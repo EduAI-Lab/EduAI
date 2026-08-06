@@ -63,6 +63,17 @@ describe('policyService', () => {
     expect(await getPolicy(FLAG)).toBe(false); // last good, not a hard fail
   });
 
+  it('serves last-good allow during Core outage after a permissive fetch (#225 SEAM-08)', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(okResponse({ [FLAG]: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await getPolicy(FLAG)).toBe(true); // primes permissive lastGood
+
+    invalidatePolicyCache();
+    fetchMock.mockRejectedValueOnce(new Error('Core down'));
+    // Mid-outage tighten lag: last-good allow persists until a successful re-fetch.
+    expect(await getPolicy(FLAG)).toBe(true);
+  });
+
   it('fails CLOSED when the first fetch fails (no last-good): a disabled flag is never silently re-enabled', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Core down')));
     // Cold start during a Core outage: policy state is unknown, so even a

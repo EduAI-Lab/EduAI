@@ -1,0 +1,86 @@
+[
+  {
+    "Transport": "http-4xx",
+    "AuthHeader": "present",
+    "Redirect": "cross-host",
+    "RedirectAuth": "keep",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "http-5xx",
+    "AuthHeader": "absent",
+    "Redirect": "none",
+    "RedirectAuth": "keep",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "http-4xx",
+    "AuthHeader": "absent",
+    "Redirect": "none",
+    "RedirectAuth": "keep",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "http-5xx",
+    "AuthHeader": "present",
+    "Redirect": "cross-host",
+    "RedirectAuth": "drop",
+    "ByteLimit": "over"
+  },
+  {
+    "Transport": "ok",
+    "AuthHeader": "present",
+    "Redirect": "cross-host",
+    "RedirectAuth": "drop",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "network-error",
+    "AuthHeader": "present",
+    "Redirect": "none",
+    "RedirectAuth": "keep",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "http-5xx",
+    "AuthHeader": "present",
+    "Redirect": "same-host",
+    "RedirectAuth": "keep",
+    "ByteLimit": "over"
+  },
+  {
+    "Transport": "ok",
+    "AuthHeader": "present",
+    "Redirect": "same-host",
+    "RedirectAuth": "keep",
+    "ByteLimit": "over"
+  },
+  {
+    "Transport": "ok",
+    "AuthHeader": "absent",
+    "Redirect": "none",
+    "RedirectAuth": "keep",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "http-4xx",
+    "AuthHeader": "present",
+    "Redirect": "same-host",
+    "RedirectAuth": "drop",
+    "ByteLimit": "under"
+  },
+  {
+    "Transport": "http-4xx",
+    "AuthHeader": "present",
+    "Redirect": "same-host",
+    "RedirectAuth": "keep",
+    "ByteLimit": "over"
+  },
+  {
+    "Transport": "network-error",
+    "AuthHeader": "absent",
+    "Redirect": "none",
+    "RedirectAuth": "keep",
+    "ByteLimit": "under"
+  }
+]

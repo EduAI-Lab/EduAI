@@ -15,7 +15,7 @@
 2. **Local resolver shim.** The fleet layer the contract references
    (`app/lib/ai/routing/fleet/types.ts` — `JobType`, `featureToJobType`, `resolveFleetHost`)
    **does not exist yet**. Implement a minimal pool+priority resolver inside the queue module
-   (v1 reality: heavy pool unset → `interactive` **and** `background` both → `ai-jobs:chat`;
+   (v1 reality: heavy pool unset → `interactive` **and** `background` both → `ai-jobs-chat`;
    priority from type). Mark it `// TODO(#168): replace with fleet/resolveFleetHost`.
 
 ---
@@ -64,13 +64,13 @@ Zod source of truth (matches `app/lib/ai/schemas.ts` convention), TS type via `z
 - Refine: `input.kind === kind`.
 
 ### 3. Pool/priority resolver (shim) — `app/lib/queue/resolve-pool.server.ts`
-- `resolveQueueName(type): "ai-jobs:chat" | "ai-jobs:heavy"` — heavy pool unset (`VLLM_FLEET_HEAVY_URL`
-  empty) → always `ai-jobs:chat`.
+- `resolveQueueName(type): "ai-jobs-chat" | "ai-jobs-heavy"` — heavy pool unset (`VLLM_FLEET_HEAVY_URL`
+  empty) → always `ai-jobs-chat`.
 - `priorityFor(type): number` — `interactive` → high (low number), `background` → low.
 - `// TODO(#168): replace with fleet resolveFleetHost/featureToJobType once fleet/types.ts lands.`
 
 ### 4. BullMQ queues — `app/lib/queue/queues.server.ts`
-- Instantiate `Queue("ai-jobs:chat")` + `Queue("ai-jobs:heavy")` bound to the shared ioredis
+- Instantiate `Queue("ai-jobs-chat")` + `Queue("ai-jobs-heavy")` bound to the shared ioredis
   connection from `connection.server.ts`. Cache on `globalThis` (hot-reload-safe, mirror prisma/redis).
 - Export `getQueue(name)`.
 

@@ -59,6 +59,17 @@ vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// These are oversight tests, not RAG tests: keep retrieval hermetic so the
+// route's #225 RAG-01/RAG-02 fail-closed path (503 when a course-intent turn
+// cannot search materials) never fires on an unmocked embedding call.
+vi.mock("~/lib/ai/embedding", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/embedding")>();
+  return {
+    ...actual,
+    findRelevantContent: vi.fn().mockResolvedValue([]),
+  };
+});
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
 	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -77,6 +88,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+	import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 	import { invalidatePolicyCache } from "~/lib/policy.server";
 	import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 	import prisma from "~/lib/prisma.server";
@@ -264,6 +276,48 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const body = await res.json();
     expect(body.content).toBe(DRAFT);
     expect(body.content).not.toContain("**Top summary**");
+  });
+});
+
+// The eval harness posts `streaming: false`; without a compliance row on this
+// path the baseline and prompt-only arms are invisible in telemetry.
+describe("POST /api/chat — compliance telemetry on the non-streaming path", () => {
+  it("records a compliance event when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: DRAFT });
+
+    const res = await action(makeArgs(baseBody({ streaming: false })));
+    expect(res.status).toBe(200);
+
+    expect(recordResponseComplianceEvent).toHaveBeenCalledTimes(1);
+    expect(recordResponseComplianceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        adhdAssist: true,
+        assistantText: DRAFT,
+        extras: expect.objectContaining({ oversightMethod: undefined }),
+      }),
+    );
+  });
+
+  it("records a compliance event for a baseline (assist off) turn", async () => {
+    mockStreamResult({ text: DRAFT });
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: CHAT_ID,
+      userId: USER_ID,
+      courseId: "c1",
+      adhdAssist: false,
+      systemPrompt: null,
+    } as never);
+
+    const res = await action(
+      makeArgs(baseBody({ streaming: false, adhdAssist: false })),
+    );
+    expect(res.status).toBe(200);
+
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    expect(recordResponseComplianceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ adhdAssist: false, assistantText: DRAFT }),
+    );
   });
 });
 

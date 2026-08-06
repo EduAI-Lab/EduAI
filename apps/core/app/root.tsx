@@ -14,7 +14,10 @@ import "./app.css";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicies } from "~/lib/policy.server";
-import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
+import {
+  getExpiredPasswordRedirect,
+  isPasswordExpiredForUser,
+} from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
@@ -38,7 +41,24 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
  * CSP (no nonce needed). Skipping HTML here avoids clobbering the nonce'd CSP.
  */
 export const middleware: Route.MiddlewareFunction[] = [
-  async (_args, next) => {
+  async ({ request }, next) => {
+    const url = new URL(request.url);
+    const isDataDocumentNavigation =
+      url.pathname.endsWith(".data") &&
+      (request.headers.get("sec-fetch-dest") === "document" ||
+        request.headers.get("accept")?.includes("text/html"));
+
+    // React Router uses `.data` internally for client-side loader requests.
+    // Reject only address-bar/document navigation so those implementation
+    // payloads cannot be browsed directly without breaking app navigation.
+    if (isDataDocumentNavigation) {
+      const blocked = new Response("Not Found", { status: 404 });
+      applySecurityHeaders(blocked.headers, {
+        isProd: process.env.NODE_ENV === "production",
+      });
+      return blocked;
+    }
+
     const response = await next();
     const isHtml =
       response.headers
@@ -51,6 +71,29 @@ export const middleware: Route.MiddlewareFunction[] = [
       });
     }
     return response;
+  },
+  // AUTH-06: the loader below only enforces password expiry for the HTML
+  // document (page navigations); `/api/*` resource routes never reach it, so
+  // an expired account could keep calling the API indefinitely. Enforce it
+  // here too, at the same request chokepoint, for every `/api/*` call that
+  // carries a session cookie. `/api/auth/*` (Better Auth's own handler) stays
+  // exempt so an expired user can still sign out or call `changePassword` —
+  // otherwise they'd be locked out with no way to fix it. Requests
+  // authenticated only by `EDUAI_API_KEY` / `x-api-key` (no session cookie)
+  // are unaffected: `getSession` returns null for them, so this never runs
+  // for server-to-server calls from AI Tutor / Question Maker.
+  async ({ request }, next) => {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
+      const session = await auth.api.getSession({ headers: request.headers });
+      if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
+        return new Response(
+          JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+    return next();
   },
 ];
 

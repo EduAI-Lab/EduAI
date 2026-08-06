@@ -133,6 +133,7 @@ export async function runCompletion(request: CompletionRequest) {
   const validatedModelId =
     `${parsedModel.providerId}:${parsedModel.modelId}` as const;
   let fleetBaseUrl: string | undefined;
+  let fleetServerId: string | undefined;
   if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
     try {
       const fleetPick = await resolveFleetHost({
@@ -140,6 +141,7 @@ export async function runCompletion(request: CompletionRequest) {
         resolvedModelId: validatedModelId,
       });
       fleetBaseUrl = fleetPick?.baseUrl;
+      fleetServerId = fleetPick?.serverId;
     } catch (error) {
       if (error instanceof FleetUnavailableError) {
         return {
@@ -209,7 +211,7 @@ export async function runCompletion(request: CompletionRequest) {
   }
 
   if (streaming) {
-    return { ok: true as const, streaming: true as const, result };
+    return { ok: true as const, streaming: true as const, result, fleetServerId };
   }
 
   try {
@@ -223,11 +225,17 @@ export async function runCompletion(request: CompletionRequest) {
     return {
       ok: true as const,
       streaming: false as const,
+      fleetServerId,
       body: {
         content: text,
         model: validatedModelId,
         usage,
         finishReason,
+      },
+      // Server-only routing metadata. API routes serialize `body` only.
+      internal: {
+        fleetHost: fleetBaseUrl ?? null,
+        fleetServerId: fleetServerId ?? null,
       },
     };
   } catch (error) {

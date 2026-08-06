@@ -3,16 +3,14 @@
  * Manages draft review, topic selection, optional assessment creation, and save flows.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Tesseract from 'tesseract.js';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
+import { Spinner } from '@eduai/ui';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
-import { IconUpload, IconFileText, IconLoader2, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
+import { IconUpload, IconFileText, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
 
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
 import { Button, Textarea, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, ScrollArea, Progress, Card, CardContent, CardHeader, CardTitle } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
-import { useToast } from '@/components/ui/use-toast';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
 
@@ -27,21 +25,37 @@ import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
 import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
 import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel } from '../../utils/aiModels';
 import type { OCRJob, StoredQuestion } from '../../types/ocr';
+import { toast } from 'sonner';
+
+// pdfjs-dist and tesseract.js are by far the heaviest dependencies in this app,
+// and only the OCR path below touches them. Imported statically they landed in
+// the shared entry chunk, so every visitor downloaded the whole OCR stack to
+// render the dashboard. Loaded on demand instead, at the point a file is
+// actually being read. `pdf.worker?url` stays static — Vite resolves it to an
+// emitted asset URL, not to the library itself.
+const isProduction = typeof window !== 'undefined' &&
+    (window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.0.0.1'));
 
 // Configure PDF.js worker
 // In production, use CDN to avoid issues with worker file path resolution
 // In development, use the local worker file
 // This fixes the "Failed to fetch dynamically imported module" error in production
-const isProduction = typeof window !== 'undefined' && 
-    (window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.0.0.1'));
-
-if (isProduction) {
-    // Use jsDelivr CDN in production for reliability
-    // Version 4.10.38 matches the installed pdfjs-dist package version
-    GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
-} else {
-    // Use local worker in development
-    GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+function loadPdfjs() {
+    // Memoised: the worker config must be applied exactly once, and re-importing
+    // per upload would re-run it on every file.
+    if (!pdfjsPromise) {
+        pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+            pdfjs.GlobalWorkerOptions.workerSrc = isProduction
+                // Use jsDelivr CDN in production for reliability
+                // Version 4.10.38 matches the installed pdfjs-dist package version
+                ? 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'
+                // Use local worker in development
+                : pdfWorkerSrc;
+            return pdfjs;
+        });
+    }
+    return pdfjsPromise;
 }
 
 type DraftQuestion = Required<Pick<ExtractedQuestion, 'question'>> &
@@ -271,7 +285,6 @@ export const QuestionUploadDialog = ({
     initialDraftQuestions,
     saveTarget = 'assessment'
 }: QuestionUploadDialogProps) => {
-    const { toast } = useToast();
 
     const [topics, setTopics] = useState<Topic[]>(providedTopics);
     const [primaryTopicId, setPrimaryTopicId] = useState<string>('');
@@ -428,21 +441,17 @@ export const QuestionUploadDialog = ({
         try {
             await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
             setApiKeySaveState('saved');
-            toast({
-                title: 'API key saved',
-                description: 'Stored locally in your browser for this provider.',
-            });
+            toast('API key saved', { description: 'Stored locally in your browser for this provider.' });
         } catch {
             setApiKeySaveState('error');
-            toast({
-                variant: 'destructive',
-                title: 'Failed to save API key',
+            toast.error('Failed to save API key', {
                 description: 'Could not store the key locally. Try again.',
             });
         }
     }, [aiModel, providerApiKey, toast]);
 
     const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+        const { getDocument } = await loadPdfjs();
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await getDocument({ data: arrayBuffer }).promise;
         const pageTexts: string[] = [];
@@ -459,6 +468,7 @@ export const QuestionUploadDialog = ({
     }, []);
 
     const performImageOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+        const { default: Tesseract } = await import('tesseract.js');
         const result = await Tesseract.recognize(file, 'eng', {
             logger: (message) => {
                 if (message.status === 'recognizing text') {
@@ -518,10 +528,9 @@ export const QuestionUploadDialog = ({
         setProcessingStage('review');
         setProgress(100);
 
-        toast({
-            title: 'Questions extracted',
+        toast('Questions extracted', {
             description: `Parsed ${drafts.length} question${drafts.length === 1 ? '' : 's'} from the upload.`,
-            duration: Number.POSITIVE_INFINITY,
+            duration: Infinity,
         });
     }, [courseId, toast, aiModel]);
 
@@ -573,12 +582,7 @@ export const QuestionUploadDialog = ({
             setProcessingStage('idle');
             setProgress(0);
             updateJobStatus(jobId, 'error', { error: message });
-            toast({
-                variant: 'destructive',
-                title: 'Question extraction failed',
-                description: message,
-                duration: Number.POSITIVE_INFINITY,
-            });
+            toast.error('Question extraction failed', { description: message, duration: Infinity });
         }
     }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName]);
 
@@ -719,8 +723,7 @@ export const QuestionUploadDialog = ({
         }
         setShowUnsavedDialog(false);
         onClose();
-        toast({
-            title: 'Questions discarded',
+        toast('Questions discarded', {
             description: 'You can restore them later from the History panel in the upload dialog.',
             duration: 10000,
         });
@@ -758,8 +761,7 @@ export const QuestionUploadDialog = ({
             setAssessmentType(job.assessmentDetails.type as typeof assessmentTypes[number]);
             setAssessmentName(job.assessmentDetails.name);
         }
-        toast({
-            title: 'Questions restored',
+        toast('Questions restored', {
             description: `Restored ${restoredDrafts.length} question(s) from history. Choices and answers are included.`,
             duration: 10000,
         });
@@ -767,11 +769,9 @@ export const QuestionUploadDialog = ({
 
     const handleSelectHistoryJob = useCallback((job: OCRJob) => {
         if (job.courseId !== courseId) {
-            toast({
-                title: 'Different course',
+            toast.error('Different course', {
                 description: `This upload was for "${job.courseName}". Switch to that course to restore these questions.`,
-                variant: 'destructive',
-                duration: Number.POSITIVE_INFINITY,
+                duration: Infinity,
             });
             return;
         }
@@ -813,17 +813,14 @@ export const QuestionUploadDialog = ({
 
         try {
             await navigator.clipboard.writeText(lines.join('\n\n'));
-            toast({
-                title: 'Copied',
+            toast('Copied', {
                 description: 'Extracted questions copied to clipboard.',
-                duration: Number.POSITIVE_INFINITY,
+                duration: Infinity,
             });
         } catch (err) {
-            toast({
-                variant: 'destructive',
-                title: 'Copy failed',
+            toast.error('Copy failed', {
                 description: 'Could not copy questions to clipboard.',
-                duration: Number.POSITIVE_INFINITY,
+                duration: Infinity,
             });
         }
     }, [draftQuestions, toast]);
@@ -885,8 +882,7 @@ export const QuestionUploadDialog = ({
             });
 
             onQuestionsSaved(result.questions, { assessmentId: result.assessmentId ?? null });
-            toast({
-                title: 'Questions added',
+            toast('Questions added', {
                 description: `${result.questions.length} question${result.questions.length === 1 ? '' : 's'} saved successfully.`,
                 duration: 10000,
             });
@@ -895,12 +891,7 @@ export const QuestionUploadDialog = ({
             console.error('Failed to save extracted questions', err);
             const message = err?.response?.data?.error || err?.message || 'Failed to save questions.';
             setError(message);
-            toast({
-                variant: 'destructive',
-                title: 'Save failed',
-                description: message,
-                duration: Number.POSITIVE_INFINITY,
-            });
+            toast.error('Save failed', { description: message, duration: Infinity });
             setProcessingStage('review');
         }
     }, [
@@ -1502,7 +1493,7 @@ export const QuestionUploadDialog = ({
                             {(processingStage === 'ocr' || processingStage === 'extracting' || processingStage === 'saving') && (
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <IconLoader2 className="h-4 w-4 animate-spin" />
+                                        <Spinner />
                                         <span>
                                             {processingStage === 'ocr' && 'Running OCR...'}
                                             {processingStage === 'extracting' && 'Extracting questions with AI...'}
@@ -1551,7 +1542,7 @@ export const QuestionUploadDialog = ({
                             <Tooltip content={disabledReason} multiline>
                                 <span className="inline-block">
                                     <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        {processingStage === 'saving' && <Spinner className="mr-2" />}
                                         {processingStage === 'saving' ? 'Saving…' : 'Save questions'}
                                     </Button>
                                 </span>
@@ -1568,7 +1559,7 @@ export const QuestionUploadDialog = ({
                             >
                                 <span className="inline-block">
                                     <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        {processingStage === 'saving' && <Spinner className="mr-2" />}
                                         {processingStage === 'saving' ? 'Saving…' : 'Save questions'}
                                     </Button>
                                 </span>
@@ -1623,10 +1614,9 @@ export const QuestionUploadDialog = ({
                         onClick={() => {
                             clearHistory();
                             setShowClearHistoryConfirm(false);
-                            toast({
-                                title: 'History cleared',
+                            toast('History cleared', {
                                 description: 'Upload history has been cleared. Saved questions are unchanged.',
-                                duration: Number.POSITIVE_INFINITY,
+                                duration: Infinity,
                             });
                         }}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
