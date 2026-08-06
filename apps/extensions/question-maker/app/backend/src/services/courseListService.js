@@ -17,6 +17,8 @@ import {
 import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
+const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
+const accessSyncedAtByUser = new Map();
 
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
 const CORE_UNAVAILABLE_NAME = 'Course unavailable';
@@ -297,6 +299,117 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     }
   }
   return visible;
+}
+
+/** Refresh the caller's Core enrollment snapshot at most once per TTL. */
+async function syncCourseAccessMirror(reqUser, cookie) {
+  const now = Date.now();
+  if (now - (accessSyncedAtByUser.get(reqUser.id) ?? 0) < ACCESS_SYNC_TTL_MS) return;
+
+  const scopedCourses = await listCoursesFromCore(cookie, { all: true });
+  const coreIds = scopedCourses.map((course) => course?.id).filter(Boolean);
+  const anchors = coreIds.length
+    ? await prisma.course.findMany({
+        where: { coreCourseId: { in: coreIds } },
+        select: { id: true, coreCourseId: true },
+      })
+    : [];
+  const anchorByCoreId = new Map(anchors.map((course) => [course.coreCourseId, course]));
+
+  await prisma.courseAccess.deleteMany({ where: { userId: reqUser.id } });
+  const accessRows = scopedCourses.flatMap((course) => {
+    const anchor = anchorByCoreId.get(course.id);
+    if (!anchor || !course.callerEnrollmentRole) return [];
+    return [{
+      userId: reqUser.id,
+      courseId: anchor.id,
+      role: course.callerEnrollmentRole,
+      department: course.department ?? null,
+    }];
+  });
+  if (accessRows.length) await prisma.courseAccess.createMany({ data: accessRows, skipDuplicates: true });
+  accessSyncedAtByUser.set(reqUser.id, now);
+}
+
+export function resetCourseAccessSyncForTests() {
+  accessSyncedAtByUser.clear();
+}
+
+/** SQL-paginated course list. Visibility and totals share one DB predicate. */
+export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+  if (reqUser.role === 'ADMIN') {
+    await listCoursesForUser(reqUser, { cookie });
+  } else {
+    try {
+      await syncCourseAccessMirror(reqUser, cookie);
+    } catch {
+      // Core-down behavior retains the owner fallback below.
+      accessSyncedAtByUser.set(reqUser.id, Date.now());
+    }
+  }
+
+  const authorizedUnits = reqUser.role === 'UNIT_ADMIN'
+    ? await getAuthorizedUnits(reqUser, cookie)
+    : [];
+  const where = reqUser.role === 'ADMIN'
+    ? {}
+    : {
+        OR: [
+          {
+            userId: reqUser.id,
+            OR: [
+              { coreCourseId: null },
+              { accessGrants: { none: { userId: reqUser.id } } },
+            ],
+          },
+          { accessGrants: { some: { userId: reqUser.id, role: 'INSTRUCTOR' } } },
+          ...(reqUser.role === 'UNIT_ADMIN' && authorizedUnits.length
+            ? [{ accessGrants: { some: { userId: reqUser.id, department: { in: authorizedUnits } } } }]
+            : []),
+        ],
+      };
+
+  const [total, rows] = await Promise.all([
+    prisma.course.count({ where }),
+    prisma.course.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: pagination.offset,
+      take: pagination.limit,
+      include: {
+        accessGrants: {
+          where: { userId: reqUser.id },
+          select: { role: true, department: true },
+        },
+      },
+    }),
+  ]);
+
+  const courses = rows.map((course) => {
+    const grant = course.accessGrants?.[0];
+    const accessLevel = reqUser.role === 'ADMIN'
+      ? 'admin'
+      : grant?.department && authorizedUnits.includes(grant.department)
+        ? 'unit'
+        : grant?.role === 'INSTRUCTOR' || reqUser.id === course.userId
+          ? 'instructor'
+          : null;
+    const { accessGrants, ...plainCourse } = course;
+    return { ...plainCourse, accessLevel };
+  });
+
+  let coreById = new Map();
+  try {
+    const coreCourses = await getCoursesByIdsFromCore(
+      courses.map((course) => course.coreCourseId).filter(Boolean),
+      {},
+      { serviceKeyOnly: true },
+    );
+    coreById = new Map(coreCourses.map((course) => [course.id, course]));
+  } catch {
+    // Core projection degrades to the placeholder, as in the legacy list.
+  }
+  return { courses: courses.map((course) => enrichCourseRow(course, coreById, course.accessLevel)), total };
 }
 
 /**
