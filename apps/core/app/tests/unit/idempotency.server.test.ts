@@ -432,4 +432,59 @@ describe("withIdempotency", () => {
     expect(prismaMock.idempotencyRecord.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.idempotencyRecord.deleteMany).not.toHaveBeenCalled();
   });
+
+  it("coalesces overlapping same-key requests onto one handler (#1110)", async () => {
+    let resolveHandler!: (value: Response) => void;
+    const handlerGate = new Promise<Response>((resolve) => {
+      resolveHandler = resolve;
+    });
+    let handlerEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      handlerEntered = resolve;
+    });
+    const handler = vi.fn().mockImplementation(() => {
+      handlerEntered();
+      return handlerGate;
+    });
+
+    prismaMock.idempotencyRecord.create.mockResolvedValue({});
+    prismaMock.idempotencyRecord.update.mockResolvedValue({});
+
+    const makeRequest = () =>
+      new Request("http://localhost/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "overlap-key",
+        },
+        body: JSON.stringify({ email: "a@b.c", name: "A", role: "STUDENT" }),
+      });
+
+    const first = withIdempotency(
+      { request: makeRequest(), route: "POST /api/users", actorId: "admin-1" },
+      handler,
+    );
+    const second = withIdempotency(
+      { request: makeRequest(), route: "POST /api/users", actorId: "admin-1" },
+      handler,
+    );
+
+    await entered;
+    expect(handler).toHaveBeenCalledOnce();
+
+    resolveHandler(
+      new Response(JSON.stringify({ id: "u-overlap" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    expect(await a.json()).toEqual({ id: "u-overlap" });
+    expect(await b.json()).toEqual({ id: "u-overlap" });
+    expect(handler).toHaveBeenCalledOnce();
+    expect(prismaMock.idempotencyRecord.create).toHaveBeenCalledOnce();
+  });
 });
