@@ -6,6 +6,7 @@
  * the callerEnrollmentRole-vs-roster parity analysis.
  */
 import { prisma } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 import { LEVELS, getAuthorizedUnits } from '../middleware/courseAccess.js';
 import {
   getAllCoursesFromCore,
@@ -24,8 +25,14 @@ const MIN_LIST_RANK = LEVELS.instructor.rank;
  * missing anchors (#1270) — each holds an advisory-lock transaction for its
  * duration, so this bounds how many are open against the pool at once
  * instead of fanning out one per Core course on a fresh deploy/import.
+ *
+ * Prisma's default `connection_limit` is `2 * num_cpus + 1` (~9-17 on typical
+ * hardware; `config/database.js` doesn't override it), and this request
+ * shares that pool with everything else the process is doing concurrently.
+ * 8 stays under the low end of that range with headroom, instead of the
+ * batch alone being able to exhaust the pool and hit `P2024` (#1270 review).
  */
-const ADMIN_ANCHOR_BACKFILL_BATCH_SIZE = 25;
+const ADMIN_ANCHOR_BACKFILL_BATCH_SIZE = 8;
 
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
 const CORE_UNAVAILABLE_NAME = 'Course unavailable';
@@ -263,9 +270,24 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
       // transaction holding an advisory lock for its duration. Unbounded
       // fan-out there means one ADMIN list request opening thousands of
       // concurrent transactions against the pool at once.
+      // Backfill is opportunistic materialization, not the point of the
+      // request — one transient failure (P2024, a lock timeout, a dropped
+      // connection) on a single anchor must not 500 the whole ADMIN list.
+      // allSettled + warn-log instead of Promise.all (#1270 review); the
+      // re-fetch below just reads back whatever did land.
       for (let i = 0; i < missingCoreCourseIds.length; i += ADMIN_ANCHOR_BACKFILL_BATCH_SIZE) {
         const batch = missingCoreCourseIds.slice(i, i + ADMIN_ANCHOR_BACKFILL_BATCH_SIZE);
-        await Promise.all(batch.map((coreCourseId) => ensureCourseAnchor(reqUser.id, coreCourseId)));
+        const results = await Promise.allSettled(
+          batch.map((coreCourseId) => ensureCourseAnchor(reqUser.id, coreCourseId)),
+        );
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'rejected') {
+            logger.warn(
+              { coreCourseId: batch[index], error: result.reason },
+              'ADMIN course-list anchor backfill failed for one course; continuing',
+            );
+          }
+        }
       }
       // Re-fetch: ensure does not return every row, and a racing request may
       // have inserted some of these first — read back the ground truth.

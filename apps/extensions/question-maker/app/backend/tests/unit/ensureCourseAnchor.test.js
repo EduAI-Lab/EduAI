@@ -75,36 +75,72 @@ describe('ensureCourseAnchor', () => {
     });
   });
 
-  it('rereads outside the aborted transaction after P2002', async () => {
-    txFindUnique.mockResolvedValue(null);
-    txCreate.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-        code: 'P2002',
-        clientVersion: '6.19.3',
-        meta: { target: ['core_course_id'] },
-      }),
-    );
+  it('rereads in a new, re-locked transaction after P2002 aborts the first one', async () => {
     const raced = { id: 3, userId: 'other', coreCourseId: 'core-3' };
-    prismaFindUnique.mockResolvedValue(raced);
+    // First transaction: race lost at create(). Second (recovery) transaction:
+    // reacquires the lock and finds the row the racing writer persisted.
+    transaction
+      .mockImplementationOnce(async (fn) =>
+        fn({
+          $executeRaw: executeRaw,
+          course: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockRejectedValue(
+              new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+                code: 'P2002',
+                clientVersion: '6.19.3',
+                meta: { target: ['core_course_id'] },
+              }),
+            ),
+          },
+        }),
+      )
+      .mockImplementationOnce(async (fn) =>
+        fn({ $executeRaw: executeRaw, course: { findUnique: txFindUnique, create: txCreate } }),
+      );
+    txFindUnique.mockResolvedValue(raced);
 
     const result = await ensureCourseAnchor('u1', 'core-3');
 
     expect(result).toEqual({ course: raced, created: false });
-    // Recovery must use the root client — not `tx` — after P2002 aborts the txn.
-    expect(prismaFindUnique).toHaveBeenCalledWith({ where: { coreCourseId: 'core-3' } });
+    // Recovery re-locks (both transactions call $executeRaw) rather than an
+    // unlocked module-level reread — closes the delete-in-the-window race.
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(executeRaw).toHaveBeenCalledTimes(2);
+    expect(txCreate).not.toHaveBeenCalled();
   });
 
-  it('rethrows P2002 when the outside reread still finds nothing', async () => {
-    const err = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-      code: 'P2002',
-      clientVersion: '6.19.3',
-      meta: { target: ['core_course_id'] },
-    });
+  it('creates under the reacquired lock when the recovery reread finds the conflicting row gone', async () => {
+    // The row that caused the P2002 was deleted between the conflict and the
+    // recovery transaction. Holding the lock now makes it safe to create
+    // instead of rethrowing a conflict that no longer exists (#1270 review).
+    const recovered = { id: 4, userId: 'u1', coreCourseId: 'core-missing' };
+    transaction
+      .mockImplementationOnce(async (fn) =>
+        fn({
+          $executeRaw: executeRaw,
+          course: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockRejectedValue(
+              new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+                code: 'P2002',
+                clientVersion: '6.19.3',
+                meta: { target: ['core_course_id'] },
+              }),
+            ),
+          },
+        }),
+      )
+      .mockImplementationOnce(async (fn) =>
+        fn({ $executeRaw: executeRaw, course: { findUnique: txFindUnique, create: txCreate } }),
+      );
     txFindUnique.mockResolvedValue(null);
-    txCreate.mockRejectedValue(err);
-    prismaFindUnique.mockResolvedValue(null);
+    txCreate.mockResolvedValue(recovered);
 
-    await expect(ensureCourseAnchor('u1', 'core-missing')).rejects.toBe(err);
+    const result = await ensureCourseAnchor('u1', 'core-missing');
+
+    expect(result).toEqual({ course: recovered, created: true });
+    expect(txCreate).toHaveBeenCalledWith({ data: { userId: 'u1', coreCourseId: 'core-missing' } });
   });
 
   it('rethrows non-unique errors from the transaction', async () => {

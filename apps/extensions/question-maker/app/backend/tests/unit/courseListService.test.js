@@ -185,6 +185,52 @@ describe('listCoursesForUser', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].coreUnavailable).toBe(true);
     });
+
+    it('does not fail the whole list when one anchor backfill rejects (#1270 review: allSettled, not Promise.all)', async () => {
+      const bigCatalog = [
+        { id: 'core-1', name: 'Course One', code: 'C1', department: 'COSC' },
+        { id: 'core-2', name: 'Course Two', code: 'C2', department: 'COSC' },
+      ];
+      mockGetAllCoursesFromCore.mockResolvedValue(bigCatalog);
+      mockFindMany
+        .mockResolvedValueOnce([]) // no local anchors yet — both are missing
+        .mockResolvedValueOnce([{ id: 2, coreCourseId: 'core-2' }]); // only core-2 landed
+      mockEnsureCourseAnchor.mockImplementation(async (_userId, coreCourseId) => {
+        if (coreCourseId === 'core-1') throw new Error('P2024: pool timeout');
+        return { course: { id: 2, userId: 'admin-7', coreCourseId: 'core-2' }, created: true };
+      });
+
+      const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
+
+      // Must not throw despite one rejection — the request degrades to
+      // whatever backfilled successfully instead of 500ing the whole list.
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledTimes(2);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].code).toBe('C2');
+    });
+
+    it('processes every missing anchor across multiple batches when the catalog exceeds the batch size', async () => {
+      const missingCount = 20; // > ADMIN_ANCHOR_BACKFILL_BATCH_SIZE (8)
+      const bigCatalog = Array.from({ length: missingCount }, (_, i) => ({
+        id: `core-${i}`,
+        name: `Course ${i}`,
+        code: `C${i}`,
+        department: 'COSC',
+      }));
+      mockGetAllCoursesFromCore.mockResolvedValue(bigCatalog);
+      mockFindMany
+        .mockResolvedValueOnce([]) // nothing anchored locally yet
+        .mockResolvedValueOnce(bigCatalog.map((c, i) => ({ id: i, coreCourseId: c.id })));
+      mockEnsureCourseAnchor.mockImplementation(async (_userId, coreCourseId) => ({
+        course: { id: coreCourseId, userId: 'admin-7', coreCourseId },
+        created: true,
+      }));
+
+      const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
+
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledTimes(missingCount);
+      expect(rows).toHaveLength(missingCount);
+    });
   });
 
   describe('non-ADMIN access derivation (#1072 unified contract — no per-row Core call)', () => {

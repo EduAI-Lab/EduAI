@@ -6,10 +6,11 @@
  * same per-`coreCourseId` Postgres advisory lock and agree on one persisted
  * owner.
  *
- * Unique-conflict recovery re-reads OUTSIDE the transaction: a P2002 aborts
- * the Postgres transaction, so a reread through `tx` would fail with
- * "current transaction is aborted" and surface as 500 when racing a path that
- * somehow bypasses the lock.
+ * Unique-conflict recovery re-reads in a NEW transaction, not the aborted
+ * one: a P2002 aborts the Postgres transaction, so a reread through the same
+ * `tx` would fail with "current transaction is aborted". The new transaction
+ * reacquires the same advisory lock before reading, so the recovery path
+ * can't race a concurrent delete of the conflicting row either (#1270 review).
  */
 import { Prisma } from '@eduai/question-maker-prisma-client';
 import { prisma } from '../config/database.js';
@@ -61,9 +62,28 @@ export async function ensureCourseAnchor(userId, coreCourseId) {
       error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
     if (!isUniqueViolation) throw error;
 
-    // Transaction already aborted/rolled back — reread with a fresh client.
-    const course = await prisma.course.findUnique({ where: { coreCourseId } });
-    if (!course) throw error;
-    return { course, created: false };
+    // Transaction already aborted/rolled back by the P2002 — an unlocked
+    // reread here has a window where the racing writer's row could be
+    // deleted between the conflict and this read, returning null and
+    // rethrowing a spurious error even though the conflict has cleared
+    // (#1270 review). Reacquire the same advisory lock in a fresh
+    // transaction instead: once held, no other `ensureCourseAnchor` call for
+    // this `coreCourseId` can be concurrently creating or racing a delete
+    // against it, so it's safe to read-or-create here as the single source
+    // of truth rather than just read-and-give-up.
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${COURSE_ANCHOR_LOCK_NS}::int, ${courseAnchorAdvisoryLockKey(coreCourseId)}::int)`;
+
+      const existing = await tx.course.findUnique({ where: { coreCourseId } });
+      if (existing) {
+        return { course: existing, created: false };
+      }
+
+      // The conflicting row is gone (deleted between the P2002 and here) —
+      // we hold the lock now, so it's safe to create rather than surface a
+      // 500 for a conflict that no longer exists.
+      const course = await tx.course.create({ data: { userId, coreCourseId } });
+      return { course, created: true };
+    });
   }
 }
