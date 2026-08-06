@@ -30,6 +30,14 @@ export interface CommandPaletteItem {
   shortcut?: string
   /** cmdk match string; defaults to the label. Use to make an item searchable by code/name. */
   value?: string
+  /**
+   * Render as an inert notice rather than a destination — cmdk skips it in
+   * keyboard navigation, so it can never be the auto-highlighted row that Enter
+   * activates. Needed because every select runs through `run()`, which closes
+   * the dialog: an item with a no-op `onSelect` still dismisses the palette and
+   * discards the query, which is the opposite of a no-op.
+   */
+  disabled?: boolean
   onSelect: () => void
 }
 
@@ -180,7 +188,11 @@ export function CommandPalette({
                 <CommandItem
                   key={`${item.label}-${ii}`}
                   value={item.value ?? item.label}
-                  onSelect={() => run(item.onSelect)}
+                  disabled={item.disabled}
+                  onSelect={() => {
+                    if (item.disabled) return
+                    run(item.onSelect)
+                  }}
                 >
                   {item.icon}
                   <span className="font-medium">{item.label}</span>
