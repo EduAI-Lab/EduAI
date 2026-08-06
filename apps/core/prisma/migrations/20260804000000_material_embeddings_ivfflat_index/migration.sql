@@ -48,6 +48,11 @@
 -- Runtime `probes` tuning (ivfflat.probes) is set per-query in
 -- findRelevantContent() via a transaction-scoped `SET LOCAL`, not here -- see
 -- apps/core/app/lib/ai/embedding.ts and docs/rag-ai/EMBEDDINGS.md.
+--
+-- This migration may run before the first material embedding exists. After the
+-- initial bulk embed (and after a substantial corpus growth), run:
+--   REINDEX INDEX CONCURRENTLY "material_embeddings_embedding_ivfflat_idx";
+-- so centroids are trained from representative rows rather than an empty table.
 
 CREATE INDEX IF NOT EXISTS "material_embeddings_embedding_ivfflat_idx"
   ON "material_embeddings"

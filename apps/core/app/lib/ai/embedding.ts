@@ -67,6 +67,8 @@ export function resolveIvfflatProbes(): number {
     return DEFAULT_IVFFLAT_PROBES;
   }
   return Math.min(MAX_IVFFLAT_PROBES, Math.max(MIN_IVFFLAT_PROBES, Math.round(raw)));
+}
+/**
  * Default number of materials re-embedded concurrently in `reEmbedCourseMaterials`
  * (#945). Kept modest (rather than unbounded `Promise.all`) so a large re-embed run
  * doesn't exhaust the Postgres connection pool or burst past the embedding
@@ -786,6 +788,17 @@ export async function findRelevantContent(
   // to this bounded maximum, so a large unrelated course cannot starve a
   // smaller course's nearest chunks from the candidate set.
   const maxProbes = MAX_IVFFLAT_PROBES;
+  const iterativeScanSettings = Prisma.sql`
+    DO $$
+    DECLARE version_text text;
+    BEGIN
+      SELECT extversion INTO version_text FROM pg_extension WHERE extname = 'vector';
+      IF string_to_array(version_text, '.') >= ARRAY[0, 8, 0]::int[] THEN
+        PERFORM set_config('ivfflat.iterative_scan', 'relaxed_order', true);
+        PERFORM set_config('ivfflat.max_probes', ${String(maxProbes)}, true);
+      END IF;
+    END $$;
+  `;
 
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
@@ -801,8 +814,7 @@ export async function findRelevantContent(
     // to the resulting candidate set.
     const [, , , hybridResults] = await prisma.$transaction([
       prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
-      prisma.$executeRawUnsafe("SET LOCAL ivfflat.iterative_scan = relaxed_order"),
-      prisma.$executeRawUnsafe(`SET LOCAL ivfflat.max_probes = ${maxProbes}`),
+      prisma.$executeRaw(iterativeScanSettings),
       prisma.$queryRaw<
         Array<{ content: string; score: number; material_title: string }>
       >`
@@ -848,8 +860,7 @@ export async function findRelevantContent(
 
   const [, , , results] = await prisma.$transaction([
     prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
-    prisma.$executeRawUnsafe("SET LOCAL ivfflat.iterative_scan = relaxed_order"),
-    prisma.$executeRawUnsafe(`SET LOCAL ivfflat.max_probes = ${maxProbes}`),
+    prisma.$executeRaw(iterativeScanSettings),
     prisma.$queryRaw<
       Array<{
         content: string;
