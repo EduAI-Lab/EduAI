@@ -4,7 +4,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mockFindMany = vi.fn();
+const mockCount = vi.fn();
 const mockCreateMany = vi.fn();
+const mockCourseAccessDeleteMany = vi.fn();
+const mockCourseAccessCreateMany = vi.fn();
 const mockGetAllCoursesFromCore = vi.fn();
 const mockGetCoursesByIdsFromCore = vi.fn();
 const mockSearchCoursesFromCore = vi.fn();
@@ -16,7 +19,12 @@ vi.mock('../../src/config/database.js', () => ({
   prisma: {
     course: {
       findMany: (...args) => mockFindMany(...args),
+      count: (...args) => mockCount(...args),
       createMany: (...args) => mockCreateMany(...args),
+    },
+    courseAccess: {
+      deleteMany: (...args) => mockCourseAccessDeleteMany(...args),
+      createMany: (...args) => mockCourseAccessCreateMany(...args),
     },
   },
 }));
@@ -40,7 +48,12 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   listCoursesFromCore: (...args) => mockListCoursesFromCore(...args),
 }));
 
-const { listCoursesForUser, enrichCourseDetail } = await import(
+const {
+  listCoursesForUser,
+  listCoursesPageForUser,
+  resetCourseAccessSyncForTests,
+  enrichCourseDetail,
+} = await import(
   '../../src/services/courseListService.js'
 );
 
@@ -62,6 +75,63 @@ describe('listCoursesForUser', () => {
     mockListCoursesFromCore.mockResolvedValue([]);
     mockGetAuthorizedUnits.mockResolvedValue([]);
     mockGetCourseFromCore.mockResolvedValue({ id: 'core-1', name: 'Core Course One' });
+    mockCount.mockResolvedValue(0);
+    mockCourseAccessDeleteMany.mockResolvedValue({ count: 0 });
+    mockCourseAccessCreateMany.mockResolvedValue({ count: 0 });
+    resetCourseAccessSyncForTests();
+  });
+
+  describe('listCoursesPageForUser (#1206)', () => {
+    it('refreshes access once, then applies the same SQL visibility predicate to count and page', async () => {
+      mockListCoursesFromCore.mockResolvedValue([
+        { id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR', department: 'COSC' },
+      ]);
+      mockFindMany
+        .mockResolvedValueOnce([{ id: 10, coreCourseId: 'core-1' }])
+        .mockResolvedValueOnce([{
+          id: 10,
+          userId: 'other-owner',
+          coreCourseId: 'core-1',
+          accessGrants: [{ role: 'INSTRUCTOR', department: 'COSC' }],
+        }]);
+      mockCount.mockResolvedValue(3);
+
+      const result = await listCoursesPageForUser(
+        { id: 'instructor-1', role: 'INSTRUCTOR' },
+        { cookie: 'session=x', pagination: { offset: 2, limit: 1 } },
+      );
+
+      expect(result.total).toBe(3);
+      expect(result.courses).toHaveLength(1);
+      expect(result.courses[0].accessLevel).toBe('instructor');
+      expect(mockCourseAccessDeleteMany).toHaveBeenCalledWith({ where: { userId: 'instructor-1' } });
+      expect(mockCourseAccessCreateMany).toHaveBeenCalledWith({
+        data: [{ userId: 'instructor-1', courseId: 10, role: 'INSTRUCTOR', department: 'COSC' }],
+        skipDuplicates: true,
+      });
+
+      const countWhere = mockCount.mock.calls[0][0].where;
+      const pageQuery = mockFindMany.mock.calls[1][0];
+      expect(pageQuery.where).toEqual(countWhere);
+      expect(pageQuery.skip).toBe(2);
+      expect(pageQuery.take).toBe(1);
+      expect(pageQuery.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('does not refresh Core access again while the caller snapshot is fresh', async () => {
+      mockFindMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      mockCount.mockResolvedValue(0);
+
+      const user = { id: 'instructor-ttl', role: 'INSTRUCTOR' };
+      const options = { cookie: 'session=x', pagination: { offset: 0, limit: 25 } };
+      await listCoursesPageForUser(user, options);
+      await listCoursesPageForUser(user, options);
+
+      expect(mockListCoursesFromCore).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('enrichCourseDetail (#1072 detail-fetch: service-key mode, not preferCookie)', () => {
