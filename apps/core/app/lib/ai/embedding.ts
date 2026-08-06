@@ -795,7 +795,7 @@ export async function findRelevantContent(
       SELECT extversion INTO version_text FROM pg_extension WHERE extname = 'vector';
       IF string_to_array(version_text, '.') >= ARRAY[0, 8, 0]::int[] THEN
         PERFORM set_config('ivfflat.iterative_scan', 'relaxed_order', true);
-        PERFORM set_config('ivfflat.max_probes', ${String(maxProbes)}, true);
+        PERFORM set_config('ivfflat.max_probes', '${Prisma.raw(String(maxProbes))}', true);
       END IF;
     END $$;
   `;
