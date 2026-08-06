@@ -924,6 +924,7 @@ export async function findRelevantContent(
     // can still change the final ordering without turning the ANN query back
     // into a full scan.
     const hybridCandidateLimit = Number(effectiveLimit) * 4;
+    const lexicalCandidateLimit = Math.max(hybridCandidateLimit, Number(effectiveLimit));
 
     // pgvector can use an ANN index only when the index operator itself is the
     // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
@@ -963,6 +964,8 @@ export async function findRelevantContent(
             ${canvasPublishFilter}
             ${visibilityFilter}
             AND mc.content_tsv @@ plainto_tsquery('english', ${userQuery})
+          ORDER BY ts_rank(mc.content_tsv, plainto_tsquery('english', ${userQuery})) DESC
+          LIMIT ${lexicalCandidateLimit}
         ), candidate_chunks AS (
           SELECT content, content_tsv, material_title, distance
           FROM vector_candidates

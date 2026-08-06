@@ -1,6 +1,10 @@
 -- #941: Hybrid RAG's `ts_rank(to_tsvector('english', mc.content), plainto_tsquery(...))`
 -- (app/lib/ai/embedding.ts) re-tokenized every chunk's `content` on every hybrid query
 -- because `to_tsvector` was computed inline with no stored representation to index.
+-- WARNING: adding the generated column rewrites material_chunks under an
+-- ACCESS EXCLUSIVE lock, and the GIN build blocks writes while it runs.
+-- Schedule this migration during a low-write window (or split it into an
+-- online/concurrent rollout before applying it to a large production corpus).
 --
 -- Add a STORED generated column so Postgres computes the tsvector once at write
 -- time instead of on every read, then index it with GIN so `@@` lookups and

@@ -184,6 +184,15 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("AND 1 -");
   });
 
+  it("keeps visibility and deletion filters in both UNION arms", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const [lexical, semantic] = capturedSql().split("UNION");
+    expect(lexical).toContain('cm."deletedAt" IS NULL');
+    expect(semantic).toContain('cm."deletedAt" IS NULL');
+    expect(lexical).toContain('cm."visibleToStudents" = true');
+    expect(semantic).toContain('cm."visibleToStudents" = true');
+  });
+
   // #941: content_tsv is a GENERATED ALWAYS ... STORED column (GIN-indexed) derived
   // from content via to_tsvector('english', ...); the hybrid query must read that
   // stored column instead of recomputing to_tsvector(content) inline on every query.
