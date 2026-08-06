@@ -26,11 +26,11 @@ const CLOUD_EMBED_MANY_MAX_BATCH_SIZE = 100;
 /**
  * Max rows per multi-row `material_embeddings` INSERT (#943).
  *
- * Each row binds 3 params (id, chunkId, embedding), so Postgres's ~65535
- * bind-parameter limit per statement allows roughly 21800 rows/statement.
- * Real-world PDF chunk counts are far smaller, but we cap well under that
- * ceiling defensively so a single pathological upload can't build one
- * enormous statement — batching also keeps individual round trips small.
+ * The payload cap is based on the actual vector dimension (`embedding.length`)
+ * rather than only the number of bind parameters: a vector component is
+ * conservatively budgeted at 8 bytes plus SQL/identifier overhead. This keeps
+ * each bind payload below 2 MiB for 1024-dimension vectors and automatically
+ * reduces the row count when a larger configured dimension is used.
  */
 export const MATERIAL_EMBEDDING_INSERT_BATCH_SIZE = 500;
 const MATERIAL_EMBEDDING_INSERT_MAX_BYTES = 2_000_000;
@@ -997,8 +997,8 @@ export type ProcessMaterialEmbeddingsOptions = {
  * raw SQL is required; `Prisma.sql` + `Prisma.join` keep every value
  * (including the vector literal) bound as a parameter rather than
  * string-concatenated, and rows are chunked to
- * `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` to stay well under Postgres's
- * ~65535 bind-parameter limit per statement.
+ * `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` and the dimension-aware payload cap
+ * to keep synchronous query construction and bind payloads bounded.
  */
 export async function insertMaterialEmbeddingsBatched(
   tx: Prisma.TransactionClient,

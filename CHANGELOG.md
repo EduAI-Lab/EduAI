@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [core] perf: Batch `material_embeddings` vector inserts into a single multi-row `INSERT` per batch instead of one `$executeRaw` round trip per chunk during material ingestion (`processMaterialEmbeddings`) — cuts DB round trips and shortens the open-transaction hold time for large PDFs. Rows are chunked to `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` (500) to stay well under Postgres's per-statement bind-parameter limit; params (including the pgvector literal) stay bound via `Prisma.sql`/`Prisma.join`, never string-concatenated. Closes #943. (@saadtab01, 2026-08-04) — [#1355](https://github.com/EduAI-Lab/EduAI/pull/1355)
+- [core] perf: Batch `material_embeddings` vector inserts into a single multi-row `INSERT` per batch instead of one `$executeRaw` round trip per chunk during material ingestion (`processMaterialEmbeddings`) — cuts DB round trips and shortens the open-transaction hold time for large PDFs. Rows are bounded by the env-tunable `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` (500) and a dimension-aware ~2 MiB payload cap, so larger embedding dimensions automatically produce smaller batches; params (including the pgvector literal) stay bound via `Prisma.sql`/`Prisma.join`, never string-concatenated. Closes #943. (@saadtab01, 2026-08-04) — [#1355](https://github.com/EduAI-Lab/EduAI/pull/1355)
 
 ### Tests
 
