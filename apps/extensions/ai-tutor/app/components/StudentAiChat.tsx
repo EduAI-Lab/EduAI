@@ -49,6 +49,7 @@ import {
   IconSend,
   IconSparkles,
 } from '@tabler/icons-react';
+import { normalizeMathMarkdown } from '@eduai/ui/math-markdown';
 import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
 import { KnowledgeLevelChips } from '~/components/chat/knowledge-level-chips';
 import { loadSessionMessages, type ApiChatSession } from '~/lib/student-chat-history';
@@ -613,9 +614,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         <Message key={msg.id}>
           {/* Match Core's chat: render AI markdown directly on the card (bg-transparent)
               instead of the default bg-secondary bubble, which broke dark-mode contrast.
-              MessageContent applies `reading-surface` internally for Assistive Mode. */}
+              MessageContent applies `reading-surface` internally for Assistive Mode.
+
+              Assistant output is normalized first (#1401) so model LaTeX reaches
+              KaTeX in the delimiters remark-math accepts — same split Core uses in
+              components/chat/chat-message.tsx. User-typed text stays verbatim. */}
           <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
-            {msg.content}
+            {normalizeMathMarkdown(msg.content)}
           </MessageContent>
         </Message>
       ),

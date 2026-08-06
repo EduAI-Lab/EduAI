@@ -15,7 +15,7 @@ import {
   CHAT_MESSAGE_INACTIVE_CLASS,
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
-import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
+import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
 import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
