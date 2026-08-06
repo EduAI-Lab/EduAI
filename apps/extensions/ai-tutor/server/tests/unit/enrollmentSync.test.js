@@ -341,14 +341,30 @@ describe('syncCourseEnrollments', () => {
     });
   });
 
-  describe('error propagation', () => {
-    it('propagates errors thrown by the Core client without swallowing them', async () => {
+  describe("error propagation", () => {
+    it("propagates errors thrown by the Core client without swallowing them", async () => {
       const err = Object.assign(new Error('EDUAI_API_KEY not configured'), { status: 500 });
       listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(err);
 
       await expect(syncCourseEnrollments(1)).rejects.toThrow('EDUAI_API_KEY not configured');
       expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
       expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('leaves stale local enrollments untouched when Core sync hard-fails (#225 SEAM-06)', async () => {
+      // Core would have demoted/removed users, but a hard failure must not wipe
+      // or mutate local rows — stale access persists until the next good sync.
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: 'user-cuid-stale', role: 'STUDENT' },
+      ]);
+      listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(
+        Object.assign(new Error('Core unavailable'), { status: 503 }),
+      );
+
+      await expect(syncCourseEnrollments(1)).rejects.toThrow('Core unavailable');
+      expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
+      expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
     });
 
     it('tags a Core fetch failure with phase "fetch"', async () => {
