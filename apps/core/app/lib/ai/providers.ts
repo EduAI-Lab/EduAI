@@ -10,6 +10,7 @@ import { createOllama } from 'ollama-ai-provider';
 import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
 import { resolveAllowedOllamaBaseUrl } from '~/lib/ai/ollama-url.server';
 import { resolveAllowedVllmBaseUrl } from '~/lib/ai/vllm-url.server';
+import { vllmThinkingDisabledFetch } from '~/lib/ai/vllm-thinking.server';
 import {
   LOCAL_INFERENCE_PROVIDERS,
   mergeLocalInferenceFromEnv,
@@ -144,6 +145,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
         baseURL,
         // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
         compatibility: "strict",
+        fetch: vllmThinkingDisabledFetch(),
       });
     }
   }

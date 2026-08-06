@@ -18,11 +18,15 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-vi.mock("~/lib/ai/embedding", () => ({
-  findRelevantContent: vi.fn().mockResolvedValue([]),
-  generateEmbedding: vi.fn().mockResolvedValue([]),
-  processMaterialEmbeddings: vi.fn(),
-}));
+vi.mock("~/lib/ai/embedding", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/embedding")>();
+  return {
+    ...actual,
+    findRelevantContent: vi.fn().mockResolvedValue([]),
+    generateEmbedding: vi.fn().mockResolvedValue([]),
+    processMaterialEmbeddings: vi.fn(),
+  };
+});
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
@@ -128,11 +132,36 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamConfig(): { system?: string; maxTokens?: number } {
+function lastStreamConfig(): { system?: string; maxTokens?: number; messages?: Array<{ id?: string }> } {
   const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as
-    | { system?: string; maxTokens?: number }
+    | { system?: string; maxTokens?: number; messages?: Array<{ id?: string }> }
     | undefined;
   return call ?? {};
+}
+
+function lastStreamMessages(): Array<{ id?: string }> {
+  return lastStreamConfig().messages ?? [];
+}
+
+function storedRecord(id: string, role: string, content: string) {
+  return {
+    messageId: id,
+    role,
+    content: { id, role, content },
+    position: 0,
+  };
+}
+
+/** DB returns newest-first; the route reverses to chronological order. */
+function storedRecordsDesc(count: number) {
+  return Array.from({ length: count }, (_, i) => {
+    const idx = count - 1 - i;
+    return storedRecord(
+      `stored-${idx}`,
+      idx % 2 === 0 ? "user" : "assistant",
+      `turn-${idx}`,
+    );
+  });
 }
 
 function mockAuditResult(text: string = "Audited reply.") {
@@ -254,6 +283,60 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
+    it("fails closed with RAG_DIMENSION_MISMATCH when retrieval throws for a course-intent query (#225 RAG-01)", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(
+        new Error("Embedding dimension mismatch in generateEmbedding: got 768, expected 1024."),
+      );
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body.code).toBe("RAG_DIMENSION_MISMATCH");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("fails closed with RAG_RETRIEVAL_FAILED when the embedding provider is down for a course-intent query (#225 RAG-02)", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(
+        new Error("Local embedding provider failed (mxbai-embed-large). fetch failed"),
+      );
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body.code).toBe("RAG_RETRIEVAL_FAILED");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("fails closed on prefetch failure even when intent heuristics skip grounding (#225 RAG-01/RAG-02)", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "Explain polymorphism" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body.code).toBe("RAG_DIMENSION_MISMATCH");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("fails closed on prefetch failure for a greeting that would otherwise skip inject", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
     it("does not prefetch when no course is selected", async () => {
       vi.mocked(prisma.chat.findFirst).mockResolvedValue({
         id: CHAT_ID,
@@ -267,6 +350,67 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
       expect(findRelevantContent).not.toHaveBeenCalled();
+    });
+
+    it("prefetches whitespace-only user text but skips RAG inject (#225 RAG-10)", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "   " }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(findRelevantContent).toHaveBeenCalledWith(
+        "   ",
+        COURSE_ID,
+        expect.any(Number),
+        undefined,
+        expect.any(Boolean),
+      );
+      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
+      expect(lastStreamConfig().system).not.toContain("did not return relevant excerpts");
+    });
+
+    it("keeps all 20 merged turns when at the context message cap (#225 RAG-11)", async () => {
+      vi.mocked(prisma.chatMessage.findMany).mockResolvedValue(storedRecordsDesc(19) as never);
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+
+      await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "incoming-19", role: "user", content: "latest" }],
+          }),
+        ),
+      );
+
+      const ids = lastStreamMessages().map((m) => m.id);
+      expect(ids).toHaveLength(20);
+      expect(ids[0]).toBe("stored-0");
+      expect(ids[19]).toBe("incoming-19");
+    });
+
+    it("drops the oldest turn when 21 merged messages exceed the cap (#225 RAG-11)", async () => {
+      vi.mocked(prisma.chatMessage.findMany).mockResolvedValue(storedRecordsDesc(20) as never);
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+
+      await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "incoming-20", role: "user", content: "latest" }],
+          }),
+        ),
+      );
+
+      const ids = lastStreamMessages().map((m) => m.id);
+      expect(ids).toHaveLength(20);
+      expect(ids[0]).toBe("stored-1");
+      expect(ids).not.toContain("stored-0");
+      expect(ids[19]).toBe("incoming-20");
     });
   });
 
@@ -310,6 +454,21 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Late work loses 10%");
       expect(lastStreamConfig().system).toContain("getInformation");
+    });
+
+    it("fails closed on the tool path too when retrieval throws for a course-intent query (#225 RAG-01)", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(
+        new Error("Embedding dimension mismatch in generateEmbedding: got 768, expected 1024."),
+      );
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body.code).toBe("RAG_DIMENSION_MISMATCH");
+      expect(streamText).not.toHaveBeenCalled();
     });
   });
 
