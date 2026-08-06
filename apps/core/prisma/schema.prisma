@@ -516,7 +516,7 @@ model MaterialChunk {
   // prisma/migrations/20260804180000_material_chunks_content_tsv_gin and the hybrid
   // query in app/lib/ai/embedding.ts (findRelevantContent).
   @@unique([materialId, index])
-  @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_gin_idx")
+  @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_idx")
   @@map("material_chunks")
 }
 
