@@ -10,6 +10,16 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { IconChevronRight } from '@tabler/icons-react';
 import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from '@eduai/ui';
+import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
+
+/**
+ * Course rows the left panel renders. It is a curated preview, not a browser, so
+ * it slices well below the page size — which means the truncation notice has to
+ * count what is rendered, not what was fetched. Counting the page would both
+ * overstate the visible rows and, whenever the page already holds every course,
+ * suppress the notice entirely while still hiding everything past this bound.
+ */
+const COURSE_PREVIEW_ROWS = 5;
 
 export type DashboardStatDef = {
   label: string;
@@ -39,6 +49,13 @@ export type DashboardViewProps = {
   /** "Browse all" link target for the course-list panel. */
   coursesHref: string;
   leftPanelTitle: string;
+  /**
+   * Full course count (#1208). Supply it when the role's `rightPanel` isn't a
+   * course panel that already discloses the bound — otherwise the disclosure
+   * would render twice on the same screen. `courses` is one bounded page, so
+   * without this the list truncates silently.
+   */
+  courseTotal?: number;
   quickActions: DashboardQuickAction[];
   rightPanelTitle: string;
   rightPanel: ReactNode;
@@ -90,7 +107,7 @@ function CourseListPanel({
 
   return (
     <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
-      {courses.slice(0, 5).map((course) => (
+      {courses.slice(0, COURSE_PREVIEW_ROWS).map((course) => (
         <Link
           key={course.id}
           to={`${coursesHref}/courses/${course.id}`}
@@ -130,6 +147,7 @@ export function DashboardView({
   coursesLoading = false,
   coursesHref,
   leftPanelTitle,
+  courseTotal,
   quickActions,
   rightPanelTitle,
   rightPanel,
@@ -161,6 +179,14 @@ export function DashboardView({
               </Link>
             </div>
             <CourseListPanel courses={courses} loading={coursesLoading} coursesHref={coursesHref} />
+            {!coursesLoading && courseTotal !== undefined && (
+              <TruncatedListNotice
+                className="mt-2.5"
+                shown={Math.min(courses.length, COURSE_PREVIEW_ROWS)}
+                total={courseTotal}
+                action="browse all courses to find the rest"
+              />
+            )}
           </div>
 
           <div>
