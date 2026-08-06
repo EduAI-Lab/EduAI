@@ -10,6 +10,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] feat: Add the BullMQ dequeue/dispatch worker for durable AI jobs: per-pool consumers, race-safe durable-row claiming before `bullJobId` persistence, cancellation-safe lifecycle transitions, Auto/fleet-aware question generation, configurable retries/concurrency, graceful shutdown, and producer-to-worker integration coverage. (#916/#168, @ssaada08, 2026-07-27)
 
+### Changed
+
+- [ai-tutor] feat: Move course search and the term/status/progress filters server-side on `GET /api/courses` (plus a new `GET /api/courses/facets` so dropdown options span the caller's whole accessible set), so the course switcher, command palette, and the instructor/student lists reach past the bounded 200-course page instead of filtering it. Closes #1208. (@abdullahmoh21, 2026-08-02) — [#1345](https://github.com/EduAI-Lab/EduAI/pull/1345)
+
 ### Fixed
 
 ## [Week 14 — August 3–9, 2026]
