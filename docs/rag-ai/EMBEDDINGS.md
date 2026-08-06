@@ -299,6 +299,8 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 
 ### ANN index (#940)
 
+`RAG_IVFFLAT_PROBES` defaults to 10 and is clamped to `[1, 99]`; zero and invalid values use the default. On pgvector 0.8+, retrieval also enables bounded iterative scanning. After the first bulk embedding, rebuild the index with `REINDEX INDEX CONCURRENTLY "material_embeddings_embedding_ivfflat_idx"` so its centroids are trained from real rows.
+
 `material_embeddings.embedding` has an `ivfflat` index (`vector_cosine_ops`) added by migration `20260804000000_material_embeddings_ivfflat_index`. Both retrieval paths in `findRelevantContent()` first materialize vector candidates with the planner-recognizable `ORDER BY me.embedding <=> query_vector ASC LIMIT candidate_count` shape. Similarity conversion, thresholding, and hybrid BM25 reranking happen outside that candidate query so they do not hide the distance operator from the ANN planner.
 
 | Knob | Where | Default | Notes |
