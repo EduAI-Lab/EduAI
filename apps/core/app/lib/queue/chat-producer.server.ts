@@ -3,15 +3,15 @@ import {
   parseWorkloadFeature,
   type JobType,
 } from "~/lib/ai/routing/fleet/types";
-import { enqueue } from "./enqueue.server";
+import { enqueue, type EnqueueResult } from "./enqueue.server";
 
 /**
  * Guarded producer branch for the `/api/chat` question-generation call site
  * (contract §6, issue #914). Off by default: it fires only when
  * `QUEUE_ENQUEUE_ENABLED=true` AND the request explicitly opts in with
  * `enqueue: true`. Normal interactive chat never enters this path, so the live
- * synchronous stream is untouched until the dispatch worker (#168) exists to
- * drain the queue.
+ * synchronous stream is untouched unless the guarded producer is explicitly
+ * enabled. Deployments that enable it must run `npm run queue:worker`.
  *
  * Integration seam: QM's `eduaiService` must send `{ enqueue: true, source,
  * routingContext }` for this to fire — not flipped in #914.
@@ -71,10 +71,11 @@ export type ChatEnqueueParams = {
 
 /**
  * Build a `question-generation` job from a `/api/chat` request and enqueue it.
- * Returns the durable `{ jobId }`. Throws (ZodError) on an invalid payload —
- * the route maps that to a 400.
+ * Returns the durable `jobId` plus a live `queuePosition`/`queueDepth` snapshot
+ * (#915). Throws `ZodError` on an invalid payload (route maps to 400) and
+ * `QueueFullError` when the queue is saturated (route maps to 429).
  */
-export async function enqueueQuestionGeneration(params: ChatEnqueueParams): Promise<{ jobId: string }> {
+export async function enqueueQuestionGeneration(params: ChatEnqueueParams): Promise<EnqueueResult> {
   const { body, messages, userId, courseId, requestedModel } = params;
   const type = resolveJobType(body.routingContext);
   const rawCount = body.count;

@@ -216,7 +216,7 @@ export function CourseCard({
                           </>
                         ) : (
                           <>
-                            <IconWorldUpload size={15} className="text-[oklch(0.418_0.171_257)]" />
+                            <IconWorldUpload size={15} className="text-secondary" />
                             Publish course
                           </>
                         )}

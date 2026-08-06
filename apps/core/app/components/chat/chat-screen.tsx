@@ -40,9 +40,13 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
-import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
+import {
+  resolvedModelIdFromMessage,
+  wasAutoRoutedFromMessage,
+} from "~/lib/chat/chat-message-metadata";
 
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
@@ -70,6 +74,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationState = location.state as ChatNavigationState | null;
+  const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   const { courses } = useCourses({ pageSize: 200 });
@@ -93,7 +98,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       : defaultChatModelId(chatModels, routerAutoEnabled);
   });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
+    editableTranscript?.chat.courseCode ??
+      searchParams.get("courseCode") ??
+      lastCourseCode ??
+      null,
   );
   const [chatId, setChatId] = useState<string | null>(
     editableTranscript?.chat.id ?? null,
@@ -135,7 +143,29 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
     string | null
   >(null);
+  /**
+   * Whether each assistant message's request was sent with an auto mode
+   * selected, keyed by message id — captured at send time so switching the
+   * selector afterward doesn't retroactively change older messages' labels.
+   */
+  const [wasAutoRoutedByMessageId, setWasAutoRoutedByMessageId] = useState<
+    Record<string, boolean>
+  >(() => {
+    const hydrated: Record<string, boolean> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id =
+        typeof message.id === "string" && message.id.trim().length > 0
+          ? message.id
+          : null;
+      if (id && resolvedModelIdFromMessage(message)) {
+        hydrated[id] = wasAutoRoutedFromMessage(message);
+      }
+    }
+    return hydrated;
+  });
+  const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
+  const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
@@ -144,7 +174,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
   const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
     useChatHistory({ scope: "own", limit: 50 });
-  const [searchParams, setSearchParams] = useSearchParams();
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
 
@@ -162,14 +191,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       setAssistive(checked);
     },
     [setAssistive],
-  );
-
-  const handleCourseChange = useCallback(
-    (code: string | null) => {
-      setSelectedCourseCode(code);
-      persistPreference({ lastCourseCode: code });
-    },
-    [persistPreference],
   );
 
   // Students see a first-visit privacy notice explaining course-chat visibility.
@@ -227,13 +248,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     epoch: reorientationEpoch,
   });
 
-  // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
+  // The state initializer applies ?courseCode= before the default-course effect
+  // can run. Strip the one-shot handoff parameter after mount.
   useEffect(() => {
     if (courseParamApplied.current) return;
     const code = searchParams.get("courseCode");
     if (!code) return;
     courseParamApplied.current = true;
-    setSelectedCourseCode(code);
     const next = new URLSearchParams(searchParams);
     next.delete("courseCode");
     setSearchParams(next, { replace: true });
@@ -258,8 +279,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
   };
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
-    useChat({
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+    setMessages,
+    setInput,
+  } = useChat({
       api: "/api/chat",
       // Seed the composer from the route loader's transcript (DB is the source of
       // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
@@ -284,6 +313,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           routedHeader && routedHeader.length > 0 ? routedHeader : null;
         pendingRoutedRegistryIdRef.current = routed;
         setStreamingRoutedRegistryId(routed);
+        // The selector is disabled while a request is in flight, so this
+        // still reflects what was selected when the request was sent.
+        const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
+        pendingWasAutoRoutedRef.current = wasAutoRouted;
+        setStreamingWasAutoRouted(wasAutoRouted);
 
         await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
@@ -301,9 +335,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         const routed = pendingRoutedRegistryIdRef.current;
         if (message.role === "assistant" && routed) {
           setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+          setWasAutoRoutedByMessageId((prev) => ({
+            ...prev,
+            [message.id]: pendingWasAutoRoutedRef.current,
+          }));
         }
         pendingRoutedRegistryIdRef.current = null;
+        pendingWasAutoRoutedRef.current = false;
         setStreamingRoutedRegistryId(null);
+        setStreamingWasAutoRouted(false);
 
         const id = pendingNavigateChatId.current;
         if (id && location.pathname === "/chat") {
@@ -317,9 +357,55 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       onError: (error) => {
         logChatUseChatError(error, "learning-chat");
         pendingRoutedRegistryIdRef.current = null;
+        pendingWasAutoRoutedRef.current = false;
         setStreamingRoutedRegistryId(null);
+        setStreamingWasAutoRouted(false);
       },
     });
+
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      const action = resolveCourseChangeAction({
+        currentCourseCode: selectedCourseCode,
+        nextCourseCode: code,
+        chatId,
+      });
+      if (action.kind === "noop") return;
+
+      persistPreference({ lastCourseCode: code });
+
+      if (action.kind === "new-chat") {
+        // A chat id can arrive in onResponse while the URL is still /chat. A
+        // same-route navigation does not remount this component, so clear all
+        // persisted/in-flight state before handing off the selected course.
+        stop();
+        pendingNavigateChatId.current = null;
+        pendingRoutedRegistryIdRef.current = null;
+        setChatId(null);
+        setSystemPrompt(null);
+        setMessages([]);
+        setInput("");
+        setSelectedCourseCode(action.courseCode);
+        setRoutedModelByMessageId({});
+        setStreamingRoutedRegistryId(null);
+        setWebToolsEnabled(false);
+        navigate(action.to, { state: { focusMode } });
+        return;
+      }
+
+      setSelectedCourseCode(action.courseCode);
+    },
+    [
+      chatId,
+      focusMode,
+      navigate,
+      persistPreference,
+      selectedCourseCode,
+      setInput,
+      setMessages,
+      stop,
+    ],
+  );
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -469,6 +555,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     disabledReason,
     routedModelByMessageId,
     streamingRoutedRegistryId,
+    wasAutoRoutedByMessageId,
+    streamingWasAutoRouted,
   };
 
   return (

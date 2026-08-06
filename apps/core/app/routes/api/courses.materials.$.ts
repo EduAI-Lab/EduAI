@@ -5,6 +5,7 @@
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
+import { createHash } from 'crypto';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
@@ -19,12 +20,29 @@ import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
 import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
+import { parseCursorParams, splitPage } from '~/lib/cursor-list.server';
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/**
+ * True for a Prisma unique-constraint violation on `CourseMaterial`'s
+ * `(courseId, checksum)` index. `uploadMaterial`'s findFirst dedupe check and
+ * its create() are not atomic, so two concurrent uploads of the same file can
+ * both pass the findFirst check and race into create() — the DB constraint
+ * (not the findFirst) is the real guard (#225 RAG-04).
+ */
+function isChecksumConflict(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 /**
@@ -341,6 +359,49 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
+async function persistFailedUploadMaterial(
+  courseId: string,
+  file: File,
+  userId: string,
+): Promise<string> {
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const checksum = `failed:${createHash('sha256').update(bytes).digest('hex')}`;
+  const title = (file.name || 'upload').replace(/\.[^/.]+$/, '') || 'upload';
+
+  const existing = await prisma.courseMaterial.findFirst({
+    where: { courseId, checksum },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await prisma.courseMaterial.update({
+      where: { id: existing.id },
+      data: {
+        status: 'FAILED',
+        uploadedBy: userId,
+        deletedAt: null,
+        deletedBy: null,
+        processedAt: null,
+      },
+    });
+    return existing.id;
+  }
+
+  const created = await prisma.courseMaterial.create({
+    data: {
+      courseId,
+      title,
+      mimeType: file.type || 'application/octet-stream',
+      fileSize: file.size || bytes.length,
+      checksum,
+      rawText: null,
+      status: 'FAILED',
+      uploadedBy: userId,
+    },
+  });
+  return created.id;
+}
+
 async function uploadMaterial(
   request: Request,
   courseId: string,
@@ -354,9 +415,35 @@ async function uploadMaterial(
     return json(400, { error: 'No file provided' });
   }
 
+  let fileInfo;
   try {
-    const fileInfo = await processUploadedFile(file);
+    fileInfo = await processUploadedFile(file);
+  } catch (extractError) {
+    // Extraction (e.g. PDF worker kill) happens before a material row exists — persist
+    // FAILED so a killed worker still leaves an auditable record (#1018 / #1161).
+    console.error('Error extracting material upload:', extractError);
+    let materialId: string | undefined;
+    try {
+      materialId = await persistFailedUploadMaterial(courseId, file, user.id);
+      fireAndForget(
+        logSystemError({
+          ...requestContext,
+          source: 'AI',
+          code: 'MATERIAL_EXTRACT_FAILED',
+          message: 'Material extraction failed during upload processing',
+          error: extractError,
+        }),
+      );
+    } catch (persistError) {
+      console.error('Additionally failed to persist FAILED material:', persistError);
+    }
+    return json(500, {
+      error: toMaterialUploadUserMessage(extractError),
+      ...(materialId ? { materialId } : {}),
+    });
+  }
 
+  try {
     const existingMaterial = await prisma.courseMaterial.findFirst({
       where: { courseId, checksum: fileInfo.checksum },
     });
@@ -405,18 +492,39 @@ async function uploadMaterial(
       });
     }
 
-    const material = await prisma.courseMaterial.create({
-      data: {
-        courseId,
-        title: fileInfo.title,
-        mimeType: fileInfo.mimeType,
-        fileSize: fileInfo.fileSize,
-        checksum: fileInfo.checksum,
-        rawText: fileInfo.content,
-        status: 'PROCESSING',
-        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
-      },
-    });
+    let material;
+    try {
+      material = await prisma.courseMaterial.create({
+        data: {
+          courseId,
+          title: fileInfo.title,
+          mimeType: fileInfo.mimeType,
+          fileSize: fileInfo.fileSize,
+          checksum: fileInfo.checksum,
+          rawText: fileInfo.content,
+          status: 'PROCESSING',
+          uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
+        },
+      });
+    } catch (createError) {
+      // #225 RAG-04: a concurrent upload with the same (courseId, checksum)
+      // won the findFirst-to-create race above — the unique index rejected
+      // this insert, so no duplicate corpus was created. Respond the same
+      // way the findFirst dedupe path would, instead of leaking a raw Prisma
+      // conflict as a 500.
+      if (isChecksumConflict(createError)) {
+        const winner = await prisma.courseMaterial.findFirst({
+          where: { courseId, checksum: fileInfo.checksum, deletedAt: null },
+        });
+        if (winner) {
+          return json(409, {
+            error: 'A file with identical content already exists in this course',
+            materialId: winner.id,
+          });
+        }
+      }
+      throw createError;
+    }
 
     // Audit the upload as soon as the material row is persisted, independent of embedding.
     // A material that uploads successfully but later fails to embed is still a real upload
@@ -483,20 +591,29 @@ async function uploadMaterial(
 
 const PREVIEW_EXCERPT_MAX = 4000;
 
-async function materialsListResponse(courseId: string, includeDeleted: boolean) {
-  const materials = await prisma.courseMaterial.findMany({
+async function materialsListResponse(
+  courseId: string,
+  includeDeleted: boolean,
+  cursorParams: { cursor: string | null; limit: number },
+) {
+  const { cursor, limit } = cursorParams;
+  const rows = await prisma.courseMaterial.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     include: {
       _count: { select: { chunks: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
+  const { page, nextCursor } = splitPage(rows, limit);
 
   return json(200, {
-    materials: materials.map(({ _count, ...material }) => ({
+    materials: page.map(({ _count, ...material }) => ({
       ...material,
       chunkCount: _count?.chunks ?? 0,
     })),
+    nextCursor,
   });
 }
 
@@ -506,6 +623,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!courseId) {
     return json(400, { error: 'Course ID is required' });
   }
+
+  const cursorParams = parseCursorParams(new URL(request.url).searchParams);
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
   // soft-deleted materials — including those in a soft-deleted course. The access
@@ -523,7 +642,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (!course) {
       return json(404, { error: 'COURSE_NOT_FOUND' });
     }
-    return materialsListResponse(courseId, true);
+    return materialsListResponse(courseId, true, cursorParams);
   }
 
   const resolved = await resolveMaterialsAccess(request, courseId);
@@ -577,6 +696,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
 
     if (!material) {
+      // A student-gated miss is ambiguous: either the material doesn't exist
+      // (or is soft-deleted) or it exists but studentGate excluded it. Only
+      // students can hit the latter case (studentGate is `{}` for staff, so
+      // this findFirst is otherwise identical to the existence check below).
+      // Distinguish them with one extra query so hidden-but-real material
+      // reports 403, matching #1180's spec, instead of the indistinguishable
+      // 404 a folded WHERE clause would otherwise produce.
+      if (access.level === 'student') {
+        const exists = await prisma.courseMaterial.findFirst({
+          where: { id: materialId, courseId, deletedAt: null },
+          select: { id: true },
+        });
+        if (exists) {
+          return json(403, { error: 'Forbidden' });
+        }
+      }
       return json(404, { error: 'Material not found' });
     }
 
@@ -595,22 +730,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const materials = await prisma.courseMaterial.findMany({
+  const { cursor, limit } = cursorParams;
+  const rows = await prisma.courseMaterial.findMany({
     where: { courseId, deletedAt: null, ...studentGate },
     include: {
       _count: { select: { chunks: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
+  const { page, nextCursor } = splitPage(rows, limit);
 
   // Staff receive the scheduling fields so the management UI can render and edit
   // them; students never do (they only ever see already-visible materials).
   const staff = isStaffAccess(access);
   return json(200, {
-    materials: materials.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
+    materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
       ...material,
       chunkCount: _count?.chunks ?? 0,
       ...(staff ? { visibleToStudents, availableAt } : {}),
     })),
+    nextCursor,
   });
 }
