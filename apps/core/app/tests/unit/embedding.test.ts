@@ -17,6 +17,7 @@ const {
   getExpectedEmbeddingDimension,
   wantsLocalEmbeddingProvider,
   DEFAULT_EMBEDDING_DIMENSION,
+  classifyRagRetrievalError,
 } = await import("~/lib/ai/embedding");
 const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
 
@@ -296,5 +297,32 @@ describe("wantsLocalEmbeddingProvider", () => {
     expect(wantsLocalEmbeddingProvider()).toBe(false);
     delete process.env.EMBEDDING_PROVIDER;
     expect(wantsLocalEmbeddingProvider()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyRagRetrievalError (#225 RAG-01/RAG-02)
+// ---------------------------------------------------------------------------
+
+describe("classifyRagRetrievalError", () => {
+  it("classifies assertEmbeddingDimension's message as RAG_DIMENSION_MISMATCH", () => {
+    const err = new Error(
+      "Embedding dimension mismatch in generateEmbedding: got 768, expected 1024.",
+    );
+    expect(classifyRagRetrievalError(err)).toBe("RAG_DIMENSION_MISMATCH");
+  });
+
+  it("classifies a pgvector dimension error as RAG_DIMENSION_MISMATCH", () => {
+    const err = new Error('different vector dimensions 1024 and 768');
+    expect(classifyRagRetrievalError(err)).toBe("RAG_DIMENSION_MISMATCH");
+  });
+
+  it("classifies a provider-down failure as RAG_RETRIEVAL_FAILED", () => {
+    const err = new Error("Local embedding provider failed (mxbai-embed-large). fetch failed");
+    expect(classifyRagRetrievalError(err)).toBe("RAG_RETRIEVAL_FAILED");
+  });
+
+  it("classifies a non-Error throw as RAG_RETRIEVAL_FAILED", () => {
+    expect(classifyRagRetrievalError("network down")).toBe("RAG_RETRIEVAL_FAILED");
   });
 });

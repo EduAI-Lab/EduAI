@@ -13,10 +13,10 @@ import {
   toDashboardCourseRow,
 } from './dashboard-helpers';
 
-const NOT_STARTED_COLOR = 'oklch(0.70 0.03 255)';
-const IN_PROGRESS_COLOR = 'oklch(0.75 0.15 80)';
-const COMPLETED_COLOR = 'oklch(0.60 0.15 150)';
-const PROGRESS_COLOR = 'oklch(0.55 0.16 255)';
+const NOT_STARTED_COLOR = 'var(--color-series-6)';
+const IN_PROGRESS_COLOR = 'var(--color-series-2)';
+const COMPLETED_COLOR = 'var(--color-series-1)';
+const PROGRESS_COLOR = 'var(--color-series-3)';
 
 type DashboardStudentViewProps = {
   courses: Course[];

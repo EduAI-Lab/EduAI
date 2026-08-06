@@ -4,6 +4,7 @@ import {
   mapAdminUser,
   mapCoreAdminUser,
   mapCourseOffering,
+  mapCourseOfferingAfterPublishWrite,
   mapModule,
   mapLesson,
   mapActivity,
@@ -196,6 +197,52 @@ describe('mapCourseOffering', () => {
     expect(result.term).toBeNull();
     expect(result.year).toBeNull();
     expect(result.aiInstructions).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapCourseOfferingAfterPublishWrite (#225 SEAM-04)
+// ---------------------------------------------------------------------------
+describe('mapCourseOfferingAfterPublishWrite', () => {
+  const offering = { id: 5, coreOfferingId: 'core-5' };
+
+  it('reports the known-good write result when the re-read fails (coreUnavailable) instead of degrading to false', () => {
+    const result = mapCourseOfferingAfterPublishWrite(
+      offering,
+      { course: null, coreUnavailable: true },
+      true,
+    );
+    expect(result.isPublished).toBe(true);
+    expect(result.corePublishStale).toBe(true);
+  });
+
+  it('reports the known-good unpublished write result on a failed re-read', () => {
+    const result = mapCourseOfferingAfterPublishWrite(
+      offering,
+      { course: null, coreUnavailable: true },
+      false,
+    );
+    expect(result.isPublished).toBe(false);
+    expect(result.corePublishStale).toBe(true);
+  });
+
+  it('trusts a successful re-read over the known write result (Core state may have moved again)', () => {
+    const result = mapCourseOfferingAfterPublishWrite(
+      offering,
+      { course: { id: 'core-5', isPublished: false }, coreUnavailable: false },
+      true,
+    );
+    expect(result.isPublished).toBe(false);
+    expect(result.corePublishStale).toBeUndefined();
+  });
+
+  it('does not set corePublishStale on a successful re-read', () => {
+    const result = mapCourseOfferingAfterPublishWrite(
+      offering,
+      { course: { id: 'core-5', isPublished: true }, coreUnavailable: false },
+      true,
+    );
+    expect(result.corePublishStale).toBeUndefined();
   });
 });
 

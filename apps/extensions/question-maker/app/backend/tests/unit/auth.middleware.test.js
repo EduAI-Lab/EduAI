@@ -23,9 +23,11 @@ function makeRes() {
     status: vi.fn(),
     json: vi.fn(),
     redirect: vi.fn(),
+    set: vi.fn(),
   };
   res.status.mockReturnValue(res);
   res.json.mockReturnValue(res);
+  res.set.mockReturnValue(res);
   return res;
 }
 
@@ -103,6 +105,51 @@ describe('requireAuth', () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
+  // #225 edge-case audit SEAM-01 / #1197 fix: a Core 429 (IP rate limit) is
+  // passed through as 429 with Retry-After forwarded, instead of collapsing
+  // into a generic 401 that would make every extension API call look like
+  // "logged out" during the rate-limit window.
+  it('passes a Core 429 rate-limit response through as 429 with Retry-After (SEAM-01)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: { get: (name) => (name.toLowerCase() === 'retry-after' ? '15' : null) },
+      }),
+    );
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '15');
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, error: 'Rate limited', retryAfter: '15' }),
+    );
+    expect(findOrCreateUser).not.toHaveBeenCalled();
+  });
+
+  it('passes a Core 429 through even without a Retry-After header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 429, headers: { get: () => null } }),
+    );
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.set).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, error: 'Rate limited', retryAfter: null }),
+    );
+  });
+
   it('forwards the incoming cookie header to Core', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -134,7 +181,25 @@ describe('requireAuth', () => {
     expect(req.user.role).toBe('STUDENT');
   });
 
-  it.each(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN'])(
+  // #225 AUTH-12: 'TA' is no longer a valid platform role (Core drops it from
+  // UserRole) — a role of 'TA' from any caller is normalized to STUDENT just
+  // like any other unrecognized role.
+  it('normalizes a platform role of TA to STUDENT', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'TA' } }),
+    }));
+    const req = makeApiReq();
+
+    await requireAuth(req, makeRes(), next);
+
+    expect(req.user.role).toBe('STUDENT');
+  });
+
+  // #225 AUTH-12: platform UserRole has no TA — a course TA is a
+  // STUDENT-platform user with a TA course enrollment, so Core never returns
+  // role: 'TA' here (see the "normalizes" test below for that case).
+  it.each(['STUDENT', 'INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN'])(
     'preserves valid role %s unchanged',
     async (role) => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
