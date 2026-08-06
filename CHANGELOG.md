@@ -14,6 +14,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Fixed
+
+- [core] fix: Disable Qwen3.5's default reasoning-mode output for vLLM chat completions, preventing leaked `<think>` blocks in responses; set `VLLM_DISABLE_THINKING=0` only when reasoning output is intended. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
+
 ### Changed
 
 - [core] perf: Bounded concurrency for `reEmbedCourseMaterials` (course re-embed background job) — materials now process up to `REINDEX_CONCURRENCY` (default 4) at a time via `p-limit` instead of strictly serially, cutting large re-embed wall-clock time while each material keeps its own try/catch so one failure never blocks or cancels sibling in-flight work; aggregate `processed`/`failed`/`total` and progress reporting are unchanged. Closes #945. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
@@ -21,6 +25,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Add vLLM thinking-mode request-wrapper regression coverage for chat-body rewriting, existing template kwargs, non-chat requests, and the explicit opt-out. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
 - [core] test: `reembed-course-materials.test.ts` — asserts bounded in-flight concurrency (never exceeds the configured limit, proven concurrent via a delayed `embedMany` mock), per-material failure isolation (one rejection doesn't stop siblings), monotonic/consistent progress reporting, and blank/null `rawText` exclusion. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
 - [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 

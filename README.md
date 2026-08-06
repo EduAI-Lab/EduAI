@@ -58,6 +58,8 @@ Full-stack tool for building course question banks and assessments. Supports AI-
 
 Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
+Core disables Qwen3.5 thinking-mode output for vLLM chat requests by default. Set `VLLM_DISABLE_THINKING=0` only when the model's `<think>` reasoning output is explicitly required.
+
 ## Docs
 
 System-wide architecture and planning documents live in [`docs/`](docs/). App-specific docs live alongside each app under their own `docs/` directory.
