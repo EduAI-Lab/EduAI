@@ -134,6 +134,38 @@ describe('CourseSwitcher — server search (#1208)', () => {
     await waitFor(() => expect(screen.getByText('No courses match')).toBeInTheDocument());
   });
 
+  it('drops the previous results while a new search is in flight', async () => {
+    listCourses.mockResolvedValue(page([{ id: 7, title: 'PHYS 200 — Mechanics' }]));
+    renderSwitcher();
+    await settle();
+
+    openMenu();
+    await waitFor(() => expect(screen.getByText('PHYS 200')).toBeInTheDocument());
+
+    // Hold the next response open so we can observe the pending window.
+    listCourses.mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'algebra' } });
+    await settle();
+
+    // The unrelated previous result must not stay visible or selectable while
+    // the new query is resolving.
+    expect(screen.queryByText('PHYS 200')).not.toBeInTheDocument();
+  });
+
+  it('shows the pending label, not the empty label, while a search is resolving', async () => {
+    renderSwitcher();
+    await settle();
+
+    listCourses.mockImplementationOnce(() => new Promise(() => {}));
+    openMenu();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'algebra' } });
+    await settle();
+
+    // "No courses match" here would be the false negative #1208 exists to fix.
+    expect(screen.getByText('Searching…')).toBeInTheDocument();
+    expect(screen.queryByText('No courses match')).not.toBeInTheDocument();
+  });
+
   it('keeps the current course label when the lookup fails', async () => {
     listCourses.mockRejectedValue(new Error('network'));
     renderSwitcher();

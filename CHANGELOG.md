@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [ai-tutor] feat: Move course search and the term/status/progress filters server-side on `GET /api/courses` (plus a new `GET /api/courses/facets` so dropdown options span the caller's whole accessible set), so the course switcher, command palette, and the instructor/student lists reach past the bounded 200-course page instead of filtering it. Closes #1208. (@abdullahmoh21, 2026-08-02)
+- [ai-tutor] feat: Move course search and the term/status/progress filters server-side on `GET /api/courses` (plus a new `GET /api/courses/facets` so dropdown options span the caller's whole accessible set), so the course switcher, command palette, and the instructor/student lists reach past the bounded 200-course page instead of filtering it. Closes #1208. (@abdullahmoh21, 2026-08-02) — [#1345](https://github.com/EduAI-Lab/EduAI/pull/1345)
 
 ### Fixed
 

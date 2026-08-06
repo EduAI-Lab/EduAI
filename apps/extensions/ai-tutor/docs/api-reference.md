@@ -130,9 +130,11 @@ Filter options for the course list, scoped to what the caller can see.
 
 **Why:** dropdown options must span the caller's whole accessible set, not the loaded page — a term appearing only on page 3 would otherwise never be offered as a filter. Kept separate from the list response so the `{ data, total, page, pageSize }` envelope stays untouched, and so clients can fetch it once per mount instead of per keystroke.
 
-**Response:** `{ terms: string[], statuses: string[], progress: string[] }` — raw filter values, ordered most-recent-first for `terms`. Clients supply the labels (they already own the term vocabulary used for the list's section headings). `progress` is empty for roles whose rows carry no progress.
+**Response:** `{ terms: string[], statuses: string[], progress: string[], coreUnavailable: boolean }` — raw filter values, ordered most-recent-first for `terms`. Clients supply the labels (they already own the term vocabulary used for the list's section headings). `progress` is empty for roles whose rows carry no progress.
 
 Fail-soft: when Core is unavailable this returns empty arrays with `X-Core-Status: unavailable`, never a 500.
+
+`coreUnavailable` repeats that outage state in the body, because the two empty responses mean different things and a client that can't read response headers can't tell them apart: `coreUnavailable: false` with empty `terms` means the caller genuinely has no terms to filter by, while `coreUnavailable: true` means the options are unknown. Render the second as "filters unavailable" and leave the dropdowns disabled rather than showing an empty option list, and don't cache the result — an outage response would otherwise pin empty filters in place until the next mount.
 
 ---
 

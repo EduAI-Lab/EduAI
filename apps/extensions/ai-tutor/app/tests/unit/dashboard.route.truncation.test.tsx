@@ -62,6 +62,17 @@ describe('DashboardHome — truncation disclosure (#1208)', () => {
     expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent('Showing 1 of 900');
   });
 
+  it('discloses the bounded page to an ADMIN', () => {
+    // Admin's right panel is bug-report triage, not a course panel, so the
+    // disclosure has to ride on the course list itself — it was the one role
+    // that got a silently partial list.
+    renderDashboard('ADMIN', 4312);
+
+    expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent(
+      'Showing 1 of 4,312 courses',
+    );
+  });
+
   it('says nothing when the page already holds every course', () => {
     renderDashboard('INSTRUCTOR', courses.length);
 

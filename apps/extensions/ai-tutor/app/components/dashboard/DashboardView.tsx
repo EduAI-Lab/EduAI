@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { IconChevronRight } from '@tabler/icons-react';
 import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from '@eduai/ui';
+import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
 
 export type DashboardStatDef = {
   label: string;
@@ -39,6 +40,13 @@ export type DashboardViewProps = {
   /** "Browse all" link target for the course-list panel. */
   coursesHref: string;
   leftPanelTitle: string;
+  /**
+   * Full course count (#1208). Supply it when the role's `rightPanel` isn't a
+   * course panel that already discloses the bound — otherwise the disclosure
+   * would render twice on the same screen. `courses` is one bounded page, so
+   * without this the list truncates silently.
+   */
+  courseTotal?: number;
   quickActions: DashboardQuickAction[];
   rightPanelTitle: string;
   rightPanel: ReactNode;
@@ -130,6 +138,7 @@ export function DashboardView({
   coursesLoading = false,
   coursesHref,
   leftPanelTitle,
+  courseTotal,
   quickActions,
   rightPanelTitle,
   rightPanel,
@@ -161,6 +170,14 @@ export function DashboardView({
               </Link>
             </div>
             <CourseListPanel courses={courses} loading={coursesLoading} coursesHref={coursesHref} />
+            {!coursesLoading && courseTotal !== undefined && (
+              <TruncatedListNotice
+                className="mt-2.5"
+                shown={courses.length}
+                total={courseTotal}
+                action="browse all courses to find the rest"
+              />
+            )}
           </div>
 
           <div>
