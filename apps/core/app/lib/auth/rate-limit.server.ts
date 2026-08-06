@@ -1,3 +1,14 @@
+/**
+ * AUTH-20: this store (and the equivalent one in `canvas/guards.server.ts`)
+ * is per-process / in-memory — it is NOT shared across horizontally-scaled
+ * instances. With N instances behind a load balancer, a caller's effective
+ * limit is multiplied by up to N (each instance tracks its own hit count for
+ * the same key) instead of being divided across them. No Redis (or other
+ * shared store) is introduced here since none is otherwise used in this
+ * project. If/when Core runs with N > 1 instances, either move this to a
+ * shared store or divide the configured `*_RATE_LIMIT` env vars by the
+ * instance count so the effective limit stays correct.
+ */
 const store = new Map<string, number[]>();
 
 /**
@@ -15,6 +26,8 @@ export function parseEnvInt(value: string | undefined, fallback: number): number
 // single-process deployment, since a key with one hit and no return visit is
 // never removed. STALE_ENTRY_MS is comfortably larger than any configured
 // window so a sweep never evicts a key with an active hit count.
+// Cap is read at module load so a misconfigured RATE_LIMIT_MAX_KEYS surfaces
+// at process start rather than on the first request.
 const MAX_STORE_KEYS = parseEnvInt(process.env.RATE_LIMIT_MAX_KEYS, 50_000);
 const STALE_ENTRY_MS = 60 * 60_000;
 // Eviction below targets 90% of the cap rather than exactly MAX_STORE_KEYS,
@@ -33,10 +46,13 @@ function evictStaleEntries(now: number): void {
 
 export function isRateLimited(
   key: string,
-  limit = Number(process.env.SESSION_VALIDATE_RATE_LIMIT ?? 300),
+  limit = parseEnvInt(process.env.SESSION_VALIDATE_RATE_LIMIT, 300),
   windowMs = 60_000
 ): boolean {
   const now = Date.now();
+  // Equivalent ArrayDeclaration mutant: replacing `[]` with a non-empty
+  // Stryker sentinel still yields an empty filtered list, because the
+  // sentinel timestamps fail `now - t < windowMs` (NaN comparison).
   const hits = (store.get(key) ?? []).filter((t) => now - t < windowMs);
   if (hits.length >= limit) {
     store.set(key, hits);
