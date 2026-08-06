@@ -53,13 +53,12 @@ describe("material_chunks full-text search (#941)", () => {
         status: "READY",
       },
     });
-    const chunk = await prisma.materialChunk.create({
-      data: {
-        materialId: material.id,
-        index: 0,
-        content: "Assignment four covers breadth first search.",
-      },
-    });
+    const chunkId = `fts-${Date.now()}`;
+    await prisma.$executeRaw`
+      INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
+      VALUES (${chunkId}, ${material.id}, 0, ${"Assignment four covers breadth first search."}, NOW())
+    `;
+    const chunk = await prisma.materialChunk.findUniqueOrThrow({ where: { id: chunkId } });
 
     const matches = await prisma.$queryRaw<Array<{ id: string }>>`
       SELECT id
