@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
 
@@ -11,8 +12,9 @@ import { describe, it, expect } from 'vitest';
  * Mirrors apps/core/app/tests/unit/chat-markdown-css-scope.test.ts.
  */
 
-// Vitest root is apps/extensions/ai-tutor (vitest.config.ts lives there).
-const appDir = path.resolve(process.cwd(), 'app');
+// Resolved from this file rather than process.cwd() so the suite passes
+// wherever vitest is invoked from (repo root, app dir, or a --root override).
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative: string) => readFileSync(path.join(appDir, relative), 'utf8');
 
 describe('AI Tutor chat markdown CSS scoping', () => {
