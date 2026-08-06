@@ -53,13 +53,13 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
  * GUC, not an index property, so it can't be "baked into" the migration.
  *
  * Env override lets ops raise recall (or lower latency) without a code change;
- * clamped to a sane range so a bad value can't silently disable the index
- * (0 falls back to Postgres' own default) or scan every one of this index's
- * 100 lists (which PostgreSQL may plan as an exact scan instead of ANN).
+ * clamped to the index's 100-list range. A value of 100 is an explicit
+ * maximum-recall mode: it scans every IVFFlat list while still using the
+ * index, and is useful for validating filtered recall.
  */
 const DEFAULT_IVFFLAT_PROBES = 10;
 const MIN_IVFFLAT_PROBES = 1;
-const MAX_IVFFLAT_PROBES = 99;
+const MAX_IVFFLAT_PROBES = 100;
 
 export function resolveIvfflatProbes(): number {
   const raw = Number(process.env.RAG_IVFFLAT_PROBES);
@@ -793,7 +793,7 @@ export async function findRelevantContent(
     DECLARE version_text text;
     BEGIN
       SELECT extversion INTO version_text FROM pg_extension WHERE extname = 'vector';
-      IF string_to_array(version_text, '.') >= ARRAY[0, 8, 0]::int[] THEN
+      IF string_to_array(version_text, '.')::int[] >= ARRAY[0, 8, 0]::int[] THEN
         PERFORM set_config('ivfflat.iterative_scan', 'relaxed_order', true);
         PERFORM set_config('ivfflat.max_probes', '${Prisma.raw(String(maxProbes))}', true);
       END IF;
@@ -812,7 +812,7 @@ export async function findRelevantContent(
     // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
     // a materialized CTE, then apply the similarity floor and hybrid reranking
     // to the resulting candidate set.
-    const [, , , hybridResults] = await prisma.$transaction([
+    const [, , hybridResults] = await prisma.$transaction([
       prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
       prisma.$executeRaw(iterativeScanSettings),
       prisma.$queryRaw<
@@ -858,7 +858,7 @@ export async function findRelevantContent(
     }));
   }
 
-  const [, , , results] = await prisma.$transaction([
+  const [, , results] = await prisma.$transaction([
     prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
     prisma.$executeRaw(iterativeScanSettings),
     prisma.$queryRaw<
