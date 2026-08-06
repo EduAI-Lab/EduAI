@@ -27,9 +27,9 @@ import {
 const STAFF_ROLES = new Set(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']);
 
 const TYPE_COLORS: Record<string, string> = {
-  MCQ: 'oklch(0.55 0.16 255)',
-  SA: 'oklch(0.64 0.15 190)',
-  LA: 'oklch(0.66 0.16 300)',
+  MCQ: 'var(--color-series-3)',
+  SA: 'var(--color-series-7)',
+  LA: 'var(--color-series-8)',
 };
 // Pull from the shared difficulty tokens (index.css) so meters match every other
 // difficulty surface and adapt to light/dark automatically.
