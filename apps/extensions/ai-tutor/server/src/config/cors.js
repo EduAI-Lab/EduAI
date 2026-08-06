@@ -38,10 +38,15 @@ export function normalizeOrigin(entry) {
 }
 
 const corsOriginsEnv = process.env.CORS_ORIGINS;
+const runtimeEnvironment = process.env.NODE_ENV?.trim() || 'development';
+const localDefaultOrigins =
+  runtimeEnvironment === 'development' || runtimeEnvironment === 'test'
+    ? ['http://localhost:3001']
+    : [];
 
 let allowedOrigins;
 if (!corsOriginsEnv || corsOriginsEnv.trim() === '') {
-  allowedOrigins = [];
+  allowedOrigins = [...localDefaultOrigins];
 } else {
   const raw = corsOriginsEnv
     .split(',')
@@ -52,14 +57,12 @@ if (!corsOriginsEnv || corsOriginsEnv.trim() === '') {
 
   for (const entry of deduped) {
     if (entry.includes('*')) {
-      throw new Error(
-        'CORS_ORIGINS must not contain a wildcard (*). Use explicit origins only.'
-      );
+      throw new Error('CORS_ORIGINS must not contain a wildcard (*). Use explicit origins only.');
     }
 
     if (!isValidOrigin(entry)) {
       throw new Error(
-        `CORS_ORIGINS contains an invalid origin: "${entry}". Must be an exact http:// or https:// origin with no path, query, fragment, or credentials.`
+        `CORS_ORIGINS contains an invalid origin: "${entry}". Must be an exact http:// or https:// origin with no path, query, fragment, or credentials.`,
       );
     }
   }

@@ -1,23 +1,63 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+const originalNodeEnv = process.env.NODE_ENV;
+const originalCorsOrigins = process.env.CORS_ORIGINS;
 
 beforeEach(() => {
   vi.resetModules();
   delete process.env.CORS_ORIGINS;
+  process.env.NODE_ENV = 'test';
+});
+
+afterEach(() => {
+  if (originalNodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = originalNodeEnv;
+  }
+
+  if (originalCorsOrigins === undefined) {
+    delete process.env.CORS_ORIGINS;
+  } else {
+    process.env.CORS_ORIGINS = originalCorsOrigins;
+  }
 });
 
 describe('cors config — parsing', () => {
-  it('CORS_ORIGINS unset produces an empty allowlist', async () => {
+  it.each(['development', 'test'])(
+    'CORS_ORIGINS unset allows the local SPA in %s',
+    async (nodeEnv) => {
+      process.env.NODE_ENV = nodeEnv;
+      delete process.env.CORS_ORIGINS;
+
+      const cors = await import('../../src/config/cors.js');
+
+      cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
+        expect(err).toBeNull();
+        expect(allowed).toBe(true);
+      });
+
+      cors.corsOriginCallback('https://evil.example.com', (err, allowed) => {
+        expect(err).toBeNull();
+        expect(allowed).toBe(false);
+      });
+    },
+  );
+
+  it('CORS_ORIGINS unset produces an empty allowlist in production', async () => {
+    process.env.NODE_ENV = 'production';
     delete process.env.CORS_ORIGINS;
 
     const cors = await import('../../src/config/cors.js');
 
-    cors.corsOriginCallback('http://a.com', (err, allowed) => {
+    cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
       expect(err).toBeNull();
       expect(allowed).toBe(false);
     });
   });
 
-  it('CORS_ORIGINS empty string produces an empty allowlist', async () => {
+  it('CORS_ORIGINS empty string produces an empty allowlist in production', async () => {
+    process.env.NODE_ENV = 'production';
     process.env.CORS_ORIGINS = '';
 
     const cors = await import('../../src/config/cors.js');
@@ -28,7 +68,8 @@ describe('cors config — parsing', () => {
     });
   });
 
-  it('whitespace-only CORS_ORIGINS produces an empty allowlist', async () => {
+  it('whitespace-only CORS_ORIGINS produces an empty allowlist in production', async () => {
+    process.env.NODE_ENV = 'production';
     process.env.CORS_ORIGINS = '   ';
 
     const cors = await import('../../src/config/cors.js');

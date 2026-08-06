@@ -1,10 +1,47 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { makeProfessor } from '../helpers.js';
+
+const originalNodeEnv = process.env.NODE_ENV;
+const originalCorsOrigins = process.env.CORS_ORIGINS;
 
 beforeEach(() => {
   vi.resetModules();
   delete process.env.CORS_ORIGINS;
+  process.env.NODE_ENV = 'test';
+});
+
+afterEach(() => {
+  if (originalNodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = originalNodeEnv;
+  }
+
+  if (originalCorsOrigins === undefined) {
+    delete process.env.CORS_ORIGINS;
+  } else {
+    process.env.CORS_ORIGINS = originalCorsOrigins;
+  }
+});
+
+describe('CORS integration - local test default', () => {
+  it('allows the local SPA when CORS_ORIGINS is unset', async () => {
+    delete process.env.CORS_ORIGINS;
+
+    const { createApp } = await import('../../src/app.js');
+
+    const app = await createApp({ mockUser: makeProfessor() });
+
+    const res = await request(app)
+      .get('/api/health')
+      .set('Origin', 'http://localhost:3001')
+      .set('Cookie', 'session=test');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:3001');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
 });
 
 describe('CORS integration — successful listed-origin request', () => {
@@ -54,9 +91,7 @@ describe('CORS integration — rejection', () => {
 
     const app = await createApp({ mockUser: makeProfessor() });
 
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', 'https://evil.example.com');
+    const res = await request(app).get('/api/health').set('Origin', 'https://evil.example.com');
 
     expect(res.status).toBe(200);
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -98,9 +133,7 @@ describe('CORS integration — rejection', () => {
 
     const app = await createApp({ mockUser: makeProfessor() });
 
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', 'null');
+    const res = await request(app).get('/api/health').set('Origin', 'null');
 
     expect(res.status).toBe(200);
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -113,9 +146,7 @@ describe('CORS integration — rejection', () => {
 
     const app = await createApp({ mockUser: makeProfessor() });
 
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', 'not-a-valid-origin-!@#$');
+    const res = await request(app).get('/api/health').set('Origin', 'not-a-valid-origin-!@#$');
 
     expect(res.status).toBe(200);
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -136,22 +167,22 @@ describe('CORS integration — rejection', () => {
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('empty CORS_ORIGINS blocks normal cross-origin request', async () => {
+  it('unset CORS_ORIGINS blocks normal cross-origin request in production', async () => {
+    process.env.NODE_ENV = 'production';
     delete process.env.CORS_ORIGINS;
 
     const { createApp } = await import('../../src/app.js');
 
     const app = await createApp({ mockUser: makeProfessor() });
 
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', 'http://localhost:5173');
+    const res = await request(app).get('/api/health').set('Origin', 'http://localhost:3001');
 
     expect(res.status).toBe(200);
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('empty CORS_ORIGINS blocks preflight cross-origin request', async () => {
+  it('unset CORS_ORIGINS blocks preflight cross-origin request in production', async () => {
+    process.env.NODE_ENV = 'production';
     delete process.env.CORS_ORIGINS;
 
     const { createApp } = await import('../../src/app.js');
@@ -160,7 +191,7 @@ describe('CORS integration — rejection', () => {
 
     const res = await request(app)
       .options('/api/health')
-      .set('Origin', 'http://localhost:5173')
+      .set('Origin', 'http://localhost:3001')
       .set('Access-Control-Request-Method', 'GET');
 
     expect(res.status).not.toBe(500);
@@ -174,9 +205,7 @@ describe('CORS integration — rejection', () => {
 
     const app = await createApp({ mockUser: makeProfessor() });
 
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', 'https://evil.example.com');
+    const res = await request(app).get('/api/health').set('Origin', 'https://evil.example.com');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });

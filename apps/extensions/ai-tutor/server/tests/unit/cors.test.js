@@ -1,8 +1,28 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
+
+const originalNodeEnv = process.env.NODE_ENV;
+const originalCorsOrigins = process.env.CORS_ORIGINS;
+
+process.env.NODE_ENV = 'production';
+delete process.env.CORS_ORIGINS;
 
 const cors = await import('../../src/config/cors.js');
 
-describe('corsOriginCallback with empty allowlist (default)', () => {
+afterAll(() => {
+  if (originalNodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = originalNodeEnv;
+  }
+
+  if (originalCorsOrigins === undefined) {
+    delete process.env.CORS_ORIGINS;
+  } else {
+    process.env.CORS_ORIGINS = originalCorsOrigins;
+  }
+});
+
+describe('corsOriginCallback with empty production allowlist', () => {
   it('returns false for a missing Origin header', () => {
     cors.corsOriginCallback(undefined, (err, allowed) => {
       expect(err).toBeNull();
@@ -31,7 +51,7 @@ describe('corsOriginCallback with empty allowlist (default)', () => {
     });
   });
 
-  it('returns false for localhost when unconfigured', () => {
+  it('returns false for localhost when unconfigured in production', () => {
     cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
       expect(err).toBeNull();
       expect(allowed).toBe(false);
