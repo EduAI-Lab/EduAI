@@ -5,7 +5,7 @@ import {
 import {
   isValidUbcStudentNumber,
   UBC_STUDENT_NUMBER_MESSAGE,
-} from "~/lib/canvas/schemas";
+} from "~/lib/canvas/student-number";
 import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
