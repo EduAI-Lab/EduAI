@@ -1,7 +1,34 @@
 [
   {
     "Auth": "session",
-    "ProxyUser": "blocked",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
+    "CourseIdSource": "body",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "student",
+    "CourseIdSource": "body",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "CourseIdSource": "body-missing",
+    "PersistedChat": "not-found"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "none",
     "ChatMode": "user",
     "CoursePublished": "yes",
     "Enrollment": "instructor",
@@ -9,12 +36,48 @@
     "PersistedChat": "type-mismatch"
   },
   {
-    "Auth": "service-key",
+    "Auth": "session",
     "ProxyUser": "blocked",
     "ChatMode": "admin",
     "CoursePublished": "no",
+    "Enrollment": "instructor",
+    "CourseIdSource": "body",
+    "PersistedChat": "pin-conflict"
+  },
+  {
+    "Auth": "none",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
+    "CourseIdSource": "none",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "student",
+    "CourseIdSource": "persisted",
+    "PersistedChat": "ok"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
     "Enrollment": "none",
     "CourseIdSource": "body-missing",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "service-key",
+    "ProxyUser": "blocked",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "CourseIdSource": "none",
     "PersistedChat": "none"
   },
   {
@@ -22,25 +85,16 @@
     "ProxyUser": "valid",
     "ChatMode": "user",
     "CoursePublished": "no",
-    "Enrollment": "student",
-    "CourseIdSource": "body",
-    "PersistedChat": "pin-conflict"
-  },
-  {
-    "Auth": "session",
-    "ProxyUser": "blocked",
-    "ChatMode": "admin",
-    "CoursePublished": "yes",
-    "Enrollment": "none",
-    "CourseIdSource": "none",
+    "Enrollment": "instructor",
+    "CourseIdSource": "persisted",
     "PersistedChat": "ok"
   },
   {
-    "Auth": "admin-api-key",
-    "ProxyUser": "valid",
-    "ChatMode": "admin",
-    "CoursePublished": "no",
-    "Enrollment": "instructor",
+    "Auth": "session",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
     "CourseIdSource": "persisted",
     "PersistedChat": "ok"
   },
@@ -49,6 +103,60 @@
     "ProxyUser": "blocked",
     "ChatMode": "admin",
     "CoursePublished": "yes",
+    "Enrollment": "none",
+    "CourseIdSource": "body-missing",
+    "PersistedChat": "not-found"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "CourseIdSource": "body-missing",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "service-key",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
+    "CourseIdSource": "body-missing",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "CourseIdSource": "none",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "student",
+    "CourseIdSource": "body",
+    "PersistedChat": "ok"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "student",
+    "CourseIdSource": "body",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
     "Enrollment": "student",
     "CourseIdSource": "body",
     "PersistedChat": "pin-conflict"
@@ -56,68 +164,23 @@
   {
     "Auth": "service-key",
     "ProxyUser": "none",
-    "ChatMode": "user",
-    "CoursePublished": "yes",
-    "Enrollment": "student",
-    "CourseIdSource": "body",
-    "PersistedChat": "none"
-  },
-  {
-    "Auth": "none",
-    "ProxyUser": "none",
     "ChatMode": "admin",
-    "CoursePublished": "yes",
+    "CoursePublished": "no",
     "Enrollment": "instructor",
     "CourseIdSource": "body",
     "PersistedChat": "none"
   },
   {
     "Auth": "admin-api-key",
-    "ProxyUser": "none",
+    "ProxyUser": "valid",
     "ChatMode": "admin",
     "CoursePublished": "no",
     "Enrollment": "none",
-    "CourseIdSource": "body-missing",
+    "CourseIdSource": "none",
     "PersistedChat": "ok"
   },
   {
-    "Auth": "admin-api-key",
-    "ProxyUser": "valid",
-    "ChatMode": "user",
-    "CoursePublished": "no",
-    "Enrollment": "none",
-    "CourseIdSource": "none",
-    "PersistedChat": "type-mismatch"
-  },
-  {
     "Auth": "session",
-    "ProxyUser": "blocked",
-    "ChatMode": "admin",
-    "CoursePublished": "yes",
-    "Enrollment": "none",
-    "CourseIdSource": "body-missing",
-    "PersistedChat": "not-found"
-  },
-  {
-    "Auth": "admin-api-key",
-    "ProxyUser": "valid",
-    "ChatMode": "user",
-    "CoursePublished": "no",
-    "Enrollment": "none",
-    "CourseIdSource": "body-missing",
-    "PersistedChat": "type-mismatch"
-  },
-  {
-    "Auth": "session",
-    "ProxyUser": "none",
-    "ChatMode": "user",
-    "CoursePublished": "yes",
-    "Enrollment": "student",
-    "CourseIdSource": "body",
-    "PersistedChat": "type-mismatch"
-  },
-  {
-    "Auth": "admin-api-key",
     "ProxyUser": "none",
     "ChatMode": "admin",
     "CoursePublished": "no",
@@ -129,44 +192,26 @@
     "Auth": "admin-api-key",
     "ProxyUser": "valid",
     "ChatMode": "user",
-    "CoursePublished": "yes",
+    "CoursePublished": "no",
     "Enrollment": "student",
     "CourseIdSource": "body",
     "PersistedChat": "not-found"
-  },
-  {
-    "Auth": "none",
-    "ProxyUser": "none",
-    "ChatMode": "user",
-    "CoursePublished": "no",
-    "Enrollment": "none",
-    "CourseIdSource": "none",
-    "PersistedChat": "none"
   },
   {
     "Auth": "service-key",
     "ProxyUser": "blocked",
-    "ChatMode": "user",
-    "CoursePublished": "yes",
-    "Enrollment": "none",
-    "CourseIdSource": "none",
-    "PersistedChat": "none"
-  },
-  {
-    "Auth": "session",
-    "ProxyUser": "none",
-    "ChatMode": "user",
+    "ChatMode": "admin",
     "CoursePublished": "yes",
     "Enrollment": "student",
-    "CourseIdSource": "persisted",
-    "PersistedChat": "ok"
+    "CourseIdSource": "body",
+    "PersistedChat": "none"
   },
   {
     "Auth": "none",
     "ProxyUser": "none",
     "ChatMode": "user",
-    "CoursePublished": "yes",
-    "Enrollment": "student",
+    "CoursePublished": "no",
+    "Enrollment": "instructor",
     "CourseIdSource": "body",
     "PersistedChat": "none"
   },
@@ -175,40 +220,22 @@
     "ProxyUser": "none",
     "ChatMode": "admin",
     "CoursePublished": "no",
-    "Enrollment": "instructor",
+    "Enrollment": "student",
     "CourseIdSource": "body",
     "PersistedChat": "pin-conflict"
   },
   {
-    "Auth": "session",
-    "ProxyUser": "blocked",
-    "ChatMode": "admin",
-    "CoursePublished": "no",
-    "Enrollment": "none",
-    "CourseIdSource": "body-missing",
-    "PersistedChat": "none"
-  },
-  {
-    "Auth": "admin-api-key",
+    "Auth": "none",
     "ProxyUser": "none",
     "ChatMode": "admin",
-    "CoursePublished": "yes",
-    "Enrollment": "instructor",
+    "CoursePublished": "no",
+    "Enrollment": "student",
     "CourseIdSource": "body",
-    "PersistedChat": "not-found"
+    "PersistedChat": "none"
   },
   {
     "Auth": "none",
     "ProxyUser": "none",
-    "ChatMode": "user",
-    "CoursePublished": "no",
-    "Enrollment": "none",
-    "CourseIdSource": "body-missing",
-    "PersistedChat": "none"
-  },
-  {
-    "Auth": "admin-api-key",
-    "ProxyUser": "valid",
     "ChatMode": "admin",
     "CoursePublished": "no",
     "Enrollment": "none",
@@ -219,27 +246,45 @@
     "Auth": "session",
     "ProxyUser": "blocked",
     "ChatMode": "user",
-    "CoursePublished": "yes",
-    "Enrollment": "instructor",
-    "CourseIdSource": "body",
-    "PersistedChat": "ok"
-  },
-  {
-    "Auth": "session",
-    "ProxyUser": "blocked",
-    "ChatMode": "admin",
     "CoursePublished": "yes",
     "Enrollment": "instructor",
     "CourseIdSource": "persisted",
     "PersistedChat": "ok"
   },
   {
-    "Auth": "service-key",
+    "Auth": "session",
     "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "CourseIdSource": "body",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "admin",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "CourseIdSource": "body-missing",
+    "PersistedChat": "ok"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
     "ChatMode": "user",
     "CoursePublished": "no",
     "Enrollment": "instructor",
     "CourseIdSource": "body",
-    "PersistedChat": "none"
+    "PersistedChat": "not-found"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "student",
+    "CourseIdSource": "body",
+    "PersistedChat": "type-mismatch"
   }
 ]
