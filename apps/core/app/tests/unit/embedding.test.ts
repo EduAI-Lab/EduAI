@@ -348,6 +348,9 @@ describe("resolveIvfflatProbes", () => {
   it("clamps overrides below the min to 1", () => {
     process.env.RAG_IVFFLAT_PROBES = "0.4";
     expect(resolveIvfflatProbes()).toBe(1);
+  });
+});
+
 // classifyRagRetrievalError (#225 RAG-01/RAG-02)
 // ---------------------------------------------------------------------------
 
