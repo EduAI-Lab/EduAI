@@ -3,9 +3,9 @@
  * Used when the client requests `model=auto-llm` or `ROUTER_MODE=llm`.
  */
 import { generateText } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { isLocalVllmRouting } from "./local-vllm";
+import { createClassifierClient } from "./classifier-client";
 
 export type LlmClassifierContext = {
   courseId: string | null;
@@ -75,18 +75,6 @@ function classifierMinConfidence(): number {
 function classifierTimeoutMs(): number {
   const n = Number(process.env.ROUTING_LLM_CLASSIFIER_TIMEOUT_MS ?? "30000");
   return Number.isFinite(n) && n > 0 ? n : 30_000;
-}
-
-function createClassifierClient() {
-  const vllmPort = process.env.VLLM_PORT || "8001";
-  let baseURL =
-    process.env.VLLM_BASE_URL?.trim() || `http://localhost:${vllmPort}`;
-  baseURL = baseURL.replace(/\/$/, "");
-  if (!baseURL.endsWith("/v1")) {
-    baseURL = `${baseURL}/v1`;
-  }
-  const apiKey = process.env.VLLM_API_KEY?.trim() || "vllm-local";
-  return createOpenAI({ baseURL, apiKey, compatibility: "strict" });
 }
 
 function buildClassifierUserPrompt(

@@ -202,6 +202,82 @@ describe('Activities routes', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/AI mode/i);
     });
+
+    it('returns 400 for a non-numeric lesson id', async () => {
+      const res = await request(profApp).post('/api/lessons/not-a-number/activities').send({
+        question: 'Q?',
+        mainTopicId: seed.topic.id,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid lesson id/i);
+    });
+
+    it('returns 400 for an invalid payload (missing question)', async () => {
+      const res = await request(profApp).post(`/api/lessons/${seed.lesson.id}/activities`).send({
+        mainTopicId: seed.topic.id,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid payload/i);
+    });
+
+    it('returns 404 when the lesson does not exist', async () => {
+      const res = await request(profApp).post('/api/lessons/999999/activities').send({
+        question: 'Q?',
+        mainTopicId: seed.topic.id,
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when the caller does not instruct the lesson course', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+
+      const res = await request(otherApp).post(`/api/lessons/${seed.lesson.id}/activities`).send({
+        question: 'Q?',
+        mainTopicId: seed.topic.id,
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 400 for a cross-course secondaryTopicIds entry', async () => {
+      const otherCourse = await prisma.courseOffering.create({
+        data: { coreOfferingId: 'core-other-course-secondary' },
+      });
+      const otherTopic = await prisma.topic.create({
+        data: { name: 'Alien Secondary Topic', courseOfferingId: otherCourse.id },
+      });
+
+      const res = await request(profApp).post(`/api/lessons/${seed.lesson.id}/activities`).send({
+        question: 'Cross course secondary?',
+        mainTopicId: seed.topic.id,
+        secondaryTopicIds: [otherTopic.id],
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/secondaryTopicIds/i);
+    });
+
+    it('creates an activity with non-empty secondaryTopicIds and persists the join rows', async () => {
+      const topicB = await prisma.topic.create({
+        data: { name: 'Topic B', courseOfferingId: seed.course.id },
+      });
+
+      const res = await request(profApp).post(`/api/lessons/${seed.lesson.id}/activities`).send({
+        question: 'What is friction?',
+        mainTopicId: seed.topic.id,
+        secondaryTopicIds: [topicB.id],
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.secondaryTopics).toHaveLength(1);
+      expect(res.body.secondaryTopics[0].id).toBe(topicB.id);
+
+      const joinRows = await prisma.activitySecondaryTopic.findMany({
+        where: { activityId: res.body.id },
+      });
+      expect(joinRows).toHaveLength(1);
+      expect(joinRows[0].topicId).toBe(topicB.id);
+    });
   });
 
   // ── PATCH /api/activities/:id ─────────────────────────────────────
@@ -280,6 +356,203 @@ describe('Activities routes', () => {
         .send({ question: 'Hacked?' });
 
       expect(res.status).toBe(403);
+    });
+
+    it('returns 404 for an unknown activity id', async () => {
+      const res = await request(profApp).patch('/api/activities/999999').send({ title: 'Nope' });
+      expect(res.status).toBe(404);
+    });
+
+    it('ADMIN can PATCH an activity in any course', async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+      const res = await request(adminApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ title: 'Admin edit' });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('Admin edit');
+    });
+
+    it('sets title to a trimmed string', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ title: '  My Title  ' });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('My Title');
+    });
+
+    it('sets title to null explicitly', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ title: null });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBeNull();
+    });
+
+    it('whitespace-only title trims down to null', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ title: '   ' });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBeNull();
+    });
+
+    it('returns 400 when question is whitespace-only', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ question: '   ' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/question must not be empty/i);
+    });
+
+    it('setting type to SHORT_TEXT nulls out options', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ type: 'SHORT_TEXT' });
+      expect(res.status).toBe(200);
+      expect(res.body.type).toBe('SHORT_TEXT');
+      expect(res.body.options).toBeNull();
+    });
+
+    it('sets options explicitly to null', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ options: null });
+      expect(res.status).toBe(200);
+      expect(res.body.options).toBeNull();
+    });
+
+    it('updates answer alone', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ answer: 2 });
+      expect(res.status).toBe(200);
+      expect(res.body.answer).toBe(2);
+    });
+
+    it('trims and filters blank hints entries', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ hints: ['  Hint 1  ', '', '   ', 'Hint 2'] });
+      expect(res.status).toBe(200);
+      expect(res.body.hints).toEqual(['Hint 1', 'Hint 2']);
+    });
+
+    it('links a valid promptTemplateId', async () => {
+      const template = await prisma.promptTemplate.create({
+        data: { slug: `slug-${activity.id}`, name: 'Custom Template', systemPrompt: 'System.' },
+      });
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ promptTemplateId: template.id });
+      expect(res.status).toBe(200);
+      expect(res.body.promptTemplateId).toBe(template.id);
+      expect(res.body.promptTemplate).toMatchObject({ id: template.id, name: 'Custom Template' });
+    });
+
+    it('returns 400 for a non-existent promptTemplateId', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ promptTemplateId: 999999 });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid promptTemplateId/i);
+    });
+
+    it('clears promptTemplateId when set to null', async () => {
+      const template = await prisma.promptTemplate.create({
+        data: { slug: `slug-clear-${activity.id}`, name: 'Template', systemPrompt: 'System.' },
+      });
+      await prisma.activity.update({ where: { id: activity.id }, data: { promptTemplateId: template.id } });
+
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ promptTemplateId: null });
+      expect(res.status).toBe(200);
+      expect(res.body.promptTemplateId).toBeNull();
+      expect(res.body.promptTemplate).toBeNull();
+    });
+
+    it('returns 400 when promptTemplateId is not a number or null', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ promptTemplateId: 'not-a-number' });
+      expect(res.status).toBe(400);
+    });
+
+    it('normalizes customPrompt when set to a string', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ customPrompt: '  Be a helpful tutor.  ' });
+      expect(res.status).toBe(200);
+      expect(res.body.customPrompt).toBe('Be a helpful tutor.');
+    });
+
+    it('clears customPrompt when set to null', async () => {
+      await prisma.activity.update({ where: { id: activity.id }, data: { customPrompt: 'Existing.' } });
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ customPrompt: null });
+      expect(res.status).toBe(200);
+      expect(res.body.customPrompt).toBeNull();
+    });
+
+    it('returns 400 when customPrompt is not a string or null', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ customPrompt: 42 });
+      expect(res.status).toBe(400);
+    });
+
+    it('normalizes customPromptTitle when set to a string', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ customPromptTitle: '  Short Title  ' });
+      expect(res.status).toBe(200);
+      expect(res.body.customPromptTitle).toBe('Short Title');
+    });
+
+    it('clears customPromptTitle when set to null', async () => {
+      await prisma.activity.update({ where: { id: activity.id }, data: { customPromptTitle: 'Existing' } });
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ customPromptTitle: null });
+      expect(res.status).toBe(200);
+      expect(res.body.customPromptTitle).toBeNull();
+    });
+
+    it('returns 400 when customPromptTitle is not a string or null', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ customPromptTitle: 42 });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when mainTopicId is not a string', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ mainTopicId: 12345 });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when mainTopicId belongs to a different course', async () => {
+      const otherCourse = await prisma.courseOffering.create({
+        data: { coreOfferingId: 'core-other-course-patch' },
+      });
+      const otherTopic = await prisma.topic.create({
+        data: { name: 'Alien Topic', courseOfferingId: otherCourse.id },
+      });
+
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ mainTopicId: otherTopic.id });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/must belong to the activity course/i);
+    });
+
+    it('returns 400 when secondaryTopicIds is not an array', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}`)
+        .send({ secondaryTopicIds: 'not-an-array' });
+      expect(res.status).toBe(400);
     });
   });
 
@@ -978,6 +1251,87 @@ describe('Activities routes', () => {
     });
   });
 
+  // ── GET /api/activities/importable ─────────────────────────────────
+
+  describe('GET /api/activities/importable', () => {
+    it('returns 400 when courseId is missing', async () => {
+      const res = await request(profApp).get('/api/activities/importable');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/courseId is required/i);
+    });
+
+    it('returns 400 when courseId is non-numeric', async () => {
+      const res = await request(profApp).get('/api/activities/importable?courseId=abc');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/courseId is required/i);
+    });
+
+    it('returns 400 when excludeLessonId is present but non-numeric', async () => {
+      const res = await request(profApp).get(
+        `/api/activities/importable?courseId=${seed.course.id}&excludeLessonId=abc`,
+      );
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/excludeLessonId must be a number/i);
+    });
+
+    it('returns 400 when page/pageSize are missing (pagination required)', async () => {
+      const res = await request(profApp).get(`/api/activities/importable?courseId=${seed.course.id}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 when the course does not exist', async () => {
+      const res = await request(profApp).get(
+        '/api/activities/importable?courseId=999999&page=1&pageSize=25',
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 for an INSTRUCTOR who does not manage the course', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+
+      const res = await request(otherApp).get(
+        `/api/activities/importable?courseId=${seed.course.id}&page=1&pageSize=25`,
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('lists an importable activity from another lesson the instructor manages', async () => {
+      const activity = await createActivityInDb();
+
+      const res = await request(profApp).get(
+        `/api/activities/importable?courseId=${seed.course.id}&page=1&pageSize=25`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBeGreaterThanOrEqual(1);
+      expect(res.body.data.some((a) => a.id === activity.id)).toBe(true);
+    });
+
+    it('excludeLessonId filters out activities belonging to that lesson', async () => {
+      await createActivityInDb();
+
+      const res = await request(profApp).get(
+        `/api/activities/importable?courseId=${seed.course.id}&excludeLessonId=${seed.lesson.id}&page=1&pageSize=25`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.some((a) => a.lessonId === seed.lesson.id)).toBe(false);
+    });
+
+    it('ADMIN sees importable activities across every course', async () => {
+      await createActivityInDb();
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+
+      const res = await request(adminApp).get(
+        `/api/activities/importable?courseId=${seed.course.id}&page=1&pageSize=25`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   // ── Activity ordering (#1047) ─────────────────────────────────────
 
   describe('activity ordering', () => {
@@ -1113,19 +1467,25 @@ describe('Tutoring-flow: question consumption via Core', () => {
       },
     ];
 
-    // Call 1: Core questions list. All subsequent calls: EduAI chat (tutor + supervisor).
+    // Route by URL rather than call order: the tutor-model policy resolution
+    // (Stage 3, `/ai-models`) fetches before the Core questions list (Stage 4),
+    // so a positional `mockResolvedValueOnce` would land on the wrong call.
     vi.stubGlobal(
       'fetch',
-      vi.fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ questions: coreQuestions, total: 1 }),
-          text: () => Promise.resolve(''),
-        })
-        .mockResolvedValue({
+      vi.fn((url) => {
+        if (typeof url === 'string' && url.includes('/questions') && url.includes('testable=true')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ questions: coreQuestions, total: 1 }),
+            text: () => Promise.resolve(''),
+          });
+        }
+        return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
-        }),
+          text: () => Promise.resolve(''),
+        });
+      }),
     );
 
     const res = await request(studentApp)
@@ -1316,6 +1676,178 @@ describe('Tutoring-flow: question consumption via Core', () => {
 
     const sessions = await prisma.aiChatSession.findMany({ where: { activityId: activity.id } });
     expect(sessions).toHaveLength(0);
+  });
+
+  // ── /teach, /guide: id / auth / payload validation ────────────────
+
+  describe.each([
+    ['teach', 'teach'],
+    ['guide', 'guide'],
+  ])('%s: id / auth / payload validation', (_label, mode) => {
+    it(`returns 400 for a non-numeric activity id on /${mode}`, async () => {
+      const res = await request(studentApp)
+        .post(`/api/activities/not-a-number/${mode}`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(400);
+    });
+
+    it(`returns 401 for an unauthenticated request on /${mode}`, async () => {
+      const noAuthApp = await createApp();
+      const res = await request(noAuthApp)
+        .post(`/api/activities/${activity.id}/${mode}`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(401);
+    });
+
+    it(`returns 404 for an unknown activity id on /${mode}`, async () => {
+      const res = await request(studentApp)
+        .post(`/api/activities/999999/${mode}`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(404);
+    });
+
+    it(`returns 400 for an invalid payload on /${mode}`, async () => {
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      const res = await request(studentApp).post(`/api/activities/${activity.id}/${mode}`).send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid payload/i);
+    });
+  });
+
+  // ── POST /api/activities/:activityId/custom ────────────────────────
+
+  describe('POST /api/activities/:activityId/custom', () => {
+    it('returns 400 for a non-numeric activity id', async () => {
+      const res = await request(studentApp)
+        .post('/api/activities/not-a-number/custom')
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 401 for an unauthenticated request', async () => {
+      const noAuthApp = await createApp();
+      const res = await request(noAuthApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 404 for an unknown activity id', async () => {
+      const res = await request(studentApp)
+        .post('/api/activities/999999/custom')
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 for a non-student caller (INSTRUCTOR)', async () => {
+      const profApp = await createApp({ mockUser: prof });
+      const res = await request(profApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/only students/i);
+    });
+
+    it('returns 403 for a STUDENT not enrolled in the course', async () => {
+      const outsider = makeStudent();
+      const outsiderApp = await createApp({ mockUser: outsider });
+      const res = await request(outsiderApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not enrolled/i);
+    });
+
+    it('returns 403 when the lesson is unpublished', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not available/i);
+    });
+
+    it('returns 403 when the course is unpublished', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: false });
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not available/i);
+    });
+
+    it('returns 400 when custom mode is not enabled for the activity', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      const noCustom = await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          mainTopicId: seed.topic.id,
+          instructionsMd: 'No custom mode.',
+          enableTeachMode: true,
+          enableCustomMode: false,
+          config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+        },
+      });
+      const res = await request(studentApp)
+        .post(`/api/activities/${noCustom.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/custom mode is not enabled/i);
+    });
+
+    it('returns 400 when custom mode is enabled but no customPrompt is configured', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      const noPrompt = await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          mainTopicId: seed.topic.id,
+          instructionsMd: 'Custom mode, no prompt.',
+          enableTeachMode: true,
+          enableCustomMode: true,
+          customPrompt: null,
+          config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+        },
+      });
+      const res = await request(studentApp)
+        .post(`/api/activities/${noPrompt.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/no custom prompt configured/i);
+    });
+
+    it('returns 400 for an invalid payload', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      const res = await request(studentApp).post(`/api/activities/${activity.id}/custom`).send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid payload/i);
+    });
+
+    it('returns 200 and forwards the composed custom prompt through EduAI (Core questions + completion)', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn()
+          .mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve({ questions: [], total: 0 }),
+            text: () => Promise.resolve(''),
+          })
+          .mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-custom-1' }),
+          }),
+      );
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .set('Cookie', 'session=test-cookie')
+        .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(typeof res.body.message).toBe('string');
+    });
   });
 });
 

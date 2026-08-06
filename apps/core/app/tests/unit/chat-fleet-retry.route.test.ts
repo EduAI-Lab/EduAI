@@ -114,7 +114,7 @@ import {
   resolveFleetHost,
   resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
-import { resetAiAdmission } from "~/lib/ai/admission.server";
+import { getAiAdmissionStats, resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -142,6 +142,35 @@ function makeRequest(body: object) {
     params: {},
     context: {} as never,
   } as never;
+}
+
+// Mirrors the real AI SDK's fullStream: a genuine ReadableStream (so
+// `.getReader()` / `.cancel()` behave like production), not a bare async
+// generator. onChunk fires as a side effect of the stream being read, same
+// as the real SDK.
+function makeFullStream(
+  parts: unknown[],
+  onChunk?: (chunk: unknown) => void,
+): ReadableStream<unknown> {
+  let cancelled = false;
+  return new ReadableStream({
+    async pull(controller) {
+      if (cancelled) {
+        controller.close();
+        return;
+      }
+      const part = parts.shift();
+      if (part === undefined) {
+        controller.close();
+        return;
+      }
+      onChunk?.({ chunk: part });
+      controller.enqueue(part);
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
 }
 
 function baseBody(overrides: Record<string, unknown> = {}) {
@@ -235,9 +264,14 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
         throw new Error("connection refused");
       })
       .mockImplementation((args) => {
-        args.onChunk?.({} as never);
         args.onStepFinish?.({ toolCalls: [], toolResults: [] } as never);
         return {
+          get fullStream() {
+            return makeFullStream(
+              [{ type: "text-delta", text: "Recovered on cmps02." }],
+              args.onChunk as never,
+            );
+          },
           consumeStream: vi.fn().mockResolvedValue(undefined),
           text: Promise.resolve("Recovered on cmps02."),
           usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -268,4 +302,115 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(attemptIdx).toBeGreaterThanOrEqual(0);
     expect(successIdx).toBeGreaterThan(attemptIdx);
   }, 15_000);
+});
+
+// Regression test for the fleet stream startup probe deadlock: onChunk/onStepFinish
+// only fire once something reads the stream (as the real AI SDK behaves — see
+// streamText's lazy fullStream getter), so runStreamText must start reading before
+// or concurrently with awaiting the probe, not after. Previously nothing read the
+// stream until after `await probe.wait()` returned, so the probe always fell through
+// to its full timeout even on a healthy, fast-responding host.
+describe("Fleet stream startup probe does not deadlock on a lazy stream", () => {
+  it("resolves via onChunk instead of waiting out the full probe timeout", async () => {
+    process.env.FLEET_STREAM_PROBE_MS = "5000";
+
+    vi.mocked(streamText).mockImplementation((args) => {
+      return {
+        get fullStream() {
+          return makeFullStream([{ type: "text-delta", text: "Hi" }], args.onChunk as never);
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: Promise.resolve("Hi"),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-1",
+          messages: [{ id: "msg-1", role: "assistant", content: "Hi" }],
+        }),
+      } as never;
+    });
+
+    const t0 = Date.now();
+    const res = await action(makeRequest(baseBody()));
+    const elapsedMs = Date.now() - t0;
+
+    expect(res.status).toBe(200);
+    // A regression to the deadlock would take ~5000ms (the probe's soft-timeout);
+    // the fix resolves as soon as onChunk fires during stream iteration.
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("stops reading fullStream once the probe is ready, on the streaming response path", async () => {
+    process.env.FLEET_STREAM_PROBE_MS = "5000";
+    process.env.AI_MAX_INFLIGHT = "1";
+
+    let upstreamCancelled = false;
+    vi.mocked(streamText).mockImplementation((args) => {
+      const chunks = ["Hi", " there"];
+      const upstream = new ReadableStream<{ type: string; text: string }>({
+        pull(controller) {
+          const text = chunks.shift();
+          if (text === undefined) {
+            // Keep the provider stream open until the client disconnects.
+            return;
+          }
+          const part = { type: "text-delta", text };
+          args.onChunk?.({ chunk: part } as never);
+          controller.enqueue(part);
+        },
+        cancel() {
+          upstreamCancelled = true;
+        },
+      });
+
+      // Mirror the AI SDK: fullStream tees the shared provider stream, and
+      // toDataStreamResponse consumes the sibling rather than a canned body.
+      let responseBranch = upstream;
+      return {
+        get fullStream() {
+          const [probeBranch, downstreamBranch] = responseBranch.tee();
+          responseBranch = downstreamBranch;
+          return probeBranch;
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        toDataStreamResponse: vi.fn(({ headers }: { headers?: Record<string, string> }) => {
+          const encoder = new TextEncoder();
+          const encodedBody = responseBranch.pipeThrough(
+            new TransformStream<{ type: string; text: string }, Uint8Array>({
+              transform(part, controller) {
+                controller.enqueue(encoder.encode(part.text));
+              },
+            }),
+          );
+          return new Response(encodedBody, { status: 200, headers });
+        }),
+        text: Promise.resolve("Hi there"),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-1",
+          messages: [{ id: "msg-1", role: "assistant", content: "Hi there" }],
+        }),
+      } as never;
+    });
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+
+    expect(res.status).toBe(200);
+    expect(getAiAdmissionStats().inflight).toBe(1);
+
+    const reader = res.body!.getReader();
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toBe("Hi");
+    await reader.cancel();
+
+    await vi.waitFor(() => {
+      expect(upstreamCancelled).toBe(true);
+      expect(getAiAdmissionStats().inflight).toBe(0);
+    });
+  });
 });

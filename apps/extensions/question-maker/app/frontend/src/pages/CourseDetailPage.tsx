@@ -73,9 +73,9 @@ type ActiveTab = 'overview' | 'questions' | 'assessments' | 'canvas';
 const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'assessments', 'canvas'];
 
 const TYPE_COLORS: Record<string, string> = {
-  MCQ: 'oklch(0.55 0.16 255)',
-  SA: 'oklch(0.64 0.15 190)',
-  LA: 'oklch(0.66 0.16 300)',
+  MCQ: 'var(--color-series-3)',
+  SA: 'var(--color-series-7)',
+  LA: 'var(--color-series-8)',
 };
 // Shared difficulty tokens (index.css) — keeps meters consistent + dark-mode aware.
 const DIFF_COLORS = {
