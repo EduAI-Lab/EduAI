@@ -253,6 +253,27 @@ describe("GET /api/users course student candidates", () => {
     });
   });
 
+  it("returns only the candidate fields for a course-scoped search", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+    mockPagedTransaction([ROW], 1);
+
+    const response = await get(
+      "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true",
+    );
+    expect(await body(response)).toEqual({
+      data: [{ id: "u1", name: "Student One", email: "s1@example.com" }],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    });
+  });
+
   it("does not turn the endpoint into a general user directory for instructors", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },

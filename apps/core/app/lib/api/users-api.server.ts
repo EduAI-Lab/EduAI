@@ -221,10 +221,12 @@ export async function handleUsersApiRequest(request: Request) {
           })();
 
       // Scoped to the current page's user ids so this second query stays bounded.
-      const taEnrollments = await prisma.enrollment.findMany({
-        where: { role: "TA", isActive: true, userId: { in: users.map((u) => u.id) } },
-        select: { userId: true, courseId: true },
-      });
+      const taEnrollments = courseId
+        ? []
+        : await prisma.enrollment.findMany({
+            where: { role: "TA", isActive: true, userId: { in: users.map((u) => u.id) } },
+            select: { userId: true, courseId: true },
+          });
       const taCourseIdsByUser = new Map<string, string[]>();
       for (const enrollment of taEnrollments) {
         const courseIds = taCourseIdsByUser.get(enrollment.userId) ?? [];
@@ -232,19 +234,21 @@ export async function handleUsersApiRequest(request: Request) {
         taCourseIdsByUser.set(enrollment.userId, courseIds);
       }
 
-      const mapped = users.map(({ _count, ...u }) => ({
-        ...u,
-        taCourseIds: taCourseIdsByUser.get(u.id) ?? [],
-        _count: {
-          enrolledCourses: _count.enrollments,
-          assistedCourses: taCourseIdsByUser.get(u.id)?.length ?? 0,
-          taughtCourses: _count.taughtCourses,
-          aiInteractions: _count.aiInteractions,
-        },
-      }));
+      const mapped = courseId
+        ? users.map(({ id, name, email }) => ({ id, name, email }))
+        : users.map(({ _count, ...u }) => ({
+            ...u,
+            taCourseIds: taCourseIdsByUser.get(u.id) ?? [],
+            _count: {
+              enrolledCourses: _count.enrollments,
+              assistedCourses: taCourseIdsByUser.get(u.id)?.length ?? 0,
+              taughtCourses: _count.taughtCourses,
+              aiInteractions: _count.aiInteractions,
+            },
+          }));
 
       return pagination
-        ? paginatedResponse(mapped, total, pagination, {
+        ? paginatedResponse(mapped, total, pagination, courseId ? undefined : {
             stats: {
               total: statsTotal,
               active: statsActive,
