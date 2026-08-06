@@ -75,6 +75,9 @@ fi
 
 assert_rejects "short key below entropy floor" "abc123"
 assert_rejects "short mixed-case denylist dodge" "VLLM-LOCAL"
+# Long enough to clear the 16-char floor on its own — only the case-insensitive
+# denylist match (not length) can catch this one.
+assert_rejects "long mixed-case denylist dodge" "CHANGEME-RUN-DEPLOY-EDGE-PROXY"
 
 assert_accepts "synthetic openssl-like key" "a1b2c3d4e5f6789012345678abcdef01"
 

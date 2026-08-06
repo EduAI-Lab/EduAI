@@ -3,7 +3,8 @@
 # Sourced by deploy-edge-proxy.sh and unit tests — do not execute directly.
 
 # Known example / placeholder values that must never be used in a real deploy.
-# Exact match, case-sensitive. Do not log the supplied secret.
+# Matched case-insensitively (see check_not_example_secret). Do not log the
+# supplied secret.
 CMPS01_EXAMPLE_SECRETS=(
   "vllm-local"
   "changeme-run-deploy-edge-proxy"
@@ -26,9 +27,11 @@ check_not_example_secret() {
     return 1
   fi
 
-  local example
+  # tr, not bash 4's ${var,,}, so this still works under macOS's bash 3.2.
+  local example value_lower
+  value_lower="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
   for example in "${CMPS01_EXAMPLE_SECRETS[@]}"; do
-    if [ "${value}" = "${example}" ]; then
+    if [ "${value_lower}" = "$(printf '%s' "${example}" | tr '[:upper:]' '[:lower:]')" ]; then
       echo "FATAL: ${var_name} is a known example value; generate a real key with \`openssl rand -hex 32\`" >&2
       return 1
     fi

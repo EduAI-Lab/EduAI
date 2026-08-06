@@ -291,11 +291,12 @@ Edit `~/cmps01/litellm-config.yaml.template` — add a block (copy an existing e
       api_key: vllm-local
 ```
 
-Restart proxy:
+Restart proxy — a bare `docker compose restart` won't pick up the template edit
+(see the note above), so re-run the deploy script instead:
 
 ```bash
 cd ~/cmps01
-docker compose restart
+./deploy-edge-proxy.sh
 ```
 
 ### Step 3 — Verify through proxy
