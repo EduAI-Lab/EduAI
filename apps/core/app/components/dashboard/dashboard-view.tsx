@@ -259,7 +259,12 @@ function RecentChatsPanel({
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">{relativeTime(chat.updatedAt)}</span>
+                  {/* Recent chats are SSR'd now (#1220), so this relative
+                      timestamp renders on the server too; its value depends on
+                      the wall clock and timezone, so suppress the expected
+                      server/client hydration diff (React's canonical timestamp
+                      case) rather than mismatch-warn on every dashboard load. */}
+                  <span suppressHydrationWarning className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">{relativeTime(chat.updatedAt)}</span>
                 </div>
                 <p className="text-[13px] text-foreground leading-snug line-clamp-2">
                   {chat.preview ?? chat.title ?? "New conversation"}
