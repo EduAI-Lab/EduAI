@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] perf: Add an `ivfflat` ANN index (`vector_cosine_ops`, `lists=100`) on `material_embeddings.embedding` via a Prisma raw-SQL migration. Both pure-vector and hybrid retrieval now materialize candidates with the indexable `ORDER BY embedding <=> query ASC LIMIT ...` shape before applying similarity thresholds or BM25 reranking. Also tunes `ivfflat.probes` per query — `resolveIvfflatProbes()` reads `RAG_IVFFLAT_PROBES` (default 10, clamped `[1, 100]`) and applies it via `SET LOCAL` inside a `prisma.$transaction`, since the setting is connection-scoped. The migration and RAG docs cover index tuning, deployment locking, and `EXPLAIN (ANALYZE, BUFFERS)` verification. Closes #940. (@saadtab01, 2026-08-04) — [#1357](https://github.com/EduAI-Lab/EduAI/pull/1357)
+- [core] perf: Add an `ivfflat` ANN index (`vector_cosine_ops`, `lists=100`) on `material_embeddings.embedding` via a Prisma raw-SQL migration. Both pure-vector and hybrid retrieval now materialize candidates with the indexable `ORDER BY embedding <=> query ASC LIMIT ...` shape before applying similarity thresholds or BM25 reranking. Also tunes `ivfflat.probes` per query — `resolveIvfflatProbes()` reads `RAG_IVFFLAT_PROBES` (default 10, clamped `[1, 99]`) and applies it via `SET LOCAL` inside a `prisma.$transaction`, since the setting is connection-scoped. The migration and RAG docs cover index tuning, deployment locking, and `EXPLAIN (ANALYZE, BUFFERS)` verification. Closes #940. (@saadtab01, 2026-08-04) — [#1357](https://github.com/EduAI-Lab/EduAI/pull/1357)
 ## [Week 13 — July 27–August 2, 2026]
 
 ### Added
