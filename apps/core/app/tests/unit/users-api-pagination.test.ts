@@ -64,6 +64,14 @@ function mockPagedTransaction(rows = [ROW], total = rows.length) {
   vi.mocked(prisma.$transaction).mockResolvedValue([total, rows, 137, 130, 1, 2, 3, 4] as never);
 }
 
+/**
+ * The `courseId` candidate branch runs a narrow `[count, findMany]`
+ * $transaction only — no platform-wide aggregates.
+ */
+function mockCandidateTransaction(rows: Array<Pick<typeof ROW, "id" | "name" | "email">>, total = rows.length) {
+  vi.mocked(prisma.$transaction).mockResolvedValue([total, rows] as never);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -235,7 +243,7 @@ describe("GET /api/users course student candidates", () => {
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
-    mockPagedTransaction();
+    mockCandidateTransaction([{ id: "u1", name: "Student One", email: "s1@example.com" }]);
 
     expect((await get(candidateQuery)).status).toBe(200);
 
@@ -258,7 +266,7 @@ describe("GET /api/users course student candidates", () => {
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
-    mockPagedTransaction([ROW], 1);
+    mockCandidateTransaction([{ id: "u1", name: "Student One", email: "s1@example.com" }], 1);
 
     const response = await get(
       "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true",
@@ -268,10 +276,50 @@ describe("GET /api/users course student candidates", () => {
       page: 1,
       pageSize: 25,
       total: 1,
-      totalPages: 1,
-      hasNextPage: false,
-      hasPreviousPage: false,
     });
+  });
+
+  it("never runs the admin-shaped query for a courseId request — narrow select, no admin transaction", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+    mockCandidateTransaction([{ id: "u1", name: "Student One", email: "s1@example.com" }], 1);
+
+    const response = await get(
+      "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true",
+    );
+
+    // The $transaction call is the narrow [count, findMany] pair only — no
+    // platform-wide count()/isActive-count()/role-breakdown queries mixed in.
+    const transactionArg = vi.mocked(prisma.$transaction).mock.calls[0][0] as unknown as unknown[];
+    expect(transactionArg).toHaveLength(2);
+
+    // The findMany's `select` — what Prisma is actually asked to load — must
+    // be exactly the candidate-picker fields. No `stats`, `taCourseIds`,
+    // `authorizedUnits`, `role`, `isActive`, `emailVerified`, `_count`, or any
+    // other admin-only field or relation count may appear here, since those
+    // leak the moment they're selected regardless of what the mapped response
+    // later omits.
+    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      select?: Record<string, unknown>;
+    };
+    expect(findManyArgs.select).toEqual({ id: true, name: true, email: true });
+
+    // The raw response body itself carries no admin metadata either.
+    const payload = await body(response);
+    expect(payload).toEqual({
+      data: [{ id: "u1", name: "Student One", email: "s1@example.com" }],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+    });
+    expect(payload).not.toHaveProperty("stats");
+    expect(payload.data[0]).not.toHaveProperty("taCourseIds");
+    expect(payload.data[0]).not.toHaveProperty("authorizedUnits");
+    expect(payload.data[0]).not.toHaveProperty("_count");
+    expect(payload.data[0]).not.toHaveProperty("role");
+    expect(payload.data[0]).not.toHaveProperty("isActive");
   });
 
   it("does not turn the endpoint into a general user directory for instructors", async () => {
