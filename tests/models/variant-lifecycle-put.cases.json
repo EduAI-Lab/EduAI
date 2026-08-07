@@ -1,0 +1,72 @@
+[
+  {
+    "AccessLevel": "instructor_plus",
+    "CurrentIsDraft": "approved",
+    "Ownership": "own",
+    "RequestedIsDraft": "absent",
+    "FieldChangeKind": "onlyAiTag"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "draft",
+    "Ownership": "other",
+    "RequestedIsDraft": "false",
+    "FieldChangeKind": "none"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "approved",
+    "Ownership": "other",
+    "RequestedIsDraft": "true",
+    "FieldChangeKind": "onlyAiTag"
+  },
+  {
+    "AccessLevel": "instructor_plus",
+    "CurrentIsDraft": "draft",
+    "Ownership": "own",
+    "RequestedIsDraft": "true",
+    "FieldChangeKind": "content"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "approved",
+    "Ownership": "own",
+    "RequestedIsDraft": "false",
+    "FieldChangeKind": "content"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "approved",
+    "Ownership": "other",
+    "RequestedIsDraft": "absent",
+    "FieldChangeKind": "none"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "draft",
+    "Ownership": "other",
+    "RequestedIsDraft": "absent",
+    "FieldChangeKind": "content"
+  },
+  {
+    "AccessLevel": "instructor_plus",
+    "CurrentIsDraft": "draft",
+    "Ownership": "own",
+    "RequestedIsDraft": "true",
+    "FieldChangeKind": "none"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "draft",
+    "Ownership": "other",
+    "RequestedIsDraft": "false",
+    "FieldChangeKind": "onlyAiTag"
+  },
+  {
+    "AccessLevel": "instructor_plus",
+    "CurrentIsDraft": "approved",
+    "Ownership": "own",
+    "RequestedIsDraft": "false",
+    "FieldChangeKind": "onlyAiTag"
+  }
+]

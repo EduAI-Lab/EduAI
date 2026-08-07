@@ -1,0 +1,23 @@
+# S9 — variant-lifecycle-put (QM), census docs/PICT_CENSUS.md § S9.
+# See tests/models/variant-lifecycle-put.oracle.ts for the oracle spec.
+#
+# PUT /api/questions/variants/:variantId
+# (apps/extensions/question-maker/app/backend/src/routes/variants.js:137).
+# `AccessLevel` collapses the resolved course-access rank into two values:
+# only the boundary at LEVELS.instructor.rank matters here (TA below it,
+# everyone admitted by requireVariantAccess({min:'ta'}) at or above it
+# behaves identically). `FieldChangeKind` captures the nine-field aiTagOnly
+# allowlist (:156-166) as one of three shapes: no fields changed, some
+# content field changed, or only `isAiGenerated` changed.
+#
+# `updateVariant` (questionService.js:948) already clears `coreQuestionId`
+# on the isDraft false->true transition (the `unreviewing` flag, :988) —
+# confirmed correct by reading the source, not re-modelled here since it's a
+# service-layer concern below this route's own gate logic.
+AccessLevel:        ta, instructor_plus
+CurrentIsDraft:     draft, approved
+Ownership:          own, other
+RequestedIsDraft:   true, false, absent
+FieldChangeKind:    none, content, onlyAiTag
+
+IF [AccessLevel] = "instructor_plus" THEN [Ownership] = "own";
