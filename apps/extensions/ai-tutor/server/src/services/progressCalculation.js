@@ -119,7 +119,7 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
 
 /**
  * Calculate progress for a course based on correct submissions
- * Progress = (# activities with correct latest submission) / (# published activities)
+ * Progress = (# activities with any correct submission, sticky (#1187)) / (# published activities)
  * Only counts activities in published lessons in published modules
  */
 export async function calculateCourseProgress(courseId, userId) {

@@ -12,25 +12,19 @@
  * here. Real Postgres via the QM Prisma client (TEST_DATABASE_URL) —
  * `findBestBankMetadataForSlot` only reads the bank from the DB; the
  * baseline `slotVariant` it scores against is a plain object, no DB row
- * needed for it.
+ * needed for it. Shared cases/oracle loading comes from
+ * tests/helpers/pictModel.js (#1188).
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { createId } from '@paralleldrive/cuid2';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { loadPictModel } from '../helpers/pictModel.js';
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../..');
-const rows = JSON.parse(
-  readFileSync(path.join(repoRoot, 'tests/models/metadata-similarity-assembly.cases.json'), 'utf8'),
-);
-const { metadataSimilarityAssemblyOracle } = await import(
-  path.join(repoRoot, 'tests/models/metadata-similarity-assembly.oracle.ts')
-);
+const { rows, oracle } = await loadPictModel('metadata-similarity-assembly');
+const { metadataSimilarityAssemblyOracle } = oracle;
 
 const SLOT_TYPE = 'SA';
 const SLOT_DIFFICULTY = 'medium';

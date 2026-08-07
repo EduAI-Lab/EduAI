@@ -12,13 +12,14 @@
  * established pattern for this route: questionService, coreWiringService,
  * and the RBAC Core reads (coreApiService) are mocked; the caller's Core
  * enrollment role drives the resolved course-access level, and the session
- * role drives the QM_AUTHORIZED flat gate.
+ * role drives the QM_AUTHORIZED flat gate. Shared cases/oracle loading and
+ * auth/settings/coreApiService mocks come from tests/helpers/pictModel.js
+ * and tests/helpers/pictRouteMocks.js (#1188).
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { loadPictModel } from '../helpers/pictModel.js';
+import { stubSessionUser, stubEnrollment } from '../helpers/pictRouteMocks.js';
 
 const { mockUpdateVariant, mockVariantsFindOne, mockEnrollments } = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
@@ -26,13 +27,17 @@ const { mockUpdateVariant, mockVariantsFindOne, mockEnrollments } = vi.hoisted((
   mockEnrollments: vi.fn(),
 }));
 
-vi.mock('../../src/services/authService.js', () => ({
-  findOrCreateUser: vi.fn().mockResolvedValue({}),
-}));
+// Dynamic imports (rather than a static import used directly in the factory)
+// because vi.mock factories run before the module's own static imports are
+// wired up — see tests/helpers/pictRouteMocks.js.
+vi.mock('../../src/services/authService.js', async () => {
+  const { mockAuthService } = await import('../helpers/pictRouteMocks.js');
+  return mockAuthService();
+});
 
-vi.mock('../../src/config/settings.js', () => {
-  const cfg = { coreUrl: 'http://core.test', eduaiApiKey: 'k', corsOrigins: ['*'], nodeEnv: 'test', logLevel: 'silent' };
-  return { config: cfg, default: cfg };
+vi.mock('../../src/config/settings.js', async () => {
+  const { mockSettings } = await import('../helpers/pictRouteMocks.js');
+  return mockSettings();
 });
 
 vi.mock('../../src/services/questionService.js', () => ({
@@ -48,12 +53,10 @@ vi.mock('../../src/services/coreWiringService.js', () => ({
   VALID_REASONING_LEVELS: ['LOW', 'MEDIUM', 'HIGH'],
 }));
 
-vi.mock('../../src/services/coreApiService.js', () => ({
-  getCourseEnrollmentsFromCore: mockEnrollments,
-  getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
-  getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
-  patchQuestionTestableOnCore: vi.fn(),
-}));
+vi.mock('../../src/services/coreApiService.js', async () => {
+  const { mockCoreApiService } = await import('../helpers/pictRouteMocks.js');
+  return mockCoreApiService(mockEnrollments, { patchQuestionTestableOnCore: vi.fn() });
+});
 
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
@@ -68,11 +71,8 @@ vi.mock('../../src/config/database.js', () => ({
 
 const { default: app } = await import('../../src/app.js');
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../..');
-const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/models/variant-lifecycle-put.cases.json'), 'utf8'));
-const { variantLifecyclePutOracle } = await import(
-  path.join(repoRoot, 'tests/models/variant-lifecycle-put.oracle.ts')
-);
+const { rows, oracle } = await loadPictModel('variant-lifecycle-put');
+const { variantLifecyclePutOracle } = oracle;
 
 // A genuine course-level TA is platform-role INSTRUCTOR (QM_AUTHORIZED
 // excludes STUDENT/TA at the flat gate) who does NOT own the course and
@@ -83,10 +83,8 @@ const TA_USER = { id: 'ta-1', email: 'ta@test.com', role: 'INSTRUCTOR', name: 'T
 const INSTRUCTOR_PLUS_USER = { id: COURSE.userId, email: 'owner@test.com', role: 'INSTRUCTOR', name: 'Owner' };
 
 function authAs(user, enrollRole) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }));
-  mockEnrollments.mockResolvedValue({
-    enrollments: enrollRole ? [{ studentId: user.id, role: enrollRole, isActive: true }] : [],
-  });
+  stubSessionUser(user);
+  stubEnrollment(mockEnrollments, user.id, enrollRole);
 }
 
 function loadVariant({ isDraft, createdBy }) {

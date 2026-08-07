@@ -10,13 +10,14 @@
  * `npm run test:pict:gen` from tests/models/generate-questions.pict), and
  * one world-builder here, reusing tests/integration/eduaiRouteCoverage.integration.test.js's
  * established mocking (no DB / live Core; eduaiService and course-code
- * access resolution are mocked).
+ * access resolution are mocked). Shared cases/oracle loading and
+ * auth/settings/coreApiService mocks come from tests/helpers/pictModel.js
+ * and tests/helpers/pictRouteMocks.js (#1188).
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { loadPictModel } from '../helpers/pictModel.js';
+import { stubSessionUser } from '../helpers/pictRouteMocks.js';
 
 const { mockFindCoursesByProjectedCode, mockEnrollments, eduaiService } = vi.hoisted(() => ({
   mockFindCoursesByProjectedCode: vi.fn(),
@@ -24,36 +25,33 @@ const { mockFindCoursesByProjectedCode, mockEnrollments, eduaiService } = vi.hoi
   eduaiService: { chat: vi.fn(), generateQuestions: vi.fn() },
 }));
 
-vi.mock('../../src/services/authService.js', () => ({ findOrCreateUser: vi.fn().mockResolvedValue({}) }));
+// Dynamic imports (rather than a static import used directly in the factory)
+// because vi.mock factories run before the module's own static imports are
+// wired up — see tests/helpers/pictRouteMocks.js.
+vi.mock('../../src/services/authService.js', async () => {
+  const { mockAuthService } = await import('../helpers/pictRouteMocks.js');
+  return mockAuthService();
+});
 
-vi.mock('../../src/config/settings.js', () => {
-  const cfg = {
-    coreUrl: 'http://core.test',
-    eduaiApiKey: 'k',
-    corsOrigins: ['*'],
-    nodeEnv: 'test',
-    logLevel: 'silent',
-    maxQuestions: 50,
-  };
-  return { config: cfg, default: cfg };
+vi.mock('../../src/config/settings.js', async () => {
+  const { mockSettings } = await import('../helpers/pictRouteMocks.js');
+  return mockSettings({ maxQuestions: 50 });
 });
 
 vi.mock('../../src/services/courseListService.js', () => ({
   findCoursesByProjectedCode: mockFindCoursesByProjectedCode,
 }));
 
-vi.mock('../../src/services/coreApiService.js', () => ({
-  getCourseEnrollmentsFromCore: mockEnrollments,
-  getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
-  getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
-}));
+vi.mock('../../src/services/coreApiService.js', async () => {
+  const { mockCoreApiService } = await import('../helpers/pictRouteMocks.js');
+  return mockCoreApiService(mockEnrollments);
+});
 
 vi.mock('../../src/services/eduaiService.js', () => ({ default: eduaiService }));
 
 const { default: app } = await import('../../src/app.js');
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../..');
-const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/models/generate-questions.cases.json'), 'utf8'));
+const { rows, oracle } = await loadPictModel('generate-questions');
 const {
   generateQuestionsOracle,
   MAX_QUESTIONS,
@@ -62,13 +60,13 @@ const {
   MCQ_INPUT,
   PROVIDED_DIFFICULTY_DISTRIBUTION,
   PROVIDED_REASONING_DISTRIBUTION,
-} = await import(path.join(repoRoot, 'tests/models/generate-questions.oracle.ts'));
+} = oracle;
 
 const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
 const STUDENT = { id: 'stu-1', role: 'STUDENT', email: 's@t.co', name: 'S' };
 
 function authAs(user) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }));
+  stubSessionUser(user);
 }
 
 function accessibleCourse() {
