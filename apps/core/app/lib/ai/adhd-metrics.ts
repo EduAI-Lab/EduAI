@@ -75,16 +75,36 @@ const NEXT_LINE_PARAGRAPH_RE = /^\s*\*\*next\?\*\*/i;
 
 const STEP_LADDER_HEADING_RE = /(?:^|\n)\s*(?:#{1,3}\s*)?\*{0,2}step ladder\*{0,2}\s*(?:\n|$)/i;
 const NUMBERED_LIST_ITEM_RE = /^\s*\d+\.\s+\S/m;
+// The next markdown heading or policy anchor (Next?/Sources) after the Step
+// ladder heading — marks where the Step ladder section ends, so a numbered
+// item elsewhere in the reply can't be credited to an empty section (#1245).
+const NEXT_SECTION_BOUNDARY_RE = /\n\s*(?:#{1,3}\s*\S|\*\*(?:Next\?|Sources)\*\*)/i;
+
+/**
+ * Return the body of the "Step ladder" section (everything between the
+ * heading and the next heading/policy anchor), or null when there is no
+ * Step ladder heading at all. Shared by `hasStepLadderSection` and the
+ * step-recall copy-paste check in adhd-oversight.ts (#1245).
+ */
+export function extractStepLadderSection(text: string): string | null {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return null;
+  const headingMatch = STEP_LADDER_HEADING_RE.exec(trimmed);
+  if (!headingMatch) return null;
+  const rest = trimmed.slice(headingMatch.index + headingMatch[0].length);
+  const boundaryMatch = NEXT_SECTION_BOUNDARY_RE.exec(rest);
+  return (boundaryMatch ? rest.slice(0, boundaryMatch.index) : rest).trim();
+}
 
 /**
  * Detect a real "Step ladder" section: the heading plus at least one
- * numbered step — not just the bare words "step ladder" mentioned in prose,
- * and not a bare Top summary / Next? shell with no expanded steps (#1245).
+ * numbered step INSIDE that section — not just the bare words "step ladder"
+ * mentioned in prose, and not a numbered item that happens to live elsewhere
+ * in the reply while the Step ladder section itself is empty (#1245).
  */
 export function hasStepLadderSection(text: string): boolean {
-  const trimmed = (text ?? "").trim();
-  if (!trimmed) return false;
-  return STEP_LADDER_HEADING_RE.test(trimmed) && NUMBERED_LIST_ITEM_RE.test(trimmed);
+  const section = extractStepLadderSection(text);
+  return section !== null && NUMBERED_LIST_ITEM_RE.test(section);
 }
 
 /**
