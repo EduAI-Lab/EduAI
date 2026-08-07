@@ -1,0 +1,14 @@
+# docs/PICT_CENSUS.md § S6 — role-forked-listing (#1185)
+# Core buildCourseListFilter (lib/auth/course-access.server.ts:118) vs ai-tutor GET /courses
+# (routes/courses.js:164): does course C show up in the caller's course list? Core keys the
+# non-admin branches on ENROLLMENT role, never platform role — TA is not a platform role
+# (rbac-matrix.md §1), so PlatformRole excludes it; the interesting case is PlatformRole=STUDENT
+# with an Enrollment=TA row on this course (TA-parity), contrasted with plain STUDENT.
+PlatformRole: STUDENT, INSTRUCTOR, UNIT_ADMIN, ADMIN
+Enrollment:   none, student, ta, instructor
+Published:    yes, no
+UnitMatch:    in-unit, out-of-unit
+Site:         core, ai-tutor
+
+# UnitMatch only means anything for UNIT_ADMIN.
+IF [PlatformRole] <> "UNIT_ADMIN" THEN [UnitMatch] = "in-unit";
