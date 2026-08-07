@@ -7,6 +7,8 @@ import { findResumeCourse, toDashboardCourseRow } from './dashboard-helpers';
 
 type DashboardTaViewProps = {
   courses: Course[];
+  /** Full course count (#1208); `courses` is a bounded page, so the panel discloses the gap. */
+  courseTotal?: number;
   submissions: SubmissionRow[];
   /** Cross-course rollup from `api.dashboardStats()` — optional/nullable; falls back to client-derived counts below when absent. */
   dashboardStats?: DashboardStats | null;
@@ -19,7 +21,7 @@ type DashboardTaViewProps = {
  * teaching-focused; "Continue learning" only lights up when a resumable
  * student-side course actually exists.
  */
-export function DashboardTaView({ courses, submissions, dashboardStats }: DashboardTaViewProps) {
+export function DashboardTaView({ courses, courseTotal, submissions, dashboardStats }: DashboardTaViewProps) {
   const published = courses.filter((c) => c.isPublished);
   const learningCourses = courses.filter((c) => Boolean(c.progress));
   const resumeCourse = findResumeCourse(courses);
@@ -65,7 +67,7 @@ export function DashboardTaView({ courses, submissions, dashboardStats }: Dashbo
       leftPanelTitle="Assigned courses"
       quickActions={quickActions}
       rightPanelTitle="Continue learning"
-      rightPanel={<ContinueLearningPanel courses={courses} coursesBaseHref="/student" />}
+      rightPanel={<ContinueLearningPanel courses={courses} total={courseTotal} coursesBaseHref="/student" />}
     />
   );
 }
