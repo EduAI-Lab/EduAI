@@ -30,6 +30,10 @@ import {
   runConfiguredLogRetentionIfDue,
   updateLogRetentionPolicy,
 } from "~/lib/db.log-retention-policy.server";
+import {
+  getInteractionCountsByModel,
+  getInteractionCountsByServer,
+} from "~/lib/db.ai-interaction-stats.server";
 import type { Route } from "./+types/admin.logs";
 
 const DEFAULT_PAGE = 1;
@@ -89,7 +93,7 @@ function parsePositiveInt(value: string | null, fallback: number, max: number = 
 
 /** Restricts tab values to known views so unknown query values cannot break rendering. */
 function parseLogsTab(value: string | null): LogsTab {
-  if (value === "security" || value === "system") {
+  if (value === "security" || value === "system" || value === "servers") {
     return value;
   }
   return "audit";
@@ -215,6 +219,29 @@ export async function loader({ request }: Route.LoaderArgs) {
       systemRetentionDays: retentionPolicy.systemRetentionDays,
     },
   });
+
+  if (tab === "servers") {
+    const [serverStats, modelStats] = await Promise.all([
+      getInteractionCountsByServer({ dateFrom, dateTo }),
+      getInteractionCountsByModel({ dateFrom, dateTo }),
+    ]);
+    return {
+      user,
+      tab,
+      page,
+      pageSize,
+      total: 0,
+      hasMore: false,
+      rows: [],
+      query: buildQueryState(tab, page, pageSize, direction, searchParams),
+      retentionPolicy: {
+        auditRetentionDays: retentionPolicy.auditRetentionDays,
+        systemRetentionDays: retentionPolicy.systemRetentionDays,
+      },
+      serverStats,
+      modelStats,
+    };
+  }
 
   if (tab === "security") {
     const outcomeRaw = readOptionalQueryValue(searchParams, "outcome");
@@ -357,6 +384,8 @@ export default function AdminLogsRoute() {
         hasMore={data.hasMore}
         query={data.query}
         retentionPolicy={data.retentionPolicy}
+        serverStats={"serverStats" in data ? data.serverStats : undefined}
+        modelStats={"modelStats" in data ? data.modelStats : undefined}
       />
     </CoreAppShell>
   );
