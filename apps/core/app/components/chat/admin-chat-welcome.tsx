@@ -1,4 +1,4 @@
-import { Shield } from "lucide-react";
+import { IconShield } from "@tabler/icons-react";
 import { PromptSuggestion } from "@eduai/ui";
 
 export interface AdminChatWelcomeProps {
@@ -46,7 +46,7 @@ export function AdminChatWelcome({ selectedModelInfo, onSelectPrompt }: AdminCha
         <div className="space-y-6">
           <div className="flex items-center justify-center mb-6">
             <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
-              <Shield className="h-8 w-8 text-primary-foreground" />
+              <IconShield className="h-8 w-8 text-primary-foreground" />
             </div>
           </div>
 

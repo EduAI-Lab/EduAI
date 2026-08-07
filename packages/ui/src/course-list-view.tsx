@@ -91,6 +91,12 @@ export interface CourseListViewProps<T> {
   loadingSlot?: React.ReactNode
   searchPlaceholder?: string
   searchAriaLabel?: string
+  /**
+   * Cap on the search box, for controlled callers whose server bounds the term
+   * (AI Tutor 400s past 200 chars). Omitted means unbounded, which is right for
+   * uncontrolled callers that filter in-page and never send the value anywhere.
+   */
+  searchMaxLength?: number
   /** Extra bespoke control(s) rendered at the end of the toolbar. */
   filters?: React.ReactNode
   /** Shown when the role has no courses at all. */
@@ -100,6 +106,31 @@ export interface CourseListViewProps<T> {
   /** Override the responsive card grid classes. */
   gridClassName?: string
   className?: string
+
+  // ── Controlled (server-driven) mode ─────────────────────────────────
+  // Omit every prop below and the component behaves exactly as before: it owns
+  // search + filter state and matches over `courses` client-side. Supply them
+  // and it becomes presentational for that dimension — the host has already
+  // filtered server-side, so re-filtering here would drop rows the server
+  // deliberately returned. Search and filters are independently controllable.
+
+  /** Controlled search text. When set, `getSearchText` is not applied. */
+  searchValue?: string
+  onSearchChange?: (value: string) => void
+  /** Controlled filter selections by group id. When set, `getValue` is not applied. */
+  selectedFilters?: Record<string, string[]>
+  onFilterChange?: (groupId: string, values: string[]) => void
+  /**
+   * Values present across the caller's WHOLE result set, by group id. Required in
+   * controlled mode for the dropdowns to be honest: deriving options from
+   * `courses` would only ever offer what the current page happens to contain,
+   * which is the bug server-side filtering exists to fix.
+   */
+  availableValues?: Record<string, string[]>
+  /** Total matching rows server-side; drives the result count when controlled. */
+  totalCount?: number
+  /** Called by "Clear" in controlled mode; defaults to clearing each dimension. */
+  onClearAll?: () => void
 }
 
 const DEFAULT_GRID = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
@@ -129,11 +160,17 @@ function valuesOf<T>(group: CourseFilterGroup<T>, course: T): string[] {
 function resolveOptions<T>(
   group: CourseFilterGroup<T>,
   courses: T[],
+  available?: string[],
 ): CourseFilterOption[] {
   if (group.options) return group.options
   const seen = new Set<string>()
-  for (const course of courses) {
-    for (const v of valuesOf(group, course)) seen.add(v)
+  if (available) {
+    // Controlled mode: the host knows the full value set; `courses` is one page.
+    for (const v of available) seen.add(v)
+  } else {
+    for (const course of courses) {
+      for (const v of valuesOf(group, course)) seen.add(v)
+    }
   }
   const opts = Array.from(seen).map((value) => ({
     value,
@@ -165,14 +202,37 @@ export function CourseListView<T>({
   loadingSlot,
   searchPlaceholder = "Search courses by title or code",
   searchAriaLabel = "Search courses",
+  searchMaxLength,
   filters,
   emptyState = null,
   noResultsState,
   gridClassName = DEFAULT_GRID,
   className,
+  searchValue,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  totalCount,
+  onClearAll,
 }: CourseListViewProps<T>) {
-  const [search, setSearch] = React.useState("")
-  const [selected, setSelected] = React.useState<Record<string, string[]>>({})
+  const searchControlled = searchValue !== undefined
+  const filtersControlled = selectedFilters !== undefined
+
+  const [ownSearch, setOwnSearch] = React.useState("")
+  const [ownSelected, setOwnSelected] = React.useState<Record<string, string[]>>({})
+
+  const search = searchControlled ? searchValue : ownSearch
+  const selected = filtersControlled ? selectedFilters : ownSelected
+
+  const setSearch = (value: string) => {
+    if (searchControlled) onSearchChange?.(value)
+    else setOwnSearch(value)
+  }
+  const setGroupValues = (groupId: string, next: string[]) => {
+    if (filtersControlled) onFilterChange?.(groupId, next)
+    else setOwnSelected((prev) => ({ ...prev, [groupId]: next }))
+  }
 
   // Which groups are worth rendering. A group is dropped when the courses hold
   // no value for it, or (with `hideWhenSingle`, the default) only one distinct
@@ -183,33 +243,59 @@ export function CourseListView<T>({
     if (!filterGroups?.length) return []
     return filterGroups
       .map((group) => {
+        const available = availableValues?.[group.id]
+        // Presence decides whether the dropdown is worth rendering. In controlled
+        // mode it must come from the host's full value set — counting distinct
+        // values on the current page would hide a dimension whose second value
+        // only appears further down the result set.
         const present = new Set<string>()
-        for (const course of courses) {
-          for (const v of valuesOf(group, course)) present.add(v)
+        if (available) {
+          for (const v of available) present.add(v)
+        } else {
+          for (const course of courses) {
+            for (const v of valuesOf(group, course)) present.add(v)
+          }
         }
-        return { group, options: resolveOptions(group, courses), present: present.size }
+        return {
+          group,
+          options: resolveOptions(group, courses, available),
+          present: present.size,
+        }
       })
       .filter(({ group, present }) => {
         if (present === 0) return false
         const hide = group.hideWhenSingle ?? true
         return !(hide && present <= 1)
       })
-  }, [filterGroups, courses])
+  }, [filterGroups, courses, availableValues])
 
   const visible = React.useMemo(() => {
     const query = search.trim().toLowerCase()
     return courses.filter((course) => {
+      // `matchesFilter` is a host-side predicate rather than a toolbar dimension,
+      // so it applies in both modes.
       if (matchesFilter && !matchesFilter(course)) return false
-      for (const { group } of activeGroups) {
-        const picked = selected[group.id]
-        if (!picked?.length) continue
-        const vals = valuesOf(group, course)
-        if (!vals.some((v) => picked.includes(v))) return false
+      if (!filtersControlled) {
+        for (const { group } of activeGroups) {
+          const picked = selected[group.id]
+          if (!picked?.length) continue
+          const vals = valuesOf(group, course)
+          if (!vals.some((v) => picked.includes(v))) return false
+        }
       }
-      if (!query) return true
+      if (searchControlled || !query) return true
       return getSearchText(course).toLowerCase().includes(query)
     })
-  }, [courses, search, matchesFilter, getSearchText, activeGroups, selected])
+  }, [
+    courses,
+    search,
+    matchesFilter,
+    getSearchText,
+    activeGroups,
+    selected,
+    searchControlled,
+    filtersControlled,
+  ])
 
   const termGroups = React.useMemo(
     () => groupCoursesByTerm(visible, getTermInfo),
@@ -250,13 +336,28 @@ export function CourseListView<T>({
     }))
   }, [groupSections, visible, orderedTermGroups])
 
-  const activeFilterCount =
-    Object.values(selected).reduce((n, v) => n + (v?.length ?? 0), 0)
+  // Count only the dimensions this list actually renders a dropdown for.
+  // `selected` is read straight from the URL and always carries every filter
+  // key, so summing all of it made a stray `?status=draft` on a list with no
+  // Status dropdown report "1 filter" and offer a Clear — for a dimension the
+  // route never forwarded to the server and the user has no control to unset.
+  const activeFilterCount = activeGroups.reduce(
+    (n, { group }) => n + (selected[group.id]?.length ?? 0),
+    0,
+  )
   const hasActiveQuery = search.trim().length > 0 || activeFilterCount > 0
 
   const clearAll = () => {
+    if (onClearAll) {
+      onClearAll()
+      return
+    }
     setSearch("")
-    setSelected({})
+    if (filtersControlled) {
+      for (const { group } of activeGroups) onFilterChange?.(group.id, [])
+    } else {
+      setOwnSelected({})
+    }
   }
 
   if (isLoading) {
@@ -268,7 +369,11 @@ export function CourseListView<T>({
   }
 
   // No courses at all for this role — no toolbar, just the empty state.
-  if (courses.length === 0) {
+  // The `hasActiveQuery` guard matters only in controlled mode: there, a search
+  // that matches nothing returns an empty `courses`, and hiding the toolbar
+  // would strand the user with no way to clear the query. Uncontrolled callers
+  // still hold every course in `courses`, so this reads exactly as before.
+  if (courses.length === 0 && !hasActiveQuery) {
     return <div className={cn("space-y-6", className)}>{emptyState}</div>
   }
 
@@ -287,6 +392,7 @@ export function CourseListView<T>({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
+              maxLength={searchMaxLength}
               aria-label={searchAriaLabel}
             />
           </div>
@@ -299,9 +405,7 @@ export function CourseListView<T>({
                   className="w-full sm:w-auto sm:min-w-40"
                   options={options}
                   value={selected[group.id] ?? []}
-                  onValueChange={(next) =>
-                    setSelected((prev) => ({ ...prev, [group.id]: next }))
-                  }
+                  onValueChange={(next) => setGroupValues(group.id, next)}
                   placeholder={group.label}
                   searchPlaceholder={`Filter ${group.label.toLowerCase()}…`}
                 />
@@ -314,10 +418,19 @@ export function CourseListView<T>({
         {hasActiveQuery ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <IconFilter className="h-4 w-4" aria-hidden="true" />
-            <span>
-              {visible.length} of {courses.length}{" "}
-              {courses.length === 1 ? "course" : "courses"}
-            </span>
+            {searchControlled || filtersControlled ? (
+              // Controlled mode: `courses` is one server-filtered page, so
+              // "N of page-size" would be meaningless. Report the match count.
+              <span>
+                {(totalCount ?? visible.length).toLocaleString()}{" "}
+                {(totalCount ?? visible.length) === 1 ? "course" : "courses"} found
+              </span>
+            ) : (
+              <span>
+                {visible.length} of {courses.length}{" "}
+                {courses.length === 1 ? "course" : "courses"}
+              </span>
+            )}
             {activeFilterCount > 0 ? (
               <Badge variant="secondary" className="font-normal">
                 {activeFilterCount} {activeFilterCount === 1 ? "filter" : "filters"}

@@ -52,10 +52,31 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
-import { mapCourseOffering, mapCourseOfferingAfterPublishWrite, mapProgressData } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import {
+  mapCourseOffering,
+  mapCourseOfferingAfterPublishWrite,
+  mapProgressData,
+} from '../utils/mappers.js';
+import {
+  parsePaginationParams,
+  parseSearchParam,
+  parseFilterParam,
+  paginated,
+  PaginationError,
+} from '../utils/pagination.js';
+import {
+  COURSE_PROGRESS_VALUES,
+  COURSE_STATUS_VALUES,
+  coreFacetWhere,
+  coreFacets,
+} from '../utils/courseSearch.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
-import { calculateCourseProgress } from '../services/progressCalculation.js';
+import { calculateCourseProgressBatch, progressBucket } from '../services/progressCalculation.js';
+import {
+  isSupportedCourseRole,
+  resolveCourseAccess,
+  userHasTaEnrollment,
+} from '../services/courseAccess.js';
 import {
   findEduAiCourseById,
   listCoreAdminUsers,
@@ -81,21 +102,21 @@ import { listAdminBugReports } from '../services/bugReports.js';
 
 const router = express.Router();
 
-function isSupportedCourseRole(role) {
-  return (
-    role === 'INSTRUCTOR' ||
-    role === 'STUDENT' ||
-    role === 'TA' ||
-    role === 'UNIT_ADMIN' ||
-    role === 'ADMIN'
-  );
-}
-
-async function userHasTaEnrollment(userId) {
-  const count = await prisma.courseEnrollment.count({
-    where: { userId, role: 'TA' },
-  });
-  return count > 0;
+/**
+ * Combine Prisma where-fragments with AND, dropping the absent ones.
+ *
+ * Returns `undefined` for an all-empty list (an unscoped query — only ADMIN with
+ * no filters reaches that) and the bare fragment for a single entry, so the
+ * common cases produce exactly the query they did before #1208 added filters.
+ * AND-wrapping matters for the UNIT_ADMIN branch in particular: its `where` is an
+ * `OR`, and merging a filter into that object would widen the result instead of
+ * narrowing it.
+ */
+function andWhere(fragments) {
+  const parts = fragments.filter(Boolean);
+  if (parts.length === 0) return undefined;
+  if (parts.length === 1) return parts[0];
+  return { AND: parts };
 }
 
 /**
@@ -165,9 +186,31 @@ router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
  * Auth: INSTRUCTOR or STUDENT.
  * Returns: INSTRUCTOR → all instructor-assigned courses (no progress);
  *   STUDENT → published enrolled courses each with `progress`.
+ * Query: `page`/`pageSize` (required, #1043), plus the optional #1208 filters —
+ *   `search` (free text over title + code), repeatable `term` (`W1::2026`),
+ *   repeatable `status` (published|draft), repeatable `progress`
+ *   (not-started|in-progress|completed).
  *
  * Why: the two roles want fundamentally different shapes, so progress
  * computation is skipped entirely for instructors to keep their dashboard fast.
+ *
+ * Gotchas (#1208):
+ *   - `search`/`term`/`status` CANNOT be Prisma predicates: title, code, term,
+ *     year and isPublished are Core-owned read-throughs with no local column
+ *     (#1072 step 4). They are matched against the catalog this request already
+ *     fetched and pushed down as `coreOfferingId IN (...)` — see
+ *     utils/courseSearch.js. Because `count` and `findMany` share that `where`,
+ *     `total` is the filtered total and the pager stays honest.
+ *   - Consequently, when Core is unavailable the catalog is empty and every one
+ *     of those filters resolves to `{ in: [] }` → zero rows. That is the same
+ *     fail-closed stance the publish gate takes; `X-Core-Status: unavailable`
+ *     lets the client say "search unavailable" instead of "no matches".
+ *   - `progress` is the one LOCAL dimension (Activity/Submission). It is scoped
+ *     per caller, so it is ignored — not rejected — for roles whose rows carry
+ *     no progress, keeping a bookmarked URL from 400ing after a role change.
+ *   - Filters never widen access: each is AND-ed onto the role `where` from
+ *     services/courseAccess.js, so e.g. `?status=draft` as a STUDENT returns
+ *     nothing rather than exposing an unpublished course.
  */
 router.get('/courses', async (req, res) => {
   const authUser = req.user;
@@ -182,6 +225,13 @@ router.get('/courses', async (req, res) => {
     // #1043: unbounded list — require explicit paging (Group A contract,
     // mirrors #1041). One envelope shape across every role branch below.
     const pageParams = parsePaginationParams(req);
+
+    // #1208: parse before any I/O so a malformed filter 400s without hitting
+    // Core or the database.
+    const search = parseSearchParam(req);
+    const terms = parseFilterParam(req, 'term');
+    const statuses = parseFilterParam(req, 'status', { allowed: COURSE_STATUS_VALUES });
+    const progressBuckets = parseFilterParam(req, 'progress', { allowed: COURSE_PROGRESS_VALUES });
 
     // Unified extension course-fetch contract (#1072): course FIELD truth
     // comes from ONE batched service-key catalog fetch — never the
@@ -211,16 +261,23 @@ router.get('/courses', async (req, res) => {
       .filter((c) => c?.isPublished === true)
       .map((c) => c.id);
 
-    if (authUser.role === 'STUDENT' || authUser.role === 'TA') {
+    if (authUser.role === 'STUDENT' || authUser.role === 'TA' || authUser.role === 'INSTRUCTOR') {
       // Unified contract: the mirror is a throttled fire-and-forget side
       // effect (shared runCoreMirror) — the list response never waits on it.
       // It fetches its own cookie-scoped list internally (authorization
-      // context / callerEnrollmentRole); a fresh Core enrollment shows up on
-      // the caller's next request, same trade-off as QM's list mirror.
+      // context / callerEnrollmentRole); a fresh Core enrollment (or a newly
+      // assigned instructor course) shows up on the caller's next request,
+      // same trade-off as QM's list mirror.
       runCoreMirror(authUser, cookie);
     }
 
-    if (authUser.role === 'ADMIN') {
+    // #1208: role → visibility lives in services/courseAccess.js so this
+    // endpoint and GET /courses/facets cannot disagree about what the caller
+    // may see. A facet value the list can never return would offer the user a
+    // filter that always yields nothing.
+    const access = await resolveCourseAccess(authUser, { catalogCourses, publishedCoreIds });
+
+    if (access.kind === 'admin') {
       // Platform admins see Core's full course catalog (#1074), not just
       // whatever happened to already have a local anchor row — the old
       // enrollment-driven mirror never ran for admins (no enrollments of
@@ -236,161 +293,182 @@ router.get('/courses', async (req, res) => {
       if (!coreUnavailable && catalogCourses.length > 0) {
         await ensureOfferingAnchors(catalogCourses.map((c) => c.id));
       }
-      const [total, courses] = await prisma.$transaction([
-        prisma.courseOffering.count(),
-        prisma.courseOffering.findMany({
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: pageParams.skip,
-          take: pageParams.take,
-        }),
-      ]);
-      res.json(paginated(courses.map(withCore), total, pageParams));
-    } else if (authUser.role === 'INSTRUCTOR') {
-      // Unified contract: throttled fire-and-forget mirror (see STUDENT/TA
-      // branch note above) — a course newly assigned in Core appears on the
-      // instructor's next request rather than blocking this one.
-      runCoreMirror(authUser, cookie);
-
-      const instructorWhere = { instructors: { some: { userId: authUser.id } } };
-      const [total, courses] = await prisma.$transaction([
-        prisma.courseOffering.count({ where: instructorWhere }),
-        prisma.courseOffering.findMany({
-          where: instructorWhere,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: pageParams.skip,
-          take: pageParams.take,
-        }),
-      ]);
-      res.json(paginated(courses.map(withCore), total, pageParams));
-    } else if (authUser.role === 'UNIT_ADMIN') {
-      // UNIT_ADMINs see every course in their authorized units (regardless of
-      // publish state), plus any course they personally lead — so the courses
-      // they create or import are always visible even before a department is set.
-      // `department` is Core-owned (#1072 step 4): join the already-fetched
-      // service-key catalog batch (never a per-course Core call) to find which
-      // `coreOfferingId`s fall in the caller's units, then scope the local
-      // query on that id set unioned with instructor membership. Fail-soft:
-      // on `coreUnavailable` the department set is empty, so the branch
-      // degrades to "courses I personally lead" rather than erroring.
-      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
-      const deptCoreIds = units.length > 0
-        ? catalogCourses.filter((c) => c?.department && units.includes(c.department)).map((c) => c.id)
-        : [];
-      const unitAdminWhere = {
-        OR: [
-          ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
-          { instructors: { some: { userId: authUser.id } } },
-        ],
-      };
-      const [total, courses] = await prisma.$transaction([
-        prisma.courseOffering.count({ where: unitAdminWhere }),
-        prisma.courseOffering.findMany({
-          where: unitAdminWhere,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: pageParams.skip,
-          take: pageParams.take,
-        }),
-      ]);
-      res.json(paginated(courses.map(withCore), total, pageParams));
-    } else if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
-      // TAs see all TA-enrolled courses regardless of publish state (no progress),
-      // plus published student-enrolled courses (with progress). The publish
-      // gate reads through Core (#819) rather than the possibly-stale local
-      // column, same as the STUDENT branch below.
-      const allEnrollments = await prisma.courseEnrollment.findMany({
-        where: { userId: authUser.id },
-        select: { courseOfferingId: true, role: true },
-      });
-      const taOfferingIds = allEnrollments
-        .filter((e) => e.role === 'TA')
-        .map((e) => e.courseOfferingId);
-      const studentOfferingIds = allEnrollments
-        .filter((e) => e.role === 'STUDENT')
-        .map((e) => e.courseOfferingId);
-      const taOfferingIdSet = new Set(taOfferingIds);
-
-      // #1043: TA-enrolled courses (any publish state, no progress) UNION
-      // student-enrolled *published* courses (with progress) — collapsed into
-      // one query so the page and `total` are honest across the join. The
-      // published gate rides in the SQL `where` (publishedCoreIds), and progress
-      // is attached only to the student-role rows on the returned page. TA
-      // enrollment wins when a course is held under both roles.
-      const taUnionWhere = {
-        OR: [
-          ...(taOfferingIds.length > 0 ? [{ id: { in: taOfferingIds } }] : []),
-          ...(studentOfferingIds.length > 0
-            ? [{ id: { in: studentOfferingIds }, coreOfferingId: { in: publishedCoreIds } }]
-            : []),
-        ],
-      };
-
-      if (taUnionWhere.OR.length === 0) {
-        return res.json(paginated([], 0, pageParams));
-      }
-
-      const [total, courses] = await prisma.$transaction([
-        prisma.courseOffering.count({ where: taUnionWhere }),
-        prisma.courseOffering.findMany({
-          where: taUnionWhere,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: pageParams.skip,
-          take: pageParams.take,
-        }),
-      ]);
-
-      const rows = await Promise.all(
-        courses.map(async (course) => {
-          if (taOfferingIdSet.has(course.id)) {
-            return withCore(course);
-          }
-          const progress = await calculateCourseProgress(course.id, authUser.id);
-          return { ...withCore(course), progress: mapProgressData(progress) };
-        }),
-      );
-
-      res.json(paginated(rows, total, pageParams));
-    } else {
-      // Students only see published courses they're enrolled in (with
-      // progress). The publish gate reads through Core (#819) rather than
-      // the possibly-stale local column — a course published in Core but not
-      // yet reconciled locally must still appear here.
-      // #1082 stays fixed by construction: the catalog contains every
-      // non-deleted Core course, so an AT-only enrollment (no matching Core
-      // enrollment) still resolves its fields and publish state here.
-      // #1043: the `.filter(isCorePublished)` post-query gate is now the
-      // `coreOfferingId in publishedCoreIds` SQL predicate, so skip/take and
-      // `total` are honest.
-      const studentWhere = {
-        enrollments: { some: { userId: authUser.id } },
-        coreOfferingId: { in: publishedCoreIds },
-      };
-      const [total, courses] = await prisma.$transaction([
-        prisma.courseOffering.count({ where: studentWhere }),
-        prisma.courseOffering.findMany({
-          where: studentWhere,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: pageParams.skip,
-          take: pageParams.take,
-        }),
-      ]);
-
-      // Calculate progress for each course on the page
-      const coursesWithProgress = await Promise.all(
-        courses.map(async (course) => {
-          const progress = await calculateCourseProgress(course.id, authUser.id);
-          return {
-            ...withCore(course),
-            progress: mapProgressData(progress),
-          };
-        }),
-      );
-
-      res.json(paginated(coursesWithProgress, total, pageParams));
     }
+
+    // The caller holds no enrollments at all — no query can return anything.
+    if (access.isEmpty) {
+      return res.json(paginated([], 0, pageParams));
+    }
+
+    // #1208: catalog-side dimensions collapse to one id-set predicate, AND-ed
+    // onto the role `where` so a filter can only ever narrow, never widen.
+    const facetWhere = coreFacetWhere(catalogCourses, { search, terms, statuses });
+
+    // #1208: `progress` is local, so it needs the caller's whole accessible set
+    // bucketed before paging. Narrow by the catalog filters first so the batch
+    // runs over as few courses as possible, and skip it entirely for roles whose
+    // rows carry no progress (a stray param on a bookmarked URL is ignored, not
+    // a 400 — see the docblock).
+    let progressWhere = null;
+    if (progressBuckets.length > 0 && access.hasProgress) {
+      const candidates = await prisma.courseOffering.findMany({
+        where: andWhere([access.where, facetWhere]),
+        select: { id: true },
+      });
+      // In the TA union, TA-held courses are returned without progress, so they
+      // belong to no bucket and any progress filter excludes them.
+      const scopedIds = candidates
+        .map((c) => c.id)
+        .filter((id) => access.kind !== 'taUnion' || !access.taOfferingIdSet.has(id));
+      const bucketed = await calculateCourseProgressBatch(scopedIds, authUser.id);
+      progressWhere = {
+        id: {
+          in: scopedIds.filter((id) => progressBuckets.includes(progressBucket(bucketed.get(id)))),
+        },
+      };
+    }
+
+    const listWhere = andWhere([access.where, facetWhere, progressWhere]);
+
+    const [total, courses] = await prisma.$transaction([
+      prisma.courseOffering.count({ where: listWhere }),
+      prisma.courseOffering.findMany({
+        where: listWhere,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: pageParams.skip,
+        take: pageParams.take,
+      }),
+    ]);
+
+    // Progress is attached only to rows the caller holds as a STUDENT: the
+    // instructor/admin shapes carry none (keeps their dashboard fast), and in
+    // the TA union a course held under both roles resolves to the TA shape.
+    // #1208: one batched call for the whole page — this used to be a
+    // per-course `calculateCourseProgress` await (2 queries each).
+    const progressIds = courses
+      .filter((course) => access.kind === 'student'
+        || (access.kind === 'taUnion' && !access.taOfferingIdSet.has(course.id)))
+      .map((course) => course.id);
+    const progressById = await calculateCourseProgressBatch(progressIds, authUser.id);
+
+    const rows = courses.map((course) => {
+      const progress = progressById.get(course.id);
+      if (!progress) return withCore(course);
+      return { ...withCore(course), progress: mapProgressData(progress) };
+    });
+
+    res.json(paginated(rows, total, pageParams));
   } catch (e) {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /courses/facets — filter options for the course list (#1208).
+ *
+ * Auth: any supported course role.
+ * Returns: `{ terms: string[], statuses: string[], progress: string[] }` — raw
+ *   filter values (`"W1::2026"`, `"published"`, `"not-started"`); the client
+ *   labels them, see below.
+ *
+ * Why a sibling endpoint rather than a `facets` key on the list response: the
+ * `{ data, total, page, pageSize }` envelope is the shared pagination contract
+ * (#1043, mirroring Core's #1041) and widening it would ripple into every other
+ * paged reader. Facets also change rarely, so the client fetches them once per
+ * mount instead of on every keystroke.
+ *
+ * Why it exists at all: dropdown options used to be derived from the loaded page,
+ * so a term that only appears on page 3 was never offered as a filter — the same
+ * class of silent truncation #1208 fixes for search. Options must therefore come
+ * from the caller's WHOLE accessible set, which is why this selects ids only (no
+ * skip/take) and reuses `resolveCourseAccess` — the list and the facets cannot be
+ * allowed to disagree about visibility.
+ *
+ * Gotchas:
+ *   - Fail-soft, never a hard error: when Core is unavailable the catalog is
+ *     empty, so terms/statuses come back empty with `X-Core-Status: unavailable`.
+ *     That state is ALSO returned in the body as `coreUnavailable`, because the
+ *     header is consumed by the client's `http()` wrapper and never reaches the
+ *     route — which left a fail-closed search rendering "No courses match".
+ *   - `progress` is offered only to callers whose rows carry progress, and only
+ *     for buckets actually reachable. The fixed list was cheaper, but it offered
+ *     filters that always yield nothing: `progressBucket` returns null for a
+ *     course with no published activities, and `?progress=` excludes those from
+ *     every bucket, so a student whose courses are all unpublished-inside got
+ *     three options that each emptied their list.
+ */
+router.get('/courses/facets', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!isSupportedCourseRole(authUser.role)) {
+    return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
+  }
+
+  try {
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+    const publishedCoreIds = catalogCourses
+      .filter((c) => c?.isPublished === true)
+      .map((c) => c.id);
+
+    const access = await resolveCourseAccess(authUser, { catalogCourses, publishedCoreIds });
+
+    // ADMIN sees the whole catalog, so skip the id query entirely. Everyone else
+    // is scoped to the Core courses behind the offerings they can actually see.
+    let scopedCatalog = catalogCourses;
+    let scopedOfferingIds = null;
+    if (access.kind !== 'admin') {
+      if (access.isEmpty) {
+        scopedCatalog = [];
+        scopedOfferingIds = [];
+      } else {
+        const visible = await prisma.courseOffering.findMany({
+          where: access.where,
+          select: { id: true, coreOfferingId: true },
+        });
+        const visibleCoreIds = new Set(visible.map((o) => o.coreOfferingId).filter(Boolean));
+        scopedCatalog = catalogCourses.filter((c) => visibleCoreIds.has(c?.id));
+        scopedOfferingIds = visible.map((o) => o.id);
+      }
+    }
+
+    // Only offer buckets the list can actually return. This mirrors exactly what
+    // `GET /courses` does when `?progress=` is supplied (same batch, same
+    // `progressBucket`), so the dropdown and the filter can't disagree. In the TA
+    // union, TA-held courses carry no progress and belong to no bucket, matching
+    // the list's own exclusion.
+    let progress = [];
+    if (access.hasProgress) {
+      if (scopedOfferingIds === null) {
+        // ADMIN: no per-offering scoping ran, and admins hold no progress rows of
+        // their own, so there is nothing to enumerate.
+        progress = [];
+      } else {
+        const ids = scopedOfferingIds.filter(
+          (id) => access.kind !== 'taUnion' || !access.taOfferingIdSet.has(id),
+        );
+        const bucketed = await calculateCourseProgressBatch(ids, authUser.id);
+        const present = new Set(ids.map((id) => progressBucket(bucketed.get(id))));
+        progress = COURSE_PROGRESS_VALUES.filter((v) => present.has(v));
+      }
+    }
+
+    // Values only, no labels: the client already owns the UBC term vocabulary
+    // (`termLabel`) and uses it for the list's section headings. Labelling here
+    // too would duplicate that logic and let the dropdown drift from the headings.
+    const { terms, statuses } = coreFacets(scopedCatalog);
+    res.json({
+      terms,
+      statuses,
+      progress,
+      coreUnavailable,
+    });
+  } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
@@ -1329,9 +1407,13 @@ router.get('/me/dashboard-stats', async (req, res) => {
         : [];
     const courses = rawCourses.filter(isCorePublished);
 
-    const progresses = await Promise.all(
-      courses.map((c) => calculateCourseProgress(c.id, authUser.id)),
+    // #1208: one batched call across every enrolled course — this was a
+    // per-course `calculateCourseProgress` fan-out (2 queries each).
+    const progressById = await calculateCourseProgressBatch(
+      courses.map((c) => c.id),
+      authUser.id,
     );
+    const progresses = [...progressById.values()];
     const completedCourses = progresses.filter((p) => p.total > 0 && p.completed === p.total).length;
     const inProgressCourses = progresses.filter(
       (p) => p.total > 0 && p.completed > 0 && p.completed < p.total,
