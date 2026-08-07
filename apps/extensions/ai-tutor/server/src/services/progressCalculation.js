@@ -8,6 +8,16 @@ import { prisma } from '../config/database.js';
 const EMPTY_PROGRESS = { completed: 0, total: 0, percentage: 0 };
 
 /**
+ * Prisma `where` fragment for "activity's lesson AND that lesson's module are
+ * both published" — the denominator predicate for course/module/lesson
+ * progress. Centralized so the three `findMany` calls below can't drift apart
+ * the way they did before #1187. The raw SQL in `calculateCourseProgressBatch`
+ * can't spread this (it's a different query engine) — if you change this
+ * fragment, update that JOIN's ON clauses too.
+ */
+const PUBLISHED_LESSON_WHERE = { isPublished: true, module: { isPublished: true } };
+
+/**
  * Bucket a progress record the way the course-list Progress filter does.
  *
  * Why here: `PROGRESS_FILTER` in `app/routes/student.tsx` is the definition of
@@ -58,6 +68,8 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
 
     // Published activities per course. COUNT(*)::int keeps this a JS number —
     // an un-cast COUNT comes back as BigInt and breaks the arithmetic below.
+    // The two `AND ... "isPublished" = true` clauses are PUBLISHED_LESSON_WHERE's
+    // predicate, hand-written for raw SQL — keep them in sync with that fragment.
     const totals = await prisma.$queryRaw`
       SELECT m."courseOfferingId" AS "courseId", COUNT(*)::int AS "count"
       FROM "Activity" a
@@ -120,11 +132,8 @@ export async function calculateCourseProgress(courseId, userId) {
     const activities = await prisma.activity.findMany({
       where: {
         lesson: {
-          isPublished: true,
-          module: {
-            isPublished: true,
-            courseOfferingId: courseId,
-          },
+          ...PUBLISHED_LESSON_WHERE,
+          module: { ...PUBLISHED_LESSON_WHERE.module, courseOfferingId: courseId },
         },
       },
       select: { id: true },
@@ -166,11 +175,7 @@ export async function calculateModuleProgress(moduleId, userId) {
     // Find all published activity IDs in this module
     const activities = await prisma.activity.findMany({
       where: {
-        lesson: {
-          isPublished: true,
-          moduleId,
-          module: { isPublished: true },
-        },
+        lesson: { ...PUBLISHED_LESSON_WHERE, moduleId },
       },
       select: { id: true },
     });
@@ -213,7 +218,7 @@ export async function calculateLessonProgress(lessonId, userId) {
     const activities = await prisma.activity.findMany({
       where: {
         lessonId,
-        lesson: { isPublished: true, module: { isPublished: true } },
+        lesson: PUBLISHED_LESSON_WHERE,
       },
       select: { id: true },
     });
@@ -245,8 +250,8 @@ export async function calculateLessonProgress(lessonId, userId) {
  *
  * Completion is sticky (#1187): an activity is 'correct' if ANY submission
  * was ever correct, even if a later attempt was wrong. This matches
- * calculateDifficulty's counterpart in countCompletedActivities below and
- * the platform's mental model of progress as monotonically non-decreasing.
+ * countCompletedActivities's counterpart below and the platform's mental
+ * model of progress as monotonically non-decreasing.
  */
 export async function getActivityCompletionStatuses(activityIds, userId) {
   if (!activityIds || activityIds.length === 0 || !userId) {
