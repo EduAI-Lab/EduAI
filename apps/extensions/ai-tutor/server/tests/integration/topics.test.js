@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import {
@@ -31,6 +31,14 @@ describe('Topics routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     app = await createApp({ mockUser: prof });
+  });
+
+  // The `prisma` spies below are restored inline, which never runs if the
+  // assertions before it throw — the spy would then leak into every later test
+  // in the file and bury the real failure. There's no `restoreMocks` in
+  // vitest.integration.config.js, so restore here.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   // ── GET /api/courses/:courseId/topics ──────────────────────────────
@@ -336,6 +344,76 @@ describe('Topics routes', () => {
         where: { activityId: activity.id },
       });
       expect(secondaries.map((s) => s.topicId)).toEqual([topicC.id]);
+    });
+
+    it('fans two sources into one target the activity does not already carry', async () => {
+      const topicC = await prisma.topic.create({
+        data: { name: 'Topic C', courseOfferingId: seed.course.id },
+      });
+      // Same fan-in as above, but C is NOT already a secondary. Both pairs read
+      // the same pre-loop snapshot, which says "(activity, C) is missing", so
+      // both queue that row — the dedupe plus `skipDuplicates` is the only
+      // thing standing between this and a composite-PK violation that rolls
+      // the whole batch back.
+      await prisma.activity.update({
+        where: { id: activity.id },
+        data: { mainTopicId: topicC.id },
+      });
+      await prisma.activitySecondaryTopic.createMany({
+        data: [
+          { activityId: activity.id, topicId: topicA.id },
+          { activityId: activity.id, topicId: topicB.id },
+        ],
+      });
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/remap`)
+        .send({
+          mappings: [
+            { fromTopicId: topicA.id, toTopicId: topicC.id },
+            { fromTopicId: topicB.id, toTopicId: topicC.id },
+          ],
+        });
+
+      expect(res.status).toBe(200);
+      const secondaries = await prisma.activitySecondaryTopic.findMany({
+        where: { activityId: activity.id },
+      });
+      expect(secondaries.map((s) => s.topicId)).toEqual([topicC.id]);
+      const survivors = await prisma.topic.findMany({
+        where: { id: { in: [topicA.id, topicB.id] } },
+      });
+      expect(survivors).toEqual([]);
+    });
+
+    it('leaves a source topic in place when an activity outside the course still points at it', async () => {
+      // The delete is best-effort: a topic still referenced as a main topic is
+      // skipped rather than failing the request. Pinning it here because the
+      // guard moved from a caught FK error to a `mainActivities: { none: {} }`
+      // filter — a caught error would leave the transaction aborted.
+      const topicC = await prisma.topic.create({
+        data: { name: 'Topic C', courseOfferingId: seed.course.id },
+      });
+      const otherSeed = await seedMinimalCourse(prof.id);
+      await prisma.activity.create({
+        data: {
+          lessonId: otherSeed.lesson.id,
+          mainTopicId: topicA.id,
+          instructionsMd: 'Elsewhere',
+          config: { question: 'Q?', questionType: 'MCQ' },
+        },
+      });
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/remap`)
+        .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: topicC.id }] });
+
+      expect(res.status).toBe(200);
+      // In-course activity moved; the out-of-course reference keeps A alive.
+      const moved = await prisma.activity.findUnique({ where: { id: activity.id } });
+      expect(moved.mainTopicId).toBe(topicC.id);
+      const stillThere = await prisma.topic.findUnique({ where: { id: topicA.id } });
+      expect(stillThere).not.toBeNull();
     });
 
     it('creates the target relation when the activity does not already carry it', async () => {
