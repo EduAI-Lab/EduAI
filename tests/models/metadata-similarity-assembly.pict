@@ -1,0 +1,21 @@
+# S9 — metadata-similarity-assembly (QM), census docs/PICT_CENSUS.md § S9.
+# See tests/models/metadata-similarity-assembly.oracle.ts for the oracle spec.
+#
+# `findBestBankMetadataForSlot` (assessmentVariantService.js:404) picks the
+# best-scoring bank question via `scoreMetadataMatch`
+# (assessmentVariantMetadataScoring.js): topic +100 / type +50 / difficulty
+# +25 / reasoning +10, against a 75 cutoff (`MIN_METADATA_SCORE`, :399).
+# `HasFallback` is deliberately constrained to only matter when `AlreadyUsed`
+# is "yes": a fallback candidate coexisting with an available primary would
+# just make the "which one wins" comparison ambiguous on a score tie without
+# adding real model value, so this model keeps the fallback scoped to its
+# actual purpose — rescuing a slot when the best candidate was already
+# consumed by an earlier slot in the same exam.
+TopicMatch:      yes, no
+TypeMatch:       yes, no
+DifficultyMatch: yes, no
+ReasoningMatch:  yes, no
+AlreadyUsed:     yes, no
+HasFallback:     yes, no
+
+IF [AlreadyUsed] = "no" THEN [HasFallback] = "no";
