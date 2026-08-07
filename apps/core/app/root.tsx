@@ -148,20 +148,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const isExempt =
     url.pathname.startsWith("/settings") ||
     url.pathname.startsWith("/auth/");
-  if (!isExempt) {
-    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
-    if (expiredRedirect) return expiredRedirect;
-  }
-
-  const row = await prisma.userPreference.findUnique({
-    where: { userId: session.user.id },
-    select: {
-      assistDefault: true,
-      motionReduced: true,
-      density: true,
-      theme: true,
-    },
-  });
+  // #1369: both awaits depend only on `session.user.id`, so run them together instead of
+  // serializing the preference lookup behind the expiry check on every authenticated
+  // render. The redirect still short-circuits below; the cost is one wasted (primary-key
+  // indexed) preference read in the rare expired case, against a saved round-trip on the
+  // common one. `isPasswordExpiredForUser` is also memoized for 60s per process, so most
+  // renders never reach the account query at all.
+  const [expiredRedirect, row] = await Promise.all([
+    isExempt ? Promise.resolve(null) : getExpiredPasswordRedirect(session.user.id),
+    prisma.userPreference.findUnique({
+      where: { userId: session.user.id },
+      select: {
+        assistDefault: true,
+        motionReduced: true,
+        density: true,
+        theme: true,
+      },
+    }),
+  ]);
+  if (expiredRedirect) return expiredRedirect;
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
