@@ -48,6 +48,68 @@ import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from
 
 const router = express.Router();
 
+/**
+ * Pre-load the `ActivitySecondaryTopic` rows a whole remap request needs, so
+ * the per-pair loop reads from memory instead of issuing two queries per pair
+ * (#1372).
+ *
+ * Only sound when the pairs don't observe each other's writes:
+ *   - a source topic repeated across pairs (`A→B`, `A→C`) means the second
+ *     pair must see rows the first already deleted;
+ *   - a chain (`A→B`, `B→C`) means the second pair must see rows the first
+ *     just created on B.
+ * A snapshot taken before the loop is stale in both cases, so those requests
+ * fall back to the original per-pair reads. Fan-in (`A→C`, `B→C`) is fine:
+ * the target rows one pair adds are only ever re-added by another, and
+ * `createMany({ skipDuplicates })` absorbs that against the
+ * `@@id([activityId, topicId])` primary key.
+ *
+ * Returns `null` when batching is unsafe.
+ */
+async function preloadSecondaryTopics(tx, courseId, normalized) {
+  const fromTopicIds = normalized.map((m) => m.fromTopicId);
+  const toTopicIds = new Set(normalized.map((m) => m.toTopicId));
+  const independent =
+    new Set(fromTopicIds).size === fromTopicIds.length &&
+    !fromTopicIds.some((id) => toTopicIds.has(id));
+  if (!independent) {
+    return null;
+  }
+
+  const sourceRows = await tx.activitySecondaryTopic.findMany({
+    where: {
+      topicId: { in: fromTopicIds },
+      activity: { lesson: { module: { courseOfferingId: courseId } } },
+    },
+    select: { activityId: true, topicId: true },
+  });
+
+  const sourceByTopic = new Map();
+  const allActivityIds = new Set();
+  for (const row of sourceRows) {
+    if (!sourceByTopic.has(row.topicId)) sourceByTopic.set(row.topicId, new Set());
+    sourceByTopic.get(row.topicId).add(row.activityId);
+    allActivityIds.add(row.activityId);
+  }
+
+  const targetByTopic = new Map();
+  if (allActivityIds.size > 0) {
+    const targetRows = await tx.activitySecondaryTopic.findMany({
+      where: {
+        topicId: { in: Array.from(toTopicIds) },
+        activityId: { in: Array.from(allActivityIds) },
+      },
+      select: { activityId: true, topicId: true },
+    });
+    for (const row of targetRows) {
+      if (!targetByTopic.has(row.topicId)) targetByTopic.set(row.topicId, new Set());
+      targetByTopic.get(row.topicId).add(row.activityId);
+    }
+  }
+
+  return { sourceByTopic, targetByTopic };
+}
+
 async function ensureCourseAccess(courseId, user) {
   const userId = user?.id;
   const course = await prisma.courseOffering.findUnique({
@@ -283,6 +345,15 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
  * call. Since GET .../topics now auto-syncs (#1031) and there's no UI path
  * to `missingTopics` anymore, drifted local topics otherwise pile up
  * silently — this is the only remaining way to clean them up.
+ *
+ * Query cost (#1372): `mappings` length is caller-controlled and the whole
+ * batch runs in one transaction holding row locks, so per-pair reads were the
+ * expensive part. Topic resolution is now a single `findMany` for the entire
+ * request, and the `ActivitySecondaryTopic` reads are hoisted too whenever the
+ * pairs are independent (see `preloadSecondaryTopics`) — roughly 8N queries
+ * down to 3 + 4N. The writes stay per-pair: they target distinct topics with
+ * distinct data, and the best-effort `topic.delete` has no `deleteMany` form
+ * that preserves "skip the ones still referenced".
  */
 router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
@@ -316,16 +387,34 @@ router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_
     }
 
     await prisma.$transaction(async (tx) => {
+      // Every topic id is known before the loop starts, so resolve them in one
+      // read instead of two `findUnique` calls per pair (#1372). Scoping the
+      // query to `courseOfferingId` collapses "no such topic" and "belongs to
+      // another course" into a single set — the per-pair checks below already
+      // treated those two states identically.
+      const allTopicIds = Array.from(
+        new Set(normalized.flatMap((m) => [m.fromTopicId, m.toTopicId])),
+      );
+      const ownedTopics = await tx.topic.findMany({
+        where: { id: { in: allTopicIds }, courseOfferingId: courseId },
+        select: { id: true },
+      });
+      const ownedTopicIds = new Set(ownedTopics.map((t) => t.id));
+
+      // Each iteration deletes its own `fromTopicId`, so a later pair naming a
+      // consumed topic has to keep failing the ownership check the way the
+      // per-pair `findUnique` made it. Track the deletes instead of re-reading.
+      const deletedTopicIds = new Set();
+      const isUsable = (id) => ownedTopicIds.has(id) && !deletedTopicIds.has(id);
+
+      const preloaded = await preloadSecondaryTopics(tx, courseId, normalized);
+
       for (const { fromTopicId, toTopicId } of normalized) {
         // Validate topics belong to this course
-        const [fromTopic, toTopic] = await Promise.all([
-          tx.topic.findUnique({ where: { id: fromTopicId } }),
-          tx.topic.findUnique({ where: { id: toTopicId } }),
-        ]);
-        if (!fromTopic || fromTopic.courseOfferingId !== courseId) {
+        if (!isUsable(fromTopicId)) {
           throw new Error('fromTopicId does not belong to this course');
         }
-        if (!toTopic || toTopic.courseOfferingId !== courseId) {
+        if (!isUsable(toTopicId)) {
           throw new Error('toTopicId does not belong to this course');
         }
 
@@ -339,22 +428,32 @@ router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_
         });
 
         // Reassign secondary topics: create missing target relations, then delete old relations
-        const secondary = await tx.activitySecondaryTopic.findMany({
-          where: {
-            topicId: fromTopicId,
-            activity: { lesson: { module: { courseOfferingId: courseId } } },
-          },
-          select: { activityId: true },
-        });
-        const activityIds = Array.from(new Set(secondary.map((s) => s.activityId)));
+        let activityIds;
+        if (preloaded) {
+          activityIds = Array.from(preloaded.sourceByTopic.get(fromTopicId) ?? []);
+        } else {
+          const secondary = await tx.activitySecondaryTopic.findMany({
+            where: {
+              topicId: fromTopicId,
+              activity: { lesson: { module: { courseOfferingId: courseId } } },
+            },
+            select: { activityId: true },
+          });
+          activityIds = Array.from(new Set(secondary.map((s) => s.activityId)));
+        }
 
         if (activityIds.length > 0) {
           // Create missing target relations
-          const existingTarget = await tx.activitySecondaryTopic.findMany({
-            where: { topicId: toTopicId, activityId: { in: activityIds } },
-            select: { activityId: true },
-          });
-          const have = new Set(existingTarget.map((e) => e.activityId));
+          let have;
+          if (preloaded) {
+            have = preloaded.targetByTopic.get(toTopicId) ?? new Set();
+          } else {
+            const existingTarget = await tx.activitySecondaryTopic.findMany({
+              where: { topicId: toTopicId, activityId: { in: activityIds } },
+              select: { activityId: true },
+            });
+            have = new Set(existingTarget.map((e) => e.activityId));
+          }
           const toCreate = activityIds.filter((id) => !have.has(id));
           if (toCreate.length > 0) {
             await tx.activitySecondaryTopic.createMany({
@@ -372,6 +471,7 @@ router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_
         // Attempt to delete the old topic now that it’s unused
         try {
           await tx.topic.delete({ where: { id: fromTopicId } });
+          deletedTopicIds.add(fromTopicId);
         } catch (_) {
           // If still referenced somehow, leave it.
         }
