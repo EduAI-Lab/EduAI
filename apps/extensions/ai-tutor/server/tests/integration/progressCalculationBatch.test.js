@@ -92,16 +92,16 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(b.course.id)).toEqual({ completed: 0, total: 2, percentage: 0 });
   });
 
-  it('counts the LATEST attempt, so a later wrong answer un-completes an activity', async () => {
+  it('is sticky (#1187): a later wrong answer does not un-complete an activity', async () => {
     const a1 = await createActivity(a);
     await submit(a1.id, studentId, 1, true);
     await submit(a1.id, studentId, 2, false);
 
     const batch = await expectAgreement([a.course.id], studentId);
-    expect(batch.get(a.course.id)).toEqual({ completed: 0, total: 1, percentage: 0 });
+    expect(batch.get(a.course.id)).toEqual({ completed: 1, total: 1, percentage: 100 });
   });
 
-  it('counts the LATEST attempt, so a later correct answer completes an activity', async () => {
+  it('counts a later correct answer, so it completes an activity', async () => {
     const a1 = await createActivity(a);
     await submit(a1.id, studentId, 1, false);
     await submit(a1.id, studentId, 2, true);

@@ -38,8 +38,9 @@ export function progressBucket(progress) {
  * Semantics are identical to `calculateCourseProgress`, which the unit tests
  * assert directly against this function on shared fixtures:
  *   total     = activities in published lessons in published modules
- *   completed = of those, the ones whose LATEST submission (highest
- *               attemptNumber) by this user is `isCorrect = true`
+ *   completed = of those, the ones with ANY submission by this user ever
+ *               `isCorrect = true` (sticky — #1187 — a later wrong
+ *               re-attempt does not undo completion)
  *   total 0   → { completed: 0, total: 0, percentage: 0 }
  *
  * @param {number[]} courseIds CourseOffering ids.
@@ -66,12 +67,10 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
       GROUP BY m."courseOfferingId"
     `;
 
-    // Of those, the ones whose latest attempt is correct. DISTINCT ON collapses
-    // to one row per activity, ordered by attemptNumber DESC — the set-based
-    // equivalent of the "first row wins after ordering" loop in
-    // `countCompletedActivities`. The trailing `s.id DESC` only breaks ties
-    // between two submissions sharing an attemptNumber, making the result
-    // deterministic where the row-by-row version was arbitrary.
+    // Of those, the ones with ANY submission by this user ever correct —
+    // sticky (#1187), the set-based equivalent of `countCompletedActivities`'s
+    // `distinct: ['activityId']` over `isCorrect: true` submissions. A later
+    // incorrect re-attempt must not undo completion.
     const completed = await prisma.$queryRaw`
       WITH scoped AS (
         SELECT a.id AS "activityId", m."courseOfferingId" AS "courseId"
@@ -79,18 +78,12 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
         JOIN "Lesson" l ON l.id = a."lessonId" AND l."isPublished" = true
         JOIN "Module" m ON m.id = l."moduleId" AND m."isPublished" = true
         WHERE m."courseOfferingId" IN (${idList})
-      ),
-      latest AS (
-        SELECT DISTINCT ON (s."activityId") s."activityId", s."isCorrect"
-        FROM "Submission" s
-        JOIN scoped ON scoped."activityId" = s."activityId"
-        WHERE s."userId" = ${userId}
-        ORDER BY s."activityId", s."attemptNumber" DESC, s.id DESC
       )
-      SELECT scoped."courseId" AS "courseId", COUNT(*)::int AS "count"
-      FROM latest
-      JOIN scoped ON scoped."activityId" = latest."activityId"
-      WHERE latest."isCorrect" = true
+      SELECT scoped."courseId" AS "courseId", COUNT(DISTINCT scoped."activityId")::int AS "count"
+      FROM scoped
+      JOIN "Submission" s ON s."activityId" = scoped."activityId"
+        AND s."userId" = ${userId}
+        AND s."isCorrect" = true
       GROUP BY scoped."courseId"
     `;
 
