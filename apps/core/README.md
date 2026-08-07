@@ -23,6 +23,7 @@ Core listens at **http://localhost:3000**. Do not treat this package as a standa
 - Chat + RAG (`POST /api/chat`), embeddings (pgvector), AI provider catalog
 - Policy registry (`GET /api/policies`) and admin tooling
 - Administrator-managed automatic routing: AI Management controls separate `Auto` (LLM-classified) and `Auto (rules)` (fixed-rule) modes. Both select only active tiered models on active providers, while explicit model selections remain unchanged.
+- ADHD Assist mode: toggling regenerates response **content**, not just styling — the policy (`app/lib/ai/adhd-assist.ts`) enforces a Top summary / Step ladder / Next? structure, and `app/lib/ai/adhd-oversight.ts` audits and rewrites (or forces deterministic fallback) any reply that doesn't comply
 - Service-key and session APIs consumed by extensions
 
 ## Essential environment
