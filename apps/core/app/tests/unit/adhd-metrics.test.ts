@@ -193,6 +193,19 @@ describe("hasStepLadderSection", () => {
   it("returns false for empty text", () => {
     expect(hasStepLadderSection("")).toBe(false);
   });
+
+  it("returns false when a numbered item sits above an empty Step ladder section (#1245)", () => {
+    // The numbered items here are in Top summary, not inside Step ladder —
+    // the heading is present but the section itself has no steps.
+    const text = `**Top summary**
+1. Rinse
+2. Wash
+
+### Step ladder
+
+**Next?** Want the next step?`;
+    expect(hasStepLadderSection(text)).toBe(false);
+  });
 });
 
 describe("resolveAdhdResponseWordCap", () => {
