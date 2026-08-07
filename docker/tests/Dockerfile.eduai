@@ -39,10 +39,13 @@ COPY apps/core/prisma            ./apps/core/prisma
 COPY apps/core/scripts           ./apps/core/scripts
 # Imported directly by the rapl-util unit test.
 COPY tools/energy-meter          ./tools/energy-meter
+# tests/models/*.cases.json + *.oracle.ts, imported by every PICT model's test file.
+COPY tests                       ./tests
 COPY apps/core/vitest.config.ts  ./apps/core/
 COPY apps/core/vitest.integration.config.ts ./apps/core/
 # Shared vitest options imported by both configs above.
 COPY apps/core/vitest.shared.ts  ./apps/core/
+COPY apps/core/vitest.ui-aliases.ts ./apps/core/
 COPY apps/core/vite.config.ts    ./apps/core/
 COPY apps/core/react-router.config.ts ./apps/core/
 COPY apps/core/tsconfig.json     ./apps/core/
