@@ -12,30 +12,52 @@ import { IconCircleCheck, IconArrowRight, IconEyeOff } from '@tabler/icons-react
 import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
 import type { Course } from '~/lib/types';
 import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
+import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
 
 type NeedsAttentionPanelProps = {
   courses: Course[];
   /** Base path for course drilldown links, e.g. "/instructor". */
   coursesBaseHref: string;
+  /**
+   * Full course count (#1208). `courses` is one bounded page, so when more exist
+   * the panel says so — a draft past the page bound would otherwise be invisible
+   * here with no hint that anything was left out.
+   */
+  total?: number;
 };
 
-export function NeedsAttentionPanel({ courses, coursesBaseHref }: NeedsAttentionPanelProps) {
+export function NeedsAttentionPanel({
+  courses,
+  coursesBaseHref,
+  total,
+}: NeedsAttentionPanelProps) {
   const navigate = useNavigate();
   const drafts = courses.filter((c) => !c.isPublished);
 
   if (drafts.length === 0) {
+    // "All caught up" is a strong claim to make from one bounded page — a draft
+    // sitting past the page bound would make it plainly wrong. Disclose here too.
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <IconCircleCheck size={20} aria-hidden="true" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">All caught up</p>
-            <p className="text-xs text-muted-foreground">Every course you can see is published.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <IconCircleCheck size={20} aria-hidden="true" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">All caught up</p>
+              <p className="text-xs text-muted-foreground">
+                Every course you can see is published.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <TruncatedListNotice
+          shown={courses.length}
+          total={total ?? courses.length}
+          action="search your courses to find the rest"
+        />
+      </div>
     );
   }
 
@@ -111,6 +133,12 @@ export function NeedsAttentionPanel({ courses, coursesBaseHref }: NeedsAttention
           </CardContent>
         </Card>
       )}
+
+      <TruncatedListNotice
+        shown={courses.length}
+        total={total ?? courses.length}
+        action="search your courses to find the rest"
+      />
     </div>
   );
 }

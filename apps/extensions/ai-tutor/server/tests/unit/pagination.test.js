@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   parsePaginationParams,
+  parseSearchParam,
+  parseFilterParam,
   paginated,
   PaginationError,
   MAX_PAGE_SIZE,
   MAX_PAGE,
+  MAX_SEARCH_LENGTH,
+  MAX_FILTER_VALUES,
 } from '../../src/utils/pagination.js';
 
 /** Minimal Express-request stub — only `query` is read by the helper. */
@@ -165,5 +169,113 @@ describe('paginated', () => {
       page: 1,
       pageSize: 25,
     });
+  });
+});
+
+describe('parseSearchParam', () => {
+  it('returns undefined when the param is absent', () => {
+    expect(parseSearchParam(reqWith({}))).toBeUndefined();
+  });
+
+  it('treats an empty or whitespace-only value as absent', () => {
+    expect(parseSearchParam(reqWith({ search: '' }))).toBeUndefined();
+    expect(parseSearchParam(reqWith({ search: '   ' }))).toBeUndefined();
+  });
+
+  it('trims the query', () => {
+    expect(parseSearchParam(reqWith({ search: '  cosc 111  ' }))).toBe('cosc 111');
+  });
+
+  it('preserves inner whitespace and case', () => {
+    expect(parseSearchParam(reqWith({ search: 'Intro To Computing' }))).toBe('Intro To Computing');
+  });
+
+  it('reads a custom param name', () => {
+    expect(parseSearchParam(reqWith({ q: 'algebra' }), { param: 'q' })).toBe('algebra');
+  });
+
+  it('throws SEARCH_INVALID when the param is repeated', () => {
+    try {
+      parseSearchParam(reqWith({ search: ['a', 'b'] }));
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('SEARCH_INVALID');
+      expect(e.status).toBe(400);
+    }
+  });
+
+  it('throws SEARCH_TOO_LONG past MAX_SEARCH_LENGTH', () => {
+    try {
+      parseSearchParam(reqWith({ search: 'x'.repeat(MAX_SEARCH_LENGTH + 1) }));
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('SEARCH_TOO_LONG');
+    }
+  });
+
+  it('accepts a query exactly at the limit', () => {
+    const atLimit = 'x'.repeat(MAX_SEARCH_LENGTH);
+    expect(parseSearchParam(reqWith({ search: atLimit }))).toBe(atLimit);
+  });
+});
+
+describe('parseFilterParam', () => {
+  it('returns an empty array when the param is absent', () => {
+    expect(parseFilterParam(reqWith({}), 'term')).toEqual([]);
+  });
+
+  it('wraps a single value', () => {
+    expect(parseFilterParam(reqWith({ term: 'W1::2026' }), 'term')).toEqual(['W1::2026']);
+  });
+
+  it('keeps every value of a repeated param', () => {
+    expect(parseFilterParam(reqWith({ term: ['W1::2026', 'W2::2025'] }), 'term')).toEqual([
+      'W1::2026',
+      'W2::2025',
+    ]);
+  });
+
+  it('de-dupes and drops blanks', () => {
+    expect(parseFilterParam(reqWith({ term: ['a', 'a', '', '  ', ' b '] }), 'term')).toEqual(['a', 'b']);
+  });
+
+  it('accepts values inside the allowed set', () => {
+    expect(
+      parseFilterParam(reqWith({ status: 'draft' }), 'status', { allowed: ['published', 'draft'] }),
+    ).toEqual(['draft']);
+  });
+
+  it('throws FILTER_INVALID on a value outside the allowed set', () => {
+    try {
+      parseFilterParam(reqWith({ status: 'bogus' }), 'status', { allowed: ['published', 'draft'] });
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('FILTER_INVALID');
+      expect(e.status).toBe(400);
+    }
+  });
+
+  it('throws FILTER_TOO_MANY past MAX_FILTER_VALUES', () => {
+    const many = Array.from({ length: MAX_FILTER_VALUES + 1 }, (_, i) => `v${i}`);
+    try {
+      parseFilterParam(reqWith({ term: many }), 'term');
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('FILTER_TOO_MANY');
+    }
+  });
+
+  it('throws FILTER_INVALID on a non-string value', () => {
+    try {
+      parseFilterParam(reqWith({ term: [{ nested: true }] }), 'term');
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('FILTER_INVALID');
+    }
   });
 });

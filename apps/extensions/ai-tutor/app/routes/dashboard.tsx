@@ -42,6 +42,8 @@ const SUPPORTED_ROLES: Role[] = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA', 'STU
 type DashboardLoaderData = {
   role: Role;
   courses: Course[];
+  /** Full course count (#1208) — `courses` is a bounded page, so panels disclose the gap. */
+  courseTotal: number;
   submissions: SubmissionRow[];
   adminUsers: AdminUserPage | null;
   adminBugReports: AdminBugReportRow[];
@@ -55,12 +57,14 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   const wantsSubmissions = user.role === 'STUDENT' || user.role === 'TA';
   const isAdmin = user.role === 'ADMIN';
 
-  const [courses, submissions, adminUsers, adminBugReports, dashboardStats] = await Promise.all([
+  const [coursePage, submissions, adminUsers, adminBugReports, dashboardStats] = await Promise.all([
     // #1043: /courses is paginated. Dashboards render a bounded page for the
     // Continue-Learning / Needs-Attention panels; every COUNT tile and donut
     // reads from `dashboardStats` (server-computed over the full set), not this
     // page's length — so the panels' bounded view never skews a stat.
-    api.listCourses().then((r) => r.data),
+    // #1208: keep `total` alongside the page so the panels can disclose that
+    // they're a bounded preview rather than silently implying completeness.
+    api.listCourses().then((r) => ({ data: r.data, total: r.total })),
     wantsSubmissions ? (api.mySubmissions() as Promise<SubmissionRow[]>) : Promise.resolve([]),
     // #1041: one page plus Core's platform-wide `stats`, instead of the whole
     // user table the role breakdown used to be computed from.
@@ -75,7 +79,8 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
 
   return {
     role: user.role,
-    courses,
+    courses: coursePage.data,
+    courseTotal: coursePage.total,
     submissions,
     adminUsers,
     adminBugReports,
@@ -116,7 +121,8 @@ function heroCopy(role: Role, firstName: string | null): { heading: string; subh
 
 export default function DashboardHome({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
-  const { role, courses, submissions, adminUsers, adminBugReports, dashboardStats } = loaderData;
+  const { role, courses, courseTotal, submissions, adminUsers, adminBugReports, dashboardStats } =
+    loaderData;
 
   useShellBreadcrumbs([{ label: 'Dashboard' }]);
 
@@ -128,6 +134,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
       content = (
         <DashboardAdminView
           courses={courses}
+          courseTotal={courseTotal}
           adminUsers={adminUsers}
           bugReports={adminBugReports}
           dashboardStats={dashboardStats}
@@ -135,14 +142,19 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
       );
       break;
     case 'UNIT_ADMIN':
-      content = <DashboardUnitAdminView courses={courses} dashboardStats={dashboardStats} />;
+      content = <DashboardUnitAdminView courses={courses} courseTotal={courseTotal} dashboardStats={dashboardStats} />;
       break;
     case 'INSTRUCTOR':
-      content = <DashboardInstructorView courses={courses} dashboardStats={dashboardStats} />;
+      content = <DashboardInstructorView courses={courses} courseTotal={courseTotal} dashboardStats={dashboardStats} />;
       break;
     case 'TA':
       content = (
-        <DashboardTaView courses={courses} submissions={submissions} dashboardStats={dashboardStats} />
+        <DashboardTaView
+          courses={courses}
+          courseTotal={courseTotal}
+          submissions={submissions}
+          dashboardStats={dashboardStats}
+        />
       );
       break;
     case 'STUDENT':
@@ -150,6 +162,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
       content = (
         <DashboardStudentView
           courses={courses}
+          courseTotal={courseTotal}
           submissions={submissions}
           dashboardStats={dashboardStats}
         />

@@ -236,9 +236,9 @@ oracle are single-sourced; only the world-builders differ.
 | Model | Dims | Location | Tier |
 |---|---|---|---|
 | `auto-router-model-selection` | 6 | `lib/ai/routing/router.ts:155-238,347-447` + `chat.ts:958` | **BUILD** |
-| `chat-entry-admission` | 6 | `lib/ai/chat.ts:470-790` | **BUILD** |
-| `chat-rag-inject-oracle` | 5 | `lib/ai/course-rag-policy.ts:39` + `chat.ts:1363` | **BUILD** |
-| `byok-vs-platform-key-resolution` | 5 | `chat.ts:1064-1177` + `lib/ai/provider-types.ts:75-110` | **BUILD** |
+| `chat-entry-admission` | 7 | `routes/api/chat.ts` admission (~462–788): auth × proxy × chatMode × publish × enrollment × course-id source × persisted-chat | **BUILD** |
+| `chat-rag-inject-oracle` | 5 | `lib/ai/course-rag-policy.ts:39` + `chat.ts` inject call site | **BUILD** |
+| `byok-vs-platform-key-resolution` | 6 | `provider-types.ts` mergeLocalInferenceFromEnv + `providers.ts` createAIProviderRegistry vLLM apiKey | **BUILD** |
 | `rag-retrieval-path-fork` | 4 | `lib/ai/embedding.ts:633-717` | DEFER |
 | `embedding-settings-validate` | 3–4 | `lib/ai/embedding-config.ts:168` | DEFER |
 | `fleet-host-selection` | 3–4 | `lib/ai/routing/fleet/resolve-fleet.ts:61-131` + `chat.ts:1023` | DEFER |
@@ -250,9 +250,12 @@ oracle are single-sourced; only the world-builders differ.
 Notes for the BUILD set: router mode is `rules / knn / hybrid / llm` with a mode override, and a
 classifier throw downgrades silently to `rules` — the oracle must pin that downgrade. Chat admission
 forks on service-key vs cookie auth, `proxyUser`, `chatMode=admin`, publish/enrollment state,
-`chatbotType` mismatch (410) and course-pin conflict (409). RAG injection is an information-exposure
-oracle (which course material enters the prompt), with similarity thresholds 0.8 / 0.55. BYOK
-resolution precedence is fleet > user > env for `baseUrl`.
+course-id source (`body` / `body-missing` → 404 / `persisted`), `chatbotType` mismatch or
+missing chat (410) and course-pin conflict (409) — dimension count moved 6→7 when course-id
+source was split from enrollment. RAG injection is an information-exposure oracle (which course
+material enters the prompt), with similarity thresholds 0.8 / 0.55 plus AlwaysSource (env vs
+explicit arg) for the always-with-course flag. BYOK resolution precedence is fleet > user > env
+for `baseUrl`; apiKey source tags add a sixth dimension (user / platform / default).
 
 `rag-retrieval-path-fork` is DEFER only because the pilot (S1) already covers its two SQL branches
 through the `Path` dimension.
