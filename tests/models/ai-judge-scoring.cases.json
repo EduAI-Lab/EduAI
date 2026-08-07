@@ -1,0 +1,122 @@
+[
+  {
+    "ConceptualEquivalence": "high",
+    "DifficultySimilarity": "high",
+    "StructuralValidity": "high",
+    "AnswerCorrectness": "low",
+    "TopicAlignment": "high",
+    "Distinctness": "high",
+    "Usability": "unknown",
+    "ApplyUsabilityPenalty": "false"
+  },
+  {
+    "ConceptualEquivalence": "high",
+    "DifficultySimilarity": "low",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "low",
+    "Distinctness": "mid",
+    "Usability": "usable_with_edits",
+    "ApplyUsabilityPenalty": "true"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "low",
+    "StructuralValidity": "high",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "high",
+    "Distinctness": "low",
+    "Usability": "usable_with_edits",
+    "ApplyUsabilityPenalty": "false"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "high",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "low",
+    "TopicAlignment": "low",
+    "Distinctness": "mid",
+    "Usability": "usable_as_is",
+    "ApplyUsabilityPenalty": "false"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "low",
+    "StructuralValidity": "high",
+    "AnswerCorrectness": "low",
+    "TopicAlignment": "high",
+    "Distinctness": "mid",
+    "Usability": "unknown",
+    "ApplyUsabilityPenalty": "true"
+  },
+  {
+    "ConceptualEquivalence": "high",
+    "DifficultySimilarity": "high",
+    "StructuralValidity": "high",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "low",
+    "Distinctness": "mid",
+    "Usability": "unusable",
+    "ApplyUsabilityPenalty": "true"
+  },
+  {
+    "ConceptualEquivalence": "high",
+    "DifficultySimilarity": "high",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "low",
+    "Distinctness": "low",
+    "Usability": "unknown",
+    "ApplyUsabilityPenalty": "true"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "low",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "low",
+    "TopicAlignment": "high",
+    "Distinctness": "low",
+    "Usability": "unusable",
+    "ApplyUsabilityPenalty": "false"
+  },
+  {
+    "ConceptualEquivalence": "high",
+    "DifficultySimilarity": "low",
+    "StructuralValidity": "high",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "high",
+    "Distinctness": "high",
+    "Usability": "usable_as_is",
+    "ApplyUsabilityPenalty": "true"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "high",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "low",
+    "Distinctness": "low",
+    "Usability": "usable_as_is",
+    "ApplyUsabilityPenalty": "true"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "low",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "high",
+    "TopicAlignment": "low",
+    "Distinctness": "high",
+    "Usability": "unusable",
+    "ApplyUsabilityPenalty": "false"
+  },
+  {
+    "ConceptualEquivalence": "low",
+    "DifficultySimilarity": "high",
+    "StructuralValidity": "low",
+    "AnswerCorrectness": "low",
+    "TopicAlignment": "high",
+    "Distinctness": "high",
+    "Usability": "usable_with_edits",
+    "ApplyUsabilityPenalty": "false"
+  }
+]

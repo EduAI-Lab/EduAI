@@ -1,0 +1,24 @@
+# S9 — ai-judge-scoring (QM), census docs/PICT_CENSUS.md § S9.
+# See tests/models/ai-judge-scoring.oracle.ts for the oracle spec.
+#
+# The deterministic scoring pipeline in `reviewVariantExamWithAi`
+# (apps/extensions/question-maker/app/backend/src/services/assessmentVariantService.js:1117-1226) —
+# the AI judge call itself (which produces the five rubric scores +
+# distinctness + usability) is out of scope; this model tests the pure
+# arithmetic applied to those scores once returned. Each of the five rubric
+# dimensions gets an independent Low(1)/High(5) value specifically so
+# pairwise coverage can catch a swapped composite weight (0.24 vs 0.19)
+# between any two dimensions. `Usability` includes "unknown" to lock in
+# `normalizeUsability`'s unknown -> unusable mapping (the harshest arm)
+# explicitly. `ApplyUsabilityPenalty` exists because the usability
+# multiplier is applied unconditionally to the PER-QUESTION adjusted score
+# but only conditionally to the exam-level final score — two different
+# toggles on the same multiplier, asserted here as distinct outcomes.
+ConceptualEquivalence:   low, high
+DifficultySimilarity:    low, high
+StructuralValidity:      low, high
+AnswerCorrectness:       low, high
+TopicAlignment:          low, high
+Distinctness:            low, mid, high
+Usability:               usable_as_is, usable_with_edits, unusable, unknown
+ApplyUsabilityPenalty:   true, false
