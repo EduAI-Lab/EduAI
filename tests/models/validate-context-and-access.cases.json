@@ -1,0 +1,107 @@
+[
+  {
+    "ContextDepth": "module",
+    "Existence": "missing",
+    "Consistency": "consistent",
+    "Role": "STUDENT",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "lesson",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "STUDENT",
+    "Authorized": "no"
+  },
+  {
+    "ContextDepth": "activity",
+    "Existence": "exists",
+    "Consistency": "inconsistent",
+    "Role": "INSTRUCTOR",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "module",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "INSTRUCTOR",
+    "Authorized": "no"
+  },
+  {
+    "ContextDepth": "activity",
+    "Existence": "missing",
+    "Consistency": "consistent",
+    "Role": "OTHER",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "course",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "OTHER",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "course",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "INSTRUCTOR",
+    "Authorized": "no"
+  },
+  {
+    "ContextDepth": "module",
+    "Existence": "exists",
+    "Consistency": "inconsistent",
+    "Role": "OTHER",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "course",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "STUDENT",
+    "Authorized": "no"
+  },
+  {
+    "ContextDepth": "lesson",
+    "Existence": "exists",
+    "Consistency": "inconsistent",
+    "Role": "INSTRUCTOR",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "course",
+    "Existence": "missing",
+    "Consistency": "consistent",
+    "Role": "INSTRUCTOR",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "none",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "STUDENT",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "activity",
+    "Existence": "exists",
+    "Consistency": "consistent",
+    "Role": "STUDENT",
+    "Authorized": "no"
+  },
+  {
+    "ContextDepth": "activity",
+    "Existence": "exists",
+    "Consistency": "inconsistent",
+    "Role": "STUDENT",
+    "Authorized": "yes"
+  },
+  {
+    "ContextDepth": "lesson",
+    "Existence": "missing",
+    "Consistency": "consistent",
+    "Role": "OTHER",
+    "Authorized": "yes"
+  }
+]
