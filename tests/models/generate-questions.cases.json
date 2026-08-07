@@ -1,0 +1,122 @@
+[
+  {
+    "Authorized": "no",
+    "PromptPresent": "yes",
+    "CourseCodePresent": "no",
+    "NumQuestions": "exceeds",
+    "CourseAccess": "no",
+    "Mcq": "absent",
+    "DifficultyDistribution": "absent",
+    "ReasoningDistribution": "provided"
+  },
+  {
+    "Authorized": "yes",
+    "PromptPresent": "no",
+    "CourseCodePresent": "yes",
+    "NumQuestions": "exceeds",
+    "CourseAccess": "yes",
+    "Mcq": "high",
+    "DifficultyDistribution": "provided",
+    "ReasoningDistribution": "absent"
+  },
+  {
+    "Authorized": "yes",
+    "PromptPresent": "yes",
+    "CourseCodePresent": "yes",
+    "NumQuestions": "valid",
+    "CourseAccess": "no",
+    "Mcq": "valid",
+    "DifficultyDistribution": "absent",
+    "ReasoningDistribution": "absent"
+  },
+  {
+    "Authorized": "no",
+    "PromptPresent": "no",
+    "CourseCodePresent": "no",
+    "NumQuestions": "absent",
+    "CourseAccess": "yes",
+    "Mcq": "valid",
+    "DifficultyDistribution": "provided",
+    "ReasoningDistribution": "provided"
+  },
+  {
+    "Authorized": "yes",
+    "PromptPresent": "no",
+    "CourseCodePresent": "no",
+    "NumQuestions": "exceeds",
+    "CourseAccess": "no",
+    "Mcq": "valid",
+    "DifficultyDistribution": "provided",
+    "ReasoningDistribution": "absent"
+  },
+  {
+    "Authorized": "no",
+    "PromptPresent": "no",
+    "CourseCodePresent": "yes",
+    "NumQuestions": "absent",
+    "CourseAccess": "yes",
+    "Mcq": "absent",
+    "DifficultyDistribution": "absent",
+    "ReasoningDistribution": "absent"
+  },
+  {
+    "Authorized": "yes",
+    "PromptPresent": "yes",
+    "CourseCodePresent": "yes",
+    "NumQuestions": "valid",
+    "CourseAccess": "yes",
+    "Mcq": "absent",
+    "DifficultyDistribution": "provided",
+    "ReasoningDistribution": "provided"
+  },
+  {
+    "Authorized": "yes",
+    "PromptPresent": "yes",
+    "CourseCodePresent": "yes",
+    "NumQuestions": "absent",
+    "CourseAccess": "no",
+    "Mcq": "low",
+    "DifficultyDistribution": "absent",
+    "ReasoningDistribution": "provided"
+  },
+  {
+    "Authorized": "no",
+    "PromptPresent": "no",
+    "CourseCodePresent": "no",
+    "NumQuestions": "valid",
+    "CourseAccess": "yes",
+    "Mcq": "low",
+    "DifficultyDistribution": "provided",
+    "ReasoningDistribution": "absent"
+  },
+  {
+    "Authorized": "no",
+    "PromptPresent": "yes",
+    "CourseCodePresent": "no",
+    "NumQuestions": "valid",
+    "CourseAccess": "no",
+    "Mcq": "high",
+    "DifficultyDistribution": "absent",
+    "ReasoningDistribution": "provided"
+  },
+  {
+    "Authorized": "yes",
+    "PromptPresent": "no",
+    "CourseCodePresent": "yes",
+    "NumQuestions": "exceeds",
+    "CourseAccess": "yes",
+    "Mcq": "low",
+    "DifficultyDistribution": "absent",
+    "ReasoningDistribution": "absent"
+  },
+  {
+    "Authorized": "no",
+    "PromptPresent": "yes",
+    "CourseCodePresent": "no",
+    "NumQuestions": "absent",
+    "CourseAccess": "yes",
+    "Mcq": "high",
+    "DifficultyDistribution": "provided",
+    "ReasoningDistribution": "absent"
+  }
+]
