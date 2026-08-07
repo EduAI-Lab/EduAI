@@ -1,5 +1,5 @@
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router"
-import { GalleryVerticalEnd } from "lucide-react"
+import { IconStack2 } from "@tabler/icons-react"
 import { useState } from "react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
@@ -118,7 +118,7 @@ export default function AcceptInvitationPage() {
         <div className="flex justify-center gap-2 md:justify-start">
           <a href="/" className="flex items-center gap-2 font-medium">
             <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
-              <GalleryVerticalEnd className="size-4" />
+              <IconStack2 className="size-4" />
             </div>
             EduAI
           </a>
