@@ -23,6 +23,26 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /** Provider hard limit (e.g. Google Gemini embedMany — "At most 100 requests per batch"). */
 const CLOUD_EMBED_MANY_MAX_BATCH_SIZE = 100;
 
+/**
+ * Max rows per multi-row `material_embeddings` INSERT (#943).
+ *
+ * The payload cap is based on the actual vector dimension (`embedding.length`)
+ * rather than only the number of bind parameters: a vector component is
+ * conservatively budgeted at 8 bytes plus SQL/identifier overhead. This keeps
+ * each bind payload below 2 MiB for 1024-dimension vectors and automatically
+ * reduces the row count when a larger configured dimension is used.
+ */
+export const MATERIAL_EMBEDDING_INSERT_BATCH_SIZE = 500;
+const MATERIAL_EMBEDDING_INSERT_MAX_BYTES = 2_000_000;
+
+function resolveMaterialEmbeddingInsertBatchSize(): number {
+  const configured = Number(process.env.MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+  if (!Number.isSafeInteger(configured) || configured <= 0) {
+    return MATERIAL_EMBEDDING_INSERT_BATCH_SIZE;
+  }
+  return Math.min(configured, MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+}
+
 /** pgvector column dimension — must match LOCAL-EMBEDDINGS and `EMBEDDING_DIMENSION`. */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 
@@ -768,6 +788,12 @@ export async function generateEmbeddings(
           return result.embeddings;
         }, courseId);
 
+    if (embeddings.length !== batch.length) {
+      throw new Error(
+        `Embedding count mismatch in generateEmbeddings: got ${embeddings.length} vectors for ${batch.length} chunks`,
+      );
+    }
+
     for (let j = 0; j < embeddings.length; j++) {
       assertEmbeddingDimension(embeddings[j], "generateEmbeddings");
       out.push({ embedding: embeddings[j], content: batch[j] });
@@ -1133,6 +1159,57 @@ export type ProcessMaterialEmbeddingsOptions = {
 };
 
 /**
+ * Insert one `material_embeddings` row per chunk using batched multi-row
+ * INSERTs instead of one `$executeRaw` round trip per chunk (#943).
+ *
+ * Prisma's typed client can't write the `vector` column type directly, so
+ * raw SQL is required; `Prisma.sql` + `Prisma.join` keep every value
+ * (including the vector literal) bound as a parameter rather than
+ * string-concatenated, and rows are chunked to
+ * `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` and the dimension-aware payload cap
+ * to keep synchronous query construction and bind payloads bounded.
+ */
+export async function insertMaterialEmbeddingsBatched(
+  tx: Prisma.TransactionClient,
+  chunksByIndex: Array<{ id: string }>,
+  embeddings: Array<{ embedding: number[] }>,
+): Promise<void> {
+  if (chunksByIndex.length === 0) {
+    return;
+  }
+  if (chunksByIndex.length !== embeddings.length) {
+    throw new Error(
+      `Embedding count mismatch in insertMaterialEmbeddingsBatched: got ${embeddings.length} vectors for ${chunksByIndex.length} chunks`,
+    );
+  }
+
+  const rowLimit = resolveMaterialEmbeddingInsertBatchSize();
+  for (let start = 0; start < chunksByIndex.length; ) {
+    const batch = [] as Array<{ chunk: { id: string }; embedding: number[] }>;
+    let estimatedBytes = 0;
+    while (start + batch.length < chunksByIndex.length && batch.length < rowLimit) {
+      const index = start + batch.length;
+      const embedding = embeddings[index].embedding;
+      const rowBytes = embedding.length * 8 + 128;
+      if (batch.length > 0 && estimatedBytes + rowBytes > MATERIAL_EMBEDDING_INSERT_MAX_BYTES) break;
+      batch.push({ chunk: chunksByIndex[index], embedding });
+      estimatedBytes += rowBytes;
+    }
+
+    const rows = batch.map(({ chunk, embedding }) => {
+      const vectorLiteral = formatPgVectorLiteral(embedding);
+      return Prisma.sql`(${randomUUID()}, ${chunk.id}, ${vectorLiteral}::vector, NOW())`;
+    });
+
+    await tx.$executeRaw`
+      INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
+      VALUES ${Prisma.join(rows)}
+    `;
+    start += batch.length;
+  }
+}
+
+/**
  * Process and store embeddings for a course material (single transaction).
  */
 export async function processMaterialEmbeddings(
@@ -1170,12 +1247,6 @@ export async function processMaterialEmbeddings(
 
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
 
-    for (let i = 0; i < chunksByIndex.length; i++) {
-      const vectorLiteral = formatPgVectorLiteral(embeddings[i].embedding);
-      await tx.$executeRaw`
-        INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${vectorLiteral}::vector, NOW())
-      `;
-    }
+    await insertMaterialEmbeddingsBatched(tx, chunksByIndex, embeddings);
   }, options?.transactionOptions);
 }

@@ -9,6 +9,6 @@ export default defineConfig({
     globalSetup: ['./app/tests/globalSetup.ts'],
     environment: 'node',
     fileParallelism: false,
-    setupFiles: ['./app/tests/setup.ts', './app/tests/setup.integration.ts'],
+    setupFiles: ['./app/tests/setup.env.ts', './app/tests/setup.ts', './app/tests/setup.integration.ts'],
   },
 });

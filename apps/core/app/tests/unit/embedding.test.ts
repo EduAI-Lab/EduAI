@@ -18,9 +18,12 @@ const {
   wantsLocalEmbeddingProvider,
   resolveIvfflatProbes,
   DEFAULT_EMBEDDING_DIMENSION,
+ insertMaterialEmbeddingsBatched,
+ MATERIAL_EMBEDDING_INSERT_BATCH_SIZE,
   classifyRagRetrievalError,
 } = await import("~/lib/ai/embedding");
 const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
+const { Prisma } = await import("@prisma/client");
 
 const sampleEmbedding = new Array(1024).fill(0);
 
@@ -201,6 +204,120 @@ describe("generateEmbeddings", () => {
     for (const call of embedManyMock.mock.calls) {
       expect(call[0].values.length).toBeLessThanOrEqual(100);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// insertMaterialEmbeddingsBatched (#943 — multi-row INSERT batching)
+// ---------------------------------------------------------------------------
+
+describe("insertMaterialEmbeddingsBatched", () => {
+  function makeChunksAndEmbeddings(n: number) {
+    const chunks = Array.from({ length: n }, (_, i) => ({ id: `chunk-${i}` }));
+    const embeddings = Array.from({ length: n }, (_, i) => ({
+      embedding: [i, i + 0.5, i + 0.25],
+    }));
+    return { chunks, embeddings };
+  }
+
+  // Reconstruct the flattened (id, chunkId, vectorLiteral) triples that were
+  // bound as params for a given $executeRaw call, using the real Prisma.sql
+  // tag semantics: the mock receives (stringsArray, ...interpolatedValues),
+  // and a `Prisma.join(rows)` argument is a Sql object whose `.values`
+  // holds the flattened per-row params in order.
+  function extractRowsFromCall(call: unknown[]): Array<[string, string, string]> {
+    // call[0] is the strings array; the VALUES clause interpolation is call[1].
+    const joined = call[1] as InstanceType<typeof Prisma.Sql>;
+    const values = joined.values as unknown[];
+    const rows: Array<[string, string, string]> = [];
+    for (let i = 0; i < values.length; i += 3) {
+      rows.push([values[i] as string, values[i + 1] as string, values[i + 2] as string]);
+    }
+    return rows;
+  }
+
+  it("does nothing and issues no query for zero chunks", async () => {
+    const executeRaw = vi.fn();
+    const tx = { $executeRaw: executeRaw } as any;
+
+    await expect(insertMaterialEmbeddingsBatched(tx, [], [])).resolves.toBeUndefined();
+
+    expect(executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("issues a single $executeRaw call for a small number of chunks", async () => {
+    const { chunks, embeddings } = makeChunksAndEmbeddings(3);
+    const executeRaw = vi.fn().mockResolvedValue(3);
+    const tx = { $executeRaw: executeRaw } as any;
+
+    await insertMaterialEmbeddingsBatched(tx, chunks, embeddings);
+
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds each chunk's id and vector literal as parameters, in order", async () => {
+    const { chunks, embeddings } = makeChunksAndEmbeddings(3);
+    const executeRaw = vi.fn().mockResolvedValue(3);
+    const tx = { $executeRaw: executeRaw } as any;
+
+    await insertMaterialEmbeddingsBatched(tx, chunks, embeddings);
+
+    const rows = extractRowsFromCall(executeRaw.mock.calls[0]);
+    expect(rows).toHaveLength(3);
+    rows.forEach(([id, chunkId, vectorLiteral], i) => {
+      expect(typeof id).toBe("string");
+      expect(id.length).toBeGreaterThan(0);
+      expect(chunkId).toBe(`chunk-${i}`);
+      expect(vectorLiteral).toBe(`[${i},${i + 0.5},${i + 0.25}]`);
+    });
+  });
+
+  it("issues ceil(N/batchSize) calls when N spans multiple batches", async () => {
+    const n = MATERIAL_EMBEDDING_INSERT_BATCH_SIZE + 1;
+    const { chunks, embeddings } = makeChunksAndEmbeddings(n);
+    const executeRaw = vi.fn().mockResolvedValue(1);
+    const tx = { $executeRaw: executeRaw } as any;
+
+    await insertMaterialEmbeddingsBatched(tx, chunks, embeddings);
+
+    const expectedCalls = Math.ceil(n / MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+    expect(expectedCalls).toBe(2);
+    expect(executeRaw).toHaveBeenCalledTimes(expectedCalls);
+  });
+
+  it("splits rows correctly across the batch boundary and preserves ordering", async () => {
+    const n = MATERIAL_EMBEDDING_INSERT_BATCH_SIZE + 1;
+    const { chunks, embeddings } = makeChunksAndEmbeddings(n);
+    const executeRaw = vi.fn().mockResolvedValue(1);
+    const tx = { $executeRaw: executeRaw } as any;
+
+    await insertMaterialEmbeddingsBatched(tx, chunks, embeddings);
+
+    const firstBatchRows = extractRowsFromCall(executeRaw.mock.calls[0]);
+    const secondBatchRows = extractRowsFromCall(executeRaw.mock.calls[1]);
+
+    expect(firstBatchRows).toHaveLength(MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+    expect(secondBatchRows).toHaveLength(1);
+
+    // Last row of the first batch is chunk index (batchSize - 1); the
+    // second batch picks up exactly where the first left off.
+    expect(firstBatchRows[0][1]).toBe("chunk-0");
+    expect(firstBatchRows[firstBatchRows.length - 1][1]).toBe(
+      `chunk-${MATERIAL_EMBEDDING_INSERT_BATCH_SIZE - 1}`,
+    );
+    expect(secondBatchRows[0][1]).toBe(`chunk-${MATERIAL_EMBEDDING_INSERT_BATCH_SIZE}`);
+  });
+
+  it("generates a unique id for every row", async () => {
+    const { chunks, embeddings } = makeChunksAndEmbeddings(5);
+    const executeRaw = vi.fn().mockResolvedValue(5);
+    const tx = { $executeRaw: executeRaw } as any;
+
+    await insertMaterialEmbeddingsBatched(tx, chunks, embeddings);
+
+    const rows = extractRowsFromCall(executeRaw.mock.calls[0]);
+    const ids = rows.map(([id]) => id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 
