@@ -1,0 +1,18 @@
+# App-specific: generated Prisma client
+/app/generated/prisma
+cookies.txt
+ecosystem.config.cjs
+
+# Test coverage reports
+/coverage
+
+# Local research / bench artifacts (dev server — never commit secrets or run output)
+.env.research
+/logs/
+/output/
+/scripts/research/.env.research
+/scripts/research/data/runs/
+
+# Stryker Generated Files
+.stryker-tmp/
+/reports/

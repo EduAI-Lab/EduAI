@@ -1,0 +1,984 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/@prisma/client"
+  // "native" auto-detects the local OS; "rhel-openssl-1.1.x" is needed
+  // for RHEL 8 hosts (dev.eduai.ok.ubc.ca / s378); "linux-musl-openssl-3.0.x"
+  // is required for node:*-alpine Docker images (musl libc, OpenSSL 3).
+  binaryTargets = ["native", "rhel-openssl-1.1.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                        String                 @id @default(cuid())
+  email                     String                 @unique
+  name                      String
+  image                     String?
+  role                      UserRole
+  studentId                 String?
+  studentIdLookup           String?                @unique
+  isActive                  Boolean                @default(true)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  emailVerified             Boolean                @default(false)
+  authorizedUnits           String[]
+  accounts                  Account[]
+  aiInteractions            AIInteraction[]
+  enrollments               Enrollment[]
+  questions                 Question[]
+  sessions                  Session[]
+  providerSettings          UserProviderSettings[]
+  apiKeys                   apikey[]
+  chats                     Chat[]
+  externalUsers             ExternalUser[]
+  preference                UserPreference?
+  bugReports                BugReport[]
+  assistiveEvents           AssistiveEvent[]
+  uploadedMaterials         CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics             CourseTopic[]          @relation("TopicCreator")
+  canvasIntegration         CanvasIntegration?
+  syncedCanvasRosterMembers CanvasRosterMember[]
+  invitationsSent           Invitation[]           @relation("InvitationsSent")
+  invitationAccepted        Invitation[]           @relation("InvitationAccepted")
+  taughtCourses             Course[]               @relation("CourseInstructor")
+  auditLogs                 AuditLog[]
+  systemLogs                SystemLog[]
+  passwordHistory           PasswordHistory[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  passwordChangedAt     DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([identifier, value])
+  @@map("verification")
+}
+
+/// UBCO subject codes ("units" / "disciplines") pulled from Workday. Source of
+/// truth for course `department` validation and the discipline search endpoint.
+/// Seeded from prisma/data/disciplines.csv.
+model Discipline {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  courses   Course[] @relation("CourseDiscipline")
+
+  @@index([name])
+  @@map("disciplines")
+}
+
+model Course {
+  id                          String                    @id @default(cuid())
+  code                        String
+  name                        String
+  description                 String?
+  section                     String
+  term                        String
+  year                        Int
+  isActive                    Boolean                   @default(true)
+  isPublished                 Boolean                   @default(false)
+  startDate                   DateTime
+  endDate                     DateTime?
+  instructorId                String?
+  externalId                  String?
+  externalSource              String?
+  lastSyncedAt                DateTime?
+  department                  String?
+  discipline                  Discipline?               @relation("CourseDiscipline", fields: [department], references: [code], onDelete: Restrict, onUpdate: Cascade)
+  deletedAt                   DateTime?
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  aiInstructions              String                    @default("")
+  /// Instructor-selected response style tag ids (e.g. socratic, concise). Injected at chat time.
+  responseStyleTags           String[]                  @default([])
+  /// Enables the strict second-pass course-scope classifier. Layer A prompt scoping is always on.
+  // Defaulted off (was on) for easier testing
+  courseScopeGuardrailEnabled Boolean                   @default(false)
+  /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
+  ragTopK                     Int?
+  /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
+  ragSimilarityThreshold      Float?
+  instructor                  User?                     @relation("CourseInstructor", fields: [instructorId], references: [id])
+  /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
+  embeddingProvider           String?
+  /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
+  embeddingModel              String?
+  lastEmbeddedAt              DateTime?
+  embeddedWithProvider        String?
+  embeddedWithModel           String?
+  aiInteractions              AIInteraction[]
+  chats                       Chat[]                    @relation("CourseChats")
+  enrollments                 Enrollment[]
+  canvasRosterMembers         CanvasRosterMember[]
+  materials                   CourseMaterial[]
+  canvasMaterialExclusions    CanvasMaterialExclusion[]
+  reEmbedJobs                 CourseReEmbedJob[]
+  topics                      CourseTopic[]
+  questions                   Question[]
+
+  @@unique([code, startDate, section])
+  @@index([externalSource, externalId])
+  @@map("courses")
+}
+
+model CourseReEmbedJob {
+  id                   String           @id @default(cuid())
+  courseId             String
+  status               ReEmbedJobStatus @default(PENDING)
+  totalMaterials       Int              @default(0)
+  processedCount       Int              @default(0)
+  failedMaterialIds    String[]         @default([])
+  currentMaterialTitle String?
+  errorMessage         String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, status])
+  @@map("course_re_embed_jobs")
+}
+
+/// Source of truth for async AI-job status/result. Redis/BullMQ is transport;
+/// this row survives a Redis flush and drives the client status/ETA endpoints.
+/// Producer (#914) writes PENDING; the dispatch worker (#168) owns terminal state.
+/// Mirrors CourseReEmbedJob. Contract: docs/implementations/async-ai-job-queue-contract.md §5.
+model AiJob {
+  id           String      @id @default(cuid())
+  kind         String // JobKind (contract §3); string for forward-compat
+  type         AiJobType
+  source       String // origin app — telemetry, free-form (contract §3)
+  status       AiJobStatus @default(PENDING)
+  payload      Json // validated JobPayload
+  result       Json? // worker-written result (contract §7)
+  errorMessage String?
+  userId       String
+  courseId     String?
+  queueName    String? // BullMQ queue the job was pushed onto (pool, contract §4)
+  bullJobId    String? // link back to the BullMQ job — only unique within `queueName`
+  attempts     Int         @default(0)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // BullMQ auto-generated ids are per-queue counters, so `bullJobId` alone is not
+  // globally unique — `ai-jobs-chat` and `ai-jobs-heavy` both hand out "1".
+  @@unique([queueName, bullJobId])
+  @@index([userId, status])
+  @@index([status, type])
+  @@map("ai_jobs")
+}
+
+model Enrollment {
+  id             String         @id @default(cuid())
+  courseId       String
+  userId         String
+  role           EnrollmentRole
+  enrolledAt     DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  isActive       Boolean        @default(true)
+  externalId     String?
+  externalSource String?
+  course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@index([userId])
+  @@index([externalSource, externalId])
+  @@map("enrollments")
+}
+
+model AIInteraction {
+  id               String                   @id @default(cuid())
+  userId           String
+  courseId         String?
+  query            String
+  response         String
+  context          Json?
+  modelUsed        String
+  createdAt        DateTime                 @default(now())
+  modelId          String?
+  routedByAuto     Boolean                  @default(false)
+  routerVersion    String?
+  routerFeatures   Json?
+  routerConfidence Float?
+  routerChosenTier RouterTier?
+  ttftMs           Int?
+  durationMs       Int?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  estInputCostUsd  Float?
+  estOutputCostUsd Float?
+  energyJoules     Float?
+  energySource     EnergyMeasurementSource?
+  carbonGramsCO2   Float?
+  finishReason     String?
+  course           Course?                  @relation(fields: [courseId], references: [id])
+  model            AIModel?                 @relation(fields: [modelId], references: [id])
+  user             User                     @relation(fields: [userId], references: [id])
+
+  @@map("ai_interactions")
+}
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String
+
+  @@map("system_config")
+}
+
+model AIProvider {
+  id             String                 @id @default(cuid())
+  name           String                 @unique
+  displayName    String
+  description    String
+  requiresApiKey Boolean                @default(true)
+  defaultBaseUrl String?
+  envVarName     String?
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  models         AIModel[]
+  userSettings   UserProviderSettings[]
+
+  @@map("ai_providers")
+}
+
+model AIModel {
+  id                         String          @id @default(cuid())
+  modelId                    String
+  name                       String
+  description                String
+  type                       AIModelType
+  maxTokens                  Int?
+  supportsImages             Boolean         @default(false)
+  supportsTools              Boolean         @default(false)
+  supportsStreaming          Boolean         @default(true)
+  inputPricing               Float?
+  outputPricing              Float?
+  routerTier                 RouterTier?
+  estEnergyJoulesPerToken    Float?
+  averageCarbonGramsPerToken Float?
+  isActive                   Boolean         @default(true)
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @updatedAt
+  providerId                 String
+  interactions               AIInteraction[]
+  provider                   AIProvider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, modelId])
+  @@map("ai_models")
+}
+
+model UserProviderSettings {
+  id              String     @id @default(cuid())
+  userId          String
+  providerId      String
+  apiKey          String?
+  apiKeyExpiresAt DateTime?
+  baseUrl         String?
+  isEnabled       Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  provider        AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerId])
+  @@map("user_provider_settings")
+}
+
+model UserPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  assistDefault  Boolean  @default(false)
+  lastCourseCode String?
+  motionReduced  Boolean  @default(false)
+  density        String   @default("comfortable")
+  theme          String   @default("system")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model CourseMaterial {
+  id                String          @id @default(cuid())
+  courseId          String
+  title             String
+  mimeType          String
+  fileSize          Int
+  checksum          String
+  rawText           String?
+  status            MaterialStatus  @default(PROCESSING)
+  externalId        String?
+  externalSource    String?
+  canvasUpdatedAt   DateTime?
+  uploadedBy        String?
+  /// Student-visibility gate, independent of the course-level publish flag. When
+  /// false, students never see this material even in a published course; staff
+  /// (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) always see it. Lets instructors stage all
+  /// material up-front and reveal it on the course timeline.
+  visibleToStudents Boolean         @default(true)
+  /// Optional scheduled reveal. When set and in the future, students do not see
+  /// this material until the timestamp passes (staff always see it). Null = no
+  /// schedule (governed only by `visibleToStudents` + course publish state).
+  availableAt       DateTime?
+  /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
+  /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
+  /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
+  deletedAt         DateTime?
+  deletedBy         String?
+  /// Set automatically when Canvas re-check finds the source file unpublished/
+  /// locked/hidden; cleared automatically if it becomes published again. This is
+  /// distinct from `deletedAt` (manual, one-way instructor delete) — the two must
+  /// never be set/cleared by the same code path. Student-facing reads filter
+  /// `unpublishedAt: null` alongside `deletedAt: null`.
+  unpublishedAt     DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  processedAt       DateTime?
+  course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader          User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  chunks            MaterialChunk[]
+
+  @@unique([courseId, checksum])
+  @@index([externalSource, externalId])
+  @@index([uploadedBy])
+  @@index([courseId, deletedAt])
+  @@map("course_materials")
+}
+
+model CanvasMaterialExclusion {
+  id               String   @id @default(cuid())
+  courseId         String
+  canvasFileId     String
+  excludedByUserId String?
+  createdAt        DateTime @default(now())
+  course           Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, canvasFileId])
+  @@map("canvas_material_exclusions")
+}
+
+model CourseTopic {
+  id              String                   @id @default(cuid())
+  courseId        String
+  name            String
+  createdBy       String?
+  /// Soft-delete marker — see CourseMaterial.deletedAt. One-way (EduAI only),
+  /// never propagated to Canvas. Reads filter `deletedAt: null`.
+  deletedAt       DateTime?
+  deletedBy       String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  creator         User?                    @relation("TopicCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  questions       Question[]
+  secondaryTopics QuestionSecondaryTopic[]
+
+  @@unique([courseId, name])
+  @@index([createdBy])
+  @@index([courseId, deletedAt])
+  @@map("course_topics")
+}
+
+model Question {
+  id              String                   @id @default(cuid())
+  courseId        String
+  topicId         String
+  createdBy       String
+  content         String
+  type            QuestionType
+  difficulty      QuestionDifficulty       @default(MEDIUM)
+  reasoningLevel  ReasoningLevel           @default(FACTUAL)
+  choices         Json?
+  answer          String?
+  testable        Boolean                  @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topic           CourseTopic              @relation(fields: [topicId], references: [id])
+  creator         User                     @relation(fields: [createdBy], references: [id])
+  secondaryTopics QuestionSecondaryTopic[]
+
+  @@index([courseId, topicId, testable])
+  @@index([createdBy])
+  @@map("questions")
+}
+
+model QuestionSecondaryTopic {
+  questionId String
+  topicId    String
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  topic      CourseTopic @relation(fields: [topicId], references: [id])
+
+  @@id([questionId, topicId])
+  @@index([topicId])
+  @@map("question_secondary_topics")
+}
+
+model BugReport {
+  id          String          @id @default(cuid())
+  source      BugReportSource
+  userId      String?
+  isAnonymous Boolean         @default(false)
+  description String          @db.VarChar(2000)
+  bugType     BugReportType?
+  status      BugReportStatus @default(UNHANDLED)
+  consoleLogs String?
+  networkLogs String?
+  screenshot  String?
+  pageUrl     String?
+  userAgent   String?
+  context     Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@index([source])
+  @@map("bug_reports")
+}
+
+model MaterialChunk {
+  id         String             @id @default(cuid())
+  materialId String
+  index      Int
+  content    String
+  createdAt  DateTime           @default(now())
+  material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  embedding  MaterialEmbedding?
+
+  @@unique([materialId, index])
+  @@map("material_chunks")
+}
+
+model MaterialEmbedding {
+  id        String                      @id @default(cuid())
+  chunkId   String                      @unique
+  embedding Unsupported("vector(1024)")
+  createdAt DateTime                    @default(now())
+  chunk     MaterialChunk               @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@map("material_embeddings")
+}
+
+model apikey {
+  id                  String    @id @default(cuid())
+  name                String?
+  start               String?
+  prefix              String?
+  key                 String
+  userId              String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean   @default(true)
+  rateLimitEnabled    Boolean   @default(false)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int       @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  permissions         Json?
+  metadata            Json?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("apiKey")
+}
+
+enum ChatbotType {
+  LEARNING
+  ADMIN
+}
+
+model Chat {
+  id              String           @id @default(cuid())
+  userId          String
+  chatbotType     ChatbotType      @default(LEARNING) @map("chatbot_type")
+  /// Optional course context. Null = general (non-course) assistant chat; course
+  /// chats are tagged at creation so instructors/unit-admins can read them (RBAC
+  /// policy expansion §5). SetNull on course delete so history survives removal.
+  courseId        String?
+  systemPrompt    String?
+  title           String?
+  adhdAssist      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course?          @relation("CourseChats", fields: [courseId], references: [id], onDelete: SetNull)
+  messages        ChatMessage[]
+  assistiveEvents AssistiveEvent[]
+
+  @@index([userId])
+  @@index([courseId, updatedAt])
+  @@map("chats")
+}
+
+model AssistiveEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  chatId      String?
+  adhdAssist  Boolean  @default(false)
+  eventType   String
+  metricsJson Json
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat        Chat?    @relation(fields: [chatId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([adhdAssist, createdAt])
+  @@index([chatId])
+  @@map("assistive_events")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  messageId String
+  role      String
+  content   Json
+  /// Auto-increment keeps message ordering monotonic even with concurrent writers.
+  position  Int      @default(autoincrement())
+  createdAt DateTime @default(now())
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, messageId])
+  @@index([chatId, position])
+  @@map("chat_messages")
+}
+
+model CanvasIntegration {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  canvasUrl  String
+  /// AES-256-GCM encrypted Canvas personal access token (see lib/canvas/encryption.ts).
+  apiKey     String
+  isTestMode Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("canvas_integrations")
+}
+
+/// Staging table for Canvas roster members before they link to an EduAI User.
+model CanvasRosterMember {
+  id              String         @id @default(cuid())
+  courseId        String
+  canvasUserId    String
+  sisUserId       String?
+  sisUserIdLookup String?
+  email           String?
+  displayName     String?
+  role            EnrollmentRole
+  syncedByUserId  String
+  isActive        Boolean        @default(true)
+  lastSeenAt      DateTime
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  syncedBy        User           @relation(fields: [syncedByUserId], references: [id])
+
+  @@unique([courseId, canvasUserId, role])
+  @@index([email])
+  @@index([sisUserIdLookup])
+  @@index([canvasUserId])
+  @@map("canvas_roster_members")
+}
+
+model ExternalUser {
+  id             String   @id @default(cuid())
+  provider       String
+  externalUserId String
+  userId         String
+  /// Stores the upstream email for reference; User.email remains canonical.
+  email          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalUserId])
+  @@index([userId])
+  @@map("external_users")
+}
+
+enum UserRole {
+  ADMIN
+  UNIT_ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum EnrollmentRole {
+  STUDENT
+  TA
+  INSTRUCTOR
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+/// Admin-issued invitation to onboard a privileged, non-self-serve platform
+/// user (ADMIN / UNIT_ADMIN / INSTRUCTOR). The invitee follows a tokenized
+/// link, sets a password, and gets a real account with the invited role.
+model Invitation {
+  id              String           @id @default(cuid())
+  email           String
+  name            String?
+  role            UserRole
+  authorizedUnits String[]         @default([])
+  /// sha256 of the raw token; the raw token only ever lives in the email link.
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  /// Null when the inviting admin's account has since been deleted.
+  invitedById     String?
+  invitedBy       User?            @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  /// Null until accepted; cleared if the accepted account is later deleted.
+  acceptedUserId  String?
+  acceptedUser    User?            @relation("InvitationAccepted", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@map("invitations")
+}
+
+enum QuestionType {
+  MCQ
+  SA
+  LA
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ReasoningLevel {
+  FACTUAL
+  ANALYTICAL
+  APPLICATION
+}
+
+enum BugReportSource {
+  CORE
+  AI_TUTOR
+  QUESTION_MAKER
+}
+
+enum BugReportStatus {
+  UNHANDLED
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum BugReportType {
+  UI_DISPLAY
+  FEATURE_NOT_WORKING
+  PERFORMANCE
+  CONTENT_ERROR
+  ACCESS_PERMISSION
+  OTHER
+}
+
+enum AIModelType {
+  CHAT
+  COMPLETION
+  EMBEDDING
+  IMAGE
+  AUDIO
+  VIDEO
+}
+
+enum RouterTier {
+  TIER_1
+  TIER_2
+  TIER_3
+}
+
+enum EnergyMeasurementSource {
+  RAPL_CPU
+  NVML_GPU
+  RAPL_PLUS_NVML
+  OLLAMA_METRICS
+  ESTIMATED_FROM_TOKENS
+  ESTIMATED_FROM_DURATION
+}
+
+enum MaterialStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum ReEmbedJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+// Reused from the fleet — describes how long the user can wait, maps to pool + priority.
+// Contract: docs/implementations/async-ai-job-queue-contract.md §2.
+enum AiJobType {
+  interactive
+  background
+}
+
+enum AiJobStatus {
+  PENDING // enqueued, not yet picked up
+  RUNNING // worker dequeued and is executing
+  COMPLETED // finished, result written
+  FAILED // terminal failure after retries exhausted
+  CANCELLED // cancelled by user/system before completion
+}
+
+// ─── Logging / Observability ──────────────────────────────────────────────
+// Three append-only streams surfaced in the admin /admin/logs viewer:
+//   AuditLog   — who changed what (domain mutations + accepted invitations)
+//   SystemLog  — server errors / diagnostics (route, AI, mail, db failures)
+//   plus a singleton LogRetentionPolicy that drives periodic cleanup.
+
+enum AuditLogCategory {
+  USER
+  INVITATION
+  COURSE
+  ENROLLMENT
+  MATERIAL
+  TOPIC
+  AI_CONFIG
+  CANVAS
+  BUG_REPORT
+  SECURITY
+}
+
+enum AuditLogOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+enum SystemLogLevel {
+  ERROR
+  WARN
+  INFO
+}
+
+enum SystemLogSource {
+  ROUTE
+  AUTH
+  AI
+  CANVAS
+  MAIL
+  DB
+  SSR
+  API
+}
+
+model AuditLog {
+  id          String           @id @default(cuid())
+  createdAt   DateTime         @default(now())
+  category    AuditLogCategory
+  outcome     AuditLogOutcome  @default(SUCCESS)
+  actionCode  String
+  actorUserId String?
+  actorRole   String?
+  actorType   String           @default("USER")
+  entityType  String
+  entityId    String?
+  entityLabel String?
+  details     Json?
+  requestId   String?
+  routePath   String?
+  httpMethod  String?
+  ipAddress   String?
+  userAgent   String?
+
+  user User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([actionCode, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([routePath, createdAt])
+  @@index([outcome, createdAt])
+  @@map("audit_logs")
+}
+
+model SystemLog {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  level       SystemLogLevel
+  source      SystemLogSource
+  code        String
+  message     String
+  errorName   String?
+  stack       String?
+  details     Json?
+  actorUserId String?
+  actorRole   String?
+  requestId   String?
+  routePath   String?
+  httpMethod  String?
+  ipAddress   String?
+  userAgent   String?
+  statusCode  Int?
+
+  user User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([source, createdAt])
+  @@index([code, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("system_logs")
+}
+
+model LogRetentionPolicy {
+  id                  String   @id @default("default")
+  auditRetentionDays  Int      @default(365)
+  systemRetentionDays Int      @default(90)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("log_retention_policy")
+}
+
+/// Stores the last 10 password hashes per user for the UBC no-reuse policy (#339).
+/// Hashes are bcrypt/scrypt — never plaintext. Reuse is checked by verify(candidate, hash).
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
+}
+
+enum CronJobStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model CronJobRun {
+  id         String        @id @default(cuid())
+  jobName    String
+  status     CronJobStatus
+  startedAt  DateTime
+  finishedAt DateTime?
+  message    String?
+  exitCode   Int?
+  createdAt  DateTime      @default(now())
+
+  @@index([jobName, startedAt])
+  /// Partial unique index (one RUNNING per jobName) lives in SQL migration —
+  /// Prisma cannot express WHERE status = 'RUNNING' in schema.
+  @@map("cron_job_runs")
+}
+
+model CronJobScheduleOverride {
+  jobName       String   @id
+  schedule      String
+  scheduleLabel String
+  updatedAt     DateTime @updatedAt
+
+  @@map("cron_job_schedule_overrides")
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Centralized idempotency store for retry-safe POST creates (#828).
+model IdempotencyRecord {
+  id           String            @id @default(cuid())
+  key          String
+  route        String
+  actorId      String
+  requestHash  String
+  status       IdempotencyStatus
+  statusCode   Int?
+  responseBody Json?
+  expiresAt    DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([key, route, actorId])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}

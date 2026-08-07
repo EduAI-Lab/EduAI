@@ -1,0 +1,114 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "build/**", ".next/**"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.config.*",
+        "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "jest.config.*",
+        "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:unit": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.integration.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:all": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.config.*",
+        "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "jest.config.*",
+        "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.config.*",
+        "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "jest.config.*",
+        "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ],
+      "outputs": ["coverage/**"]
+    },
+    "lint": {
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

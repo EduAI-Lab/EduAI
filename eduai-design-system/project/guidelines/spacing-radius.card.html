@@ -1,0 +1,25 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Border Radius" subtitle="Radius tokens from none (0) to full (pill)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 24px; font-family: var(--font-sans); background: var(--background); display: flex; gap: 16px; align-items: flex-end; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .box { width: 52px; height: 52px; background: var(--primary); opacity: 0.85; }
+  .label { font-size: 10px; font-family: var(--font-mono); color: var(--muted-foreground); text-align: center; }
+  .sublabel { font-size: 9px; color: var(--muted-foreground); text-align: center; }
+  .pill { width: 80px; height: 28px; }
+</style>
+</head>
+<body>
+  <div class="cell"><div class="box" style="border-radius:var(--radius-none)"></div><div class="label">--radius-none</div><div class="sublabel">0</div></div>
+  <div class="cell"><div class="box" style="border-radius:var(--radius-sm)"></div><div class="label">--radius-sm</div><div class="sublabel">4px</div></div>
+  <div class="cell"><div class="box" style="border-radius:var(--radius-md)"></div><div class="label">--radius-md</div><div class="sublabel">6px</div></div>
+  <div class="cell"><div class="box" style="border-radius:var(--radius-base)"></div><div class="label">--radius-base</div><div class="sublabel">8px · buttons/cards</div></div>
+  <div class="cell"><div class="box" style="border-radius:var(--radius-xl)"></div><div class="label">--radius-xl</div><div class="sublabel">12px · dialogs</div></div>
+  <div class="cell"><div class="box" style="border-radius:var(--radius-2xl)"></div><div class="label">--radius-2xl</div><div class="sublabel">16px</div></div>
+  <div class="cell"><div class="pill box" style="border-radius:var(--radius-full)"></div><div class="label">--radius-full</div><div class="sublabel">9999px · pills</div></div>
+</body>
+</html>

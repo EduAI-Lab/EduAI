@@ -1,0 +1,5 @@
+# App-specific: server subdirectory scoping
+server/.env
+server/.env.local
+server/.env.test
+server/node_modules/

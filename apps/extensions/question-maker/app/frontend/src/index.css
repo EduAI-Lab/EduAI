@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../../../../../packages/ui/src/styles/base.css";
+@source "../../../../../../packages/ui/src";
+
+/* Design tokens, base layer and scrollbars live in @eduai/ui's base.css above.
+ * Only Question Maker-specific rules belong below. */

@@ -1,0 +1,162 @@
+[
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "future",
+    "Deleted": "no",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "ANON",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "yes",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "TA",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "no",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "future",
+    "Deleted": "no",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "ANON",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "TA",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "future",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "TA",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "future",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "ANON",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "future",
+    "Deleted": "yes",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "no",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "future",
+    "Deleted": "no",
+    "Unpublished": "yes"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "yes",
+    "Unpublished": "no"
+  }
+]

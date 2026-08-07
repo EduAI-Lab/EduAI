@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "pedantic": "off",
+    "style": "off",
+    "nursery": "off"
+  },
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "eqeqeq": "warn"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "build",
+    "dist",
+    ".react-router",
+    "server/node_modules",
+    "server/prisma/migrations"
+  ]
+}

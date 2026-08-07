@@ -1,0 +1,215 @@
+name: Test Coverage Report
+
+# Tracks test coverage (unit + integration) across all workspaces with a test suite — the
+# three backend packages plus the frontend/UI suites — and commits a Markdown summary to
+# eduai-summer-2026/reports/ on a dedicated branch. No coverage build artifacts (HTML/lcov)
+# are committed — coverage/ stays gitignored; only the .md is pushed.
+
+on:
+  schedule:
+    # Every 3 days: on days 1,4,7,…,28,31 of the month at 09:00 UTC. (Cron has no true
+    # "every N days" operator; `*/3` on day-of-month resets each month, so the 31→1
+    # boundary is a 1-day gap — close enough for a full-suite coverage snapshot.)
+    - cron: '0 9 */3 * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: test-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Generate test coverage report
+    runs-on: ubuntu-latest
+
+    services:
+      core-db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+      ai-tutor-db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+      qm-db:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: question_maker_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPORTS_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Each backend resolves its test database from committed env files / globalSetup. Write the
+      # CI-specific values so they point at the service containers above, deterministically.
+      - name: Configure test environment
+        run: |
+          set -euo pipefail
+          # core: resolveIntegrationTestDatabaseUrl() merges apps/core/.env (host/port) with
+          # apps/core/.env.test (db name). Remove .env so .env.test is used verbatim.
+          rm -f apps/core/.env
+          cat > apps/core/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/eduai_test?schema=public"
+          BETTER_AUTH_SECRET="test-secret-not-for-production"
+          BETTER_AUTH_URL="http://localhost:3000"
+          COOKIE_DOMAIN="localhost"
+          PORT=4001
+          EOF
+          # ai-tutor-server: globalSetup loads .env.test with override:true.
+          cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5433/aitutor_test"
+          BETTER_AUTH_SECRET="test-secret-not-for-production"
+          BETTER_AUTH_URL="http://localhost:4000/api/auth"
+          COOKIE_DOMAIN="localhost"
+          PORT=4001
+          EOF
+
+      - name: Generate Prisma clients
+        run: |
+          set -euo pipefail
+          npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
+
+      - name: Verify Prisma client isolation
+        run: npm run test:prisma-client-isolation
+
+      - name: Coverage — core
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+          GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+        run: npm run test:coverage -w edu-ai
+
+      - name: Coverage — ai-tutor-server
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+        run: npm run test:coverage -w ai-tutor-server
+
+      - name: Coverage — question-maker-backend
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
+          TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
+          JWT_SECRET: test-jwt-secret-for-ci
+          ENCRYPTION_KEY: test-encryption-key-32bytes!!
+        run: npm run test:coverage -w question-maker-backend
+
+      - name: Coverage — @eduai/ui
+        continue-on-error: true
+        run: npm run test:coverage -w @eduai/ui
+
+      - name: Coverage — ai-tutor client
+        continue-on-error: true
+        run: npm run test:coverage -w ai-tutor
+
+      - name: Coverage — question-maker-frontend
+        continue-on-error: true
+        run: npm run test:coverage -w question-maker-frontend
+
+      - name: Generate coverage report
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          REPORT_TIMESTAMP: ${{ github.run_started_at }}
+        run: node eduai-summer-2026/scripts/generate-coverage-report.js
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-html
+          path: |
+            apps/core/coverage/
+            apps/extensions/ai-tutor/server/coverage/
+            apps/extensions/question-maker/app/backend/coverage/
+            packages/ui/coverage/
+            apps/extensions/ai-tutor/coverage/
+            apps/extensions/question-maker/app/frontend/coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit report
+        if: ${{ vars.COMMIT_REPORTS != 'false' }}
+        env:
+          REPORT_COMMIT_BRANCH: ${{ vars.REPORT_COMMIT_BRANCH }}
+        run: |
+          set -euo pipefail
+          REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-docs/coverage}"
+          REPORT_FILE="eduai-summer-2026/reports/coverage/coverage-report.md"
+
+          if [ ! -f "$REPORT_FILE" ]; then
+            echo "No coverage report generated; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Save the report to a temp location
+          mkdir -p /tmp/coverage-report-commit
+          cp "$REPORT_FILE" /tmp/coverage-report-commit/coverage-report.md
+
+          # Fetch the report branch
+          git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
+          
+          # Checkout the report branch
+          if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
+            git checkout -f -B "$REPORT_BRANCH" "origin/${REPORT_BRANCH}"
+          else
+            git checkout -f -b "$REPORT_BRANCH"
+          fi
+
+          # Merge 'development' into the report branch
+          # This ensures the report branch always has the latest code
+          git merge origin/development --no-edit
+
+          # Restore the report and commit
+          mkdir -p eduai-summer-2026/reports/coverage
+          cp /tmp/coverage-report-commit/coverage-report.md "$REPORT_FILE"
+
+          git add -f "$REPORT_FILE"
+          
+          if git diff --cached --quiet; then
+            echo "Coverage report unchanged; nothing to commit."
+            exit 0
+          fi
+          
+          git commit -m "chore: update test coverage report"
+          git push -u origin "$REPORT_BRANCH"

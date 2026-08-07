@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@eduai/ai-tutor-prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+/// Reusable system-prompt definitions for AI tutor modes.
+///
+/// The slugs `learning-prompt`, `exercise-prompt`, and `supervisor-prompt`
+/// MUST exist for the AI dual-loop (tutor + supervisor) to function. They
+/// are inserted by `prisma/seed.ts`; deleting or renaming them will break
+/// every chat session at runtime, not at deploy time.
+model PromptTemplate {
+  id           Int      @id @default(autoincrement())
+  name         String
+  slug         String   @unique
+  systemPrompt String
+  temperature  Float?
+  topP         Float?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  activities Activity[]
+}
+
+/// A pure anchor row for a single Core course offering (#1072 step 4).
+///
+/// `CourseOffering` holds NO Core-owned data — no title, description,
+/// department, dates, publish state, or external-system metadata. It exists
+/// only as a stable local id: an FK target for content (modules/lessons/
+/// activities/submissions/topics/instructors/enrollments) and the join key
+/// (`coreOfferingId`) back to Core's `Course.id`. Every real field is
+/// resolved live from Core on every read via `services/courseResolver.js` +
+/// `utils/mappers.js#mapCourseOffering` — never cached or mirrored locally.
+///
+/// `coreOfferingId` is required and unique: every offering originates in
+/// Core (anchor rows are created on-demand by
+/// `services/importTaughtCoursesService.js`); there is no such thing as a
+/// native, Core-less offering anymore. The `externalId`/`externalSource`
+/// pair from the pre-#1072 design was consolidated into this single field —
+/// they were always `'EDUAI'` plus a redundant copy of the same id, never a
+/// genuine second source like Canvas.
+model CourseOffering {
+  id             Int      @id @default(autoincrement())
+  coreOfferingId String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  modules     Module[]
+  topics      Topic[]
+  instructors CourseInstructor[]
+  enrollments CourseEnrollment[]
+}
+
+/// Instructor assignment for a course offering.
+/// `userId` is the Core CUID of the instructor; no local FK — User table is owned by Core.
+model CourseInstructor {
+  userId           String
+  courseOfferingId Int
+  role             String         @default("LEAD")
+  createdAt        DateTime       @default(now())
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, courseOfferingId])
+}
+
+/// Student or TA enrollment for a course offering.
+/// `role` mirrors Core's EnrollmentRole: "STUDENT", "TA", or "INSTRUCTOR".
+/// `userId` is the Core CUID of the enrollee; no local FK — User table is owned by Core.
+model CourseEnrollment {
+  userId           String
+  courseOfferingId Int
+  role             String         @default("STUDENT")
+  createdAt        DateTime       @default(now())
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+
+  @@id([courseOfferingId, userId])
+}
+
+/// Topic taxonomy scoped to a single CourseOffering.
+///
+/// `id` is a CUID string (changed from autoincrement Int in schema-unification).
+/// `coreTopicId` links to Core's CourseTopic.id; nullified by the daily cron
+/// reconciliation job on 404. The local topic record is never auto-deleted.
+///
+/// Uniqueness is on `(courseOfferingId, name)`: topic identity is the
+/// human-readable name within a course.
+model Topic {
+  id               String         @id @default(cuid())
+  name             String
+  coreTopicId      String?        @unique
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+  courseOfferingId Int
+
+  mainActivities      Activity[]               @relation("ActivityMainTopic")
+  secondaryActivities ActivitySecondaryTopic[]
+
+  @@unique([courseOfferingId, name])
+}
+
+model Module {
+  id               Int            @id @default(autoincrement())
+  title            String
+  description      String?
+  position         Int            @default(0)
+  isPublished      Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+  courseOfferingId Int
+
+  lessons Lesson[]
+}
+
+model Lesson {
+  id          Int      @id @default(autoincrement())
+  title       String
+  contentMd   String?
+  position    Int      @default(0)
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  moduleId    Int
+
+  activities Activity[]
+}
+
+/// A single learner-facing activity (question/exercise) under a Lesson.
+///
+/// `mainTopicId` is REQUIRED (non-nullable). Every activity must belong to
+/// exactly one primary topic; secondary topics go through the
+/// `ActivitySecondaryTopic` M:N join.
+///
+/// `config Json?` carries the question payload in the shape
+/// `{ question, questionType, options, answer, hints }`. The structure is
+/// flexible by design — `mapActivity` in `utils/mappers.js` is the single
+/// chokepoint that flattens it into a stable client DTO; do not consume
+/// `config` directly from route handlers.
+///
+/// `enableTeachMode` / `enableGuideMode` / `enableCustomMode` toggle which
+/// AI tutor modes are available. Route validation enforces "at least one
+/// mode enabled" — disabling all three at the schema level is allowed but
+/// will be rejected on write.
+model Activity {
+  id                Int             @id @default(autoincrement())
+  title             String?
+  instructionsMd    String
+  config            Json?
+  position          Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  lesson            Lesson          @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId          Int
+  promptTemplate    PromptTemplate? @relation(fields: [promptTemplateId], references: [id])
+  promptTemplateId  Int?
+  customPrompt      String?
+  customPromptTitle String?
+
+  mainTopic       Topic                    @relation("ActivityMainTopic", fields: [mainTopicId], references: [id])
+  mainTopicId     String
+  secondaryTopics ActivitySecondaryTopic[]
+
+  enableTeachMode  Boolean @default(true)
+  enableGuideMode  Boolean @default(true)
+  enableCustomMode Boolean @default(false)
+
+  submissions            Submission[]
+  aiChatSessions         AiChatSession[]
+  activityFeedback       ActivityFeedback[]
+  activityAnalytics      ActivityAnalytics?
+  activityStudentMetrics ActivityStudentMetric[]
+  aiInteractionTraces    AiInteractionTrace[]
+}
+
+/// A student's attempt at an Activity. Submissions are versioned per-attempt
+/// via `attemptNumber` (1-based) — historical attempts are retained, never
+/// updated in place, so analytics can reconstruct the full attempt timeline.
+///
+/// `userId` stores the Core CUID of the authenticated user; no local FK
+/// constraint since the User table is owned by Core.
+model Submission {
+  id               Int                @id @default(autoincrement())
+  attemptNumber    Int                @default(1)
+  response         Json?
+  aiFeedback       Json?
+  score            Float?
+  isCorrect        Boolean?
+  createdAt        DateTime           @default(now())
+  userId           String
+  activity         Activity           @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId       Int
+  activityFeedback ActivityFeedback[]
+}
+
+model ActivitySecondaryTopic {
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId Int
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topicId    String
+
+  @@id([activityId, topicId])
+}
+
+model SystemPrompt {
+  id        Int      @id @default(autoincrement())
+  slug      String   @unique
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Key-value system settings table. Treat as a typed config registry, not a
+/// generic kv store. Known keys:
+///   - `EDUAI_API_KEY`     — EduAI integration credential, set via admin UI
+///                            so it can be rotated without a redeploy.
+///   - `AI_MODEL_POLICY`   — JSON describing per-mode model selection /
+///                            supervisor-loop policy.
+/// Adding a new key requires a corresponding read site; there is no schema
+/// migration cost but there is a runtime contract.
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// `userId` stores the Core CUID; no local FK — User table is owned by Core.
+model ActivityFeedback {
+  id           Int         @id @default(autoincrement())
+  rating       Int
+  note         String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  userId       String
+  activity     Activity    @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId   Int
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  submissionId Int?
+
+  @@unique([userId, activityId])
+}
+
+/// `userId` stores the Core CUID; no local FK — User table is owned by Core.
+model ActivityStudentMetric {
+  id                       Int      @id @default(autoincrement())
+  helpRequestCount         Int      @default(0)
+  submissionCount          Int      @default(0)
+  incorrectSubmissionCount Int      @default(0)
+  correctSubmissionCount   Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  userId                   String
+  activity                 Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId               Int
+
+  @@unique([userId, activityId])
+}
+
+model ActivityAnalytics {
+  id                       Int      @id @default(autoincrement())
+  helpRequestCount         Int      @default(0)
+  submissionCount          Int      @default(0)
+  incorrectSubmissionCount Int      @default(0)
+  correctSubmissionCount   Int      @default(0)
+  studentCount             Int      @default(0)
+  feedbackCount            Int      @default(0)
+  averageRating            Float?
+  difficultyScore          Int      @default(0)
+  difficultyLabel          String   @default("LOW")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  activity                 Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId               Int      @unique
+}
+
+model SuggestedPrompt {
+  id        Int      @id @default(autoincrement())
+  mode      String
+  text      String
+  position  Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One row per AI chat session a student starts for a given (activity, mode).
+/// Multiple rows per (userId, activityId, mode) are allowed so the history
+/// panel can list past conversations. Each row's chatId is the Core Chat id
+/// where the full message transcript lives.
+///
+/// `userId` stores the Core CUID; no local FK — User table is owned by Core.
+model AiChatSession {
+  id                  Int                  @id @default(autoincrement())
+  userId              String
+  activity            Activity             @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId          Int
+  mode                String
+  chatId              String               @unique
+  modelId             String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  aiInteractionTraces AiInteractionTrace[]
+
+  @@index([userId, activityId])
+  @@index([userId, activityId, mode])
+}
+
+/// `userId` stores the Core CUID; no local FK — User table is owned by Core.
+model AiInteractionTrace {
+  id                Int            @id @default(autoincrement())
+  mode              String
+  knowledgeLevel    String?
+  chatId            String?
+  tutorModelId      String?
+  supervisorModelId String?
+  userMessage       String
+  finalResponse     String
+  finalOutcome      String
+  iterationCount    Int            @default(0)
+  trace             Json
+  createdAt         DateTime       @default(now())
+  userId            String
+  activity          Activity       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityId        Int
+  aiChatSession     AiChatSession? @relation(fields: [aiChatSessionId], references: [id], onDelete: SetNull)
+  aiChatSessionId   Int?
+}

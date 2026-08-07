@@ -1,0 +1,15 @@
+# Playwright E2E test runner
+#
+# Build context: monorepo root
+
+FROM mcr.microsoft.com/playwright:v1.60.0-jammy
+
+WORKDIR /e2e
+
+# Install from the lockfile so @playwright/test matches the browsers in the base image.
+COPY tests/e2e/package.json tests/e2e/package-lock.json ./
+RUN npm ci
+
+COPY tests/e2e/ ./
+
+CMD ["npx", "playwright", "test"]

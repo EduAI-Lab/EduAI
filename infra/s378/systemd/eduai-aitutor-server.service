@@ -1,0 +1,38 @@
+[Unit]
+Description=EduAI AI Tutor API (dev.aitutor → /api/ → :4000)
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/GO-LIVE.md
+After=network-online.target
+Wants=network-online.target
+PartOf=eduai-dev.target
+
+[Service]
+Type=simple
+User=ssaada08
+Group=eduai-dev
+UMask=0002
+
+WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/extensions/ai-tutor/server
+# Fallback, matching the other two units, so a missing (optional)
+# /etc/eduai/eduai-dev.env cannot change behaviour. This server reads no
+# NODE_ENV gate of its own today; the line keeps all three units honest and
+# survives someone adding one. The EnvironmentFile below still wins.
+Environment=NODE_ENV=development
+EnvironmentFile=-/etc/eduai/eduai-dev.env
+Environment=HOME=/home/ssaada08
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PORT=4000
+
+# Plain node, not nodemon: nothing edits source on this box at runtime.
+# prisma generate is deliberately NOT run here. This schema pins its own output
+# (apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client),
+# so the on-disk client is already correct; regenerating every restart would only
+# add latency. Generation happens once, in go-live-build.sh.
+ExecStart=/usr/local/bin/node src/index.js
+
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+KillMode=control-group
+
+[Install]
+WantedBy=eduai-dev.target

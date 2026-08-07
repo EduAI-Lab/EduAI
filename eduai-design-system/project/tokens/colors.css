@@ -1,0 +1,169 @@
+/*
+ * SUPERSEDED — do not use these values.
+ *
+ * The live colour tokens are packages/ui/src/styles/base.css, imported by all
+ * three apps. This file has drifted from them and is kept only as a historical
+ * reference alongside the rest of this bundle.
+ *
+ * Note it is dark-mode-first: its `:root` holds dark values, so diffing it
+ * against an app's light-mode `:root` reports drift that is not real.
+ *
+ * The typography and assistive-reading material in this bundle IS still
+ * referenced (see apps/extensions/ai-tutor/app/components/settings/assistive-mode.tsx)
+ * — this notice applies to the colour tokens only.
+ */
+
+/*
+ * EduAI Design System — Color Tokens
+ * Brand: UBC-aligned (UBC Blue #002145, UBC Gold #FFD100, UBC Light Blue #0055B3)
+ * All colors expressed in oklch() for shadcn/ui compatibility.
+ *
+ * WCAG NOTES:
+ *   — Gold (#FFD100) is DECORATIVE ONLY. Never use as text color on white,
+ *     never use white text on gold. Fails WCAG AA at both.
+ *   — Primary (UBC Blue) on white: ~17:1 contrast — excellent.
+ *   — Secondary (UBC Light Blue) on white: ~5.6:1 — passes AA for text.
+ */
+
+:root {
+  /* ── Palette: UBC Blue scale ─────────────────────────────── */
+  --color-blue-950:  oklch(0.158 0.048 259);   /* deepest navy             */
+  --color-blue-900:  oklch(0.198 0.060 259);   /* UBC Blue   #002145       */
+  --color-blue-800:  oklch(0.249 0.078 253);   /* near-UBC   #002B5C       */
+  --color-blue-700:  oklch(0.310 0.105 257);   /* dark link                */
+  --color-blue-600:  oklch(0.418 0.171 257);   /* UBC Light  #0055B3       */
+  --color-blue-500:  oklch(0.500 0.170 252);   /* interactive mid          */
+  --color-blue-400:  oklch(0.580 0.160 245);   /* hover state              */
+  --color-blue-300:  oklch(0.684 0.140 232);   /* accent cyan-blue         */
+  --color-blue-200:  oklch(0.790 0.095 233);   /* light accent             */
+  --color-blue-100:  oklch(0.910 0.040 240);   /* tinted surface           */
+  --color-blue-50:   oklch(0.962 0.018 250);   /* subtle bg tint           */
+
+  /* ── Palette: UBC Gold scale ────────────────────────────── */
+  --color-gold-700:  oklch(0.740 0.162 82);    /* deep gold                */
+  --color-gold-600:  oklch(0.810 0.175 86);    /* warm gold                */
+  --color-gold-500:  oklch(0.882 0.188 89);    /* UBC Gold   #FFD100 ◆     */
+  --color-gold-400:  oklch(0.918 0.160 89);    /* pale gold                */
+  --color-gold-100:  oklch(0.968 0.062 89);    /* gold tint surface        */
+  --color-gold-50:   oklch(0.985 0.025 89);    /* lightest gold tint       */
+
+  /* ── Palette: Neutrals ──────────────────────────────────── */
+  --color-neutral-950: oklch(0.140 0 0);
+  --color-neutral-900: oklch(0.205 0 0);
+  --color-neutral-800: oklch(0.260 0 0);
+  --color-neutral-700: oklch(0.320 0 0);
+  --color-neutral-600: oklch(0.420 0 0);
+  --color-neutral-500: oklch(0.545 0 0);
+  --color-neutral-400: oklch(0.630 0 0);
+  --color-neutral-300: oklch(0.720 0 0);
+  --color-neutral-200: oklch(0.860 0 0);
+  --color-neutral-150: oklch(0.904 0 0);
+  --color-neutral-100: oklch(0.922 0 0);
+  --color-neutral-50:  oklch(0.967 0 0);
+  --color-neutral-0:   oklch(1.000 0 0);
+
+  /* ── Palette: Status ────────────────────────────────────── */
+  --color-success-700: oklch(0.420 0.120 145);
+  --color-success-500: oklch(0.554 0.155 145);
+  --color-success-100: oklch(0.940 0.050 145);
+  --color-warning-700: oklch(0.640 0.150 60);
+  --color-warning-500: oklch(0.769 0.165 70);
+  --color-warning-100: oklch(0.962 0.055 89);
+  --color-error-700:   oklch(0.415 0.205 27);
+  --color-error-600:   oklch(0.480 0.225 27);
+  --color-error-500:   oklch(0.545 0.230 27);
+  --color-error-100:   oklch(0.950 0.055 20);
+
+  /* ── Semantic tokens — Light Mode ───────────────────────── */
+  --background:             var(--color-neutral-0);
+  --foreground:             var(--color-neutral-900);
+
+  --card:                   var(--color-neutral-0);
+  --card-foreground:        var(--color-neutral-900);
+
+  --popover:                var(--color-neutral-0);
+  --popover-foreground:     var(--color-neutral-600);
+
+  --primary:                var(--color-blue-900);       /* UBC Blue */
+  --primary-foreground:     var(--color-neutral-0);
+  --primary-text:           var(--primary);              /* adapts in dark mode → blue-500ish */
+
+  --secondary:              var(--color-blue-600);       /* UBC Light Blue */
+  --secondary-foreground:   var(--color-neutral-0);
+
+  --accent:                 var(--color-blue-300);       /* light cyan-blue */
+  --accent-foreground:      var(--color-neutral-0);
+
+  --gold:                   var(--color-gold-500);       /* decorative only */
+  --gold-foreground:        var(--color-neutral-900);
+
+  --muted:                  var(--color-neutral-100);
+  --muted-foreground:       var(--color-neutral-500);
+
+  --border:                 var(--color-neutral-150);
+  --input:                  var(--color-neutral-50);
+  --ring:                   var(--color-blue-900);
+
+  --destructive:            var(--color-error-500);
+  --destructive-hover:      var(--color-error-600);
+  --destructive-foreground: var(--color-neutral-0);
+
+  /* ── Sidebar — dark navy (UBC Blue) ─────────────────────── */
+  --sidebar:                    var(--color-blue-900);
+  --sidebar-foreground:         oklch(0.870 0.012 256);
+  --sidebar-primary:            var(--color-blue-900);
+  --sidebar-primary-foreground: var(--color-neutral-0);
+  --sidebar-accent:             oklch(0.260 0.055 259);   /* slightly lighter than navy */
+  --sidebar-accent-foreground:  var(--color-neutral-0);
+  --sidebar-border:             oklch(0.268 0.045 259);
+  --sidebar-ring:               var(--color-blue-300);
+
+  /* ── Role badge semantic tokens ─────────────────────────── */
+  --color-role-admin:         var(--color-error-500);      /* red   */
+  --color-role-unit-admin:    var(--color-warning-500);    /* amber */
+  --color-role-instructor:    var(--color-blue-600);       /* blue  */
+  --color-role-ta:            var(--color-success-500);    /* green */
+  --color-role-student:       var(--color-neutral-500);    /* gray  */
+
+  /* ── Chart palette ──────────────────────────────────────── */
+  --chart-1: var(--color-blue-900);
+  --chart-2: var(--color-blue-600);
+  --chart-3: var(--color-blue-300);
+  --chart-4: var(--color-gold-500);
+  --chart-5: var(--color-success-500);
+}
+
+/* ── Dark mode overrides ────────────────────────────────── */
+.dark {
+  --background:             oklch(0.142 0.008 259);    /* deep blue-tinted dark */
+  --foreground:             oklch(0.929 0.013 256);
+  --primary-text:           oklch(0.640 0.155 252);    /* lighter UBC blue for dark bg ~4.5:1 */
+
+  /* Error palette flips: surface darkens, interactive brightens for dark bg legibility */
+  --color-error-100:        oklch(0.230 0.060 27);     /* dark red-tinted surface */
+  --color-error-500:        oklch(0.625 0.240 25);     /* vivid bright red — pops on dark bg */
+  --color-error-600:        oklch(0.700 0.220 25);     /* hover state on dark bg */
+  --color-error-700:        oklch(0.875 0.065 25);     /* light pinkish for text on dark surface */
+
+  --card:                   oklch(0.190 0.012 259);
+  --card-foreground:        oklch(0.929 0.013 256);
+
+  --popover:                oklch(0.220 0.015 259);
+  --popover-foreground:     oklch(0.735 0 0);
+
+  --muted:                  oklch(0.228 0.012 259);
+  --muted-foreground:       oklch(0.680 0 0);
+
+  --border:                 oklch(0.265 0.020 259);
+  --input:                  oklch(0.220 0.012 259);
+
+  --destructive:            var(--color-error-500);    /* vivid bright red in dark mode */
+  --destructive-hover:      var(--color-error-600);
+  --destructive-foreground: oklch(1.000 0 0);
+
+  --sidebar:                oklch(0.115 0.018 262);
+  --sidebar-foreground:     oklch(0.780 0.015 256);
+  --sidebar-accent:         oklch(0.175 0.022 260);
+  --sidebar-accent-foreground: var(--color-neutral-0);
+  --sidebar-border:         oklch(0.200 0.020 260);
+}

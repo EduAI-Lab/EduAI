@@ -1,0 +1,75 @@
+# AI Tutor frontend
+# Targets:
+#   test  — Vitest runner (unit and integration suites, jsdom environment)
+#   serve — vite preview for E2E (SPA mode, ssr: false)
+#
+# Build context: monorepo root
+#
+# Note: vite-tsconfig-paths is a devDependency of apps/core, hoisted to the
+# root node_modules. The AI Tutor vitest.config.ts imports it from there,
+# which is why the build context must be the monorepo root.
+
+# ── Shared: install workspace dependencies ─────────────────────────────────
+FROM node:24-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
+COPY packages/types/package.json  ./packages/types/
+COPY packages/types/tsconfig.json ./packages/types/
+COPY packages/types/src           ./packages/types/src
+COPY apps/core/package.json                                   ./apps/core/
+COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/question-maker/package.json              ./apps/extensions/question-maker/
+COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
+
+RUN npm ci --ignore-scripts \
+     && npm run build -w @eduai/types
+
+# ── Target: test ───────────────────────────────────────────────────────────
+FROM node:24-alpine AS test
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
+
+COPY packages/ui                     ./packages/ui/
+COPY apps/extensions/ai-tutor/app    ./apps/extensions/ai-tutor/app
+COPY apps/extensions/ai-tutor/shared ./apps/extensions/ai-tutor/shared
+COPY apps/extensions/ai-tutor/vitest.config.ts ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/tsconfig.json    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/package.json     ./apps/extensions/ai-tutor/
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/ai-tutor
+CMD ["npx", "vitest", "run"]
+
+# ── Build: compile SPA for production serve ────────────────────────────────
+FROM node:24-alpine AS build
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
+COPY packages/ui ./packages/ui/
+COPY apps/extensions/ai-tutor ./apps/extensions/ai-tutor
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/ai-tutor
+RUN npm run build
+
+# ── Target: serve ──────────────────────────────────────────────────────────
+FROM node:24-alpine AS serve
+WORKDIR /app
+
+COPY --from=deps /app/node_modules                              ./node_modules
+COPY --from=build /app/apps/extensions/ai-tutor/build          ./apps/extensions/ai-tutor/build
+COPY apps/extensions/ai-tutor/package.json                      ./apps/extensions/ai-tutor/
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/ai-tutor
+CMD ["sh", "-c", "npm run start -- --port ${PORT:-3001} --host 0.0.0.0"]

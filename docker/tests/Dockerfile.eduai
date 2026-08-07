@@ -1,0 +1,97 @@
+# EduAI Core
+# Targets:
+#   test  — Vitest runner (unit and integration suites)
+#   serve — react-router-serve for E2E (SSR, runs prisma migrate deploy at startup)
+#
+# Build context: monorepo root
+
+# ── Shared: install workspace dependencies ─────────────────────────────────
+FROM node:24-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
+COPY packages/types/package.json  ./packages/types/
+COPY packages/types/tsconfig.json ./packages/types/
+COPY packages/types/src           ./packages/types/src
+COPY apps/core/package.json                                   ./apps/core/
+COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/question-maker/package.json              ./apps/extensions/question-maker/
+COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
+
+RUN npm ci --ignore-scripts \
+     && npm run build -w @eduai/types \
+     && mkdir -p apps/core/node_modules
+
+# ── Target: test ───────────────────────────────────────────────────────────
+FROM node:24-alpine AS test
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
+
+COPY packages/ui                 ./packages/ui/
+COPY apps/core/app               ./apps/core/app
+COPY apps/core/prisma            ./apps/core/prisma
+# Imported directly by the backfill-match unit test.
+COPY apps/core/scripts           ./apps/core/scripts
+# Imported directly by the rapl-util unit test.
+COPY tools/energy-meter          ./tools/energy-meter
+# tests/models/*.cases.json + *.oracle.ts, imported by every PICT model's test file.
+COPY tests                       ./tests
+COPY apps/core/vitest.config.ts  ./apps/core/
+COPY apps/core/vitest.integration.config.ts ./apps/core/
+# Shared vitest options imported by both configs above.
+COPY apps/core/vitest.shared.ts  ./apps/core/
+COPY apps/core/vitest.ui-aliases.ts ./apps/core/
+COPY apps/core/vite.config.ts    ./apps/core/
+COPY apps/core/react-router.config.ts ./apps/core/
+COPY apps/core/tsconfig.json     ./apps/core/
+COPY apps/core/package.json      ./apps/core/
+# Read by the cleanup-invitations integration test, which verifies the
+# script's own DELETE statement rather than a reimplementation of it.
+COPY infra/cron                  ./infra/cron/
+COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+RUN npx prisma generate --schema=apps/core/prisma/schema.prisma
+
+WORKDIR /app/apps/core
+CMD ["npx", "vitest", "run"]
+
+# ── Build: compile for production serve ────────────────────────────────────
+FROM node:24-alpine AS build
+WORKDIR /app
+
+COPY --from=deps /app/package.json      ./
+COPY --from=deps /app/package-lock.json ./
+COPY --from=deps /app/node_modules      ./node_modules
+COPY --from=deps /app/packages/types    ./packages/types
+COPY packages/ui                        ./packages/ui/
+COPY apps/core                          ./apps/core
+COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+# prisma generate does not connect to the DB; placeholder prevents any env check
+ENV DATABASE_URL=postgresql://build:build@build:5432/build
+
+WORKDIR /app/apps/core
+RUN npm run build
+
+# ── Target: serve ──────────────────────────────────────────────────────────
+FROM node:24-alpine AS serve
+WORKDIR /app
+
+COPY --from=deps /app/node_modules            ./node_modules
+COPY --from=deps /app/apps/core/package.json  ./apps/core/package.json
+COPY --from=build /app/apps/core/build        ./apps/core/build
+COPY --from=build /app/apps/core/node_modules ./apps/core/node_modules
+COPY --from=build /app/apps/core/prisma       ./apps/core/prisma
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/core
+CMD ["sh", "-c", "npx prisma migrate deploy && react-router-serve ./build/server/index.js"]

@@ -1,0 +1,24 @@
+{
+  "minLines": 5,
+  "minTokens": 50,
+  "reporters": ["json", "html", "console"],
+  "output": "docs/perf/backend/baseline/duplication",
+  "gitignore": true,
+  "absolute": false,
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.react-router/**",
+    "**/.turbo/**",
+    "**/coverage/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.test.js",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/prisma/migrations/**",
+    "**/*.d.ts",
+    "**/generated/**"
+  ]
+}

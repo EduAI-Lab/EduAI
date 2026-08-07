@@ -2,6 +2,8 @@
 
 > **This is a living document.** It is a work in progress and should be treated as a starting point, not a final answer. Any section can be revised, restructured, or replaced entirely as the team learns more and makes decisions together.
 
+> **Course-data sections refreshed 2026-07-17 (#1072):** §1.2, §1.3, §3.1 (QM-3), §3.2 (AT-1), Decision 1, and Decision 2 now describe the shipped anchor + live read-through architecture. The rest of this document (auth, Canvas, bug reporting, monorepo, week-by-week checklist) is unchanged and reflects the original May 10 planning snapshot — several of those items have since moved independently of this pass.
+
 **Epic:** EduAICore #58  
 **Last Updated:** May 10, 2026
 
@@ -27,19 +29,19 @@
 
 ## 0. TL;DR
 
-Everything **shared** across AI Tutor, Question Maker, and Course-Aware Chat must go through **EduAI Core's API**. Anything specific to one extension stays in that extension.
+Everything **shared** across AI Tutor, Question Maker, and Course-Aware Chat must go through **EduAI's API**. Anything specific to one extension stays in that extension.
 
-Today the three extensions were built independently. Each has its own auth, its own copy of user/course data, and its own way of managing things. This causes duplication, inconsistency, and makes central management impossible (e.g., a student's enrollment change in EduAI Core should propagate everywhere — not require a manual re-sync in each extension).
+Today the three extensions were built independently. Each has its own auth, its own copy of user/course data, and its own way of managing things. This causes duplication, inconsistency, and makes central management impossible (e.g., a student's enrollment change in EduAI should propagate everywhere — not require a manual re-sync in each extension).
 
 ---
 
 ## 1. Current State — What We Have
 
-### 1.1 EduAI Core
+### 1.1 EduAI
 
 The central platform. Already owns:
 
-- **Auth:** Better Auth (email/password + API keys). Acts as an **OAuth 2.0 / OIDC provider** — extensions can authenticate users through EduAI Core.
+- **Auth:** Better Auth (email/password + API keys). Acts as an **OAuth 2.0 / OIDC provider** — extensions can authenticate users through EduAI.
 - **Users & Roles:** Admin, Professor, TA, Student
 - **Courses:** Full course management (create, enroll, TA assignment, topics)
 - **Materials / RAG:** Document upload, chunking, vector embeddings, semantic search (PGVector)
@@ -47,7 +49,7 @@ The central platform. Already owns:
 - **AI Models:** Dynamic model registry with per-provider config
 - **Usage Logging:** AI interaction logs
 
-> **Note:** Course-Aware Chat lives **in** EduAI Core. The `/chat` route in this repo is the Course-Aware Chat experience. It does not live in a separate repo.
+> **Note:** Course-Aware Chat lives **in** EduAI. The `/chat` route in this repo is the Course-Aware Chat experience. It does not live in a separate repo.
 
 ---
 
@@ -55,10 +57,10 @@ The central platform. Already owns:
 
 | Domain | Status | Notes |
 |--------|--------|-------|
-| Auth | Centralized | Uses EduAI Core's OAuth/OIDC (Better Auth genericOAuth plugin) |
-| AI Chat | Centralized | Proxies all AI calls through `POST /api/chat` on EduAI Core |
-| AI Models | Centralized | Fetches model list from EduAI Core |
-| Courses | Partial — one-time sync | Instructors manually "import" a course (copies metadata + enrollments + topics into AI Tutor's local DB). **Changes in EduAI Core don't auto-propagate.** |
+| Auth | Centralized | Uses EduAI's OAuth/OIDC (Better Auth genericOAuth plugin) |
+| AI Chat | Centralized | Proxies all AI calls through `POST /api/chat` on EduAI |
+| AI Models | Centralized | Fetches model list from EduAI |
+| Courses | Centralized — anchor + live read-through (#1072) | AI Tutor keeps only a minimal anchor row (`coreOfferingId`) per course; every Core-owned field (title, description, department, dates, publish state, term/year, `aiInstructions`) is fetched live from EduAI on each request — zero local copies, so an EduAI-side edit appears immediately with no manual re-sync. Instructor "import" now just provisions the anchor. Lists source from one batched `GET /api/courses` call (never per-course); if EduAI is unreachable, AI Tutor degrades to a placeholder + "Core unavailable" state instead of erroring. A read-through cache is deferred (#1083). Enrollments and topics still sync into AI Tutor's local DB — that mechanism is unchanged by #1072. |
 | Users | Partial — local mirror | Has its own `User` table, but populated from EduAI OAuth claims. It's a projection of EduAI data, not a second source of truth. |
 | Activities / Content | AI Tutor-specific | Modules, Lessons, Activities, Submissions, Analytics — stay in AI Tutor |
 | Prompt Templates | AI Tutor-specific | Stays in AI Tutor |
@@ -69,9 +71,9 @@ The central platform. Already owns:
 
 | Domain | Status | Notes |
 |--------|--------|-------|
-| Auth | Not integrated | Fully standalone JWT auth with local user registration. **No integration with EduAI Core.** |
+| Auth | Not integrated | Fully standalone JWT auth with local user registration. **No integration with EduAI.** |
 | Users | Local only | Local `users` table with bcrypt passwords. Completely separate from EduAI. |
-| Courses | Partial — reference only | Local `courses` table. Instructors can call `GET /api/eduai/courses` to list EduAI courses for reference, but local courses are entirely separate. |
+| Courses | Centralized — anchor + live read-through (#1072) | Local `Course` table is a minimal anchor (`id`, `userId`, `coreCourseId`) — no name/code/department/term/description stored locally. Every QM course now originates in EduAI (`coreCourseId` required at creation; local-only "sandbox" course creation was removed), and all display fields are projected live from EduAI on every list/detail read (one batched call, never per-course). If EduAI is unreachable, QM degrades to a placeholder (`coreUnavailable: true`) instead of serving stale local columns. Canvas quiz import/export still talks to Canvas directly from QM rather than through EduAI — that centralization is tracked separately (#1084 / Decision #4 below, Epic #59). |
 | Topics | Partial — reference only | Fetched from EduAI on-demand but stored locally for FK associations. |
 | AI Chat / Question Generation | Partial | OCR extraction and variant generation proxy through Core. The main question generation route still dispatches directly to Groq, OpenAI, or DeepSeek — see QM-7. |
 | Questions / Variants | QM-specific | Question bank, variant workflows, assessment building — stay in Question Maker |
@@ -86,25 +88,25 @@ The central platform. Already owns:
 
 | Domain | Owned By | Notes |
 |--------|----------|-------|
-| Authentication / Sessions | EduAI Core | Single sign-on for all extensions |
-| User Accounts & Roles | EduAI Core | Single source of truth |
-| Courses | EduAI Core | Instructors manage courses here |
-| Course Enrollment | EduAI Core | Student roster managed here |
-| Topics | EduAI Core | Course-scoped topic taxonomy |
-| Materials / RAG | EduAI Core | Document upload, chunking, embeddings |
-| AI Models / Providers | EduAI Core | Model selection and inference |
-| AI Chat | EduAI Core | All AI interactions via `/api/chat` |
-| Usage Logging | EduAI Core | Cross-extension analytics |
-| Canvas Integration | EduAI Core | Centralized Canvas credentials and operations (Epic #59) |
-| **Shared Question/Exercise Bank** | EduAI Core (Hosted) | Questions shared by Tutor + QM — *see Decision #3* |
-| **Chat/Session History** | EduAI Core (Hosted) | Unified chat history |
+| Authentication / Sessions | EduAI | Single sign-on for all extensions |
+| User Accounts & Roles | EduAI | Single source of truth |
+| Courses | EduAI | Instructors manage courses here |
+| Course Enrollment | EduAI | Student roster managed here |
+| Topics | EduAI | Course-scoped topic taxonomy |
+| Materials / RAG | EduAI | Document upload, chunking, embeddings |
+| AI Models / Providers | EduAI | Model selection and inference |
+| AI Chat | EduAI | All AI interactions via `/api/chat` |
+| Usage Logging | EduAI | Cross-extension analytics |
+| Canvas Integration | EduAI | Centralized Canvas credentials and operations (Epic #59) |
+| **Shared Question/Exercise Bank** | EduAI (Hosted) | Questions shared by Tutor + QM — *see Decision #3* |
+| **Chat/Session History** | EduAI (Hosted) | Unified chat history |
 | Tutoring Sessions & Analytics | AI Tutor | Specific to tutoring workflow |
 | Modules / Lessons / Activities | AI Tutor | Content hierarchy |
 | Submissions & Grading | AI Tutor | Student attempts, feedback |
 | Prompt Templates | AI Tutor | Tutoring-specific |
 | Questions / Variants | Question Maker | Question bank, variant workflows |
 | Assessments | Question Maker | Quiz/test building |
-| Canvas Quiz Export/Import | Question Maker | Assessment delivery — routes through EduAI Core Canvas credentials |
+| Canvas Quiz Export/Import | Question Maker | Assessment delivery — routes through EduAI Canvas credentials |
 | OCR / Document Extraction | Question Maker | QM-specific feature |
 
 ---
@@ -113,7 +115,7 @@ The central platform. Already owns:
 
 ```
               ┌────────────────────────────────────────────┐
-              │                EduAI Core                  │
+              │                EduAI                  │
               │                                            │
               │  ┌───────────┐  ┌──────────┐  ┌────────┐  │
               │  │   Auth    │  │ Courses  │  │  RAG   │  │
@@ -132,10 +134,10 @@ The central platform. Already owns:
         │  - Prompt Templates  │  │  - Canvas Quiz         │
         └──────────────────────┘  └────────────────────────┘
 
-  Each extension calls EduAI Core for:
+  Each extension calls EduAI for:
   OAuth/OIDC | Courses API | Enrollments API | Topics API | AI Chat API | Canvas API
 
-  Course-Aware Chat lives in EduAI Core — no separate migration needed
+  Course-Aware Chat lives in EduAI — no separate migration needed
 ```
 
 ---
@@ -148,10 +150,10 @@ The central platform. Already owns:
 |----|-----|--------|----------|
 | QM-1 | **Auth migration:** Remove local JWT auth. Implement EduAI OAuth/OIDC using Better Auth (same pattern as AI Tutor). | Large | Critical |
 | QM-2 | **Remove local users table:** Derive user identity from EduAI OAuth claims only. Remove registration/login endpoints. | Medium | Critical |
-| QM-3 | **Course reference:** Remove local `courses` table. Questions and assessments reference EduAI Core course IDs directly. | Medium | High |
-| QM-4 | **Topic reference:** Remove local topic storage. Fetch from EduAI Core on-demand. | Small | High |
+| QM-3 | ~~**Course reference:** Remove local `courses` table. Questions and assessments reference EduAI course IDs directly.~~ **Resolved (#1072):** the local `Course` table was kept as a minimal anchor (`id`, `userId`, `coreCourseId`) rather than removed outright — full removal would lose `onDelete: Cascade` for Questions/Assessments/Topics (deferred until Canvas routing, #1084, and #630). Every course field beyond the anchor is live read-through from EduAI; zero Core-owned columns remain locally. | Medium | Done |
+| QM-4 | **Topic reference:** Remove local topic storage. Fetch from EduAI on-demand. | Small | High |
 | QM-5 | **API key scope:** Currently uses a shared admin API key for all EduAI calls. After OAuth migration, user-scoped calls should use the user's Bearer token. | Small | High |
-| QM-6 | **Canvas credentials:** Currently stored locally per-user. Migrate to EduAI Core centralized Canvas management (see Decision #4). | Medium | High |
+| QM-6 | **Canvas credentials:** Currently stored locally per-user. Migrate to EduAI centralized Canvas management (see Decision #4). | Medium | High |
 | QM-7 | **Direct AI provider calls:** Question generation still dispatches directly to Groq, OpenAI, or DeepSeek — route it through Core instead. OCR extraction and variant generation are already centralized. The legacy extraction and topic-assignment functions are dead code and can be deleted. | Medium | High |
 | QM-8 | **Bug reporting:** QM owns `bugReportService.js` and `schema/BugReport.js` — a duplicate of AI Tutor's bug-report flow. See Decision #5. | Small | Low |
 
@@ -161,15 +163,15 @@ The central platform. Already owns:
 
 | ID | Gap | Effort | Priority |
 |----|-----|--------|----------|
-| AT-1 | **Course sync staleness:** One-time import means roster/topic changes don't propagate. Decision needed on sync model (see Decision #1). | Medium | High |
-| AT-2 | **Local user mirror:** Local `User` table duplicates EduAI data. Could be removed and fetched from EduAI Core on each request, or kept as a read-through cache. | Small | Low |
+| AT-1 | ~~**Course sync staleness:** One-time import means roster/topic changes don't propagate. Decision needed on sync model (see Decision #1).~~ **Resolved (#1072):** moved to live fetch (Decision #1, Option B) for every Core-owned course field — see §1.2. Roster/topic import is a separate sync mechanism and is unaffected by this decision. | Medium | Done |
+| AT-2 | **Local user mirror:** Local `User` table duplicates EduAI data. Could be removed and fetched from EduAI on each request, or kept as a read-through cache. | Small | Low |
 | AT-3 | **Bug reporting:** AI Tutor owns `services/bugReports.js`, `routes/bugReports.js`, and `utils/bugReportMappers.js` — identical in structure to QM's bug-report flow. See Decision #5. | Small | Low |
 
 ---
 
-### 3.3 EduAI Core — API Gaps
+### 3.3 EduAI — API Gaps
 
-EduAI Core needs these new or updated endpoints for extensions to depend on:
+EduAI needs these new or updated endpoints for extensions to depend on:
 
 | ID | Endpoint | Status | What's Needed |
 |----|----------|--------|---------------|
@@ -182,7 +184,7 @@ EduAI Core needs these new or updated endpoints for extensions to depend on:
 | EC-7 | `GET /api/courses/:id/topics` | Exists | Already used by AI Tutor. |
 | EC-8 | `POST /api/courses/:id/topics` | Exists | Topic management. |
 | EC-9 | `GET /api/ai-models` | Exists | AI Tutor already uses this. |
-| EC-10 | OAuth/OIDC for sister apps | In Progress — PRs #48, #49, #51, #50 | OAuth provider foundation (#48), Better Auth API key schema fix (#49), OAuth bearer auth for sister app API access (#51), Admin sister app registration UI (#50). These open PRs cover the EduAI Core side of auth. Question Maker still needs to be registered as a client once they land. |
+| EC-10 | OAuth/OIDC for sister apps | In Progress — PRs #48, #49, #51, #50 | OAuth provider foundation (#48), Better Auth API key schema fix (#49), OAuth bearer auth for sister app API access (#51), Admin sister app registration UI (#50). These open PRs cover the EduAI side of auth. Question Maker still needs to be registered as a client once they land. |
 | EC-11 | Canvas credential management | Missing | Centralized Canvas connection per user — needed once Decision #4 is resolved. |
 | EC-12 | Bug report endpoints | Missing | `POST /api/bug-reports`, `GET /api/admin/bug-reports`, `PATCH /api/admin/bug-reports/:id/status` — needed only if Decision #5 approves consolidation. |
 
@@ -199,9 +201,9 @@ Code duplication found via jscpd. All items below are within a single extension 
 | Question Maker | Canvas export and import dialogs share ~8 blocks — extract a shared base dialog component |
 | Question Maker | Assessment service and question service overlap — run a focused diff first; only extract what's genuinely shared |
 | Question Maker | `createdAt`/`updatedAt` declared manually in every Sequelize schema file — Sequelize's `timestamps: true` handles this automatically |
-| EduAI Core | 4 auth routes are likely legacy duplicates — audit and delete dead ones before CWL migration reshapes this surface |
-| EduAI Core | Admin table/dialog pairs share layout — extract shared components |
-| EduAI Core | 47 CRUD route clones — extract shared error-mapping, pagination, and response-shape helpers into a route-utils module |
+| EduAI | 4 auth routes are likely legacy duplicates — audit and delete dead ones before CWL migration reshapes this surface |
+| EduAI | Admin table/dialog pairs share layout — extract shared components |
+| EduAI | 47 CRUD route clones — extract shared error-mapping, pagination, and response-shape helpers into a route-utils module |
 
 ---
 
@@ -211,7 +213,7 @@ These contracts must be defined, stubbed, and test-covered before extension team
 
 ### Contract 1: Authentication
 
-Every extension authenticates users via EduAI Core OAuth/OIDC.
+Every extension authenticates users via EduAI OAuth/OIDC.
 
 ```
 Discovery:     GET  {EDUAI_URL}/api/auth/.well-known/openid-configuration
@@ -231,7 +233,7 @@ UserInfo:      GET  {EDUAI_URL}/api/auth/oauth2/userinfo
 }
 ```
 
-**Each extension registers its own OAuth client** with a unique `client_id` and `client_secret` in EduAI Core's config.
+**Each extension registers its own OAuth client** with a unique `client_id` and `client_secret` in EduAI's config.
 
 ---
 
@@ -309,10 +311,10 @@ Response:
 
 ### Phase 1: Auth Centralization (Weeks 2–3, May 11–21)
 
-**Goal:** Every extension authenticates users through EduAI Core. No more standalone accounts in Question Maker.
+**Goal:** Every extension authenticates users through EduAI. No more standalone accounts in Question Maker.
 
-**EduAI Core tasks:**
-> Note: PRs #48, #49, #51, and #50 are open and cover the OAuth provider foundation, API key schema, bearer auth for sister apps, and admin registration UI. The EduAI Core side of auth is largely being handled by these. Monitor their merge order before starting Question Maker integration.
+**EduAI tasks:**
+> Note: PRs #48, #49, #51, and #50 are open and cover the OAuth provider foundation, API key schema, bearer auth for sister apps, and admin registration UI. The EduAI side of auth is largely being handled by these. Monitor their merge order before starting Question Maker integration.
 - [ ] Once PRs #48–#51 land, register Question Maker as a new OAuth client
 - [ ] Verify OIDC discovery returns correct metadata for Question Maker's client
 - [ ] Verify `/api/auth/oauth2/userinfo` returns the role claim correctly
@@ -334,9 +336,9 @@ Response:
 
 ### Phase 2: Course Data Centralization (Weeks 3–5, May 22–Jun 4)
 
-**Goal:** Extensions read course/enrollment/topic data from EduAI Core. No independently-managed course copies.
+**Goal:** Extensions read course/enrollment/topic data from EduAI. No independently-managed course copies.
 
-**EduAI Core tasks:**
+**EduAI tasks:**
 - [ ] Update `GET /api/courses` and `GET /api/courses/:id` with role-based filtering (EC-1, EC-2)
 - [ ] Build `GET /api/courses/:id/enrollments` endpoint (EC-3) — in progress on `feature/enrollment-api`, track and test once merged
 - [ ] Build `POST /api/courses/:id/enrollments` and `DELETE` (EC-4, EC-5)
@@ -344,7 +346,7 @@ Response:
 
 **Question Maker tasks:**
 - [ ] Remove local `courses` and `topics` tables
-- [ ] Update all questions/assessments/sections to store `eduaiCourseId` (EduAI Core's CUID) as the course reference instead of a local FK
+- [ ] Update all questions/assessments/sections to store `eduaiCourseId` (EduAI's CUID) as the course reference instead of a local FK
 - [ ] Fetch course context from `GET /api/courses/:id` on-demand
 - [ ] Update `GET /api/eduai/courses` proxy to use the user's Bearer token (not shared API key)
 
@@ -358,7 +360,7 @@ Response:
 
 **Goal:** End-to-end demo. A single user logs in and sees the same courses in all three extensions.
 
-- [ ] All three extensions authenticated via EduAI Core OIDC
+- [ ] All three extensions authenticated via EduAI OIDC
 - [ ] Question Maker using EduAI course IDs as foreign keys
 - [ ] AI Tutor course sync updated per decision made in Phase 2
 - [ ] Demo flow: login → navigate to AI Tutor → navigate to Question Maker → same identity, same courses visible
@@ -374,16 +376,18 @@ The options below are starting points for discussion, not final answers. If some
 
 ### Decision 1: AI Tutor Course Sync — Keep Import Model or Move to Live Fetch?
 
+> **Resolved 2026-07-17 (#1072): Option B — live fetch, no cache.** AI Tutor keeps only a `coreOfferingId` anchor row; every Core-owned field (title, description, department, dates, publish state, term/year, `aiInstructions`) is fetched live from EduAI per request, with list requests batched into one `GET /api/courses` call (never per-course, so the "latency added" risk below stayed bounded). An EduAI outage degrades to a placeholder + "Core unavailable" state instead of hard-erroring. The caching layer called out as a downside of Option B is deferred, not skipped — tracked as #1083. Enrollment/topic import remains a separate sync mechanism, unaffected by this decision.
+
 **Option A: Keep import model** (current behavior)
 - Instructor clicks "import course" once; AI Tutor syncs metadata, enrollments, and topics locally.
-- + Simple, resilient — works even if EduAI Core is temporarily down
-- - Stale data risk — roster changes in EduAI Core don't propagate until re-imported
+- + Simple, resilient — works even if EduAI is temporarily down
+- - Stale data risk — roster changes in EduAI don't propagate until re-imported
 - - Instructor must manually re-sync after course updates
 
 **Option B: Live fetch**
-- AI Tutor fetches course/enrollment/topic data from EduAI Core on every request.
+- AI Tutor fetches course/enrollment/topic data from EduAI on every request.
 - + Always fresh, no sync step
-- - Every request depends on EduAI Core being up; latency added
+- - Every request depends on EduAI being up; latency added
 - - Requires a caching layer, error handling, and graceful degradation
 
 **Option C: Hybrid — import + TTL cache**
@@ -395,9 +399,11 @@ The options below are starting points for discussion, not final answers. If some
 
 ### Decision 2: What is the Canonical Course ID in Question Maker?
 
+> **Resolved 2026-07-17 (#1072): Option B, refined — a local anchor row keyed by `coreCourseId`, not a full local course table used as a reference layer.** Question Maker keeps a minimal local `Course` row (`id`, `userId`, `coreCourseId`) as the FK target for Questions/Assessments/Topics — pure Option A (dropping the table and using the EduAI CUID as the bare FK) would lose `onDelete: Cascade` and is deferred until Canvas routing (#1084) and #630. `coreCourseId` is the sole course identity: every course now originates in EduAI at creation (local-only "sandbox" creation removed), and the legacy code-based matching/backfill machinery (linking on course `code`) was deleted as dead code once that invariant held everywhere.
+
 When Question Maker's questions and assessments reference a "course," what should that ID be?
 
-**Option A: EduAI Core course ID** (CUID string) as the FK — eliminates the local course table entirely
+**Option A: EduAI course ID** (CUID string) as the FK — eliminates the local course table entirely
 
 **Option B: Keep local course table** as a reference layer that maps to EduAI IDs — more indirection, but extensions remain more self-contained
 
@@ -405,12 +411,12 @@ When Question Maker's questions and assessments reference a "course," what shoul
 
 ### Decision 3: Shared Question/Exercise Bank — In Scope This Summer?
 
-Per the architecture, a "Shared question/exercise bank (Tutor + QM)" is a **hosted service** in EduAI Core. Both AI Tutor's Activities and Question Maker's Questions/Variants conceptually serve similar purposes.
+Per the architecture, a "Shared question/exercise bank (Tutor + QM)" is a **hosted service** in EduAI. Both AI Tutor's Activities and Question Maker's Questions/Variants conceptually serve similar purposes.
 
 **Option A: In scope this summer**
-- Design and build the shared schema in EduAI Core
+- Design and build the shared schema in EduAI
 - Migrate AI Tutor Activities and QM Questions/Variants into it
-- Both extensions read/write through EduAI Core
+- Both extensions read/write through EduAI
 - Note: Significant effort — involves schema migration in two separate extensions with different data models
 
 **Option B: Design now, implement later**
@@ -424,21 +430,21 @@ Per the architecture, a "Shared question/exercise bank (Tutor + QM)" is a **host
 
 ### Decision 4: How Should Canvas Be Centralized?
 
-Canvas credentials and operations should go through EduAI Core. The question is how:
+Canvas credentials and operations should go through EduAI. The question is how:
 
-**Option A: EduAI Core manages credentials and proxies all Canvas operations**
-- User connects Canvas once in EduAI Core
-- Question Maker calls EduAI Core API to perform Canvas operations (quiz export/import)
-- EduAI Core owns all Canvas-related endpoints and acts as a Canvas proxy for all extensions
+**Option A: EduAI manages credentials and proxies all Canvas operations**
+- User connects Canvas once in EduAI
+- Question Maker calls EduAI API to perform Canvas operations (quiz export/import)
+- EduAI owns all Canvas-related endpoints and acts as a Canvas proxy for all extensions
 - Cleanest separation — no extension talks to Canvas directly
 
-**Option B: EduAI Core stores credentials; extensions retrieve and use them directly**
-- User connects Canvas once in EduAI Core
-- Extensions retrieve the user's Canvas token from EduAI Core and make Canvas calls directly
-- Simpler API surface on EduAI Core, but Canvas logic remains in each extension
+**Option B: EduAI stores credentials; extensions retrieve and use them directly**
+- User connects Canvas once in EduAI
+- Extensions retrieve the user's Canvas token from EduAI and make Canvas calls directly
+- Simpler API surface on EduAI, but Canvas logic remains in each extension
 
 **Option C: Shared credential storage with extension-specific Canvas logic**
-- EduAI Core stores and exposes the Canvas API key per user
+- EduAI stores and exposes the Canvas API key per user
 - Each extension is responsible for its own Canvas operations using that shared key
 - Middle ground between A and B
 
@@ -492,11 +498,11 @@ Core and AI Tutor use Prisma; QM uses Sequelize. This affects every QM backend t
 
 ### Week 2 (May 11–14): Foundation
 
-- [ ] **EduAI Core:** Monitor PRs #48, #49, #51, #50 (OAuth foundation) — these must land before Question Maker auth integration starts
-- [ ] **EduAI Core:** Once PRs #48–#51 are merged, register Question Maker as an OAuth client
-- [ ] **EduAI Core:** Audit `GET /api/courses` — confirm role-based filtering is needed, spec the change
-- [ ] **EduAI Core:** Track `feature/enrollment-api` (`GET /api/courses/:courseId/enrollments`) — review and test once merged
-- [ ] **EduAI Core:** Delete duplicate marketing pages (landing, team, header, footer, nav, welcome) — confirm no app routes import them first; verify `/` redirects to `/dashboard` or `/login` after deletion
+- [ ] **EduAI:** Monitor PRs #48, #49, #51, #50 (OAuth foundation) — these must land before Question Maker auth integration starts
+- [ ] **EduAI:** Once PRs #48–#51 are merged, register Question Maker as an OAuth client
+- [ ] **EduAI:** Audit `GET /api/courses` — confirm role-based filtering is needed, spec the change
+- [ ] **EduAI:** Track `feature/enrollment-api` (`GET /api/courses/:courseId/enrollments`) — review and test once merged
+- [ ] **EduAI:** Delete duplicate marketing pages (landing, team, header, footer, nav, welcome) — confirm no app routes import them first; verify `/` redirects to `/dashboard` or `/login` after deletion
 - [ ] **Question Maker:** Confirm whether the direct provider call functions in the AI service are dead code or still live — resolves QM-7
 - [ ] **Group 5 (Testing):** Write API contract test suites for Contracts 1–4 above
 - [ ] **Question Maker:** Begin Better Auth + EduAI OIDC setup (mirror AI Tutor pattern)
@@ -507,20 +513,20 @@ Core and AI Tutor use Prisma; QM uses Sequelize. This affects every QM backend t
 be made before auth migration begins — this feeds directly into Contract 1, as QM will implement against it
 - [ ] **Question Maker:** Complete OAuth migration; remove local auth endpoints
 - [ ] **Question Maker:** Remove local `users` table; derive user from OAuth session
-- [ ] **EduAI Core:** Verify Question Maker OAuth client working end-to-end
+- [ ] **EduAI:** Verify Question Maker OAuth client working end-to-end
 - [ ] **AI Tutor:** Audit current auth and document any edge cases found
 
 ### Weeks 5–6 (May 29–Jun 11): Course Data Centralization
 
-- [ ] **EduAI Core:** Deploy centralized API v1 (role-filtered courses + enrollments endpoints)
+- [ ] **EduAI:** Deploy centralized API v1 (role-filtered courses + enrollments endpoints)
 - [ ] **Question Maker:** Update question/assessment FKs to use EduAI course IDs; remove local course/topic tables
 - [ ] **AI Tutor:** Implement sync model decision from Phase 2
 - [ ] **All:** Integration tests across auth + course data endpoints
 
 ### Weeks 7–8 (Jun 12–25): Integration Sprint
 
-- [ ] All three extensions authenticated via EduAI Core
-- [ ] Question Maker using EduAI Core for all user/course context
+- [ ] All three extensions authenticated via EduAI
+- [ ] Question Maker using EduAI for all user/course context
 - [ ] End-to-end demo: single login → same identity and courses visible in all extensions
 - [ ] Shared question bank schema documented (even if not yet implemented)
 
@@ -553,7 +559,7 @@ export const auth = betterAuth({
 });
 ```
 
-### How Question Maker Currently Calls EduAI Core
+### How Question Maker Currently Calls EduAI
 
 ```javascript
 // Question-Maker/app/backend/src/services/eduaiService.js
@@ -565,7 +571,7 @@ const eduaiApi = axios.create({
 
 After auth migration, user-scoped requests should use the user's Bearer token forwarded from the session, not a shared admin API key.
 
-### EduAI Core: Adding Role-Filtered Course Access
+### EduAI: Adding Role-Filtered Course Access
 
 The current `GET /api/courses` endpoint in `app/routes/api/courses.$.ts` is admin-only. The fix is to add a role check that returns:
 - For `PROFESSOR`: `WHERE instructorId = userId`
@@ -601,7 +607,7 @@ The current `GET /api/courses` endpoint in `app/routes/api/courses.$.ts` is admi
 | `EduAICore/app/routes/api/courses.$.ts` | Course API endpoints (needs role filtering update) |
 | `EduAICore/app/routes/api/courses.id.ts` | Single course endpoint |
 | `EduAICore/app/routes/api/courses.topics.$.ts` | Topics endpoint |
-| `EduAICore/app/lib/auth/` | EduAI Core auth setup (OAuth provider) |
+| `EduAICore/app/lib/auth/` | EduAI auth setup (OAuth provider) |
 | `EduAICore/prisma/schema.prisma` | Database schema (CourseEnrollment, User, etc.) |
 | `Question-Maker/app/backend/src/auth.js` | Current local JWT auth (to be replaced) |
 | `Question-Maker/app/backend/src/services/eduaiService.js` | Current EduAI API client |
@@ -613,7 +619,7 @@ The current `GET /api/courses` endpoint in `app/routes/api/courses.$.ts` is admi
 
 ### Local Development Setup
 
-Running the full stack locally means running EduAI Core, AI Tutor, and Question Maker simultaneously — each with its own server process and database. This is more complex than the typical single-service setup most developers are used to.
+Running the full stack locally means running EduAI, AI Tutor, and Question Maker simultaneously — each with its own server process and database. This is more complex than the typical single-service setup most developers are used to.
 
 **OAuth across localhost ports**  
 The OIDC flow involves real browser redirects between services. Locally this means every service must be running on a known, fixed port, and CORS plus cookie domain settings must be explicitly configured for localhost. Session cookies in particular can behave differently when crossing ports (e.g., `localhost:5174` to `localhost:3000`) depending on the browser. This needs to be tested and documented for every developer's first setup.
@@ -622,30 +628,30 @@ The OIDC flow involves real browser redirects between services. Locally this mea
 Each service has its own PostgreSQL database. Local setup requires initializing all three databases and keeping their schemas in sync as migrations are added. A new developer joining mid-project needs to run three separate schema setups, not one.
 
 **Environment variable coordination**  
-Three separate repos each have `.env` files that need to reference each other. For example, `EDUAI_BASE_URL` in both AI Tutor and Question Maker must point to whatever port EduAI Core is running on locally. If a developer changes EduAI Core's port, they have to update env files in two other repos. This is easy to get wrong silently — a misconfigured URL produces auth failures that can look like code bugs.
+Three separate repos each have `.env` files that need to reference each other. For example, `EDUAI_BASE_URL` in both AI Tutor and Question Maker must point to whatever port EduAI is running on locally. If a developer changes EduAI's port, they have to update env files in two other repos. This is easy to get wrong silently — a misconfigured URL produces auth failures that can look like code bugs.
 
 **No shared local startup**  
 Currently each service has its own Docker or npm run dev setup. There is no single command to start the whole stack. A shared `docker-compose.yml` at the monorepo root (or a simple shell script) would reduce friction significantly and is worth creating early.
 
 ### Integration Testing
 
-Testing a cross-service flow — for example, a user logging into Question Maker via EduAI Core then generating a question — requires all three services running and correctly configured. This is harder to set up in CI than a single-service test.
+Testing a cross-service flow — for example, a user logging into Question Maker via EduAI then generating a question — requires all three services running and correctly configured. This is harder to set up in CI than a single-service test.
 
-Unit tests for services that call EduAI Core's API will need stubs or mocks. The API contract test suites written in Week 1 serve this purpose: they define the expected shape of every response so extension teams can mock against a known contract rather than guessing. But this only works if the stubs are kept in sync with the real API as it evolves.
+Unit tests for services that call EduAI's API will need stubs or mocks. The API contract test suites written in Week 1 serve this purpose: they define the expected shape of every response so extension teams can mock against a known contract rather than guessing. But this only works if the stubs are kept in sync with the real API as it evolves.
 
-EduAI Core currently has no tests. This is the most urgent blocker for the centralization work, and should be done before anything else. Since extensions are about to depend on Core's API, any changes to any endpoint will have no way to check prematurely for failures. Writing contract tests for Contracts 1-4 must be the first task completed in Week 2, before any other integration work begins.
+EduAI currently has no tests. This is the most urgent blocker for the centralization work, and should be done before anything else. Since extensions are about to depend on Core's API, any changes to any endpoint will have no way to check prematurely for failures. Writing contract tests for Contracts 1-4 must be the first task completed in Week 2, before any other integration work begins.
 
 Testing OAuth flows is also harder to automate. Most approaches either bypass the full flow in test mode (e.g., a test-only endpoint that issues a session directly) or run a real OAuth server in the test environment. The team should agree on which approach to use before writing auth-dependent tests.
 
 ### API Contract Drift
 
-As EduAI Core's API evolves, extension teams must be notified of breaking changes. A change to a response shape or a renamed field in EduAI Core can silently break AI Tutor or Question Maker — and the failure may not show up until someone tests the integration manually. The contract test suites from Week 1 are the main defense here, but only if they are treated as a shared responsibility and updated whenever EduAI Core's API changes.
+As EduAI's API evolves, extension teams must be notified of breaking changes. A change to a response shape or a renamed field in EduAI can silently break AI Tutor or Question Maker — and the failure may not show up until someone tests the integration manually. The contract test suites from Week 1 are the main defense here, but only if they are treated as a shared responsibility and updated whenever EduAI's API changes.
 
 ---
 
 ## 12. Monorepo
 
-EduAI Core, AI Tutor, and Question Maker will be consolidated into a single repository managed by **Turborepo** with separate package manager workspaces. This decision resolves several of the structural friction points described in §11 and sets the foundation for the shared infrastructure this epic depends on.
+EduAI, AI Tutor, and Question Maker will be consolidated into a single repository managed by **Turborepo** with separate package manager workspaces. This decision resolves several of the structural friction points described in §11 and sets the foundation for the shared infrastructure this epic depends on.
 
 ---
 
@@ -673,7 +679,7 @@ A monorepo does **not** mean the services become a monolith. Each extension rema
 ```
 EduAI/
 ├── apps/
-│   ├── core/            # EduAI Core (migrated from EduAI-Core)
+│   ├── core/            # EduAI (migrated from EduAI-Core)
 │   ├── extensions/
 │   ├──── tutor/           # AI Tutor (migrated from AI-Tutor)
 │   └──── question-maker/  # Question Maker (migrated from Question-Maker)
@@ -709,7 +715,7 @@ This phase is intentionally fast. We allocate a small, fixed window of time to c
 Create `packages/config` and extract the root `tsconfig.json`, Prettier, and ESLint configurations. Update all three apps to extend the shared configs via atomic PRs. No functional changes.
 
 #### Phase 3: Core Infrastructure Extraction
-- Create `packages/db` and migrate `schema.prisma` from EduAI Core. This is the enabler for the shared Prisma client that all apps will consume.
+- Create `packages/db` and migrate `schema.prisma` from EduAI. This is the enabler for the shared Prisma client that all apps will consume.
 - Create `packages/auth` and centralize the auth implementation. This directly supports §5 Phase 1 — the Question Maker auth migration depends on this package existing.
 - Refactor apps one-by-one to drop local DB/auth logic and import the shared internal packages.
 
