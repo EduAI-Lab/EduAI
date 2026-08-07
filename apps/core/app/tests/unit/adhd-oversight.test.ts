@@ -707,6 +707,86 @@ Two: Second
       ),
     ).toBe(true);
   });
+  it("does not let a bare Top summary / Next? shell bypass Step ladder on a step-recall turn (#1245)", async () => {
+    // This exact shape used to pass through untouched (see "passes through
+    // structurally compliant drafts" above) — the bug: a copy-pasted
+    // one-line fragment satisfies Top summary + Next? with no real step
+    // content. requireStepLadder must force it through Dean instead.
+    const thin = `**Top summary**
+- Step 2: rinse each item under running water to remove loose food debris.
+
+**Next?** Want me to continue?`;
+
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: `**Top summary**
+- Step 2 is about rinsing before you wash.
+
+### Step ladder
+1. **Rinse each item** — why it matters: loosens stuck-on food so soap can actually clean, not just spread grease around.
+
+**Next?** Want the next step?`,
+      usage: { promptTokens: 10, completionTokens: 20 },
+    } as never);
+
+    const result = await auditAndMaybeRewrite({
+      draft: thin,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "Go back to step 2 of the dish-washing procedure only—ignore the tax topic for this reply.",
+      priorAssistantText: "Here are the dish-washing steps...",
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.method).toBe("llm");
+    expect(result.text).toMatch(/### Step ladder/i);
+    expect(
+      isProfileStructuralPass(computeAdhdResponseMetrics(result.text), "full_tutoring", result.text),
+    ).toBe(true);
+  });
+
+  it("ships the thin shell untouched when there is no step-recall request (unchanged behavior)", async () => {
+    const thin = `**Top summary**
+- Step 2: rinse each item under running water to remove loose food debris.
+
+**Next?** Want me to continue?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft: thin,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "What is gradient descent?",
+    });
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("none");
+  });
+
+  it("forces a minimal Step ladder skeleton when LLM retries still miss it", async () => {
+    const thin = `**Top summary**
+- Step 2: rinse each item under running water.
+
+**Next?** Want me to continue?`;
+
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({ text: thin, usage: { promptTokens: 5, completionTokens: 5 } } as never)
+      .mockResolvedValueOnce({ text: thin, usage: { promptTokens: 5, completionTokens: 5 } } as never);
+
+    const result = await auditAndMaybeRewrite({
+      draft: thin,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "Go back to step 2.",
+      priorAssistantText: "Here are the dish-washing steps...",
+    });
+
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.text).toMatch(/### Step ladder/i);
+    expect(
+      isProfileStructuralPass(computeAdhdResponseMetrics(result.text), "full_tutoring", result.text),
+    ).toBe(true);
+  });
+
   it("rejects score-improving LLM rewrites that still miss **Next?** (contentOk gate)", async () => {
     // Improves score (adds Top summary) but still fails profileStructuralPass —
     // must retry then force-wrap rather than accept the partial rewrite.

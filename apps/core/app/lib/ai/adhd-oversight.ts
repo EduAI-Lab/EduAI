@@ -10,6 +10,7 @@ import {
   ADHD_URGENCY_TERMS,
   computeAdhdResponseMetrics,
   hasSourcesFooter,
+  hasStepLadderSection,
   isProfileStructuralPass,
   isRedirectTemplatePass,
   isStructuralCompliancePass,
@@ -23,7 +24,7 @@ import {
   hasEduaiDiagramFence,
   resolveAdhdAssistPolicyBlock,
 } from "~/lib/ai/adhd-assist";
-import { userRequestedDiagram } from "~/lib/ai/adhd-turn-profile";
+import { userRequestedDiagram, userRequestedStepRecall } from "~/lib/ai/adhd-turn-profile";
 
 export const ADHD_OVERSIGHT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode chat responses.
 Rewrite the draft to satisfy ALL structural rules without changing facts, numbers, or meaning.
@@ -53,6 +54,17 @@ DIAGRAM REQUIRED (learner asked for a visual):
 - Do NOT describe the diagram in prose instead of emitting the fence.
 - Do NOT use a plain text/ASCII fence when eduai-diagram fits.`;
 
+/** #1245: learner asked to revisit a specific numbered step from an earlier Step ladder. */
+const ADHD_OVERSIGHT_STEP_LADDER_REQUIRED_ADDENDUM = `
+
+STEP RECALL (learner asked to revisit/expand a specific step):
+- You MUST include a "### Step ladder" section with at least one numbered
+  step that re-explains the requested step in full — restate the action and
+  its "why it matters" reason in fresh wording.
+- Do NOT just repeat the earlier answer's wording for that step verbatim; a
+  one-line copy is not an acceptable rewrite here.
+- Keep the reply scoped to the requested step only.`;
+
 const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode redirect responses.
 The learner asked about a second topic while another is in progress.
 
@@ -79,7 +91,7 @@ export const ADHD_OVERSIGHT_GENERIC_SOURCES =
 export function buildOversightRewriteSystem(
   profile: AdhdTurnProfile,
   wordCap: number,
-  options?: { requireDiagram?: boolean },
+  options?: { requireDiagram?: boolean; requireStepLadder?: boolean },
 ): string {
   if (profile === "redirect") {
     return ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
@@ -98,6 +110,9 @@ export function buildOversightRewriteSystem(
   }
   if (options?.requireDiagram) {
     system += ADHD_OVERSIGHT_DIAGRAM_REQUIRED_ADDENDUM;
+  }
+  if (options?.requireStepLadder) {
+    system += ADHD_OVERSIGHT_STEP_LADDER_REQUIRED_ADDENDUM;
   }
   return system;
 }
@@ -592,12 +607,13 @@ function contentOk(
   metrics: AdhdStructuralCompliance,
   profile: AdhdTurnProfile,
   text: string,
-  options?: { requireDiagram?: boolean; expectSources?: boolean },
+  options?: { requireDiagram?: boolean; expectSources?: boolean; requireStepLadder?: boolean },
 ): boolean {
   if (!passesProfileStructure(metrics, profile, text)) return false;
   if (!metrics.noUrgency) return false;
   if (options?.requireDiagram && !hasEduaiDiagramFence(text)) return false;
   if (options?.expectSources && !metrics.hasSources) return false;
+  if (options?.requireStepLadder && !metrics.stepLadder) return false;
   return true;
 }
 
@@ -606,7 +622,7 @@ export function describeOversightRejectReasons(
   metrics: AdhdStructuralCompliance & { profileStructuralPass: boolean },
   profile: AdhdTurnProfile,
   text: string,
-  options?: { requireDiagram?: boolean; expectSources?: boolean },
+  options?: { requireDiagram?: boolean; expectSources?: boolean; requireStepLadder?: boolean },
 ): string[] {
   const reasons: string[] = [];
   const req = getProfileRequirements(profile);
@@ -631,6 +647,12 @@ export function describeOversightRejectReasons(
   if (options?.expectSources && !metrics.hasSources) {
     reasons.push("missing Sources footer after tools/RAG ran");
   }
+  if (options?.requireStepLadder && !metrics.stepLadder) {
+    reasons.push(
+      "learner asked to revisit a specific step — reply must include a real ### Step ladder " +
+        "re-explanation of that step (with a why-it-matters clause), not a one-line copy of the earlier wording",
+    );
+  }
   if (reasons.length === 0 && !metrics.profileStructuralPass) {
     reasons.push("profile structural pass failed");
   }
@@ -643,6 +665,7 @@ function buildOversightUserPrompt(args: {
   profile: AdhdTurnProfile;
   requireDiagram: boolean;
   expectSources: boolean;
+  requireStepLadder?: boolean;
   rejectReasons?: string[];
 }): string {
   const learner = (args.userText ?? "").trim() || "(unknown)";
@@ -665,6 +688,11 @@ function buildOversightUserPrompt(args: {
   if (args.requireDiagram) {
     parts.push(
       `\nThe learner asked for a diagram. Rewrite so the reply includes one eduai-diagram fence with topic-specific stage labels (type: process-flow, gradient-descent, hierarchy, or compare — default process-flow). Stages must match Top summary / Step ladder names.`,
+    );
+  }
+  if (args.requireStepLadder) {
+    parts.push(
+      `\nThe learner asked to revisit a specific numbered step from an earlier plan. Rewrite so the reply includes a "### Step ladder" section that re-explains that step in full (fresh wording, plus a why-it-matters clause) — do not just repeat the earlier answer's line for that step verbatim.`,
     );
   }
   parts.push(`\nDRAFT TO REWRITE:\n\n${args.draft}`);
@@ -690,12 +718,22 @@ export function tryDeterministicStructuralFix(
     wordCap?: number;
     profile?: AdhdTurnProfile;
     expectSources?: boolean;
+    requireStepLadder?: boolean;
   },
 ): string | null {
   const wordCap = options?.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const profile = options?.profile;
   const trimmed = normalizeAdhdStructuralAnchors(draft);
   if (!trimmed) return null;
+
+  // A missing Step ladder can't be fixed deterministically (there is no real
+  // step content to insert) — only an LLM rewrite can regenerate it, so bail
+  // out here rather than ship a draft that passes every other check while
+  // still being the thin, copy-pasted fragment #1245 is about.
+  if (options?.requireStepLadder) {
+    const metrics = computeAdhdResponseMetrics(trimmed, { wordCap });
+    if (!metrics.stepLadder) return null;
+  }
 
   if (profile) {
     const before = withProfileStructuralPass(
@@ -765,6 +803,7 @@ export async function auditAndMaybeRewrite(args: {
   wordCap?: number;
   profile?: AdhdTurnProfile;
   userText?: string;
+  priorAssistantText?: string;
   /** When true, require a Sources footer (tools/RAG ran). Never invent page numbers. */
   toolsUsed?: boolean;
 }): Promise<AuditAndMaybeRewriteResult> {
@@ -776,8 +815,18 @@ export async function auditAndMaybeRewrite(args: {
   const requireDiagram =
     userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
   const expectSources = Boolean(args.toolsUsed);
+  // #1245: a step-recall request must get a real Step ladder re-explanation,
+  // not just a bare Top summary / Next? shell around a copy-pasted fragment.
+  // Only full_tutoring's policy block describes Step ladder rules at all.
+  const requireStepLadder =
+    profile === "full_tutoring" &&
+    userRequestedStepRecall({
+      userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
+    }) &&
+    !hasStepLadderSection(trimmed);
   const diagramOpts = { userText: args.userText };
-  const gateOpts = { requireDiagram, expectSources };
+  const gateOpts = { requireDiagram, expectSources, requireStepLadder };
 
   const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap }),
@@ -849,6 +898,7 @@ export async function auditAndMaybeRewrite(args: {
     wordCap,
     profile,
     expectSources,
+    requireStepLadder,
   });
   if (deterministic && !requireDiagram) {
     const afterMetrics = withProfileStructuralPass(
@@ -889,13 +939,17 @@ export async function auditAndMaybeRewrite(args: {
       model: args.model,
       temperature: 0.2,
       maxTokens: resolveOversightRewriteMaxTokens(wordCap),
-      system: buildOversightRewriteSystem(profile, wordCap, { requireDiagram }),
+      system: buildOversightRewriteSystem(profile, wordCap, {
+        requireDiagram,
+        requireStepLadder,
+      }),
       prompt: buildOversightUserPrompt({
         draft: trimmed,
         userText: args.userText,
         profile,
         requireDiagram,
         expectSources,
+        requireStepLadder,
         rejectReasons,
       }),
     });
@@ -955,6 +1009,7 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       requireDiagram,
       expectSources,
+      requireStepLadder,
       userText: args.userText,
       beforeMetrics,
       oversightStartedAt,
@@ -971,6 +1026,7 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       requireDiagram,
       expectSources,
+      requireStepLadder,
       userText: args.userText,
       beforeMetrics,
       oversightStartedAt,
@@ -992,11 +1048,12 @@ function finalizeForcedDeterministic(args: {
   profile: AdhdTurnProfile;
   requireDiagram?: boolean;
   expectSources?: boolean;
+  requireStepLadder?: boolean;
   userText?: string;
   beforeMetrics: AdhdStructuralCompliance & { profileStructuralPass?: boolean };
   oversightStartedAt: number;
   oversightUsage: OversightUsage | null;
-  gateOpts: { requireDiagram?: boolean; expectSources?: boolean };
+  gateOpts: { requireDiagram?: boolean; expectSources?: boolean; requireStepLadder?: boolean };
 }): AuditAndMaybeRewriteResult {
   const wrapOpts = {
     wordCap: args.wordCap,
@@ -1025,6 +1082,12 @@ function finalizeForcedDeterministic(args: {
       parts.push("**Top summary**", "- See the question above.");
     } else {
       parts.push("One topic at a time — happy to switch or return.");
+    }
+    if (args.requireStepLadder) {
+      parts.push(
+        "### Step ladder",
+        "1. Revisit that step — why it matters: keeps the plan in order so you don't lose your place.",
+      );
     }
     if (args.requireDiagram) {
       parts.push(

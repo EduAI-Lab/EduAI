@@ -35,10 +35,13 @@ import {
  * topic (#1313 scenario topic bleed) and caps redirect replies at 3
  * sentences; an in-message instruction to merge topics does not override
  * this. Dean enforces the sentence cap deterministically via
- * isRedirectTemplatePass (adhd-metrics.ts). NOTE: this version number may
- * collide with #1245's independent v2.2 bump — reconcile at merge time.
+ * isRedirectTemplatePass (adhd-metrics.ts).
+ * v2.3: STEP RECALL rule (#1245) — revisiting/expanding a specific numbered
+ * step must produce a fresh Step ladder re-explanation, not a copy-pasted
+ * fragment of the earlier wording. Dean enforces this deterministically via
+ * auditAndMaybeRewrite's requireStepLadder gate (adhd-oversight.ts).
  */
-export const ADHD_ASSIST_POLICY_VERSION = "2.2";
+export const ADHD_ASSIST_POLICY_VERSION = "2.3";
 
 export const ADHD_ASSIST_POLICY_BLOCK = `=== ADHD ASSIST MODE ===
 You are responding to a learner who benefits from low cognitive load and
@@ -97,6 +100,16 @@ FOCUS:
 - If the user goes off-topic, gently redirect:
   "That's a separate question - want to come back to <previous topic>
    first, or switch?"
+
+STEP RECALL:
+- If the user asks to go back to, revisit, re-explain, or expand a specific
+  numbered step from an earlier Step ladder, treat it as a full tutoring
+  answer about that one step: include a fresh "### Step ladder" entry that
+  restates the action and its "why it matters" reason in new wording, with
+  one concrete example or detail you have not already given.
+- Do NOT answer with a bare quote or near-copy of your earlier wording for
+  that step. A one- or two-sentence repeat is not a valid step-recall reply.
+- Stay scoped to the requested step only; do not re-list the other steps.
 
 CONNECTING TOPICS:
 - If another topic is closely related, you may add at most one
