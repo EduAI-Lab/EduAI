@@ -31,7 +31,7 @@ export function AnimatedCompare({
       {({ playKey, reducedMotion }) => (
         <div
           key={playKey}
-          className="flex flex-wrap items-stretch justify-center gap-2 sm:gap-3"
+          className="flex w-full min-w-0 flex-wrap items-stretch justify-center gap-2 sm:gap-3"
         >
           {stages.map((pane, i) => (
             <ComparePane

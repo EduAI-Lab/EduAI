@@ -86,7 +86,7 @@ function ProcessFlowTrack({
   }, [playKey, reducedMotion, stages.length, onHighlight]);
 
   return (
-    <ol className="flex flex-wrap items-stretch justify-center gap-1.5 sm:gap-2">
+    <ol className="flex w-full min-w-0 flex-wrap items-stretch justify-center gap-1.5 sm:gap-2">
       {stages.map((stage, i) => (
         <li key={`${stage.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
           {i > 0 ? (

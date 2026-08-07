@@ -41,7 +41,7 @@ export function AnimatedHierarchy({
             playKey={playKey}
           />
           {children.length > 0 ? (
-            <div className="flex flex-wrap items-stretch justify-center gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-stretch justify-center gap-2">
               {children.map((child, i) => (
                 <HierarchyNode
                   key={`${child.label}-${i}`}

@@ -41,7 +41,12 @@ export function AnimatedDiagramShell({
   return (
     <div
       className={cn(
-        "my-3 overflow-hidden rounded-xl border border-border/60 bg-muted/30 p-3",
+        // #1320: w-full + min-w-0 so this shell shrinks to its message-column
+        // parent instead of growing to fit an unwrapped flex-wrap row of
+        // stage chips (flex items default to min-width: auto, which lets
+        // their content's intrinsic width push an ancestor wider than the
+        // viewport instead of wrapping).
+        "my-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-muted/30 p-3",
         className,
       )}
       data-eduai-diagram={diagramId}
@@ -62,7 +67,7 @@ export function AnimatedDiagramShell({
           </Button>
         )}
       </div>
-      <div role="group" aria-label={ariaLabel}>
+      <div role="group" aria-label={ariaLabel} className="min-w-0">
         {children({ playKey, reducedMotion })}
       </div>
       {detail ? (

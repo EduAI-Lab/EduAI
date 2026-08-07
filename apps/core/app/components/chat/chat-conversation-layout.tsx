@@ -100,7 +100,13 @@ export function ChatConversationLayout({
             </p>
           </div>
         )}
-        <div className="h-full min-h-0 overflow-y-auto overscroll-contain scrollbar-hover scroll-smooth">
+        {/* #1320: overflow-x-hidden is required alongside overflow-y-auto --
+            per spec, an axis left unset next to a non-"visible" sibling axis
+            computes to "auto" (not "visible"), so wide message content (an
+            eduai-diagram widget wider than its intended max-w-3xl column)
+            silently opened a horizontal scroll region here instead of
+            wrapping/shrinking, effectively rendering it off-screen. */}
+        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain scrollbar-hover scroll-smooth">
           <div
             className={cn(
               "px-4 md:px-6",
