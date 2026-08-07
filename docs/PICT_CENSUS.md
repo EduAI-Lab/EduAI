@@ -313,10 +313,9 @@ the surface entirely — the better outcome, if it lands first.
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
-| `password-set-reuse-gate` | 6+ | `lib/auth/server.ts:92` | **BUILD** |
-| `enforce-admin-if-apikey` ⭐ | 4–5 | `lib/auth/guards.server.ts:48` | **BUILD** |
-| `api-me-action` ⭐ | 4 | `routes/api/me.ts:57` | **BUILD** |
-| `role-forked-listing` ⭐ | 4–5 | Core `course-access.server.ts:118` + ai-tutor `routes/courses.js:164` | **BUILD** |
+| `password-set-reuse-gate` | 6 | `lib/auth/server.ts:92` | **BUILD** |
+| `auth-precedence` ⭐ (was `enforce-admin-if-apikey` + `api-me-action`) | 3 | `lib/auth/guards.server.ts:48` + `routes/api/me.ts:57` | **BUILD** |
+| `role-forked-listing` ⭐ | 5 | Core `course-access.server.ts:118` + ai-tutor `routes/courses.js:164` | **BUILD** |
 | `signup-registration-gate` | 4 | `lib/auth/server.ts:182` | DEFER |
 | `requireInviter` | 4 | `guards.server.ts:185` | DEFER |
 | `isStrongPassword` | 4 | `lib/auth/password-policy.ts:20` | DEFER |
@@ -330,14 +329,23 @@ the surface entirely — the better outcome, if it lands first.
 a documented precedence (a wrong current password beats the reuse check) that the oracle must encode
 rather than discover.
 
-`enforce-admin-if-apikey` and `api-me-action` are **two implementations of one precedence rule** —
-invalid key **plus** cookie defers to the cookie, invalid key **without** cookie is 401. They belong
-in one model with a site dimension. A partial hand-written matrix already exists at
-`guards.server.test.ts:125-200`, so this is largely converting enumerated cases to a generated table
-and filling the holes it exposes.
+`auth-precedence` (built as one model, per the drift-override rationale below): `enforce-admin-if-apikey`
+and the `/api/me` composition are **two implementations of one precedence rule** — invalid key **plus**
+cookie defers to the cookie, invalid key **without** cookie is 401. `KeyState × CookieState × Site` (3
+dims, down from the 4–5 estimated per standalone endpoint — merging into one model collapses the
+overlap). The precedence cases at `guards.server.test.ts:154-465` became PICT rows.
+
+`guards.server.test.ts` itself is **kept, not converted away** — it covers robustness edges the 3-dim
+precedence model has no axis for: x-api-key whitespace trimming, malformed/userless session shapes,
+missing/orphan user records, and the exact `logSecurityEvent` fields per denial path. Those are
+implementation invariants, not additional points in `KeyState × CookieState × Site`; folding them into
+the generated adapter would duplicate the same assertions on every row rather than add coverage.
 
 `role-forked-listing`: the publish gate keys on **enrollment** role, not platform role — a frequent
-source of TA-parity divergence between Core and ai-tutor.
+source of TA-parity divergence between Core and ai-tutor. Building it surfaced a real cross-app
+inconsistency for a platform-STUDENT holding instructor-of-record status (visible in Core, not in
+ai-tutor) — filed as #1386, not a bug in either oracle since each side's actual behavior is
+internally correct.
 
 `enrollment-floor`: the last-active-INSTRUCTOR floor applies on demote and deactivate but **not** on
 add, and it binds ADMIN too (no override).
@@ -356,8 +364,13 @@ add, and it binds ADMIN too (no override).
 | `bug-reports-auth-select` | 3 | bug-reports action | DROP |
 
 `resolveChatReadAccess` dims: `owner × admin × courseId × access-level × policy-flag ×
-owner-active-student`. `createQuestion` has a 6-way error oracle plus deleted/missing topic-set
-folding. `admin-write-confirmation` covers preview consumption and the same-turn anti-replay guard.
+owner-active-student`. `createQuestion` has a 6-way error oracle (5 errors + success) plus
+deleted/missing topic-set folding. `admin-write-confirmation` models the real caller-facing entry
+point `runConfirmedAdminWriteTool` (not just the underlying preview map) — `confirmed ×
+preview-state × identity × confirm-turn × run-outcome` — covering both preview consumption and the
+same-turn anti-replay guard; found that `/set-password` never actually reaches the strength/reuse
+gate in `password-set-reuse-gate` (a `better-auth` SERVER_ONLY endpoint has no `ctx.path`), filed as
+#1385.
 
 Confirmed thin, not modelled: agent-readiness (static data table), disciplines (cache + validate),
 `dashboard.stats` (role-only switch), agent-tools wiring/delegation.
