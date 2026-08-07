@@ -1,0 +1,26 @@
+# S8 — ai-chat-gate (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# See tests/models/ai-chat-gate.oracle.ts for the oracle spec.
+#
+# `POST /activities/:activityId/{teach,guide,custom}` (handleAiInteraction,
+# apps/extensions/ai-tutor/server/src/routes/activities.js) gates access on
+# role/enrollment, then a three-way publish AND (course, module, lesson),
+# before any mode-specific work. `Access` collapses platform-role and
+# enrollment into one dimension since the code checks them in strict
+# sequence (role first, enrollment only for STUDENT). `DualLoop` must NOT
+# change the gate outcome — it only affects internal AI orchestration once
+# the gate is already open — so this model is also a regression lock against
+# a future change accidentally coupling them.
+#
+# Two things named in the census note ("mode" enable-flags, "session
+# ownership") are deliberately NOT dimensions here and are not exercised by
+# this model at all: reading the handler showed neither is actually enforced
+# server-side today (POST /teach and /guide never check
+# enableTeachMode/enableGuideMode, and the chatId "ownership" lookup result
+# is discarded rather than acted on) — both filed as separate bugs rather
+# than modeled or fixed here (docs/PICT_CENSUS.md § S8 update, #1187).
+Access:               STUDENT_ENROLLED, STUDENT_NOT_ENROLLED, NON_STUDENT
+CoursePublishedLive:  yes, no
+ModulePublished:      yes, no
+LessonPublished:      yes, no
+Mode:                 teach, guide, custom
+DualLoop:             on, off

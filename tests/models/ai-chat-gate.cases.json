@@ -1,0 +1,74 @@
+[
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "yes",
+    "LessonPublished": "no",
+    "Mode": "guide",
+    "DualLoop": "off"
+  },
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "yes",
+    "ModulePublished": "no",
+    "LessonPublished": "yes",
+    "Mode": "custom",
+    "DualLoop": "on"
+  },
+  {
+    "Access": "STUDENT_ENROLLED",
+    "CoursePublishedLive": "yes",
+    "ModulePublished": "yes",
+    "LessonPublished": "yes",
+    "Mode": "guide",
+    "DualLoop": "on"
+  },
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "no",
+    "LessonPublished": "yes",
+    "Mode": "teach",
+    "DualLoop": "off"
+  },
+  {
+    "Access": "STUDENT_NOT_ENROLLED",
+    "CoursePublishedLive": "yes",
+    "ModulePublished": "yes",
+    "LessonPublished": "no",
+    "Mode": "teach",
+    "DualLoop": "on"
+  },
+  {
+    "Access": "STUDENT_ENROLLED",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "no",
+    "LessonPublished": "no",
+    "Mode": "teach",
+    "DualLoop": "off"
+  },
+  {
+    "Access": "STUDENT_NOT_ENROLLED",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "yes",
+    "LessonPublished": "yes",
+    "Mode": "custom",
+    "DualLoop": "off"
+  },
+  {
+    "Access": "STUDENT_NOT_ENROLLED",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "no",
+    "LessonPublished": "no",
+    "Mode": "guide",
+    "DualLoop": "on"
+  },
+  {
+    "Access": "STUDENT_ENROLLED",
+    "CoursePublishedLive": "yes",
+    "ModulePublished": "yes",
+    "LessonPublished": "no",
+    "Mode": "custom",
+    "DualLoop": "off"
+  }
+]
