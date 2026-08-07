@@ -10,6 +10,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] feat: Add the BullMQ dequeue/dispatch worker for durable AI jobs: per-pool consumers, race-safe durable-row claiming before `bullJobId` persistence, cancellation-safe lifecycle transitions, Auto/fleet-aware question generation, configurable retries/concurrency, graceful shutdown, and producer-to-worker integration coverage. (#916/#168, @ssaada08, 2026-07-27)
 
+### Changed
+
+- [ai-tutor] feat: Move course search and the term/status/progress filters server-side on `GET /api/courses` (plus a new `GET /api/courses/facets` so dropdown options span the caller's whole accessible set), so the course switcher, command palette, and the instructor/student lists reach past the bounded 200-course page instead of filtering it. Closes #1208. (@abdullahmoh21, 2026-08-02) — [#1345](https://github.com/EduAI-Lab/EduAI/pull/1345)
+
 ### Fixed
 
 ## [Week 14 — August 3–9, 2026]
@@ -28,6 +32,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] test: Add vLLM thinking-mode request-wrapper regression coverage for chat-body rewriting, existing template kwargs, non-chat requests, and the explicit opt-out. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
 - [core] test: `reembed-course-materials.test.ts` — asserts bounded in-flight concurrency (never exceeds the configured limit, proven concurrent via a delayed `embedMany` mock), per-material failure isolation (one rejection doesn't stop siblings), monotonic/consistent progress reporting, and blank/null `rawText` exclusion. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
 - [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+- [core] test: Route loader/action coverage for `app/routes` (#1213) — adds 46 test files covering every `admin.*.tsx` route's authorization checks, `courses.$courseId.tsx`/`chat.$chatId.tsx` found/not-found/unauthorized branches, every remaining top-level page loader/action, all four `auth/*` routes, and ~20 `app/routes/api/*` handlers that had drifted to 0% coverage since the issue was filed (`dashboard.stats`, `sessions.validate`, `courses.embedding-settings.$`, `questions(.ts/.id.ts)`, `courses.id.rag-settings`, `vllm-models`, `courses.re-embed.$`/`$jobId`, `e2e.promote`, `canvas.$`, `courses.canvas-materials.$`, and others). Statement coverage: `app/routes/api` 63%→86.45% (the issue's stated 72.57% had regressed since filing; now above it), `app/routes/auth` 36%→81.43%, top-level `app/routes` 3.67%→43.32%, combined 54.4%(stale)/59%(re-measured)→76.34%. The remaining gap to the 80% combined target sits almost entirely in top-level route JSX component bodies, which the issue itself scopes out as "not the testable surface" for loader/action work — closing it would require rendering full page components (data fetching, `@eduai/ui` deps), a separate and substantially larger effort. (#1213, @evanbones, 2026-08-05) — [#1397](https://github.com/EduAI-Lab/EduAI/pull/1397)
 
 
 ## [Week 13 — July 27 – August 2, 2026]
@@ -53,6 +58,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Close Core AI/RAG/chat PICT models for #1182 — auto-router, chat-entry-admission (incl. course-id source → 404 and persisted not-found → 410), chat-rag-inject (AlwaysSource env vs arg), and byok-vs-platform-key-resolution (registry key-source assertions); census/TESTS dimension counts reconciled. (#1182, @GlowyBlack, 2026-08-05) — [#1340](https://github.com/EduAI-Lab/EduAI/pull/1340)
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 - [core] test: `chat-markdown-css-scope.test.ts` guards the #1222 CSS split — fails if `app.css` re-imports katex/streamdown, if the Streamdown `@source` directives are dropped, or if `chat-message.tsx` stops importing the scoped stylesheet. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
 - [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
