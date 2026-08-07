@@ -44,6 +44,8 @@ function uniqueEmail(prefix: string): string {
   return email;
 }
 
+const verificationIdentifiers: string[] = [];
+
 function cookieHeaderFrom(res: Response): string {
   const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
   return setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
@@ -153,10 +155,12 @@ async function runRow(row: PasswordSetReuseGateRow) {
 
     const token = randomUUID();
     if (row.ResetToken !== "missing") {
+      const identifier = `reset-password:${token}`;
+      verificationIdentifiers.push(identifier);
       await prisma.verification.create({
         data: {
-          id: `reset-password:${token}`,
-          identifier: `reset-password:${token}`,
+          id: identifier,
+          identifier,
           value: user.id,
           expiresAt:
             row.ResetToken === "valid"
@@ -224,7 +228,7 @@ afterAll(async () => {
   await prisma.session.deleteMany({ where: { user: { email: { in: emails } } } });
   await prisma.passwordHistory.deleteMany({ where: { user: { email: { in: emails } } } });
   await prisma.account.deleteMany({ where: { user: { email: { in: emails } } } });
-  await prisma.verification.deleteMany({ where: { identifier: { startsWith: "reset-password:" } } });
+  await prisma.verification.deleteMany({ where: { identifier: { in: verificationIdentifiers } } });
   await prisma.user.deleteMany({ where: { email: { in: emails } } });
   await prisma.$disconnect();
 });
