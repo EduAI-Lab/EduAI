@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ADHD_ASSIST_POLICY_BLOCK,
+  ADHD_ASSIST_POLICY_VERSION,
   composeSystemPrompt,
   ensureDiagramBeforeNext,
   hasDiagramBlock,
@@ -162,6 +163,18 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Top summary**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Next?**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain('Do not rename **Top summary** or **Next?**');
+  });
+});
+
+describe("v2.3 step recall rule (#1245)", () => {
+  it("full tutoring block tells the model to regenerate, not copy, a revisited step", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("STEP RECALL:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("### Step ladder");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("bare quote or near-copy");
+  });
+
+  it("stamps the bumped policy version", () => {
+    expect(ADHD_ASSIST_POLICY_VERSION).toBe("2.3");
   });
 });
 
