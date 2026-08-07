@@ -150,11 +150,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     url.pathname.startsWith("/auth/");
   // #1369: both awaits depend only on `session.user.id`, so run them together instead of
   // serializing the preference lookup behind the expiry check on every authenticated
-  // render. The redirect still short-circuits below; the cost is one wasted (primary-key
-  // indexed) preference read in the rare expired case, against a saved round-trip on the
-  // common one. `isPasswordExpiredForUser` is also memoized for 60s per process, so most
-  // renders never reach the account query at all.
-  const [expiredRedirect, row] = await Promise.all([
+  // render. `isPasswordExpiredForUser` is memoized for 60s per process, so the saved
+  // round-trip lands on the cache miss — roughly one render per user per minute — not on
+  // every render. The costs are one wasted (primary-key indexed) preference read in the
+  // rare expired case, and a second pool connection held for the length of the overlap.
+  //
+  // `allSettled`, not `all`: the expired-password redirect to /settings is the only route
+  // a user has back to the change-password form, so it must not be swallowed by a
+  // rejection in the independent preference read (statement timeout, pool P2024, dropped
+  // connection). The redirect wins; otherwise either rejection still surfaces as before.
+  const [expiryResult, rowResult] = await Promise.allSettled([
     isExempt ? Promise.resolve(null) : getExpiredPasswordRedirect(session.user.id),
     prisma.userPreference.findUnique({
       where: { userId: session.user.id },
@@ -166,7 +171,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     }),
   ]);
-  if (expiredRedirect) return expiredRedirect;
+  if (expiryResult.status === "rejected") throw expiryResult.reason;
+  if (expiryResult.value) return expiryResult.value;
+  if (rowResult.status === "rejected") throw rowResult.reason;
+  const row = rowResult.value;
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.

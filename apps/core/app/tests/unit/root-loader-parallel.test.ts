@@ -45,9 +45,20 @@ type RootData = {
   policies: Record<string, boolean>;
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function run(path = "/dashboard") {
+  const url = new URL(`http://localhost${path}`);
   return loader({
-    request: new Request(`http://localhost${path}`),
+    request: new Request(url),
+    url,
+    pattern: "/",
     params: {},
     context: {} as never,
   });
@@ -84,21 +95,19 @@ describe("root loader — #1369 parallel awaits", () => {
     signedInAs("STUDENT");
 
     // Hold the expiry check open. If the two awaits were still sequential, the preference
-    // query could not have been issued while this promise is unresolved.
-    let releaseExpiry!: () => void;
-    vi.mocked(getExpiredPasswordRedirect).mockReturnValue(
-      new Promise<null>((resolve) => {
-        releaseExpiry = () => resolve(null);
-      }),
-    );
+    // query could not have been issued while this promise is unresolved. `vi.waitFor`
+    // rather than a fixed number of microtask ticks, so the assertion does not break when
+    // an unrelated `await` is added upstream in the loader — a serial implementation can
+    // never satisfy it either way, since the gate is still closed.
+    const expiryGate = deferred<null>();
+    vi.mocked(getExpiredPasswordRedirect).mockReturnValue(expiryGate.promise);
 
     const pending = run();
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() =>
+      expect(prismaMock.userPreference.findUnique).toHaveBeenCalledTimes(1),
+    );
 
-    expect(prismaMock.userPreference.findUnique).toHaveBeenCalledTimes(1);
-
-    releaseExpiry();
+    expiryGate.resolve(null);
     await pending;
   });
 
@@ -156,6 +165,30 @@ describe("root loader — #1369 parallel awaits", () => {
     // The preference read is fired in parallel and simply discarded here — that wasted
     // primary-key lookup is the deliberate cost of not serializing the common path.
     expect(prismaMock.userPreference.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("still redirects when the parallel preference read rejects", async () => {
+    signedInAs("STUDENT");
+    vi.mocked(getExpiredPasswordRedirect).mockResolvedValue(
+      new Response(null, { status: 302, headers: { Location: "/settings?expired=1" } }),
+    );
+    // Running the two queries together must not let the preference read's health decide
+    // whether the user can reach the change-password form.
+    prismaMock.userPreference.findUnique.mockRejectedValue(
+      new Error("Timed out fetching a new connection from the connection pool"),
+    );
+
+    const result = await run();
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(302);
+  });
+
+  it("surfaces a preference-read failure when the password is not expired", async () => {
+    signedInAs("STUDENT");
+    prismaMock.userPreference.findUnique.mockRejectedValue(new Error("DB down"));
+
+    await expect(run()).rejects.toThrow("DB down");
   });
 
   it.each(["/settings", "/settings/account", "/auth/sign-in"])(

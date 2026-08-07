@@ -11,8 +11,6 @@ Migration `20260807120000_index_core_foreign_keys`.
 
 | Index | Column(s) | Why |
 |---|---|---|
-| `questions_topicId_idx` | `questions(topicId)` | The existing `(courseId, topicId, testable)` composite leads with `courseId`, so a topic-only filter can't seek on it |
-| `ai_interactions_courseId_idx` | `ai_interactions(courseId)` | `AIInteraction` had no index of any kind |
 | `account_userId_providerId_idx` | `account(userId, providerId)` | `getPasswordChangedAt` filters on both, from the root loader on every authenticated render |
 | `session_userId_idx` | `session(userId)` | Authenticated-request path, plus the `onDelete: Cascade` from User |
 | `courses_department_idx` | `courses(department)` | FK to `disciplines(code)` with `ON UPDATE CASCADE` / `ON DELETE RESTRICT` |
@@ -22,9 +20,21 @@ constraint, so better-auth is unaffected — but don't let `prisma migrate dev` 
 models from the datamodel.
 
 **No `CREATE INDEX CONCURRENTLY`.** Prisma runs each migration inside a transaction, where
-CONCURRENTLY is not permitted, and nothing else in `prisma/migrations` uses it. At current
-volumes the brief write lock is acceptable; if production volume changes that, create the index
-out-of-band and `prisma migrate resolve` this migration as applied.
+CONCURRENTLY is not permitted, and nothing else in `prisma/migrations` uses it. `CREATE INDEX`
+takes a SHARE lock, so writes to each table block for the length of the build.
+
+`courses` and `account` grow with content and are small enough that this is a non-event.
+**`session` is the exception** — it grows with traffic rather than content, and better-auth
+writes it on every sign-in and session refresh, so blocking writes there blocks logins. Check
+`SELECT count(*) FROM "session"` before deploying; above ~1M rows, build that one index
+out-of-band during a quiet window:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "session_userId_idx" ON "session"("userId");
+```
+
+then run `prisma migrate deploy` as normal — the `IF NOT EXISTS` in the migration makes it a
+no-op rather than needing `prisma migrate resolve`.
 
 ## Measured
 
@@ -35,9 +45,11 @@ deltas**, not SLAs, per the note in `docs/perf/README.md`.
 
 | Query | Before | After | Delta |
 |---|---|---|---|
-| `questions WHERE topicId = ?` | 1.105 ms — Bitmap Index Scan on the `(courseId, topicId, testable)` composite | 0.095 ms — Bitmap Index Scan on `questions_topicId_idx` | ~12x |
+| `questions WHERE topicId = ?` | 1.105 ms — Bitmap Index Scan on the `(courseId, topicId, testable)` composite | 0.095 ms — Bitmap Index Scan on a bare `topicId` index | ~12x |
 | `ai_interactions WHERE courseId = ?` | 0.605 ms — Seq Scan, 1,367 rows discarded | 0.096 ms — Bitmap Index Scan | ~6x |
 | `courses WHERE department = ?` | n/a | 0.011 ms — Index Scan | — |
+
+The first two rows are why those indexes were **not** kept — see the next section.
 
 Two honest deviations from the numbers quoted in the issue:
 
@@ -50,10 +62,23 @@ Two honest deviations from the numbers quoted in the issue:
   production account volume on a hot path, not by anything measurable on seed data — worth
   knowing before someone "confirms" it locally and concludes the index is useless.
 
+## Measured faster, but not added
+
+Both of these sped up a hand-written `EXPLAIN`, and then turned out to have no caller. An index
+only pays for itself if something reads it; otherwise it is pure write cost on tables that grow
+continuously. Recording them here so the next person doesn't re-derive the same `EXPLAIN` and
+reach the opposite conclusion.
+
+| Candidate | Why not | Add it when |
+|---|---|---|
+| `questions(topicId)` | Core never issues a topic-only filter. `listQuestions` types `courseId` as required and always puts it in the `where`; `topicId` is only ever an extra narrowing on top of it, which the existing `(courseId, topicId, testable)` composite already seeks. The `Restrict` FK check doesn't need it either — topics are soft-deleted via `courseTopic.update({ deletedAt })`, never hard-deleted | A cross-course topic view ships |
+| `ai_interactions(courseId)` | `AIInteraction` is write-only. The one production call site is `prisma.aIInteraction.create` in `app/lib/ai/routing/telemetry.server.ts`; the only read anywhere is a research backfill filtering on `createdAt`. Nothing reads `WHERE courseId = ?`, and this is the highest-write-rate table in the set | A per-course reporting read lands |
+
 ## Deliberately not indexed
 
-Verified against `pg_constraint ⋈ pg_index` after the migration: exactly these seven FKs remain
-without a leading-column index, and every one is a decision, not an oversight.
+Verified against `pg_constraint ⋈ pg_index` after the migration: these FKs, plus the two in the
+section above, are the complete set left without a leading-column index, and every one is a
+decision, not an oversight.
 
 | Column | Why not | Revisit when |
 |---|---|---|

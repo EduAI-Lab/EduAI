@@ -278,11 +278,12 @@ model AIInteraction {
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
 
-  // #1369: measured 3.287 ms Seq Scan -> 0.132 ms Index Scan on the perf seed (1,373 rows).
-  @@index([courseId])
-  // #1369 deferred: `userId` matched 1362/1373 rows on the perf seed and `modelId` is
-  // low-cardinality (a handful of models), so neither index would be selective enough
-  // for the planner to use. Re-evaluate `userId` once production has many active users.
+  // #1369 deferred: `courseId` measured 0.605 ms Seq Scan -> 0.096 ms Bitmap Index Scan on
+  // the perf seed (1,373 rows), but nothing reads it — this model is write-only, with
+  // `create` in ai/routing/telemetry.server.ts its one production call site. Index it when
+  // a per-course reporting read lands. `userId` matched 1362/1373 rows on the perf seed and
+  // `modelId` is low-cardinality (a handful of models), so neither index would be selective
+  // enough for the planner to use. Re-evaluate `userId` once production has many active users.
   @@map("ai_interactions")
 }
 
@@ -478,9 +479,12 @@ model Question {
 
   @@index([courseId, topicId, testable])
   @@index([createdBy])
-  // #1369: the composite above leads with `courseId`, so a topic-only filter cannot use
-  // it. Measured 5.349 ms Seq Scan -> 0.131 ms Index Scan on the perf seed (10,058 rows).
-  @@index([topicId])
+  // #1369 deferred: a bare `@@index([topicId])` measured 1.105 ms -> 0.095 ms on the perf
+  // seed (10,046 rows), but Core never issues a topic-only filter — `listQuestions` types
+  // `courseId` as required, so `topicId` is only ever an extra narrowing on top of the
+  // composite above, which already seeks. The `Restrict` FK check doesn't need it either:
+  // topics are soft-deleted via `courseTopic.update({ deletedAt })`, never hard-deleted.
+  // Add it if a cross-course topic view ever ships.
   @@map("questions")
 }
 

@@ -4,16 +4,22 @@
 -- deliberately left out are documented inline in schema.prisma.
 --
 -- No CREATE INDEX CONCURRENTLY: Prisma runs each migration inside a transaction, where
--- CONCURRENTLY is not permitted. These tables are small enough that the brief write lock
--- is acceptable. If production volume changes that, create the index out-of-band and mark
--- this migration applied with `prisma migrate resolve`.
-
--- questions.topicId — the existing (courseId, topicId, testable) index leads with courseId,
--- so a topic-only filter cannot use it. 5.349 ms Seq Scan -> 0.131 ms Index Scan (10,058 rows).
-CREATE INDEX IF NOT EXISTS "questions_topicId_idx" ON "questions"("topicId");
-
--- ai_interactions.courseId — 3.287 ms Seq Scan -> 0.132 ms Index Scan (1,373 rows).
-CREATE INDEX IF NOT EXISTS "ai_interactions_courseId_idx" ON "ai_interactions"("courseId");
+-- CONCURRENTLY is not permitted. CREATE INDEX takes a SHARE lock, so writes to each table
+-- below block for the length of the build. `courses` and `account` grow with content and
+-- are small enough that this is a non-event.
+--
+-- `session` is the exception: it grows with traffic, not content, and better-auth writes
+-- it on every sign-in and session refresh, so blocking writes there blocks logins. Before
+-- deploying, check the row count:
+--
+--   SELECT count(*) FROM "session";
+--
+-- Above ~1M rows, build that one index out-of-band during a quiet window instead of
+-- letting migrate do it:
+--
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS "session_userId_idx" ON "session"("userId");
+--
+-- then run `prisma migrate deploy` as normal — the IF NOT EXISTS below makes it a no-op.
 
 -- account — getPasswordChangedAt() filters { userId, providerId: 'credential' } on every
 -- authenticated render; the existing unique leads with providerId and cannot serve it.
@@ -24,3 +30,7 @@ CREATE INDEX IF NOT EXISTS "session_userId_idx" ON "session"("userId");
 
 -- courses.department — FK to disciplines(code) with ON UPDATE CASCADE / ON DELETE RESTRICT.
 CREATE INDEX IF NOT EXISTS "courses_department_idx" ON "courses"("department");
+
+-- Not added: questions(topicId) and ai_interactions(courseId). Both measured faster in
+-- isolation, but neither backs a query Core actually issues — see the "Measured but not
+-- added" section of docs/perf/backend/foreign-key-indexes.md.
