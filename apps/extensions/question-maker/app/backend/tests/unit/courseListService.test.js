@@ -137,6 +137,42 @@ describe('listCoursesForUser', () => {
 
       expect(mockListCoursesFromCore).toHaveBeenCalledTimes(1);
     });
+
+    it('fails closed for non-owners when the Core access refresh fails', async () => {
+      mockListCoursesFromCore.mockRejectedValue(new Error('Core unavailable'));
+      mockFindMany.mockResolvedValue([{
+        id: 10,
+        userId: 'other-owner',
+        coreCourseId: 'core-1',
+        accessGrants: [{ role: 'INSTRUCTOR', department: 'COSC' }],
+      }]);
+      mockCount.mockResolvedValue(0);
+
+      await listCoursesPageForUser(
+        { id: 'former-instructor', role: 'INSTRUCTOR' },
+        { cookie: 'session=x', pagination: { offset: 0, limit: 25 } },
+      );
+
+      const pageQuery = mockFindMany.mock.calls[0][0];
+      expect(pageQuery.where).toEqual({
+        OR: [{ userId: 'former-instructor' }],
+      });
+      expect(pageQuery.include).toEqual({});
+    });
+
+    it('reuses the cached ADMIN catalog while resolving only the current page', async () => {
+      mockGetAllCoursesFromCore.mockResolvedValue([{ id: 'core-1', name: 'Course' }]);
+      mockFindMany.mockResolvedValue([]);
+      mockCount.mockResolvedValue(0);
+
+      const user = { id: 'admin-1', role: 'ADMIN' };
+      const options = { pagination: { offset: 0, limit: 25 } };
+      await listCoursesPageForUser(user, options);
+      await listCoursesPageForUser(user, options);
+
+      expect(mockGetAllCoursesFromCore).toHaveBeenCalledTimes(1);
+      expect(mockGetCoursesByIdsFromCore).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('enrichCourseDetail (#1072 detail-fetch: service-key mode, not preferCookie)', () => {

@@ -19,9 +19,22 @@ import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
 const accessSyncedAtByUser = new Map();
+const coreCatalogCache = { courses: null, refreshedAt: 0 };
 
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
 const CORE_UNAVAILABLE_NAME = 'Course unavailable';
+
+async function getCachedCoreCatalog() {
+  const now = Date.now();
+  if (coreCatalogCache.courses && now - coreCatalogCache.refreshedAt < ACCESS_SYNC_TTL_MS) {
+    return coreCatalogCache.courses;
+  }
+
+  const courses = await getAllCoursesFromCore();
+  coreCatalogCache.courses = courses;
+  coreCatalogCache.refreshedAt = now;
+  return courses;
+}
 
 /**
  * Projects Core-owned fields (`name`, `code`, `department`, `term`, `year`,
@@ -219,7 +232,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // only ever joins against the local rows, so an `?ids=` lookup suffices.
     const coreCourses =
       reqUser.role === 'ADMIN'
-        ? await getAllCoursesFromCore()
+        ? await getCachedCoreCatalog()
         : await getCoursesByIdsFromCore(
             allCourses.map((c) => c.coreCourseId),
             {},
@@ -304,7 +317,8 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
 /** Refresh the caller's Core enrollment snapshot at most once per TTL. */
 async function syncCourseAccessMirror(reqUser, cookie) {
   const now = Date.now();
-  if (now - (accessSyncedAtByUser.get(reqUser.id) ?? 0) < ACCESS_SYNC_TTL_MS) return;
+  const cached = accessSyncedAtByUser.get(reqUser.id);
+  if (cached && now - cached.refreshedAt < ACCESS_SYNC_TTL_MS) return cached.healthy;
 
   const scopedCourses = await listCoursesFromCore(cookie, { all: true });
   const coreIds = scopedCourses.map((course) => course?.id).filter(Boolean);
@@ -328,23 +342,29 @@ async function syncCourseAccessMirror(reqUser, cookie) {
     }];
   });
   if (accessRows.length) await prisma.courseAccess.createMany({ data: accessRows, skipDuplicates: true });
-  accessSyncedAtByUser.set(reqUser.id, now);
+  accessSyncedAtByUser.set(reqUser.id, { refreshedAt: now, healthy: true });
+  return true;
 }
 
 export function resetCourseAccessSyncForTests() {
   accessSyncedAtByUser.clear();
+  coreCatalogCache.courses = null;
+  coreCatalogCache.refreshedAt = 0;
 }
 
 /** SQL-paginated course list. Visibility and totals share one DB predicate. */
 export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+  let accessMirrorHealthy = true;
   if (reqUser.role === 'ADMIN') {
     await listCoursesForUser(reqUser, { cookie });
   } else {
     try {
-      await syncCourseAccessMirror(reqUser, cookie);
+      accessMirrorHealthy = await syncCourseAccessMirror(reqUser, cookie);
     } catch {
-      // Core-down behavior retains the owner fallback below.
-      accessSyncedAtByUser.set(reqUser.id, Date.now());
+      // Do not use stale grants after a failed refresh. Linked-course owners
+      // retain the documented fallback, while non-owners fail closed.
+      accessMirrorHealthy = false;
+      accessSyncedAtByUser.set(reqUser.id, { refreshedAt: Date.now(), healthy: false });
     }
   }
 
@@ -357,13 +377,14 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
         OR: [
           {
             userId: reqUser.id,
-            OR: [
-              { coreCourseId: null },
-              { accessGrants: { none: { userId: reqUser.id } } },
-            ],
+            ...(accessMirrorHealthy
+              ? { OR: [{ coreCourseId: null }, { accessGrants: { none: { userId: reqUser.id } } }] }
+              : {}),
           },
-          { accessGrants: { some: { userId: reqUser.id, role: 'INSTRUCTOR' } } },
-          ...(reqUser.role === 'UNIT_ADMIN' && authorizedUnits.length
+          ...(accessMirrorHealthy
+            ? [{ accessGrants: { some: { userId: reqUser.id, role: 'INSTRUCTOR' } } }]
+            : []),
+          ...(accessMirrorHealthy && reqUser.role === 'UNIT_ADMIN' && authorizedUnits.length
             ? [{ accessGrants: { some: { userId: reqUser.id, department: { in: authorizedUnits } } } }]
             : []),
         ],
@@ -377,10 +398,14 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
       skip: pagination.offset,
       take: pagination.limit,
       include: {
-        accessGrants: {
-          where: { userId: reqUser.id },
-          select: { role: true, department: true },
-        },
+        ...(accessMirrorHealthy
+          ? {
+              accessGrants: {
+                where: { userId: reqUser.id },
+                select: { role: true, department: true },
+              },
+            }
+          : {}),
       },
     }),
   ]);
@@ -400,13 +425,11 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
 
   let coreById = new Map();
   try {
-    const coreCourses = reqUser.role === 'ADMIN'
-      ? await getAllCoursesFromCore()
-      : await getCoursesByIdsFromCore(
-          courses.map((course) => course.coreCourseId).filter(Boolean),
-          {},
-          { serviceKeyOnly: true },
-        );
+    const coreCourses = await getCoursesByIdsFromCore(
+      courses.map((course) => course.coreCourseId).filter(Boolean),
+      {},
+      { serviceKeyOnly: true },
+    );
     coreById = new Map(coreCourses.map((course) => [course.id, course]));
   } catch {
     // Core projection degrades to the placeholder, as in the legacy list.
