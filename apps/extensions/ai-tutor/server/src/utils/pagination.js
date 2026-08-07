@@ -127,7 +127,10 @@ export function parseSearchParam(req, opts = {}) {
  *
  * `title` and `instructionsMd` are real columns and match case-insensitively.
  * The question text lives in the `config` JSON (there is no `question` column),
- * so it is matched with Prisma's `string_contains`, which has NO `mode` option
+ * under `question` on current rows and `prompt` on legacy ones — `mapActivity`
+ * reads `config.question ?? config.prompt ?? instructionsMd`, so all three have
+ * to be searchable or an activity displays question text that search can never
+ * find. It is matched with Prisma's `string_contains`, which has NO `mode` option
  * and is therefore case-SENSITIVE. Rather than pretend otherwise, the term is
  * tried in the casings question text actually gets written in: as typed,
  * all-lower, all-upper, sentence case, and title case. The last two are what
@@ -155,8 +158,8 @@ export function activitySearchWhere(term, prefix = []) {
     OR: [
       nest({ title: { contains: term, mode: 'insensitive' } }),
       nest({ instructionsMd: { contains: term, mode: 'insensitive' } }),
-      ...casings.map((cased) =>
-        nest({ config: { path: ['question'], string_contains: cased } }),
+      ...['question', 'prompt'].flatMap((key) =>
+        casings.map((cased) => nest({ config: { path: [key], string_contains: cased } })),
       ),
     ],
   };

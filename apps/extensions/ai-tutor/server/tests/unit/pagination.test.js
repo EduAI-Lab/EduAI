@@ -4,6 +4,7 @@ import {
   paginated,
   parseSearchParam,
   searchWhere,
+  activitySearchWhere,
   PaginationError,
   MAX_PAGE_SIZE,
   MAX_PAGE,
@@ -256,5 +257,54 @@ describe('searchWhere (#1207)', () => {
     expect(where.OR).toHaveLength(2);
     expect(where.OR[0]).toEqual({ title: { contains: 'x', mode: 'insensitive' } });
     expect(where.OR[1]).toEqual({ lesson: { title: { contains: 'x', mode: 'insensitive' } } });
+  });
+});
+
+describe('activitySearchWhere (#1207)', () => {
+  /** Every JSON-path clause in the fragment, as `[path, term]` pairs. */
+  const jsonClauses = (where, unnest = (clause) => clause) =>
+    where.OR.map(unnest)
+      .filter((clause) => clause.config)
+      .map((clause) => [clause.config.path.join('.'), clause.config.string_contains]);
+
+  it('returns null with no term', () => {
+    expect(activitySearchWhere(null)).toBeNull();
+    expect(activitySearchWhere('')).toBeNull();
+  });
+
+  it('searches the legacy config.prompt as well as config.question', () => {
+    // `mapActivity` reads `config.question ?? config.prompt ?? instructionsMd`,
+    // so a row that only has `prompt` displays question text. Omitting the
+    // clause made that text permanently unsearchable.
+    const paths = new Set(jsonClauses(activitySearchWhere('heap')).map(([path]) => path));
+    expect(paths).toEqual(new Set(['question', 'prompt']));
+  });
+
+  it('tries the same casing set against both JSON fields', () => {
+    const clauses = jsonClauses(activitySearchWhere('spanning tree'));
+    const byPath = (path) => clauses.filter(([p]) => p === path).map(([, term]) => term);
+    // `string_contains` has no `mode`, so casing is brute-forced; both fields
+    // have to get the same treatment or `prompt` matches strictly less.
+    expect(byPath('prompt')).toEqual(byPath('question'));
+    expect(byPath('question')).toEqual(
+      expect.arrayContaining(['spanning tree', 'SPANNING TREE', 'Spanning tree', 'Spanning Tree']),
+    );
+  });
+
+  it('still matches the real columns case-insensitively', () => {
+    const where = activitySearchWhere('graphs');
+    expect(where.OR).toContainEqual({ title: { contains: 'graphs', mode: 'insensitive' } });
+    expect(where.OR).toContainEqual({
+      instructionsMd: { contains: 'graphs', mode: 'insensitive' },
+    });
+  });
+
+  it('nests every clause under the relation prefix', () => {
+    const where = activitySearchWhere('heap', ['activity']);
+    expect(where.OR.every((clause) => 'activity' in clause)).toBe(true);
+    const paths = new Set(
+      jsonClauses(where, (clause) => clause.activity).map(([path]) => path),
+    );
+    expect(paths).toEqual(new Set(['question', 'prompt']));
   });
 });

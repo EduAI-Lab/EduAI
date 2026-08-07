@@ -281,6 +281,33 @@ describe('Tree endpoint search (#1207)', () => {
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].title).toBe('A');
     });
+
+    it('matches legacy question text stored under config.prompt', async () => {
+      // `mapActivity` falls back to `config.prompt` when `config.question` is
+      // absent, so rows written before the rename still DISPLAY a question.
+      // Searching only `config.question` made that text unreachable.
+      await prisma.activity.create({
+        data: {
+          title: 'Legacy',
+          instructionsMd: 'Do it.',
+          config: { prompt: 'Explain tail recursion', questionType: 'SHORT_TEXT', hints: [] },
+          position: 0,
+          lessonId: seed.lesson.id,
+          mainTopicId: seed.topic.id,
+        },
+      });
+      await addActivity({ title: 'Other', question: 'Define a heap.' });
+
+      const res = await request(profApp)
+        .get(`/api/lessons/${seed.lesson.id}/activities`)
+        .query({ page: 1, pageSize: 25, search: 'tail recursion' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].title).toBe('Legacy');
+      // The row search found is the row the mapper renders a question for.
+      expect(res.body.data[0].question).toBe('Explain tail recursion');
+    });
   });
 
   describe('GET /courses/:courseId/topics', () => {

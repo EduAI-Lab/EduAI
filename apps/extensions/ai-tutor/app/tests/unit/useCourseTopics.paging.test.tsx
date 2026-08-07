@@ -141,6 +141,47 @@ describe('useCourseTopics paging', () => {
     expect(result.current.topics.map((t) => t.name)).toEqual(['Alpha', 'Zeta']);
   });
 
+  it('drops a loadMore response that lands after the course changed', async () => {
+    // The picker can switch offerings while page 2 is still in flight. Without
+    // the request-id guard the old course's topics append into the new one's
+    // list and drag its `total` along with them.
+    let releaseSlowPage2: ((value: unknown) => void) | undefined;
+    topicsForCourse.mockImplementation((courseId: number, { page }: { page: number }) => {
+      if (courseId === 1 && page === 1) {
+        return Promise.resolve({ data: [topic('a', 'Alpha')], total: 2, page: 1, pageSize: 1 });
+      }
+      if (courseId === 1 && page === 2) {
+        return new Promise((resolve) => {
+          releaseSlowPage2 = resolve;
+        });
+      }
+      return Promise.resolve({ data: [topic('z', 'Zeta')], total: 1, page: 1, pageSize: 1 });
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useCourseTopics(id), {
+      initialProps: { id: 1 },
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let morePromise: Promise<boolean>;
+    act(() => {
+      morePromise = result.current.loadMore();
+    });
+
+    // Switch courses while page 2 is still pending, then let it land.
+    rerender({ id: 2 });
+    await waitFor(() => expect(result.current.topics.map((t) => t.id)).toEqual(['z']));
+
+    await act(async () => {
+      releaseSlowPage2?.({ data: [topic('b', 'Beta')], total: 2, page: 2, pageSize: 1 });
+      await morePromise;
+    });
+
+    expect(result.current.topics.map((t) => t.id)).toEqual(['z']);
+    expect(result.current.total).toBe(1);
+    expect(result.current.loadingMore).toBe(false);
+  });
+
   it('resets the total when the fetch fails', async () => {
     topicsForCourse.mockRejectedValue(new Error('boom'));
 

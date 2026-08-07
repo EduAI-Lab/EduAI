@@ -520,9 +520,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const handleDuplicateActivity = async (activityId: number) => {
     setDuplicatingActivityId(activityId);
     try {
-      const duplicated = await api.duplicateActivity(activityId);
-      setActivities((prev) => [...prev, duplicated]);
-      setActivitiesTotal((prev) => prev + 1);
+      await api.duplicateActivity(activityId);
+      // The server appends the clone after the last activity, not after the
+      // row it was cloned from — so it belongs on the last page, not spliced
+      // onto whatever page is on screen (#1207). Appending locally used to
+      // render a 26th row on a 25-row page and shift every drag ordinal below
+      // it out of sync with the server's real order.
+      await revealNewestActivity();
     } catch (error) {
       console.error('Failed to duplicate activity', error);
       alert('Failed to duplicate activity. Please try again.');

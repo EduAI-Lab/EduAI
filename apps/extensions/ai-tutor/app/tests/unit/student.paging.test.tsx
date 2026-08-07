@@ -180,4 +180,79 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     wrap();
     expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
   });
+
+  it('drops an activity page that resolves after the student changed lessons', async () => {
+    // Prev/next lesson links navigate without unmounting the player, so a page
+    // fetch can still be in flight when the loader swaps in another lesson.
+    // Appending that response mixes the old lesson's activities into the new
+    // one — and the id-dedupe can't see it, the ids don't collide.
+    const named = (id: number, question: string) => ({ ...activity(id), question });
+    let releaseStale: ((value: unknown) => void) | undefined;
+
+    mockActivitiesForLesson.mockReset();
+    mockActivitiesForLesson.mockImplementation((lessonId: number) => {
+      if (lessonId === 3) {
+        return new Promise((resolve) => {
+          releaseStale = resolve;
+        });
+      }
+      return Promise.resolve({
+        data: [named(11, 'FRESH ROW')],
+        total: 2,
+        page: 2,
+        pageSize: 50,
+      });
+    });
+
+    const props = (loaderData: Record<string, unknown>) =>
+      ({ loaderData } as unknown as React.ComponentProps<typeof StudentLessonPlayer>);
+
+    const oldLesson = {
+      course,
+      module: { id: 2, title: 'Module', courseOfferingId: 1 },
+      lesson: { id: 3, title: 'Lesson', moduleId: 2, isPublished: true, contentMd: '' },
+      activities: [named(1, 'OLD ONE'), named(2, 'OLD TWO')],
+      activitiesTotal: 3,
+      orderText: '3.2',
+    };
+    const newLesson = {
+      ...oldLesson,
+      lesson: { id: 4, title: 'Next lesson', moduleId: 2, isPublished: true, contentMd: '' },
+      activities: [named(10, 'NEW ONE')],
+      activitiesTotal: 2,
+      orderText: '3.3',
+    };
+
+    let rerender: (ui: React.ReactElement) => void;
+    await act(async () => {
+      ({ rerender } = render(
+        <MemoryRouter>
+          <StudentLessonPlayer {...props(oldLesson)} />
+        </MemoryRouter>,
+      ));
+    });
+    await waitFor(() => expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, expect.anything()));
+
+    // Navigate while lesson 3's page 2 is still pending.
+    await act(async () => {
+      rerender!(
+        <MemoryRouter>
+          <StudentLessonPlayer {...props(newLesson)} />
+        </MemoryRouter>,
+      );
+    });
+
+    // The latch has to be released on navigation, or the new lesson can never
+    // top up while the orphaned request hangs.
+    await waitFor(() => expect(mockActivitiesForLesson).toHaveBeenCalledWith(4, expect.anything()));
+
+    await act(async () => {
+      releaseStale?.({ data: [named(3, 'STALE ROW')], total: 3, page: 2, pageSize: 50 });
+    });
+
+    // Walking forward reaches lesson 4's own page 2, never lesson 3's tail.
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(screen.getByText('FRESH ROW')).toBeInTheDocument();
+    expect(screen.queryByText('STALE ROW')).not.toBeInTheDocument();
+  });
 });

@@ -188,17 +188,6 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   >({});
   const chatRef = useRef<StudentAiChatHandle>(null);
 
-  // React 19 derived-state-during-render pattern: when the loader returns a
-  // new activities array (e.g. on navigation back to this route), reset the
-  // local mutable copy used for completion-status overlays. This avoids the
-  // flash of stale data that a useEffect-based reset would cause.
-  const [prevActivities, setPrevActivities] = useState(activities);
-  if (activities !== prevActivities) {
-    setPrevActivities(activities);
-    setOrderedActivities(activities ?? []);
-    setLoadedPage(1);
-  }
-
   /**
    * Append the next page of activities as the student approaches the end of
    * what's loaded (#1207).
@@ -211,18 +200,45 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
    */
   const loadingMoreRef = useRef(false);
   const [activitiesLoadFailed, setActivitiesLoadFailed] = useState(false);
+  /**
+   * Which lesson the buffer above belongs to. The prev/next lesson links
+   * navigate without unmounting this route, so a page fetch can still be in
+   * flight when the loader swaps in another lesson's activities — and its
+   * response would otherwise append foreign rows onto the new lesson (the
+   * id-dedupe below can't catch them, the ids don't collide).
+   */
+  const lessonIdRef = useRef(lesson.id);
+
+  // React 19 derived-state-during-render pattern: when the loader returns a
+  // new activities array (e.g. on navigation back to this route), reset the
+  // local mutable copy used for completion-status overlays. This avoids the
+  // flash of stale data that a useEffect-based reset would cause.
+  const [prevActivities, setPrevActivities] = useState(activities);
+  if (activities !== prevActivities) {
+    setPrevActivities(activities);
+    setOrderedActivities(activities ?? []);
+    setLoadedPage(1);
+    // Orphan any in-flight fetch and release its latch, so the new lesson can
+    // prefetch immediately instead of waiting on a response it will discard.
+    lessonIdRef.current = lesson.id;
+    loadingMoreRef.current = false;
+    setActivitiesLoadFailed(false);
+  }
+
   const ensureActivitiesLoaded = async (targetIdx: number) => {
     if (loadingMoreRef.current) return;
     if (orderedActivities.length >= activitiesTotal) return;
     if (targetIdx < orderedActivities.length - PLAYER_PREFETCH_MARGIN) return;
 
+    const lessonId = lesson.id;
     loadingMoreRef.current = true;
     try {
       const nextPage = loadedPage + 1;
-      const result = await api.activitiesForLesson(lesson.id, {
+      const result = await api.activitiesForLesson(lessonId, {
         page: nextPage,
         pageSize: PLAYER_ACTIVITY_PAGE_SIZE,
       });
+      if (lessonIdRef.current !== lessonId) return;
       setOrderedActivities((prev) => {
         // Guard against a double-append if this resolved twice for one page.
         const seen = new Set(prev.map((a) => a.id));
@@ -231,6 +247,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       setLoadedPage(nextPage);
       setActivitiesLoadFailed(false);
     } catch (error) {
+      if (lessonIdRef.current !== lessonId) return;
       console.error('Failed to load more activities', error);
       // Surface it: without this the student just hits an invisible wall at the
       // page boundary. `canNext` stops at the loaded edge while this is set, and
@@ -238,7 +255,9 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       setActivitiesLoadFailed(true);
       toast.error("Couldn't load the rest of this lesson. Check your connection and try again.");
     } finally {
-      loadingMoreRef.current = false;
+      // Only the fetch that still owns the latch may release it — an orphaned
+      // one would otherwise clear the latch the new lesson's fetch is holding.
+      if (lessonIdRef.current === lessonId) loadingMoreRef.current = false;
     }
   };
 

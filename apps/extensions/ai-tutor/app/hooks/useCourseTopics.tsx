@@ -71,6 +71,10 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
     // started in the meantime. Every state write below is gated on this.
     const requestId = ++requestIdRef.current;
     setLoading(true);
+    // Any `loadMore` still in flight is orphaned by the bump above, and its
+    // `finally` will decline to clear this — so clear it here or the spinner
+    // sticks for the rest of the new course's session.
+    setLoadingMore(false);
     setError(null);
     try {
       // #1043: topics endpoint returns the pagination envelope. Server already
@@ -137,15 +141,25 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
    *
    * Deduped by id on merge: `createTopic` inserts optimistically, which can
    * shift a row across the page boundary and make it arrive twice.
+   *
+   * Gated on `requestIdRef` exactly like `loadTopics`: without it a slow page 2
+   * for the previous offering resolves after the switch and appends that
+   * course's topics into the new one, taking `total` along with it.
    */
   const loadMore = useCallback(async () => {
     if (!courseOfferingId) return false;
     if (topics.length >= total) return false;
 
+    // Read the loader's counter rather than keeping a second one, so a course
+    // switch (which bumps it via `loadTopics`) orphans an in-flight `loadMore`
+    // too. Read, not bump: `loadMore` must not orphan a `refresh` that would
+    // then leave page 2 appended to a stale page 1.
+    const requestId = requestIdRef.current;
     setLoadingMore(true);
     try {
       const nextPage = loadedPage + 1;
       const fetched = await api.topicsForCourse(courseOfferingId, { page: nextPage });
+      if (requestId !== requestIdRef.current) return false;
       setTopics((prev) => {
         const seen = new Set(prev.map((t) => t.id));
         return sortTopics([...prev, ...fetched.data.filter((t) => !seen.has(t.id))]);
@@ -154,10 +168,13 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
       setLoadedPage(nextPage);
       return true;
     } catch (err) {
+      if (requestId !== requestIdRef.current) return false;
       console.error('Failed to load more topics', err);
       return false;
     } finally {
-      setLoadingMore(false);
+      if (requestId === requestIdRef.current) {
+        setLoadingMore(false);
+      }
     }
   }, [courseOfferingId, loadedPage, topics.length, total]);
 

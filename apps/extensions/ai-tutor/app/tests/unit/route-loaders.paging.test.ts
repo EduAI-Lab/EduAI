@@ -25,7 +25,9 @@ const api = {
   lessonContext: vi.fn(),
 };
 
-vi.mock('~/lib/api', () => ({ default: api }));
+// `student.module` also reads the named page-size constant for its lesson
+// read, so the mock has to carry it alongside the default export.
+vi.mock('~/lib/api', () => ({ default: api, FULL_TREE_READ_PAGE_SIZE: 200 }));
 vi.mock('~/lib/client-auth', () => ({ requireClientUser: vi.fn().mockResolvedValue({}) }));
 
 const page = (data: unknown[], total = data.length, pageNum = 1, pageSize = 25) => ({
@@ -183,6 +185,32 @@ describe('student.course clientLoader', () => {
   it('redirects past the end', async () => {
     api.modulesForCourse.mockResolvedValue(page([], 5, 9, 25));
     await expectThrownStatus(load('http://x/student/course/1?page=9'), 302);
+  });
+});
+
+describe('student.module clientLoader', () => {
+  const load = async () => {
+    const { clientLoader } = await import('~/routes/student.module');
+    return clientLoader({ params: { moduleId: '2' }, request: req('http://x/m/2') } as never);
+  };
+
+  it('takes the module ordinal from the server, not a sibling-list findIndex', async () => {
+    // The student course grid is paged, so a module past the first page is
+    // reachable — and a findIndex over one bounded page of siblings scored it
+    // -1 and rendered the hero watermark as "0".
+    const result = await load();
+
+    expect(result.moduleOrder).toBe(3);
+    expect(api.moduleContext).toHaveBeenCalledWith(2);
+    expect(api.modulesForCourse).not.toHaveBeenCalled();
+  });
+
+  it('throws a 400 Response for a non-numeric module id', async () => {
+    const { clientLoader } = await import('~/routes/student.module');
+    await expectThrownStatus(
+      clientLoader({ params: { moduleId: 'abc' }, request: req('http://x/m') } as never),
+      400,
+    );
   });
 });
 
