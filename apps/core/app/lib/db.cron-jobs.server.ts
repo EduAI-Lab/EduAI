@@ -5,6 +5,7 @@ import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.
 
 export type CronJobStatusValue = "RUNNING" | "SUCCESS" | "ERROR";
 export type CronJobTriggerSource = "SCHEDULE" | "ADMIN_UI" | "ADMIN_CHAT" | "UNKNOWN";
+export type CronJobExecution = "SCRIPT" | "CORE";
 
 export interface KnownCronJob {
   name: string;
@@ -12,6 +13,7 @@ export interface KnownCronJob {
   schedule: string;
   scheduleLabel: string;
   script: string;
+  execution?: CronJobExecution;
   triggerEnabled?: boolean;
 }
 
@@ -49,7 +51,8 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     description: "Email users whose AI provider API keys expire in 7 days",
     schedule: "0 4 * * *",
     scheduleLabel: "Daily at 04:00 UTC",
-    script: "notify-api-key-expiry.sh",
+    script: "Core handler",
+    execution: "CORE",
   },
   {
     name: "ai-tutor-reconcile",
@@ -269,7 +272,25 @@ function resolveScriptDir(): string {
   return cwdNorm.endsWith("apps/core") ? fromAppsCore : fromCwd;
 }
 
-export function triggerCronJobAsync(jobName: string, script: string, runId: string): void {
+export function triggerCronJobAsync(
+  jobName: string,
+  script: string,
+  runId: string,
+  execution: CronJobExecution = "SCRIPT",
+): void {
+  if (execution === "CORE") {
+    void import("~/lib/cron-notify-api-key-expiry.server")
+      .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
+      .then(({ notified }) => finishCronRun(runId, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0))
+      .catch((err: unknown) =>
+        finishCronRun(runId, "ERROR", `Core handler failed: ${redactErrorForConsole(err)}`, 1)
+          .catch((finishErr: unknown) =>
+            console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+          ),
+      );
+    return;
+  }
+
   // Pass the script dir as cwd so Node sets the working directory at the OS level
   const scriptDir = resolveScriptDir();
 

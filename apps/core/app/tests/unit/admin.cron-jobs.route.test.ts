@@ -170,7 +170,7 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
       source: "ADMIN_UI",
       triggeredByUserId: ADMIN_USER.id,
     });
-    expect(triggerCronJobAsync).toHaveBeenCalledWith("backup-nightly", "backup-nightly.sh", "run-1");
+    expect(triggerCronJobAsync).toHaveBeenCalledWith("backup-nightly", "backup-nightly.sh", "run-1", undefined);
     const b = body(res);
     expect(b.runId).toBe("run-1");
   });

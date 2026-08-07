@@ -19,7 +19,12 @@ function getTaskScheduleMap(): Map<string, string> {
   return globalThis.__cronTaskSchedules;
 }
 
-function scheduleOne(jobName: string, schedule: string, script: string): void {
+function scheduleOne(
+  jobName: string,
+  schedule: string,
+  script: string,
+  execution: "SCRIPT" | "CORE" = "SCRIPT",
+): void {
   const tasks = getTaskMap();
   tasks.get(jobName)?.stop();
   const task = cron.schedule(
@@ -27,7 +32,7 @@ function scheduleOne(jobName: string, schedule: string, script: string): void {
     () => {
       startCronRun(jobName, { source: "SCHEDULE" })
         .then(({ runId, created }) => {
-          if (created) triggerCronJobAsync(jobName, script, runId);
+          if (created) triggerCronJobAsync(jobName, script, runId, execution);
         })
         .catch((err: unknown) =>
           console.error(`[cron] ${jobName} failed to start:`, redactErrorForConsole(err)),
@@ -46,11 +51,11 @@ export async function refreshCronSchedules(): Promise<void> {
   const schedules = getTaskScheduleMap();
 
   for (const job of KNOWN_CRON_JOBS) {
-    if (!job.script) continue;
+    if (!job.script && job.execution !== "CORE") continue;
     const schedule = overrideMap.get(job.name) ?? job.schedule;
     if (schedules.get(job.name) === schedule) continue;
     try {
-      scheduleOne(job.name, schedule, job.script);
+      scheduleOne(job.name, schedule, job.script, job.execution);
     } catch (err) {
       console.error(`[cron] Failed to schedule ${job.name}:`, redactErrorForConsole(err));
     }

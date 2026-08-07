@@ -76,7 +76,7 @@ export async function action({ request }: ActionFunctionArgs) {
       triggeredByUserId: user.id,
     });
     if (created) {
-      triggerCronJobAsync(jobName, job.script, runId);
+      triggerCronJobAsync(jobName, job.script, runId, job.execution);
     }
 
     return data({ runId, reused: !created });

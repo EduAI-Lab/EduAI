@@ -758,7 +758,7 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     triggeredByUserId: actor.id,
   });
   if (created) {
-    triggerCronJobAsync(jobName, job.script, runId);
+    triggerCronJobAsync(jobName, job.script, runId, job.execution);
   }
   return { ok: true, runId, jobName, reused: !created };
 }

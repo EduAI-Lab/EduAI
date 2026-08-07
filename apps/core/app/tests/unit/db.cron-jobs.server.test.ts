@@ -10,6 +10,7 @@ const mockExecuteRaw = vi.hoisted(() => vi.fn());
 const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
+const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -21,6 +22,10 @@ vi.mock("~/lib/prisma.server", () => ({
       deleteMany: mockOverrideDeleteMany,
     },
   },
+}));
+
+vi.mock("~/lib/cron-notify-api-key-expiry.server", () => ({
+  notifyExpiringApiKeys: mockNotifyExpiringApiKeys,
 }));
 
 const {
@@ -41,6 +46,7 @@ beforeEach(() => {
   mockOverrideFindMany.mockResolvedValue([]);
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
+  mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
 });
 
 describe("listCronJobStatuses", () => {
@@ -238,6 +244,17 @@ describe("triggerCronJobAsync", () => {
     child.stderr = new EventEmitter();
     return child;
   }
+
+  it("runs a Core handler without spawning a shell process", async () => {
+    mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
+    triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "CORE");
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(mockExecuteRaw).toHaveBeenCalledOnce();
+  });
 
   it("spawns bash with the resolved script path", () => {
     const child = makeChild();
