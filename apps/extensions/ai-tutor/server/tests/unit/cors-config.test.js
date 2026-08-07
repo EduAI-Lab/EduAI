@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { parse } from 'dotenv';
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalCorsOrigins = process.env.CORS_ORIGINS;
@@ -43,6 +45,26 @@ describe('cors config — parsing', () => {
       });
     },
   );
+
+  it('clean local env template explicitly enables the development default', async () => {
+    const localTemplate = parse(
+      readFileSync(new URL('../../.env.example', import.meta.url), 'utf8'),
+    );
+
+    expect(localTemplate.NODE_ENV).toBe('development');
+    expect(localTemplate.CORS_ORIGINS).toBeUndefined();
+
+    process.env.NODE_ENV = localTemplate.NODE_ENV;
+    delete process.env.CORS_ORIGINS;
+
+    const cors = await import('../../src/config/cors.js');
+
+    cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(true);
+    });
+  });
+
   it.each([
     ['missing NODE_ENV and unset CORS_ORIGINS', undefined, undefined],
     ['missing NODE_ENV and blank CORS_ORIGINS', undefined, '   '],

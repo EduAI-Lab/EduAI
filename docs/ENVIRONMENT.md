@@ -146,6 +146,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | required | Postgres connection string |
+| `NODE_ENV` | required | Runtime mode. The local template actively sets `development`, which `setup-env.js` copies or merges; production deployments must set `production` explicitly. |
 | `PORT` | optional (default 4000) | Server port |
 | `CORE_URL` | required | Core base URL — session validation and login redirect |
 | `EDUAI_API_KEY` | required | Must match Core's `EDUAI_API_KEY` exactly (Core does not read admin-UI overrides) |

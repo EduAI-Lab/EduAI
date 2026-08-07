@@ -182,6 +182,7 @@ Source of truth: `server/.env.example`.
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
+| `NODE_ENV` | Yes | `development` in the generated local `.env` | Selects runtime defaults; production deployments must set `production` explicitly |
 | `PORT` | No | `4000` | Express listen port |
 | `CORE_URL` | Yes | `http://localhost:3000` | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
 | `EDUAI_BASE_URL` | No | `http://localhost:3000/api` | Core API base URL (course import/sync, policies, chat completion) |
