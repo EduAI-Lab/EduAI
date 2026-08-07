@@ -43,6 +43,31 @@ describe('cors config — parsing', () => {
       });
     },
   );
+  it.each([
+    ['missing NODE_ENV and unset CORS_ORIGINS', undefined, undefined],
+    ['missing NODE_ENV and blank CORS_ORIGINS', undefined, '   '],
+    ['empty NODE_ENV', '', undefined],
+    ['unknown NODE_ENV', 'staging', undefined],
+  ])('stays fail-closed with %s', async (_label, nodeEnv, corsOrigins) => {
+    if (nodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = nodeEnv;
+    }
+
+    if (corsOrigins === undefined) {
+      delete process.env.CORS_ORIGINS;
+    } else {
+      process.env.CORS_ORIGINS = corsOrigins;
+    }
+
+    const cors = await import('../../src/config/cors.js');
+
+    cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(false);
+    });
+  });
 
   it('CORS_ORIGINS unset produces an empty allowlist in production', async () => {
     process.env.NODE_ENV = 'production';
@@ -192,6 +217,19 @@ describe('cors config — malformed configured origins', () => {
       await import('../../src/config/cors.js');
     }).rejects.toThrow(/CORS_ORIGINS contains an invalid origin/);
   });
+  it.each([
+    'https://trusted.example.com/..',
+    'https://trusted.example.com/%2e%2e',
+    'https://trusted.example.com?',
+    'https://trusted.example.com#',
+    'https://trusted.example.com/',
+  ])('rejects raw non-origin syntax before URL normalization: %s', async (entry) => {
+    process.env.CORS_ORIGINS = entry;
+
+    await expect(async () => {
+      await import('../../src/config/cors.js');
+    }).rejects.toThrow(/CORS_ORIGINS contains an invalid origin/);
+  });
 
   it('rejects an entry with a username', async () => {
     process.env.CORS_ORIGINS = 'https://user@example.com';
@@ -274,17 +312,6 @@ describe('cors config — origin matching', () => {
     cors.corsOriginCallback('https://trusted.example.com/', (err, allowed) => {
       expect(err).toBeNull();
       expect(allowed).toBe(false);
-    });
-  });
-
-  it('accepts a configured origin with trailing slash (normalized to canonical form)', async () => {
-    process.env.CORS_ORIGINS = 'https://trusted.example.com/';
-
-    const cors = await import('../../src/config/cors.js');
-
-    cors.corsOriginCallback('https://trusted.example.com', (err, allowed) => {
-      expect(err).toBeNull();
-      expect(allowed).toBe(true);
     });
   });
 });

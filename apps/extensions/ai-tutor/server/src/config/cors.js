@@ -1,4 +1,10 @@
+const rawOriginPattern = /^https?:\/\/[^/?#]+$/;
+
 export function isValidOrigin(entry) {
+  if (!rawOriginPattern.test(entry) || entry.includes('*')) {
+    return false;
+  }
+
   let url;
   try {
     url = new URL(entry);
@@ -14,23 +20,7 @@ export function isValidOrigin(entry) {
     return false;
   }
 
-  if (url.pathname !== '/') {
-    return false;
-  }
-
-  if (url.search !== '') {
-    return false;
-  }
-
-  if (url.hash !== '') {
-    return false;
-  }
-
-  if (entry.includes('*')) {
-    return false;
-  }
-
-  return true;
+  return entry === url.origin;
 }
 
 export function normalizeOrigin(entry) {
@@ -38,7 +28,7 @@ export function normalizeOrigin(entry) {
 }
 
 const corsOriginsEnv = process.env.CORS_ORIGINS;
-const runtimeEnvironment = process.env.NODE_ENV?.trim() || 'development';
+const runtimeEnvironment = process.env.NODE_ENV?.trim();
 const localDefaultOrigins =
   runtimeEnvironment === 'development' || runtimeEnvironment === 'test'
     ? ['http://localhost:3001']

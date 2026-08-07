@@ -187,7 +187,7 @@ Source of truth: `server/.env.example`.
 | `EDUAI_BASE_URL` | No | `http://localhost:3000/api` | Core API base URL (course import/sync, policies, chat completion) |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
-| `CORS_ORIGINS` | No | `http://localhost:3001` in local/development/test; empty in production | Comma-separated exact browser origins with no wildcards; production deployments must configure every trusted frontend origin |
+| `CORS_ORIGINS` | No | `http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials; deployments must configure every trusted frontend origin |
 | `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
 | `EDUAI_ENFORCE_URL_CONSISTENCY` | No | - | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
 
