@@ -24,6 +24,16 @@ const coreCatalogCache = { courses: null, refreshedAt: 0 };
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
 const CORE_UNAVAILABLE_NAME = 'Course unavailable';
 
+/**
+ * `CourseAccess.role` (`enrollment_role`) is a required column — a caller can
+ * have department-only (no personal enrollment) access to a course, which
+ * carries no real role to store. This sentinel fills the column without
+ * colliding with any real Core enrollment role, so it never satisfies the
+ * `role: 'INSTRUCTOR'` branch of the SQL visibility predicate below — only
+ * the department/unit-lock branch can grant access from a row like this.
+ */
+const NO_ENROLLMENT_ROLE = 'NONE';
+
 async function getCachedCoreCatalog() {
   const now = Date.now();
   if (coreCatalogCache.courses && now - coreCatalogCache.refreshedAt < ACCESS_SYNC_TTL_MS) {
@@ -333,11 +343,19 @@ async function syncCourseAccessMirror(reqUser, cookie) {
   await prisma.courseAccess.deleteMany({ where: { userId: reqUser.id } });
   const accessRows = scopedCourses.flatMap((course) => {
     const anchor = anchorByCoreId.get(course.id);
-    if (!anchor || !course.callerEnrollmentRole) return [];
+    if (!anchor) return [];
+    // Core can return an authorized-unit course with `callerEnrollmentRole:
+    // null` (the caller has department-only access, no personal enrollment).
+    // That is still a valid visibility grant for a UNIT_ADMIN — the
+    // department is what the SQL predicate's unit-lock branch matches on
+    // (`listCoursesPageForUser` below) — so it must not be dropped here just
+    // because there is no enrollment role to record. A row with neither a
+    // role nor a department carries no grant at all and is skipped.
+    if (!course.callerEnrollmentRole && !course.department) return [];
     return [{
       userId: reqUser.id,
       courseId: anchor.id,
-      role: course.callerEnrollmentRole,
+      role: course.callerEnrollmentRole ?? NO_ENROLLMENT_ROLE,
       department: course.department ?? null,
     }];
   });
@@ -377,9 +395,16 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
         OR: [
           {
             userId: reqUser.id,
+            // Owner fallback must fail CLOSED for linked courses when the
+            // Core access refresh failed: a linked course's real access can't
+            // be verified locally, so only QM-native/unlinked owned courses
+            // (`coreCourseId: null`) get automatic visibility here. When the
+            // mirror is healthy the fallback still applies to a linked course
+            // that has no synced grant at all (never enrolled in Core, e.g. a
+            // freshly-linked course pending Core sync).
             ...(accessMirrorHealthy
               ? { OR: [{ coreCourseId: null }, { accessGrants: { none: { userId: reqUser.id } } }] }
-              : {}),
+              : { coreCourseId: null }),
           },
           ...(accessMirrorHealthy
             ? [{ accessGrants: { some: { userId: reqUser.id, role: 'INSTRUCTOR' } } }]
@@ -424,15 +449,24 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
   });
 
   let coreById = new Map();
-  try {
-    const coreCourses = await getCoursesByIdsFromCore(
-      courses.map((course) => course.coreCourseId).filter(Boolean),
-      {},
-      { serviceKeyOnly: true },
-    );
-    coreById = new Map(coreCourses.map((course) => [course.id, course]));
-  } catch {
-    // Core projection degrades to the placeholder, as in the legacy list.
+  if (reqUser.role === 'ADMIN') {
+    // The ADMIN branch above already fetched (and cached, per-TTL) Core's
+    // full catalog via `listCoursesForUser` -> `getCachedCoreCatalog()`. Read
+    // that result back rather than issuing a second, separately-failable
+    // network call here: a fresh failed request must never clobber names
+    // that were already resolved successfully earlier in this same call.
+    coreById = new Map((coreCatalogCache.courses ?? []).map((course) => [course.id, course]));
+  } else {
+    try {
+      const coreCourses = await getCoursesByIdsFromCore(
+        courses.map((course) => course.coreCourseId).filter(Boolean),
+        {},
+        { serviceKeyOnly: true },
+      );
+      coreById = new Map(coreCourses.map((course) => [course.id, course]));
+    } catch {
+      // Core projection degrades to the placeholder, as in the legacy list.
+    }
   }
   return { courses: courses.map((course) => enrichCourseRow(course, coreById, course.accessLevel)), total };
 }

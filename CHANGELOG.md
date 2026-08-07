@@ -21,6 +21,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [core] fix: Disable Qwen3.5's default reasoning-mode output for vLLM chat completions, preventing leaked `<think>` blocks in responses; set `VLLM_DISABLE_THINKING=0` only when reasoning output is intended. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
+- [question-maker] fix: Address #1410 review findings on the SQL course-visibility pagination — a UNIT_ADMIN no longer loses visibility into an authorized-unit course whose Core enrollment role is `null` (department-only access is now persisted into the synced access mirror); the owner-fallback path on a failed Core access refresh now fails CLOSED for linked courses (only unlinked, `coreCourseId: null` owned courses retain automatic visibility); and the ADMIN branch of `GET /api/course` reuses its already-fetched Core catalog for page enrichment instead of making a second, separately-failable catalog request that could overwrite already-resolved names with the "Course unavailable" placeholder — this was the active required-CI failure. Also resets the process-wide access/catalog cache between `coreWiringDb.integration.test.js` cases to stop state leaking across tests. (@saadtab01, 2026-08-07) — [#1410](https://github.com/EduAI-Lab/EduAI/pull/1410)
 
 ### Changed
 

@@ -123,6 +123,43 @@ describe('listCoursesForUser', () => {
       expect(pageQuery.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
     });
 
+    it('keeps a department-only course visible to a UNIT_ADMIN when callerEnrollmentRole is null (#1410 review)', async () => {
+      // Core can return an authorized-unit course with no personal
+      // enrollment role — that is still a valid grant for a UNIT_ADMIN and
+      // must not be dropped from the synced access mirror.
+      mockListCoursesFromCore.mockResolvedValue([
+        { id: 'core-1', callerEnrollmentRole: null, department: 'COSC' },
+      ]);
+      mockGetAuthorizedUnits.mockResolvedValue(['COSC']);
+      mockFindMany
+        .mockResolvedValueOnce([{ id: 10, coreCourseId: 'core-1' }])
+        .mockResolvedValueOnce([{
+          id: 10,
+          userId: 'other-owner',
+          coreCourseId: 'core-1',
+          accessGrants: [{ role: 'NONE', department: 'COSC' }],
+        }]);
+      mockCount.mockResolvedValue(1);
+
+      const result = await listCoursesPageForUser(
+        { id: 'unit-admin-1', role: 'UNIT_ADMIN' },
+        { cookie: 'session=x', pagination: { offset: 0, limit: 25 } },
+      );
+
+      expect(result.total).toBe(1);
+      expect(result.courses).toHaveLength(1);
+      expect(result.courses[0].accessLevel).toBe('unit');
+      // The department-only grant is persisted even without an enrollment role.
+      expect(mockCourseAccessCreateMany).toHaveBeenCalledWith({
+        data: [{ userId: 'unit-admin-1', courseId: 10, role: 'NONE', department: 'COSC' }],
+        skipDuplicates: true,
+      });
+      const pageWhere = mockFindMany.mock.calls[1][0].where;
+      expect(pageWhere.OR).toContainEqual({
+        accessGrants: { some: { userId: 'unit-admin-1', department: { in: ['COSC'] } } },
+      });
+    });
+
     it('does not refresh Core access again while the caller snapshot is fresh', async () => {
       mockFindMany
         .mockResolvedValueOnce([])
@@ -154,13 +191,38 @@ describe('listCoursesForUser', () => {
       );
 
       const pageQuery = mockFindMany.mock.calls[0][0];
+      // The owner-fallback branch is restricted to `coreCourseId: null` when
+      // the mirror is unhealthy, so a caller who owns no unlinked course
+      // still gets a (correctly unsatisfiable-by-them) `userId` clause.
       expect(pageQuery.where).toEqual({
-        OR: [{ userId: 'former-instructor' }],
+        OR: [{ userId: 'former-instructor', coreCourseId: null }],
       });
       expect(pageQuery.include).toEqual({});
     });
 
-    it('reuses the cached ADMIN catalog while resolving only the current page', async () => {
+    it('excludes a linked course from owner fallback when the Core access refresh fails (fail closed)', async () => {
+      // #1410 review: a linked course's real access can't be verified
+      // locally once Core is unreachable, so an owner must NOT get automatic
+      // fallback visibility into it — only their QM-native (unlinked) courses.
+      mockListCoursesFromCore.mockRejectedValue(new Error('Core unavailable'));
+      mockFindMany.mockResolvedValue([]);
+      mockCount.mockResolvedValue(0);
+
+      await listCoursesPageForUser(
+        { id: 'linked-owner', role: 'INSTRUCTOR' },
+        { cookie: 'session=x', pagination: { offset: 0, limit: 25 } },
+      );
+
+      const countWhere = mockCount.mock.calls[0][0].where;
+      const pageWhere = mockFindMany.mock.calls[0][0].where;
+      // The predicate itself proves a linked course owned by the caller
+      // cannot match: the owner branch requires `coreCourseId: null`, and
+      // every other OR branch is dropped while the mirror is unhealthy.
+      expect(countWhere).toEqual({ OR: [{ userId: 'linked-owner', coreCourseId: null }] });
+      expect(pageWhere).toEqual(countWhere);
+    });
+
+    it('reuses the cached ADMIN catalog while resolving only the current page, without a second Core request', async () => {
       mockGetAllCoursesFromCore.mockResolvedValue([{ id: 'core-1', name: 'Course' }]);
       mockFindMany.mockResolvedValue([]);
       mockCount.mockResolvedValue(0);
@@ -170,8 +232,37 @@ describe('listCoursesForUser', () => {
       await listCoursesPageForUser(user, options);
       await listCoursesPageForUser(user, options);
 
+      // Only the one catalog fetch inside `listCoursesForUser` (TTL-cached
+      // across both calls) — #1410 review: a second, separately-failable
+      // `getCoursesByIdsFromCore` request must not be made for ADMIN, since
+      // it could clobber names the cached catalog already resolved.
       expect(mockGetAllCoursesFromCore).toHaveBeenCalledTimes(1);
-      expect(mockGetCoursesByIdsFromCore).toHaveBeenCalledTimes(2);
+      expect(mockGetCoursesByIdsFromCore).not.toHaveBeenCalled();
+    });
+
+    it('does not overwrite valid ADMIN names with a placeholder when Core is unreachable for a later request (#1410 review)', async () => {
+      // First call succeeds and warms the shared catalog cache; a later Core
+      // outage must not corrupt names the cache already resolved.
+      mockGetAllCoursesFromCore.mockResolvedValueOnce([
+        { id: 'core-1', name: 'Real Course Name', code: 'STUDY3' },
+      ]);
+      mockFindMany.mockResolvedValue([{ id: 10, userId: 'admin-1', coreCourseId: 'core-1' }]);
+      mockCount.mockResolvedValue(1);
+
+      const user = { id: 'admin-1', role: 'ADMIN' };
+      const options = { pagination: { offset: 0, limit: 25 } };
+
+      const first = await listCoursesPageForUser(user, options);
+      expect(first.courses[0].name).toBe('Real Course Name');
+
+      // Simulate Core going down for any *new* request (getCoursesByIdsFromCore),
+      // while the already-cached catalog is still warm.
+      mockGetCoursesByIdsFromCore.mockRejectedValue(new Error('Core unavailable'));
+      const second = await listCoursesPageForUser(user, options);
+
+      expect(second.courses[0].name).toBe('Real Course Name');
+      expect(second.courses[0].coreUnavailable).toBe(false);
+      expect(mockGetCoursesByIdsFromCore).not.toHaveBeenCalled();
     });
   });
 
