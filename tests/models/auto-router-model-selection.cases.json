@@ -1,0 +1,194 @@
+[
+  {
+    "RouterMode": "hybrid",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "llm",
+    "ModeOverride": "rules",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "hybrid",
+    "ModeOverride": "hybrid",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "low"
+  },
+  {
+    "RouterMode": "llm",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "llm",
+    "ModeOverride": "none",
+    "ClassifierThrows": "yes",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "knn",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "llm",
+    "ModeOverride": "hybrid",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "low"
+  },
+  {
+    "RouterMode": "rules",
+    "ModeOverride": "none",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "none",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "hybrid",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "hybrid",
+    "ModeOverride": "knn",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "rules",
+    "ModeOverride": "rules",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "rules",
+    "ModeOverride": "knn",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "hybrid",
+    "ModeOverride": "none",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "low"
+  },
+  {
+    "RouterMode": "rules",
+    "ModeOverride": "hybrid",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "low"
+  },
+  {
+    "RouterMode": "rules",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "hybrid",
+    "ModeOverride": "rules",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "rules",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "yes",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "yes",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "llm",
+    "ModeOverride": "knn",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "yes",
+    "Tier3RuleMatch": "yes",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "rules",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "hybrid",
+    "ModeOverride": "llm",
+    "ClassifierThrows": "yes",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "high"
+  },
+  {
+    "RouterMode": "knn",
+    "ModeOverride": "hybrid",
+    "ClassifierThrows": "no",
+    "ImagesPresent": "no",
+    "Tier3RuleMatch": "no",
+    "KnnConfidence": "low"
+  }
+]

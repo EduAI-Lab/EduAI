@@ -1,4 +1,116 @@
+// NB: the client is generated to a custom output (see `generator client` in
+// schema.prisma), so `Prisma` must come from there — importing it from
+// '@prisma/client' resolves to a different module whose `Prisma.join` is undefined.
+import { Prisma } from '@eduai/ai-tutor-prisma-client';
 import { prisma } from '../config/database.js';
+
+/** Progress shape returned when there is nothing to compute. */
+const EMPTY_PROGRESS = { completed: 0, total: 0, percentage: 0 };
+
+/**
+ * Bucket a progress record the way the course-list Progress filter does.
+ *
+ * Why here: `PROGRESS_FILTER` in `app/routes/student.tsx` is the definition of
+ * record for these buckets, and `GET /api/courses?progress=` must agree with it
+ * exactly or the filter returns courses the UI would have labelled differently.
+ * Unit tests on both sides pin them to the same four cases (#1208).
+ *
+ * @returns {'not-started'|'in-progress'|'completed'|null} null = no published
+ *   activities, so the course sits in no bucket and any progress filter excludes it.
+ */
+export function progressBucket(progress) {
+  const total = progress?.total ?? 0;
+  const completed = progress?.completed ?? 0;
+  if (total <= 0) return null;
+  if (completed <= 0) return 'not-started';
+  if (completed >= total) return 'completed';
+  return 'in-progress';
+}
+
+/**
+ * Batched course progress — TWO set-based queries for any number of courses.
+ *
+ * Why: `calculateCourseProgress` runs 2 queries *per course*. That was tolerable
+ * when only the current page needed progress, but `?progress=` (#1208) has to
+ * bucket the caller's entire accessible set before paging, which would turn the
+ * documented N+1 into an N+1 over everything. This replaces both uses.
+ *
+ * Semantics are identical to `calculateCourseProgress`, which the unit tests
+ * assert directly against this function on shared fixtures:
+ *   total     = activities in published lessons in published modules
+ *   completed = of those, the ones whose LATEST submission (highest
+ *               attemptNumber) by this user is `isCorrect = true`
+ *   total 0   → { completed: 0, total: 0, percentage: 0 }
+ *
+ * @param {number[]} courseIds CourseOffering ids.
+ * @param {string} userId
+ * @returns {Promise<Map<number, { completed: number, total: number, percentage: number }>>}
+ *   Every requested id is present; courses with no published activities map to zeroes.
+ */
+export async function calculateCourseProgressBatch(courseIds, userId) {
+  const ids = Array.from(new Set((courseIds ?? []).filter((id) => Number.isInteger(id))));
+  const result = new Map(ids.map((id) => [id, { ...EMPTY_PROGRESS }]));
+  if (ids.length === 0 || !userId) return result;
+
+  try {
+    const idList = Prisma.join(ids);
+
+    // Published activities per course. COUNT(*)::int keeps this a JS number —
+    // an un-cast COUNT comes back as BigInt and breaks the arithmetic below.
+    const totals = await prisma.$queryRaw`
+      SELECT m."courseOfferingId" AS "courseId", COUNT(*)::int AS "count"
+      FROM "Activity" a
+      JOIN "Lesson" l ON l.id = a."lessonId" AND l."isPublished" = true
+      JOIN "Module" m ON m.id = l."moduleId" AND m."isPublished" = true
+      WHERE m."courseOfferingId" IN (${idList})
+      GROUP BY m."courseOfferingId"
+    `;
+
+    // Of those, the ones whose latest attempt is correct. DISTINCT ON collapses
+    // to one row per activity, ordered by attemptNumber DESC — the set-based
+    // equivalent of the "first row wins after ordering" loop in
+    // `countCompletedActivities`. The trailing `s.id DESC` only breaks ties
+    // between two submissions sharing an attemptNumber, making the result
+    // deterministic where the row-by-row version was arbitrary.
+    const completed = await prisma.$queryRaw`
+      WITH scoped AS (
+        SELECT a.id AS "activityId", m."courseOfferingId" AS "courseId"
+        FROM "Activity" a
+        JOIN "Lesson" l ON l.id = a."lessonId" AND l."isPublished" = true
+        JOIN "Module" m ON m.id = l."moduleId" AND m."isPublished" = true
+        WHERE m."courseOfferingId" IN (${idList})
+      ),
+      latest AS (
+        SELECT DISTINCT ON (s."activityId") s."activityId", s."isCorrect"
+        FROM "Submission" s
+        JOIN scoped ON scoped."activityId" = s."activityId"
+        WHERE s."userId" = ${userId}
+        ORDER BY s."activityId", s."attemptNumber" DESC, s.id DESC
+      )
+      SELECT scoped."courseId" AS "courseId", COUNT(*)::int AS "count"
+      FROM latest
+      JOIN scoped ON scoped."activityId" = latest."activityId"
+      WHERE latest."isCorrect" = true
+      GROUP BY scoped."courseId"
+    `;
+
+    const completedByCourse = new Map(completed.map((r) => [r.courseId, r.count]));
+    for (const row of totals) {
+      const total = row.count;
+      if (total <= 0) continue;
+      const done = completedByCourse.get(row.courseId) ?? 0;
+      result.set(row.courseId, {
+        completed: done,
+        total,
+        percentage: Math.round((done / total) * 100),
+      });
+    }
+    return result;
+  } catch (error) {
+    console.error('Error calculating batched course progress:', error);
+    return result;
+  }
+}
 
 /**
  * Calculate progress for a course based on correct submissions

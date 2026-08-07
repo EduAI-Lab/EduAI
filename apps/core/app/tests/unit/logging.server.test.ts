@@ -289,4 +289,103 @@ describe("logging.server", () => {
       }),
     );
   });
+
+  // #976: key-level redaction alone left secrets under innocuous keys fully readable.
+  describe("value-level redaction of detail strings", () => {
+    it("redacts token query params hidden under an innocuous key", async () => {
+      await logAuditAction({
+        actionCode: "CANVAS_CALLBACK_RECEIVED",
+        category: "AI_CONFIG",
+        entityType: "Integration",
+        details: {
+          note: "retried https://canvas.test/api/v1/courses?access_token=abc123def456&page=2",
+        },
+      });
+
+      expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: {
+            note: "retried https://canvas.test/api/v1/courses?access_token=[REDACTED]&page=2",
+          },
+        }),
+      );
+    });
+
+    it("redacts connection-string credentials under an innocuous key", async () => {
+      await logSecurityEvent({
+        actionCode: "DB_CONNECT_FAILED",
+        entityType: "Db",
+        details: { reason: "cannot reach postgres://appuser:s3cr3t@db.internal:5432/eduai" },
+      });
+
+      expect(auditDb.createSecurityLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: { reason: "cannot reach postgres://[REDACTED]@db.internal:5432/eduai" },
+        }),
+      );
+    });
+
+    it("redacts authorization headers nested in arrays and objects", async () => {
+      await logAuditAction({
+        actionCode: "OUTBOUND_REQUEST_FAILED",
+        category: "AI_CONFIG",
+        entityType: "Integration",
+        details: {
+          request: {
+            headerLines: [
+              "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+              "Cookie: session=abc123; theme=dark",
+            ],
+          },
+        },
+      });
+
+      expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: {
+            request: {
+              headerLines: ["Authorization: Bearer [REDACTED]", "Cookie: [REDACTED]"],
+            },
+          },
+        }),
+      );
+    });
+
+    it("redacts detail strings on the system error path too", async () => {
+      await logSystemError({
+        source: "AI",
+        code: "AI_HTTP_ERROR",
+        message: "request failed",
+        error: new Error("503"),
+        details: { endpoint: "/v1/chat?api_key=sk-live-abcdef123456" },
+      });
+
+      expect(systemDb.createSystemError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: { endpoint: "/v1/chat?api_key=[REDACTED]" },
+        }),
+      );
+    });
+
+    it("leaves ordinary prose untouched so log readability is preserved", async () => {
+      await logAuditAction({
+        actionCode: "COURSE_UPDATED",
+        category: "COURSE",
+        entityType: "Course",
+        details: {
+          summary: "Bearer of bad news: Basic setup complete for CPSC 100",
+          url: "https://eduai.test/courses/42?page=2",
+        },
+      });
+
+      expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: {
+            summary: "Bearer of bad news: Basic setup complete for CPSC 100",
+            url: "https://eduai.test/courses/42?page=2",
+          },
+        }),
+      );
+    });
+  });
 });

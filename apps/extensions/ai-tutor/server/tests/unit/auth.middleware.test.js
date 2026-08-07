@@ -25,9 +25,11 @@ function makeRes() {
     status: vi.fn(),
     json: vi.fn(),
     redirect: vi.fn(),
+    set: vi.fn(),
   };
   res.status.mockReturnValue(res);
   res.json.mockReturnValue(res);
+  res.set.mockReturnValue(res);
   return res;
 }
 
@@ -75,6 +77,50 @@ describe('requireAuth', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: 'Authentication required' });
+  });
+
+  // Edge-case audit #225 (SEAM-01 / #1197 fix): a Core 429 (IP rate limit) is
+  // passed through as 429 with the Retry-After hint forwarded, instead of
+  // being collapsed into a generic 401 that would otherwise make every
+  // extension API call look like "logged out" during the rate-limit window.
+  it('passes a Core 429 rate-limit response through as 429 with Retry-After (SEAM-01)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: { get: (name) => (name.toLowerCase() === 'retry-after' ? '30' : null) },
+      }),
+    );
+    const req = makeReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '30');
+    expect(res.json).toHaveBeenCalledWith({ error: 'Rate limited', retryAfter: '30' });
+  });
+
+  it('passes a Core 429 through even without a Retry-After header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: { get: () => null },
+      }),
+    );
+    const req = makeReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.set).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ error: 'Rate limited', retryAfter: null });
   });
 
   it('returns 401 when Core is unreachable (fetch throws)', async () => {
