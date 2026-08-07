@@ -151,6 +151,7 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Started</TableHead>
+                  <TableHead>Triggered by</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Message</TableHead>
@@ -160,6 +161,14 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
                 {runs.map((run) => (
                   <TableRow key={run.id}>
                     <TableCell className="text-sm">{formatDateTime(run.startedAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {run.triggerSource === "ADMIN_UI" ? "Admin panel" :
+                        run.triggerSource === "ADMIN_CHAT" ? "Admin chatbot" :
+                          run.triggerSource === "SCHEDULE" ? "Schedule" : "Unknown"}
+                      {run.triggeredByUserId && (
+                        <div className="font-mono text-[10px]">{run.triggeredByUserId}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDuration(run.startedAt, run.finishedAt)}
                     </TableCell>

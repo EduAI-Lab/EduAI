@@ -4,6 +4,7 @@ import prisma from "~/lib/prisma.server";
 import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
 
 export type CronJobStatusValue = "RUNNING" | "SUCCESS" | "ERROR";
+export type CronJobTriggerSource = "SCHEDULE" | "ADMIN_UI" | "ADMIN_CHAT" | "UNKNOWN";
 
 export interface KnownCronJob {
   name: string;
@@ -76,6 +77,8 @@ export interface CronJobRunRow {
   finishedAt: string | null;
   message: string | null;
   exitCode: number | null;
+  triggerSource: CronJobTriggerSource;
+  triggeredByUserId: string | null;
 }
 
 export interface CronJobEntry extends KnownCronJob {
@@ -94,10 +97,12 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
         finishedAt: Date | null;
         message: string | null;
         exitCode: number | null;
+        triggerSource: CronJobTriggerSource;
+        triggeredByUserId: string | null;
       }>
     >`
       SELECT DISTINCT ON ("jobName")
-        id, "jobName", status, "startedAt", "finishedAt", message, "exitCode"
+        id, "jobName", status, "startedAt", "finishedAt", message, "exitCode", "triggerSource", "triggeredByUserId"
       FROM cron_job_runs
       ORDER BY "jobName", "startedAt" DESC
     `,
@@ -115,6 +120,8 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
         finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
         message: r.message,
         exitCode: r.exitCode,
+        triggerSource: r.triggerSource,
+        triggeredByUserId: r.triggeredByUserId,
       } satisfies CronJobRunRow,
     ]),
   );
@@ -159,9 +166,11 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
       finishedAt: Date | null;
       message: string | null;
       exitCode: number | null;
+      triggerSource: CronJobTriggerSource;
+      triggeredByUserId: string | null;
     }>
   >`
-    SELECT id, "jobName", status, "startedAt", "finishedAt", message, "exitCode"
+    SELECT id, "jobName", status, "startedAt", "finishedAt", message, "exitCode", "triggerSource", "triggeredByUserId"
     FROM cron_job_runs
     WHERE "jobName" = ${jobName}
     ORDER BY "startedAt" DESC
@@ -175,6 +184,8 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
     finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
     message: r.message,
     exitCode: r.exitCode,
+    triggerSource: r.triggerSource,
+    triggeredByUserId: r.triggeredByUserId,
   }));
 }
 
@@ -194,17 +205,20 @@ export async function findRunningCronRun(
 
 export async function startCronRun(
   jobName: string,
+  metadata: { source: CronJobTriggerSource; triggeredByUserId?: string } = { source: "UNKNOWN" },
 ): Promise<{ runId: string; created: boolean }> {
   // Insert first; partial unique index (one RUNNING per jobName) makes concurrent
   // triggers conflict instead of double-spawning. ON CONFLICT DO NOTHING + reclaim.
   // `created: true` only when this caller won the INSERT — losers must not spawn.
   const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
-    INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "createdAt")
+    INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "triggerSource", "triggeredByUserId", "createdAt")
     VALUES (
       gen_random_uuid()::text,
       ${jobName},
       'RUNNING'::"CronJobStatus",
       NOW(),
+      ${metadata.source}::"CronJobTriggerSource",
+      ${metadata.triggeredByUserId ?? null},
       NOW()
     )
     ON CONFLICT ("jobName") WHERE (status = 'RUNNING') DO NOTHING

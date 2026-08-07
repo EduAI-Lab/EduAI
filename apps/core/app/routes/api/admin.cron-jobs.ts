@@ -71,7 +71,10 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ runId: alreadyRunning.id, reused: true });
     }
 
-    const { runId, created } = await startCronRun(jobName);
+    const { runId, created } = await startCronRun(jobName, {
+      source: "ADMIN_UI",
+      triggeredByUserId: user.id,
+    });
     if (created) {
       triggerCronJobAsync(jobName, job.script, runId);
     }

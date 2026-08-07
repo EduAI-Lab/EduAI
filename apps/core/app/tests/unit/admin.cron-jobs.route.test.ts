@@ -166,7 +166,10 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
     const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
     expect(status(res)).toBe(200);
     expect(findRunningCronRun).toHaveBeenCalledWith("backup-nightly");
-    expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
+    expect(startCronRun).toHaveBeenCalledWith("backup-nightly", {
+      source: "ADMIN_UI",
+      triggeredByUserId: ADMIN_USER.id,
+    });
     expect(triggerCronJobAsync).toHaveBeenCalledWith("backup-nightly", "backup-nightly.sh", "run-1");
     const b = body(res);
     expect(b.runId).toBe("run-1");

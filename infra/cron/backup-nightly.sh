@@ -18,12 +18,14 @@ mkdir -p "$BACKUP_DIR"
 # override (5th arg) so the QM container's different password is handled.
 pg_dump_for() {
   local port=$1 dbname=$2 container=$3 pass="${4:-$PGPASSWORD}"
-  if command -v pg_dump >/dev/null 2>&1; then
-    PGPASSWORD="$pass" pg_dump -h "$DB_HOST" -p "$port" -U "$DB_USER" "$dbname"
-    return
-  fi
+  # Prefer the database container's client. The shared dev host may have an
+  # older system pg_dump than its PostgreSQL server, which PostgreSQL rejects.
   if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx "$container"; then
     docker exec -e PGPASSWORD="$pass" "$container" pg_dump -U "$DB_USER" "$dbname"
+    return
+  fi
+  if command -v pg_dump >/dev/null 2>&1; then
+    PGPASSWORD="$pass" pg_dump -h "$DB_HOST" -p "$port" -U "$DB_USER" "$dbname"
     return
   fi
   die "pg_dump not found and container '$container' is not running. Install PostgreSQL client tools or start dev DBs."
@@ -45,4 +47,6 @@ backup_db ai-tutor       "$DB_PORT_TUTOR" ai-tutor        eduai-ai-tutor-db
 backup_db question-maker "$DB_PORT_QM"    question-maker  eduai-question-maker-db "${DB_PASS_QM:-$PGPASSWORD}"
 log "=== All nightly backups complete for $DATE ==="
 
-[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_finish
+if [[ -z "${CORE_CRON_RUN_ID:-}" ]]; then
+  cron_finish
+fi

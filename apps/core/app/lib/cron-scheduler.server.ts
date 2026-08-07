@@ -25,7 +25,7 @@ function scheduleOne(jobName: string, schedule: string, script: string): void {
   const task = cron.schedule(
     schedule,
     () => {
-      startCronRun(jobName)
+      startCronRun(jobName, { source: "SCHEDULE" })
         .then(({ runId, created }) => {
           if (created) triggerCronJobAsync(jobName, script, runId);
         })
