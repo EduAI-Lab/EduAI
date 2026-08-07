@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
+import { MAX_SEARCH_LENGTH } from '../../src/utils/pagination.js';
 import {
   makeProfessor,
   makeStudent,
@@ -183,10 +184,19 @@ describe('Tree endpoint search (#1207)', () => {
       expect(asProf.body.total).toBe(1);
     });
 
-    it('400s SEARCH_INVALID on an over-long term', async () => {
+    it('400s SEARCH_TOO_LONG on an over-long term', async () => {
       const res = await request(profApp)
         .get(`/api/courses/${seed.course.id}/modules`)
-        .query({ page: 1, pageSize: 25, search: 'a'.repeat(101) });
+        .query({ page: 1, pageSize: 25, search: 'a'.repeat(MAX_SEARCH_LENGTH + 1) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('SEARCH_TOO_LONG');
+    });
+
+    it('400s SEARCH_INVALID on a repeated search param', async () => {
+      const res = await request(profApp)
+        .get(`/api/courses/${seed.course.id}/modules`)
+        .query({ page: 1, pageSize: 25, search: ['graphs', 'sorting'] });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('SEARCH_INVALID');

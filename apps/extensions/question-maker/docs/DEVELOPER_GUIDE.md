@@ -24,9 +24,9 @@ flowchart LR
 - Models & associations:
   - Core tables: `User`, `Course`, `Topics`, `Question_Metadata`, `Variants`, `Assessments`, `AssessmentSections`, `SectionVariants`, `CanvasIntegration`, `CanvasCourseMapping`, `BugReport`.
 - Middleware:
-  - `middleware/auth.js` (JWT guard), `middleware/errorHandler.js` (404 + error responses).
+  - `middleware/auth.js` (validates the session cookie against Core's `POST /api/sessions/validate`, populates `req.user`, RBAC guard), `middleware/errorHandler.js` (404 + error responses).
 - Services:
-  - Auth: `services/authService.js` (register/login/JWT, bcrypt, `isBugReportAdmin` flag projection).
+  - Auth: `services/authService.js` (`findOrCreateUser` — upserts the thin local user row needed for FK integrity once Core has validated the session; no JWT signing or password hashing happens in this backend).
   - Questions/variants: `services/questionService.js` (CRUD, topic normalization, extraction save flow, ordering).
   - Assessments/sections: `services/assessmentService.js`, `services/assessmentSectionService.js`.
   - AI: `services/aiService.js` (extraction wrapper), `services/eduaiService.js` (models/generation/chat proxy).

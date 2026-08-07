@@ -14,6 +14,8 @@ import {
 } from "~/lib/canvas/student-id.server";
 import prisma from "~/lib/prisma.server";
 
+type RosterDb = Pick<typeof prisma, "canvasRosterMember">;
+
 type RosterSyncInput = {
   credentials: CanvasIntegrationCredentials;
   coreCourseId: string;
@@ -21,6 +23,8 @@ type RosterSyncInput = {
   syncedByUserId: string;
   syncStartedAt: Date;
   fetchImpl?: typeof fetch;
+  /** Optional transaction client so callers can hold a course sync lock. */
+  db?: RosterDb;
 };
 
 function mapCanvasRole(enrollmentType: "student" | "ta"): EnrollmentRole {
@@ -44,6 +48,7 @@ async function upsertRosterMembers(
   rows: CanvasCourseUserApi[],
   role: EnrollmentRole,
   input: RosterSyncInput,
+  db: RosterDb,
 ): Promise<number> {
   let synced = 0;
 
@@ -55,7 +60,7 @@ async function upsertRosterMembers(
     const seenAt = new Date();
 
     try {
-      await prisma.canvasRosterMember.upsert({
+      await db.canvasRosterMember.upsert({
         where: {
           courseId_canvasUserId_role: {
             courseId: input.coreCourseId,
@@ -92,8 +97,16 @@ async function upsertRosterMembers(
   return synced;
 }
 
-/** Fetches Canvas roster and upserts staging rows for students and TAs. */
+/**
+ * Fetches Canvas roster and upserts staging rows for students and TAs.
+ *
+ * CANVAS-01 (#225 / #1195): a *successful* empty roster response must not wipe
+ * a previously non-empty staging table (false-empty Canvas responses). When the
+ * fetch returns zero members but active staging rows already exist, we throw
+ * instead of running the deactivation sweep.
+ */
 export async function syncCourseRoster(input: RosterSyncInput): Promise<number> {
+  const db = input.db ?? prisma;
   const fetchImpl = input.fetchImpl ?? fetch;
   const [students, tas] = await Promise.all([
     listCanvasCourseStudents(input.credentials, input.canvasCourseId, fetchImpl),
@@ -104,8 +117,9 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
     students,
     mapCanvasRole("student"),
     input,
+    db,
   );
-  const taCount = await upsertRosterMembers(tas, mapCanvasRole("ta"), input);
+  const taCount = await upsertRosterMembers(tas, mapCanvasRole("ta"), input, db);
   const syncedCount = studentCount + taCount;
 
   console.info(
@@ -120,7 +134,19 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
     }),
   );
 
-  await prisma.canvasRosterMember.updateMany({
+  if (syncedCount === 0) {
+    const priorActive = await db.canvasRosterMember.count({
+      where: { courseId: input.coreCourseId, isActive: true },
+    });
+    if (priorActive > 0) {
+      throw new Error(
+        `Canvas returned an empty roster for course ${input.canvasCourseId}, but ${priorActive} active staging members already exist. Refusing to wipe the roster — retry the sync or check Canvas API permissions.`,
+      );
+    }
+    return 0;
+  }
+
+  await db.canvasRosterMember.updateMany({
     where: {
       courseId: input.coreCourseId,
       isActive: true,

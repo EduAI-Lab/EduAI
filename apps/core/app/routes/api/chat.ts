@@ -95,7 +95,7 @@ import {
   computeAdhdResponseMetrics,
 } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { classifyRagRetrievalError, findRelevantContent } from "~/lib/ai/embedding";
 import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
@@ -109,6 +109,7 @@ import {
   enforceAdminIfApiKey,
   requireServiceKey,
 } from "~/lib/auth/guards.server";
+import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -368,6 +369,15 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
  * we only update the mapping's email for reference.
+ *
+ * SECURITY (#225 AUTH-01 / AUTH-03): the `(provider, externalUserId)` mapping
+ * is the ONLY identity binding here. We never look up an *existing* EduAI
+ * account by `proxyUser.email` and inherit its role — that let any delegating
+ * caller impersonate an arbitrary instructor/admin merely by naming their
+ * email. A brand-new mapping only ever creates a brand-new, least-privilege
+ * STUDENT account, and only when the supplied email clears the same bar as
+ * self-registration (a real UBC address, with `auth.allowPublicRegistration`
+ * on); otherwise we fail closed instead of minting an unvetted account.
  */
 async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
@@ -377,10 +387,8 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
     throw new Error("proxyUser.id is required");
   }
 
-  let email = proxyUser.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    email = `${externalUserId}@${provider}.local`;
-  }
+  const rawEmail = proxyUser.email?.trim().toLowerCase();
+  const suppliedEmail = rawEmail && rawEmail.includes("@") ? rawEmail : null;
 
   const existingMapping = await prisma.externalUser.findUnique({
     where: {
@@ -395,26 +403,49 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   });
 
   if (existingMapping?.user) {
-    if (!existingMapping.email && email) {
+    if (!existingMapping.email && suppliedEmail) {
       await prisma.externalUser.update({
         where: { id: existingMapping.id },
-        data: { email },
+        data: { email: suppliedEmail },
       });
     }
     return existingMapping.user;
   }
 
-  let user = await prisma.user.findUnique({ where: { email } });
+  if (!suppliedEmail || !isUbcEmail(suppliedEmail)) {
+    throw new Error(
+      "proxyUser.email must be a verifiable UBC email address to create a new proxy identity",
+    );
+  }
+  if (!(await getPolicy("auth.allowPublicRegistration"))) {
+    throw new Error(
+      "Cannot create a new proxy identity while public registration is disabled",
+    );
+  }
 
-  if (!user) {
+  let user: User;
+  try {
     user = await prisma.user.create({
       data: {
-        email,
-        name: email,
+        email: suppliedEmail,
+        name: suppliedEmail,
         role: UserRole.STUDENT,
         isActive: true,
       },
     });
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      // The email already belongs to an existing EduAI account. Refuse to
+      // bind an external identity onto it — that is exactly the AUTH-01
+      // escalation path this fix closes.
+      throw new Error("An EduAI account with this email already exists");
+    }
+    throw error;
   }
 
   try {
@@ -422,7 +453,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       data: {
         provider,
         externalUserId,
-        email,
+        email: suppliedEmail,
         userId: user.id,
       },
     });
@@ -1587,7 +1618,16 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
+    // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —
+    // it does not depend on, and is not depended on by, the model-capability
+    // lookup or course-RAG fetch performed below in each branch. We kick it
+    // off here without awaiting so it resolves concurrently with that
+    // branch-specific work (see the `Promise.all` calls below); we only block
+    // on it at the point it is first actually needed (`buildChatToolRegistry`
+    // in the non-admin branch). The admin branch never reads
+    // `webToolsEnabled`, so there it simply overlaps for free with
+    // `resolveActiveChatModel`.
+    const webToolsEnabledPromise = getPolicy("chat.webToolsEnabled");
     const resolvedSystemPrompt =
       trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
@@ -1599,6 +1639,10 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagContextText = "";
     let courseRagInject = false;
     let effectiveForceHybridRag = forceHybridRag;
+    // Set in both branches below once `webToolsEnabledPromise` resolves; read
+    // later (outside the branch) for debug logging and the
+    // X-Web-Tools-Enabled response header.
+    let webToolsEnabled: boolean;
     /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
     let adminContextWindow: number | undefined;
     let adminDesiredMaxOutput: number | undefined;
@@ -1625,7 +1669,16 @@ export async function action({ request }: ActionFunctionArgs) {
           customPrompt: resolvedSystemPrompt,
         });
 
-      const activeChatModel = await resolveActiveChatModel(model);
+      // Admin mode never reads `webToolsEnabled`, but we still must observe
+      // the same rejection semantics as the original serial `await getPolicy`
+      // — so it is awaited alongside the model lookup rather than left to
+      // float as an unhandled rejection. Both promises were already in
+      // flight before this branch started, so this await is effectively free.
+      let activeChatModel: Awaited<ReturnType<typeof resolveActiveChatModel>>;
+      [webToolsEnabled, activeChatModel] = await Promise.all([
+        webToolsEnabledPromise,
+        resolveActiveChatModel(model),
+      ]);
       supportsTools = activeChatModel?.supportsTools ?? false;
       const contextWindow = resolveModelContextWindow(
         activeChatModel?.maxTokens,
@@ -1706,12 +1759,66 @@ export async function action({ request }: ActionFunctionArgs) {
         system: buildDefaultSystemPrompt(),
       };
     } else {
+      // §1431 dependency graph: `webToolsEnabledPromise` (kicked off before the
+      // admin/non-admin branch), `getChatModelCapabilities(model)`, and the
+      // course-RAG fetch are mutually independent — none consumes another's
+      // result, they only share inputs (`model`, `effectiveCourseId`,
+      // `userQuestion`) that were already resolved earlier in the request. The
+      // original code awaited them one at a time, serializing three
+      // network/DB round trips into TTFB. We now fire all three at once and
+      // await together.
+      //
+      // Error-handling parity:
+      //   - `getPolicy` (webToolsEnabledPromise) has no local try/catch — a
+      //     rejection must still propagate to the outer request handler
+      //     exactly as the original serial `await` would. It is included in
+      //     `Promise.all` (not `allSettled`) so first-rejection-wins behavior
+      //     is preserved.
+      //   - `getChatModelCapabilities` already catches its own errors
+      //     internally and resolves with a safe fallback — it never rejects.
+      //   - The course-RAG fetch must not reject the whole batch (that would
+      //     mask getPolicy failures and lose parallel progress). It catches
+      //     locally and returns `{ error }` so the consumer can fail closed
+      //     with 503 (#225 RAG-01/RAG-02) instead of treating retrieval
+      //     outages as zero hits.
+      type CourseRagPrefetchResult =
+        | { hits: HybridRagHit[]; error?: undefined }
+        | { hits: []; error: unknown };
+      const courseRagPromise = (async (): Promise<CourseRagPrefetchResult> => {
+        if (!(shouldPrefetchCourseRag(hasCourse) && effectiveCourseId)) {
+          return { hits: [] };
+        }
+        if (routerRagPrefetch) {
+          return { hits: routerRagPrefetch };
+        }
+        try {
+          const hits = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            restrictRagToStudentVisible,
+          );
+          return { hits };
+        } catch (error) {
+          console.error("Error prefetching course RAG context:", error);
+          return { hits: [], error };
+        }
+      })();
+
+      let modelCapabilities: Awaited<ReturnType<typeof getChatModelCapabilities>>;
+      let courseRagResult: Awaited<typeof courseRagPromise>;
+      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all([
+        webToolsEnabledPromise,
+        getChatModelCapabilities(model),
+        courseRagPromise,
+      ]);
+
       const tools = buildChatToolRegistry({
         effectiveCourseId,
         webToolsEnabled,
         restrictToStudentVisible: restrictRagToStudentVisible,
       });
-      const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
       effectiveForceHybridRag =
         forceHybridRag ||
@@ -1756,35 +1863,38 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
         .join("\n\n");
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
-        try {
-          courseRagHits =
-            routerRagPrefetch ??
-            (await findRelevantContent(
-              userQuestion,
-              effectiveCourseId,
-              HYBRID_RAG_MAX_CHUNKS,
-              undefined,
-              restrictRagToStudentVisible,
-            ));
-          courseRagInject = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: courseRagHits,
-          });
-          if (courseRagInject && courseRagHits.length > 0) {
-            courseRagContextText = buildCappedRagContextText(
-              courseRagHits,
-              HYBRID_RAG_MAX_CHUNKS,
-              HYBRID_RAG_MAX_CONTEXT_CHARS,
-            );
-          }
-        } catch (error) {
-          console.error("Error prefetching course RAG context:", error);
-          courseRagInject = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: [],
-          });
+        // #225 RAG-01/RAG-02: an exception during retrieval means the
+        // embedding path failed (stale dimension vs. corpus, or provider
+        // down) — never treat it like a legitimate zero-hit result. Any
+        // failed course prefetch must fail closed: prompts that the intent
+        // heuristic skips (e.g. "Explain polymorphism") can still inject
+        // via strong similarity when retrieval succeeds, so gating 503 on
+        // courseRagNeeded would still answer ungrounded. Deliberately
+        // skipped retrieval never enters the promise body (see
+        // shouldPrefetchCourseRag).
+        if (courseRagResult.error !== undefined) {
+          return chatApiReject(
+            503,
+            {
+              error:
+                "Course materials could not be searched right now. Please try again shortly.",
+              code: classifyRagRetrievalError(courseRagResult.error),
+            },
+            { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
+          );
+        }
+        courseRagHits = courseRagResult.hits;
+        courseRagInject = shouldInjectCourseRag({
+          hasCourse,
+          courseRagNeeded,
+          hits: courseRagHits,
+        });
+        if (courseRagInject && courseRagHits.length > 0) {
+          courseRagContextText = buildCappedRagContextText(
+            courseRagHits,
+            HYBRID_RAG_MAX_CHUNKS,
+            HYBRID_RAG_MAX_CONTEXT_CHARS,
+          );
         }
       }
 
@@ -2208,7 +2318,40 @@ ${buildEmptyCourseRagBlock()}`;
       });
 
       if (probe) {
-        await probe.wait();
+        // streamText() sets up the request lazily: onChunk/onStepFinish only
+        // fire once something actually reads the stream. Downstream code
+        // doesn't start reading until after this function returns, so without
+        // a reader here the probe always falls through to its timeout —
+        // it has nothing to be signaled by. Pump a tee'd branch of the
+        // stream (fullStream tees a fresh, independent branch per access, so
+        // this doesn't steal chunks from the real consumer) purely to drive
+        // onChunk while we wait; discard its output. The reader is
+        // startup-only: it's canceled as soon as the probe settles so it
+        // doesn't keep the tee buffering/consuming for the whole generation.
+        const reader = result.fullStream.getReader();
+        const pump = (async () => {
+          try {
+            while (true) {
+              const { done } = await reader.read();
+              if (done) break;
+              // draining only; onChunk/onStepFinish above do the signaling.
+            }
+          } catch (error) {
+            // A rejected probe reader can occur before the SDK emits onError.
+            // Surface it immediately so fleet retry does not wait for timeout.
+            probe.hooks.signalError(error);
+          }
+        })();
+        try {
+          await probe.wait();
+        } finally {
+          // A tee branch's cancel promise does not settle until its sibling
+          // branch also finishes or cancels. Register cancellation, but do not
+          // await that promise here: the sibling is the response stream and
+          // cannot start until runStreamText returns.
+          void reader.cancel().catch(() => {});
+          void pump;
+        }
       }
       return result;
     };

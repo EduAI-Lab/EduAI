@@ -1,14 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   parsePaginationParams,
-  paginated,
   parseSearchParam,
+  parseFilterParam,
+  paginated,
   searchWhere,
   activitySearchWhere,
   PaginationError,
   MAX_PAGE_SIZE,
   MAX_PAGE,
   MAX_SEARCH_LENGTH,
+  MAX_FILTER_VALUES,
 } from '../../src/utils/pagination.js';
 
 /** Minimal Express-request stub — only `query` is read by the helper. */
@@ -172,45 +174,60 @@ describe('paginated', () => {
   });
 });
 
-describe('parseSearchParam (#1207)', () => {
-  it('returns null when the param is absent, so callers omit the filter entirely', () => {
-    expect(parseSearchParam(reqWith({}))).toBeNull();
+describe('parseSearchParam', () => {
+  it('returns undefined when the param is absent, so callers omit the filter entirely', () => {
+    expect(parseSearchParam(reqWith({}))).toBeUndefined();
   });
 
-  it('treats an empty or whitespace-only term as no filter', () => {
-    expect(parseSearchParam(reqWith({ search: '' }))).toBeNull();
-    expect(parseSearchParam(reqWith({ search: '   ' }))).toBeNull();
-    expect(parseSearchParam(reqWith({ search: '\t\n ' }))).toBeNull();
+  it('treats an empty or whitespace-only term as absent', () => {
+    expect(parseSearchParam(reqWith({ search: '' }))).toBeUndefined();
+    expect(parseSearchParam(reqWith({ search: '   ' }))).toBeUndefined();
+    expect(parseSearchParam(reqWith({ search: '\t\n ' }))).toBeUndefined();
   });
 
   it('trims surrounding whitespace', () => {
     expect(parseSearchParam(reqWith({ search: '  graphs  ' }))).toBe('graphs');
   });
 
-  it('collapses internal whitespace so spacing variants are one query', () => {
+  it('collapses internal whitespace so spacing variants are one query (#1207)', () => {
     expect(parseSearchParam(reqWith({ search: 'binary   search   trees' }))).toBe(
       'binary search trees',
     );
   });
 
-  it('accepts a term exactly at the length limit', () => {
-    const term = 'a'.repeat(MAX_SEARCH_LENGTH);
-    expect(parseSearchParam(reqWith({ search: term }))).toBe(term);
+  it('preserves single-spaced inner whitespace and case', () => {
+    expect(parseSearchParam(reqWith({ search: 'Intro To Computing' }))).toBe('Intro To Computing');
   });
 
-  it('rejects a term over the length limit rather than truncating it', () => {
-    const term = 'a'.repeat(MAX_SEARCH_LENGTH + 1);
-    expect(() => parseSearchParam(reqWith({ search: term }))).toThrow(PaginationError);
+  it('reads a custom param name', () => {
+    expect(parseSearchParam(reqWith({ q: 'algebra' }), { param: 'q' })).toBe('algebra');
+  });
+
+  it('throws SEARCH_INVALID when the param is repeated', () => {
     try {
-      parseSearchParam(reqWith({ search: term }));
+      parseSearchParam(reqWith({ search: ['a', 'b'] }));
+      throw new Error('expected throw');
     } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
       expect(e.code).toBe('SEARCH_INVALID');
       expect(e.status).toBe(400);
     }
   });
 
-  it('rejects a repeated param, which Express parses as an array', () => {
-    expect(() => parseSearchParam(reqWith({ search: ['a', 'b'] }))).toThrow(PaginationError);
+  it('throws SEARCH_TOO_LONG past MAX_SEARCH_LENGTH', () => {
+    try {
+      parseSearchParam(reqWith({ search: 'x'.repeat(MAX_SEARCH_LENGTH + 1) }));
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('SEARCH_TOO_LONG');
+      expect(e.status).toBe(400);
+    }
+  });
+
+  it('accepts a query exactly at the limit', () => {
+    const atLimit = 'x'.repeat(MAX_SEARCH_LENGTH);
+    expect(parseSearchParam(reqWith({ search: atLimit }))).toBe(atLimit);
   });
 
   it('honours a caller-supplied maxLength', () => {
@@ -221,8 +238,68 @@ describe('parseSearchParam (#1207)', () => {
   });
 });
 
+describe('parseFilterParam', () => {
+  it('returns an empty array when the param is absent', () => {
+    expect(parseFilterParam(reqWith({}), 'term')).toEqual([]);
+  });
+
+  it('wraps a single value', () => {
+    expect(parseFilterParam(reqWith({ term: 'W1::2026' }), 'term')).toEqual(['W1::2026']);
+  });
+
+  it('keeps every value of a repeated param', () => {
+    expect(parseFilterParam(reqWith({ term: ['W1::2026', 'W2::2025'] }), 'term')).toEqual([
+      'W1::2026',
+      'W2::2025',
+    ]);
+  });
+
+  it('de-dupes and drops blanks', () => {
+    expect(parseFilterParam(reqWith({ term: ['a', 'a', '', '  ', ' b '] }), 'term')).toEqual(['a', 'b']);
+  });
+
+  it('accepts values inside the allowed set', () => {
+    expect(
+      parseFilterParam(reqWith({ status: 'draft' }), 'status', { allowed: ['published', 'draft'] }),
+    ).toEqual(['draft']);
+  });
+
+  it('throws FILTER_INVALID on a value outside the allowed set', () => {
+    try {
+      parseFilterParam(reqWith({ status: 'bogus' }), 'status', { allowed: ['published', 'draft'] });
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('FILTER_INVALID');
+      expect(e.status).toBe(400);
+    }
+  });
+
+  it('throws FILTER_TOO_MANY past MAX_FILTER_VALUES', () => {
+    const many = Array.from({ length: MAX_FILTER_VALUES + 1 }, (_, i) => `v${i}`);
+    try {
+      parseFilterParam(reqWith({ term: many }), 'term');
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('FILTER_TOO_MANY');
+    }
+  });
+
+  it('throws FILTER_INVALID on a non-string value', () => {
+    try {
+      parseFilterParam(reqWith({ term: [{ nested: true }] }), 'term');
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PaginationError);
+      expect(e.code).toBe('FILTER_INVALID');
+    }
+  });
+});
+
 describe('searchWhere (#1207)', () => {
   it('returns null with no term, so the caller skips the AND entirely', () => {
+    expect(searchWhere(undefined, ['title'])).toBeNull();
     expect(searchWhere(null, ['title'])).toBeNull();
     expect(searchWhere('', ['title'])).toBeNull();
   });
@@ -260,14 +337,15 @@ describe('searchWhere (#1207)', () => {
   });
 });
 
-describe('activitySearchWhere (#1207)', () => {
-  /** Every JSON-path clause in the fragment, as `[path, term]` pairs. */
-  const jsonClauses = (where, unnest = (clause) => clause) =>
-    where.OR.map(unnest)
-      .filter((clause) => clause.config)
-      .map((clause) => [clause.config.path.join('.'), clause.config.string_contains]);
+/** Every JSON-path clause in an activity fragment, as `[path, term]` pairs. */
+const jsonClauses = (where, unnest = (clause) => clause) =>
+  where.OR.map(unnest)
+    .filter((clause) => clause.config)
+    .map((clause) => [clause.config.path.join('.'), clause.config.string_contains]);
 
+describe('activitySearchWhere (#1207)', () => {
   it('returns null with no term', () => {
+    expect(activitySearchWhere(undefined)).toBeNull();
     expect(activitySearchWhere(null)).toBeNull();
     expect(activitySearchWhere('')).toBeNull();
   });
@@ -302,9 +380,7 @@ describe('activitySearchWhere (#1207)', () => {
   it('nests every clause under the relation prefix', () => {
     const where = activitySearchWhere('heap', ['activity']);
     expect(where.OR.every((clause) => 'activity' in clause)).toBe(true);
-    const paths = new Set(
-      jsonClauses(where, (clause) => clause.activity).map(([path]) => path),
-    );
+    const paths = new Set(jsonClauses(where, (clause) => clause.activity).map(([path]) => path));
     expect(paths).toEqual(new Set(['question', 'prompt']));
   });
 });

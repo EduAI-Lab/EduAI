@@ -55,49 +55,6 @@ export class PaginationError extends Error {
 }
 
 /**
- * Upper bound on a `search` term. Long enough for a full activity question,
- * short enough that a pathological query can't turn into an expensive scan.
- */
-export const MAX_SEARCH_LENGTH = 100;
-
-/**
- * Parse the optional `search` query param.
- *
- * Absent, empty, or whitespace-only means "no filter" and returns `null` — the
- * caller then omits the search fragment entirely rather than ANDing a
- * match-everything clause. Internal whitespace is collapsed so `"foo   bar"`
- * and `"foo bar"` are the same query.
- *
- * A param that is present but not a string (`?search=a&search=b`, which Express
- * parses as an array) or longer than `maxLength` is a 400, for the same reason
- * malformed pagination is: silently coercing garbage hides caller bugs.
- *
- * @param {import('express').Request} req
- * @param {object} [opts]
- * @param {number} [opts.maxLength=100]
- * @returns {string | null} The normalized term, or `null` for "no filter".
- * @throws {PaginationError} `SEARCH_INVALID` on a non-string or over-long term.
- */
-export function parseSearchParam(req, opts = {}) {
-  const { maxLength = MAX_SEARCH_LENGTH } = opts;
-  const raw = req.query.search;
-  if (raw === undefined) return null;
-
-  if (typeof raw !== 'string') {
-    throw new PaginationError('search must be a single string', 'SEARCH_INVALID');
-  }
-  if (raw.length > maxLength) {
-    throw new PaginationError(
-      `search must be at most ${maxLength} characters`,
-      'SEARCH_INVALID',
-    );
-  }
-
-  const normalized = raw.trim().replace(/\s+/g, ' ');
-  return normalized === '' ? null : normalized;
-}
-
-/**
  * Build the Prisma `where` fragment for a search term across one or more
  * fields, ANDable onto a route's existing scope/visibility clause.
  *
@@ -251,4 +208,81 @@ export function parsePaginationParams(req, opts = {}) {
  */
 export function paginated(data, total, { page, pageSize }) {
   return { data, total, page, pageSize };
+}
+
+/** Upper bound on a `search` query string. */
+export const MAX_SEARCH_LENGTH = 200;
+
+/** Upper bound on how many values one repeatable filter param may carry. */
+export const MAX_FILTER_VALUES = 25;
+
+/**
+ * Parse an optional free-text `search` query param.
+ *
+ * Absent, empty, or whitespace-only all yield `undefined` — so `?search=` behaves
+ * exactly like sending no param at all, rather than filtering on the empty string
+ * and returning everything-or-nothing depending on the caller's match logic.
+ *
+ * Internal whitespace is collapsed (#1207), so `"foo   bar"` and `"foo bar"` are
+ * the same query rather than two cache keys that match different rows.
+ *
+ * Rejected with 400 (`PaginationError`):
+ *   - a repeated param (`?search=a&search=b`), which Express hands over as an
+ *     array — silently taking `[0]` would drop half the caller's intent;
+ *   - anything longer than `maxLength`, so an oversized query can't be used to
+ *     burn CPU scanning the Core catalog on every request.
+ *
+ * @returns {string|undefined} the normalized query, or undefined when unset.
+ */
+export function parseSearchParam(req, { param = 'search', maxLength = MAX_SEARCH_LENGTH } = {}) {
+  const raw = req.query?.[param];
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'string') {
+    throw new PaginationError(`${param} must be a single value`, 'SEARCH_INVALID');
+  }
+  if (raw.length > maxLength) {
+    throw new PaginationError(`${param} must be at most ${maxLength} characters`, 'SEARCH_TOO_LONG');
+  }
+  const normalized = raw.trim().replace(/\s+/g, ' ');
+  return normalized === '' ? undefined : normalized;
+}
+
+/**
+ * Parse a repeatable multi-select filter param (`?term=2026W2&term=2025W1`).
+ *
+ * Normalizes Express's `string | string[]` shape to a de-duped `string[]`, drops
+ * blanks, and returns `[]` when the param is absent — so callers can treat "no
+ * filter" and "empty filter" identically without a null check.
+ *
+ * Rejected with 400 (`PaginationError`):
+ *   - a value outside `allowed`, when given. An unknown enum value is a client
+ *     bug; answering it with an empty list would look like "no matching courses"
+ *     and hide the mistake.
+ *   - more than `maxValues` values.
+ *
+ * @param {import('express').Request} req
+ * @param {string} param
+ * @param {{ allowed?: string[], maxValues?: number }} [opts]
+ * @returns {string[]}
+ */
+export function parseFilterParam(req, param, { allowed, maxValues = MAX_FILTER_VALUES } = {}) {
+  const raw = req.query?.[param];
+  if (raw === undefined || raw === null) return [];
+
+  const list = Array.isArray(raw) ? raw : [raw];
+  if (list.some((v) => typeof v !== 'string')) {
+    throw new PaginationError(`${param} values must be strings`, 'FILTER_INVALID');
+  }
+
+  const values = [...new Set(list.map((v) => v.trim()).filter((v) => v !== ''))];
+  if (values.length > maxValues) {
+    throw new PaginationError(`${param} accepts at most ${maxValues} values`, 'FILTER_TOO_MANY');
+  }
+  if (allowed) {
+    const bad = values.find((v) => !allowed.includes(v));
+    if (bad !== undefined) {
+      throw new PaginationError(`${param} has an unsupported value: ${bad}`, 'FILTER_INVALID');
+    }
+  }
+  return values;
 }

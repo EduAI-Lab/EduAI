@@ -16,12 +16,14 @@
 import { redirect } from 'react-router';
 
 /**
- * Mirror of the server's `MAX_SEARCH_LENGTH` (`server/src/utils/pagination.js`).
+ * Mirror of the server's `MAX_SEARCH_LENGTH` (`server/src/utils/pagination.js`),
+ * and the same value as `MAX_COURSE_SEARCH_LENGTH` — one server-side constant
+ * backs both, so these two must move together.
  *
- * Kept in sync deliberately: a longer term is a 400 (`SEARCH_INVALID`), and a
+ * Kept in sync deliberately: a longer term is a 400 (`SEARCH_TOO_LONG`), and a
  * loader has nowhere to put that but the route error boundary.
  */
-export const MAX_SEARCH_LENGTH = 100;
+export const MAX_SEARCH_LENGTH = 200;
 
 export interface ListUrlParams {
   page: number;
@@ -39,7 +41,7 @@ export interface ListUrlParams {
  * junk page number in a shared link should still render something useful. For
  * the same reason an over-long `search` is truncated to the server's limit
  * instead of being passed through — the API answers a longer term with a 400
- * (`SEARCH_INVALID`), which a loader can only surface as the route error
+ * (`SEARCH_TOO_LONG`), which a loader can only surface as the route error
  * boundary, replacing the whole page over a pasted paragraph.
  */
 export function parseListUrlParams(request: Request): ListUrlParams {

@@ -63,7 +63,8 @@ An absent, empty, or whitespace-only `search` means "no filter". Because search 
 **Pagination errors:**
 - `400 PAGINATION_REQUIRED` — a required-mode endpoint was called without both `page` and `pageSize`.
 - `400 PAGINATION_INVALID` — `page` or `pageSize` was supplied but is not a finite number.
-- `400 SEARCH_INVALID` — `search` was repeated (parsed as an array) or exceeds 100 characters.
+- `400 SEARCH_INVALID` — `search` was repeated, which Express parses as an array.
+- `400 SEARCH_TOO_LONG` — `search` exceeds 200 characters.
 
 All are shaped `{ error: string, code: string }`.
 
@@ -161,7 +162,38 @@ List courses for the current user.
 
 **Pagination:** Required — see [Pagination](#pagination). `page` and `pageSize` are both mandatory; omitting either returns `400 PAGINATION_REQUIRED`.
 
+**Search and filters (#1208):** all optional, all applied server-side and AND-ed onto the caller's role scope — a filter can only narrow what the caller may already see, never widen it.
+
+| Param | Repeatable | Values | Notes |
+| --- | --- | --- | --- |
+| `search` | no | free text, ≤ 200 chars | Matches course title **or** code, case-insensitively. |
+| `term` | yes | `"W1::2026"` (`term::year`) | |
+| `status` | yes | `published` \| `draft` | |
+| `progress` | yes | `not-started` \| `in-progress` \| `completed` | Ignored for roles whose rows carry no progress (instructor/admin), rather than rejected. |
+
+Repeated values within one dimension are OR-ed; separate dimensions are AND-ed. `total` reflects the **filtered** count, so the pager stays correct under a filter.
+
+`search`, `term` and `status` are matched against the Core catalog rather than local columns — title/code/term/year/isPublished are Core-owned read-throughs with no column on `CourseOffering` (#1072 step 4). Consequently, when Core is unavailable these filters return an empty list and the response carries `X-Core-Status: unavailable`; clients must render that as "search unavailable" rather than "no matches".
+
+**Filter errors:** `400 SEARCH_INVALID` (repeated `search`), `400 SEARCH_TOO_LONG`, `400 FILTER_INVALID` (unknown enum value), `400 FILTER_TOO_MANY` (> 25 values in one dimension). Same `{ error, code }` shape as the pagination errors.
+
 **Response:** `Paginated<Course>` — `{ data: Course[], total, page, pageSize }`
+
+---
+
+### `GET /api/courses/facets`
+
+Filter options for the course list, scoped to what the caller can see.
+
+**Auth:** any supported course role.
+
+**Why:** dropdown options must span the caller's whole accessible set, not the loaded page — a term appearing only on page 3 would otherwise never be offered as a filter. Kept separate from the list response so the `{ data, total, page, pageSize }` envelope stays untouched, and so clients can fetch it once per mount instead of per keystroke.
+
+**Response:** `{ terms: string[], statuses: string[], progress: string[], coreUnavailable: boolean }` — raw filter values, ordered most-recent-first for `terms`. Clients supply the labels (they already own the term vocabulary used for the list's section headings). `progress` is empty for roles whose rows carry no progress.
+
+Fail-soft: when Core is unavailable this returns empty arrays with `X-Core-Status: unavailable`, never a 500.
+
+`coreUnavailable` repeats that outage state in the body, because the two empty responses mean different things and a client that can't read response headers can't tell them apart: `coreUnavailable: false` with empty `terms` means the caller genuinely has no terms to filter by, while `coreUnavailable: true` means the options are unknown. Render the second as "filters unavailable" and leave the dropdowns disabled rather than showing an empty option list, and don't cache the result — an outage response would otherwise pin empty filters in place until the next mount.
 
 ---
 

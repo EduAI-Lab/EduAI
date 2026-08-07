@@ -10,9 +10,8 @@ if (!url.includes('connection_limit=')) {
     : `${url}?connection_limit=1`;
 }
 
-// Many accept-flow tests sign up in quick succession; disable Better Auth's
-// per-IP limiter so CI doesn't flake on the 4th+ sign-up in a file.
-process.env.BETTER_AUTH_DISABLE_RATE_LIMIT = '1';
+// Better Auth's per-IP limiter is disabled in setup.env.ts, which runs before
+// this file's own imports (below) pull in ~/lib/auth/server.
 
 beforeAll(async () => {
   await seedTestDisciplines();
