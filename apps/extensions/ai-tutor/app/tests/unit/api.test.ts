@@ -95,6 +95,81 @@ describe('api methods', () => {
       );
     });
 
+    // ── #1208 search + filter params ──────────────────────────────────
+
+    it('appends a trimmed search when one is supplied', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ search: '  cosc 111  ' });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}&search=cosc+111`,
+      );
+    });
+
+    it('omits a blank or whitespace-only search entirely', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ search: '   ' });
+
+      // Byte-identical to an unfiltered request — no stray `search=`.
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('repeats a multi-value filter param rather than joining it', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ term: ['W1::2026', 'W2::2025'] });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`
+          + '&term=W1%3A%3A2026&term=W2%3A%3A2025',
+      );
+    });
+
+    it('omits empty filter arrays', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ term: [], status: [], progress: [] });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('sends every dimension together', async () => {
+      okEmptyPage();
+      const { api } = await import('~/lib/api');
+      await api.listCourses({
+        page: 2,
+        pageSize: 10,
+        search: 'algebra',
+        term: ['W1::2026'],
+        status: ['draft'],
+        progress: ['completed'],
+      });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        'http://localhost:4000/api/courses?page=2&pageSize=10&search=algebra'
+          + '&term=W1%3A%3A2026&status=draft&progress=completed',
+      );
+    });
+
+    it('listCourseFacets() hits the facets endpoint', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ terms: ['W1::2026'], statuses: ['published'], progress: [] }),
+      });
+      const { api } = await import('~/lib/api');
+      const facets = await api.listCourseFacets();
+
+      expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:4000/api/courses/facets');
+      expect(facets.terms).toEqual(['W1::2026']);
+    });
+
     it('tree endpoints also send a complete pair', async () => {
       okEmptyPage();
       const { api } = await import('~/lib/api');

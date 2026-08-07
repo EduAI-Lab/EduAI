@@ -16,9 +16,13 @@
  *   - Cost-tier inference is heuristic substring-matching against model name
  *     and id (see `inferCostTier`). New providers/families need entries here
  *     or they'll silently bucket as MEDIUM.
- *   - `resolveTutorModelSelection` throws a 403 (status attached) when a
- *     student requests a model that isn't on the allow-list — routes are
- *     expected to map `error.status` straight to the HTTP response.
+ *   - `resolveTutorModelSelection` always validates against the *catalog-
+ *     reconciled* allow-list (via `getAiModelPolicyState`), never the raw
+ *     stored policy — an empty admin allow-list means "any currently
+ *     available catalog model," not "any string the client sends." It
+ *     throws a 403 (status attached) when a student requests a model that
+ *     isn't allowed — routes are expected to map `error.status` straight to
+ *     the HTTP response.
  *   - Supervisor iteration count is clamped to [1, 5]; 5 is a hard guardrail
  *     against runaway dual-loop costs.
  *   - Defaults if the setting is unset or unparseable: empty allow-list (which
@@ -284,26 +288,29 @@ export async function setAiModelPolicy(policyInput) {
 
 /**
  * Per-request gate: validate a student's requested tutor model against the
- * stored allow-list. Returns the requested id if allowed, or the policy
- * default if none was requested. Throws Error w/ `status=403` when the
- * requested model is on the catalog but blocked by policy — routes propagate
- * `error.status` directly to the response.
+ * catalog-reconciled allow-list (same reconciliation the admin UI sees via
+ * `getAiModelPolicyState`). Returns the requested id if allowed, or the
+ * policy default if none was requested. Throws Error w/ `status=403` when
+ * the requested model isn't allowed — routes propagate `error.status`
+ * directly to the response.
+ *
+ * Why reconciled, not raw: an empty stored allow-list means "unrestricted,"
+ * but unrestricted still means "any model the live catalog actually offers,"
+ * not any string the client sends — an unreconciled check would let a
+ * caller request a nonexistent/hallucinated model id whenever the admin
+ * hasn't set an explicit allow-list.
  */
 export async function resolveTutorModelSelection(requestedModelId) {
-  const storedPolicy = await getStoredAiModelPolicy();
-  const allowedTutorModelIds = storedPolicy.allowedTutorModelIds;
+  const { policy } = await getAiModelPolicyState();
+  const { allowedTutorModelIds, defaultTutorModelId } = policy;
 
-  if (
-    requestedModelId &&
-    allowedTutorModelIds.length > 0 &&
-    !allowedTutorModelIds.includes(requestedModelId)
-  ) {
+  if (requestedModelId && !allowedTutorModelIds.includes(requestedModelId)) {
     const error = new Error('Selected tutor model is not allowed');
     error.status = 403;
     throw error;
   }
 
-  return requestedModelId || storedPolicy.defaultTutorModelId || DEFAULT_TUTOR_MODEL;
+  return requestedModelId || defaultTutorModelId || DEFAULT_TUTOR_MODEL;
 }
 
 /**
