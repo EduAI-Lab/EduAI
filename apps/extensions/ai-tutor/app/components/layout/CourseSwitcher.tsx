@@ -2,12 +2,19 @@
  * AI Tutor's breadcrumb course switcher — a thin adapter over the shared
  * `@eduai/ui` CourseSwitcher (issue #764), so Core, QuestionMaker, and AI Tutor
  * share one switcher. Lands on the same role shell (`/student` or `/instructor`).
+ *
+ * #1208: the list is searched server-side. The shared component's `onQueryChange`
+ * (added in #1143 for exactly this) keeps it presentational — it renders whatever
+ * `courses` it is given and never filters — so a user with more courses than one
+ * page can still reach any of them by typing, instead of silently seeing the
+ * first 200.
  */
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from '@eduai/ui';
 
 import api from '~/lib/api';
+import { useDebouncedValue } from '~/hooks/useDebouncedValue';
 import { splitTitle } from '~/lib/course-title';
 import type { Course } from '~/lib/types';
 
@@ -23,39 +30,66 @@ export function CourseSwitcher({
 }) {
   const navigate = useNavigate();
   const [courses, setCourses] = React.useState<Course[]>([]);
+  const [query, setQuery] = React.useState('');
+  const debouncedQuery = useDebouncedValue(query);
+
+  // Monotonic request id. Debouncing narrows the out-of-order window but does not
+  // close it: a slow response for "co" can still land after a fast one for "cosc"
+  // and repopulate the dropdown with stale results. Only the newest request in
+  // flight may write state.
+  const latestRequest = React.useRef(0);
+  const [fetching, setFetching] = React.useState(true);
 
   React.useEffect(() => {
-    let cancelled = false;
+    const requestId = ++latestRequest.current;
+    setFetching(true);
     void (async () => {
       try {
-        // #1043: /courses is paginated; the switcher takes one bounded page.
-        // The trigger always seeds with the current course below, so a course
-        // beyond the page still labels correctly even if it's not listed.
-        const page = await api.listCourses();
-        if (!cancelled) setCourses(Array.isArray(page.data) ? page.data : []);
+        const page = await api.listCourses({ search: debouncedQuery.trim() || undefined });
+        if (latestRequest.current !== requestId) return;
+        setCourses(Array.isArray(page.data) ? page.data : []);
       } catch {
-        // Non-fatal: the switcher still shows the current course.
+        // Non-fatal: a failed lookup must never break the breadcrumb. The
+        // trigger keeps whatever it already had.
+      } finally {
+        if (latestRequest.current === requestId) setFetching(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [debouncedQuery]);
 
   // Seed with the current course so the trigger label is right before the list
-  // resolves; the fetched list replaces it once available.
-  const options: CourseSwitcherOption[] =
-    courses.length > 0
+  // resolves. Once a search is active that seed would be a phantom result, so it
+  // applies only to the unsearched list — and `currentLabel` below carries the
+  // trigger label independently, so dropping the seed can't blank the breadcrumb
+  // the moment the results stop including the course the user is on.
+  const searching = query.trim().length > 0;
+  const current = splitTitle(currentTitle);
+
+  // `courses` still holds the previous query's results until the new response
+  // lands, and the shared switcher never filters — so rendering them here would
+  // leave an unrelated course visible and selectable for the debounce window.
+  // Drop them instead, and tell the switcher we're pending so an empty list
+  // reads as "Searching…" rather than "No courses match" on every keystroke.
+  const pending = fetching || query.trim() !== debouncedQuery.trim();
+  const options: CourseSwitcherOption[] = pending
+    ? []
+    : courses.length > 0
       ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? 'Untitled course') }))
-      : [{ id: courseId, ...splitTitle(currentTitle) }];
+      : searching
+        ? []
+        : [{ id: courseId, ...current }];
 
   return (
     <SharedCourseSwitcher
       courses={options}
       currentId={courseId}
+      currentLabel={current.label}
       onSelect={(id) => navigate(`${basePath}/courses/${id}`)}
       onOpenCurrent={() => navigate(`${basePath}/courses/${courseId}`)}
       onViewAll={() => navigate(basePath)}
+      onQueryChange={setQuery}
+      loading={pending}
+      emptyLabel="No courses match"
     />
   );
 }

@@ -7,9 +7,14 @@ import {
   type CourseAccentColor,
 } from "./course-theme"
 
-export const COURSE_COLORS = DEFAULT_COURSE_PALETTE.map(
-  (_, index) => `var(--color-course-${index + 1})`,
-)
+/**
+ * Course accent swatches. `course-theme.ts` is the single owner of these
+ * values — course colours are per-course content identity rather than theme,
+ * they have no dark-mode variant, and they are consumed from TS far more than
+ * from CSS. This previously mapped the palette only to discard every value and
+ * emit `var(--color-course-N)` from a parallel copy in the stylesheets.
+ */
+export const COURSE_COLORS: readonly CourseAccentColor[] = DEFAULT_COURSE_PALETTE
 
 export interface CourseColorBarProps {
   index: number
@@ -17,7 +22,15 @@ export interface CourseColorBarProps {
 
 export function CourseColorBar({ index }: CourseColorBarProps) {
   return (
-    <div style={{ height: 4, background: COURSE_COLORS[index % COURSE_COLORS.length] }} />
+    <div
+      style={
+        {
+          height: 4,
+          "--course-bar": COURSE_COLORS[index % COURSE_COLORS.length],
+          background: "var(--course-bar)",
+        } as React.CSSProperties
+      }
+    />
   )
 }
 

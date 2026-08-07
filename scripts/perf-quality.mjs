@@ -6,7 +6,7 @@
  * and knip (dead code/deps) across all three apps, writing reports under PERF_OUT.
  *
  * Usage:
- *   PERF_OUT=docs/perf/baseline-2026-07-09 node scripts/perf-quality.mjs
+ *   PERF_OUT=docs/perf/backend/baseline-2026-07-09 node scripts/perf-quality.mjs
  *
  * Tools are root devDependencies (jscpd, ts-prune, madge) + knip (in ai-tutor, hoisted).
  * Note: Core/QM have no tuned knip config yet — those runs are unconfigured baselines
@@ -15,7 +15,7 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 
-const OUT = process.env.PERF_OUT ?? `docs/perf/baseline-${new Date().toISOString().slice(0, 10)}`;
+const OUT = process.env.PERF_OUT ?? `docs/perf/backend/baseline-${new Date().toISOString().slice(0, 10)}`;
 const BIN = "node_modules/.bin";
 for (const d of [`${OUT}/duplication`, `${OUT}/dead-code`, `${OUT}/dep-graph`]) {
   if (!existsSync(d)) mkdirSync(d, { recursive: true });
@@ -39,6 +39,10 @@ const SRC = {
   "aitutor-frontend": { ext: "ts,tsx", path: "apps/extensions/ai-tutor/app" },
   "qm-backend": { ext: "js", path: "apps/extensions/question-maker/app/backend/src" },
   "qm-frontend": { ext: "ts,tsx", path: "apps/extensions/question-maker/app/frontend/src" },
+  // The shared component library was never scanned, so anything moved into it
+  // left the duplication metric entirely -- which would read as an improvement
+  // regardless of whether duplication was actually removed (#1272).
+  "shared-ui": { ext: "ts,tsx", path: "packages/ui/src" },
 };
 const TS_PROJECTS = {
   core: "apps/core/tsconfig.json",

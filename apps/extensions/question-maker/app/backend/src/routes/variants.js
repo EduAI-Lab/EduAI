@@ -201,6 +201,11 @@ router.put(
             // response below reflects the freshly-linked Core id.
             variant.coreQuestionId = pushResult.coreQuestionId;
           } catch (coreErr) {
+            // Roll approval back to draft before returning an error. updateVariant
+            // already persisted isDraft:false; leaving it approved would trip
+            // VARIANT_LOCKED on the next approve and block the promised retry.
+            await prisma.variants.update({ where: { id: variant.id }, data: { isDraft: true } });
+
             if (coreErr.status === 422) {
               const errBody = coreErr.body ?? {};
               if (errBody.error === 'INVALID_TOPIC_IDS' && Array.isArray(errBody.deletedTopicIds) && errBody.deletedTopicIds.length > 0) {
@@ -220,7 +225,15 @@ router.put(
                 });
               }
             }
-            logger.warn({ err: coreErr }, 'Core question push failed; variant approved locally without Core link');
+            // #225 SEAM-03 / #1197: any other push failure (Core down, 5xx,
+            // network error) must not report success — returning 200 would let
+            // the UI show a question as published when it isn't.
+            logger.warn({ err: coreErr }, 'Core question push failed; rolled variant back to draft');
+            return res.status(502).json({
+              success: false,
+              error: 'CORE_PUSH_FAILED',
+              message: 'Could not publish to Core. Variant left as draft — please retry.'
+            });
           }
         }
       }

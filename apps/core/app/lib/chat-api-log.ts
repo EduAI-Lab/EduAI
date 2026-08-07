@@ -2,6 +2,8 @@
  * Opt-in debug logging for the chat API hot path.
  * Set `CHAT_DEBUG_LOG=1` or `LOG_LEVEL=debug` to enable.
  */
+import { sanitizeSensitiveData } from "~/lib/redact.server";
+
 export function isChatApiDebug(): boolean {
   return (
     process.env.CHAT_DEBUG_LOG === "1" ||
@@ -17,7 +19,7 @@ export function isChatApiTrace(): boolean {
 export function chatApiDebug(message: string, payload?: Record<string, unknown>): void {
   if (!isChatApiDebug()) return;
   if (payload !== undefined) {
-    console.log(`[chat-api] ${message}`, payload);
+    console.log(`[chat-api] ${message}`, sanitizeSensitiveData(payload));
   } else {
     console.log(`[chat-api] ${message}`);
   }
@@ -26,7 +28,7 @@ export function chatApiDebug(message: string, payload?: Record<string, unknown>)
 export function chatApiTrace(message: string, payload?: Record<string, unknown>): void {
   if (!isChatApiTrace()) return;
   if (payload !== undefined) {
-    console.log(`[chat-api:trace] ${message}`, payload);
+    console.log(`[chat-api:trace] ${message}`, sanitizeSensitiveData(payload));
   } else {
     console.log(`[chat-api:trace] ${message}`);
   }
@@ -39,14 +41,17 @@ export function chatApiReject(
   status: number,
   body: Record<string, unknown>,
   trace?: ChatApiRejectTrace,
+  headers?: Record<string, string>,
 ): Response {
+  // `trace` carries arbitrary request context (headers, provider payloads) supplied by callers,
+  // and unlike the debug helpers above this one always logs — scrub before it reaches stdout.
   console.error("[chat-api] rejected", {
     status,
-    body,
-    trace,
+    body: sanitizeSensitiveData(body),
+    trace: sanitizeSensitiveData(trace),
   });
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 }

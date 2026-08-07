@@ -68,6 +68,10 @@ export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
   const { startDate, endDate } = resolveCanvasCourseDates(canvasCourse);
   const term = ubcTermFromDate(startDate);
 
+  // CANVAS-06 (#225 / #1195): respect Canvas workflow_state. An unpublished
+  // Canvas course must not become student-visible in EduAI.
+  const isPublished = canvasCourse.workflow_state !== "unpublished";
+
   return {
     externalId: String(canvasCourse.id),
     externalSource: CANVAS_EXTERNAL_SOURCE,
@@ -83,8 +87,7 @@ export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
     lastSyncedAt: new Date(),
     deletedAt: null as Date | null,
     isActive: true,
-    // Canvas-synced courses are visible to linked students once roster enrollments exist.
-    isPublished: true,
+    isPublished,
   };
 }
 
@@ -181,7 +184,7 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
         lastSyncedAt: fields.lastSyncedAt,
         deletedAt: null,
         isActive: true,
-        isPublished: true,
+        isPublished: fields.isPublished,
       },
     });
   }
