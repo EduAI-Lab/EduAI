@@ -400,11 +400,13 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
 
   let coreById = new Map();
   try {
-    const coreCourses = await getCoursesByIdsFromCore(
-      courses.map((course) => course.coreCourseId).filter(Boolean),
-      {},
-      { serviceKeyOnly: true },
-    );
+    const coreCourses = reqUser.role === 'ADMIN'
+      ? await getAllCoursesFromCore()
+      : await getCoursesByIdsFromCore(
+          courses.map((course) => course.coreCourseId).filter(Boolean),
+          {},
+          { serviceKeyOnly: true },
+        );
     coreById = new Map(coreCourses.map((course) => [course.id, course]));
   } catch {
     // Core projection degrades to the placeholder, as in the legacy list.
