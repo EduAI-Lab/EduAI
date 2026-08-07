@@ -1,4 +1,4 @@
-import { Check, Circle } from "lucide-react";
+import { IconCheck, IconCircle } from "@tabler/icons-react";
 
 import { getPasswordRequirementStatus } from "~/lib/auth/password-policy";
 import { cn } from "~/lib/utils";
@@ -9,7 +9,7 @@ type RequirementProps = {
 };
 
 function Requirement({ met, children }: RequirementProps) {
-  const Icon = met ? Check : Circle;
+  const Icon = met ? IconCheck : IconCircle;
 
   return (
     <li
@@ -43,7 +43,7 @@ export function PasswordRequirements({
         className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400"
         aria-live="polite"
       >
-        <Check className="size-3.5 shrink-0" aria-hidden="true" />
+        <IconCheck className="size-3.5 shrink-0" aria-hidden="true" />
         Password meets requirements.
       </p>
     );

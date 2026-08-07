@@ -36,6 +36,12 @@ vi.mock("~/lib/assistive-events.server", () => ({
 }));
 vi.mock("~/lib/policy.server", () => ({ getPolicy: vi.fn() }));
 
+// Hybrid path (supportsTools=false) may prefetch course RAG; without this mock
+// an unmocked embedding call fails closed as 503 (#225 RAG-01/RAG-02).
+vi.mock("~/lib/ai/embedding", () => ({
+  findRelevantContent: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },

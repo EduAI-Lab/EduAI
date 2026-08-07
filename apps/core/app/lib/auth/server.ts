@@ -11,12 +11,12 @@ import {
   isStrongPassword,
   PASSWORD_POLICY_MESSAGE,
   SKIP_REUSE_PATHS,
-  TOKEN_RESET_PATHS,
 } from "./password-policy";
 import {
   isPasswordReused,
   recordPasswordHistory,
 } from "./password-history.server";
+import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
 import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
@@ -101,57 +101,54 @@ export const auth = betterAuth({
         if (!SKIP_REUSE_PATHS.has(ctx.path)) {
           // Resolve the userId: token-based reset reads it from the Verification
           // table; all other paths (change, set) have an active session.
-          let userId: string | null = null;
-          if (TOKEN_RESET_PATHS.has(ctx.path)) {
-            const token = (ctx.body as Record<string, unknown>)?.token;
-            if (typeof token === "string") {
-              const verificationId = `reset-password:${token}`;
-              const verification = await prisma.verification.findUnique({
-                where: { id: verificationId },
-                select: { value: true, expiresAt: true },
-              });
-              if (verification && verification.expiresAt > new Date()) {
-                userId = verification.value;
-              }
-            }
-          } else {
-            const session = await getSessionFromCtx(ctx as any);
-            userId = session?.user?.id ?? null;
+          const token = (ctx.body as Record<string, unknown>)?.token;
+          const userId = await resolvePasswordReuseUserId({
+            path: ctx.path,
+            token: typeof token === "string" ? token : undefined,
+            getSessionUserId: async () => (await getSessionFromCtx(ctx as any))?.user?.id ?? null,
+          });
+
+          // #225 AUTH-09: fail closed when the identity for this password-setting
+          // request can't be resolved (e.g. an already-expired reset token) —
+          // silently skipping the reuse check here would let a reused password
+          // through instead of denying the request outright.
+          if (!userId) {
+            throw new APIError("UNAUTHORIZED", {
+              message: "Unable to verify your identity for this request.",
+            });
           }
 
-          if (userId) {
-            // For change-password: verify the current password first so that an
-            // incorrect current password takes precedence over the reuse error.
-            if (ctx.path === "/change-password") {
-              const currentPassword = (ctx.body as Record<string, unknown>)?.currentPassword;
-              if (typeof currentPassword === "string") {
-                const credAccount = await prisma.account.findFirst({
-                  where: { userId, providerId: "credential" },
-                  select: { password: true },
+          // For change-password: verify the current password first so that an
+          // incorrect current password takes precedence over the reuse error.
+          if (ctx.path === "/change-password") {
+            const currentPassword = (ctx.body as Record<string, unknown>)?.currentPassword;
+            if (typeof currentPassword === "string") {
+              const credAccount = await prisma.account.findFirst({
+                where: { userId, providerId: "credential" },
+                select: { password: true },
+              });
+              if (credAccount?.password) {
+                const currentValid = await ctx.context.password.verify({
+                  hash: credAccount.password,
+                  password: currentPassword,
                 });
-                if (credAccount?.password) {
-                  const currentValid = await ctx.context.password.verify({
-                    hash: credAccount.password,
-                    password: currentPassword,
-                  });
-                  if (!currentValid) {
-                    return; // wrong current password — let better-auth's handler surface the error
-                  }
+                if (!currentValid) {
+                  return; // wrong current password — let better-auth's handler surface the error
                 }
               }
             }
+          }
 
-            const reused = await isPasswordReused({
-              userId,
-              candidate: candidatePassword,
-              verify: ctx.context.password.verify,
+          const reused = await isPasswordReused({
+            userId,
+            candidate: candidatePassword,
+            verify: ctx.context.password.verify,
+          });
+          if (reused) {
+            throw new APIError("BAD_REQUEST", {
+              message:
+                "This password was used recently. Please choose a password you have not used before.",
             });
-            if (reused) {
-              throw new APIError("BAD_REQUEST", {
-                message:
-                  "This password was used recently. Please choose a password you have not used before.",
-              });
-            }
           }
         }
       }

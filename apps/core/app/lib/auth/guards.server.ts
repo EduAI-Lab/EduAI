@@ -189,43 +189,58 @@ export async function requireInviter(
   const resolved = await auth.api.getSession({ headers: request.headers });
   const role = resolved?.user?.role;
 
+  let inviter = resolved;
+  let inviterRole = role;
+
   if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+    let admittedViaServiceKey = false;
     if (!resolved?.user) {
       const serviceKeyError = await requireServiceKey(request);
       if (!serviceKeyError) {
-        return {
-          response: null,
-          session: { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as Session,
-        };
+        // AUTH-02 (#225 SECURITY): a service-key caller delegates on behalf
+        // of an unvetted downstream actor and must never mint ADMIN or
+        // UNIT_ADMIN invitations. Synthesize it as a capped UNIT_ADMIN-tier
+        // inviter so it falls through to the same `unitAdmins.canInvite`
+        // policy gate below and `invitableRolesFor("UNIT_ADMIN")`'s role cap
+        // — not an implicit, policy-bypassing platform ADMIN.
+        inviter = {
+          user: { id: "service", name: "Service", role: "UNIT_ADMIN" },
+        } as unknown as Session;
+        inviterRole = "UNIT_ADMIN";
+        admittedViaServiceKey = true;
       }
     }
-    fireAndForget(
-      logSecurityEvent({
-        ...getActorContext(resolved?.user ?? null),
-        ...getRequestContext(request),
-        actionCode: "INVITATION_ACCESS_DENIED",
-        outcome: "DENIED",
-        entityType: "Auth",
-        entityId: resolved?.user?.id ?? null,
-        entityLabel: resolved?.user?.email ?? null,
-        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-      }),
-    );
-    return {
-      response: new Response(
-        JSON.stringify({ error: "Forbidden" }),
-        { status: 403, headers: { "Content-Type": "application/json" } },
-      ),
-      session: null,
-    };
+
+    if (!admittedViaServiceKey) {
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(resolved?.user ?? null),
+          ...getRequestContext(request),
+          actionCode: "INVITATION_ACCESS_DENIED",
+          outcome: "DENIED",
+          entityType: "Auth",
+          entityId: resolved?.user?.id ?? null,
+          entityLabel: resolved?.user?.email ?? null,
+          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+        }),
+      );
+      return {
+        response: new Response(
+          JSON.stringify({ error: "Forbidden" }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        ),
+        session: null,
+      };
+    }
   }
 
-  // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag
-  if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
+  // A UNIT_ADMIN (real or the capped service-key stand-in above) additionally
+  // needs the `unitAdmins.canInvite` flag.
+  if (inviterRole !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
     return {
       response: denyByPolicy({
         policyKey: "unitAdmins.canInvite",
-        user: resolved.user,
+        user: inviter!.user,
         action,
         request,
       }),
@@ -233,7 +248,7 @@ export async function requireInviter(
     };
   }
 
-  return { response: null, session: resolved };
+  return { response: null, session: inviter as Session };
 }
 
 /**
