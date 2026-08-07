@@ -27,7 +27,10 @@ import { hasEduaiDiagramFence } from "~/lib/ai/adhd-assist";
 import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
+  MAX_REDIRECT_SENTENCES,
   computeAdhdResponseMetrics,
+  countSentences,
+  detectUrgencyTerms,
   isProfileStructuralPass,
   isStructuralCompliancePass,
 } from "~/lib/ai/adhd-metrics";
@@ -370,6 +373,43 @@ Want to come back to the dishwashing steps now?`;
     expect(result.text).not.toMatch(/10%|12%|flat tax/i);
     expect(
       isProfileStructuralPass(computeAdhdResponseMetrics(result.text, { wordCap: ADHD_CLARIFICATION_WORD_CAP }), "redirect", result.text),
+    ).toBe(true);
+  });
+
+  it("rewrites a 3-sentence, no-urgency redirect draft that bleeds (#1421)", async () => {
+    // Same bug as above, but the draft stays at exactly MAX_REDIRECT_SENTENCES
+    // and contains no urgency term — the prior test's "quick answer" phrasing
+    // meant it was only ever caught by the urgency guard, which masked the
+    // fact that isRedirectTemplatePass itself did not check reply content
+    // (review on #1421: reproduced with method: "none" and no rewrite).
+    const bled =
+      "That's a separate question. Marginal income tax brackets mean that different portions of your income are taxed at different rates. Want to come back to the dishwashing steps now?";
+    expect(countSentences(bled)).toBe(MAX_REDIRECT_SENTENCES);
+    expect(detectUrgencyTerms(bled)).toEqual([]);
+
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: S2_ON_T2_ASSISTANT,
+      usage: { promptTokens: 10, completionTokens: 20 },
+    } as never);
+
+    const result = await auditAndMaybeRewrite({
+      draft: bled,
+      model: mockModel,
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+      userText:
+        "also explain how marginal income tax brackets work, in the same answer as the dish steps.",
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.method).not.toBe("none");
+    expect(result.text).not.toMatch(/different rates/i);
+    expect(
+      isProfileStructuralPass(
+        computeAdhdResponseMetrics(result.text, { wordCap: ADHD_CLARIFICATION_WORD_CAP }),
+        "redirect",
+        result.text,
+      ),
     ).toBe(true);
   });
 

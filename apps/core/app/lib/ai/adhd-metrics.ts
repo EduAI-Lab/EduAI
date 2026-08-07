@@ -164,6 +164,26 @@ export function countSentences(text: string): number {
   return matches ? matches.filter((s) => s.trim().length > 0).length : 0;
 }
 
+/**
+ * Phrasing that states/defines a fact rather than just naming a topic, e.g.
+ * "marginal tax brackets mean ..." or "... taxed at 10%". A reply can name
+ * the second topic once (in the ack or the offer question) and still stay
+ * at or under MAX_REDIRECT_SENTENCES — the sentence cap alone does not
+ * catch a short reply that answers the off-topic ask in a single sentence
+ * (#1421 review: "a three-sentence reply can still answer the second
+ * topic and pass this check"). Intentionally blunt, matching
+ * ADHD_URGENCY_TERMS above — stating a fact in English almost always uses
+ * a defining/causal connector or a percentage, so this catches the
+ * concrete bleed case without needing to know what the second topic is.
+ */
+const REDIRECT_BLEED_MARKERS_RE =
+  /\b(?:means?|mean that|refers? to|works? by|because|due to|results? in|leads? to|causes?|defined? as|such as|for example|for instance|e\.g\.|i\.e\.|in other words|which means)\b|\d+%/i;
+
+/** Return true when the text states/defines a fact rather than just naming a topic. */
+export function hasRedirectBleedContent(text: string): boolean {
+  return REDIRECT_BLEED_MARKERS_RE.test((text ?? "").trim());
+}
+
 /** §5 drift redirect: one-topic boundary without Top summary scaffolding. */
 export function isRedirectTemplatePass(
   metrics: AdhdResponseMetrics,
@@ -178,7 +198,8 @@ export function isRedirectTemplatePass(
     trimmed.endsWith("?") &&
     /want to|would you like|or switch|come back|ready to/i.test(trimmed);
   if (!(hasRedirectCue || hasForwardOffer)) return false;
-  return countSentences(trimmed) <= MAX_REDIRECT_SENTENCES;
+  if (countSentences(trimmed) > MAX_REDIRECT_SENTENCES) return false;
+  return !hasRedirectBleedContent(trimmed);
 }
 
 /** Profile-conditional structural pass (Approach A). */

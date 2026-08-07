@@ -4,6 +4,7 @@ import {
   computeAdhdResponseMetrics,
   countSentences,
   detectUrgencyTerms,
+  hasRedirectBleedContent,
   hasSourcesFooter,
   isProfileStructuralPass,
   isRedirectTemplatePass,
@@ -226,6 +227,41 @@ Want to come back to the dishwashing steps first, or switch now to learn about m
     const metrics = computeAdhdResponseMetrics(named, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
     expect(isRedirectTemplatePass(metrics, named)).toBe(true);
     expect(isStructuralCompliancePass(metrics)).toBe(false);
+  });
+
+  it("rejects a 3-sentence, no-urgency redirect that answers the second topic (#1421)", () => {
+    // Stays at exactly MAX_REDIRECT_SENTENCES and contains no urgency term,
+    // so neither the old sentence-count cap nor the urgency guard would
+    // have caught this — only the content check does (review on #1421:
+    // "a three-sentence reply can still answer the second topic and pass
+    // this check").
+    const bled =
+      "That's a separate question. Marginal income tax brackets mean that higher portions of your income are taxed at higher rates. Want to come back to the dishwashing steps, or switch now?";
+    expect(countSentences(bled)).toBe(MAX_REDIRECT_SENTENCES);
+    expect(detectUrgencyTerms(bled)).toEqual([]);
+    const metrics = computeAdhdResponseMetrics(bled, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isRedirectTemplatePass(metrics, bled)).toBe(false);
+  });
+
+  describe("hasRedirectBleedContent", () => {
+    it("flags a defining/causal connector", () => {
+      expect(hasRedirectBleedContent("Marginal tax brackets mean higher rates apply.")).toBe(
+        true,
+      );
+      expect(hasRedirectBleedContent("It works by taxing each bracket separately.")).toBe(true);
+    });
+
+    it("flags a bare percentage", () => {
+      expect(hasRedirectBleedContent("The first bracket is taxed at 10%.")).toBe(true);
+    });
+
+    it("does not flag a bare topic name", () => {
+      expect(
+        hasRedirectBleedContent(
+          "Want to come back to the dishwashing steps, or switch now to marginal income tax brackets?",
+        ),
+      ).toBe(false);
+    });
   });
 
   it("passes greeting drafts that are under cap without structure", () => {
