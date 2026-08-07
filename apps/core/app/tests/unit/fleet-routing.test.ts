@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   invalidateFleetHealthCacheForUrl,
@@ -5,6 +8,7 @@ import {
 } from "~/lib/ai/routing/fleet/health";
 import {
   fleetRoutingEnabled,
+  getAllFleetServers,
   resetFleetRegistryCache,
   serverIdFromUrl,
 } from "~/lib/ai/routing/fleet/registry";
@@ -72,15 +76,28 @@ describe("parseJobType", () => {
   });
 });
 
+// These tests exercise the legacy env-var-driven registry path, so they must
+// not see the repo's real apps/core/fleet.config.json — pointing
+// FLEET_CONFIG_PATH at a nonexistent file forces loadFleetConfigFile() to
+// return null (same as an unmigrated deployment) and fall through to env vars.
+const NONEXISTENT_CONFIG_PATH = "./__no-such-fleet-config__.json";
+
 describe("fleet registry", () => {
   const originalChatUrls = process.env.VLLM_FLEET_CHAT_URLS;
   const originalHeavyUrl = process.env.VLLM_FLEET_HEAVY_URL;
+  const originalConfigPath = process.env.FLEET_CONFIG_PATH;
+
+  beforeEach(() => {
+    process.env.FLEET_CONFIG_PATH = NONEXISTENT_CONFIG_PATH;
+  });
 
   afterEach(() => {
     if (originalChatUrls === undefined) delete process.env.VLLM_FLEET_CHAT_URLS;
     else process.env.VLLM_FLEET_CHAT_URLS = originalChatUrls;
     if (originalHeavyUrl === undefined) delete process.env.VLLM_FLEET_HEAVY_URL;
     else process.env.VLLM_FLEET_HEAVY_URL = originalHeavyUrl;
+    if (originalConfigPath === undefined) delete process.env.FLEET_CONFIG_PATH;
+    else process.env.FLEET_CONFIG_PATH = originalConfigPath;
     resetFleetRegistryCache();
   });
 
@@ -94,14 +111,87 @@ describe("fleet registry", () => {
     resetFleetRegistryCache();
     expect(fleetRoutingEnabled()).toBe(true);
   });
+
+  it("getAllFleetServers deduplicates chat/heavy pools by id in the env-driven fallback", () => {
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_HEAVY_URL = "http://cmps03.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    const servers = getAllFleetServers();
+    expect(servers.map((s) => s.id).sort()).toEqual(["cmps01", "cmps03"]);
+  });
+});
+
+describe("fleet registry — config file", () => {
+  let tmpDir: string;
+  const originalConfigPath = process.env.FLEET_CONFIG_PATH;
+  const originalChatUrls = process.env.VLLM_FLEET_CHAT_URLS;
+  const originalHeavyUrl = process.env.VLLM_FLEET_HEAVY_URL;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "fleet-config-registry-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    if (originalConfigPath === undefined) delete process.env.FLEET_CONFIG_PATH;
+    else process.env.FLEET_CONFIG_PATH = originalConfigPath;
+    if (originalChatUrls === undefined) delete process.env.VLLM_FLEET_CHAT_URLS;
+    else process.env.VLLM_FLEET_CHAT_URLS = originalChatUrls;
+    if (originalHeavyUrl === undefined) delete process.env.VLLM_FLEET_HEAVY_URL;
+    else process.env.VLLM_FLEET_HEAVY_URL = originalHeavyUrl;
+    resetFleetRegistryCache();
+  });
+
+  function writeConfig(servers: unknown[]): void {
+    const path = join(tmpDir, "fleet.config.json");
+    writeFileSync(path, JSON.stringify({ servers }), "utf-8");
+    process.env.FLEET_CONFIG_PATH = path;
+  }
+
+  it("uses the config file over env vars when both are present", () => {
+    writeConfig([
+      { id: "cmps-from-config", baseUrl: "http://cmps-from-config:8001", jobTypes: ["interactive"] },
+    ]);
+    // Env vars are set too, to prove the config file wins rather than merging.
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps-from-env:8001";
+    resetFleetRegistryCache();
+
+    const servers = getAllFleetServers();
+    expect(servers.map((s) => s.id)).toEqual(["cmps-from-config"]);
+  });
+
+  it("splits config-file servers into interactive/background pools by jobTypes", () => {
+    writeConfig([
+      { id: "cmps01", baseUrl: "http://cmps01:8001", jobTypes: ["interactive"] },
+      { id: "cmps03", baseUrl: "http://cmps03:8001", jobTypes: ["background"] },
+    ]);
+    resetFleetRegistryCache();
+
+    expect(fleetRoutingEnabled()).toBe(true);
+    expect(getAllFleetServers().map((s) => s.id)).toEqual(["cmps01", "cmps03"]);
+  });
+
+  it("a server can belong to both pools via jobTypes", () => {
+    writeConfig([
+      { id: "cmps01", baseUrl: "http://cmps01:8001", jobTypes: ["interactive", "background"] },
+    ]);
+    resetFleetRegistryCache();
+
+    expect(getAllFleetServers()).toHaveLength(1);
+  });
 });
 
 describe("resolveFleetHost", () => {
   const originalChatUrls = process.env.VLLM_FLEET_CHAT_URLS;
   const originalHeavyUrl = process.env.VLLM_FLEET_HEAVY_URL;
   const originalVllmBase = process.env.VLLM_BASE_URL;
+  const originalConfigPath = process.env.FLEET_CONFIG_PATH;
 
   beforeEach(() => {
+    // See NONEXISTENT_CONFIG_PATH above — keeps these env-var-driven tests
+    // isolated from the repo's real fleet.config.json.
+    process.env.FLEET_CONFIG_PATH = NONEXISTENT_CONFIG_PATH;
     resetFleetRegistryCache();
     resetFleetHealthCache();
     resetFleetRoundRobin();
@@ -115,6 +205,8 @@ describe("resolveFleetHost", () => {
     else process.env.VLLM_FLEET_HEAVY_URL = originalHeavyUrl;
     if (originalVllmBase === undefined) delete process.env.VLLM_BASE_URL;
     else process.env.VLLM_BASE_URL = originalVllmBase;
+    if (originalConfigPath === undefined) delete process.env.FLEET_CONFIG_PATH;
+    else process.env.FLEET_CONFIG_PATH = originalConfigPath;
     resetFleetRegistryCache();
     resetFleetHealthCache();
     resetFleetRoundRobin();
