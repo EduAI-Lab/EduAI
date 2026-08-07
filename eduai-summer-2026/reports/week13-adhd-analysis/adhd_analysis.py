@@ -272,6 +272,56 @@ def paired_stats(assistive: np.ndarray, baseline: np.ndarray, metric: str) -> di
 
 
 # ---------------------------------------------------------------------------
+# Leave-one-out sensitivity (#1308)
+# ---------------------------------------------------------------------------
+
+
+def run_leave_one_out(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
+    """Leave-one-out sensitivity analysis: for each participant, refit the
+    paired Wilcoxon test on the remaining n-1 sample and record how the
+    statistic, p-value, effect size, and direction shift.
+
+    Runs on the full finished+valid-group sample (N=11, no data-quality
+    exclusions applied) rather than the primary curated n=9 sample, so that
+    any single respondent's influence on the result -- including the two
+    respondents excluded from the primary analysis -- is visible directly,
+    instead of being pre-filtered out before the check even starts.
+    """
+    rows = []
+    for held_out_id in df["ResponseId"]:
+        subset = df.loc[df["ResponseId"] != held_out_id].reset_index(drop=True)
+        scored = score_all_metrics(subset)
+        for metric in metrics:
+            assistive, baseline = scored[metric]
+            stat = paired_stats(assistive, baseline, metric)
+            r = stat["effect_r"]
+            # effect_r itself is left on the pipeline's existing raw-value sign
+            # convention (same as analysis_summary.csv / the forest plot), but
+            # "direction" needs to say what it means in plain language, so it
+            # has to flip for lower-is-better metrics (TLX Load): a negative
+            # raw r there means Assistive scored *lower* load, i.e. it favors
+            # Assistive, not Baseline.
+            directional_r = -r if metric in METRIC_LOWER_IS_BETTER else r
+            if not np.isfinite(directional_r) or directional_r == 0:
+                direction = "tied / not computable"
+            elif directional_r > 0:
+                direction = "favors Assistive"
+            else:
+                direction = "favors Baseline"
+            rows.append(
+                {
+                    "participant_removed": held_out_id,
+                    "metric": metric,
+                    "wilcoxon_W": stat["wilcoxon_W"],
+                    "p_value": stat["p_value"],
+                    "effect_r": r,
+                    "direction": direction,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Charts
 # ---------------------------------------------------------------------------
 
@@ -475,6 +525,75 @@ def chart_radar(stats_rows: list[dict], outpath: Path):
     plt.close(fig)
 
 
+def _directional_r(metric: str, r: float) -> float:
+    """effect_r on a positive=favors-Assistive, negative=favors-Baseline
+    scale, flipping the raw value for lower-is-better metrics (TLX Load) --
+    same correction _radar_normalize applies for the radar chart. The raw,
+    unflipped effect_r (as used in analysis_summary.csv and the forest plot)
+    is left alone; this adjustment is local to this chart's plain-language
+    axis label."""
+    return -r if metric in METRIC_LOWER_IS_BETTER else r
+
+
+def chart_loo_sensitivity(loo_df: pd.DataFrame, full_n11_stats_rows: list[dict], outpath: Path):
+    """One row per metric; each dot is one LOO iteration's effect size r,
+    the diamond is the full N=11 (no exclusions) sample's effect size."""
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    fig.patch.set_facecolor("white")
+
+    row_by_metric = {r["metric"]: r for r in full_n11_stats_rows}
+    rows_order = list(reversed(METRIC_ORDER))
+    ys = np.arange(len(rows_order))
+    rng = np.random.default_rng(0)
+
+    for y, metric in zip(ys, rows_order):
+        sub = loo_df.loc[loo_df["metric"] == metric, "effect_r"].map(lambda r: _directional_r(metric, r))
+        finite = sub[np.isfinite(sub)]
+        jitter = rng.uniform(-0.12, 0.12, size=len(finite))
+        ax.scatter(finite, y + jitter, color=COLOR_ASSISTIVE, alpha=0.55, s=32, zorder=2, edgecolor="none")
+        full_r = _directional_r(metric, row_by_metric[metric]["effect_r"])
+        if np.isfinite(full_r):
+            ax.plot(full_r, y, marker="D", markersize=9, color="#1E293B", zorder=3)
+
+    for ref in (0.1, 0.3, 0.5):
+        for sign in (1, -1):
+            ax.axvline(sign * ref, color="#CBD5E1", linestyle="--", linewidth=0.9, zorder=0)
+    ax.axvline(0, color="#334155", linewidth=1.2, zorder=0)
+
+    ax.set_yticks(ys)
+    ax.set_yticklabels([METRIC_LABELS[m].replace("\n", " ") for m in rows_order], fontsize=10)
+    ax.set_xlabel(
+        "Directional effect size r per LOO iteration (negative = favors Baseline, positive = favors Assistive; "
+        "TLX Load sign-flipped since lower=better)",
+        fontsize=9,
+    )
+    ax.set_xlim(-1, 1)
+    ax.set_title(
+        "Leave-One-Out Sensitivity — Effect Size Stability (N=11, 11 iterations)",
+        fontsize=12.5,
+        fontweight="bold",
+        pad=12,
+    )
+    handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor=COLOR_ASSISTIVE,
+            alpha=0.7,
+            markersize=8,
+            label="LOO iteration (1 participant removed)",
+        ),
+        Line2D([0], [0], marker="D", color="#1E293B", lw=0, markersize=8, label="Full N=11 sample"),
+    ]
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.04), ncol=2, frameon=False, fontsize=8.5)
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(outpath, dpi=150, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -514,6 +633,20 @@ def main():
     chart_forest_plot(stats_rows, fig_dir / "03_forest_plot.png")
     chart_preferences(label_df, fig_dir / "04_preferences.png")
     chart_radar(stats_rows, fig_dir / "05_radar.png")
+
+    # Leave-one-out sensitivity analysis (#1308). Always runs on the full
+    # N=11 finished+valid-group sample, independent of --include-excluded,
+    # so it checks robustness against every respondent -- including the two
+    # flagged for data quality -- not just the primary n=9.
+    loo_df = load_and_filter(args.numeric_zip, exclude_ids=set())
+    loo_results = run_leave_one_out(loo_df, METRIC_ORDER)
+    loo_results.to_csv(outdir / "loo_sensitivity.csv", index=False)
+
+    full_n11_scored = score_all_metrics(loo_df)
+    full_n11_stats_rows = [
+        paired_stats(full_n11_scored[m][0], full_n11_scored[m][1], m) for m in METRIC_ORDER
+    ]
+    chart_loo_sensitivity(loo_results, full_n11_stats_rows, fig_dir / "06_loo_sensitivity.png")
 
     # Preference counts for the report, computed here so report numbers are
     # guaranteed consistent with what chart 4 draws.
@@ -569,7 +702,23 @@ def main():
     for title, counts in pref_summary.items():
         print(f"  {title}: {counts}")
     print()
-    print(f"Wrote: {outdir}/analysis_summary.csv, {outdir}/stats_dump.json, and 5 figures under {fig_dir}/")
+    print(f"Leave-one-out sensitivity (N=11, {len(loo_df)} iterations x {len(METRIC_ORDER)} metrics):")
+    for metric in METRIC_ORDER:
+        sub = loo_results[loo_results["metric"] == metric]
+        n_favors_assistive = int((sub["direction"] == "favors Assistive").sum())
+        n_favors_baseline = int((sub["direction"] == "favors Baseline").sum())
+        r_min, r_max = sub["effect_r"].min(), sub["effect_r"].max()
+        full_r = next(r["effect_r"] for r in full_n11_stats_rows if r["metric"] == metric)
+        print(
+            f"  {metric:>9s}: full-N11 r={full_r:+.2f} | LOO r range=[{r_min:+.2f}, {r_max:+.2f}] "
+            f"| direction: {n_favors_assistive}/{len(sub)} favor Assistive, "
+            f"{n_favors_baseline}/{len(sub)} favor Baseline"
+        )
+    print()
+    print(
+        f"Wrote: {outdir}/analysis_summary.csv, {outdir}/stats_dump.json, {outdir}/loo_sensitivity.csv, "
+        f"and 6 figures under {fig_dir}/"
+    )
 
 
 if __name__ == "__main__":

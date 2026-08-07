@@ -1,8 +1,8 @@
 # EduAI ADHD Pilot — Assistive Mode vs. Baseline: Results Summary
 
-**Analysis date:** 2026-07-31
+**Analysis date:** 2026-07-31 (leave-one-out sensitivity added 2026-08-06, #1308)
 **Script:** `adhd_analysis.py` (this directory) — fully reproducible, see Appendix for exact command and package versions.
-**Related issue:** EduAI-Lab/EduAI #1226
+**Related issue:** EduAI-Lab/EduAI #1226, #1308
 **Cross-checked against:** `eduai-summer-2026/reports/form-a/week13-1226-stats-one-pager.md` (2026-07-30) — same exclusion logic, see Section 6.
 
 ---
@@ -88,6 +88,8 @@ Q25 is unanimous across all 9 analyzed participants — verified against distinc
 **Still exploratory, not confirmatory.** None of the five differences cross even the uncorrected .05 threshold (smallest p = .074, SUS and TLX Load), and none come close to the Bonferroni-corrected α=.01. At n=9, a paired Wilcoxon test has very limited power — the fact that four metrics now sit at p<.10 with large r is a stronger signal than the N=11 run produced, but "closer to conventional significance" at single-digit n is still squarely pilot/hypothesis-generating territory, not a demonstrated effect.
 
 **The preference data remains the most legible signal.** 7/9, 8/9, and 9/9 splits don't carry the same wide-CI problem as continuous scale means, and Q25's unanimous result held up after removing the two flagged respondents (i.e., it isn't an artifact of the excluded outlier's data).
+
+**Leave-one-out sensitivity (#1308).** Re-running the paired Wilcoxon test 11 times on the full N=11 finished+valid-group sample (Appendix), each time holding out one participant, checks whether any single respondent is driving the reported effects. The results are largely robust, with 1 effect showing some sensitivity: TLX Performance, where 8 of 11 iterations favored Assistive Mode and the remaining 3 produced a near-zero/tied effect (r=0.00) rather than flipping to favor Baseline — consistent with it already being the weakest of the five metrics at n=9, above. The main effect of condition was extremely stable: SUS, TLX Load, UX, and Comprehension favored Assistive Mode in all 11 of 11 leave-one-out iterations, with no direction flips and narrow effect-size ranges (SUS r ∈ [+.29, +.59]; TLX Load r ∈ [-.65, -.32], sign reflects lower=better; UX r ∈ [+.33, +.53]; Comprehension r ∈ [+.08, +.42]). No individual participant — including either of the two respondents excluded from the primary n=9 analysis — reverses the overall directional pattern. Full per-iteration results: `loo_sensitivity.csv`; chart: `figures/06_loo_sensitivity.png`.
 
 **Net read:** removing the two documented data-quality issues sharpened every metric in the same direction it was already pointing — this is what you want to see (exclusions that clarify a signal rather than manufacture one). The pilot is a solid basis for scaling to the non-ADHD comparison arm (#908) and a larger ADHD cohort before drawing confirmatory claims.
 

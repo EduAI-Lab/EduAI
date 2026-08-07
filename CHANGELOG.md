@@ -18,6 +18,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Added
+
+- [monorepo] research: Land the ADHD pilot reproducible stats pipeline (`eduai-summer-2026/reports/week13-adhd-analysis/`, previously only on `docs/iura-consolidated`) on `development` for the first time, and add a leave-one-out sensitivity analysis on top of it — `run_leave_one_out()` re-runs the paired Wilcoxon signed-rank test 11 times against the full N=11 finished+valid-group sample (once per participant held out), writing `loo_sensitivity.csv` and `figures/06_loo_sensitivity.png`, plus a claim-safe interpretation paragraph in `adhd_study_report.md`. No single participant drives the reported effects: SUS, TLX Load, UX, and Comprehension favor Assistive Mode in all 11/11 iterations; TLX Performance never flips to favor Baseline either, it just drops to a near-zero effect in 3/11. Closes #1308, #1226. (@Ayyhab, 2026-08-06)
+
 ### Fixed
 
 - [core] fix: Disable Qwen3.5's default reasoning-mode output for vLLM chat completions, preventing leaked `<think>` blocks in responses; set `VLLM_DISABLE_THINKING=0` only when reasoning output is intended. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
