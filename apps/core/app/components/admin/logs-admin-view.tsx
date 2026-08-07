@@ -47,6 +47,8 @@ export type ServerRoutingStat = {
   totalCostUsd: number;
   totalEnergyJoules: number;
   totalCarbonGramsCO2: number;
+  /** Live from the server's /v1/models endpoint; null if unreachable or unregistered. */
+  models: string[] | null;
 };
 
 export type ModelRoutingStat = {
@@ -358,9 +360,10 @@ function ServerRoutingPanel({
         <CardHeader>
           <CardTitle className="text-base">Routing by server</CardTitle>
           <CardDescription>
-            How much traffic each fleet server (CMPS01/02/03, and any server added later) has
-            answered in the selected window. New servers appear automatically once they start
-            serving interactions — no configuration needed here.
+            How much traffic each registered fleet server (CMPS01/02/03, and any server added
+            later) has answered in the selected window, and which models it currently hosts
+            (live, refreshed every 30s). Servers with no traffic yet still show up here once
+            they're registered — no need to wait for their first interaction.
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -368,6 +371,7 @@ function ServerRoutingPanel({
             <TableHeader>
               <TableRow>
                 <TableHead>Server</TableHead>
+                <TableHead>Models hosted</TableHead>
                 <TableHead className="text-right">Interactions</TableHead>
                 <TableHead className="text-right">Share</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
@@ -380,8 +384,9 @@ function ServerRoutingPanel({
             <TableBody>
               {serverStats.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-muted-foreground py-8 text-center">
-                    No fleet-routed interactions found for the selected window.
+                  <TableCell colSpan={9} className="text-muted-foreground py-8 text-center">
+                    No fleet servers registered and no fleet-routed interactions found for the
+                    selected window.
                   </TableCell>
                 </TableRow>
               )}
@@ -391,6 +396,13 @@ function ServerRoutingPanel({
                     {row.serverId ?? (
                       <span className="text-muted-foreground">Not fleet-routed / unknown</span>
                     )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.models === null
+                      ? "unreachable"
+                      : row.models.length === 0
+                        ? "none reported"
+                        : row.models.join(", ")}
                   </TableCell>
                   <TableCell className="text-right">{formatCount(row.count)}</TableCell>
                   <TableCell className="text-right">
