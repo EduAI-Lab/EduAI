@@ -60,6 +60,9 @@ const {
 describe('listCoursesForUser', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFindMany.mockReset();
+    mockFindMany.mockResolvedValue([]);
+    mockCount.mockReset();
     const CORE_CATALOG = [
       { id: 'core-1', name: 'Core Course One', code: 'STUDY3', department: 'COSC' },
       { id: 'core-2', name: 'Core Course Two', code: 'MATH100', department: 'MATH' },
@@ -76,7 +79,9 @@ describe('listCoursesForUser', () => {
     mockGetAuthorizedUnits.mockResolvedValue([]);
     mockGetCourseFromCore.mockResolvedValue({ id: 'core-1', name: 'Core Course One' });
     mockCount.mockResolvedValue(0);
+    mockCourseAccessDeleteMany.mockReset();
     mockCourseAccessDeleteMany.mockResolvedValue({ count: 0 });
+    mockCourseAccessCreateMany.mockReset();
     mockCourseAccessCreateMany.mockResolvedValue({ count: 0 });
     resetCourseAccessSyncForTests();
   });
