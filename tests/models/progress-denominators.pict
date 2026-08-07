@@ -1,0 +1,19 @@
+# S8 — progress-denominators (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# See tests/models/progress-denominators.oracle.ts for the oracle spec.
+#
+# Drift contract across three independent implementations:
+# calculateCourseProgress / calculateModuleProgress / calculateLessonProgress
+# (apps/extensions/ai-tutor/server/src/services/progressCalculation.js).
+# `Scope` (course/module/lesson) is deliberately NOT a dimension here, for the
+# same reason `Path` isn't one in tests/models/material-visibility.pict: as a
+# PICT factor it would route each row to exactly one implementation, so no
+# row would ever compare two scopes against the same seeded activity — the
+# opposite of a drift contract. Instead every row is exercised against all
+# three functions in the world-builder
+# (apps/extensions/ai-tutor/server/tests/integration/progress-denominators.pict.test.js),
+# which cross-products Scope itself. (Static read estimated 4 dims including
+# Scope as a factor; re-tiered to 3 real PICT dims once the oracle made clear
+# Scope belongs in the world-builder cross-product instead — docs/PICT_CENSUS.md § S8.)
+LessonPublished:  yes, no
+ModulePublished:  yes, no
+AttemptPattern:   not_attempted, correct_only, incorrect_only, correct_then_incorrect, incorrect_then_correct
