@@ -34,6 +34,7 @@
     "fleet:smoke": "node ./scripts/fleet-smoke.mjs",
     "fleet:extensions:smoke": "node ./scripts/extension-fleet-smoke.mjs",
     "queue:worker": "tsx scripts/ai-job-worker.ts",
+    "cron:worker": "tsx scripts/cron-worker.ts",
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts",
     "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",

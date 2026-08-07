@@ -129,7 +129,11 @@ export function useCoreSidebarProps({
   // if root data is somehow unavailable.
   const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
 
-  const cronStatusColor = useCronJobStatus(user.role === "ADMIN")
+  // The cron admin page owns polling while it is open, so this always-mounted
+  // sidebar never creates a concurrent request loop.
+  const cronStatusColor = useCronJobStatus(
+    user.role === "ADMIN" && pathname !== "/admin/cron-jobs",
+  )
 
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).

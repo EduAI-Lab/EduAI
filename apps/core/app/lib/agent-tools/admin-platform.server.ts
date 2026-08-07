@@ -51,7 +51,6 @@ import {
   triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
-import { rescheduleJob } from "~/lib/cron-scheduler.server";
 import prisma from "~/lib/prisma.server";
 import { resolveAdminCourseId } from "./admin-context.server";
 
@@ -773,7 +772,6 @@ export async function updateAdminCronSchedule(
   if (!cron.validate(input.schedule)) return { error: "INVALID_CRON_SCHEDULE" };
 
   await updateCronSchedule(input.jobName, input.schedule, input.scheduleLabel);
-  rescheduleJob(input.jobName, input.schedule);
   return { ok: true, jobName: input.jobName };
 }
 
@@ -785,7 +783,6 @@ export async function resetAdminCronSchedule(actor: RbacUser, jobName: string) {
   if (!known) return { error: "UNKNOWN_CRON_JOB" };
 
   await resetCronSchedule(jobName);
-  rescheduleJob(jobName, known.schedule);
   return { ok: true, jobName };
 }
 

@@ -15,7 +15,7 @@ There are two distinct layers of scheduled work in EduAI:
 
 | Layer | Where it runs | Managed by | Can trigger from admin panel? |
 |---|---|---|---|
-| **Infra shell scripts** | In-process within the Core server | Core's `node-cron` scheduler | Yes |
+| **Infra shell scripts** | Dedicated Core cron worker | Core's `node-cron` scheduler | Yes |
 | **Extension in-process jobs** | Inside the AI Tutor and Question Maker Node servers | Each extension's own scheduler | No (external) |
 
 The admin panel at **Admin → Cron Jobs** surfaces both layers in one view. Triggering a job from the panel runs the corresponding shell script immediately (infra jobs only). Extension-managed jobs show an "External" badge and cannot be triggered from Core.
@@ -80,6 +80,8 @@ Click **History** on any row to see the last 10 runs with status, duration, and 
 ## Modifying a schedule
 
 ### Infra shell-script jobs
+
+Schedule changes are stored in the database and applied by the dedicated cron worker within 30 seconds. No web-server restart is needed.
 
 Click **Edit** next to any infra job's schedule to open the schedule editor. Enter a valid 5-field cron expression; the human-readable label auto-fills for common patterns (daily, weekly, monthly) and can be edited freely.
 
@@ -230,3 +232,7 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 
 For data lifecycle jobs (user expiry, course deletion, etc.) see the [spec](implementations/EduAI_CronJob_DataLifecycle_Spec.md) — those scripts are defined there and are not yet registered in `KNOWN_CRON_JOBS`.
+## Scheduler worker deployment
+
+Run exactly one worker per environment with `npm run cron:worker -w edu-ai`.
+The worker loads database-backed schedule overrides at startup and reconciles them every 30 seconds. Web server instances never create cron timers, so scheduled work does not depend on web traffic. Monitor the worker process and its `[cron-worker]` logs; restart it if it exits unexpectedly.

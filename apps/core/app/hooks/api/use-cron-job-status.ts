@@ -21,11 +21,7 @@ function computeColor(jobs: CronJobEntry[]): CronStatusColor | null {
   return "green"
 }
 
-/**
- * Polls /api/admin/cron-jobs to derive an aggregate status color for the
- * sidebar badge. Only active when `enabled` is true (i.e. the user is ADMIN).
- * Polls every 5 s while a job is RUNNING, 30 s otherwise.
- */
+/** Polls the sidebar badge only while visible; the cron admin page owns refreshes when open. */
 export function useCronJobStatus(enabled: boolean): CronStatusColor | null {
   const [color, setColor] = useState<CronStatusColor | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -33,32 +29,47 @@ export function useCronJobStatus(enabled: boolean): CronStatusColor | null {
 
   useEffect(() => {
     if (!enabled) return
-
     cancelledRef.current = false
 
+    function clearTimer() {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+
+    function scheduleNext(delay: number) {
+      clearTimer()
+      if (!cancelledRef.current && document.visibilityState === "visible") {
+        timerRef.current = setTimeout(() => void poll(), delay)
+      }
+    }
+
     async function poll() {
-      if (cancelledRef.current) return
+      if (cancelledRef.current || document.visibilityState !== "visible") return
       let nextDelay = 30_000
       try {
         const resp = await apiFetch<{ jobs: CronJobEntry[] }>("/api/admin/cron-jobs")
         if (!cancelledRef.current) {
-          const c = computeColor(resp.jobs)
-          setColor(c)
-          nextDelay = c === "orange" ? 5_000 : 30_000
+          const nextColor = computeColor(resp.jobs)
+          setColor(nextColor)
+          nextDelay = nextColor === "orange" ? 15_000 : 30_000
         }
       } catch {
         nextDelay = 60_000
       }
-      if (!cancelledRef.current) {
-        timerRef.current = setTimeout(() => void poll(), nextDelay)
-      }
+      scheduleNext(nextDelay)
     }
 
-    void poll()
+    function onVisibilityChange() {
+      clearTimer()
+      if (document.visibilityState === "visible") void poll()
+    }
 
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    if (document.visibilityState === "visible") void poll()
     return () => {
       cancelledRef.current = true
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
+      clearTimer()
+      document.removeEventListener("visibilitychange", onVisibilityChange)
     }
   }, [enabled])
 

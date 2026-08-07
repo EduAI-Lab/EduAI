@@ -12,7 +12,6 @@ import {
   triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
-import { rescheduleJob } from "~/lib/cron-scheduler.server";
 
 async function requireAdmin(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -93,7 +92,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: "Invalid cron expression" }, { status: 400 });
     }
     await updateCronSchedule(jobName, schedule.trim(), scheduleLabel.trim());
-    rescheduleJob(jobName, schedule.trim());
     const jobs = await listCronJobStatuses();
     return data({ jobs });
   }
@@ -104,7 +102,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
     }
     await resetCronSchedule(jobName);
-    rescheduleJob(jobName, null);
     const jobs = await listCronJobStatuses();
     return data({ jobs });
   }

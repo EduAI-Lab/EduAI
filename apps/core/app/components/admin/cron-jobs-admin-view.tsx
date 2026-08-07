@@ -395,6 +395,9 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const [historyJob, setHistoryJob] = useState<string | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState === "visible",
+  );
 
   const hasRunning = jobs.some((j) => j.lastRun?.status === "RUNNING");
 
@@ -409,9 +412,15 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
     }
   }, []);
 
+  useEffect(() => {
+    const onVisibilityChange = () => setIsDocumentVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
   // Poll every 3 s while any job is RUNNING, stop otherwise.
   useEffect(() => {
-    if (hasRunning) {
+    if (hasRunning && isDocumentVisible) {
       pollRef.current = setInterval(fetchStatuses, 3000);
     } else {
       if (pollRef.current) {
@@ -422,7 +431,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [hasRunning, fetchStatuses]);
+  }, [hasRunning, isDocumentVisible, fetchStatuses]);
 
   async function triggerJob(jobName: string) {
     setTriggering((prev) => new Set(prev).add(jobName));

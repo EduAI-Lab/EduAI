@@ -6,14 +6,17 @@ import { redactErrorForConsole } from "~/lib/redact.server";
 
 declare global {
   var __cronTasks: Map<string, ScheduledTask> | undefined;
-  var __cronSchedulerReady: boolean | undefined;
+  var __cronTaskSchedules: Map<string, string> | undefined;
 }
 
 function getTaskMap(): Map<string, ScheduledTask> {
-  if (!globalThis.__cronTasks) {
-    globalThis.__cronTasks = new Map();
-  }
+  if (!globalThis.__cronTasks) globalThis.__cronTasks = new Map();
   return globalThis.__cronTasks;
+}
+
+function getTaskScheduleMap(): Map<string, string> {
+  if (!globalThis.__cronTaskSchedules) globalThis.__cronTaskSchedules = new Map();
+  return globalThis.__cronTaskSchedules;
 }
 
 function scheduleOne(jobName: string, schedule: string, script: string): void {
@@ -33,43 +36,29 @@ function scheduleOne(jobName: string, schedule: string, script: string): void {
     { timezone: "UTC" },
   );
   tasks.set(jobName, task);
+  getTaskScheduleMap().set(jobName, schedule);
 }
 
-/**
- * Re-schedule a single job after a UI-driven schedule change.
- * Passing null reverts to the job's default schedule.
- * No-ops for external jobs (no script).
- */
-export function rescheduleJob(jobName: string, schedule: string | null): void {
-  const job = KNOWN_CRON_JOBS.find((j) => j.name === jobName);
-  if (!job?.script) return;
-  scheduleOne(jobName, schedule ?? job.schedule, job.script);
+/** Refresh schedules from the database in the dedicated cron worker only. */
+export async function refreshCronSchedules(): Promise<void> {
+  const overrides = await prisma.cronJobScheduleOverride.findMany();
+  const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
+  const schedules = getTaskScheduleMap();
+
+  for (const job of KNOWN_CRON_JOBS) {
+    if (!job.script) continue;
+    const schedule = overrideMap.get(job.name) ?? job.schedule;
+    if (schedules.get(job.name) === schedule) continue;
+    try {
+      scheduleOne(job.name, schedule, job.script);
+    } catch (err) {
+      console.error(`[cron] Failed to schedule ${job.name}:`, redactErrorForConsole(err));
+    }
+  }
 }
 
-/**
- * Initialize the in-process cron scheduler. Safe to call on every request —
- * it uses a globalThis flag so the actual setup only runs once per process.
- */
-export function ensureCronSchedulerRunning(): void {
-  if (globalThis.__cronSchedulerReady) return;
-  globalThis.__cronSchedulerReady = true;
-
-  prisma.cronJobScheduleOverride
-    .findMany()
-    .then((overrides) => {
-      const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
-      for (const job of KNOWN_CRON_JOBS) {
-        if (!job.script) continue; // external extension jobs — skip
-        try {
-          scheduleOne(job.name, overrideMap.get(job.name) ?? job.schedule, job.script);
-        } catch (err) {
-          console.error(`[cron] Failed to schedule ${job.name}:`, redactErrorForConsole(err));
-        }
-      }
-      console.log("[cron] In-process scheduler started");
-    })
-    .catch((err: unknown) => {
-      console.error("[cron] Scheduler init failed:", redactErrorForConsole(err));
-      globalThis.__cronSchedulerReady = false; // allow retry on next request
-    });
+export function stopCronScheduler(): void {
+  for (const task of getTaskMap().values()) task.stop();
+  getTaskMap().clear();
+  getTaskScheduleMap().clear();
 }

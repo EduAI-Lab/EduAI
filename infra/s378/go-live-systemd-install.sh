@@ -19,7 +19,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 UNIT_SRC="${SCRIPT_DIR}/systemd"
 REPO="${EDUAI_REPO:-/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore}"
 
-UNITS=(eduai-core.service eduai-aitutor-server.service eduai-qm-backend.service)
+UNITS=(eduai-core.service eduai-cron-worker.service eduai-aitutor-server.service eduai-qm-backend.service)
 SYSTEMD_DIR=/etc/systemd/system
 ENV_DIR=/etc/eduai
 POLKIT_DIR=/etc/polkit-1/rules.d

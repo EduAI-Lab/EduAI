@@ -32,10 +32,6 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   resetCronSchedule: vi.fn(),
 }));
 
-vi.mock("~/lib/cron-scheduler.server", () => ({
-  rescheduleJob: vi.fn(),
-}));
-
 import { loader, action } from "~/routes/api/admin.cron-jobs";
 import { auth } from "~/lib/auth/server";
 import {
@@ -47,7 +43,6 @@ import {
   updateCronSchedule,
   resetCronSchedule,
 } from "~/lib/db.cron-jobs.server";
-import { rescheduleJob } from "~/lib/cron-scheduler.server";
 
 const ADMIN_USER = { id: "u-admin", role: "ADMIN", email: "admin@test.com" };
 const STUDENT_USER = { id: "u-student", role: "STUDENT", email: "student@test.com" };
@@ -238,7 +233,7 @@ describe("POST /api/admin/cron-jobs (action) — intent: update-schedule", () =>
     expect(status(res)).toBe(400);
   });
 
-  it("updates the schedule and reschedules the job on valid input", async () => {
+  it("updates the schedule on valid input", async () => {
     const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
       intent: "update-schedule",
       jobName: "backup-nightly",
@@ -247,7 +242,6 @@ describe("POST /api/admin/cron-jobs (action) — intent: update-schedule", () =>
     })));
     expect(status(res)).toBe(200);
     expect(updateCronSchedule).toHaveBeenCalledWith("backup-nightly", "0 3 * * *", "Daily at 03:00 UTC");
-    expect(rescheduleJob).toHaveBeenCalledWith("backup-nightly", "0 3 * * *");
     const b = body(res);
     expect(b.jobs).toBeDefined();
   });
@@ -271,14 +265,13 @@ describe("POST /api/admin/cron-jobs (action) — intent: reset-schedule", () => 
     expect(status(res)).toBe(400);
   });
 
-  it("resets the override and reschedules with null on valid input", async () => {
+  it("resets the override on valid input", async () => {
     const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
       intent: "reset-schedule",
       jobName: "backup-nightly",
     })));
     expect(status(res)).toBe(200);
     expect(resetCronSchedule).toHaveBeenCalledWith("backup-nightly");
-    expect(rescheduleJob).toHaveBeenCalledWith("backup-nightly", null);
     const b = body(res);
     expect(b.jobs).toBeDefined();
   });

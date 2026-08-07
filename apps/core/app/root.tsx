@@ -18,7 +18,6 @@ import {
   getExpiredPasswordRedirect,
   isPasswordExpiredForUser,
 } from "~/lib/auth/password-expiry.server";
-import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui/sonner";
@@ -126,8 +125,6 @@ const GUEST_ROOT_PREFERENCES = {
  * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  ensureCronSchedulerRunning();
-
   // getSession and getPolicies are independent — run them in parallel so a policy
   // cache-miss does not serialize behind the session lookup on every navigation.
   // Policy flags are resolved server-side (in-memory cached) and handed to the
