@@ -1,0 +1,17 @@
+# docs/PICT_CENSUS.md § S7 — admin-write-confirmation (#1186)
+# runConfirmedAdminWriteTool (lib/agent-tools/admin-mutations.server.ts:188), built on the
+# preview map in admin-write-confirmation.server.ts:50 — register-then-confirm two-step with a
+# same-turn anti-replay guard, keyed on (actorId, toolName, payloadHash).
+Confirmed:    false, true
+PreviewState: none, expired, active-no-turn, active-with-turn
+Identity:     match, mismatch
+ConfirmTurn:  null, same-as-registered, different
+RunOutcome:   success, failure
+
+# RunOutcome only matters once a preview is actually consumed — every other branch never
+# calls run() at all.
+IF [Confirmed] = "false" THEN [RunOutcome] = "success";
+IF [PreviewState] = "none" THEN [RunOutcome] = "success";
+IF [PreviewState] = "expired" THEN [RunOutcome] = "success";
+IF [Identity] = "mismatch" THEN [RunOutcome] = "success";
+IF [PreviewState] = "active-with-turn" AND [ConfirmTurn] <> "different" THEN [RunOutcome] = "success";
