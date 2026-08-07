@@ -20,18 +20,17 @@ vi.mock("~/lib/courses/server", () => ({
 }));
 
 const queryRawMock = vi.hoisted(() => vi.fn());
-const executeRawUnsafeMock = vi.hoisted(() => vi.fn());
 const executeRawMock = vi.hoisted(() => vi.fn());
 const courseFindUniqueMock = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $queryRaw: queryRawMock,
-    $executeRawUnsafe: executeRawUnsafeMock,
+    // findRelevantContent (#940) wraps a single chained `SELECT set_config(...)`
+    // GUC statement + the query in a transaction so both run on the same
+    // pooled connection in 2 round trips instead of 3+ separate `SET`
+    // statements. The real PrismaClient accepts an array of pending raw-query
+    // promises; mimic that by resolving each entry and returning the results array.
     $executeRaw: executeRawMock,
-    // findRelevantContent (#940) wraps `SET LOCAL ivfflat.probes` + the query in
-    // a transaction so both run on the same pooled connection. The real
-    // PrismaClient accepts an array of pending raw-query promises; mimic that by
-    // resolving each entry and returning the results array.
     $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     course: { findUnique: courseFindUniqueMock },
   },
@@ -69,23 +68,32 @@ delete process.env.OLLAMA_BASE_URL;
 
 // ── Module import (after mocks) ───────────────────────────────────────────────
 
-const { findRelevantContent, isHybridBm25Enabled, resolveIvfflatProbes } =
-  await import("~/lib/ai/embedding");
+const {
+  findRelevantContent,
+  isHybridBm25Enabled,
+  resolveIvfflatProbes,
+  __resetPgvectorIterativeScanCacheForTests,
+} = await import("~/lib/ai/embedding");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
  * Join the TemplateStringsArray from a $queryRaw tagged-template call so we can
- * assert that the correct SQL fragments are present.
+ * assert that the correct SQL fragments are present. `pgvectorSupportsIterativeScan()`
+ * issues its own one-time, process-cached `$queryRaw` version check (reset via
+ * `__resetPgvectorIterativeScanCacheForTests()` below), so retrieval-query calls
+ * are always at index 1, not 0.
  * calls[n][0] is the TemplateStringsArray; [1..] are interpolated values.
  */
-function capturedSql(callIndex = 0): string {
+const RETRIEVAL_QUERY_CALL_INDEX = 1;
+
+function capturedSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   const [templateStrings] = queryRawMock.mock.calls[callIndex] as [string[]];
   return templateStrings.join("__param__");
 }
 
 /** Interpolated values passed to $queryRaw (everything after the template strings). */
-function capturedParams(callIndex = 0): unknown[] {
+function capturedParams(callIndex = RETRIEVAL_QUERY_CALL_INDEX): unknown[] {
   return (queryRawMock.mock.calls[callIndex] as unknown[]).slice(1);
 }
 
@@ -96,6 +104,11 @@ const QUERY = "What is assignment 4 about?";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  __resetPgvectorIterativeScanCacheForTests();
+  // First $queryRaw call in every test is the cached pgvector version check;
+  // report 0.8.0 so iterative scanning is enabled (repository's documented
+  // minimum supported pgvector version).
+  queryRawMock.mockResolvedValueOnce([{ extversion: "0.8.0" }]);
   getCourseRagSettingsMock.mockResolvedValue({ ragTopK: null, ragSimilarityThreshold: null });
   courseFindUniqueMock.mockResolvedValue(null);
   delete process.env.RAG_HYBRID_BM25;
@@ -109,9 +122,14 @@ afterEach(() => {
 });
 
 describe("resolveIvfflatProbes()", () => {
-  it("caps probes below the migration's 100 IVFFlat lists", () => {
+  it("allows probes up to the migration's 100 IVFFlat lists (probes == lists is a valid full-index scan)", () => {
     process.env.RAG_IVFFLAT_PROBES = "100";
-    expect(resolveIvfflatProbes()).toBe(99);
+    expect(resolveIvfflatProbes()).toBe(100);
+  });
+
+  it("clamps above 100 back down to the lists count", () => {
+    process.env.RAG_IVFFLAT_PROBES = "500";
+    expect(resolveIvfflatProbes()).toBe(100);
   });
 });
 
@@ -171,10 +189,15 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
 
   it("uses bounded iterative ANN scanning so course filters retain recall", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(executeRawUnsafeMock).toHaveBeenCalledWith(
-      "SET LOCAL ivfflat.iterative_scan = relaxed_order",
-    );
-    expect(executeRawUnsafeMock).toHaveBeenCalledWith("SET LOCAL ivfflat.max_probes = 99");
+    // The probes/iterative-scan GUCs are chained into one `SELECT set_config(...)`
+    // statement (single round trip) rather than separate `SET LOCAL` calls.
+    const guCsFragment = executeRawMock.mock.calls[0][0] as { sql: string; values: unknown[] };
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.probes'");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.iterative_scan', 'relaxed_order', true)");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.max_probes'");
+    // max_probes must be >= the index's lists=100 (pgvector's own default is
+    // 32768), not one below it.
+    expect(guCsFragment.values).toContain("32768");
   });
 
   // #315: soft-deleted materials must never leak into RAG context, including on
@@ -267,10 +290,13 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
 
   it("uses bounded iterative ANN scanning before applying the course filter", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(executeRawUnsafeMock).toHaveBeenCalledWith(
-      "SET LOCAL ivfflat.iterative_scan = relaxed_order",
-    );
-    expect(executeRawUnsafeMock).toHaveBeenCalledWith("SET LOCAL ivfflat.max_probes = 99");
+    const guCsFragment = executeRawMock.mock.calls[0][0] as { sql: string; values: unknown[] };
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.probes'");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.iterative_scan', 'relaxed_order', true)");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.max_probes'");
+    // max_probes must be >= the index's lists=100 (pgvector's own default is
+    // 32768), not one below it.
+    expect(guCsFragment.values).toContain("32768");
   });
 
   it("maps the similarity column correctly", async () => {
@@ -291,7 +317,7 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
  * query. Duck-typed on `.strings` (a Prisma.Sql fragment) rather than
  * `instanceof`, which isn't reliable across the generated client build.
  */
-function capturedFragmentSql(callIndex = 0): string {
+function capturedFragmentSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   return capturedParams(callIndex)
     .filter(
       (p): p is { strings: string[] } =>
@@ -358,10 +384,14 @@ describe("findRelevantContent — student-visibility gate (#839)", () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     expect(capturedSql()).toContain('cm."deletedAt" IS NULL');
 
+    // vi.clearAllMocks() wipes queryRawMock.mock.calls, but the pgvector
+    // version-gate check is cached at module scope (not per-test) and was
+    // already resolved by the call above — the second findRelevantContent()
+    // call below issues only the retrieval query, landing back at index 0.
     vi.clearAllMocks();
     queryRawMock.mockResolvedValue([]);
     process.env.RAG_HYBRID_BM25 = "1";
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(capturedSql()).toContain('cm."deletedAt" IS NULL');
+    expect(capturedSql(0)).toContain('cm."deletedAt" IS NULL');
   });
 });

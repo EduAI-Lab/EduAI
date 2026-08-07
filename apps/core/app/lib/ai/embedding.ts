@@ -53,9 +53,11 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
  * GUC, not an index property, so it can't be "baked into" the migration.
  *
  * Env override lets ops raise recall (or lower latency) without a code change;
- * clamped to the index's 100-list range. A value of 100 is an explicit
- * maximum-recall mode: it scans every IVFFlat list while still using the
- * index, and is useful for validating filtered recall.
+ * clamped to the index's 100-list range. `probes = lists` (100) is a valid,
+ * fully-index-scan value in pgvector — it just visits every list rather than
+ * degrading to a sequential scan — and is useful for validating filtered
+ * recall. 0 / invalid input resolves to the code default of 10 (not to
+ * Postgres' own GUC default of 1).
  */
 const DEFAULT_IVFFLAT_PROBES = 10;
 const MIN_IVFFLAT_PROBES = 1;
@@ -68,6 +70,92 @@ export function resolveIvfflatProbes(): number {
   }
   return Math.min(MAX_IVFFLAT_PROBES, Math.max(MIN_IVFFLAT_PROBES, Math.round(raw)));
 }
+
+/**
+ * `ivfflat.max_probes` (#940): the ceiling iterative scanning is allowed to
+ * raise the *effective* probe count to while it looks for enough
+ * post-filter rows to satisfy a LIMIT. This is a different knob from
+ * `ivfflat.probes` above (the *initial* number of lists scanned) — probes is
+ * clamped to the index's `lists = 100` because scanning more lists than
+ * exist is meaningless, but `max_probes` must be allowed to reach (and
+ * pgvector recommends comfortably exceed) `lists` so a course-filtered query
+ * can keep asking for more lists instead of coming back short. pgvector's own
+ * documented default/max for this GUC is 32768; we reuse that value rather
+ * than inventing a smaller one that could once again sit below `lists` after
+ * a future re-tune of the index.
+ */
+const IVFFLAT_ITERATIVE_MAX_PROBES = 32768;
+
+/** Minimum pgvector extension version that supports `ivfflat.iterative_scan` / `ivfflat.max_probes`. */
+const IVFFLAT_ITERATIVE_SCAN_MIN_VERSION = [0, 8, 0] as const;
+
+/**
+ * Parses a Postgres extension version string (e.g. "0.8.0", "0.8",
+ * "0.7.4-dev") into a numeric triple for comparison. Missing components
+ * default to 0 so "0.8" compares equal to "0.8.0" instead of sorting before
+ * it (a plain element-wise array compare in SQL would treat the shorter
+ * array as "less than", which is wrong here).
+ */
+function parseExtensionVersion(version: string): [number, number, number] {
+  const parts = version
+    .trim()
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+}
+
+function isVersionAtLeast(
+  version: [number, number, number],
+  minimum: readonly [number, number, number],
+): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (version[i] > minimum[i]) return true;
+    if (version[i] < minimum[i]) return false;
+  }
+  return true;
+}
+
+let cachedPgvectorSupportsIterativeScan: Promise<boolean> | null = null;
+
+/**
+ * Whether the connected Postgres' `vector` extension is new enough
+ * (>= 0.8.0) to support `ivfflat.iterative_scan` / `ivfflat.max_probes`.
+ * Older extensions reject those GUCs with `unrecognized configuration
+ * parameter`, which would abort every retrieval transaction, so this is
+ * checked once and cached for the life of the process rather than compared
+ * inside a per-query `DO $$` block (which also re-ran the version lookup on
+ * every single retrieval call).
+ */
+async function pgvectorSupportsIterativeScan(): Promise<boolean> {
+  if (!cachedPgvectorSupportsIterativeScan) {
+    cachedPgvectorSupportsIterativeScan = (async () => {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ extversion: string }>>`
+          SELECT extversion FROM pg_extension WHERE extname = 'vector'
+        `;
+        const versionText = rows[0]?.extversion;
+        if (!versionText) return false;
+        return isVersionAtLeast(
+          parseExtensionVersion(versionText),
+          IVFFLAT_ITERATIVE_SCAN_MIN_VERSION,
+        );
+      } catch (err) {
+        console.warn("[embeddings] failed to read pgvector extension version; " +
+          "skipping ivfflat.iterative_scan / ivfflat.max_probes", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      }
+    })();
+  }
+  return cachedPgvectorSupportsIterativeScan;
+}
+
+/** Test-only: clears the cached pgvector-version check between test cases. */
+export function __resetPgvectorIterativeScanCacheForTests(): void {
+  cachedPgvectorSupportsIterativeScan = null;
+}
+
 /**
  * Default number of materials re-embedded concurrently in `reEmbedCourseMaterials`
  * (#945). Kept modest (rather than unbounded `Promise.all`) so a large re-embed run
@@ -785,20 +873,23 @@ export async function findRelevantContent(
   const probes = resolveIvfflatProbes();
   // Course filtering happens after the ANN scan. Iterative scanning asks
   // pgvector for additional lists until the filtered LIMIT is satisfied, up
-  // to this bounded maximum, so a large unrelated course cannot starve a
-  // smaller course's nearest chunks from the candidate set.
-  const maxProbes = MAX_IVFFLAT_PROBES;
-  const iterativeScanSettings = Prisma.sql`
-    DO $$
-    DECLARE version_text text;
-    BEGIN
-      SELECT extversion INTO version_text FROM pg_extension WHERE extname = 'vector';
-      IF string_to_array(version_text, '.')::int[] >= ARRAY[0, 8, 0]::int[] THEN
-        PERFORM set_config('ivfflat.iterative_scan', 'relaxed_order', true);
-        PERFORM set_config('ivfflat.max_probes', '${Prisma.raw(String(maxProbes))}', true);
-      END IF;
-    END $$;
-  `;
+  // to this bounded ceiling, so a large unrelated course cannot starve a
+  // smaller course's nearest chunks from the candidate set. Only applied on
+  // pgvector >= 0.8.0 — older extensions reject these GUCs outright, which
+  // would abort the whole transaction and take RAG down silently.
+  const supportsIterativeScan = await pgvectorSupportsIterativeScan();
+
+  // Collapse every `SET LOCAL` into one `SELECT set_config(...)` round trip
+  // instead of 2-3 separate statements, so a pooled connection is held for
+  // fewer round trips per retrieval call under concurrent chat streams.
+  const setConfigCalls = [Prisma.sql`set_config('ivfflat.probes', ${String(probes)}, true)`];
+  if (supportsIterativeScan) {
+    setConfigCalls.push(
+      Prisma.sql`set_config('ivfflat.iterative_scan', 'relaxed_order', true)`,
+      Prisma.sql`set_config('ivfflat.max_probes', ${String(IVFFLAT_ITERATIVE_MAX_PROBES)}, true)`,
+    );
+  }
+  const applyIvfflatSettings = Prisma.sql`SELECT ${Prisma.join(setConfigCalls)}`;
 
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
@@ -812,9 +903,8 @@ export async function findRelevantContent(
     // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
     // a materialized CTE, then apply the similarity floor and hybrid reranking
     // to the resulting candidate set.
-    const [, , hybridResults] = await prisma.$transaction([
-      prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
-      prisma.$executeRaw(iterativeScanSettings),
+    const [, hybridResults] = await prisma.$transaction([
+      prisma.$executeRaw(applyIvfflatSettings),
       prisma.$queryRaw<
         Array<{ content: string; score: number; material_title: string }>
       >`
@@ -858,9 +948,8 @@ export async function findRelevantContent(
     }));
   }
 
-  const [, , results] = await prisma.$transaction([
-    prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
-    prisma.$executeRaw(iterativeScanSettings),
+  const [, results] = await prisma.$transaction([
+    prisma.$executeRaw(applyIvfflatSettings),
     prisma.$queryRaw<
       Array<{
         content: string;
