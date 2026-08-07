@@ -227,6 +227,9 @@ if [ "$DO_RESTART" = "1" ]; then
   # whose bundle did not change is a pointless outage on a shared box.
   RESTART_UNITS=()
   if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
+  # The cron worker imports Core server code directly, so it must restart with
+  # every Core deployment even when Core itself was restarted after its build.
+  if want core; then RESTART_UNITS+=(eduai-cron-worker.service); fi
   if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
   if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
 
@@ -267,6 +270,10 @@ if [ "$DO_RESTART" = "1" ]; then
   # stopped would be a false alarm.
   UNHEALTHY=()
   if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
+  if want core && [ "$(systemctl is-active eduai-cron-worker.service 2>&1)" != "active" ]; then
+    echo "  eduai-cron-worker        NOT active"
+    UNHEALTHY+=(eduai-cron-worker)
+  fi
   if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
   if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
 
