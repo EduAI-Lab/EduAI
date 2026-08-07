@@ -25,7 +25,11 @@ const backendRoot = resolve(__dirname, '..');
 export async function setup() {
   // globalSetup runs in the main process before setupFiles (tests/setup.js) load the root .env,
   // so load it here too — otherwise TEST_DATABASE_URL may be undefined and the up-front migrate skipped.
-  dotenv.config({ path: resolve(backendRoot, '../../../.env') });
+  // Resolve from backendRoot (app/backend), not from __dirname (app/backend/tests) — two levels up
+  // is the extension root that holds .env. Going three up lands on apps/extensions/, where there is
+  // no .env, which silently turned this whole hook into a no-op on local runs (#1368). CI was
+  // unaffected because it sets TEST_DATABASE_URL as a real environment variable.
+  dotenv.config({ path: resolve(backendRoot, '../../.env') });
 
   if (!process.env.TEST_DATABASE_URL) {
     return;
