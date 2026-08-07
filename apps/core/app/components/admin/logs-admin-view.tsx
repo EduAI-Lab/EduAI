@@ -30,13 +30,33 @@ import {
 } from "@eduai/ui";
 import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
 
-export type LogsTab = "audit" | "security" | "system";
+export type LogsTab = "audit" | "security" | "system" | "servers";
 
 type LogsQueryState = Record<string, string | undefined>;
 
 type LogRetentionPolicy = {
   auditRetentionDays: number;
   systemRetentionDays: number;
+};
+
+export type ServerRoutingStat = {
+  serverId: string | null;
+  count: number;
+  totalTokens: number;
+  totalDurationMs: number;
+  totalCostUsd: number;
+  totalEnergyJoules: number;
+  totalCarbonGramsCO2: number;
+};
+
+export type ModelRoutingStat = {
+  modelUsed: string;
+  count: number;
+  totalTokens: number;
+  totalDurationMs: number;
+  totalCostUsd: number;
+  totalEnergyJoules: number;
+  totalCarbonGramsCO2: number;
 };
 
 type LogsAdminViewProps = {
@@ -48,6 +68,8 @@ type LogsAdminViewProps = {
   hasMore: boolean;
   query: LogsQueryState;
   retentionPolicy: LogRetentionPolicy;
+  serverStats?: ServerRoutingStat[];
+  modelStats?: ModelRoutingStat[];
 };
 
 // Audit categories exclude SECURITY — security events have their own hard-scoped tab.
@@ -262,6 +284,177 @@ function levelVariant(
   return "secondary";
 }
 
+function formatCount(value: number) {
+  return value.toLocaleString();
+}
+
+function formatCostUsd(value: number) {
+  return `$${value.toFixed(4)}`;
+}
+
+function formatDurationMs(totalDurationMs: number, count: number) {
+  if (count === 0) return "-";
+  return `${Math.round(totalDurationMs / count).toLocaleString()} ms avg`;
+}
+
+function formatEnergy(joules: number) {
+  if (joules <= 0) return "-";
+  return `${(joules / 1000).toFixed(2)} kJ`;
+}
+
+function formatCarbon(grams: number) {
+  if (grams <= 0) return "-";
+  return `${grams.toFixed(2)} g CO₂`;
+}
+
+/**
+ * Routing/model breakdown for the Servers tab (#1351). Distinct from the
+ * paginated row tables above — these are date-range aggregates, so the panel
+ * renders its own date filter and two summary tables rather than reusing the
+ * shared results table.
+ */
+function ServerRoutingPanel({
+  query,
+  serverStats,
+  modelStats,
+}: {
+  query: LogsQueryState;
+  serverStats: ServerRoutingStat[];
+  modelStats: ModelRoutingStat[];
+}) {
+  const totalInteractions = serverStats.reduce((sum, row) => sum + row.count, 0);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardContent className="pt-6">
+          <Form method="get">
+            <input type="hidden" name="tab" value="servers" />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Date from</Label>
+                <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Date to</Label>
+                <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button type="submit" size="sm">
+                Apply filters
+              </Button>
+              <Button type="button" size="sm" variant="outline" asChild>
+                <Link to={buildQueryString(query, { tab: "servers", dateFrom: undefined, dateTo: undefined })}>
+                  Clear filters
+                </Link>
+              </Button>
+            </div>
+          </Form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Routing by server</CardTitle>
+          <CardDescription>
+            How much traffic each fleet server (CMPS01/02/03, and any server added later) has
+            answered in the selected window. New servers appear automatically once they start
+            serving interactions — no configuration needed here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Server</TableHead>
+                <TableHead className="text-right">Interactions</TableHead>
+                <TableHead className="text-right">Share</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="text-right">Avg duration</TableHead>
+                <TableHead className="text-right">Est. cost</TableHead>
+                <TableHead className="text-right">Energy</TableHead>
+                <TableHead className="text-right">Carbon</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {serverStats.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-muted-foreground py-8 text-center">
+                    No fleet-routed interactions found for the selected window.
+                  </TableCell>
+                </TableRow>
+              )}
+              {serverStats.map((row) => (
+                <TableRow key={row.serverId ?? "unknown"}>
+                  <TableCell className="font-medium">
+                    {row.serverId ?? (
+                      <span className="text-muted-foreground">Not fleet-routed / unknown</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">{formatCount(row.count)}</TableCell>
+                  <TableCell className="text-right">
+                    {totalInteractions > 0 ? `${Math.round((row.count / totalInteractions) * 100)}%` : "-"}
+                  </TableCell>
+                  <TableCell className="text-right">{formatCount(row.totalTokens)}</TableCell>
+                  <TableCell className="text-right">{formatDurationMs(row.totalDurationMs, row.count)}</TableCell>
+                  <TableCell className="text-right">{formatCostUsd(row.totalCostUsd)}</TableCell>
+                  <TableCell className="text-right">{formatEnergy(row.totalEnergyJoules)}</TableCell>
+                  <TableCell className="text-right">{formatCarbon(row.totalCarbonGramsCO2)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Answers by model</CardTitle>
+          <CardDescription>
+            How much of the traffic each AI model answered, regardless of which server hosted it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Model</TableHead>
+                <TableHead className="text-right">Interactions</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="text-right">Avg duration</TableHead>
+                <TableHead className="text-right">Est. cost</TableHead>
+                <TableHead className="text-right">Energy</TableHead>
+                <TableHead className="text-right">Carbon</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {modelStats.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
+                    No interactions found for the selected window.
+                  </TableCell>
+                </TableRow>
+              )}
+              {modelStats.map((row) => (
+                <TableRow key={row.modelUsed}>
+                  <TableCell className="font-medium">{row.modelUsed}</TableCell>
+                  <TableCell className="text-right">{formatCount(row.count)}</TableCell>
+                  <TableCell className="text-right">{formatCount(row.totalTokens)}</TableCell>
+                  <TableCell className="text-right">{formatDurationMs(row.totalDurationMs, row.count)}</TableCell>
+                  <TableCell className="text-right">{formatCostUsd(row.totalCostUsd)}</TableCell>
+                  <TableCell className="text-right">{formatEnergy(row.totalEnergyJoules)}</TableCell>
+                  <TableCell className="text-right">{formatCarbon(row.totalCarbonGramsCO2)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 /**
  * Shared admin view for audit/security/system log browsing.
  *
@@ -278,6 +471,8 @@ export function LogsAdminView({
   hasMore,
   query,
   retentionPolicy,
+  serverStats,
+  modelStats,
 }: LogsAdminViewProps) {
   const [selectedRow, setSelectedRow] = useState<Record<
     string,
@@ -293,6 +488,7 @@ export function LogsAdminView({
       audit: buildQueryString(query, { tab: "audit", page: 1 }),
       security: buildQueryString(query, { tab: "security", page: 1 }),
       system: buildQueryString(query, { tab: "system", page: 1 }),
+      servers: buildQueryString(query, { tab: "servers", page: 1 }),
     }),
     [query],
   );
@@ -323,9 +519,16 @@ export function LogsAdminView({
           <TabsTrigger value="system" asChild>
             <Link to={tabLinks.system}>System</Link>
           </TabsTrigger>
+          <TabsTrigger value="servers" asChild>
+            <Link to={tabLinks.servers}>Servers</Link>
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
+      {tab === "servers" ? (
+        <ServerRoutingPanel query={query} serverStats={serverStats ?? []} modelStats={modelStats ?? []} />
+      ) : (
+        <>
       {/* Filters — GET form so the URL stays the source of truth. */}
       <Card>
         <CardContent className="pt-6">
@@ -758,6 +961,8 @@ export function LogsAdminView({
         row={selectedRow}
         onClose={() => setSelectedRow(null)}
       />
+        </>
+      )}
         </div>
       </div>
     </div>

@@ -1876,6 +1876,7 @@ ${buildEmptyCourseRagBlock()}`;
         routerFeatures: routerContext,
         sidecarTag,
         energySidecarBaseUrl,
+        serverId: fleetPick?.serverId ?? null,
       });
     };
 

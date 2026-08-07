@@ -162,4 +162,24 @@ describe("persistAiInteractionTelemetry", () => {
 
     await expect(persistAiInteractionTelemetry(baseParams)).resolves.toBeUndefined();
   });
+
+  it("persists the fleet serverId when provided", async () => {
+    await persistAiInteractionTelemetry({ ...baseParams, serverId: "cmps01" });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serverId: "cmps01" }),
+      }),
+    );
+  });
+
+  it("persists a null serverId when the turn was not fleet-routed", async () => {
+    await persistAiInteractionTelemetry(baseParams);
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serverId: null }),
+      }),
+    );
+  });
 });

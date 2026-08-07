@@ -31,6 +31,8 @@ export async function persistAiInteractionTelemetry(params: {
   sidecarTag?: string | null;
   /** Per-host sidecar base URL (fleet routing); falls back to ENERGY_SIDECAR_URL. */
   energySidecarBaseUrl?: string | null;
+  /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed. */
+  serverId?: string | null;
 }): Promise<void> {
   try {
     const parsed = splitRegistryModelId(params.resolvedModelId);
@@ -79,6 +81,7 @@ export async function persistAiInteractionTelemetry(params: {
         courseId: params.courseId,
         modelId: modelRecord?.id ?? null,
         modelUsed: params.resolvedModelId,
+        serverId: params.serverId ?? null,
         query: params.query,
         response: params.responseText,
         promptTokens,
