@@ -67,7 +67,6 @@
     "@types/node": "^22",
     "drizzle-orm": "^0.45.2",
     "jscpd": "^5.0.12",
-    "lucide-react": "^0.554.0",
     "madge": "^8.0.0",
     "nodemon": "^3.1.10",
     "syncpack": "^15",

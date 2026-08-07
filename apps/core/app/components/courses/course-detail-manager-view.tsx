@@ -13,8 +13,8 @@ import {
   IconEye,
   IconEyeOff,
   IconClock,
+  IconDownload,
 } from "@tabler/icons-react";
-import { Download } from "lucide-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
@@ -1026,7 +1026,7 @@ export function CourseDetailManagerView({
                     size="sm"
                     onClick={() => setCanvasSyncOpen(true)}
                   >
-                    <Download className="h-4 w-4 mr-1.5" />
+                    <IconDownload className="h-4 w-4 mr-1.5" />
                     Sync from Canvas
                   </Button>
                 )}
