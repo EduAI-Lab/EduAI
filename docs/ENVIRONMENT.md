@@ -146,11 +146,13 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | required | Postgres connection string |
+| `NODE_ENV` | required | Runtime mode. The local template actively sets `development`, which `setup-env.js` copies or merges; production deployments must set `production` explicitly. |
 | `PORT` | optional (default 4000) | Server port |
 | `CORE_URL` | required | Core base URL — session validation and login redirect |
 | `EDUAI_API_KEY` | required | Must match Core's `EDUAI_API_KEY` exactly (Core does not read admin-UI overrides) |
 | `EDUAI_BASE_URL` | required | Core API base for course import/sync |
 | `EDUAI_MODEL` | required | LLM model id, e.g. `google:gemini-2.5-flash` |
+| `CORS_ORIGINS` | optional (`http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed) | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials (e.g. `http://localhost:3001,https://dev.aitutor.eduai.ok.ubc.ca`). Deployments must configure every trusted frontend origin. |
 | `POLICY_CACHE_TTL_MS` | optional (default 30000) | TTL for cached Core RBAC policy flags |
 | `EDUAI_CALL_TIMEOUT_MS` | optional (default 45000) | Timeout for a single EduAI chat completion round-trip in `callEduAI()` |
 
