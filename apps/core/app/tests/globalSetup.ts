@@ -93,4 +93,18 @@ export async function setup() {
     env: { ...process.env, DATABASE_URL: dbUrl },
     stdio: 'pipe',
   });
+
+  // Prisma cannot represent an ivfflat index on Unsupported(vector), and
+  // db push intentionally ignores the raw-SQL migration. Recreate it for the
+  // integration database after every schema sync so ANN tests exercise the
+  // same plan as development/production.
+  try {
+    execSync(
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE INDEX IF NOT EXISTS \\\"material_embeddings_embedding_ivfflat_idx\\\" ON \\\"material_embeddings\\\" USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);"`,
+      { env: pgEnv, stdio: 'pipe' },
+    );
+  } catch {
+    // The integration database may not have material_embeddings yet; the
+    // migration/test setup will report a real schema error when retrieval runs.
+  }
 }
