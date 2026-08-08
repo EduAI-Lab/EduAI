@@ -12,6 +12,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Added
+
+- [core] perf: Add an `ivfflat` ANN index (`vector_cosine_ops`, `lists=100`) on `material_embeddings.embedding` via a Prisma raw-SQL migration. Both pure-vector and hybrid retrieval now materialize candidates with the indexable `ORDER BY embedding <=> query ASC LIMIT ...` shape before applying similarity thresholds or BM25 reranking. Also tunes `ivfflat.probes` per query — `resolveIvfflatProbes()` reads `RAG_IVFFLAT_PROBES` (default 10, clamped `[1, 100]`) — plus, on pgvector ≥ 0.8.0 (checked once and cached), enables bounded iterative scanning (`ivfflat.iterative_scan = relaxed_order` + `ivfflat.max_probes = 32768`, which must stay `>= lists` so a course filter can't exhaust every probed list before finding its rows — the correctness fix for a reviewer-reproduced filtered-recall gap). All GUCs are applied via one chained `SELECT set_config(...)` call inside a `prisma.$transaction`, since the settings are connection-scoped and Prisma pools connections. The migration and RAG docs cover index tuning, deployment locking, the pre-seed index-build caveat, and `EXPLAIN (ANALYZE, BUFFERS)` verification. Closes #940. (@saadtab01, 2026-08-04) — [#1357](https://github.com/EduAI-Lab/EduAI/pull/1357)
+
 ### Changed
 
 - [core] perf: Batch `material_embeddings` vector inserts into a single multi-row `INSERT` per batch instead of one `$executeRaw` round trip per chunk during material ingestion (`processMaterialEmbeddings`) — cuts DB round trips and shortens the open-transaction hold time for large PDFs. Rows are bounded by the env-tunable `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` (500) and a dimension-aware ~2 MiB payload cap, so larger embedding dimensions automatically produce smaller batches; params (including the pgvector literal) stay bound via `Prisma.sql`/`Prisma.join`, never string-concatenated. Closes #943. (@saadtab01, 2026-08-04) — [#1355](https://github.com/EduAI-Lab/EduAI/pull/1355)
@@ -20,7 +24,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] test: `insertMaterialEmbeddingsBatched` (#943) coverage in `embedding.test.ts` — zero-chunk no-op, single-batch call count and param binding correctness, `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE + 1` chunk boundary split into `ceil(N/batchSize)` calls with rows correctly partitioned, and unique row ids. (@saadtab01, 2026-08-04) — [#1355](https://github.com/EduAI-Lab/EduAI/pull/1355)
 
-## [Week 13 — July 27 – August 2, 2026]
 ## [Week 13 — July 27–August 2, 2026]
 
 ### Added
