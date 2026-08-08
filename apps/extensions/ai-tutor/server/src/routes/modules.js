@@ -2,7 +2,14 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapModule, mapProgressData } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import {
+  parsePaginationParams,
+  paginated,
+  parseSearchParam,
+  searchWhere,
+  PaginationError,
+} from '../utils/pagination.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import { calculateModuleProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 
@@ -63,14 +70,19 @@ router.get('/courses/:courseId/modules', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    const whereClause = hasElevatedAccess
+    const scope = hasElevatedAccess
       ? { courseOfferingId: courseId }
       : { courseOfferingId: courseId, isPublished: true };
 
-    // Structure-bounded list (a course has dozens of modules, not thousands).
-    // The tree UI + drag-and-drop reorder need the whole set, so callers
-    // request one bounded page (pageSize=200); pagination is optional here.
+    // #1207: `search` narrows in SQL and is ANDed onto the visibility scope, so
+    // a student can never surface an unpublished module by searching for it.
+    // The same `whereClause` feeds the count and the page, so `total` drives
+    // the pager over the filtered set.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const search = parseSearchParam(req);
+    const searchFragment = searchWhere(search, ['title', 'description']);
+    const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
+
     const [total, modules] = await prisma.$transaction([
       prisma.module.count({ where: whereClause }),
       prisma.module.findMany({
@@ -392,6 +404,148 @@ router.patch('/modules/:moduleId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADM
   }
 });
 
+/**
+ * GET /modules/:moduleId/context — structural position of a module in its course.
+ *
+ * Returns `{ moduleOrdinal, moduleTotal }`, 1-based.
+ *
+ * Why (#1207): the instructor module view derived its ordinal chip by fetching
+ * the course's entire sibling module list and calling `findIndex`. That was
+ * already fragile and became wrong outright once the tree page size dropped to
+ * a real pager's worth — a module on page 2 would score `findIndex === -1` and
+ * render as "0". Counting the rows that sort before it is exact at any size.
+ *
+ * Mirrors `GET /lessons/:lessonId/context`, including its visibility rule: a
+ * student counts only published siblings.
+ */
+router.get('/modules/:moduleId/context', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const moduleId = Number(req.params.moduleId);
+  if (!Number.isFinite(moduleId)) {
+    return res.status(400).json({ error: 'Invalid module id' });
+  }
+
+  try {
+    const module = await prisma.module.findUnique({
+      where: { id: moduleId },
+      include: {
+        courseOffering: {
+          include: {
+            instructors: { select: { userId: true } },
+            enrollments: { select: { userId: true, role: true } },
+          },
+        },
+      },
+    });
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const { courseOffering } = module;
+    const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = courseOffering.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
+
+    if (!hasElevatedAccess && !isStudent) {
+      return res.status(403).json({ error: 'Not authorized for this module' });
+    }
+    if (isStudent && !hasElevatedAccess && !module.isPublished) {
+      return res.status(403).json({ error: 'Module is not published' });
+    }
+
+    const scope = {
+      courseOfferingId: module.courseOfferingId,
+      ...(isStudent && !hasElevatedAccess ? { isPublished: true } : {}),
+    };
+    // "Sorts before me" under `position asc, id asc` — the id tiebreak matters
+    // because `position` carries no unique constraint.
+    const [before, moduleTotal] = await Promise.all([
+      prisma.module.count({
+        where: {
+          AND: [
+            scope,
+            {
+              OR: [
+                { position: { lt: module.position } },
+                { position: module.position, id: { lt: module.id } },
+              ],
+            },
+          ],
+        },
+      }),
+      prisma.module.count({ where: scope }),
+    ]);
+
+    res.json({ moduleOrdinal: before + 1, moduleTotal });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * PATCH /modules/:moduleId/position — move one module to an absolute ordinal.
+ *
+ * Auth: same as the bulk reorder below (course instructor / unit-admin / admin).
+ *
+ * Why alongside the bulk endpoint (#1207): the module grid is now paged, so a
+ * drag on page 3 no longer has the full ordered id set to send. `position` is a
+ * 0-based ordinal across the WHOLE course, which the client derives as
+ * `(page - 1) * pageSize + dropIndex`, and which the "Move to position…" menu
+ * item sends directly for a cross-page move.
+ */
+router.patch(
+  '/modules/:moduleId/position',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const moduleId = Number(req.params.moduleId);
+    if (!Number.isFinite(moduleId)) {
+      return res.status(400).json({ error: 'Invalid module id' });
+    }
+
+    try {
+      const targetPosition = parsePositionBody(req.body?.position);
+
+      const module = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: {
+          courseOffering: { include: { instructors: { select: { userId: true } } } },
+        },
+      });
+      if (!module) return res.status(404).json({ error: 'Module not found' });
+
+      const isInstructor = module.courseOffering.instructors.some(
+        (i) => i.userId === authUser.id,
+      );
+      const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      const { position, total } = await moveToPosition({
+        model: 'module',
+        id: moduleId,
+        scopeWhere: { courseOfferingId: module.courseOfferingId },
+        targetPosition,
+      });
+
+      const updated = await prisma.module.findUnique({ where: { id: moduleId } });
+      res.json({ module: mapModule(updated), position, total });
+    } catch (e) {
+      if (e instanceof ReorderError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
 // Reorder every module in a course in one atomic write. The client sends the
 // full ordered list of module ids; positions are reassigned 0..n-1 by index.
 // Bulk-and-atomic (rather than N single-field PATCHes) avoids transient
@@ -426,7 +580,9 @@ router.put(
       if (!course) return res.status(404).json({ error: 'Course not found' });
 
       const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = isUnitAdminForCourse(authUser, course);
+      // `isUnitAdminForCourse` is async — without the await this resolved to a
+      // (always truthy) Promise, so the guard below never denied anyone.
+      const unitAdmin = await isUnitAdminForCourse(authUser, course);
       if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }

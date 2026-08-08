@@ -308,6 +308,74 @@ describe("ChatScreen — header", () => {
     );
   });
 
+  it("carries the live Focus Mode value into the created chat route even when toggled mid-response (#1244)", async () => {
+    const { router } = renderChatScreen(null, autoRoutingData);
+
+    // Bound at mount, before Focus Mode is toggled on — mirrors a chat hook
+    // that keeps its original callback reference once a request starts
+    // streaming, rather than always handing back the newest render's closure.
+    const initialOptions = captureUseChatOptions.mock.calls[0][0] as {
+      onResponse: (response: Response) => Promise<void>;
+      onFinish: (message: { id: string; role: string }) => void;
+    };
+
+    await act(async () => {
+      await initialOptions.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
+      );
+    });
+
+    // User flips Focus Mode on while the response is still in flight.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onFocusModeChange(true);
+    });
+
+    act(() => {
+      initialOptions.onFinish({ id: "assistant-1", role: "assistant" });
+    });
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual(
+      expect.objectContaining({ focusMode: true }),
+    );
+  });
+
+  it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
+    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
+    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchSpy = vi
+      .spyOn(global, "fetch")
+      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+
+    const { router } = renderChatScreen(null, autoRoutingData);
+
+    // Save fires before Focus Mode is toggled on — mirrors
+    // handleSystemPromptSave reading focusModeRef only after its in-flight
+    // fetch resolves.
+    const savePromise = captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave(
+      "Be concise",
+    );
+
+    // User flips Focus Mode on while the save request is still in flight.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onFocusModeChange(true);
+    });
+
+    await act(async () => {
+      resolveFetch({ json: () => Promise.resolve({ chatId: "chat-1" }) });
+      await savePromise;
+    });
+
+    fetchSpy.mockRestore();
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual(
+      expect.objectContaining({ focusMode: true }),
+    );
+  });
+
   it("starts a blank chat with the selected course when switching a persisted chat", async () => {
     const { router, visited } = renderPersistedChatWithBlankChatRoute(
       makePersistedTranscript(),

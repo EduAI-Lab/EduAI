@@ -20,6 +20,7 @@ model User {
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
   courses              Course[]
+  courseAccess         CourseAccess[]
   createdQuestions     QuestionMetadata[]    @relation("QuestionMetadataCreator")
   createdVariants      Variants[]            @relation("VariantsCreator")
   canvasIntegration    CanvasIntegration?
@@ -43,11 +44,32 @@ model Course {
   topics                  Topics[]
   questionMetadata        QuestionMetadata[]
   assessments             Assessments[]
+  accessGrants             CourseAccess[]
   canvasMapping           CanvasCourseMapping?
   variantSelectionCursors VariantSelectionCursor[]
 
   @@index([userId])
   @@map("courses")
+}
+
+/// Local, refreshable projection of a caller's Core enrollment for SQL list
+/// filtering. Access is per user/course; it must not be stored on Course because
+/// one QM anchor can have multiple instructors and TAs.
+model CourseAccess {
+  id         Int      @id @default(autoincrement())
+  userId     String   @map("user_id")
+  courseId   Int      @map("course_id")
+  role       String   @map("enrollment_role")
+  department String?
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId, role])
+  @@index([userId, department])
+  @@map("course_access")
 }
 
 /// Course topics used to classify questions and variants. `id` is a CUID

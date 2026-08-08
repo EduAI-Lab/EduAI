@@ -146,6 +146,44 @@ export function resolveAdhdResponseWordCap(userText?: string): number {
     : ADHD_TUTORING_WORD_CAP;
 }
 
+/**
+ * A proper redirect is a short acknowledge-and-offer, e.g. "That's a
+ * separate question from dishwashing. My goal is to keep explanations
+ * clear and focused on one topic at a time. Want to come back to the
+ * dishwashing steps first, or switch now?" (3 sentences). Cap sentence
+ * count so a reply that still has the required cue/offer phrasing but
+ * also slips in an explanation of the off-topic ask (#1313 scenario
+ * topic bleed) gets rejected instead of accepted on phrase-match alone.
+ */
+export const MAX_REDIRECT_SENTENCES = 3;
+
+export function countSentences(text: string): number {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return 0;
+  const matches = trimmed.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g);
+  return matches ? matches.filter((s) => s.trim().length > 0).length : 0;
+}
+
+/**
+ * Phrasing that states/defines a fact rather than just naming a topic, e.g.
+ * "marginal tax brackets mean ..." or "... taxed at 10%". A reply can name
+ * the second topic once (in the ack or the offer question) and still stay
+ * at or under MAX_REDIRECT_SENTENCES — the sentence cap alone does not
+ * catch a short reply that answers the off-topic ask in a single sentence
+ * (#1421 review: "a three-sentence reply can still answer the second
+ * topic and pass this check"). Intentionally blunt, matching
+ * ADHD_URGENCY_TERMS above — stating a fact in English almost always uses
+ * a defining/causal connector or a percentage, so this catches the
+ * concrete bleed case without needing to know what the second topic is.
+ */
+const REDIRECT_BLEED_MARKERS_RE =
+  /\b(?:means?|mean that|refers? to|works? by|because|due to|results? in|leads? to|causes?|defined? as|such as|for example|for instance|e\.g\.|i\.e\.|in other words|which means)\b|\d+%/i;
+
+/** Return true when the text states/defines a fact rather than just naming a topic. */
+export function hasRedirectBleedContent(text: string): boolean {
+  return REDIRECT_BLEED_MARKERS_RE.test((text ?? "").trim());
+}
+
 /** §5 drift redirect: one-topic boundary without Top summary scaffolding. */
 export function isRedirectTemplatePass(
   metrics: AdhdResponseMetrics,
@@ -159,7 +197,9 @@ export function isRedirectTemplatePass(
   const hasForwardOffer =
     trimmed.endsWith("?") &&
     /want to|would you like|or switch|come back|ready to/i.test(trimmed);
-  return hasRedirectCue || hasForwardOffer;
+  if (!(hasRedirectCue || hasForwardOffer)) return false;
+  if (countSentences(trimmed) > MAX_REDIRECT_SENTENCES) return false;
+  return !hasRedirectBleedContent(trimmed);
 }
 
 /** Profile-conditional structural pass (Approach A). */

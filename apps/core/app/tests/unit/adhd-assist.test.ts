@@ -54,6 +54,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     expect(result).toContain("one-topic boundary");
   });
 
+  it("redirect policy forbids explaining the second topic and caps sentences (#1313)", () => {
+    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
+    expect(result).toContain("Do NOT explain, define, or give any fact about the second topic");
+    expect(result).toContain("Max 3 sentences total");
+    expect(result).toContain("that instruction does not");
+  });
+
   it("resolveAdhdAssistPolicyBlock returns full block by default", () => {
     expect(resolveAdhdAssistPolicyBlock()).toBe(ADHD_ASSIST_POLICY_BLOCK);
     expect(resolveAdhdAssistPolicyBlock("full_tutoring")).toBe(ADHD_ASSIST_POLICY_BLOCK);
