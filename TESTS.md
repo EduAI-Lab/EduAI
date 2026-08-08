@@ -851,6 +851,8 @@ table silently tests the old row set, which is worse than no coverage because it
 
 ---
 
+| [`users-api-pagination.test.ts`](apps/core/app/tests/unit/users-api-pagination.test.ts) | #1144 regression coverage: a course manager may use the paginated users API only to search active STUDENT candidates for a managed course, excluding already-enrolled users; instructors cannot use the general directory and candidate queries must carry the active-student constraint. `courseId` requests branch onto a narrow `[count, findMany]` query before any Prisma call is built, asserting the `findMany` `select` is exactly `{ id, name, email }` and the raw response never carries `stats`, `taCourseIds`, `authorizedUnits`, `_count`, `role`, or `isActive` — the admin-shaped query (platform counts, TA/role/unit fields) is never run for these requests, not merely filtered out after the fact. |
+
 ## EduAI Integration Tests
 
 **Path:** `apps/core/app/tests/integration/`
