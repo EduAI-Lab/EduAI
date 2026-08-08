@@ -65,6 +65,7 @@ set_or_replace "$CORE" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
 set_or_replace "$AT_SRV" CORE_URL "https://dev.eduai.ok.ubc.ca"
 set_or_replace "$AT_SRV" EDUAI_BASE_URL "https://dev.eduai.ok.ubc.ca/api"
 set_or_replace "$AT_SRV" EDUAI_API_KEY "$SERVICE_KEY"
+set_or_replace "$AT_SRV" CORS_ORIGINS "https://dev.aitutor.eduai.ok.ubc.ca"
 
 # AI Tutor frontend (Vite reads apps/extensions/ai-tutor/.env)
 touch "$AT_FE"
