@@ -5,8 +5,7 @@
   "type": "module",
   "dependencies": {
     "@eduai/types": "*",
-    "@eduai/ui": "0.1.0",
-    "question-maker-backend": "*",
+    "@eduai/ui": "*",
     "axios": "^1.13.1",
     "docx": "^9.6.1",
     "html2canvas": "^1.4.1",

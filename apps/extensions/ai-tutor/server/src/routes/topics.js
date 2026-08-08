@@ -37,7 +37,13 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isCourseAdmin } from '../middleware/auth.js';
 import { mapTopic } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import {
+  parsePaginationParams,
+  paginated,
+  parseSearchParam,
+  searchWhere,
+  PaginationError,
+} from '../utils/pagination.js';
 import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from '../services/topicSync.js';
 
 const router = express.Router();
@@ -98,10 +104,14 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // Structure-bounded list. Topic <Select> dropdowns `.find()` the saved
-    // value and validate with `.some()`, so the picker needs the whole set;
-    // callers request one bounded page (pageSize=200). Pagination optional.
+    // #1207: `search` narrows in SQL on the topic name. Topic <Select>
+    // dropdowns still need their saved value present, so the client fetches a
+    // missing saved topic by id rather than assuming it is on the loaded page.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const search = parseSearchParam(req);
+    const searchFragment = searchWhere(search, ['name']);
+    const scope = { courseOfferingId: courseId };
+    const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
 
     // For imported courses, run sync for its upsert side-effect (it keeps the
     // local mirror current); its returned list is intentionally ignored so the
@@ -120,9 +130,9 @@ router.get('/courses/:courseId/topics', async (req, res) => {
     }
 
     const [total, topics] = await prisma.$transaction([
-      prisma.topic.count({ where: { courseOfferingId: courseId } }),
+      prisma.topic.count({ where: whereClause }),
       prisma.topic.findMany({
-        where: { courseOfferingId: courseId },
+        where: whereClause,
         orderBy: [{ name: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,

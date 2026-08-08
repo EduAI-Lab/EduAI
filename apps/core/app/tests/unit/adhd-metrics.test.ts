@@ -2,7 +2,9 @@
 import { describe, it, expect } from "vitest";
 import {
   computeAdhdResponseMetrics,
+  countSentences,
   detectUrgencyTerms,
+  hasRedirectBleedContent,
   hasSourcesFooter,
   isProfileStructuralPass,
   isRedirectTemplatePass,
@@ -12,6 +14,7 @@ import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_CLARIFICATION_USER_WORD_THRESHOLD,
   ADHD_TUTORING_WORD_CAP,
+  MAX_REDIRECT_SENTENCES,
 } from "~/lib/ai/adhd-metrics";
 import { S2_ON_T2_ASSISTANT } from "~/tests/fixtures/adhd-baseline-transcripts";
 
@@ -172,6 +175,25 @@ describe("resolveAdhdResponseWordCap", () => {
   });
 });
 
+describe("countSentences", () => {
+  it("counts terminal-punctuation sentences", () => {
+    expect(countSentences("One. Two! Three?")).toBe(3);
+  });
+
+  it("counts a trailing sentence with no terminal punctuation", () => {
+    expect(countSentences("One. Two")).toBe(2);
+  });
+
+  it("returns 0 for empty text", () => {
+    expect(countSentences("")).toBe(0);
+    expect(countSentences("   ")).toBe(0);
+  });
+
+  it("matches the redirect fixture's sentence count exactly at the cap", () => {
+    expect(countSentences(S2_ON_T2_ASSISTANT)).toBe(MAX_REDIRECT_SENTENCES);
+  });
+});
+
 describe("isProfileStructuralPass", () => {
   it("requires Top summary for full tutoring", () => {
     const metrics = computeAdhdResponseMetrics("Plain paragraph answer.");
@@ -186,7 +208,60 @@ describe("isProfileStructuralPass", () => {
     });
     expect(isRedirectTemplatePass(metrics, S2_ON_T2_ASSISTANT)).toBe(true);
     expect(isProfileStructuralPass(metrics, "redirect", S2_ON_T2_ASSISTANT)).toBe(true);
+  });
+
+  it("rejects a redirect reply that bleeds into the second topic (#1313)", () => {
+    // Has the required redirect cue + forward offer, but also explains the
+    // off-topic ask (the exact bug: phrase-match alone would accept this).
+    const bled = `That's a separate question, but here's a quick answer: marginal income tax brackets mean that different portions of your income are taxed at different rates as you earn more. For example, the first bracket might be taxed at 10%, the next at 12%, and so on. This is different from a flat tax where all income is taxed the same.
+
+Want to come back to the dishwashing steps now?`;
+    const metrics = computeAdhdResponseMetrics(bled, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isRedirectTemplatePass(metrics, bled)).toBe(false);
+  });
+
+  it("accepts a short redirect that only names the second topic", () => {
+    const named = `That's a separate question from dishwashing.
+
+Want to come back to the dishwashing steps first, or switch now to learn about marginal income tax brackets?`;
+    const metrics = computeAdhdResponseMetrics(named, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isRedirectTemplatePass(metrics, named)).toBe(true);
     expect(isStructuralCompliancePass(metrics)).toBe(false);
+  });
+
+  it("rejects a 3-sentence, no-urgency redirect that answers the second topic (#1421)", () => {
+    // Stays at exactly MAX_REDIRECT_SENTENCES and contains no urgency term,
+    // so neither the old sentence-count cap nor the urgency guard would
+    // have caught this — only the content check does (review on #1421:
+    // "a three-sentence reply can still answer the second topic and pass
+    // this check").
+    const bled =
+      "That's a separate question. Marginal income tax brackets mean that higher portions of your income are taxed at higher rates. Want to come back to the dishwashing steps, or switch now?";
+    expect(countSentences(bled)).toBe(MAX_REDIRECT_SENTENCES);
+    expect(detectUrgencyTerms(bled)).toEqual([]);
+    const metrics = computeAdhdResponseMetrics(bled, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isRedirectTemplatePass(metrics, bled)).toBe(false);
+  });
+
+  describe("hasRedirectBleedContent", () => {
+    it("flags a defining/causal connector", () => {
+      expect(hasRedirectBleedContent("Marginal tax brackets mean higher rates apply.")).toBe(
+        true,
+      );
+      expect(hasRedirectBleedContent("It works by taxing each bracket separately.")).toBe(true);
+    });
+
+    it("flags a bare percentage", () => {
+      expect(hasRedirectBleedContent("The first bracket is taxed at 10%.")).toBe(true);
+    });
+
+    it("does not flag a bare topic name", () => {
+      expect(
+        hasRedirectBleedContent(
+          "Want to come back to the dishwashing steps, or switch now to marginal income tax brackets?",
+        ),
+      ).toBe(false);
+    });
   });
 
   it("passes greeting drafts that are under cap without structure", () => {
