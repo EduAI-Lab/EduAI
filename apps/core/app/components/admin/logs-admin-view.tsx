@@ -100,6 +100,14 @@ const SYSTEM_SOURCES = [
   "API",
 ] as const;
 
+// Keys whose empty string is a meaningful value ("All time" for datePreset),
+// not "absent" — buildQueryString must be able to preserve/set "" for these
+// instead of treating an empty string as "delete this key" like every other
+// filter. Without this, "All time" silently reverts to the default on the
+// very next link built from the resulting query state (tab switch,
+// pagination, a reload of the bookmarked URL).
+const PRESERVE_EMPTY_STRING_KEYS = new Set(["datePreset"]);
+
 /**
  * Builds a query string while preserving existing URL-driven state.
  */
@@ -111,17 +119,25 @@ function buildQueryString(
 
   // Preserving existing values keeps tab/filter transitions bookmarkable.
   for (const [key, value] of Object.entries(current)) {
-    if (typeof value === "string" && value.trim()) {
+    if (typeof value !== "string") continue;
+    if (value.trim() || (value === "" && PRESERVE_EMPTY_STRING_KEYS.has(key))) {
       params.set(key, value.trim());
     }
   }
 
-  // Overrides can either set a new value or clear a key completely.
+  // Overrides can either set a new value, explicitly set "" for a key that
+  // treats "" as meaningful, or clear a key completely (undefined/null, or
+  // "" for every other key).
   for (const [key, value] of Object.entries(overrides)) {
-    if (value === undefined || value === null || String(value).trim() === "") {
+    if (value === undefined || value === null) {
+      params.delete(key);
+      continue;
+    }
+    const stringValue = String(value).trim();
+    if (stringValue === "" && !PRESERVE_EMPTY_STRING_KEYS.has(key)) {
       params.delete(key);
     } else {
-      params.set(key, String(value));
+      params.set(key, stringValue);
     }
   }
 
@@ -201,6 +217,9 @@ function buildClearFiltersHref(tab: LogsTab, query: LogsQueryState) {
       routePath: undefined,
       dateFrom: undefined,
       dateTo: undefined,
+      // Belt-and-suspenders: a bookmarked/shared URL from before this was
+      // fixed could still carry a stray Servers-tab datePreset.
+      datePreset: undefined,
     });
   }
 
@@ -214,6 +233,7 @@ function buildClearFiltersHref(tab: LogsTab, query: LogsQueryState) {
       ipAddress: undefined,
       dateFrom: undefined,
       dateTo: undefined,
+      datePreset: undefined,
     });
   }
 
@@ -224,6 +244,7 @@ function buildClearFiltersHref(tab: LogsTab, query: LogsQueryState) {
     code: undefined,
     dateFrom: undefined,
     dateTo: undefined,
+    datePreset: undefined,
   });
 }
 
@@ -603,9 +624,13 @@ export function LogsAdminView({
 
   const tabLinks = useMemo(
     () => ({
-      audit: buildQueryString(query, { tab: "audit", page: 1 }),
-      security: buildQueryString(query, { tab: "security", page: 1 }),
-      system: buildQueryString(query, { tab: "system", page: 1 }),
+      // datePreset is Servers-tab-only state; other tabs don't read it and
+      // can't clear it via their own "Clear filters" link, so it must be
+      // dropped explicitly here rather than riding along via buildQueryString's
+      // default preserve-existing-keys behavior.
+      audit: buildQueryString(query, { tab: "audit", page: 1, datePreset: undefined }),
+      security: buildQueryString(query, { tab: "security", page: 1, datePreset: undefined }),
+      system: buildQueryString(query, { tab: "system", page: 1, datePreset: undefined }),
       servers: buildQueryString(query, { tab: "servers", page: 1 }),
     }),
     [query],
