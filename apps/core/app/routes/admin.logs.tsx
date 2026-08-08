@@ -140,6 +140,11 @@ function parseDateFilter(value: string | undefined, mode: "start" | "end") {
   return boundary;
 }
 
+/** Formats a Date as YYYY-MM-DD in UTC, matching what <input type="date"> expects/emits. */
+function toDateInputValue(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 /** Normalizes unknown row payloads into serializable plain objects for the client. */
 function serializeRows(rows: unknown[]) {
   return rows.map((row) => {
@@ -182,6 +187,11 @@ function buildQueryState(
     code: readOptionalQueryValue(searchParams, "code"),
     dateFrom: readOptionalQueryValue(searchParams, "dateFrom"),
     dateTo: readOptionalQueryValue(searchParams, "dateTo"),
+    // Raw pass-through (not readOptionalQueryValue): "" ("All time") must stay
+    // distinguishable from "absent" so the Servers tab dropdown can tell "the
+    // admin explicitly chose All time" apart from "first visit, use the
+    // 30-day default" — trimming "" to undefined would collapse that.
+    datePreset: searchParams.has("datePreset") ? (searchParams.get("datePreset") ?? "") : undefined,
   };
 }
 
@@ -205,6 +215,41 @@ export async function loader({ request }: Route.LoaderArgs) {
   const dateFrom = parseDateFilter(readOptionalQueryValue(searchParams, "dateFrom"), "start");
   const dateTo = parseDateFilter(readOptionalQueryValue(searchParams, "dateTo"), "end");
 
+  // The Servers tab aggregates from the fleet registry + live health checks on
+  // every request (see db.ai-interaction-stats.server.ts), so an unbounded
+  // "all time" default would also aggregate the DB's entire interaction
+  // history on first load. Defaulting to the trailing 30 days keeps the first
+  // paint fast and matches what the date-range dropdown shows as selected.
+  //
+  // Resolution order: an explicit dateFrom/dateTo pair (custom range) wins;
+  // otherwise a numeric datePreset ("7"/"30"/"90") resolves to "N days ago
+  // through now" computed fresh on every request, so "Last 30 days" always
+  // means the 30 days ending now rather than a window frozen at first render;
+  // datePreset="" means "All time" was explicitly chosen (no bound); absent
+  // entirely (first visit, no query params at all) falls back to the 30-day
+  // default.
+  const datePresetRaw = searchParams.get("datePreset");
+  const datePresetDays =
+    datePresetRaw !== null && datePresetRaw !== "" && /^\d+$/.test(datePresetRaw)
+      ? Number(datePresetRaw)
+      : null;
+  const hasExplicitDateParams = searchParams.has("dateFrom") || searchParams.has("dateTo");
+  const hasAnyDateSelection = hasExplicitDateParams || searchParams.has("datePreset");
+
+  let serversDateFrom = dateFrom;
+  let serversDateTo = dateTo;
+  if (tab === "servers" && !hasExplicitDateParams) {
+    if (datePresetDays !== null) {
+      serversDateFrom = new Date(Date.now() - datePresetDays * 24 * 60 * 60 * 1000);
+      serversDateTo = new Date();
+    } else if (!hasAnyDateSelection) {
+      // No params at all — first visit to the tab.
+      serversDateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      serversDateTo = new Date();
+    }
+    // datePreset="" ("All time" explicitly chosen): leave both undefined.
+  }
+
   const sharedReturn = (result: { rows: unknown[]; total: number }) => ({
     user,
     tab,
@@ -222,9 +267,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   if (tab === "servers") {
     const [serverStats, modelStats] = await Promise.all([
-      getInteractionCountsByServer({ dateFrom, dateTo }),
-      getInteractionCountsByModel({ dateFrom, dateTo }),
+      getInteractionCountsByServer({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
+      getInteractionCountsByModel({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
     ]);
+    const query = buildQueryState(tab, page, pageSize, direction, searchParams);
     return {
       user,
       tab,
@@ -233,7 +279,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       total: 0,
       hasMore: false,
       rows: [],
-      query: buildQueryState(tab, page, pageSize, direction, searchParams),
+      // Reflect the applied default back into the URL-driven query state so the
+      // dropdown shows "Last 30 days" selected (rather than appearing blank/
+      // "All time") while a 30-day filter is silently applied on first visit.
+      query: {
+        ...query,
+        dateFrom: query.dateFrom ?? (serversDateFrom ? toDateInputValue(serversDateFrom) : undefined),
+        dateTo: query.dateTo ?? (serversDateTo ? toDateInputValue(serversDateTo) : undefined),
+        datePreset: query.datePreset ?? (!hasAnyDateSelection ? "30" : undefined),
+      },
       retentionPolicy: {
         auditRetentionDays: retentionPolicy.auditRetentionDays,
         systemRetentionDays: retentionPolicy.systemRetentionDays,
