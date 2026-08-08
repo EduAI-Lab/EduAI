@@ -7,7 +7,6 @@ import {
 
 const baseCtx = {
   prompt: "Explain the midterm grading rubric in detail.",
-  imagesPresent: false,
   courseId: "course-1",
 };
 
@@ -24,12 +23,6 @@ describe("isShortFactualPrompt", () => {
 });
 
 describe("matchPhase1Rules", () => {
-  it("rule 1: images route to tier >= 2 with image support", () => {
-    const match = matchPhase1Rules({ ...baseCtx, imagesPresent: true });
-    expect(match.rule).toBe("rule1_images_tier_ge_2");
-    expect(match.pick).toMatchObject({ kind: "minTier", minTier: 2, requireImages: true });
-  });
-
   it("rule 3: short factual prompts use tier 1", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -70,17 +63,6 @@ describe("matchPhase1Rules", () => {
     expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
 
-  it("rule 2: web lookup prompts escalate to tier 3", () => {
-    const match = matchPhase1Rules({
-      ...baseCtx,
-      courseId: null,
-      prompt:
-        "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
-    });
-    expect(match.rule).toBe("rule2_web_lookup_tier_3");
-    expect(match.pick).toEqual({ kind: "exactTier", tier: 3, tieBreak: "carbon" });
-  });
-
   it("rule 2b: debug prompts escalate to tier 3", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -100,6 +82,35 @@ describe("matchPhase1Rules", () => {
     expect(match.rule).toBe("rule2c_complex_task_tier_3");
   });
 
+  describe("rule 2b/2c broadened patterns (2026-08-04, v3 dev-sourced)", () => {
+    const namedConstructPrompts = [
+      "Write a Java method that performs BFS on a graph represented as an adjacency list and returns the visited order.",
+      "Write the MIPS assembly for a loop that sums the integers from 1 to 10 into register $t0, using a counter in $t1.",
+      "Write MIPS assembly that implements a while loop equivalent to: while (i < n) { sum = sum + i; i = i + 1; }",
+      "Write pseudocode showing how a Strategy pattern would let a SortingContext class switch between QuickSortStrategy and MergeSortStrategy at runtime.",
+      "Write pseudocode for a Factory Method pattern where a DocumentCreator base class defers to subclasses PdfCreator and WordCreator to decide which concrete class to instantiate.",
+      "Write pseudocode for a producer thread using a mutex and two counting semaphores (emptySlots, fullSlots) to safely add an item to a bounded buffer.",
+      "Write pseudocode for a consumer thread using a mutex and two counting semaphores to safely remove an item from a bounded buffer.",
+      "Implement a Java method that performs quicksort on an int array in place, choosing the last element of each partition as the pivot.",
+      "Write pseudocode for a resource-ordering deadlock-prevention scheme: given a fixed global order over resource types A, B, C, D, show how two threads that each need two of these resources should acquire and release them to guarantee no circular wait can occur.",
+    ];
+
+    it.each(namedConstructPrompts)("escalates to tier 3: %s", (prompt) => {
+      const match = matchPhase1Rules({ ...baseCtx, courseId: null, prompt });
+      expect(match.rule).toBe("rule2c_complex_task_tier_3");
+    });
+
+    it("rule 2b: reasoning-about-a-bug prompts escalate (v3-148 dangling pointer)", () => {
+      const match = matchPhase1Rules({
+        ...baseCtx,
+        courseId: null,
+        prompt:
+          "A pointer is used after the memory it points to has already been freed, and the program behaves unpredictably rather than crashing immediately. Why is this dangerous, and what's the standard term for this bug?",
+      });
+      expect(match.rule).toBe("rule2b_debug_tier_3");
+    });
+  });
+
   it("rule 2d: RAG-reasoning phrasing uses tier 3 before strong-RAG tier-1 shortcut", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -110,13 +121,19 @@ describe("matchPhase1Rules", () => {
     expect(match.rule).toBe("rule2d_rag_reasoning_tier_3");
   });
 
-  it("generic web-search phrasing without lookup cues stays on default tier 1", () => {
+  // 2026-08-07 review round: explicit "search the web" phrasing previously
+  // stayed on the default tier because the web-lookup rule only matched a
+  // narrow topic-word list, not generic "search the web for X" requests —
+  // now explicit web-search/browse/google phrasing always escalates to a
+  // tool-capable tier (see routing-rules-fp-guardrail.test.ts for the full
+  // set of phrasing variants and the tools-unavailable fallback case).
+  it("explicit web-search phrasing escalates to the tool-capable tier", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
       prompt: "Search the web for the latest syllabus updates",
     });
-    expect(match.rule).toBe("rule6_default_tier_1_energy");
-    expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
+    expect(match.rule).toBe("rule2_web_lookup_tools_tier_3");
+    expect(match.pick).toMatchObject({ kind: "minTier", minTier: 3, requireTools: true });
   });
 
   it("rule 4: strong RAG hits use tier 1 (any chunk count)", () => {
@@ -166,15 +183,6 @@ describe("matchPhase1Rules", () => {
     });
   });
 
-  it("images win over other signals when attachments present", () => {
-    const match = matchPhase1Rules({
-      ...baseCtx,
-      imagesPresent: true,
-      prompt: "Summarize this chart from the syllabus",
-    });
-    expect(match.rule).toBe("rule1_images_tier_ge_2");
-  });
-
   describe("strict-oracle under-route fixes (10 prompts)", () => {
     const underRoutePrompts = [
       {
@@ -182,13 +190,6 @@ describe("matchPhase1Rules", () => {
         prompt: "Write a Python function that returns the nth Fibonacci number iteratively.",
         ctx: { courseId: null },
         expectedRule: "rule2c_complex_task_tier_3",
-      },
-      {
-        id: "ts-031",
-        prompt:
-          "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
-        ctx: { courseId: null },
-        expectedRule: "rule2_web_lookup_tier_3",
       },
       {
         id: "ts-037",
@@ -215,19 +216,6 @@ describe("matchPhase1Rules", () => {
           "Walk through one partition step of quicksort on [3, 6, 8, 10, 1, 2, 1] using the last element as pivot.",
         ctx: { courseId: null },
         expectedRule: "rule2c_complex_task_tier_3",
-      },
-      {
-        id: "ts-101",
-        prompt: "Look up current UBC Okanagan library Friday closing hours and summarize them.",
-        ctx: { courseId: null },
-        expectedRule: "rule2_web_lookup_tier_3",
-      },
-      {
-        id: "ts-102",
-        prompt:
-          "Find a recent reputable estimate of BC electricity grid carbon intensity and state the value with source.",
-        ctx: { courseId: null },
-        expectedRule: "rule2_web_lookup_tier_3",
       },
       {
         id: "ts-113",
