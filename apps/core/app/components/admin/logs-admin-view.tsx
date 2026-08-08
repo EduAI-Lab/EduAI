@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { Form, Link } from "react-router";
+import { useMemo, useRef, useState } from "react";
+import { Form, Link, useNavigation } from "react-router";
 
 import { LogDetailsDialog } from "~/components/admin/log-details-dialog";
-import { Badge, PageHeading } from "@eduai/ui";
+import { Badge, PageHeading, Spinner } from "@eduai/ui";
 import { Button } from "@eduai/ui";
 import {
   Card,
@@ -309,6 +309,38 @@ function formatCarbon(grams: number) {
   return `${grams.toFixed(2)} g CO₂`;
 }
 
+// Preset windows for the Servers tab date filter. The value is the number of
+// trailing days as a string, resolved to real dates server-side (see
+// admin.logs.tsx loader) so "Last 30 days" always means the 30 days ending
+// on submit, not a window frozen at whatever moment this file happened to
+// compute it. "" is "All time" (no bound). Order matches dropdown order.
+const DATE_RANGE_PRESETS = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 3 months" },
+  { value: "", label: "All time" },
+] as const;
+
+const CUSTOM_RANGE_VALUE = "custom";
+
+/**
+ * Resolves the dropdown's initial selection from the loader's query state.
+ * `query.datePreset` is authoritative when present (including "" for an
+ * explicit "All time"); its absence with explicit dateFrom/dateTo means the
+ * admin used the custom-range inputs.
+ */
+function matchPresetValue(
+  datePreset: string | undefined,
+  dateFrom: string | undefined,
+  dateTo: string | undefined,
+): string {
+  if (datePreset !== undefined) {
+    return DATE_RANGE_PRESETS.some((p) => p.value === datePreset) ? datePreset : CUSTOM_RANGE_VALUE;
+  }
+  if (!dateFrom && !dateTo) return "";
+  return CUSTOM_RANGE_VALUE;
+}
+
 /**
  * Routing/model breakdown for the Servers tab (#1351). Distinct from the
  * paginated row tables above — these are date-range aggregates, so the panel
@@ -325,29 +357,91 @@ function ServerRoutingPanel({
   modelStats: ModelRoutingStat[];
 }) {
   const totalInteractions = serverStats.reduce((sum, row) => sum + row.count, 0);
+  const navigation = useNavigation();
+  // Covers every in-flight navigation on this page (preset select, Apply,
+  // Clear, pagination link) — the loader work (live per-server health
+  // checks + DB aggregation) can take a couple of seconds, so this swaps in
+  // a spinner instead of leaving the previous table sitting there looking
+  // interactive while stale.
+  const isLoading = navigation.state !== "idle";
+
+  const initialPreset = matchPresetValue(query.datePreset, query.dateFrom, query.dateTo);
+  const [presetValue, setPresetValue] = useState(initialPreset);
+  const isCustom = presetValue === CUSTOM_RANGE_VALUE;
+  const filterFormRef = useRef<HTMLFormElement>(null);
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardContent className="pt-6">
-          <Form method="get">
+          <Form method="get" ref={filterFormRef}>
             <input type="hidden" name="tab" value="servers" />
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="grid gap-1.5">
-                <Label className="text-xs">Date from</Label>
-                <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
+                <Label className="text-xs">Date range</Label>
+                <Select
+                  value={presetValue}
+                  onValueChange={(value) => {
+                    setPresetValue(value);
+                    // Presets are a complete, valid filter on their own — submit
+                    // right away rather than making the admin also hit Apply.
+                    // Custom needs the date inputs filled in first, so it waits
+                    // for the explicit Apply click below.
+                    if (value !== CUSTOM_RANGE_VALUE) {
+                      requestAnimationFrame(() => filterFormRef.current?.requestSubmit());
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATE_RANGE_PRESETS.map((preset) => (
+                      <SelectItem key={preset.value || "all"} value={preset.value}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_RANGE_VALUE}>Custom range…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!isCustom && (
+                  // Presets compute dateFrom/dateTo as of submit time via
+                  // hidden inputs carrying the resolved preset id — the
+                  // server (admin.logs.tsx) recognizes numeric-day values
+                  // and resolves them to real dates, so "Last 30 days"
+                  // means the 30 days ending on load/submit, not a frozen
+                  // window from when this page happened to render.
+                  <input type="hidden" name="datePreset" value={presetValue} />
+                )}
               </div>
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Date to</Label>
-                <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
-              </div>
+              {isCustom && (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Date from</Label>
+                    <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Date to</Label>
+                    <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
+                  </div>
+                </>
+              )}
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button type="submit" size="sm">
+              <Button type="submit" size="sm" disabled={isLoading}>
+                {isLoading ? <Spinner size="sm" className="mr-1.5" /> : null}
                 Apply filters
               </Button>
               <Button type="button" size="sm" variant="outline" asChild>
-                <Link to={buildQueryString(query, { tab: "servers", dateFrom: undefined, dateTo: undefined })}>
+                <Link
+                  to={buildQueryString(query, {
+                    tab: "servers",
+                    dateFrom: undefined,
+                    dateTo: undefined,
+                    datePreset: "",
+                  })}
+                  onClick={() => setPresetValue("")}
+                >
                   Clear filters
                 </Link>
               </Button>
@@ -367,6 +461,11 @@ function ServerRoutingPanel({
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <Spinner size="md" />
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -417,6 +516,7 @@ function ServerRoutingPanel({
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -428,6 +528,11 @@ function ServerRoutingPanel({
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <Spinner size="md" />
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -461,6 +566,7 @@ function ServerRoutingPanel({
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </div>
