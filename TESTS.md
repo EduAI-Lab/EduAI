@@ -11,14 +11,15 @@
 7. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
 8. [EduAI Unit Tests](#eduai-unit-tests)
 9. [EduAI Integration Tests](#eduai-integration-tests)
-10. [@eduai/ui Component Tests](#eduaiui-component-tests)
-11. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-12. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-13. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-14. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-15. [Question Maker Unit Tests](#question-maker-unit-tests)
-16. [Question Maker Integration Tests](#question-maker-integration-tests)
-17. [Extending This Document](#extending-this-document)
+10. [EduAI Live Canvas Tests](#eduai-live-canvas-tests)
+11. [@eduai/ui Component Tests](#eduaiui-component-tests)
+12. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+13. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+14. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+15. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+16. [Question Maker Unit Tests](#question-maker-unit-tests)
+17. [Question Maker Integration Tests](#question-maker-integration-tests)
+18. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -904,6 +905,25 @@ table silently tests the old row set, which is worse than no coverage because it
 | `users-idempotency.integration.test.ts` | `POST /api/users` centralized idempotency (#828) on the test DB: replay returns identical 201 without duplicate user, `IDEMPOTENCY_KEY_MISMATCH` on body change, JSON validation error envelope. |
 | `users-admin-floor.integration.test.ts` | (#225 AUTH-04) Concurrent crossed demotions of the last two active ADMINs: advisory lock serializes so one request gets 200 and the other 409 `ADMIN_FLOOR_VIOLATION`, leaving exactly one active ADMIN. |
 | `agent-readiness.integration.test.ts` | Automated agent-readiness checks (#672): manifest invariants (0 partial), `POST /api/users` MCP error envelope on 403, `POST /api/invitations` invokes mocked mailer for email-sending routes. |
+
+---
+
+## EduAI Live Canvas Tests
+
+**Path:** `apps/core/app/tests/live/`
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`canvas-live.integration.test.ts`](apps/core/app/tests/live/canvas-live.integration.test.ts) | Explicitly enabled dev-server suite against `https://canvas.ubc.ca`, course `204888`: profile authentication, teacher-course access, course and term dates, student/TA roster, files, modules/items, approved non-empty file download, and two idempotent EduAI Core syncs with one course and one active instructor enrollment. Canvas operations are read-only; Core writes are scoped to the designated test identity and sandbox course. |
+| [`canvas-live.config.test.ts`](apps/core/app/tests/unit/canvas-live.config.test.ts) | Verifies default skip, required protected token, exact Canvas host/course allowlist, and clear missing-teacher-course precondition failures without secret leakage. |
+
+Run only deliberately, with the protected setup documented in [`docs/canvas-live-testing.md`](docs/canvas-live-testing.md):
+
+```bash
+npm run test:canvas-live
+```
+
+The command selects a separate Vitest config and is excluded from normal unit, integration, pull-request, and CI jobs. Without `CANVAS_LIVE_TESTS=1`, it runs only a skipped sentinel.
 
 ---
 
