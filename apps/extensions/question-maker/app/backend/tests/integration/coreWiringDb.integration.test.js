@@ -17,6 +17,7 @@ vi.mock('../../src/services/authService.js', () => ({
 }));
 
 const { default: app } = await import('../../src/app.js');
+const { resetCourseAccessSyncForTests } = await import('../../src/services/courseListService.js');
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -73,6 +74,12 @@ describeDb('Core wiring DB integration', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
+    // The ADMIN catalog cache and per-user access-sync timestamps
+    // (courseListService.js, COURSE_ACCESS_SYNC_TTL_MS) are process-wide
+    // singletons — without this reset, a catalog warmed by an earlier test in
+    // this file (or another file sharing the process) leaks into a later
+    // test's assertions regardless of what that test's own fetch stub returns.
+    resetCourseAccessSyncForTests();
 
     // Seed user (mirrors what requireAuth puts in req.user)
     await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
