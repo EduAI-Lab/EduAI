@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
+import { normalizeMathMarkdown } from "../lib/math-markdown";
 
 describe("normalizeMathMarkdown", () => {
   it("converts \\( ... \\) to double-dollar inline math delimiters", () => {

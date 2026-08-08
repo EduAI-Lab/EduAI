@@ -36,12 +36,22 @@ describe("chat markdown CSS scoping (#1222)", () => {
     expect(appCss).toContain('@source "../../../node_modules/@streamdown/math/dist/*.js";');
   });
 
-  it("holds both vendor sheets in the chunk-scoped stylesheet", () => {
+  it("holds the streamdown sheet in the chunk-scoped stylesheet", () => {
     const chatCss = read("styles/chat-markdown.css");
 
-    expect(chatCss).toContain('@import "katex/dist/katex.min.css";');
     expect(chatCss).toContain('@import "streamdown/styles.css";');
     expect(chatCss).toContain('[data-streamdown="code-block-actions"]');
+  });
+
+  it("loads katex on demand rather than statically (#1342)", () => {
+    // A static @import puts ~18KB of rules and 59 fonts on every chat surface,
+    // including the many courses whose chats contain no math at all.
+    const chatCss = read("styles/chat-markdown.css");
+    const imports = chatCss.match(/^[ \t]*@import\s+.*$/gm) ?? [];
+    expect(imports.some((line) => line.includes("katex"))).toBe(false);
+
+    const chatMessage = read("components/chat/chat-message.tsx");
+    expect(chatMessage).toContain('loadKatexStyles: () => import("katex/dist/katex.min.css")');
   });
 
   it("imports the scoped stylesheet from the shared chat message chunk", () => {

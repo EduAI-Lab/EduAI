@@ -12,7 +12,8 @@
     "./theme-sync": "./src/lib/theme-sync.ts",
     "./theme-sync-initializer": "./src/theme-sync-initializer.tsx",
     "./tooltip": "./src/ui/tooltip.tsx",
-    "./term": "./src/lib/term.ts"
+    "./term": "./src/lib/term.ts",
+    "./math-markdown": "./src/lib/math-markdown.ts"
   },
   "scripts": {
     "test": "vitest run",
