@@ -7,7 +7,7 @@ import { ModuleHero } from '../components/lessons/ModuleHero';
 import { accentForCourse } from '../lib/course-display';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.module';
-import api from '~/lib/api';
+import api, { FULL_TREE_READ_PAGE_SIZE } from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
@@ -25,20 +25,22 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     // #1043: lessons endpoint returns the pagination envelope; unwrap the
     // bounded page. moduleProgress below aggregates over the full lesson set,
     // which this bounded page still represents (a module's lessons fit 200).
-    api.lessonsForModule(moduleId).then((r) => r.data),
+    api.lessonsForModule(moduleId, { pageSize: FULL_TREE_READ_PAGE_SIZE }).then((r) => r.data),
   ]);
 
-  // Course + ordered module list in parallel — the sibling list gives the
-  // module's true 1-based ordinal for the hero watermark (see instructor.module).
+  // #1207: the module's 1-based ordinal for the hero watermark comes from the
+  // server, matching instructor.module. It used to be a `findIndex` over one
+  // bounded page of siblings — but the student course grid is paged now, so a
+  // module past that bound is reachable and scored -1, rendering as "0".
   let course: Course | null = null;
   let moduleOrder = 0;
   if (module.courseOfferingId) {
-    const [courseData, siblingModules] = await Promise.all([
+    const [courseData, moduleContext] = await Promise.all([
       api.courseById(module.courseOfferingId) as Promise<Course>,
-      api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
+      api.moduleContext(moduleId),
     ]);
     course = courseData;
-    moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
+    moduleOrder = moduleContext.moduleOrdinal;
   }
 
   return { course, module, lessons, moduleOrder };
