@@ -85,6 +85,15 @@ export type RouterInputContext = {
   ragChunkCount?: number | null;
   ragContextTokenEstimate?: number | null;
   courseRagNeeded?: boolean;
+  /**
+   * True when tool calls would actually be executable for this turn — see
+   * `Phase1RouterContext.toolsEffectivelyAvailable` / `isEffectiveToolCallingAvailable`.
+   * Omit (or leave `undefined`) to default to available, matching the
+   * pre-existing behavior of callers that don't yet compute this (e.g. kNN/
+   * hybrid/LLM-classifier request contexts that don't drive the web-lookup
+   * rule directly).
+   */
+  toolsEffectivelyAvailable?: boolean;
 };
 
 export type RouterDecision = {
@@ -102,12 +111,12 @@ function buildPhase1Context(
 ): Phase1RouterContext {
   return {
     prompt: prompt.trim(),
-    imagesPresent: ctx.imagesPresent,
     courseId: ctx.courseId,
     ragTopSimilarity: ctx.ragTopSimilarity,
     ragChunkCount: ctx.ragChunkCount,
     ragContextTokenEstimate: ctx.ragContextTokenEstimate,
     courseRagNeeded: ctx.courseRagNeeded,
+    toolsEffectivelyAvailable: ctx.toolsEffectivelyAvailable,
   };
 }
 
@@ -152,16 +161,31 @@ async function finalizePick(
     pickSource: "rules" | "knn" | "hybrid" | "llm";
   },
 ): Promise<RouterDecision> {
-  const normalizedPick = normalizePickForLocalVllm(pick);
+  // Image-bearing requests must only land on an image-capable model,
+  // regardless of which rule/mode produced the pick — applied here rather
+  // than in each rule so kNN/hybrid/LLM-classifier picks are covered too.
+  const imageConstrainedPick: PickSpec = meta.context.imagesPresent
+    ? { ...pick, requireImages: true }
+    : pick;
+  const normalizedPick = normalizePickForLocalVllm(imageConstrainedPick);
   let fallbackUsed = false;
   let picked: TierModelRow | null = await pickModelForSpec(normalizedPick);
 
   if (!picked) {
     fallbackUsed = true;
+    // Preserve `requireTools` from the original pick so a fallback can't
+    // silently drop back to a tool-less tier: a rule that escalated
+    // specifically for tool capability (e.g. rule2_web_lookup_tools_tier_3)
+    // must still fail closed (or pick a genuinely tool-capable model) rather
+    // than quietly landing on a model without tools.
+    const requireTools =
+      normalizedPick.kind === "minTier" ? normalizedPick.requireTools : undefined;
     picked = await pickModelForSpec(
       normalizePickForLocalVllm({
         kind: "exactTier",
         tier: isLocalVllmRouting() ? 3 : 2,
+        requireTools,
+        requireImages: meta.context.imagesPresent,
         tieBreak: "carbon",
       }),
     );
@@ -176,6 +200,10 @@ async function finalizePick(
       picked,
       normalizedPick.kind === "exactTier" ? normalizedPick.tier : isLocalVllmRouting() ? 3 : 2,
     );
+  } else if (meta.context.imagesPresent) {
+    throw new Error(
+      "Auto routing has no active image-capable model in its routing tiers. Enable an image-capable tiered model in Admin → AI Models.",
+    );
   } else {
     throw new Error(
       "Auto routing has no active model in its routing tiers. Enable a tiered model in Admin → AI Models.",
@@ -189,7 +217,7 @@ async function finalizePick(
     rule: meta.rule,
     pick: normalizedPick,
     promptLength: meta.phaseCtx.prompt.length,
-    imagesPresent: meta.phaseCtx.imagesPresent,
+    imagesPresent: meta.context.imagesPresent,
     messageTokenCount: meta.context.messageTokenCount ?? null,
     ragTopSimilarity: meta.phaseCtx.ragTopSimilarity ?? null,
     ragChunkCount: meta.phaseCtx.ragChunkCount ?? null,
@@ -243,25 +271,13 @@ export async function resolveRoutedModelRules(
   });
 }
 
-/** Phase 3 kNN tier + carbon policy model pick. Images still use rule 1. */
+/** Phase 3 kNN tier + carbon policy model pick. */
 export async function resolveRoutedModelKnn(
   prompt: string,
   context: RouterInputContext,
 ): Promise<RouterDecision> {
   const phaseCtx = buildPhase1Context(prompt, context);
   const match = matchPhase1Rules(phaseCtx);
-
-  if (phaseCtx.imagesPresent) {
-    return finalizePick(match.pick, {
-      routerVersion: ROUTER_VERSION_KNN,
-      rule: match.rule,
-      mode: "knn",
-      knn: null,
-      phaseCtx,
-      context,
-      pickSource: "rules",
-    });
-  }
 
   const knn = await predictTierKnn(prompt);
   const pick = pickSpecFromTier(knn.tier, context);
@@ -286,18 +302,6 @@ export async function resolveRoutedModelHybrid(
 ): Promise<RouterDecision> {
   const phaseCtx = buildPhase1Context(prompt, context);
   const match = matchPhase1Rules(phaseCtx);
-
-  if (phaseCtx.imagesPresent) {
-    return finalizePick(match.pick, {
-      routerVersion: ROUTER_VERSION_HYBRID,
-      rule: match.rule,
-      mode: "hybrid",
-      knn: null,
-      phaseCtx,
-      context,
-      pickSource: "rules",
-    });
-  }
 
   const knn = await predictTierKnn(prompt);
   const minSim = Number(process.env.ROUTING_KNN_MIN_SIM ?? "0.55");
@@ -329,7 +333,6 @@ export async function resolveRoutedModelHybrid(
 
 /**
  * P3 LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
- * Hard rules still win for images (tier ≥ 2).
  */
 export async function resolveRoutedModelLlm(
   prompt: string,
@@ -337,19 +340,6 @@ export async function resolveRoutedModelLlm(
 ): Promise<RouterDecision> {
   const phaseCtx = buildPhase1Context(prompt, context);
   const match = matchPhase1Rules(phaseCtx);
-
-  if (phaseCtx.imagesPresent) {
-    return finalizePick(match.pick, {
-      routerVersion: ROUTER_VERSION_LLM,
-      rule: match.rule,
-      mode: "llm",
-      knn: null,
-      llm: null,
-      phaseCtx,
-      context,
-      pickSource: "rules",
-    });
-  }
 
   // Tier-3 escalation rules win over the classifier (same stack as P1).
   const rulePick = match.pick;

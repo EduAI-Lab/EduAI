@@ -4,6 +4,7 @@ import { parseModelIdentifier, type SupportedProvider } from './providers';
 export type ActiveChatModel = {
   name: string;
   supportsTools: boolean;
+  supportsImages: boolean;
   /** DB maxTokens — often total context window for vLLM, not output-only. */
   maxTokens: number | null;
 };
@@ -30,6 +31,7 @@ export async function resolveActiveChatModel(
     },
     select: {
       supportsTools: true,
+      supportsImages: true,
       maxTokens: true,
       name: true,
     },
@@ -42,6 +44,7 @@ export async function resolveActiveChatModel(
   return {
     name: model.name,
     supportsTools: model.supportsTools,
+    supportsImages: model.supportsImages,
     maxTokens: model.maxTokens,
   };
 }
@@ -169,6 +172,7 @@ export function promptFitsContextWindow(params: {
 
 export type ChatModelCapabilities = {
   supportsTools: boolean;
+  supportsImages: boolean;
   maxTokens: number | null;
   name: string | null;
 };
@@ -183,6 +187,7 @@ export async function getChatModelCapabilities(
     const model = await resolveActiveChatModel(modelIdentifier);
     const capabilities: ChatModelCapabilities = {
       supportsTools: model?.supportsTools ?? false,
+      supportsImages: model?.supportsImages ?? false,
       maxTokens: model?.maxTokens ?? null,
       name: model?.name ?? null,
     };
@@ -192,7 +197,7 @@ export async function getChatModelCapabilities(
     return capabilities;
   } catch (error) {
     console.error('Error checking model tool support:', error);
-    return { supportsTools: false, maxTokens: null, name: null };
+    return { supportsTools: false, supportsImages: false, maxTokens: null, name: null };
   }
 }
 
