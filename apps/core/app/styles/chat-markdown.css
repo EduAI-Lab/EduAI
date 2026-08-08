@@ -7,11 +7,15 @@
  * /units/:department/chats and the transcript viewers embedded in the
  * dashboard, course detail and admin user dialogs.
  *
+ * KaTeX's stylesheet is deliberately absent: it is ~18KB of rules plus 59 font
+ * files, and most chats contain no math at all, so it is loaded on demand by the
+ * shared markdown component when a message actually needs it (#1342). See the
+ * MarkdownStylesProvider in components/chat/chat-message.tsx.
+ *
  * Note: the Tailwind `@source` directives for streamdown stay in app.css.
  * Streamdown's own markup is styled with Tailwind utilities that must be
  * emitted into the global sheet; only these vendor imports move.
  */
-@import "katex/dist/katex.min.css";
 @import "streamdown/styles.css";
 
 /*
