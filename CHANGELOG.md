@@ -66,6 +66,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 13 — July 27 – August 2, 2026]
 
+### Added
+
+- [ai-tutor] feat: Add server-side `search` to the AI Tutor tree and importable-activity list endpoints, plus `PATCH .../position` move-to-position and `GET .../context` ordinal endpoints so a paged client can reorder and number rows without holding every sibling. Closes #1207. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)
 ### Changed
 
 - [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and the number of Core page routes shipping KaTeX rules drops from all 25 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
@@ -124,16 +127,19 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [ai-tutor] security: Fix an authorization bypass in the three AI Tutor bulk-reorder handlers, which called the async `isUnitAdminForCourse` without awaiting it and so tested an always-truthy Promise, letting any INSTRUCTOR reorder any course's tree. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)
 - [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ### Changed
 
+- [ai-tutor] feat: Give the AI Tutor instructor module/lesson/activity lists and the student module grid a real pager and debounced server-backed search, switch the activity import picker to search-as-you-type with a visible truncation note, and re-enable drag reorder across page boundaries via absolute ordinals. Closes #1207. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)
 - [core] feat: Harden ADHD Dean fail-closed (policy v2.0) — reject → one retry with reject reasons → `forced_deterministic` wrap (no fail-open); learner message + profile policy slice in rewrite prompt; Top summary / Next? normalization; Sources footer when tools/RAG ran; telemetry methods `llm_retry` / `forced_deterministic`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 - [core] feat: Restore Teacher literal anchors (policy v2.1) — model-facing policy requires exact `**Top summary**` / `**Next?**` (copyable skeleton); TLDR/Continue stay client-only in `assistive-display-transform.ts` so prompt-only Assist can pass Form A again. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 - [core] fix: Log `response_compliance` on non-streaming chat turns (eval harness path) and require `EDUAI_COURSE_ID`/`EDUAI_COURSE_CODE` for course-scoped ADHD eval since #657; restore S2L + `profileStructuralPass` in the eval script. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ### Tests
 
+- [ai-tutor] tests: Cover the #1207 paging surface — server search and visibility scoping, the move-to-position invariant that sibling positions stay contiguous after any move, the lesson/module context ordinals, and the client's absolute-ordinal drag, debounced search, and paged loaders. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 - [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 - [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#1158](https://github.com/EduAI-Lab/EduAI/pull/1158)
