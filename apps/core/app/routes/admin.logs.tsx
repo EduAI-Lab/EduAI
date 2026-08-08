@@ -56,6 +56,12 @@ const AUDIT_FILTER_CATEGORIES = new Set([
 const OUTCOME_VALUES = new Set(["SUCCESS", "FAILURE", "DENIED"]);
 const SYSTEM_LEVEL_VALUES = new Set(["ERROR", "WARN", "INFO"]);
 const SYSTEM_SOURCE_VALUES = new Set(["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "DB", "SSR", "API"]);
+// Must match the dropdown's numeric preset values in logs-admin-view.tsx
+// (DATE_RANGE_PRESETS). A bare /^\d+$/ check would accept any digit string
+// (including "0", or an arbitrarily large value from a hand-built URL),
+// silently producing a zero-width or unbounded-in-practice window instead
+// of a real preset.
+const SERVERS_DATE_PRESET_DAYS = new Set([7, 30, 90]);
 
 /** Reject non-admins for both loader and action; returns the session user on success. */
 async function requireAdminUser(request: Request) {
@@ -221,33 +227,46 @@ export async function loader({ request }: Route.LoaderArgs) {
   // history on first load. Defaulting to the trailing 30 days keeps the first
   // paint fast and matches what the date-range dropdown shows as selected.
   //
-  // Resolution order: an explicit dateFrom/dateTo pair (custom range) wins;
-  // otherwise a numeric datePreset ("7"/"30"/"90") resolves to "N days ago
-  // through now" computed fresh on every request, so "Last 30 days" always
-  // means the 30 days ending now rather than a window frozen at first render;
-  // datePreset="" means "All time" was explicitly chosen (no bound); absent
-  // entirely (first visit, no query params at all) falls back to the 30-day
-  // default.
+  // Resolution order: an explicit, non-empty dateFrom/dateTo pair (custom
+  // range) wins; otherwise a numeric datePreset ("7"/"30"/"90") resolves to
+  // "N days ago through now" computed fresh on every request, so "Last 30
+  // days" always means the 30 days ending now rather than a window frozen at
+  // first render; datePreset="" means "All time" was explicitly chosen (no
+  // bound); an unrecognized/invalid datePreset (e.g. "0", a huge number, or
+  // garbage from a hand-edited URL) falls back to the 30-day default rather
+  // than silently computing a bogus window from it; absent entirely (first
+  // visit, no query params at all) also falls back to the 30-day default.
   const datePresetRaw = searchParams.get("datePreset");
-  const datePresetDays =
+  const isAllTimePreset = datePresetRaw === "";
+  const datePresetDaysCandidate =
     datePresetRaw !== null && datePresetRaw !== "" && /^\d+$/.test(datePresetRaw)
       ? Number(datePresetRaw)
       : null;
-  const hasExplicitDateParams = searchParams.has("dateFrom") || searchParams.has("dateTo");
-  const hasAnyDateSelection = hasExplicitDateParams || searchParams.has("datePreset");
+  const datePresetDays =
+    datePresetDaysCandidate !== null && SERVERS_DATE_PRESET_DAYS.has(datePresetDaysCandidate)
+      ? datePresetDaysCandidate
+      : null;
+  // A blank custom-range submission (dateFrom=&dateTo=, present but empty —
+  // e.g. the admin picked "Custom range…" and hit Apply without filling
+  // either field in) must NOT count as an explicit selection, or the 30-day
+  // default gets skipped while parseDateFilter still resolves both bounds to
+  // undefined, silently running an unbounded all-time aggregation.
+  const hasExplicitDateParams =
+    !!readOptionalQueryValue(searchParams, "dateFrom") || !!readOptionalQueryValue(searchParams, "dateTo");
 
   let serversDateFrom = dateFrom;
   let serversDateTo = dateTo;
   if (tab === "servers" && !hasExplicitDateParams) {
-    if (datePresetDays !== null) {
+    if (isAllTimePreset) {
+      // "All time" explicitly chosen: leave both undefined (no bound).
+    } else if (datePresetDays !== null) {
       serversDateFrom = new Date(Date.now() - datePresetDays * 24 * 60 * 60 * 1000);
       serversDateTo = new Date();
-    } else if (!hasAnyDateSelection) {
-      // No params at all — first visit to the tab.
+    } else {
+      // No params at all, or an unrecognized/invalid datePreset value.
       serversDateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       serversDateTo = new Date();
     }
-    // datePreset="" ("All time" explicitly chosen): leave both undefined.
   }
 
   const sharedReturn = (result: { rows: unknown[]; total: number }) => ({
@@ -280,13 +299,31 @@ export async function loader({ request }: Route.LoaderArgs) {
       hasMore: false,
       rows: [],
       // Reflect the applied default back into the URL-driven query state so the
-      // dropdown shows "Last 30 days" selected (rather than appearing blank/
-      // "All time") while a 30-day filter is silently applied on first visit.
+      // dropdown shows what was actually applied — "Last 30 days" on first
+      // visit or an invalid/unrecognized datePreset, rather than echoing back
+      // a raw value (e.g. "0") the resolution logic above already rejected,
+      // which would show "Custom range…" while the data reflects the 30-day
+      // default. Derived from the same resolution as serversDateFrom/To
+      // above, not re-derived independently, so the two can't drift apart.
       query: {
         ...query,
-        dateFrom: query.dateFrom ?? (serversDateFrom ? toDateInputValue(serversDateFrom) : undefined),
-        dateTo: query.dateTo ?? (serversDateTo ? toDateInputValue(serversDateTo) : undefined),
-        datePreset: query.datePreset ?? (!hasAnyDateSelection ? "30" : undefined),
+        dateFrom: hasExplicitDateParams
+          ? query.dateFrom
+          : serversDateFrom
+            ? toDateInputValue(serversDateFrom)
+            : undefined,
+        dateTo: hasExplicitDateParams
+          ? query.dateTo
+          : serversDateTo
+            ? toDateInputValue(serversDateTo)
+            : undefined,
+        datePreset: hasExplicitDateParams
+          ? undefined
+          : isAllTimePreset
+            ? ""
+            : datePresetDays !== null
+              ? String(datePresetDays)
+              : "30",
       },
       retentionPolicy: {
         auditRetentionDays: retentionPolicy.auditRetentionDays,

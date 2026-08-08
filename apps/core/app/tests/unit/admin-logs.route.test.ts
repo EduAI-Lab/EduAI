@@ -247,6 +247,54 @@ describe("admin.logs loader — servers tab date defaulting", () => {
     expect(call.dateFrom).toBeUndefined();
     expect(call.dateTo).toBeUndefined();
   });
+
+  it("treats a present-but-empty custom dateFrom/dateTo (blank inputs submitted) as no selection, applying the 30-day default instead of going unbounded", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&dateFrom=&dateTo="),
+    )) as { query: { dateFrom?: string; dateTo?: string; datePreset?: string } };
+
+    expect(result.query.datePreset).toBe("30");
+    expect(result.query.dateFrom).toBeDefined();
+    expect(result.query.dateTo).toBeDefined();
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeInstanceOf(Date);
+    expect(call.dateTo).toBeInstanceOf(Date);
+  });
+
+  it("rejects an out-of-allow-list datePreset (e.g. \"0\") and falls back to the 30-day default instead of a zero-width window", async () => {
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset=0"))) as {
+      query: { dateFrom?: string; dateTo?: string; datePreset?: string };
+    };
+
+    expect(result.query.datePreset).toBe("30");
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    const spanMs = call.dateTo!.getTime() - call.dateFrom!.getTime();
+    expect(spanMs).toBeGreaterThan(29 * 24 * 60 * 60 * 1000);
+    expect(spanMs).toBeLessThan(31 * 24 * 60 * 60 * 1000);
+  });
+
+  it("rejects an arbitrarily large datePreset instead of computing an unbounded-in-practice window", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&datePreset=99999"),
+    )) as { query: { datePreset?: string } };
+
+    expect(result.query.datePreset).toBe("30");
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    const spanMs = call.dateTo!.getTime() - call.dateFrom!.getTime();
+    expect(spanMs).toBeLessThan(31 * 24 * 60 * 60 * 1000);
+  });
 });
 
 describe("admin.logs action", () => {
