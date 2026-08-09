@@ -24,7 +24,14 @@ vi.mock("~/lib/dashboard/dashboard-data.server", () => ({
   loadDashboardData: vi.fn(),
 }));
 
+// Same for the Canvas card's integration, also resolved here now (#1220); its
+// role/policy gates are pinned by canvas-integration.server.test.ts.
+vi.mock("~/lib/canvas/integration.server", () => ({
+  getDashboardCanvasIntegration: vi.fn(),
+}));
+
 import { loader } from "~/routes/dashboard";
+import { getDashboardCanvasIntegration } from "~/lib/canvas/integration.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
@@ -45,6 +52,7 @@ beforeEach(() => {
   vi.mocked(redirectToStudentIdOnboardingIfNeeded).mockResolvedValue(null);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
   vi.mocked(loadDashboardData).mockResolvedValue(DASHBOARD as never);
+  vi.mocked(getDashboardCanvasIntegration).mockResolvedValue(null);
 });
 
 describe("dashboard loader", () => {
@@ -69,6 +77,7 @@ describe("dashboard loader", () => {
     expect(result).toBe(onboardingRedirect);
     expect(prisma.enrollment.count).not.toHaveBeenCalled();
     expect(loadDashboardData).not.toHaveBeenCalled();
+    expect(getDashboardCanvasIntegration).not.toHaveBeenCalled();
   });
 
   it("marks a STUDENT with an active TA enrollment as isTA", async () => {
@@ -82,6 +91,7 @@ describe("dashboard loader", () => {
       user: { id: "u1", role: "STUDENT" },
       isTA: true,
       dashboard: DASHBOARD,
+      canvasIntegration: null,
     });
   });
 
@@ -95,6 +105,7 @@ describe("dashboard loader", () => {
       user: { id: "admin-1", role: "ADMIN" },
       isTA: false,
       dashboard: DASHBOARD,
+      canvasIntegration: null,
     });
     expect(prisma.enrollment.count).not.toHaveBeenCalled();
   });
