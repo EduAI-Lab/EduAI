@@ -429,6 +429,13 @@ describe("resolveCanvasFileDownloadUrl", () => {
       ),
     ).toBe("http://localhost:8080/files/99/download?verify=abc");
   });
+
+  it("preserves live Canvas signed CDN URLs", () => {
+    const signedUrl =
+      "https://a11224-47385234.cluster222.canvas-user-content.com/files/99/download?sf_verifier=signed-value";
+
+    expect(resolveCanvasFileDownloadUrl(signedUrl, "https://canvas.ubc.ca")).toBe(signedUrl);
+  });
 });
 
 describe("downloadCanvasFile", () => {
@@ -500,6 +507,67 @@ describe("downloadCanvasFile", () => {
       "http://localhost:8080/files/1/download?download_frd=1&sf_verifier=abc",
       expect.any(Object),
     );
+  });
+
+  it("preserves a live Canvas signed CDN redirect and omits the bearer token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location:
+                "https://a11224-47385234.cluster222.canvas-user-content.com/files/1/download?sf_verifier=signed-value",
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response("redirected bytes", { status: 200 })),
+    );
+
+    const bytes = await downloadCanvasFile(
+      { canvasUrl: "https://canvas.ubc.ca", apiKey: "1234~token", isTestMode: false },
+      {
+        id: 1,
+        url: "https://canvas.ubc.ca/files/1/download?download_frd=1",
+        filename: "assignment2.md",
+        "content-type": "text/markdown",
+      },
+    );
+
+    expect(Buffer.from(bytes).toString()).toBe("redirected bytes");
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "https://a11224-47385234.cluster222.canvas-user-content.com/files/1/download?sf_verifier=signed-value",
+      expect.objectContaining({ headers: {}, redirect: "manual" }),
+    );
+  });
+
+  it("rejects an unapproved public redirect before sending the bearer token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://attacker.example/files/1/download" },
+        }),
+      ),
+    );
+
+    await expect(
+      downloadCanvasFile(
+        { canvasUrl: "https://canvas.ubc.ca", apiKey: "1234~token", isTestMode: false },
+        {
+          id: 1,
+          url: "https://canvas.ubc.ca/files/1/download?download_frd=1",
+          filename: "assignment2.md",
+          "content-type": "text/markdown",
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
