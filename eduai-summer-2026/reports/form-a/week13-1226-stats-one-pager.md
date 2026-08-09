@@ -21,8 +21,8 @@
 `docs/testing/H26-00906-adhd-cohort-qualtrics-2026-07-30-choice.csv`
 
 **Held out separately (not in primary means):**
-- 1 metric outlier (preference vs SUS+TLX contradiction) — `R_62F6naaHk7ItKgb`
-- 1 concept confound (wrote about Apple Assistive Access, not EduAI Assist) — `R_2Cgk3tzIPPPemYU`
+- 1 metric outlier (preference vs SUS+TLX contradiction) — `P4`
+- 1 concept confound (wrote about Apple Assistive Access, not EduAI Assist) — `P2`
 - 2 finished with no usable paired scales
 - 10 incomplete / partial
 

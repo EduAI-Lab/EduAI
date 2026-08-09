@@ -23,8 +23,8 @@
 | Data-quality exclusion | **9** | 2 | See below |
 
 **The 2 data-quality exclusions** (held out, not deleted — flagged for a documented reason, matching the standard used in the existing #1226 one-pager on this branch):
-- `R_62F6naaHk7ItKgb` — **metric outlier**: stated preference contradicts their own SUS + TLX scores.
-- `R_2Cgk3tzIPPPemYU` — **concept confound**: open-feedback text describes *Apple Assistive Access*, not EduAI Assist — not evaluating the system under test.
+- `P4` — **metric outlier**: stated preference contradicts their own SUS + TLX scores.
+- `P2` — **concept confound**: open-feedback text describes *Apple Assistive Access*, not EduAI Assist — not evaluating the system under test.
 
 Both are QR/preview cross-checked: 8 of the 9 primary rows came via Survey Preview, 1 via live QR — consistent with the existing one-pager's "8/9 preview, 1 live QR" note, which independently confirms these are the same two exclusions.
 
@@ -89,7 +89,7 @@ Q25 is unanimous across all 9 analyzed participants — verified against distinc
 
 **The preference data remains the most legible signal.** 7/9, 8/9, and 9/9 splits don't carry the same wide-CI problem as continuous scale means, and Q25's unanimous result held up after removing the two flagged respondents (i.e., it isn't an artifact of the excluded outlier's data).
 
-**Leave-one-out sensitivity (#1308).** Re-running the paired Wilcoxon test 11 times on the full N=11 finished+valid-group sample (Appendix), each time holding out one participant, checks whether any single respondent is driving the reported effects. The results are largely robust, with 1 effect showing some sensitivity: TLX Performance, where 8 of 11 iterations favored Assistive Mode and the remaining 3 produced a near-zero/tied effect (r=0.00) rather than flipping to favor Baseline — consistent with it already being the weakest of the five metrics at n=9, above. The main effect of condition was extremely stable: SUS, TLX Load, UX, and Comprehension favored Assistive Mode in all 11 of 11 leave-one-out iterations, with no direction flips and narrow effect-size ranges (SUS r ∈ [+.29, +.59]; TLX Load r ∈ [-.65, -.32], sign reflects lower=better; UX r ∈ [+.33, +.53]; Comprehension r ∈ [+.08, +.42]). No individual participant — including either of the two respondents excluded from the primary n=9 analysis — reverses the overall directional pattern. Full per-iteration results: `loo_sensitivity.csv`; chart: `figures/06_loo_sensitivity.png`.
+**Leave-one-out sensitivity (#1308).** Re-running the paired Wilcoxon test 11 times on the full N=11 finished+valid-group sample (Appendix), each time holding out one participant, checks whether any single respondent is driving the reported effects. The results are largely robust, with 1 effect showing some sensitivity: TLX Performance, where 8 of 11 iterations favored Assistive Mode and the remaining 3 produced a near-zero/tied effect (r=0.00) rather than flipping to favor Baseline — consistent with it already being the weakest of the five metrics at n=9, above. The main effect's *direction* was extremely stable: SUS, TLX Load, UX, and Comprehension favored Assistive Mode in all 11 of 11 leave-one-out iterations, with no direction flips. Magnitude is a separate claim and shows real sensitivity to which participant is held out, not just direction: SUS r ranged [+.29, +.59]; TLX Load r ranged [-.65, -.32] (sign reflects lower=better); UX r ranged [+.33, +.53]; Comprehension r ranged [+.08, +.42], swinging from small to large depending on the held-out participant. No individual participant — including either of the two respondents excluded from the primary n=9 analysis — reverses the overall directional pattern. Full per-iteration results: `loo_sensitivity.csv`; chart: `figures/06_loo_sensitivity.png`.
 
 **Net read:** removing the two documented data-quality issues sharpened every metric in the same direction it was already pointing — this is what you want to see (exclusions that clarify a signal rather than manufacture one). The pilot is a solid basis for scaling to the non-ADHD comparison arm (#908) and a larger ADHD cohort before drawing confirmatory claims.
 
@@ -116,9 +116,9 @@ This script's n=9, exclusion-applied run was built specifically to reconcile wit
 | SUS | +16.1 (58.9→75.0) | +16.1 (58.9→75.0) | ✅ exact |
 | TLX raw workload / Load | −1.28 (3.81→2.53) | −1.28 (3.81→2.53) | ✅ exact |
 | Preference (overall) | 7/9 Assistive | 7/9 Assistive | ✅ exact |
-| Comprehension | +0.50 (3.06→3.56), both within the 1–5 scale bound | +1.78 (3.89→5.67) | ⚠️ **does not match** |
+| Comprehension | +0.50 (3.06→3.56), both within the 1–5 scale bound | +0.50 (3.06→3.56) | ✅ exact |
 
-**Flag for follow-up:** the existing one-pager's Comprehension row shows an Assist mean of 5.67 on an instrument documented as a 1–5 scale — that value is out of range for the stated instrument and can't be a plain 2-item mean of 1–5 responses. This script's Comp score (mean of `Q14/15_A_Comp` and `Q20/21_B_Comp`, both individually bounded 1–5) stays within range by construction. Worth a quick reconciliation pass — either the existing doc used a different comprehension definition (e.g. a sum instead of a mean, or a different question set) that should be documented, or it's a transcription/calculation slip. Given SUS, TLX, and preference all match exactly, the two analyses are very likely using the same underlying respondents and the same TLX/SUS math — Comprehension is the one place to double check before this number goes into anything paper-facing.
+**Resolved:** the one-pager's Comprehension row previously showed an out-of-range Assist mean (5.67 on a 1–5 instrument). It has since been corrected in `week13-1226-stats-one-pager.md` (see footnote there) to the same 3.06→3.56 figures this script produces, confirming both analyses use the same underlying respondents and scoring.
 
 The full-sample (N=11, no exclusions) run is also available for comparison — direction of effect is unchanged for all five metrics, but every effect size is smaller (e.g. SUS r drops from +.60 at n=9 to +.39 at n=11), consistent with the two excluded respondents being genuine noise rather than the exclusions manufacturing the effect.
 
@@ -132,17 +132,19 @@ The full-sample (N=11, no exclusions) run is also available for comparison — d
 
 ## 8. Next Steps
 
-1. Reconcile the Comprehension discrepancy with the existing one-pager (Section 6) before either number is cited externally.
-2. Recruit and run the non-ADHD comparison arm (#908) to establish whether the Assistive Mode benefit pattern is ADHD-specific or a general usability improvement.
-3. Increase ADHD-cohort N to move from exploratory to adequately powered confirmatory testing — at the observed n=9 effect sizes (r ≈ .56–.60), a two-tailed Wilcoxon at 80% power would need roughly n≈20-25 (rule-of-thumb pilot-based estimate; formal power analysis recommended before committing to a target N).
-4. Investigate why 8/9 primary responses came via Survey Preview rather than the live QR flow before the next collection wave.
-5. Replace or supplement self-report Comprehension with an objective comprehension check in the next protocol revision.
-6. Once #716/#1201 (Dean model separation + v2.1 writer/Dean re-eval) land, consider whether a follow-up pilot wave under the updated policy is warranted before final Paper 1/Paper 2 submission.
-7. Feed this write-up + `analysis_summary.csv` into the ETR&D fit memo (#1228) and conference shortlist review (#1225) as supporting evidence.
+1. Recruit and run the non-ADHD comparison arm (#908) to establish whether the Assistive Mode benefit pattern is ADHD-specific or a general usability improvement.
+2. Increase ADHD-cohort N to move from exploratory to adequately powered confirmatory testing — at the observed n=9 effect sizes (r ≈ .56–.60), a two-tailed Wilcoxon at 80% power would need roughly n≈20-25 (rule-of-thumb pilot-based estimate; formal power analysis recommended before committing to a target N).
+3. Investigate why 8/9 primary responses came via Survey Preview rather than the live QR flow before the next collection wave.
+4. Replace or supplement self-report Comprehension with an objective comprehension check in the next protocol revision.
+5. Once #716/#1201 (Dean model separation + v2.1 writer/Dean re-eval) land, consider whether a follow-up pilot wave under the updated policy is warranted before final Paper 1/Paper 2 submission.
+6. Feed this write-up + `analysis_summary.csv` into the ETR&D fit memo (#1228) and conference shortlist review (#1225) as supporting evidence.
 
 ---
 
 ## Appendix — Reproducing this analysis
+
+The raw Qualtrics export zips are participant PII and are not committed to this
+repo — pull them from the approved restricted storage location first.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -150,16 +152,22 @@ pip install -r requirements.txt
 
 # Primary analysis (n=9, data-quality exclusions applied — default)
 python adhd_analysis.py \
-  --label-zip "../../../apps/core/docs/ADHD+participants_July+31,+2026_13.02.zip" \
-  --numeric-zip "../../../apps/core/docs/ADHD+participants_July+31,+2026_13.03.zip" \
+  --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
+  --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
   --outdir .
 
 # Sensitivity check: full uncurated sample (n=11)
 python adhd_analysis.py \
-  --label-zip "../../../apps/core/docs/ADHD+participants_July+31,+2026_13.02.zip" \
-  --numeric-zip "../../../apps/core/docs/ADHD+participants_July+31,+2026_13.03.zip" \
+  --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
+  --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
   --outdir /tmp/adhd-sensitivity-n11 \
   --include-excluded
 ```
+
+Participant identifiers in every output (`loo_sensitivity.csv`,
+`stats_dump.json`, this report) are anonymized to `P1..P11`, assigned
+deterministically by sorted `ResponseId` — re-running against the same
+restricted-storage export reproduces the same label for the same
+participant (see `build_participant_labels()` in `adhd_analysis.py`).
 
 Package versions used for this run: see `stats_dump.json["versions"]` (pandas 3.0.5, numpy 2.5.1, scipy 1.18.0, matplotlib 3.11.1).

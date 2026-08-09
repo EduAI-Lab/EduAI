@@ -5,10 +5,6 @@
   "n_after_finished_and_group_filter": 11,
   "n_dropped_incomplete_or_no_group": 12,
   "n_dropped_data_quality": 2,
-  "excluded_response_ids": [
-    "R_2Cgk3tzIPPPemYU",
-    "R_62F6naaHk7ItKgb"
-  ],
   "metrics": [
     {
       "metric": "SUS",
@@ -149,5 +145,9 @@
     "numpy": "2.5.1",
     "scipy": "1.18.0",
     "matplotlib": "3.11.1"
-  }
+  },
+  "excluded_participants": [
+    "P2",
+    "P4"
+  ]
 }

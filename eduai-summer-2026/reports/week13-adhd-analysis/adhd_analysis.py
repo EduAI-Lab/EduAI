@@ -6,10 +6,20 @@ export for quantitative scoring), scores the five instruments (SUS, NASA-TLX
 load/performance, UX, Comprehension), runs paired Wilcoxon signed-rank tests,
 and writes analysis_summary.csv plus five figures.
 
+The raw Qualtrics export zips contain participant-level PII (response IDs,
+timestamps, open-feedback text) and must not be committed to this repo --
+pull them from the approved restricted storage location before running.
+Every committed output anonymizes participant identifiers to sequential
+P1..Pn labels, assigned deterministically by sorting the raw ResponseIds
+(see build_participant_labels()); re-running this script against the same
+restricted-storage export reproduces the same P-label for the same
+participant, without that mapping itself ever being written to a
+git-tracked file.
+
 Usage:
     python adhd_analysis.py \
-        --label-zip "apps/core/docs/ADHD+participants_July+31,+2026_13.02.zip" \
-        --numeric-zip "apps/core/docs/ADHD+participants_July+31,+2026_13.03.zip" \
+        --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
+        --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
         --outdir eduai-summer-2026/reports/week13-adhd-analysis
 
 Dependencies: pandas, numpy, scipy, matplotlib (see report for versions used).
@@ -276,7 +286,20 @@ def paired_stats(assistive: np.ndarray, baseline: np.ndarray, metric: str) -> di
 # ---------------------------------------------------------------------------
 
 
-def run_leave_one_out(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
+def build_participant_labels(response_ids) -> dict[str, str]:
+    """Map raw Qualtrics ResponseIds to sequential P1..Pn labels.
+
+    Assignment is deterministic (sorted ResponseId order), so re-running the
+    pipeline against the same restricted-storage export reproduces the same
+    label for the same participant without ever writing the raw-id-to-label
+    mapping itself to a git-tracked file.
+    """
+    return {rid: f"P{i}" for i, rid in enumerate(sorted(set(response_ids)), start=1)}
+
+
+def run_leave_one_out(
+    df: pd.DataFrame, metrics: list[str], participant_labels: dict[str, str]
+) -> pd.DataFrame:
     """Leave-one-out sensitivity analysis: for each participant, refit the
     paired Wilcoxon test on the remaining n-1 sample and record how the
     statistic, p-value, effect size, and direction shift.
@@ -310,7 +333,7 @@ def run_leave_one_out(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
                 direction = "favors Baseline"
             rows.append(
                 {
-                    "participant_removed": held_out_id,
+                    "participant_removed": participant_labels[held_out_id],
                     "metric": metric,
                     "wilcoxon_W": stat["wilcoxon_W"],
                     "p_value": stat["p_value"],
@@ -639,7 +662,8 @@ def main():
     # so it checks robustness against every respondent -- including the two
     # flagged for data quality -- not just the primary n=9.
     loo_df = load_and_filter(args.numeric_zip, exclude_ids=set())
-    loo_results = run_leave_one_out(loo_df, METRIC_ORDER)
+    participant_labels = build_participant_labels(loo_df["ResponseId"])
+    loo_results = run_leave_one_out(loo_df, METRIC_ORDER, participant_labels)
     loo_results.to_csv(outdir / "loo_sensitivity.csv", index=False)
 
     full_n11_scored = score_all_metrics(loo_df)
@@ -666,7 +690,11 @@ def main():
         "n_after_finished_and_group_filter": n_before_quality_exclusion,
         "n_dropped_incomplete_or_no_group": n_raw_records - n_before_quality_exclusion,
         "n_dropped_data_quality": (0 if args.include_excluded else len(DEFAULT_EXCLUDED_RESPONSE_IDS)),
-        "excluded_response_ids": [] if args.include_excluded else sorted(DEFAULT_EXCLUDED_RESPONSE_IDS),
+        "excluded_participants": (
+            []
+            if args.include_excluded
+            else sorted(participant_labels[rid] for rid in DEFAULT_EXCLUDED_RESPONSE_IDS)
+        ),
         "metrics": stats_rows,
         "preferences": pref_summary,
         "versions": {
