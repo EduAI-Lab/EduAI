@@ -982,37 +982,3 @@ model IdempotencyRecord {
   @@index([expiresAt])
   @@map("idempotency_records")
 }
-
-model PullRequestNotification {
-  id                      String   @id @default(cuid())
-  repository              String
-  number                  Int
-  title                   String
-  url                     String
-  author                  String
-  threadId                String?
-  isOpen                  Boolean  @default(true)
-  isDraft                 Boolean  @default(false)
-  latestCommitSha         String?
-  reviewers               String[]
-  approvers               String[]
-  linkedIssues            Int[]
-  reviewRequestedAt       DateTime?
-  changesRequestedAt      DateTime?
-  lastAuthorCommitAt      DateTime?
-  lastActivityAt          DateTime @default(now())
-  lastReviewerReminderAt  DateTime?
-  reviewerEscalatedAt     DateTime?
-  lastAuthorReminderAt    DateTime?
-  lastChangesReminderAt   DateTime?
-  lastCiFailureSha        String?
-  ciIsGreen               Boolean  @default(false)
-  hasMergeConflict        Boolean  @default(false)
-  readyNotificationSentAt DateTime?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-
-  @@unique([repository, number])
-  @@index([isOpen, lastActivityAt])
-  @@map("pull_request_notifications")
-}
