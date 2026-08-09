@@ -497,6 +497,39 @@ describe("resolveAwaitingFollowup", () => {
       }),
     ).toBe(false);
   });
+
+  it("enters follow-up on the tool active→inactive edge for tool-only turns with no prior text", () => {
+    // hasAssistantText is false both before and after the tool finishes — the
+    // latch must not require it, or it never engages for a tool-only turn.
+    expect(
+      resolveAwaitingFollowup({
+        isLoading: true,
+        hasActiveTool: false,
+        hasAssistantText: false,
+        fingerprint: "",
+        prevHasActiveTool: true,
+        prevFingerprint: "",
+        prevAwaitingFollowup: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("clears the latch on the first token of a tool-only turn with no prior text", () => {
+    // prevFingerprint is "" (tool-only turn never had text before). The first
+    // streamed token must clear awaitingFollowup instead of requiring a
+    // second, already-non-empty fingerprint to compare against.
+    expect(
+      resolveAwaitingFollowup({
+        isLoading: true,
+        hasActiveTool: false,
+        hasAssistantText: true,
+        fingerprint: "First",
+        prevHasActiveTool: false,
+        prevFingerprint: "",
+        prevAwaitingFollowup: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("assistantMessageHasText — object content", () => {

@@ -83,6 +83,14 @@ export function useChatProgress(args: {
   const wasAwaitingFollowupRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   startedAtRef.current = startedAt;
+  /**
+   * Picker value snapshotted at request start. The model picker stays
+   * enabled while loading, so without this the live `selectedModel` would
+   * retroactively change the estimate for a request already in flight —
+   * before `X-Routed-Model` arrives, `modelId` must stay pinned to whatever
+   * was selected when the request started.
+   */
+  const frozenSelectedModelRef = useRef<string | null>(null);
 
   const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
   const inFlightAssistant =
@@ -94,7 +102,8 @@ export function useChatProgress(args: {
     streamingRoutedRegistryId && streamingRoutedRegistryId.trim().length > 0,
   );
   const hasActiveTool = Boolean(activeToolName);
-  const modelId = streamingRoutedRegistryId || selectedModel || null;
+  const modelId =
+    streamingRoutedRegistryId || frozenSelectedModelRef.current || selectedModel || null;
 
   const typicalExpectedMs = estimateExpectedResponseMs({
     modelId,
@@ -124,6 +133,7 @@ export function useChatProgress(args: {
       setStartedAt(null);
       setDeadlineMs(0);
       wasAwaitingFollowupRef.current = false;
+      frozenSelectedModelRef.current = null;
       edgeRef.current = {
         hasActiveTool: false,
         fingerprint: "",
@@ -134,6 +144,9 @@ export function useChatProgress(args: {
 
     setStartedAt(Date.now());
     setDeadlineMs(0);
+    // Snapshot once per request — deliberately excluded from deps below.
+    frozenSelectedModelRef.current = selectedModel;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
   // Grow the deadline when the typical estimate grows (routed model / tools).

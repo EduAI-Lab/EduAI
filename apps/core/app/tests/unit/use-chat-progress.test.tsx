@@ -262,4 +262,49 @@ describe("useChatProgress — #1171", () => {
     rerender({ routed: "vllm:qwen2.5-32b-instruct" });
     expect(result.current.deadlineMs).toBeGreaterThanOrEqual(before);
   });
+
+  it("freezes the estimate to the picker value at request start, ignoring later picker changes (pre-header path)", () => {
+    const { result, rerender } = renderHook(
+      ({ selectedModel }) =>
+        useChatProgress({
+          isLoading: true,
+          messages: [{ id: "u1", role: "user", content: "hi" }],
+          adhdAssist: false,
+          selectedModel,
+          // No streamingRoutedRegistryId yet — X-Routed-Model hasn't arrived.
+          streamingRoutedRegistryId: null,
+        }),
+      { initialProps: { selectedModel: "google:gemini" } },
+    );
+
+    const fastEstimate = result.current.typicalExpectedMs;
+
+    // User flips the picker mid-flight, before the routed-model header lands.
+    rerender({ selectedModel: "vllm:qwen2.5-32b-instruct" });
+
+    expect(result.current.typicalExpectedMs).toBe(fastEstimate);
+  });
+
+  it("uses the live picker value for the next request after the previous one settles", () => {
+    const { result, rerender } = renderHook(
+      ({ isLoading, selectedModel }) =>
+        useChatProgress({
+          isLoading,
+          messages: [{ id: "u1", role: "user", content: "hi" }],
+          adhdAssist: false,
+          selectedModel,
+          streamingRoutedRegistryId: null,
+        }),
+      {
+        initialProps: { isLoading: true, selectedModel: "google:gemini" },
+      },
+    );
+
+    const fastEstimate = result.current.typicalExpectedMs;
+
+    rerender({ isLoading: false, selectedModel: "google:gemini" });
+    rerender({ isLoading: true, selectedModel: "vllm:qwen2.5-32b-instruct" });
+
+    expect(result.current.typicalExpectedMs).toBeGreaterThan(fastEstimate);
+  });
 });
