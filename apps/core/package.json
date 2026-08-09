@@ -14,7 +14,7 @@
     "test:canvas-live": "vitest run --config vitest.canvas-live.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.coverage.config.ts",
     "test:mutation": "stryker run",
-    "test:browser": "playwright test --config app/tests/browser/playwright.config.ts",
+    "test:visual": "playwright test --config=playwright.visual.config.ts",
     "typecheck": "react-router typegen && tsc",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

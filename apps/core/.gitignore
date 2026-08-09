@@ -16,3 +16,7 @@ ecosystem.config.cjs
 # Stryker Generated Files
 .stryker-tmp/
 /reports/
+
+# Playwright visual regression (test:visual) — fixtures are regenerated from
+# component source by global-setup.ts before each run.
+/app/tests/visual/fixtures/
