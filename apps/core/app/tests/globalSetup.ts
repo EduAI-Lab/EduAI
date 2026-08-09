@@ -94,7 +94,28 @@ export async function setup() {
     stdio: 'pipe',
   });
 
-  // `content_tsv` is a generated tsvector column that Prisma cannot model.
+  // `content_tsv` is a `GENERATED ALWAYS ... STORED` tsvector column that
+  // Prisma has no first-class type for (Unsupported("tsvector") in
+  // schema.prisma). `db push` above still provisions *some* column for it —
+  // a plain, non-generated one, since it can't express STORED/GENERATED —
+  // and the raw migration's `ADD COLUMN IF NOT EXISTS` then silently no-ops
+  // against that pre-existing plain column, leaving every row's content_tsv
+  // NULL with no generation expression (#1354 CI: `is_generated` reads
+  // 'NEVER' instead of 'ALWAYS', and inserts 23502 on a stray NOT NULL).
+  // Drop whatever db push created first so the migration's ADD COLUMN is the
+  // one that actually runs.
+  try {
+    execSync(
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+      { env: pgEnv, stdio: 'pipe' },
+    );
+  } catch {
+    execSync(
+      `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+      { stdio: 'pipe' },
+    );
+  }
+
   // db push provisions only schema.prisma, so apply the idempotent raw migration
   // afterward to keep integration databases aligned with deployed databases.
   const contentTsvMigration = resolve(

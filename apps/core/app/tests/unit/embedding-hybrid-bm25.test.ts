@@ -89,9 +89,35 @@ const {
  */
 const RETRIEVAL_QUERY_CALL_INDEX = 1;
 
+/**
+ * Renders an interpolated value for SQL-text assertions: nested `Prisma.sql`
+ * fragments (e.g. canvasPublishFilter/visibilityFilter, spliced in as values
+ * rather than template-string literals) are inlined recursively so their SQL
+ * text is visible; every other value collapses to a placeholder.
+ */
+function renderSqlValue(value: unknown): string {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    "strings" in value &&
+    "values" in value
+  ) {
+    const frag = value as { strings: readonly string[]; values: unknown[] };
+    return frag.strings
+      .map((s, i) => s + (i < frag.values.length ? renderSqlValue(frag.values[i]) : ""))
+      .join("");
+  }
+  return "__param__";
+}
+
 function capturedSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
-  const [templateStrings] = queryRawMock.mock.calls[callIndex] as [string[]];
-  return templateStrings.join("__param__");
+  const [templateStrings, ...values] = queryRawMock.mock.calls[callIndex] as [
+    string[],
+    ...unknown[],
+  ];
+  return templateStrings
+    .map((s, i) => s + (i < values.length ? renderSqlValue(values[i]) : ""))
+    .join("");
 }
 
 /** Interpolated values passed to $queryRaw (everything after the template strings). */

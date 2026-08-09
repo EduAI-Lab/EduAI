@@ -980,7 +980,7 @@ export async function findRelevantContent(
           (1 - distance) * ${alpha} +
           COALESCE(
             ts_rank(
-              -- `content_tsv` is generated/stored and backed by the GIN index;
+              -- content_tsv is generated/stored and backed by the GIN index;
               -- avoid rebuilding a tsvector for every hybrid candidate.
               content_tsv,
               plainto_tsquery('english', ${userQuery})

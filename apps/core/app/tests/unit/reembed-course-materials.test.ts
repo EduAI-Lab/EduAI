@@ -44,14 +44,22 @@ function mockMaterials(materials: Material[]) {
 
 function setupTransactionMock() {
   prisma.$transaction.mockImplementation(async (fn: any) => {
+    // #941: material_chunks.content_tsv is a generated column, so the real
+    // code inserts chunks via a raw $executeRaw statement and reads them
+    // back with materialChunk.findMany rather than createManyAndReturn.
+    let insertedChunks: Array<{ id: string; index: number }> = [];
     const tx = {
       materialChunk: {
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-        createManyAndReturn: vi.fn().mockImplementation(({ data }: any) =>
-          Promise.resolve(data.map((d: any, i: number) => ({ id: `chunk-${d.materialId}-${i}`, index: d.index }))),
-        ),
+        findMany: vi.fn().mockImplementation(() => Promise.resolve(insertedChunks)),
       },
-      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      $executeRaw: vi.fn().mockImplementation((..._args: unknown[]) => {
+        // Chunk count/materialId aren't inspectable from the tagged-template
+        // call site here, so seed a single chunk per invocation — enough for
+        // these tests, which only assert on processed/failed counts.
+        insertedChunks = [{ id: `chunk-${insertedChunks.length}`, index: insertedChunks.length }];
+        return Promise.resolve(undefined);
+      }),
     };
     return fn(tx);
   });
