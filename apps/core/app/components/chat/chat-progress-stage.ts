@@ -429,9 +429,10 @@ export function resolveAwaitingFollowup(input: {
     input.fingerprint.trim().length > 0 &&
     input.fingerprint !== input.prevFingerprint;
 
-  // Active → inactive edge after earlier tokens: enter follow-up unless tokens
-  // already advanced in the same turn.
-  if (input.prevHasActiveTool && input.hasAssistantText) {
+  // Active → inactive edge: enter follow-up unless tokens already advanced in
+  // the same turn. Tool-only turns have no assistant text at this edge but
+  // still need the latch while waiting for their first follow-up token.
+  if (input.prevHasActiveTool) {
     return !textAdvanced;
   }
 
