@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -64,6 +64,13 @@ export default function AdminChatPage() {
   const [adhdAssist, setAdhdAssist] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [webToolsEnabled] = useState(false);
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
+    Record<string, string>
+  >({});
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
+    string | null
+  >(null);
+  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const { assistive, setAssistive } = useAssistiveUi();
 
   useEffect(() => {
@@ -122,14 +129,45 @@ export default function AdminChatPage() {
       messages: chatMessages.slice(-1),
     }),
     onResponse: async (response) => {
+      // Same X-Routed-Model wiring as learning ChatScreen so timed progress
+      // estimates use the actual routed model (#1171).
+      const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+      const routed =
+        routedHeader && routedHeader.length > 0 ? routedHeader : null;
+      pendingRoutedRegistryIdRef.current = routed;
+      setStreamingRoutedRegistryId(routed);
+
       await logChatApiResponse(response, "admin-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
       }
     },
-    onError: (error) => logChatUseChatError(error, "admin-chat"),
+    onFinish: (message) => {
+      const routed = pendingRoutedRegistryIdRef.current;
+      if (message.role === "assistant" && routed) {
+        setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+      }
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
+    },
+    onError: (error) => {
+      logChatUseChatError(error, "admin-chat");
+      // Clear routed-model latch on error so the next turn does not skip
+      // Routing… or estimate against a dead model. Stop/abort is separate:
+      // AI SDK v4 swallows AbortError and skips onError/onFinish.
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
+    },
   });
+
+  // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
+  // Clear the latch here or the next turn keeps the aborted turn's model.
+  const handleStop = useCallback(() => {
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
 
   const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);
 
@@ -217,8 +255,10 @@ export default function AdminChatPage() {
         onSystemPromptSave={handleSystemPromptSave}
         onInputChange={handleInputChange}
         onSubmit={handleSubmit}
-        onStop={stop}
+        onStop={handleStop}
         onSelectPrompt={handlePromptSelect}
+        routedModelByMessageId={routedModelByMessageId}
+        streamingRoutedRegistryId={streamingRoutedRegistryId}
       />
     </CoreAppShell>
   );
