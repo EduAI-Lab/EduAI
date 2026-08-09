@@ -108,7 +108,7 @@ describe("recordResponseComplianceEvent", () => {
 
     const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
     expect(metricsJson).toMatchObject({
-      policyVersion: "2.2",
+      policyVersion: "2.3",
       toolsUsed: true,
       hasSources: true,
       noUrgency: true,

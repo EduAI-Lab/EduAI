@@ -6,6 +6,7 @@ import {
   detectUrgencyTerms,
   hasRedirectBleedContent,
   hasSourcesFooter,
+  hasStepLadderSection,
   isProfileStructuralPass,
   isRedirectTemplatePass,
   isStructuralCompliancePass,
@@ -68,6 +69,7 @@ Next? Want to know more?`;
       oneTopic: null,
       noUrgency: true,
       hasSources: false,
+      stepLadder: false,
     });
     expect(metrics.structuralPass).toBe(true);
   });
@@ -156,6 +158,53 @@ Datasets can be biased through sampling, labeling, or measurement choices.
 
 **Next?** Want an example of each?`;
     expect(hasSourcesFooter(text)).toBe(false);
+  });
+});
+
+describe("hasStepLadderSection", () => {
+  it("detects a real Step ladder heading plus numbered steps", () => {
+    const text = `**Top summary**
+- Rinse, wash, dry.
+
+### Step ladder
+1. **Rinse** — why it matters: loosens stuck-on food before washing.
+2. **Wash** — why it matters: soap actually removes grease and germs.
+
+**Next?** Want the next step?`;
+    expect(hasStepLadderSection(text)).toBe(true);
+  });
+
+  it("returns false for a bare Top summary / Next? shell with no steps (#1245)", () => {
+    const text = `**Top summary**
+- Step 2: rinse each item under running water to remove loose food debris.
+
+**Next?** Want me to continue?`;
+    expect(hasStepLadderSection(text)).toBe(false);
+  });
+
+  it("returns false when 'step ladder' is only mentioned in prose, not a real section", () => {
+    const text = `**Top summary**
+- The step ladder for this task has five steps.
+
+**Next?** Want to see them?`;
+    expect(hasStepLadderSection(text)).toBe(false);
+  });
+
+  it("returns false for empty text", () => {
+    expect(hasStepLadderSection("")).toBe(false);
+  });
+
+  it("returns false when a numbered item sits above an empty Step ladder section (#1245)", () => {
+    // The numbered items here are in Top summary, not inside Step ladder —
+    // the heading is present but the section itself has no steps.
+    const text = `**Top summary**
+1. Rinse
+2. Wash
+
+### Step ladder
+
+**Next?** Want the next step?`;
+    expect(hasStepLadderSection(text)).toBe(false);
   });
 });
 
