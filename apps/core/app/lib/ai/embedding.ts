@@ -1267,9 +1267,20 @@ export async function processMaterialEmbeddings(
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
 
-    await tx.materialChunk.createMany({
-      data: chunks.map((chunkContent, i) => ({ materialId, index: i, content: chunkContent })),
-    });
+    // #941: `content_tsv` is an `Unsupported("tsvector")` GENERATED column on
+    // this model, so Prisma's generated client omits write helpers
+    // (create/createMany/etc.) that would need to construct a full row shape
+    // client-side — only reads and raw SQL remain available. Insert via
+    // $executeRaw instead, following the same Prisma.sql/Prisma.join pattern
+    // insertMaterialEmbeddingsBatched (above) already uses for the sibling
+    // Unsupported("vector") column on MaterialEmbedding.
+    const chunkRows = chunks.map((chunkContent, i) =>
+      Prisma.sql`(${randomUUID()}, ${materialId}, ${i}, ${chunkContent}, NOW())`,
+    );
+    await tx.$executeRaw`
+      INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
+      VALUES ${Prisma.join(chunkRows)}
+    `;
     const createdChunks = await tx.materialChunk.findMany({
       where: { materialId },
       orderBy: { index: "asc" },
