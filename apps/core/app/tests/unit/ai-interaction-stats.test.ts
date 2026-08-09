@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     aIInteraction: { groupBy: vi.fn() },
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -20,7 +21,36 @@ import { getAllFleetServers } from "~/lib/ai/routing/fleet/registry";
 import {
   getInteractionCountsByModel,
   getInteractionCountsByServer,
+  getPeakUsageHours,
 } from "~/lib/db.ai-interaction-stats.server";
+
+/**
+ * groupInteractionsByServer now issues two parallel groupBy calls against the
+ * same mocked fn — the main by:["serverId"] aggregation, and
+ * distinctChatCountsByServer's by:["serverId","chatId"] count. Promise.all
+ * gives no ordering guarantee between them, so route by the `by` argument's
+ * shape rather than call order/mockResolvedValueOnce.
+ */
+function mockGroupByServerId(rows: unknown[]) {
+  vi.mocked(prisma.aIInteraction.groupBy).mockImplementation((args: unknown) => {
+    const by = (args as { by: string[] }).by;
+    if (by.length === 2 && by.includes("chatId")) {
+      return Promise.resolve([]) as never;
+    }
+    return Promise.resolve(rows) as never;
+  });
+}
+
+/** Stubs both the serverId grouping and the distinct-chatId grouping (server, chatId) pairs. */
+function mockGroupByServerIdWithChats(rows: unknown[], chatRows: { serverId: string | null; chatId: string }[]) {
+  vi.mocked(prisma.aIInteraction.groupBy).mockImplementation((args: unknown) => {
+    const by = (args as { by: string[] }).by;
+    if (by.length === 2 && by.includes("chatId")) {
+      return Promise.resolve(chatRows) as never;
+    }
+    return Promise.resolve(rows) as never;
+  });
+}
 
 describe("getInteractionCountsByServer", () => {
   beforeEach(() => {
@@ -37,20 +67,26 @@ describe("getInteractionCountsByServer", () => {
       modelIds: ["qwen3.5-2b-instruct"],
       checkedAt: Date.now(),
     });
-    vi.mocked(prisma.aIInteraction.groupBy).mockResolvedValue([
-      {
-        serverId: "cmps01",
-        _count: { _all: 10 },
-        _sum: {
-          totalTokens: 1000,
-          durationMs: 5000,
-          estInputCostUsd: 0.01,
-          estOutputCostUsd: 0.02,
-          energyJoules: 100,
-          carbonGramsCO2: 5,
+    mockGroupByServerIdWithChats(
+      [
+        {
+          serverId: "cmps01",
+          _count: { _all: 10 },
+          _sum: {
+            totalTokens: 1000,
+            durationMs: 5000,
+            estInputCostUsd: 0.01,
+            estOutputCostUsd: 0.02,
+            energyJoules: 100,
+            carbonGramsCO2: 5,
+          },
         },
-      },
-    ] as never);
+      ],
+      [
+        { serverId: "cmps01", chatId: "chat_1" },
+        { serverId: "cmps01", chatId: "chat_2" },
+      ],
+    );
 
     const result = await getInteractionCountsByServer({});
 
@@ -58,6 +94,7 @@ describe("getInteractionCountsByServer", () => {
       {
         serverId: "cmps01",
         count: 10,
+        distinctChatCount: 2,
         totalTokens: 1000,
         totalDurationMs: 5000,
         totalCostUsd: 0.03,
@@ -77,7 +114,7 @@ describe("getInteractionCountsByServer", () => {
       modelIds: ["qwen2.5-32b-instruct"],
       checkedAt: Date.now(),
     });
-    vi.mocked(prisma.aIInteraction.groupBy).mockResolvedValue([] as never);
+    mockGroupByServerId([]);
 
     const result = await getInteractionCountsByServer({});
 
@@ -85,6 +122,7 @@ describe("getInteractionCountsByServer", () => {
       {
         serverId: "cmps03",
         count: 0,
+        distinctChatCount: 0,
         totalTokens: 0,
         totalDurationMs: 0,
         totalCostUsd: 0,
@@ -143,7 +181,7 @@ describe("getInteractionCountsByServer", () => {
       modelIds: ["qwen3.5-2b-instruct"],
       checkedAt: Date.now(),
     });
-    vi.mocked(prisma.aIInteraction.groupBy).mockResolvedValue([
+    mockGroupByServerId([
       {
         serverId: "cmps01",
         _count: { _all: 1 },
@@ -180,7 +218,7 @@ describe("getInteractionCountsByServer", () => {
           carbonGramsCO2: null,
         },
       },
-    ] as never);
+    ]);
 
     const result = await getInteractionCountsByServer({});
 
@@ -239,5 +277,44 @@ describe("getInteractionCountsByModel", () => {
         totalCarbonGramsCO2: 2,
       },
     ]);
+  });
+});
+
+describe("getPeakUsageHours", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("always returns all 24 hours, filling gaps with a zero count", async () => {
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([
+      { hour: 9, count: 5n },
+      { hour: 14, count: 12n },
+    ] as never);
+
+    const result = await getPeakUsageHours({});
+
+    expect(result).toHaveLength(24);
+    expect(result.map((h) => h.hour)).toEqual(Array.from({ length: 24 }, (_, i) => i));
+    expect(result.find((h) => h.hour === 9)?.count).toBe(5);
+    expect(result.find((h) => h.hour === 14)?.count).toBe(12);
+    expect(result.find((h) => h.hour === 0)?.count).toBe(0);
+  });
+
+  it("converts bigint counts from COUNT(*) into plain numbers", async () => {
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ hour: 3, count: 1000n }] as never);
+
+    const result = await getPeakUsageHours({});
+
+    const hour3 = result.find((h) => h.hour === 3);
+    expect(hour3?.count).toBe(1000);
+    expect(typeof hour3?.count).toBe("number");
+  });
+
+  it("returns all-zero hours when there are no interactions in the window", async () => {
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
+
+    const result = await getPeakUsageHours({ dateFrom: new Date("2026-01-01"), dateTo: new Date("2026-01-02") });
+
+    expect(result.every((h) => h.count === 0)).toBe(true);
   });
 });

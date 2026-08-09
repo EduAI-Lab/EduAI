@@ -33,6 +33,7 @@ import {
 import {
   getInteractionCountsByModel,
   getInteractionCountsByServer,
+  getPeakUsageHours,
 } from "~/lib/db.ai-interaction-stats.server";
 import type { Route } from "./+types/admin.logs";
 
@@ -286,9 +287,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   if (tab === "servers") {
-    const [serverStats, modelStats] = await Promise.all([
+    const [serverStats, modelStats, peakUsageHours] = await Promise.all([
       getInteractionCountsByServer({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
       getInteractionCountsByModel({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
+      getPeakUsageHours({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
     ]);
     const query = buildQueryState(tab, page, pageSize, direction, searchParams);
     return {
@@ -332,6 +334,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       serverStats,
       modelStats,
+      peakUsageHours,
     };
   }
 
@@ -478,6 +481,7 @@ export default function AdminLogsRoute() {
         retentionPolicy={data.retentionPolicy}
         serverStats={"serverStats" in data ? data.serverStats : undefined}
         modelStats={"modelStats" in data ? data.modelStats : undefined}
+        peakUsageHours={"peakUsageHours" in data ? data.peakUsageHours : undefined}
       />
     </CoreAppShell>
   );

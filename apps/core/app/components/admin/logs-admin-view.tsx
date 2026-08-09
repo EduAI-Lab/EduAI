@@ -42,6 +42,8 @@ type LogRetentionPolicy = {
 export type ServerRoutingStat = {
   serverId: string | null;
   count: number;
+  /** Distinct chats served, not distinct turns — always <= count. */
+  distinctChatCount: number;
   totalTokens: number;
   totalDurationMs: number;
   totalCostUsd: number;
@@ -61,6 +63,12 @@ export type ModelRoutingStat = {
   totalCarbonGramsCO2: number;
 };
 
+export type HourlyUsageStat = {
+  /** UTC hour-of-day, 0-23. */
+  hour: number;
+  count: number;
+};
+
 type LogsAdminViewProps = {
   tab: LogsTab;
   rows: Array<Record<string, unknown>>;
@@ -72,6 +80,7 @@ type LogsAdminViewProps = {
   retentionPolicy: LogRetentionPolicy;
   serverStats?: ServerRoutingStat[];
   modelStats?: ModelRoutingStat[];
+  peakUsageHours?: HourlyUsageStat[];
 };
 
 // Audit categories exclude SECURITY — security events have their own hard-scoped tab.
@@ -330,6 +339,46 @@ function formatCarbon(grams: number) {
   return `${grams.toFixed(2)} g CO₂`;
 }
 
+/** Zero-padded UTC hour label, e.g. 0 -> "00", 13 -> "13". */
+function formatHourLabel(hour: number): string {
+  return String(hour).padStart(2, "0");
+}
+
+/**
+ * Simple 24-bar histogram for the peak-usage-hours card — plain CSS bars
+ * rather than pulling in a charting library for one chart. Bar height is
+ * relative to the busiest hour in the window; every hour renders (even at
+ * zero) so gaps in traffic are visible rather than silently omitted.
+ */
+function PeakUsageHoursChart({ hours }: { hours: HourlyUsageStat[] }) {
+  const maxCount = Math.max(1, ...hours.map((h) => h.count));
+  const totalCount = hours.reduce((sum, h) => sum + h.count, 0);
+
+  if (totalCount === 0) {
+    return (
+      <p className="text-muted-foreground py-8 text-center text-sm">
+        No interactions found for the selected window.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex items-end gap-1 overflow-x-auto pb-2" role="img" aria-label="Interaction volume by hour of day, UTC">
+      {hours.map((h) => (
+        <div key={h.hour} className="flex min-w-[1.75rem] flex-1 flex-col items-center gap-1">
+          <span className="text-muted-foreground text-[10px] tabular-nums">{formatCount(h.count)}</span>
+          <div
+            className="bg-primary/70 w-full rounded-t"
+            style={{ height: `${Math.max(2, Math.round((h.count / maxCount) * 96))}px` }}
+            title={`${formatHourLabel(h.hour)}:00 UTC — ${formatCount(h.count)} interaction${h.count === 1 ? "" : "s"}`}
+          />
+          <span className="text-muted-foreground text-[10px] tabular-nums">{formatHourLabel(h.hour)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Preset windows for the Servers tab date filter. The value is the number of
 // trailing days as a string, resolved to real dates server-side (see
 // admin.logs.tsx loader) so "Last 30 days" always means the 30 days ending
@@ -372,11 +421,13 @@ function ServerRoutingPanel({
   query,
   serverStats,
   modelStats,
+  peakUsageHours,
   isLoading,
 }: {
   query: LogsQueryState;
   serverStats: ServerRoutingStat[];
   modelStats: ModelRoutingStat[];
+  peakUsageHours: HourlyUsageStat[];
   // Lifted from LogsAdminView (rather than read via useNavigation() here) so
   // the same pending state also covers the navigation that mounts this panel
   // in the first place — see the comment at the LogsAdminView call site.
@@ -484,7 +535,9 @@ function ServerRoutingPanel({
             How much traffic each registered fleet server (CMPS01/02/03, and any server added
             later) has answered in the selected window, and which models it currently hosts
             (live, refreshed every 30s). Servers with no traffic yet still show up here once
-            they're registered — no need to wait for their first interaction.
+            they're registered — no need to wait for their first interaction. "Chats" counts
+            distinct conversations, not turns — interactions with no owning chat (e.g. async
+            Question Maker jobs) aren't counted here since there's no chat to attribute them to.
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -499,6 +552,7 @@ function ServerRoutingPanel({
                 <TableHead>Server</TableHead>
                 <TableHead>Models hosted</TableHead>
                 <TableHead className="text-right">Interactions</TableHead>
+                <TableHead className="text-right">Chats</TableHead>
                 <TableHead className="text-right">Share</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Avg duration</TableHead>
@@ -510,7 +564,7 @@ function ServerRoutingPanel({
             <TableBody>
               {serverStats.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-muted-foreground py-8 text-center">
+                  <TableCell colSpan={10} className="text-muted-foreground py-8 text-center">
                     No fleet servers registered and no fleet-routed interactions found for the
                     selected window.
                   </TableCell>
@@ -531,6 +585,7 @@ function ServerRoutingPanel({
                         : row.models.join(", ")}
                   </TableCell>
                   <TableCell className="text-right">{formatCount(row.count)}</TableCell>
+                  <TableCell className="text-right">{formatCount(row.distinctChatCount)}</TableCell>
                   <TableCell className="text-right">
                     {totalInteractions > 0 ? `${Math.round((row.count / totalInteractions) * 100)}%` : "-"}
                   </TableCell>
@@ -596,6 +651,25 @@ function ServerRoutingPanel({
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Peak usage hours</CardTitle>
+          <CardDescription>
+            Interaction volume by hour of day (UTC), across all servers and models, for the
+            selected window — helps spot when the fleet is busiest for capacity planning.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <Spinner size="md" />
+            </div>
+          ) : (
+            <PeakUsageHoursChart hours={peakUsageHours} />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -618,6 +692,7 @@ export function LogsAdminView({
   retentionPolicy,
   serverStats,
   modelStats,
+  peakUsageHours,
 }: LogsAdminViewProps) {
   const [selectedRow, setSelectedRow] = useState<Record<
     string,
@@ -698,6 +773,7 @@ export function LogsAdminView({
           query={query}
           serverStats={serverStats ?? []}
           modelStats={modelStats ?? []}
+          peakUsageHours={peakUsageHours ?? []}
           isLoading={isLoading}
         />
       ) : (

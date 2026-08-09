@@ -28,6 +28,7 @@ vi.mock("~/lib/db.log-retention-policy.server", () => ({
 vi.mock("~/lib/db.ai-interaction-stats.server", () => ({
   getInteractionCountsByServer: vi.fn().mockResolvedValue([]),
   getInteractionCountsByModel: vi.fn().mockResolvedValue([]),
+  getPeakUsageHours: vi.fn().mockResolvedValue([]),
 }));
 
 import { loader, action } from "~/routes/admin.logs";
@@ -38,6 +39,7 @@ import { getLogRetentionPolicy, updateLogRetentionPolicy } from "~/lib/db.log-re
 import {
   getInteractionCountsByServer,
   getInteractionCountsByModel,
+  getPeakUsageHours,
 } from "~/lib/db.ai-interaction-stats.server";
 
 function makeLoaderArgs(path: string) {
@@ -86,6 +88,7 @@ beforeEach(() => {
   } as never);
   vi.mocked(getInteractionCountsByServer).mockResolvedValue([] as never);
   vi.mocked(getInteractionCountsByModel).mockResolvedValue([] as never);
+  vi.mocked(getPeakUsageHours).mockResolvedValue([] as never);
 });
 
 describe("admin.logs loader authz", () => {

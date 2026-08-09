@@ -189,4 +189,24 @@ describe("persistAiInteractionTelemetry", () => {
       }),
     );
   });
+
+  it("persists the owning chatId when provided (#1351 — distinct chat counts)", async () => {
+    await persistAiInteractionTelemetry({ ...baseParams, chatId: "chat_1" });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ chatId: "chat_1" }),
+      }),
+    );
+  });
+
+  it("persists a null chatId when the turn has no owning chat (e.g. a worker/background completion)", async () => {
+    await persistAiInteractionTelemetry(baseParams);
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ chatId: null }),
+      }),
+    );
+  });
 });
