@@ -1,5 +1,6 @@
 {
   "name": "edu-ai",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -54,7 +55,7 @@
     "@fontsource-variable/outfit": "5.3.0",
     "@mendable/firecrawl-js": "^4.3.8",
     "@opendocsg/pdf2md": "^0.2.1",
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "6.19.3",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
