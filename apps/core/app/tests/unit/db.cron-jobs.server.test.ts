@@ -248,12 +248,16 @@ describe("triggerCronJobAsync", () => {
   it("runs a Core handler without spawning a shell process", async () => {
     mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
     triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "CORE");
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
+    // The CORE path resolves via a dynamic `import()` before calling the
+    // handler — under Vite's SSR transform that hop can take more than a
+    // couple of microtask ticks, so poll instead of a fixed tick count.
+    await vi.waitFor(() => {
+      expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
+    });
     expect(mockSpawn).not.toHaveBeenCalled();
-    expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    });
   });
 
   it("spawns bash with the resolved script path", () => {
