@@ -84,9 +84,14 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) |
 | `QUEUE_ENQUEUE_ENABLED` | optional (default `false`) | dev/prod | Guarded #914 producer flag. When `true`, opted-in `/api/chat` requests (`enqueue: true`) enqueue an AI job instead of streaming. Keep off until the dispatch worker (#168) can drain the queue |
 | `QUEUE_MAX_DEPTH` | optional (default off) | dev/prod | Backpressure cap (#915): max PENDING jobs per queue before `enqueue()` rejects with 429 + `Retry-After`. Plain positive integer only — unset, `0`, or a non-integer value (e.g. `1e3`) disables the cap. See [Operating `QUEUE_MAX_DEPTH`](#operating-queue_max_depth) before enabling it |
+| `AI_JOB_DEFAULT_MODEL` | optional | dev/prod | Worker model override. When unset, the worker uses Auto routing and falls back to `vllm:qwen2.5-32b-instruct` if routing fails |
+| `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | optional (defaults `8` / `1`) | dev/prod | BullMQ worker concurrency for the chat and heavy fleet-pool queues |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | optional (default `120000`) | dev/prod | Maximum provider execution time for an async AI job before it is aborted and retried |
+| `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | optional (defaults `3` / `5000`) | dev/prod | BullMQ attempts and exponential retry base delay for async AI jobs |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
 | `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |
+| `REINDEX_CONCURRENCY` | optional (default `4`, range `1-16`) | dev/prod | #945 — max materials `reEmbedCourseMaterials` (course re-embed background job) processes concurrently via `p-limit`. Non-positive, fractional, blank, and non-numeric values use the default; values above 16 are capped at 16. Keeps large re-embed runs from overwhelming the Postgres connection pool or the embedding provider's rate limit; bump cautiously alongside `OLLAMA_EMBED_MANY_BATCH_SIZE` / `EMBED_MANY_BATCH_SIZE` |
 | `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
@@ -141,11 +146,13 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | required | Postgres connection string |
+| `NODE_ENV` | required | Runtime mode. The local template actively sets `development`, which `setup-env.js` copies or merges; production deployments must set `production` explicitly. |
 | `PORT` | optional (default 4000) | Server port |
 | `CORE_URL` | required | Core base URL — session validation and login redirect |
 | `EDUAI_API_KEY` | required | Must match Core's `EDUAI_API_KEY` exactly (Core does not read admin-UI overrides) |
 | `EDUAI_BASE_URL` | required | Core API base for course import/sync |
 | `EDUAI_MODEL` | required | LLM model id, e.g. `google:gemini-2.5-flash` |
+| `CORS_ORIGINS` | optional (`http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed) | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials (e.g. `http://localhost:3001,https://dev.aitutor.eduai.ok.ubc.ca`). Deployments must configure every trusted frontend origin. |
 | `POLICY_CACHE_TTL_MS` | optional (default 30000) | TTL for cached Core RBAC policy flags |
 | `EDUAI_CALL_TIMEOUT_MS` | optional (default 45000) | Timeout for a single EduAI chat completion round-trip in `callEduAI()` |
 

@@ -6,15 +6,21 @@ import { DashboardView, type DashboardQuickAction } from './DashboardView';
 import { BugReportTriagePanel } from './BugReportTriagePanel';
 import { toDashboardCourseRow } from './dashboard-helpers';
 
-const PUBLISHED_COLOR = 'oklch(0.60 0.15 150)';
-const DRAFT_COLOR = 'oklch(0.75 0.15 80)';
+const PUBLISHED_COLOR = 'var(--color-series-1)';
+const DRAFT_COLOR = 'var(--color-series-2)';
 
-const STUDENT_COLOR = 'oklch(0.55 0.14 255)';
-const INSTRUCTOR_COLOR = 'oklch(0.62 0.17 295)';
-const OTHER_COLOR = 'oklch(0.70 0.03 255)';
+const STUDENT_COLOR = 'var(--color-series-4)';
+const INSTRUCTOR_COLOR = 'var(--color-series-5)';
+const OTHER_COLOR = 'var(--color-series-6)';
 
 type DashboardAdminViewProps = {
   courses: Course[];
+  /**
+   * Full course count (#1208). Unlike the other roles, admin's right panel is
+   * bug-report triage rather than a course panel, so the course-list bound is
+   * disclosed on the list itself — without this it truncates with no warning.
+   */
+  courseTotal?: number;
   adminUsers: AdminUserPage | null;
   bugReports: AdminBugReportRow[];
   /** Platform-wide rollup from `api.dashboardStats()` — optional/nullable; falls back to client-derived counts below when absent. */
@@ -23,6 +29,7 @@ type DashboardAdminViewProps = {
 
 export function DashboardAdminView({
   courses,
+  courseTotal,
   adminUsers,
   bugReports,
   dashboardStats,
@@ -110,6 +117,7 @@ export function DashboardAdminView({
       courses={courses.map(toDashboardCourseRow)}
       coursesHref="/instructor"
       leftPanelTitle="All courses"
+      courseTotal={courseTotal}
       quickActions={quickActions}
       rightPanelTitle="Bug reports to triage"
       rightPanel={<BugReportTriagePanel bugReports={bugReports} />}

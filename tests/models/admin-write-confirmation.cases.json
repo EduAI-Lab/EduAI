@@ -1,0 +1,100 @@
+[
+  {
+    "Confirmed": "true",
+    "PreviewState": "active-no-turn",
+    "Identity": "match",
+    "ConfirmTurn": "null",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "false",
+    "PreviewState": "expired",
+    "Identity": "mismatch",
+    "ConfirmTurn": "same-as-registered",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "active-with-turn",
+    "Identity": "mismatch",
+    "ConfirmTurn": "null",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "false",
+    "PreviewState": "expired",
+    "Identity": "match",
+    "ConfirmTurn": "null",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "expired",
+    "Identity": "mismatch",
+    "ConfirmTurn": "different",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "false",
+    "PreviewState": "active-with-turn",
+    "Identity": "match",
+    "ConfirmTurn": "same-as-registered",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "active-no-turn",
+    "Identity": "match",
+    "ConfirmTurn": "same-as-registered",
+    "RunOutcome": "failure"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "active-no-turn",
+    "Identity": "match",
+    "ConfirmTurn": "different",
+    "RunOutcome": "failure"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "none",
+    "Identity": "match",
+    "ConfirmTurn": "same-as-registered",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "false",
+    "PreviewState": "none",
+    "Identity": "mismatch",
+    "ConfirmTurn": "different",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "active-with-turn",
+    "Identity": "match",
+    "ConfirmTurn": "different",
+    "RunOutcome": "failure"
+  },
+  {
+    "Confirmed": "false",
+    "PreviewState": "none",
+    "Identity": "match",
+    "ConfirmTurn": "null",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "false",
+    "PreviewState": "active-no-turn",
+    "Identity": "mismatch",
+    "ConfirmTurn": "different",
+    "RunOutcome": "success"
+  },
+  {
+    "Confirmed": "true",
+    "PreviewState": "active-no-turn",
+    "Identity": "match",
+    "ConfirmTurn": "null",
+    "RunOutcome": "failure"
+  }
+]

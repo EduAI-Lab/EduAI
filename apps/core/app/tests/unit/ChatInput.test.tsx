@@ -88,6 +88,12 @@ describe("ChatInput — send button", () => {
     expect(screen.getByRole("button", { name: /send message/i })).not.toBeDisabled();
   });
 
+  it("disables the send button and textarea while a regenerate request is in flight (#1365 review)", () => {
+    render(<ChatInput {...makeProps({ input: "hello", assistBusy: true })} />);
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+    expect(screen.getByPlaceholderText(/ask/i)).toBeDisabled();
+  });
+
   it("calls onSubmit when the send button is clicked", () => {
     const onSubmit = vi.fn();
     render(<ChatInput {...makeProps({ input: "hello", onSubmit })} />);

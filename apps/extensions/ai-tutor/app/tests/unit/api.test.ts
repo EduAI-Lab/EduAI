@@ -95,13 +95,90 @@ describe('api methods', () => {
       );
     });
 
+    // ── #1208 search + filter params ──────────────────────────────────
+
+    it('appends a trimmed search when one is supplied', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ search: '  cosc 111  ' });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}&search=cosc+111`,
+      );
+    });
+
+    it('omits a blank or whitespace-only search entirely', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ search: '   ' });
+
+      // Byte-identical to an unfiltered request — no stray `search=`.
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('repeats a multi-value filter param rather than joining it', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ term: ['W1::2026', 'W2::2025'] });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`
+          + '&term=W1%3A%3A2026&term=W2%3A%3A2025',
+      );
+    });
+
+    it('omits empty filter arrays', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ term: [], status: [], progress: [] });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('sends every dimension together', async () => {
+      okEmptyPage();
+      const { api } = await import('~/lib/api');
+      await api.listCourses({
+        page: 2,
+        pageSize: 10,
+        search: 'algebra',
+        term: ['W1::2026'],
+        status: ['draft'],
+        progress: ['completed'],
+      });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        'http://localhost:4000/api/courses?page=2&pageSize=10&search=algebra'
+          + '&term=W1%3A%3A2026&status=draft&progress=completed',
+      );
+    });
+
+    it('listCourseFacets() hits the facets endpoint', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ terms: ['W1::2026'], statuses: ['published'], progress: [] }),
+      });
+      const { api } = await import('~/lib/api');
+      const facets = await api.listCourseFacets();
+
+      expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:4000/api/courses/facets');
+      expect(facets.terms).toEqual(['W1::2026']);
+    });
+
     it('tree endpoints also send a complete pair', async () => {
       okEmptyPage();
       const { api } = await import('~/lib/api');
       await api.modulesForCourse(7);
 
+      // #1207 dropped the tree page size from 200 ("load everything") to a real
+      // pager's worth, once reorder and ordinals stopped needing the whole set.
       expect(mockFetch.mock.calls[0][0]).toBe(
-        'http://localhost:4000/api/courses/7/modules?page=1&pageSize=200',
+        'http://localhost:4000/api/courses/7/modules?page=1&pageSize=25',
       );
     });
   });
@@ -424,5 +501,127 @@ describe('api methods', () => {
     );
     expect(options.credentials).toBe('include');
     expect(result).toEqual(mockData);
+  });
+});
+
+/**
+ * #1207: search is applied SERVER-side, so the wire layer has to actually put
+ * the term on the query string — and leave it off when there is nothing to
+ * filter by, since the server treats `search=` and an absent param the same.
+ */
+describe('search + move endpoints (#1207)', () => {
+  const okEmptyPage = () =>
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 25 }),
+    });
+
+  const okJson = (body: unknown) =>
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) });
+
+  const calledUrl = () => mockFetch.mock.calls[0][0] as string;
+
+  it('serializes a search term on the tree endpoints', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.modulesForCourse(7, { search: 'graphs' });
+
+    expect(calledUrl()).toBe(
+      'http://localhost:4000/api/courses/7/modules?page=1&pageSize=25&search=graphs',
+    );
+  });
+
+  it('url-encodes a multi-word term', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.lessonsForModule(3, { search: 'binary search' });
+
+    expect(calledUrl()).toContain('search=binary+search');
+  });
+
+  it.each([undefined, null, '', '   '])('omits the search param for %p', async (term) => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.activitiesForLesson(9, { search: term as string | null | undefined });
+
+    expect(calledUrl()).not.toContain('search=');
+  });
+
+  it('trims a term before sending it', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.topicsForCourse(4, { search: '  recursion  ' });
+
+    expect(calledUrl()).toContain('search=recursion');
+  });
+
+  it('sends page alongside search so the pager pages the filtered set', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.modulesForCourse(7, { page: 3, search: 'graphs' });
+
+    expect(calledUrl()).toBe(
+      'http://localhost:4000/api/courses/7/modules?page=3&pageSize=25&search=graphs',
+    );
+  });
+
+  it('listImportableActivities sends search alongside its scope params', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.listImportableActivities(12, { excludeLessonId: 5, search: 'heap' });
+
+    const url = calledUrl();
+    expect(url).toContain('courseId=12');
+    expect(url).toContain('excludeLessonId=5');
+    expect(url).toContain('search=heap');
+    // Small page: the picker is search-as-you-type, not a pager.
+    expect(url).toContain('pageSize=25');
+  });
+
+  it.each([
+    ['moveModuleToPosition', 'modules', 'module'],
+    ['moveLessonToPosition', 'lessons', 'lesson'],
+    ['moveActivityToPosition', 'activities', 'activity'],
+  ])('%s PATCHes the position with a 0-based ordinal', async (method, segment, key) => {
+    okJson({ [key]: { id: 4 }, position: 12, total: 40 });
+    const { api } = await import('~/lib/api');
+
+    const result = await (api as unknown as Record<string, (id: number, p: number) => Promise<unknown>>)[
+      method
+    ](4, 12);
+
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe(`http://localhost:4000/api/${segment}/4/position`);
+    expect(options.method).toBe('PATCH');
+    expect(JSON.parse(options.body)).toEqual({ position: 12 });
+    // The server clamps, so callers read the resolved ordinal back off this.
+    expect(result).toMatchObject({ position: 12, total: 40 });
+  });
+
+  it('lessonContext GETs the context endpoint', async () => {
+    okJson({
+      moduleOrdinal: 3,
+      lessonOrdinal: 2,
+      moduleTotal: 9,
+      lessonTotal: 4,
+      prevLessonId: 1,
+      nextLessonId: 3,
+    });
+    const { api } = await import('~/lib/api');
+    const result = await api.lessonContext(77);
+
+    expect(calledUrl()).toBe('http://localhost:4000/api/lessons/77/context');
+    expect(result.moduleOrdinal).toBe(3);
+    expect(result.lessonOrdinal).toBe(2);
+  });
+
+  it('moduleContext GETs the module context endpoint', async () => {
+    okJson({ moduleOrdinal: 4, moduleTotal: 12 });
+    const { api } = await import('~/lib/api');
+    const result = await api.moduleContext(5);
+
+    expect(calledUrl()).toBe('http://localhost:4000/api/modules/5/context');
+    expect(result).toEqual({ moduleOrdinal: 4, moduleTotal: 12 });
   });
 });

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
@@ -11,28 +11,41 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
+const stopChat = vi.hoisted(() => vi.fn());
+const setChatMessages = vi.hoisted(() => vi.fn());
+const setChatInput = vi.hoisted(() => vi.fn());
 
 vi.mock("@ai-sdk/react", () => ({
   useChat: (options: { initialMessages?: unknown[] }) => {
     captureUseChatOptions(options);
     // A real useState so setMessages-driven content swaps (#1246) are visible
     // to the next render, seeded from whatever transcript the test passed in.
-    const [messages, setMessages] = useState(options.initialMessages ?? []);
+    // Also routed through the setChatMessages/setChatInput spies so the
+    // handleCourseChange reset-path tests can assert on call args.
+    const [messages, setMessagesState] = useState(options.initialMessages ?? []);
+    const setMessages: typeof setMessagesState = (...args) => {
+      setChatMessages(...args);
+      setMessagesState(...args);
+    };
     return {
       messages,
-      setMessages,
       input: "",
       handleInputChange: vi.fn(),
       handleSubmit: vi.fn(),
       isLoading: false,
-      stop: vi.fn(),
+      stop: stopChat,
+      setMessages,
+      setInput: setChatInput,
     };
   },
 }));
 
 vi.mock("~/hooks/api/use-courses", () => ({
   useCourses: () => ({
-    courses: [{ id: "c1", code: "COSC 101", name: "Intro to CS" }],
+    courses: [
+      { id: "c1", code: "COSC 101", name: "Intro to CS" },
+      { id: "c2", code: "PHYS 121", name: "Mechanics" },
+    ],
     loading: false,
   }),
 }));
@@ -116,6 +129,9 @@ const autoRoutingData: ChatBaseData = {
 beforeEach(() => {
   captureCourseViewProps.mockClear();
   captureUseChatOptions.mockClear();
+  stopChat.mockClear();
+  setChatMessages.mockClear();
+  setChatInput.mockClear();
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -166,6 +182,91 @@ function renderChatScreen(
   return { router, ...render(<RouterProvider router={router} />) };
 }
 
+function renderBlankChat(initialEntry = "/chat") {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/chat",
+        element: (
+          <PolicyProvider policies={{}}>
+            <SidebarProvider>
+              <ChatScreen data={baseData} initialTranscript={null} />
+            </SidebarProvider>
+          </PolicyProvider>
+        ),
+      },
+      {
+        path: "/chat/:chatId",
+        element: <div data-testid="persisted-chat-route" />,
+      },
+    ],
+    { initialEntries: [initialEntry] },
+  );
+
+  return { router, ...render(<RouterProvider router={router} />) };
+}
+
+function makePersistedTranscript(): ChatTranscript {
+  return {
+    chat: {
+      id: "chat-1",
+      title: "Stored chat",
+      systemPrompt: null,
+      adhdAssist: false,
+      courseId: "c1",
+      courseCode: "COSC 101",
+      courseName: "Intro to CS",
+      ownerId: "user-1",
+      ownerName: "Test User",
+      updatedAt: new Date().toISOString(),
+    },
+    messages: [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Stored answer",
+        metadata: { resolvedModelId: "openai:gpt-4" },
+      },
+    ],
+    canEdit: true,
+  };
+}
+
+function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
+  const wrap = (initialTranscript: ChatTranscript | null) => (
+    <PolicyProvider policies={{}}>
+      <SidebarProvider>
+        <ChatScreen data={baseData} initialTranscript={initialTranscript} />
+      </SidebarProvider>
+    </PolicyProvider>
+  );
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/chat/:chatId",
+        action: async () => null,
+        element: wrap(transcript),
+      },
+      {
+        path: "/chat",
+        action: async () => null,
+        element: wrap(null),
+      },
+    ],
+    { initialEntries: [`/chat/${transcript.chat.id}`] },
+  );
+  const visited: string[] = [];
+  router.subscribe((state) => {
+    visited.push(`${state.location.pathname}${state.location.search}`);
+  });
+
+  return {
+    router,
+    visited,
+    ...render(<RouterProvider router={router} />),
+  };
+}
+
 describe("ChatScreen — header", () => {
   it('renders the live page header as "Course Chat"', () => {
     renderChatScreen();
@@ -175,29 +276,7 @@ describe("ChatScreen — header", () => {
   });
 
   it("hydrates routed model ids from the stored transcript", () => {
-    const transcript: ChatTranscript = {
-      chat: {
-        id: "chat-1",
-        title: "Stored chat",
-        systemPrompt: null,
-        adhdAssist: false,
-        courseId: "c1",
-        courseCode: "COSC 101",
-        courseName: "Intro to CS",
-        ownerId: "user-1",
-        ownerName: "Test User",
-        updatedAt: new Date().toISOString(),
-      },
-      messages: [
-        {
-          id: "assistant-1",
-          role: "assistant",
-          content: "Stored answer",
-          metadata: { resolvedModelId: "openai:gpt-4" },
-        },
-      ],
-      canEdit: true,
-    };
+    const transcript = makePersistedTranscript();
 
     renderChatScreen(transcript);
 
@@ -244,6 +323,145 @@ describe("ChatScreen — header", () => {
     expect(captureCourseViewProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ selectedModel: "openai:gpt-4" }),
     );
+  });
+
+  it("carries the live Focus Mode value into the created chat route even when toggled mid-response (#1244)", async () => {
+    const { router } = renderChatScreen(null, autoRoutingData);
+
+    // Bound at mount, before Focus Mode is toggled on — mirrors a chat hook
+    // that keeps its original callback reference once a request starts
+    // streaming, rather than always handing back the newest render's closure.
+    const initialOptions = captureUseChatOptions.mock.calls[0][0] as {
+      onResponse: (response: Response) => Promise<void>;
+      onFinish: (message: { id: string; role: string }) => void;
+    };
+
+    await act(async () => {
+      await initialOptions.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
+      );
+    });
+
+    // User flips Focus Mode on while the response is still in flight.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onFocusModeChange(true);
+    });
+
+    act(() => {
+      initialOptions.onFinish({ id: "assistant-1", role: "assistant" });
+    });
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual(
+      expect.objectContaining({ focusMode: true }),
+    );
+  });
+
+  it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
+    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
+    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchSpy = vi
+      .spyOn(global, "fetch")
+      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+
+    const { router } = renderChatScreen(null, autoRoutingData);
+
+    // Save fires before Focus Mode is toggled on — mirrors
+    // handleSystemPromptSave reading focusModeRef only after its in-flight
+    // fetch resolves.
+    const savePromise = captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave(
+      "Be concise",
+    );
+
+    // User flips Focus Mode on while the save request is still in flight.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onFocusModeChange(true);
+    });
+
+    await act(async () => {
+      resolveFetch({ json: () => Promise.resolve({ chatId: "chat-1" }) });
+      await savePromise;
+    });
+
+    fetchSpy.mockRestore();
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual(
+      expect.objectContaining({ focusMode: true }),
+    );
+  });
+
+  it("starts a blank chat with the selected course when switching a persisted chat", async () => {
+    const { router, visited } = renderPersistedChatWithBlankChatRoute(
+      makePersistedTranscript(),
+    );
+    const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
+
+    await act(async () => {
+      persistedViewProps.setSelectedCourseCode("PHYS 121");
+    });
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/chat");
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({
+          selectedCourseCode: "PHYS 121",
+          messages: [],
+        }),
+      );
+    });
+    expect(visited).toContain("/chat?courseCode=PHYS%20121");
+  });
+
+  it("keeps the requested course when the loader has no last course", async () => {
+    renderBlankChat("/chat?courseCode=PHYS%20121");
+
+    await waitFor(() => {
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "PHYS 121" }),
+      );
+    });
+  });
+
+  it("clears an in-flight chat id before switching courses on /chat", async () => {
+    const { router } = renderBlankChat();
+
+    await waitFor(() => {
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "COSC 101" }),
+      );
+    });
+
+    const responseOptions = captureUseChatOptions.mock.lastCall?.[0];
+    await act(async () => {
+      await responseOptions.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-in-flight" } }),
+      );
+    });
+
+    const inFlightViewProps = captureCourseViewProps.mock.lastCall?.[0];
+    await act(async () => {
+      inFlightViewProps.setSelectedCourseCode("PHYS 121");
+    });
+
+    await waitFor(() => {
+      expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
+        expect.objectContaining({
+          courseCode: "PHYS 121",
+          chatId: undefined,
+        }),
+      );
+    });
+    expect(stopChat).toHaveBeenCalled();
+    expect(setChatMessages).toHaveBeenCalledWith([]);
+    expect(setChatInput).toHaveBeenCalledWith("");
+
+    await act(async () => {
+      responseOptions.onFinish({ id: "assistant-2", role: "assistant" });
+    });
+    expect(router.state.location.pathname).toBe("/chat");
   });
 });
 
@@ -302,8 +520,12 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
       adhdAssist: true,
       regenerateOnly: true,
       streaming: false,
-      messages: [{ id: "user-1", role: "user", content: "Explain tax brackets" }],
+      messages: [{ role: "user", content: "Explain tax brackets" }],
     });
+    // A fresh, non-persisted id — reusing the stored id would let the API's
+    // dedup drop the turn and regenerate against stale context (#1365 review).
+    expect(requestBody.messages[0].id).not.toBe("user-1");
+    expect(requestBody.messages[0].id).toMatch(/^preview-/);
 
     await act(async () => {
       resolveFetch({
@@ -426,6 +648,36 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({}),
+    } as never);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderChatScreen(transcriptWithAssistantReply);
+
+    await act(async () => {
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const finalProps = captureCourseViewProps.mock.lastCall?.[0];
+    expect(finalProps.adhdAssist).toBe(false);
+    expect(finalProps.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "assistant-1", content: "A long baseline paragraph." }),
+      ]),
+    );
+
+    consoleErrorSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it("leaves the toggle and content unchanged when the regenerate response is whitespace-only (#1365 review)", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ content: "   \n  " }),
     } as never);
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 

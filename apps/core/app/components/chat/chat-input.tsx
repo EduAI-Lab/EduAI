@@ -139,7 +139,11 @@ export function ChatInput({
       selectedCourseId)
     : null;
 
-  const canSend = !isLoading && !disabledReason && input.trim().length > 0;
+  // A regenerate-in-flight preview must block a normal send too — otherwise
+  // the send uses the pre-toggle mode while the preview can later flip it,
+  // leaving the new answer and the toggle out of sync (#1365 review).
+  const canSend =
+    !isLoading && !assistBusy && !disabledReason && input.trim().length > 0;
   const controlsDisabled = !!disabledReason;
   const motionReduced = useMotionReducedPreference();
   const chipPress = motionReduced
@@ -185,7 +189,7 @@ export function ChatInput({
                     ? `Ask about ${selectedCourseLabel}…`
                     : "Ask anything…"
                 }
-                disabled={isLoading || !!disabledReason}
+                disabled={isLoading || assistBusy || !!disabledReason}
                 className="max-h-[120px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-[15px] text-foreground placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
               />
             </PromptInput>

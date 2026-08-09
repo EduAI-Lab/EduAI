@@ -40,6 +40,7 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import {
@@ -73,6 +74,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationState = location.state as ChatNavigationState | null;
+  const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   const { courses } = useCourses({ pageSize: 200 });
@@ -96,7 +98,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       : defaultChatModelId(chatModels, routerAutoEnabled);
   });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
+    editableTranscript?.chat.courseCode ??
+      searchParams.get("courseCode") ??
+      lastCourseCode ??
+      null,
   );
   const [chatId, setChatId] = useState<string | null>(
     editableTranscript?.chat.id ?? null,
@@ -113,10 +118,20 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // Focus mode and the explicit model choice are carried across the
   // /chat -> /chat/:chatId replace-navigation below. That route swap remounts
   // ChatScreen (see chat.$chatId.tsx's key), so uncarried state would reset to
-  // its defaults — notably switching a concrete model back to Auto.
+  // its defaults — notably switching a concrete model back to Auto. focusMode
+  // is read via focusModeRef at those call sites (see below) to avoid a
+  // stale-closure revert (#1244); selectedModel is read directly since the
+  // model selector is disabled while a request is in flight.
   const [focusMode, setFocusMode] = useState(
     Boolean(navigationState?.focusMode),
   );
+  // onFinish/handleSystemPromptSave fire after the user may have toggled Focus
+  // Mode mid-response; a ref keeps the replace-navigation below reading the
+  // live value instead of whatever was true when that callback was bound (#1244).
+  const focusModeRef = useRef(focusMode);
+  useEffect(() => {
+    focusModeRef.current = focusMode;
+  }, [focusMode]);
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   /** Persisted/header registry ids keyed by their assistant message id. */
@@ -184,7 +199,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
   const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
     useChatHistory({ scope: "own", limit: 50 });
-  const [searchParams, setSearchParams] = useSearchParams();
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
 
@@ -193,14 +207,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
     },
     [prefsFetcher],
-  );
-
-  const handleCourseChange = useCallback(
-    (code: string | null) => {
-      setSelectedCourseCode(code);
-      persistPreference({ lastCourseCode: code });
-    },
-    [persistPreference],
   );
 
   // Students see a first-visit privacy notice explaining course-chat visibility.
@@ -258,13 +264,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     epoch: reorientationEpoch,
   });
 
-  // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
+  // The state initializer applies ?courseCode= before the default-course effect
+  // can run. Strip the one-shot handoff parameter after mount.
   useEffect(() => {
     if (courseParamApplied.current) return;
     const code = searchParams.get("courseCode");
     if (!code) return;
     courseParamApplied.current = true;
-    setSelectedCourseCode(code);
     const next = new URLSearchParams(searchParams);
     next.delete("courseCode");
     setSearchParams(next, { replace: true });
@@ -289,8 +295,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
   };
 
-  const { messages, setMessages, input, handleInputChange, handleSubmit, isLoading, stop } =
-    useChat({
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+    setMessages,
+    setInput,
+  } = useChat({
       api: "/api/chat",
       // Seed the composer from the route loader's transcript (DB is the source of
       // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
@@ -352,7 +366,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           pendingNavigateChatId.current = null;
           navigate(`/chat/${id}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       },
@@ -414,14 +428,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
                 adhdAssist: checked,
                 regenerateOnly: true,
                 streaming: false,
-                messages: [lastUserMessage],
+                // A fresh, preview-only id — the persisted id would collide with
+                // the already-stored user turn server-side, so mergeMessages
+                // drops it as a duplicate and the model never sees a new last
+                // message to regenerate against (#1365 review).
+                messages: [{ ...lastUserMessage, id: `preview-${crypto.randomUUID()}` }],
               }),
             });
             if (!response.ok) {
               throw new Error(`Regenerate failed with ${response.status}`);
             }
             const data = await response.json();
-            content = typeof data.content === "string" ? data.content : undefined;
+            const rawContent = typeof data.content === "string" ? data.content : undefined;
+            content = rawContent?.trim() ? rawContent : undefined;
             if (!content) {
               throw new Error("Regenerate returned empty content");
             }
@@ -463,6 +482,50 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       })();
     },
     [messages, isLoading, chatId, selectedModel, selectedCourseCode, setMessages, setAssistive],
+  );
+
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      const action = resolveCourseChangeAction({
+        currentCourseCode: selectedCourseCode,
+        nextCourseCode: code,
+        chatId,
+      });
+      if (action.kind === "noop") return;
+
+      persistPreference({ lastCourseCode: code });
+
+      if (action.kind === "new-chat") {
+        // A chat id can arrive in onResponse while the URL is still /chat. A
+        // same-route navigation does not remount this component, so clear all
+        // persisted/in-flight state before handing off the selected course.
+        stop();
+        pendingNavigateChatId.current = null;
+        pendingRoutedRegistryIdRef.current = null;
+        setChatId(null);
+        setSystemPrompt(null);
+        setMessages([]);
+        setInput("");
+        setSelectedCourseCode(action.courseCode);
+        setRoutedModelByMessageId({});
+        setStreamingRoutedRegistryId(null);
+        setWebToolsEnabled(false);
+        navigate(action.to, { state: { focusMode } });
+        return;
+      }
+
+      setSelectedCourseCode(action.courseCode);
+    },
+    [
+      chatId,
+      focusMode,
+      navigate,
+      persistPreference,
+      selectedCourseCode,
+      setInput,
+      setMessages,
+      stop,
+    ],
   );
 
   const onSubmit = useCallback(
@@ -560,7 +623,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         if (location.pathname === "/chat") {
           navigate(`/chat/${data.chatId}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       }
