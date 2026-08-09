@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
-  user: { findMany: vi.fn(), count: vi.fn() },
+  user: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
   enrollment: { findMany: vi.fn(), count: vi.fn() },
   course: { findFirst: vi.fn() },
 }));
@@ -26,13 +26,19 @@ vi.mock("~/lib/agent-tools/course-context.server", () => ({
 }));
 
 import { listBugReports } from "~/lib/bug-reports/server";
-import { getAccessibleCourse, listAccessibleCourseTopics } from "~/lib/agent-tools/course-context.server";
 import {
+  getAccessibleCourse,
+  getAccessibleCourseTopic,
+  listAccessibleCourseTopics,
+} from "~/lib/agent-tools/course-context.server";
+import {
+  getAdminCourseTopic,
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
   listAdminCourseTopics,
   listAdminUsers,
   resolveAdminCourseId,
+  resolveAdminUserId,
 } from "~/lib/agent-tools/admin-context.server";
 
 const ADMIN = { id: "a1", role: "ADMIN" };
@@ -264,6 +270,180 @@ describe("listAdminBugReportsForChat", () => {
       source: undefined,
       limit: 50,
       offset: 0,
+    });
+  });
+});
+
+describe("resolveAdminCourseId additional branches", () => {
+  it("resolves by courseId directly", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    const result = await resolveAdminCourseId(ADMIN, { courseId: "c1" });
+    expect(result).toEqual({ courseId: "c1", courseCode: "COSC 111" });
+    expect(getAccessibleCourse).toHaveBeenCalledWith(ADMIN, "c1");
+  });
+
+  it("returns a gate error when courseId is inaccessible", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await resolveAdminCourseId(ADMIN, { courseId: "c1" });
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("falls back to fallbackCourseId when courseId is absent", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c2", code: "COSC 222" },
+    } as never);
+    const result = await resolveAdminCourseId(ADMIN, { fallbackCourseId: "c2" });
+    expect(result).toEqual({ courseId: "c2", courseCode: "COSC 222" });
+  });
+
+  it("returns a gate error for an inaccessible fallbackCourseId", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await resolveAdminCourseId(ADMIN, { fallbackCourseId: "c2" });
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("returns COURSE_NOT_FOUND when courseCode has no match", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const result = await resolveAdminCourseId(ADMIN, { courseCode: "NOPE 000" });
+    expect(result).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+
+  it("returns a gate error when the resolved courseCode course is inaccessible", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c3", code: "COSC 333" });
+    vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await resolveAdminCourseId(ADMIN, { courseCode: "COSC 333" });
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("requires courseId or courseCode when nothing usable is provided", async () => {
+    const result = await resolveAdminCourseId(ADMIN, {});
+    expect(result).toEqual({ error: "courseId or courseCode required" });
+    expect(getAccessibleCourse).not.toHaveBeenCalled();
+  });
+});
+
+describe("listAdminCourseEnrollments additional branches", () => {
+  it("returns validation error for bad enrolledBefore", async () => {
+    const result = await listAdminCourseEnrollments(ADMIN, "c1", { enrolledBefore: "not-a-date" });
+    expect(result).toEqual({
+      error: "VALIDATION_ERROR",
+      fields: { enrolledBefore: "invalid ISO date" },
+    });
+    expect(getAccessibleCourse).not.toHaveBeenCalled();
+  });
+
+  it("returns a gate error when the course is inaccessible", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await listAdminCourseEnrollments(ADMIN, "c1", {});
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("treats a whitespace-only enrolledSince as no filter", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+    prismaMock.enrollment.count.mockResolvedValue(0);
+    await listAdminCourseEnrollments(ADMIN, "c1", { enrolledSince: "   " });
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { courseId: "c1" } }),
+    );
+  });
+});
+
+describe("listAdminCourseTopics additional branches", () => {
+  it("returns a gate error when the course is inaccessible", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await listAdminCourseTopics(ADMIN, "c1");
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("propagates errors from listAccessibleCourseTopics", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    vi.mocked(listAccessibleCourseTopics).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await listAdminCourseTopics(ADMIN, "c1");
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+});
+
+describe("getAdminCourseTopic", () => {
+  it("returns a gate error when the course is inaccessible", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
+    const result = await getAdminCourseTopic(ADMIN, "c1", "t1");
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("propagates a topic-not-found error", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    vi.mocked(getAccessibleCourseTopic).mockResolvedValue({ error: "TOPIC_NOT_FOUND" } as never);
+    const result = await getAdminCourseTopic(ADMIN, "c1", "missing");
+    expect(result).toEqual({ error: "TOPIC_NOT_FOUND" });
+  });
+
+  it("returns the topic with a dataSource envelope", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    vi.mocked(getAccessibleCourseTopic).mockResolvedValue({
+      topic: { id: "t1", courseId: "c1", name: "Loops" },
+    } as never);
+    const result = await getAdminCourseTopic(ADMIN, "c1", "t1");
+    expect(result).toMatchObject({
+      dataSource: "database",
+      courseId: "c1",
+      courseCode: "COSC 111",
+      topic: { id: "t1", name: "Loops" },
+    });
+  });
+});
+
+describe("resolveAdminUserId", () => {
+  it("returns Forbidden for non-admin", async () => {
+    const result = await resolveAdminUserId(STUDENT, {});
+    expect(result).toEqual({ error: "Forbidden" });
+  });
+
+  it("resolves by userId", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: "u1", email: "a@test.com", name: "A" });
+    const result = await resolveAdminUserId(ADMIN, { userId: "u1" });
+    expect(result).toEqual({ userId: "u1", email: "a@test.com", name: "A" });
+  });
+
+  it("returns USER_NOT_FOUND for an unknown userId", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    const result = await resolveAdminUserId(ADMIN, { userId: "missing" });
+    expect(result).toEqual({ error: "USER_NOT_FOUND", fields: { userId: "no user with this id" } });
+  });
+
+  it("resolves by userEmail case-insensitively", async () => {
+    prismaMock.user.findFirst.mockResolvedValue({ id: "u2", email: "b@test.com", name: "B" });
+    const result = await resolveAdminUserId(ADMIN, { userEmail: "B@Test.com" });
+    expect(result).toEqual({ userId: "u2", email: "b@test.com", name: "B" });
+    expect(prismaMock.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { email: { equals: "b@test.com", mode: "insensitive" } } }),
+    );
+  });
+
+  it("returns USER_NOT_FOUND for an unknown userEmail", async () => {
+    prismaMock.user.findFirst.mockResolvedValue(null);
+    const result = await resolveAdminUserId(ADMIN, { userEmail: "missing@test.com" });
+    expect(result).toEqual({
+      error: "USER_NOT_FOUND",
+      fields: { userEmail: "no user with this email" },
+    });
+  });
+
+  it("requires userId or userEmail", async () => {
+    const result = await resolveAdminUserId(ADMIN, {});
+    expect(result).toEqual({
+      error: "VALIDATION_ERROR",
+      fields: { user: "userId or userEmail required" },
     });
   });
 });
