@@ -265,6 +265,23 @@ describe("admin.logs loader — servers tab date defaulting", () => {
     expect(call.dateTo).toBeInstanceOf(Date);
   });
 
+  it("treats an unparseable custom dateFrom (e.g. hand-edited garbage) as no selection, applying the 30-day default instead of going unbounded", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&dateFrom=not-a-date"),
+    )) as { query: { dateFrom?: string; dateTo?: string; datePreset?: string } };
+
+    expect(result.query.datePreset).toBe("30");
+    expect(result.query.dateFrom).toBeDefined();
+    expect(result.query.dateTo).toBeDefined();
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeInstanceOf(Date);
+    expect(call.dateTo).toBeInstanceOf(Date);
+  });
+
   it("rejects an out-of-allow-list datePreset (e.g. \"0\") and falls back to the 30-day default instead of a zero-width window", async () => {
     const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset=0"))) as {
       query: { dateFrom?: string; dateTo?: string; datePreset?: string };

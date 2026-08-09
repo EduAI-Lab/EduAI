@@ -246,13 +246,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     datePresetDaysCandidate !== null && SERVERS_DATE_PRESET_DAYS.has(datePresetDaysCandidate)
       ? datePresetDaysCandidate
       : null;
-  // A blank custom-range submission (dateFrom=&dateTo=, present but empty —
-  // e.g. the admin picked "Custom range…" and hit Apply without filling
-  // either field in) must NOT count as an explicit selection, or the 30-day
-  // default gets skipped while parseDateFilter still resolves both bounds to
-  // undefined, silently running an unbounded all-time aggregation.
-  const hasExplicitDateParams =
-    !!readOptionalQueryValue(searchParams, "dateFrom") || !!readOptionalQueryValue(searchParams, "dateTo");
+  // A blank OR invalid custom-range submission (dateFrom=&dateTo=, or
+  // dateFrom=not-a-date — e.g. the admin picked "Custom range…" and hit
+  // Apply without filling either field in, or a hand-edited URL) must NOT
+  // count as an explicit selection, or the 30-day default gets skipped while
+  // dateFrom/dateTo resolve to undefined, silently running an unbounded
+  // all-time aggregation. Check the *parsed* values, not the raw query
+  // strings, so unparseable dates fall through to the 30-day default too.
+  const hasExplicitDateParams = dateFrom !== undefined || dateTo !== undefined;
 
   let serversDateFrom = dateFrom;
   let serversDateTo = dateTo;
