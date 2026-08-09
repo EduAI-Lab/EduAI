@@ -18,6 +18,8 @@ import {
 import { ProductTour } from "~/components/tour/product-tour";
 import { DASHBOARD_TOUR_STEPS, DASHBOARD_TOUR_STORAGE_KEY } from "~/components/tour/tour-steps";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
+import { getDashboardCanvasIntegration } from "~/lib/canvas/integration.server";
+import type { CanvasIntegrationPublic } from "~/lib/canvas/schemas";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { loadDashboardData, type DashboardData } from "~/lib/dashboard/dashboard-data.server";
@@ -44,19 +46,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // picks the display config, not which data is read (a TA issues the same
   // STUDENT course queries), so the enrollment lookup and the full dashboard
   // batch are independent — run them concurrently (#1220).
-  const [isTA, dashboard] = await Promise.all([
+  const [isTA, dashboard, canvasIntegration] = await Promise.all([
     session.user.role === "STUDENT"
       ? prisma.enrollment
           .count({ where: { userId: session.user.id, role: "TA", isActive: true } })
           .then((n) => n > 0)
       : Promise.resolve(false),
     loadDashboardData(session.user),
+    // The Canvas card is the dashboard's one remaining client fetch; resolving
+    // it here means it paints connected/not-connected instead of a spinner
+    // (#1220). Returns null for roles/policies that can't manage Canvas, which
+    // is also what the greyed-out card renders.
+    getDashboardCanvasIntegration(session.user),
   ]);
 
   return {
     user: session.user,
     isTA,
     dashboard,
+    canvasIntegration,
   };
 }
 
@@ -104,10 +112,12 @@ function DashboardContent({
   user,
   isTA,
   dashboard,
+  canvasIntegration,
 }: {
   user: User;
   isTA: boolean;
   dashboard: DashboardData;
+  canvasIntegration: CanvasIntegrationPublic | null;
 }) {
   const { isEnabled } = usePolicyGate();
   // §807: roles that qualify for Canvas keep the sync card visible but greyed
@@ -128,7 +138,7 @@ function DashboardContent({
       <DashboardBody effectiveRole={effectiveRole} data={dashboard} />
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">
-          <CanvasDashboardCard disabled={!canvasPolicyOk} />
+          <CanvasDashboardCard disabled={!canvasPolicyOk} initialIntegration={canvasIntegration} />
         </div>
       )}
     </>
@@ -136,7 +146,7 @@ function DashboardContent({
 }
 
 export default function Page() {
-  const { user, isTA, dashboard } = useLoaderData<typeof loader>();
+  const { user, isTA, dashboard, canvasIntegration } = useLoaderData<typeof loader>();
 
   return (
     <CoreAppShell
@@ -152,7 +162,12 @@ export default function Page() {
       }
       tour={<ProductTour steps={DASHBOARD_TOUR_STEPS} storageKey={DASHBOARD_TOUR_STORAGE_KEY} />}
     >
-      <DashboardContent user={user} isTA={isTA} dashboard={dashboard} />
+      <DashboardContent
+        user={user}
+        isTA={isTA}
+        dashboard={dashboard}
+        canvasIntegration={canvasIntegration}
+      />
     </CoreAppShell>
   );
 }
