@@ -85,13 +85,40 @@ async function usersByRole(): Promise<UserRoleBreakdown> {
   return out;
 }
 
+/** The access-scoped course rows a UNIT_ADMIN dashboard is computed from. */
+type UnitAdminCourseScope = {
+  id: string;
+  instructorId: string | null;
+  isActive: boolean;
+}[];
+
+/**
+ * Every course a UNIT_ADMIN can see, with just the fields the stats and the
+ * dashboard totals need. Resolved once per dashboard load and shared, so the
+ * unit filter is built and the course table hit a single time rather than once
+ * per consumer.
+ */
+async function loadUnitAdminCourseScope(
+  rbacUser: Parameters<typeof buildCourseListFilter>[0],
+): Promise<UnitAdminCourseScope> {
+  const filter = await buildCourseListFilter(rbacUser);
+  return prisma.course.findMany({
+    where: filter,
+    select: { id: true, instructorId: true, isActive: true },
+  });
+}
+
 /**
  * Role-scoped dashboard statistics. Lifted verbatim from the old
  * `GET /api/dashboard/stats` loader so the route (still served for any client
  * caller) and the SSR dashboard loader share one implementation.
+ *
+ * `opts.unitAdminCourses` lets the SSR loader hand in the course scope it has
+ * already resolved; without it (the API-route caller) this resolves its own.
  */
 export async function computeDashboardStats(
   user: DashboardUser,
+  opts: { unitAdminCourses?: UnitAdminCourseScope } = {},
 ): Promise<DashboardStats> {
   const role = user.role ?? "STUDENT";
   const week = weekAgo();
@@ -126,8 +153,7 @@ export async function computeDashboardStats(
 
   if (role === "UNIT_ADMIN") {
     const rbacUser = { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits ?? undefined };
-    const filter = await buildCourseListFilter(rbacUser);
-    const courses = await prisma.course.findMany({ where: filter, select: { id: true, instructorId: true, isActive: true } });
+    const courses = opts.unitAdminCourses ?? (await loadUnitAdminCourseScope(rbacUser));
     const courseIds = courses.map((c) => c.id);
     const uniqueInstructorIds = [...new Set(courses.map((c) => c.instructorId).filter(Boolean))];
 
@@ -244,8 +270,8 @@ function toDashboardCourse(course: { id: string; code: string; name: string; ter
  * runs them concurrently.
  *
  * Per-role query gating is deliberate (#1041): non-admins never touch
- * `user.count()`, and the quick-actions roles ask for `pageSize: 1` totals
- * rather than course pages.
+ * `user.count()`, and the quick-actions roles ask for counts rather than course
+ * pages.
  */
 export async function loadDashboardData(user: DashboardUser): Promise<DashboardData> {
   const role = user.role ?? "STUDENT";
@@ -257,7 +283,7 @@ export async function loadDashboardData(user: DashboardUser): Promise<DashboardD
       computeDashboardStats(user),
       listChats(viewer, { limit: RECENT_CHATS_LIMIT }),
       prisma.user.count(),
-      listCoursesForUser(rbacUser, { pageSize: 1, isActive: true }),
+      listCoursesForUser(rbacUser, { countOnly: true, isActive: true }),
     ]);
     return {
       stats,
@@ -270,18 +296,21 @@ export async function loadDashboardData(user: DashboardUser): Promise<DashboardD
   }
 
   if (role === "UNIT_ADMIN") {
-    const [stats, recentChats, allCourses, activeCourses] = await Promise.all([
-      computeDashboardStats(user),
+    // One access-scoped course read backs all three consumers: the stats, the
+    // visible-course total, and the active-course total. Previously each built
+    // its own `buildCourseListFilter` and hit the course table separately.
+    const scope = loadUnitAdminCourseScope(rbacUser);
+    const [stats, recentChats, courses] = await Promise.all([
+      scope.then((unitAdminCourses) => computeDashboardStats(user, { unitAdminCourses })),
       listChats(viewer, { limit: RECENT_CHATS_LIMIT }),
-      listCoursesForUser(rbacUser, { pageSize: 1 }),
-      listCoursesForUser(rbacUser, { pageSize: 1, isActive: true }),
+      scope,
     ]);
     return {
       stats,
       recentChats: recentChats.map(toDashboardRecentChat),
       courses: [],
-      courseTotal: allCourses.total,
-      activeCourseTotal: activeCourses.total,
+      courseTotal: courses.length,
+      activeCourseTotal: courses.filter((c) => c.isActive).length,
     };
   }
 

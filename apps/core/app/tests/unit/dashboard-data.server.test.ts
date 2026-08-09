@@ -1,10 +1,12 @@
 /**
  * The dashboard resolves its data in the route's SSR loader (#1220). This pins
  * the per-role query gating that used to live in the client bodies (#1041):
- *   - ADMIN reads a `pageSize: 1` active-course total and the platform user
+ *   - ADMIN reads a `countOnly` active-course total and the platform user
  *     total; it never fetches a page of course rows it wouldn't render.
- *   - UNIT_ADMIN takes two `pageSize: 1` total-only reads (all + active) and
- *     never the platform user total.
+ *   - UNIT_ADMIN resolves its access-scoped course list exactly once and derives
+ *     the stats, the visible total and the active total from it — one
+ *     `buildCourseListFilter` + one course read, not three — and never reads the
+ *     platform user total.
  *   - The course-card roles (INSTRUCTOR/TA/STUDENT) fetch exactly one small
  *     page and expose `courseTotal`, with no admin-only aggregates.
  */
@@ -13,6 +15,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadDashboardData } from "~/lib/dashboard/dashboard-data.server";
 import { listCoursesForUser } from "~/lib/courses/server";
 import { listChats } from "~/lib/chat-history/server";
+import { buildCourseListFilter } from "~/lib/auth/course-access.server";
+import prisma from "~/lib/prisma.server";
 
 vi.mock("~/lib/courses/server", () => ({ listCoursesForUser: vi.fn() }));
 vi.mock("~/lib/chat-history/server", () => ({ listChats: vi.fn() }));
@@ -39,6 +43,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockListChats.mockResolvedValue([]);
   mockListCourses.mockResolvedValue({ courses: [], total: 0 } as never);
+  // The prisma stub shares one model object across every model, so a per-test
+  // `findMany` override would otherwise leak into the next test.
+  vi.mocked(prisma.course.findMany).mockResolvedValue([] as never);
 });
 
 describe("loadDashboardData query gating", () => {
@@ -47,7 +54,7 @@ describe("loadDashboardData query gating", () => {
 
     expect(mockListCourses).toHaveBeenCalledTimes(1);
     expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), {
-      pageSize: 1,
+      countOnly: true,
       isActive: true,
     });
     expect(typeof data.userTotal).toBe("number");
@@ -55,14 +62,21 @@ describe("loadDashboardData query gating", () => {
     expect(data.courses).toEqual([]);
   });
 
-  it("UNIT_ADMIN takes two total-only reads and no platform user total", async () => {
+  it("UNIT_ADMIN resolves its course scope once and derives both totals from it", async () => {
+    const courseFindMany = vi.mocked(prisma.course.findMany);
+    courseFindMany.mockResolvedValue([
+      { id: "c1", instructorId: "i1", isActive: true },
+      { id: "c2", instructorId: "i2", isActive: false },
+    ] as never);
+
     const data = await loadDashboardData(userWith("UNIT_ADMIN"));
 
-    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), { pageSize: 1 });
-    expect(mockListCourses).toHaveBeenCalledWith(expect.anything(), {
-      pageSize: 1,
-      isActive: true,
-    });
+    // The stats, the visible total and the active total all read the one scope.
+    expect(vi.mocked(buildCourseListFilter)).toHaveBeenCalledTimes(1);
+    expect(courseFindMany).toHaveBeenCalledTimes(1);
+    expect(mockListCourses).not.toHaveBeenCalled();
+    expect(data.courseTotal).toBe(2);
+    expect(data.activeCourseTotal).toBe(1);
     expect(data.userTotal).toBeUndefined();
     expect(data.courses).toEqual([]);
   });
