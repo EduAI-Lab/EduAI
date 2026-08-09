@@ -435,9 +435,15 @@ export function resolveAwaitingFollowup(input: {
     return !textAdvanced;
   }
 
-  // Stay latched until follow-up text arrives.
+  // Stay latched until follow-up text arrives. Tool-only turns with no prior
+  // text start prevFingerprint at "", so the first follow-up token must still
+  // clear the latch — comparing only non-empty fingerprints (textAdvanced
+  // above) would keep awaitingFollowup true through that first token.
   if (input.prevAwaitingFollowup) {
-    return !textAdvanced;
+    const followupTextArrived =
+      input.fingerprint.trim().length > 0 &&
+      input.fingerprint !== input.prevFingerprint;
+    return !followupTextArrived;
   }
 
   return false;
