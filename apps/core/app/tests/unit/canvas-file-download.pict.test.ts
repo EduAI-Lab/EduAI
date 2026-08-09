@@ -70,10 +70,11 @@ function buildRedirectLocation(row: CanvasFileDownloadRow): string {
   return `${origin}${INITIAL_PATH}&follow=1`;
 }
 
-function buildOverLimitRedirectChain(): string[] {
+function buildOverLimitRedirectChain(row: CanvasFileDownloadRow): string[] {
+  const origin = canvasUrlForRow(row);
   const locations: string[] = [];
   for (let i = 0; i <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS; i++) {
-    locations.push(`${LOCAL_ORIGIN}/redirect/${i}`);
+    locations.push(`${origin}/redirect/${i}`);
   }
   return locations;
 }
@@ -86,7 +87,7 @@ type FetchCall = {
 function installFetchMock(row: CanvasFileDownloadRow): FetchCall[] {
   const calls: FetchCall[] = [];
   const redirectLocations =
-    row.ByteLimit === "over" ? buildOverLimitRedirectChain() : [buildRedirectLocation(row)];
+    row.ByteLimit === "over" ? buildOverLimitRedirectChain(row) : [buildRedirectLocation(row)];
 
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
