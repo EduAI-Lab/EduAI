@@ -22,6 +22,14 @@
  * VLLM_FLEET_DEFAULT_MODELS) remain a fallback when no config file is
  * present, so existing deployments keep working unmodified until they
  * migrate. See registry.ts for the fallback wiring.
+ *
+ * fleet.config.json itself is host-specific (real server URLs for whichever
+ * environment it's deployed on) and gitignored, same as .env — each
+ * deployment copies fleet.config.example.json and fills in its own servers.
+ * It must never be committed: since the default path resolves relative to
+ * process.cwd() with no env var required, a committed file would silently
+ * activate fleet routing (and its live health probes) in every checkout,
+ * including CI, against servers that checkout usually can't reach.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
