@@ -792,6 +792,54 @@ Two: Second
     );
   });
 
+  it("does not let a copied step slip through a multi-step prior ladder (#1245 review)", async () => {
+    // Prior ladder has two distinct steps. The reply copies only step 2's
+    // wording verbatim (renumbered to "1." since it's the only step in a
+    // single-step reply) — a whole-section comparison would see the sections
+    // as different and miss it. The per-step content check must still catch it.
+    const priorAssistantText = `**Top summary**
+- Dish-washing steps recap.
+
+### Step ladder
+1. **Scrape off food scraps** — why it matters: keeps grease from clogging the drain.
+2. **Rinse each item under running water** — why it matters: loosens stuck-on food so soap can actually clean, not just spread grease around.
+
+**Next?** Want the next step?`;
+
+    const copied = `**Top summary**
+- Step 2 recap.
+
+### Step ladder
+1. **Rinse each item under running water** — why it matters: loosens stuck-on food so soap can actually clean, not just spread grease around.
+
+**Next?** Want me to continue?`;
+
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: `**Top summary**
+- Step 2 is about rinsing before you wash.
+
+### Step ladder
+1. **Rinse each item, working from top to bottom** — why it matters: gravity carries loosened debris down and off the item instead of resettling on already-clean spots.
+
+**Next?** Want the next step?`,
+      usage: { promptTokens: 10, completionTokens: 20 },
+    } as never);
+
+    const result = await auditAndMaybeRewrite({
+      draft: copied,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "Go back to step 2 of the dish-washing procedure.",
+      priorAssistantText,
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.method).toBe("llm");
+    expect(result.text).not.toContain(
+      "Rinse each item under running water — why it matters: loosens stuck-on food so soap can actually clean, not just spread grease around.",
+    );
+  });
+
   it("ships the thin shell untouched when there is no step-recall request (unchanged behavior)", async () => {
     const thin = `**Top summary**
 - Step 2: rinse each item under running water to remove loose food debris.

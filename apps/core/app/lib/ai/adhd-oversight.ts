@@ -608,40 +608,71 @@ function normalizeForCopyCheck(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+/** The step number the learner asked to revisit (e.g. "what was step 2 again?"). */
+function extractRequestedStepNumber(userText?: string): string | null {
+  const stepMatch = /\bstep\s+(\d+)\b/i.exec((userText ?? "").trim());
+  return stepMatch ? stepMatch[1] : null;
+}
+
+/** The text of one numbered step line within an already-extracted Step ladder section. */
+function extractStepLine(section: string, stepNumber: string): string | null {
+  const lineRe = new RegExp(`^\\s*${stepNumber}\\.\\s+(.+)$`, "m");
+  const lineMatch = lineRe.exec(section);
+  return lineMatch ? lineMatch[1].trim() : null;
+}
+
+/** Every numbered step line's text within an already-extracted Step ladder section. */
+function extractStepLadderLines(section: string): string[] {
+  return [...section.matchAll(/^\s*\d+\.\s+(.+)$/gm)].map((m) => m[1].trim());
+}
+
 /**
- * True when the draft's Step ladder section is (near-)verbatim the same as
- * the prior assistant turn's Step ladder section — i.e. the draft already
- * "has" a Step ladder heading, but it's the same copy-pasted fragment, not a
- * fresh re-explanation of the recalled step (#1245).
+ * True when the draft's Step ladder section is a copy-paste of the prior
+ * assistant turn's rather than a fresh re-explanation of the recalled step
+ * (#1245). Checks the full section first (catches the common single-step
+ * case), then falls back to matching the requested step's prior-turn line
+ * against any line in the draft by content — a multi-step prior ladder
+ * won't match the full-section check when only one step gets copied, and a
+ * copied step is often renumbered (e.g. down to "1.") in a single-step
+ * reply, so position can't be assumed either (#1245 review).
  */
 function isStepLadderCopiedFromPrior(
   draft: string,
   priorAssistantText?: string,
+  userText?: string,
 ): boolean {
   const priorSection = extractStepLadderSection(priorAssistantText ?? "");
   if (!priorSection) return false;
   const draftSection = extractStepLadderSection(draft);
   if (!draftSection) return false;
-  return normalizeForCopyCheck(draftSection) === normalizeForCopyCheck(priorSection);
+  if (normalizeForCopyCheck(draftSection) === normalizeForCopyCheck(priorSection)) {
+    return true;
+  }
+  const stepNumber = extractRequestedStepNumber(userText);
+  if (!stepNumber) return false;
+  const priorLine = extractStepLine(priorSection, stepNumber);
+  if (!priorLine) return false;
+  const priorLineNormalized = normalizeForCopyCheck(priorLine);
+  return extractStepLadderLines(draftSection).some(
+    (line) => normalizeForCopyCheck(line) === priorLineNormalized,
+  );
 }
 
 /**
- * Pull the specific numbered step's line the learner asked to revisit (e.g.
- * "what was step 2 again?") out of the prior assistant turn's Step ladder,
- * so the last-resort fallback skeleton can preserve the actual recalled
- * action instead of a generic "Revisit that step" placeholder (#1245).
+ * Pull the specific numbered step's line the learner asked to revisit out of
+ * the prior assistant turn's Step ladder, so the last-resort fallback
+ * skeleton can preserve the actual recalled action instead of a generic
+ * "Revisit that step" placeholder (#1245).
  */
 function extractRecalledStepText(
   userText: string | undefined,
   priorAssistantText: string | undefined,
 ): string | null {
-  const stepMatch = /\bstep\s+(\d+)\b/i.exec((userText ?? "").trim());
-  if (!stepMatch) return null;
+  const stepNumber = extractRequestedStepNumber(userText);
+  if (!stepNumber) return null;
   const priorSection = extractStepLadderSection(priorAssistantText ?? "");
   if (!priorSection) return null;
-  const lineRe = new RegExp(`^\\s*${stepMatch[1]}\\.\\s+(.+)$`, "m");
-  const lineMatch = lineRe.exec(priorSection);
-  return lineMatch ? lineMatch[1].trim() : null;
+  return extractStepLine(priorSection, stepNumber);
 }
 
 type StepLadderGateOpts = {
@@ -649,6 +680,7 @@ type StepLadderGateOpts = {
   expectSources?: boolean;
   requireStepLadder?: boolean;
   priorAssistantText?: string;
+  userText?: string;
 };
 
 function contentOk(
@@ -666,7 +698,7 @@ function contentOk(
   // the prior turn's isn't a real re-explanation of the recalled step (#1245).
   if (
     options?.requireStepLadder &&
-    isStepLadderCopiedFromPrior(text, options.priorAssistantText)
+    isStepLadderCopiedFromPrior(text, options.priorAssistantText, options.userText)
   ) {
     return false;
   }
@@ -712,7 +744,7 @@ export function describeOversightRejectReasons(
   if (
     options?.requireStepLadder &&
     metrics.stepLadder &&
-    isStepLadderCopiedFromPrior(text, options.priorAssistantText)
+    isStepLadderCopiedFromPrior(text, options.priorAssistantText, options.userText)
   ) {
     reasons.push(
       "the Step ladder section is a verbatim copy of the prior turn's — write a fresh " +
@@ -891,13 +923,14 @@ export async function auditAndMaybeRewrite(args: {
       priorAssistantText: args.priorAssistantText,
     }) &&
     (!hasStepLadderSection(trimmed) ||
-      isStepLadderCopiedFromPrior(trimmed, args.priorAssistantText));
+      isStepLadderCopiedFromPrior(trimmed, args.priorAssistantText, args.userText));
   const diagramOpts = { userText: args.userText };
   const gateOpts: StepLadderGateOpts = {
     requireDiagram,
     expectSources,
     requireStepLadder,
     priorAssistantText: args.priorAssistantText,
+    userText: args.userText,
   };
 
   const beforeMetrics = withProfileStructuralPass(
