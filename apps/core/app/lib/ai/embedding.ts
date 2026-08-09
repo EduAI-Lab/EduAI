@@ -66,6 +66,117 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
 }
 
 /**
+ * ivfflat.probes (#940): how many of the index's `lists` clusters to scan per
+ * query. Higher = better recall, closer to exact search, at the cost of more
+ * rows scanned; pgvector's own default is 1, which is fast but recall-poor
+ * once `lists` is non-trivial. This is a session/transaction-scoped Postgres
+ * GUC, not an index property, so it can't be "baked into" the migration.
+ *
+ * Env override lets ops raise recall (or lower latency) without a code change;
+ * clamped to the index's 100-list range. `probes = lists` (100) is a valid,
+ * fully-index-scan value in pgvector — it just visits every list rather than
+ * degrading to a sequential scan — and is useful for validating filtered
+ * recall. 0 / invalid input resolves to the code default of 10 (not to
+ * Postgres' own GUC default of 1).
+ */
+const DEFAULT_IVFFLAT_PROBES = 10;
+const MIN_IVFFLAT_PROBES = 1;
+const MAX_IVFFLAT_PROBES = 100;
+
+export function resolveIvfflatProbes(): number {
+  const raw = Number(process.env.RAG_IVFFLAT_PROBES);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_IVFFLAT_PROBES;
+  }
+  return Math.min(MAX_IVFFLAT_PROBES, Math.max(MIN_IVFFLAT_PROBES, Math.round(raw)));
+}
+
+/**
+ * `ivfflat.max_probes` (#940): the ceiling iterative scanning is allowed to
+ * raise the *effective* probe count to while it looks for enough
+ * post-filter rows to satisfy a LIMIT. This is a different knob from
+ * `ivfflat.probes` above (the *initial* number of lists scanned) — probes is
+ * clamped to the index's `lists = 100` because scanning more lists than
+ * exist is meaningless, but `max_probes` must be allowed to reach (and
+ * pgvector recommends comfortably exceed) `lists` so a course-filtered query
+ * can keep asking for more lists instead of coming back short. pgvector's own
+ * documented default/max for this GUC is 32768; we reuse that value rather
+ * than inventing a smaller one that could once again sit below `lists` after
+ * a future re-tune of the index.
+ */
+const IVFFLAT_ITERATIVE_MAX_PROBES = 32768;
+
+/** Minimum pgvector extension version that supports `ivfflat.iterative_scan` / `ivfflat.max_probes`. */
+const IVFFLAT_ITERATIVE_SCAN_MIN_VERSION = [0, 8, 0] as const;
+
+/**
+ * Parses a Postgres extension version string (e.g. "0.8.0", "0.8",
+ * "0.7.4-dev") into a numeric triple for comparison. Missing components
+ * default to 0 so "0.8" compares equal to "0.8.0" instead of sorting before
+ * it (a plain element-wise array compare in SQL would treat the shorter
+ * array as "less than", which is wrong here).
+ */
+function parseExtensionVersion(version: string): [number, number, number] {
+  const parts = version
+    .trim()
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+}
+
+function isVersionAtLeast(
+  version: [number, number, number],
+  minimum: readonly [number, number, number],
+): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (version[i] > minimum[i]) return true;
+    if (version[i] < minimum[i]) return false;
+  }
+  return true;
+}
+
+let cachedPgvectorSupportsIterativeScan: Promise<boolean> | null = null;
+
+/**
+ * Whether the connected Postgres' `vector` extension is new enough
+ * (>= 0.8.0) to support `ivfflat.iterative_scan` / `ivfflat.max_probes`.
+ * Older extensions reject those GUCs with `unrecognized configuration
+ * parameter`, which would abort every retrieval transaction, so this is
+ * checked once and cached for the life of the process rather than compared
+ * inside a per-query `DO $$` block (which also re-ran the version lookup on
+ * every single retrieval call).
+ */
+async function pgvectorSupportsIterativeScan(): Promise<boolean> {
+  if (!cachedPgvectorSupportsIterativeScan) {
+    cachedPgvectorSupportsIterativeScan = (async () => {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ extversion: string }>>`
+          SELECT extversion FROM pg_extension WHERE extname = 'vector'
+        `;
+        const versionText = rows[0]?.extversion;
+        if (!versionText) return false;
+        return isVersionAtLeast(
+          parseExtensionVersion(versionText),
+          IVFFLAT_ITERATIVE_SCAN_MIN_VERSION,
+        );
+      } catch (err) {
+        console.warn("[embeddings] failed to read pgvector extension version; " +
+          "skipping ivfflat.iterative_scan / ivfflat.max_probes", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      }
+    })();
+  }
+  return cachedPgvectorSupportsIterativeScan;
+}
+
+/** Test-only: clears the cached pgvector-version check between test cases. */
+export function __resetPgvectorIterativeScanCacheForTests(): void {
+  cachedPgvectorSupportsIterativeScan = null;
+}
+
+/**
  * Default number of materials re-embedded concurrently in `reEmbedCourseMaterials`
  * (#945). Kept modest (rather than unbounded `Promise.all`) so a large re-embed run
  * doesn't exhaust the Postgres connection pool or burst past the embedding
@@ -777,38 +888,84 @@ export async function findRelevantContent(
     ? Prisma.sql`AND cm."visibleToStudents" = true AND (cm."availableAt" IS NULL OR cm."availableAt" <= NOW())`
     : Prisma.empty;
 
+  // #940: ivfflat.probes is a session/transaction-scoped GUC, not an index
+  // property. Prisma's PrismaClient pools connections, so a bare
+  // `$executeRaw(SET ivfflat.probes = ...)` followed by a separate
+  // `$queryRaw` is not guaranteed to land on the same physical connection.
+  // `SET LOCAL` inside an explicit `$transaction` is — Prisma runs every
+  // statement in an interactive/batched transaction over one reserved
+  // connection — so the probes setting reliably applies to the query that
+  // follows it and is automatically reset once the transaction ends.
+  const probes = resolveIvfflatProbes();
+  // Course filtering happens after the ANN scan. Iterative scanning asks
+  // pgvector for additional lists until the filtered LIMIT is satisfied, up
+  // to this bounded ceiling, so a large unrelated course cannot starve a
+  // smaller course's nearest chunks from the candidate set. Only applied on
+  // pgvector >= 0.8.0 — older extensions reject these GUCs outright, which
+  // would abort the whole transaction and take RAG down silently.
+  const supportsIterativeScan = await pgvectorSupportsIterativeScan();
+
+  // Collapse every `SET LOCAL` into one `SELECT set_config(...)` round trip
+  // instead of 2-3 separate statements, so a pooled connection is held for
+  // fewer round trips per retrieval call under concurrent chat streams.
+  const setConfigCalls = [Prisma.sql`set_config('ivfflat.probes', ${String(probes)}, true)`];
+  if (supportsIterativeScan) {
+    setConfigCalls.push(
+      Prisma.sql`set_config('ivfflat.iterative_scan', 'relaxed_order', true)`,
+      Prisma.sql`set_config('ivfflat.max_probes', ${String(IVFFLAT_ITERATIVE_MAX_PROBES)}, true)`,
+    );
+  }
+  const applyIvfflatSettings = Prisma.sql`SELECT ${Prisma.join(setConfigCalls)}`;
+
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
     const bm25Weight = 1 - alpha;
+    // Retrieve a wider semantic candidate pool before lexical reranking so BM25
+    // can still change the final ordering without turning the ANN query back
+    // into a full scan.
+    const hybridCandidateLimit = Number(effectiveLimit) * 4;
 
-    // Hybrid path: weighted sum of vector cosine similarity and BM25 (ts_rank).
-    // Same vector similarity floor as the pure-vector path; combined score ranks survivors.
-    // to_tsvector / plainto_tsquery are built-in PostgreSQL; no extra extension needed.
-    const hybridResults = await prisma.$queryRaw<
-      Array<{ content: string; score: number; material_title: string }>
-    >`
-      SELECT
-        mc.content,
-        cm.title AS material_title,
-        (1 - (me.embedding <=> ${queryEmbedding}::vector)) * ${alpha} +
-        COALESCE(
-          ts_rank(
-            to_tsvector('english', mc.content),
-            plainto_tsquery('english', ${userQuery})
-          ),
-          0
-        ) * ${bm25Weight} AS score
-      FROM material_embeddings me
-      JOIN material_chunks mc ON me."chunkId" = mc.id
-      JOIN course_materials cm ON mc."materialId" = cm.id
-      WHERE cm."courseId" = ${courseId}
-        AND cm."deletedAt" IS NULL
-        ${canvasPublishFilter}
-        ${visibilityFilter}
-        AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-      ORDER BY score DESC
-      LIMIT ${Number(effectiveLimit)}
-    `;
+    // pgvector can use an ANN index only when the index operator itself is the
+    // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
+    // a materialized CTE, then apply the similarity floor and hybrid reranking
+    // to the resulting candidate set.
+    const [, hybridResults] = await prisma.$transaction([
+      prisma.$executeRaw(applyIvfflatSettings),
+      prisma.$queryRaw<
+        Array<{ content: string; score: number; material_title: string }>
+      >`
+        WITH vector_candidates AS MATERIALIZED (
+          SELECT
+            mc.content,
+            cm.title AS material_title,
+            me.embedding <=> ${queryEmbedding}::vector AS distance
+          FROM material_embeddings me
+          JOIN material_chunks mc ON me."chunkId" = mc.id
+          JOIN course_materials cm ON mc."materialId" = cm.id
+          WHERE cm."courseId" = ${courseId}
+            AND cm."deletedAt" IS NULL
+            ${canvasPublishFilter}
+            ${visibilityFilter}
+          ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
+          LIMIT ${hybridCandidateLimit}
+        )
+        SELECT
+          content,
+          material_title,
+          (1 - distance) * ${alpha} +
+          COALESCE(
+            ts_rank(
+              to_tsvector('english', content),
+              plainto_tsquery('english', ${userQuery})
+            ),
+            0
+          ) * ${bm25Weight} AS score
+        FROM vector_candidates
+        WHERE 1 - distance > ${threshold}
+        ORDER BY score DESC
+        LIMIT ${Number(effectiveLimit)}
+      `,
+    ]);
 
     return hybridResults.map((r) => ({
       content: r.content,
@@ -817,28 +974,40 @@ export async function findRelevantContent(
     }));
   }
 
-  const results = await prisma.$queryRaw<
-    Array<{
-      content: string;
-      similarity: number;
-      material_title: string;
-    }>
-  >`
-    SELECT
-      mc.content,
-      1 - (me.embedding <=> ${queryEmbedding}::vector) AS similarity,
-      cm.title as material_title
-    FROM material_embeddings me
-    JOIN material_chunks mc ON me."chunkId" = mc.id
-    JOIN course_materials cm ON mc."materialId" = cm.id
-    WHERE cm."courseId" = ${courseId}
-      AND cm."deletedAt" IS NULL
-      ${canvasPublishFilter}
-      ${visibilityFilter}
-      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-    ORDER BY similarity DESC
-    LIMIT ${Number(effectiveLimit)}
-  `;
+  const [, results] = await prisma.$transaction([
+    prisma.$executeRaw(applyIvfflatSettings),
+    prisma.$queryRaw<
+      Array<{
+        content: string;
+        similarity: number;
+        material_title: string;
+      }>
+    >`
+      WITH vector_candidates AS MATERIALIZED (
+        SELECT
+          mc.content,
+          cm.title AS material_title,
+          me.embedding <=> ${queryEmbedding}::vector AS distance
+        FROM material_embeddings me
+        JOIN material_chunks mc ON me."chunkId" = mc.id
+        JOIN course_materials cm ON mc."materialId" = cm.id
+        WHERE cm."courseId" = ${courseId}
+          AND cm."deletedAt" IS NULL
+          ${canvasPublishFilter}
+          ${visibilityFilter}
+        ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
+        LIMIT ${Number(effectiveLimit)}
+      )
+      SELECT
+        content,
+        1 - distance AS similarity,
+        material_title
+      FROM vector_candidates
+      WHERE 1 - distance > ${threshold}
+      ORDER BY distance ASC
+      LIMIT ${Number(effectiveLimit)}
+    `,
+  ]);
 
   return results.map((result) => ({
     content: result.content,
