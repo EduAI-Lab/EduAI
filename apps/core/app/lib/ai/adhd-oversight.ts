@@ -59,6 +59,10 @@ The learner asked about a second topic while another is in progress.
 RULES:
 - Do NOT add a "Top summary" block.
 - Keep a single-topic boundary: acknowledge the new topic and offer to return or switch.
+- Do NOT explain, define, or state any fact about the second topic (#1313)
+  — name it only, do not answer it. Remove any such content from the draft.
+- Max 3 sentences total: acknowledge + (optional) restate the boundary +
+  one forward offer.
 - End with one clear forward continuation question if missing.
 - Hard cap ${ADHD_CLARIFICATION_WORD_CAP} words.
 - Remove any urgency or time-pressure wording ("quickly", "fast", "hurry"); never rush the learner.

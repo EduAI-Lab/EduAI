@@ -3,6 +3,12 @@ name: PR Tests
 on:
   pull_request:
     branches: [development, main]
+  # Required checks must run on GitHub's temporary merge-group commit before
+  # an entry can leave the merge queue. Keep this limited to development,
+  # which is the branch governed by the queue policy.
+  merge_group:
+    types: [checks_requested]
+    branches: [development]
   push:
     branches: [development]
 
