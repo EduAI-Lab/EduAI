@@ -372,19 +372,17 @@ function ServerRoutingPanel({
   query,
   serverStats,
   modelStats,
+  isLoading,
 }: {
   query: LogsQueryState;
   serverStats: ServerRoutingStat[];
   modelStats: ModelRoutingStat[];
+  // Lifted from LogsAdminView (rather than read via useNavigation() here) so
+  // the same pending state also covers the navigation that mounts this panel
+  // in the first place — see the comment at the LogsAdminView call site.
+  isLoading: boolean;
 }) {
   const totalInteractions = serverStats.reduce((sum, row) => sum + row.count, 0);
-  const navigation = useNavigation();
-  // Covers every in-flight navigation on this page (preset select, Apply,
-  // Clear, pagination link) — the loader work (live per-server health
-  // checks + DB aggregation) can take a couple of seconds, so this swaps in
-  // a spinner instead of leaving the previous table sitting there looking
-  // interactive while stale.
-  const isLoading = navigation.state !== "idle";
 
   const initialPreset = matchPresetValue(query.datePreset, query.dateFrom, query.dateTo);
   const [presetValue, setPresetValue] = useState(initialPreset);
@@ -401,14 +399,19 @@ function ServerRoutingPanel({
               <div className="grid gap-1.5">
                 <Label className="text-xs">Date range</Label>
                 <Select
-                  value={presetValue}
+                  // Radix Select treats an empty string as "no selection", so an
+                  // empty presetValue (the "All time" preset's value) would show
+                  // the "Date range" placeholder instead of the "All time" label.
+                  // Map "" <-> ALL_VALUE the same way FilterSelect does above.
+                  value={presetValue === "" ? ALL_VALUE : presetValue}
                   onValueChange={(value) => {
-                    setPresetValue(value);
+                    const resolved = value === ALL_VALUE ? "" : value;
+                    setPresetValue(resolved);
                     // Presets are a complete, valid filter on their own — submit
                     // right away rather than making the admin also hit Apply.
                     // Custom needs the date inputs filled in first, so it waits
                     // for the explicit Apply click below.
-                    if (value !== CUSTOM_RANGE_VALUE) {
+                    if (resolved !== CUSTOM_RANGE_VALUE) {
                       requestAnimationFrame(() => filterFormRef.current?.requestSubmit());
                     }
                   }}
@@ -418,7 +421,10 @@ function ServerRoutingPanel({
                   </SelectTrigger>
                   <SelectContent>
                     {DATE_RANGE_PRESETS.map((preset) => (
-                      <SelectItem key={preset.value || "all"} value={preset.value}>
+                      <SelectItem
+                        key={preset.value || "all"}
+                        value={preset.value === "" ? ALL_VALUE : preset.value}
+                      >
                         {preset.label}
                       </SelectItem>
                     ))}
@@ -618,6 +624,17 @@ export function LogsAdminView({
     unknown
   > | null>(null);
 
+  // Hoisted above ServerRoutingPanel (rather than read inside it) so the
+  // pending state also covers navigating *into* the Servers tab from
+  // another tab: while that navigation is in flight, `tab` here is still
+  // the previous tab's server-rendered value, so ServerRoutingPanel hasn't
+  // mounted yet and any spinner living only inside it would never show.
+  const navigation = useNavigation();
+  const isLoading = navigation.state !== "idle";
+  const isNavigatingToServers =
+    navigation.state !== "idle" &&
+    new URLSearchParams(navigation.location?.search ?? "").get("tab") === "servers";
+
   const prevHref =
     page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
   const nextHref = hasMore ? buildQueryString(query, { page: page + 1 }) : null;
@@ -668,8 +685,21 @@ export function LogsAdminView({
         </TabsList>
       </Tabs>
 
-      {tab === "servers" ? (
-        <ServerRoutingPanel query={query} serverStats={serverStats ?? []} modelStats={modelStats ?? []} />
+      {tab !== "servers" && isNavigatingToServers ? (
+        // Servers tab requested from another tab: the loader hasn't resolved
+        // yet, so `tab` is still the outgoing tab and ServerRoutingPanel
+        // hasn't mounted. Show a lightweight indicator here instead of
+        // rendering the outgoing tab's (about-to-be-replaced) filter form.
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <Spinner size="md" />
+        </div>
+      ) : tab === "servers" ? (
+        <ServerRoutingPanel
+          query={query}
+          serverStats={serverStats ?? []}
+          modelStats={modelStats ?? []}
+          isLoading={isLoading}
+        />
       ) : (
         <>
       {/* Filters — GET form so the URL stays the source of truth. */}
