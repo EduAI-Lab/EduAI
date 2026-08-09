@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
 
@@ -59,6 +59,15 @@ vi.mock("~/lib/logging.server", () => ({
 
 import { enqueue } from "~/lib/queue/enqueue.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
+import { resetFleetRegistryCache } from "~/lib/ai/routing/fleet/registry";
+
+// resolveQueueName() (via heavyFleetConfigured()) reads fleet.config.json
+// first, falling back to VLLM_FLEET_HEAVY_URL only when no config file is
+// present (see resolve-pool.server.ts). Without pointing FLEET_CONFIG_PATH
+// at a file that doesn't exist, a real fleet.config.json on disk (e.g. a
+// developer's local copy for eduai-dev) would silently override these
+// tests' env-var-driven queue selection.
+const NONEXISTENT_CONFIG_PATH = "./__no-such-fleet-config__.json";
 
 const job: JobPayload = {
   kind: "question-generation",
@@ -82,9 +91,13 @@ function stubCounts({ ahead, depth }: { ahead: number; depth: number }) {
   );
 }
 
+const originalFleetConfigPath = process.env.FLEET_CONFIG_PATH;
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  process.env.FLEET_CONFIG_PATH = NONEXISTENT_CONFIG_PATH;
+  resetFleetRegistryCache();
   prismaMock.aiJob.create.mockResolvedValue({
     id: "aijob_1",
     type: "background",
@@ -100,6 +113,12 @@ beforeEach(() => {
   stubCounts({ ahead: 0, depth: 1 });
   prismaMock.aiJob.deleteMany.mockResolvedValue({ count: 1 });
   queueAdd.mockResolvedValue({ id: "bull_1" });
+});
+
+afterEach(() => {
+  if (originalFleetConfigPath === undefined) delete process.env.FLEET_CONFIG_PATH;
+  else process.env.FLEET_CONFIG_PATH = originalFleetConfigPath;
+  resetFleetRegistryCache();
 });
 
 describe("enqueue", () => {
