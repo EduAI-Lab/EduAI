@@ -640,7 +640,8 @@ function assertAllowedCanvasFileDownloadHost(url: string, canvasUrl: string): vo
 }
 
 function shouldSendCanvasFileBearer(url: string, canvasUrl: string): boolean {
-  return new URL(url).origin === parseAndValidateCanvasUrl(canvasUrl).origin;
+  if (new URL(url).origin !== parseAndValidateCanvasUrl(canvasUrl).origin) return false;
+  return !url.includes("sf_verifier");
 }
 
 type CanvasFileDownloadResponse = {
