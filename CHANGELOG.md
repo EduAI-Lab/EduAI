@@ -5,6 +5,7 @@
 ### Fixed
 
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
+- [core] fix: Research energy-backfill matching (`scripts/research/backfill-match.mjs`) silently joined a run's data to the WRONG `AIInteraction` DB rows whenever a fixed synthetic `userId` (e.g. research service-key calls) was reused across multiple runs with repeated prompt text — the `userId::query` path was plain FIFO with no timestamp check at all, unlike the query-only path. Surfaced during the v3 study's Track A routing run; caught only by a suspicious ~90min timestamp offset, no error raised anywhere. Now picks the closest-in-time candidate bounded by the same 60s default window the query-only path already used, rejecting rather than guessing when out of window or unverifiable. Also fixes a related `byQueryOnly` double-match gap and adds visibility for silent-FIFO-fallback cases. 15 unit tests (9 new), reviewed by Opus 5 in two passes, re-verified live against s378's real interaction pool. Closes #1443. (@SyedS, 2026-08-09) — [#1442](https://github.com/EduAI-Lab/EduAI/pull/1442)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
 
