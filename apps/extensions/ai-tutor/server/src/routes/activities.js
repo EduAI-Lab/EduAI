@@ -257,12 +257,19 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   try {
     // Stage 2: verify the client's chatId belongs to this user. Skip when no
     // chatId provided (new session — Core will mint one after the response).
-    const existingSession =
-      payload.chatId && payload.chatId.trim().length > 0
-        ? await prisma.aiChatSession.findFirst({
-            where: { chatId: payload.chatId, userId: authUser.id, activityId, mode },
-          })
-        : null;
+    const hasChatId = Boolean(payload.chatId && payload.chatId.trim().length > 0);
+    const existingSession = hasChatId
+      ? await prisma.aiChatSession.findFirst({
+          where: { chatId: payload.chatId, userId: authUser.id, activityId, mode },
+        })
+      : null;
+
+    // A client-supplied chatId that doesn't resolve to a session owned by this
+    // user/activity/mode either belongs to someone else or is stale — reject
+    // rather than silently reusing it (see #1412).
+    if (hasChatId && !existingSession) {
+      return res.status(403).json({ error: 'Chat session not found' });
+    }
 
     // Stage 3: model + policy resolution. Tutor selection respects student picks
     // when policy allows, otherwise falls back to the policy default.
@@ -270,7 +277,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       await resolveSupervisorSettings();
     const tutorModelId = await resolveTutorModelSelection(payload.modelId);
     const cookie = getEduAiCookieForRequest(req);
-    const chatId = payload.chatId || existingSession?.chatId || null;
+    const chatId = existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
     // Stage 4: fetch testable questions + the course code, both from the
@@ -1351,6 +1358,10 @@ router.post('/activities/:activityId/teach', async (req, res) => {
     if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
 
+    if (!activity.enableTeachMode) {
+      return res.status(400).json({ error: 'Teach mode is not enabled for this activity' });
+    }
+
     let payload;
     try {
       payload = TeachRequestSchema.parse(req.body || {});
@@ -1421,6 +1432,10 @@ router.post('/activities/:activityId/guide', async (req, res) => {
     const lesson = activity.lesson;
     if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
+
+    if (!activity.enableGuideMode) {
+      return res.status(400).json({ error: 'Guide mode is not enabled for this activity' });
+    }
 
     let payload;
     try {
