@@ -117,12 +117,6 @@ describe("Canvas live integration — approved UBC sandbox", { timeout: 180_000 
     expect(first.synced).toHaveLength(1);
     expect(first.synced[0]?.canvasId).toBe(canvas.courseId);
 
-    const second = await capability("repeated Core course sync", () =>
-      syncCanvasCourses(canvas.coreUserId, [canvas.courseId]),
-    );
-    expect(second.errors).toEqual([]);
-    expect(second.synced).toHaveLength(1);
-
     const courses = await prisma.course.findMany({
       where: { externalSource: "canvas", externalId: canvas.courseId },
       select: { id: true, isActive: true, deletedAt: true },
@@ -141,10 +135,18 @@ describe("Canvas live integration — approved UBC sandbox", { timeout: 180_000 
     });
     expect(instructorEnrollments).toHaveLength(1);
 
-    const stagedRoster = await prisma.canvasRosterMember.count({
+    const firstRoster = await prisma.canvasRosterMember.findMany({
       where: { courseId: courses[0]?.id, isActive: true },
+      select: { canvasUserId: true, role: true },
+      orderBy: [{ canvasUserId: "asc" }, { role: "asc" }],
     });
-    expect(stagedRoster).toBeGreaterThanOrEqual(0);
+    expect(firstRoster).toHaveLength(new Set(firstRoster.map((row) => `${row.canvasUserId}:${row.role}`)).size);
+
+    const second = await capability("repeated Core course sync", () =>
+      syncCanvasCourses(canvas.coreUserId, [canvas.courseId]),
+    );
+    expect(second.errors).toEqual([]);
+    expect(second.synced).toHaveLength(1);
 
     const allCourseEnrollments = await prisma.enrollment.count({ where: { courseId: courses[0]?.id } });
     const repeatedCourseEnrollments = await prisma.enrollment.count({
@@ -152,6 +154,13 @@ describe("Canvas live integration — approved UBC sandbox", { timeout: 180_000 
     });
     expect(allCourseEnrollments).toBeGreaterThanOrEqual(1);
     expect(repeatedCourseEnrollments).toBeGreaterThanOrEqual(1);
+
+    const secondRoster = await prisma.canvasRosterMember.findMany({
+      where: { courseId: courses[0]?.id, isActive: true },
+      select: { canvasUserId: true, role: true },
+      orderBy: [{ canvasUserId: "asc" }, { role: "asc" }],
+    });
+    expect(secondRoster).toEqual(firstRoster);
   });
 
   it("does not expose token material when a capability fails", async () => {
