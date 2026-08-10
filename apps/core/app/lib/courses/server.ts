@@ -773,6 +773,74 @@ export async function getAccessibleCourseCodes(user: {
   return courses.map((course) => course.code);
 }
 
+/** A course row plus the caller's enrollment role on it, as `listCoursesForUser` returns. */
+type CourseWithCallerRole = Prisma.CourseGetPayload<object> & {
+  callerEnrollmentRole: Prisma.EnrollmentGetPayload<object>["role"] | null;
+};
+
+/**
+ * Data-only course listing for in-process server callers (the dashboard loader)
+ * that already hold the session user and need the same access-scoped page +
+ * `total` GET /api/courses returns, without an HTTP round trip.
+ *
+ * Mirrors the session path of {@link getCourses}: `buildCourseListFilter` access
+ * scoping, an optional `isActive` narrowing, and the per-row caller-enrollment
+ * annotation. It deliberately omits the `?ids=`/`?search=`/`includeDeleted`
+ * lookup surfaces and the service-key path — those are HTTP-only concerns the
+ * dashboard never uses. Pass `countOnly: true` for a `total`-only read: it skips
+ * the page fetch and the enrollment annotation entirely and returns `courses: []`.
+ */
+export async function listCoursesForUser(
+  // Same access-scoping input `buildCourseListFilter` takes (a session user
+  // satisfies it) — deliberately its loose `RbacUser`, not `rbac/types`'.
+  user: Parameters<typeof buildCourseListFilter>[0],
+  opts: { page?: number; pageSize?: number; isActive?: boolean; countOnly?: boolean } = {},
+) {
+  const { page = 1, pageSize = 25, isActive, countOnly = false } = opts;
+
+  const base = await buildCourseListFilter(user);
+  const where: Prisma.CourseWhereInput =
+    isActive === undefined ? base : { AND: [base, { isActive }] };
+
+  if (countOnly) {
+    return { courses: [] as CourseWithCallerRole[], total: await prisma.course.count({ where }) };
+  }
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.course.count({ where }),
+    prisma.course.findMany({
+      where,
+      orderBy: { code: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  // No rows means no enrollment annotation to build — an `in: []` lookup would
+  // round-trip to Postgres only to return nothing.
+  if (rows.length === 0) {
+    return { courses: rows.map((course) => ({ ...course, callerEnrollmentRole: null })), total };
+  }
+
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: {
+      userId: user.id,
+      isActive: true,
+      courseId: { in: rows.map((course) => course.id) },
+    },
+    select: { courseId: true, role: true },
+  });
+  const roleByCourseId = new Map(
+    enrollmentRows.map((row) => [row.courseId, row.role]),
+  );
+  const courses = rows.map((course) => ({
+    ...course,
+    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
+  }));
+
+  return { courses, total };
+}
+
 /**
  * Returns only the RAG-tuning fields for a course.
  * Both fields are nullable — callers should fall back to global defaults when null.
