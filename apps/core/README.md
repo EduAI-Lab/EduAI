@@ -48,6 +48,7 @@ Full inventory: [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) and `apps/cor
 npm run typecheck
 npm run test:unit
 npm run test:integration
+npm run test:canvas-live # explicit opt-in; see ../../docs/canvas-live-testing.md
 npm run db:migrate
 npm run db:generate
 npm run db:seed
