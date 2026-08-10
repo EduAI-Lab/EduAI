@@ -15,7 +15,7 @@ function required(name) { const value = process.env[name]?.trim(); if (!value) t
 const config = {
   token: required("DISCORD_TOKEN"), guildId: required("DISCORD_GUILD_ID"),
   channelId: required("DISCORD_PR_CHANNEL_ID"), secret: required("GITHUB_WEBHOOK_SECRET"),
-  approvals: Number(process.env.PR_REQUIRED_APPROVALS ?? 1),
+  approvals: Number(process.env.PR_REQUIRED_APPROVALS ?? 2),
 };
 const key = (repo, number) => `${repo}#${number}`;
 const now = () => new Date().toISOString();
