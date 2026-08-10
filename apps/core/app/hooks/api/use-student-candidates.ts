@@ -9,10 +9,9 @@ export interface StudentCandidate {
 const SEARCH_DEBOUNCE_MS = 250
 
 /**
- * Search-select backend for the "add student" / "add TA" pickers (#1042).
- * Backed by `GET /api/courses/:courseId/student-candidates`, which bounds
- * results to a small `limit` instead of the platform-wide STUDENT list this
- * used to preload.
+ * Search-select backend for the "add student" / "add TA" pickers. It uses
+ * the paginated users API rather than preloading the platform-wide STUDENT
+ * list in the course loader.
  */
 export function useStudentCandidates(courseId: string | undefined, exclude: 'enrolled' | 'ta') {
   const [query, setQuery] = useState('')
@@ -35,13 +34,20 @@ export function useStudentCandidates(courseId: string | undefined, exclude: 'enr
       const requestId = ++requestIdRef.current
       setLoading(true)
       try {
-        const params = new URLSearchParams({ exclude })
-        if (query.trim()) params.set('q', query.trim())
-        const res = await fetch(`/api/courses/${courseId}/student-candidates?${params}`)
+        const params = new URLSearchParams({
+          courseId,
+          exclude,
+          page: '1',
+          pageSize: '25',
+          role: 'STUDENT',
+          isActive: 'true',
+        })
+        if (query.trim()) params.set('search', query.trim())
+        const res = await fetch(`/api/users?${params}`)
         if (!res.ok) throw new Error(await res.text())
-        const data = (await res.json()) as { candidates: StudentCandidate[] }
+        const data = (await res.json()) as { data: StudentCandidate[] }
         if (requestId !== requestIdRef.current) return
-        setCandidates(data.candidates)
+        setCandidates(data.data)
       } catch {
         if (requestId !== requestIdRef.current) return
         setCandidates([])

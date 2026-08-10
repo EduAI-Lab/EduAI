@@ -46,6 +46,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 vi.mock("~/lib/ai/providers.server", () => ({
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
+    supportsImages: false,
     maxTokens: null,
     name: null,
   }),
@@ -216,6 +217,7 @@ describe("Smart course RAG gate (#484)", () => {
     beforeEach(() => {
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: false,
+        supportsImages: false,
         maxTokens: null,
         name: null,
       });
@@ -419,6 +421,7 @@ describe("Smart course RAG gate (#484)", () => {
       process.env.VLLM_CHAT_TOOLS = "1";
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: true,
+        supportsImages: false,
         maxTokens: 8192,
         name: "Test tool model",
       });
@@ -478,6 +481,7 @@ describe("Smart course RAG gate (#484)", () => {
     beforeEach(() => {
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: false,
+        supportsImages: false,
         maxTokens: null,
         name: null,
       });

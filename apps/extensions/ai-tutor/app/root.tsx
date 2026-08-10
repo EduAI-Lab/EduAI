@@ -24,18 +24,8 @@ import { ThemeSyncInitializer } from '@eduai/ui/theme-sync-initializer';
 import { Toaster } from '@eduai/ui/sonner';
 import { PageLoader } from '@eduai/ui/page-loader';
 
-export const links: Route.LinksFunction = () => [
-  { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-  {
-    rel: 'preconnect',
-    href: 'https://fonts.gstatic.com',
-    crossOrigin: 'anonymous',
-  },
-  {
-    rel: 'stylesheet',
-    href: 'https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap',
-  },
-];
+// No `links()` export: Outfit is self-hosted via @fontsource-variable/outfit,
+// imported from @eduai/ui's base.css and bundled with the app stylesheet (#1221).
 
 export function HydrateFallback() {
   return <PageLoader />;

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ADHD_ASSIST_POLICY_BLOCK,
+  ADHD_ASSIST_POLICY_VERSION,
   composeSystemPrompt,
   ensureDiagramBeforeNext,
   hasDiagramBlock,
@@ -52,6 +53,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
     expect(result).toContain("ADHD ASSIST MODE (redirect)");
     expect(result).toContain("one-topic boundary");
+  });
+
+  it("redirect policy forbids explaining the second topic and caps sentences (#1313)", () => {
+    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
+    expect(result).toContain("Do NOT explain, define, or give any fact about the second topic");
+    expect(result).toContain("Max 3 sentences total");
+    expect(result).toContain("that instruction does not");
   });
 
   it("resolveAdhdAssistPolicyBlock returns full block by default", () => {
@@ -155,6 +163,18 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Top summary**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Next?**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain('Do not rename **Top summary** or **Next?**');
+  });
+});
+
+describe("v2.3 step recall rule (#1245)", () => {
+  it("full tutoring block tells the model to regenerate, not copy, a revisited step", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("STEP RECALL:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("### Step ladder");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("bare quote or near-copy");
+  });
+
+  it("stamps the bumped policy version", () => {
+    expect(ADHD_ASSIST_POLICY_VERSION).toBe("2.3");
   });
 });
 
