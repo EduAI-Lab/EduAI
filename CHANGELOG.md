@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- [core] fix: Canvas file downloads now preserve a signed redirect to the live Canvas CDN (`*.canvas-user-content.com`, `*.inscloudgate.net`) instead of rewriting the redirect Location onto the configured Canvas origin, which invalidated the signed URL — only local Docker Canvas aliases are still rewritten. The Canvas bearer token is now sent only to the configured Canvas origin and is never forwarded on a cross-origin redirect hop; any other, non-allowlisted cross-host redirect is rejected before a second request is made. Closes #1264. (@saadtab01, 2026-08-09) — [#1437](https://github.com/EduAI-Lab/EduAI/pull/1437)
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
