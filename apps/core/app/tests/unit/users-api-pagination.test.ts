@@ -16,6 +16,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn(async () => ({ response: null, session: null })),
 }));
 
+vi.mock("~/lib/auth/course-access.server", () => ({
+  resolveCourseAccessWithCourse: vi.fn(),
+}));
+
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logAuditAction: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 
@@ -57,6 +62,14 @@ async function body(response: Response) {
 /** The paged branch runs count + findMany + the platform-wide aggregates in one $transaction. */
 function mockPagedTransaction(rows = [ROW], total = rows.length) {
   vi.mocked(prisma.$transaction).mockResolvedValue([total, rows, 137, 130, 1, 2, 3, 4] as never);
+}
+
+/**
+ * The `courseId` candidate branch runs a narrow `[count, findMany]`
+ * $transaction only — no platform-wide aggregates.
+ */
+function mockCandidateTransaction(rows: Array<Pick<typeof ROW, "id" | "name" | "email">>, total = rows.length) {
+  vi.mocked(prisma.$transaction).mockResolvedValue([total, rows] as never);
 }
 
 beforeEach(() => {
@@ -215,5 +228,114 @@ describe("GET /api/users — ?ids= lookup (#1125)", () => {
     ).where;
     expect(where.id).toEqual({ in: ["u1", "u2"] });
     expect(where.OR).toBeDefined();
+  });
+});
+
+describe("GET /api/users course student candidates", () => {
+  const candidateQuery =
+    "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true&search=ali";
+
+  it("lets a course manager search only active students not already enrolled", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },
+    } as never);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+    mockCandidateTransaction([{ id: "u1", name: "Student One", email: "s1@example.com" }]);
+
+    expect((await get(candidateQuery)).status).toBe(200);
+
+    const where = (vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    }).where;
+    expect(where).toMatchObject({
+      role: { in: ["STUDENT"] },
+      isActive: true,
+      enrollments: { none: { courseId: "c1", isActive: true } },
+      OR: [
+        { name: { contains: "ali", mode: "insensitive" } },
+        { email: { contains: "ali", mode: "insensitive" } },
+      ],
+    });
+  });
+
+  it("returns only the candidate fields for a course-scoped search", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+    mockCandidateTransaction([{ id: "u1", name: "Student One", email: "s1@example.com" }], 1);
+
+    const response = await get(
+      "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true",
+    );
+    expect(await body(response)).toEqual({
+      data: [{ id: "u1", name: "Student One", email: "s1@example.com" }],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+    });
+  });
+
+  it("never runs the admin-shaped query for a courseId request — narrow select, no admin transaction", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+    mockCandidateTransaction([{ id: "u1", name: "Student One", email: "s1@example.com" }], 1);
+
+    const response = await get(
+      "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true",
+    );
+
+    // The $transaction call is the narrow [count, findMany] pair only — no
+    // platform-wide count()/isActive-count()/role-breakdown queries mixed in.
+    const transactionArg = vi.mocked(prisma.$transaction).mock.calls[0][0] as unknown as unknown[];
+    expect(transactionArg).toHaveLength(2);
+
+    // The findMany's `select` — what Prisma is actually asked to load — must
+    // be exactly the candidate-picker fields. No `stats`, `taCourseIds`,
+    // `authorizedUnits`, `role`, `isActive`, `emailVerified`, `_count`, or any
+    // other admin-only field or relation count may appear here, since those
+    // leak the moment they're selected regardless of what the mapped response
+    // later omits.
+    const findManyArgs = vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      select?: Record<string, unknown>;
+    };
+    expect(findManyArgs.select).toEqual({ id: true, name: true, email: true });
+
+    // The raw response body itself carries no admin metadata either.
+    const payload = await body(response);
+    expect(payload).toEqual({
+      data: [{ id: "u1", name: "Student One", email: "s1@example.com" }],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+    });
+    expect(payload).not.toHaveProperty("stats");
+    expect(payload.data[0]).not.toHaveProperty("taCourseIds");
+    expect(payload.data[0]).not.toHaveProperty("authorizedUnits");
+    expect(payload.data[0]).not.toHaveProperty("_count");
+    expect(payload.data[0]).not.toHaveProperty("role");
+    expect(payload.data[0]).not.toHaveProperty("isActive");
+  });
+
+  it("does not turn the endpoint into a general user directory for instructors", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },
+    } as never);
+
+    expect((await get("?page=1&pageSize=25&role=STUDENT")).status).toBe(403);
+  });
+
+  it("requires the candidate mode to request active students", async () => {
+    mockPagedTransaction();
+
+    const response = await get("?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT");
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(await body(response))).toContain("COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
   });
 });

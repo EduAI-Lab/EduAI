@@ -10,10 +10,9 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-const prismaMock = vi.hoisted(() => ({
-  aIModel: { findMany: vi.fn() },
+vi.mock("~/lib/prisma.server", () => ({
+  default: { aIModel: { findMany: vi.fn() } },
 }));
-vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
 vi.mock("~/lib/courses/server", () => ({
   getAccessibleCourseCodes: vi.fn(),
@@ -24,23 +23,21 @@ vi.mock("~/lib/user-preferences.server", () => ({
   saveUserPreference: vi.fn(),
 }));
 
-vi.mock("~/lib/chat-auto-model", () => ({
-  withAutoChatModel: vi.fn(),
-}));
-
 vi.mock("~/lib/routing-model-settings.server", () => ({
   getRoutingModelSettings: vi.fn(),
 }));
 
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
-import { withAutoChatModel } from "~/lib/chat-auto-model";
 import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import {
   loadChatBaseData,
+  loadChatBaseDataForUser,
   loadChatTranscript,
+  requireChatSessionUser,
   chatPreferencesAction,
 } from "~/lib/chat/chat-route.server";
 
@@ -61,19 +58,228 @@ const CHAT_ACCESS = {
   canEdit: true,
 };
 
+const USER = { id: "user-1", role: "STUDENT", name: "Alex Patel" } as never;
+
 const PREFERENCES = {
   assistDefault: false,
   lastCourseCode: null,
   motionReduced: false,
-  density: "comfortable" as const,
-  theme: "system" as const,
+  density: "comfortable",
+  theme: "system",
 };
 
-beforeEach(() => {
-  vi.clearAllMocks();
+/**
+ * Wrap a mock so it holds until `release()` is called, tracking how many of the
+ * wrapped calls were in flight at once. Sequential awaits peak at 1.
+ */
+function makeConcurrencyTracker() {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const releases: Array<() => void> = [];
+
+  return {
+    get maxInFlight() {
+      return maxInFlight;
+    },
+    track<T>(value: T) {
+      return () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        return new Promise<T>((resolve) => {
+          releases.push(() => {
+            inFlight -= 1;
+            resolve(value);
+          });
+        });
+      };
+    },
+    /**
+     * Release everything currently held, yielding between passes so a *serial*
+     * implementation — which only enqueues its next release a microtask after
+     * the previous one resolves — still runs to completion instead of hanging
+     * the test. The concurrency assertion must therefore be made before this
+     * is called, so a serial regression fails on the assertion rather than on
+     * a 5s vitest timeout.
+     */
+    async drain() {
+      for (let pass = 0; pass < 10; pass += 1) {
+        while (releases.length > 0) {
+          releases.shift()!();
+        }
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+    },
+  };
+}
+
+describe("requireChatSessionUser", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the session user", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: USER } as never);
+
+    await expect(
+      requireChatSessionUser(new Request("http://localhost/chat/chat-1")),
+    ).resolves.toBe(USER);
+  });
+
+  it("redirects to login when there is no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    const thrown = await requireChatSessionUser(
+      new Request("http://localhost/chat/chat-1"),
+    ).catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(Response);
+    expect((thrown as Response).headers.get("Location")).toBe("/auth/login");
+  });
+});
+
+describe("loadChatBaseDataForUser", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getRoutingModelSettings).mockResolvedValue({
+      autoLlmEnabled: false,
+      autoRulesEnabled: false,
+    } as never);
+    vi.mocked(prisma.aIModel.findMany).mockResolvedValue([] as never);
+    vi.mocked(getAccessibleCourseCodes).mockResolvedValue(["COSC 101"] as never);
+    vi.mocked(getUserPreference).mockResolvedValue(PREFERENCES as never);
+  });
+
+  it("issues the three independent reads concurrently", async () => {
+    const tracker = makeConcurrencyTracker();
+    vi.mocked(getRoutingModelSettings).mockImplementation(
+      tracker.track({ autoLlmEnabled: false, autoRulesEnabled: false }) as never,
+    );
+    vi.mocked(prisma.aIModel.findMany).mockImplementation(tracker.track([]) as never);
+    vi.mocked(getAccessibleCourseCodes).mockImplementation(
+      tracker.track(["COSC 101"]) as never,
+    );
+
+    const pending = loadChatBaseDataForUser(USER);
+    await Promise.resolve();
+
+    // Asserted while all three are still held: a serial rewrite peaks at 1 and
+    // fails here, rather than deadlocking on the drain below.
+    expect(tracker.maxInFlight).toBe(3);
+
+    await tracker.drain();
+    await pending;
+  });
+
+  it("passes the accessible course codes to the preference read", async () => {
+    const data = await loadChatBaseDataForUser(USER);
+
+    expect(getUserPreference).toHaveBeenCalledWith("user-1", ["COSC 101"]);
+    expect(data.user).toBe(USER);
+    expect(data.lastCourseCode).toBeNull();
+  });
+
+  it("prepends routing models when auto routing is enabled", async () => {
+    vi.mocked(getRoutingModelSettings).mockResolvedValue({
+      autoLlmEnabled: true,
+      autoRulesEnabled: true,
+    } as never);
+
+    const data = await loadChatBaseDataForUser(USER);
+
+    expect(data.routerAutoEnabled).toBe(true);
+    expect(data.showRoutingModels).toBe(true);
+    expect(data.chatModels.map((model) => model.id)).toEqual(["auto-llm", "auto"]);
+  });
+
+  it("maps the selected model columns into ChatModelOption", async () => {
+    vi.mocked(prisma.aIModel.findMany).mockResolvedValue([
+      {
+        modelId: "gpt-4o",
+        name: "GPT-4o",
+        description: "Fast multimodal",
+        maxTokens: 128000,
+        supportsImages: true,
+        supportsTools: true,
+        provider: { name: "openai" },
+      },
+    ] as never);
+
+    const data = await loadChatBaseDataForUser(USER);
+
+    expect(data.chatModels).toEqual([
+      {
+        id: "openai:gpt-4o",
+        name: "GPT-4o",
+        description: "Fast multimodal",
+        provider: "openai",
+        maxTokens: 128000,
+        supportsImages: true,
+        supportsTools: true,
+      },
+    ]);
+  });
+
+  it("is what loadChatBaseData composes with the session lookup", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: USER } as never);
+
+    const data = await loadChatBaseData(new Request("http://localhost/chat"));
+
+    expect(data.user).toBe(USER);
+    expect(getAccessibleCourseCodes).toHaveBeenCalledWith(USER);
+  });
+
+  it("propagates the login redirect out of loadChatBaseData", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    const thrown = await loadChatBaseData(new Request("http://localhost/chat")).catch(
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBeInstanceOf(Response);
+    expect((thrown as Response).headers.get("Location")).toBe("/auth/login");
+  });
+
+  it("reads nothing from the database when there is no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    await loadChatBaseData(new Request("http://localhost/chat")).catch(() => {});
+
+    // The parallel block must stay behind the auth guard: an unauthenticated
+    // caller costs zero queries.
+    expect(getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(prisma.aIModel.findMany).not.toHaveBeenCalled();
+    expect(getAccessibleCourseCodes).not.toHaveBeenCalled();
+    expect(getUserPreference).not.toHaveBeenCalled();
+  });
+
+  it("resolves the session before issuing any base-data read", async () => {
+    let releaseSession: ((value: unknown) => void) | undefined;
+    vi.mocked(auth.api.getSession).mockReturnValue(
+      new Promise((resolve) => {
+        releaseSession = resolve;
+      }) as never,
+    );
+
+    const pending = loadChatBaseData(new Request("http://localhost/chat"));
+    await Promise.resolve();
+
+    expect(getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(prisma.aIModel.findMany).not.toHaveBeenCalled();
+    expect(getAccessibleCourseCodes).not.toHaveBeenCalled();
+
+    releaseSession!({ user: USER });
+    await pending;
+
+    expect(getAccessibleCourseCodes).toHaveBeenCalledWith(USER);
+  });
 });
 
 describe("loadChatTranscript", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("returns null when the viewer may not read the chat", async () => {
     vi.mocked(resolveChatReadAccess).mockResolvedValue(null);
 
@@ -148,81 +354,11 @@ describe("loadChatTranscript", () => {
   });
 });
 
-describe("loadChatBaseData", () => {
-  it("redirects anonymous callers to /auth/login", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
-
-    await expect(
-      loadChatBaseData(new Request("http://localhost/chat").headers as never),
-    ).rejects.toMatchObject({ status: 302 });
-  });
-
-  it("assembles chat models, preferences, and routing flags for a signed-in user", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
-    } as never);
-    vi.mocked(getRoutingModelSettings).mockResolvedValue({
-      autoLlmEnabled: true,
-      autoRulesEnabled: false,
-    });
-    prismaMock.aIModel.findMany.mockResolvedValue([
-      {
-        provider: { name: "openai" },
-        modelId: "gpt-4o",
-        name: "GPT-4o",
-        description: "desc",
-        maxTokens: 1000,
-        supportsImages: true,
-        supportsTools: true,
-      },
-    ]);
-    vi.mocked(withAutoChatModel).mockReturnValue([
-      { id: "openai:gpt-4o", name: "GPT-4o", description: "desc", provider: "openai" },
-    ]);
-    vi.mocked(getAccessibleCourseCodes).mockResolvedValue(["COSC 101"]);
-    vi.mocked(getUserPreference).mockResolvedValue(PREFERENCES);
-
-    const result = await loadChatBaseData(
-      new Request("http://localhost/chat").headers as never,
-    );
-
-    expect(result.user).toEqual({ id: "u1", role: "STUDENT" });
-    expect(result.routerAutoEnabled).toBe(true);
-    expect(result.showRoutingModels).toBe(true);
-    expect(result.chatModels).toEqual([
-      { id: "openai:gpt-4o", name: "GPT-4o", description: "desc", provider: "openai" },
-    ]);
-    expect(result.assistDefault).toBe(false);
-    expect(prismaMock.aIModel.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: true, provider: { isActive: true } } }),
-    );
-    expect(getAccessibleCourseCodes).toHaveBeenCalledWith({ id: "u1", role: "STUDENT" });
-    expect(getUserPreference).toHaveBeenCalledWith("u1", ["COSC 101"]);
-  });
-
-  it("disables routing models when both auto flags are off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "u1", role: "STUDENT" },
-    } as never);
-    vi.mocked(getRoutingModelSettings).mockResolvedValue({
-      autoLlmEnabled: false,
-      autoRulesEnabled: false,
-    });
-    prismaMock.aIModel.findMany.mockResolvedValue([]);
-    vi.mocked(withAutoChatModel).mockReturnValue([]);
-    vi.mocked(getAccessibleCourseCodes).mockResolvedValue([]);
-    vi.mocked(getUserPreference).mockResolvedValue(PREFERENCES);
-
-    const result = await loadChatBaseData(
-      new Request("http://localhost/chat").headers as never,
-    );
-
-    expect(result.routerAutoEnabled).toBe(false);
-    expect(result.showRoutingModels).toBe(false);
-  });
-});
-
 describe("chatPreferencesAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("returns 401 for anonymous callers", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 

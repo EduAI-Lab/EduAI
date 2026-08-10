@@ -22,6 +22,7 @@ import {
   acquireAiAdmission,
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
+import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
@@ -328,6 +329,17 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
     messageCount: messages.length,
     messageTextChars,
   };
+}
+
+/**
+ * Rough token estimate (chars/4) for a set of retrieved RAG chunks, used by
+ * Phase 1 rule5's "long RAG context" threshold (rules.ts). Shared between
+ * the router's own RAG prefetch (routerRagPrefetch, routeWithAuto only) and
+ * the plain course-mode RAG path (courseRagHits, every course-scoped
+ * request) so both surface the same field with the same formula.
+ */
+export function ragContextTokenEstimateForCourseRagHits(hits: HybridRagHit[]): number {
+  return hits.reduce((acc, hit) => acc + Math.ceil(hit.content.length / 4), 0);
 }
 
 /** Serializes a message object to JSON, handling circular references. */
@@ -1246,6 +1258,19 @@ export async function action({ request }: ActionFunctionArgs) {
           })
         : null;
 
+    // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —
+    // it does not depend on, and is not depended on by, the model-capability
+    // lookup or course-RAG fetch performed below in each branch. Kicked off
+    // here (before Auto routing) rather than later so the routing decision
+    // itself can gate the web-lookup escalation rule on *effective* tool
+    // availability (#1403 review: a rule that escalates to a "tool-capable"
+    // tier without checking `VLLM_CHAT_TOOLS`/`chat.webToolsEnabled` picks a
+    // tier the caller can't actually call tools on). We only block on it
+    // once, right before routing needs the resolved boolean; the admin
+    // branch never reads `webToolsEnabled` itself but the promise is already
+    // settled for free by the time any branch reaches its own await.
+    const webToolsEnabledPromise = getPolicy("chat.webToolsEnabled");
+
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
@@ -1266,10 +1291,7 @@ export async function action({ request }: ActionFunctionArgs) {
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
-        ragContextTokenEstimate = routerRagPrefetch.reduce(
-          (acc, hit) => acc + Math.ceil(hit.content.length / 4),
-          0,
-        );
+        ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err });
       }
@@ -1281,6 +1303,17 @@ export async function action({ request }: ActionFunctionArgs) {
     let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
+      // Admin mode never registers web tools (buildChatToolRegistry /
+      // webToolsEnabled are non-admin-only — see the admin branch below),
+      // so tool-capable web-lookup escalation only makes sense for non-admin
+      // chat. Mirrors `useToolCalling`'s gate later in this function
+      // (`supportsTools && !effectiveForceHybridRag`) without needing to
+      // know the picked model yet: vLLM forces the tool-less hybrid path
+      // unless `VLLM_CHAT_TOOLS=1`, regardless of which tier gets picked.
+      const toolsEffectivelyAvailable =
+        chatMode !== "admin" &&
+        (await webToolsEnabledPromise) &&
+        isEffectiveToolCallingAvailable();
       const routingContext = {
         courseId: effectiveCourseId,
         courseCode: courseCode ?? null,
@@ -1289,6 +1322,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ragChunkCount,
         ragContextTokenEstimate,
         courseRagNeeded,
+        toolsEffectivelyAvailable,
       };
       let decision: RouterDecision;
       try {
@@ -1346,6 +1380,29 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         },
       );
+    }
+
+    // Auto routing already enforces `requireImages` centrally (finalizePick
+    // in router.ts). An explicitly-chosen model (`routeWithAuto === false`,
+    // e.g. admin/service-key callers picking a specific provider:modelId)
+    // bypassed that check entirely — an image-bearing request could
+    // silently reach a text-only model (seeded vLLM tiers default to
+    // `supportsImages: false`) with no error. Reject loudly instead of
+    // falling back silently, matching Auto routing's fail-closed behavior.
+    if (imagesPresent && !routeWithAuto) {
+      const activeModel = await resolveActiveChatModel(resolvedModelId);
+      if (!activeModel?.supportsImages) {
+        return new Response(
+          JSON.stringify({
+            error: "IMAGE_MODEL_UNSUPPORTED",
+            message: `Model "${resolvedModelId}" does not support image inputs. Choose an image-capable model or use Auto routing.`,
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
     }
 
     let fleetPick: FleetPick | null = null;
@@ -1618,16 +1675,6 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —
-    // it does not depend on, and is not depended on by, the model-capability
-    // lookup or course-RAG fetch performed below in each branch. We kick it
-    // off here without awaiting so it resolves concurrently with that
-    // branch-specific work (see the `Promise.all` calls below); we only block
-    // on it at the point it is first actually needed (`buildChatToolRegistry`
-    // in the non-admin branch). The admin branch never reads
-    // `webToolsEnabled`, so there it simply overlaps for free with
-    // `resolveActiveChatModel`.
-    const webToolsEnabledPromise = getPolicy("chat.webToolsEnabled");
     const resolvedSystemPrompt =
       trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
@@ -2491,6 +2538,7 @@ ${buildEmptyCourseRagBlock()}`;
               wordCap: adhdWordCap,
               profile: adhdProfile ?? "full_tutoring",
               userText: lastUserText,
+              priorAssistantText,
               toolsUsed: adhdToolsUsed,
             })
           : emptyOversightAuditResult();
@@ -2584,6 +2632,9 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
+            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
@@ -2722,6 +2773,9 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
+            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
