@@ -35,16 +35,17 @@ import {
   PdfExtractionBusyError,
 } from "~/lib/ai/file-processing";
 
-// `mammoth`'s Node build only accepts `{ path }` / `{ buffer }` inputs (see its own
-// index.d.ts: NodeJsInput = PathInput | BufferInput, BrowserInput = ArrayBufferInput).
-// extractDocxText's real, unmocked call passes `{ arrayBuffer }` — see the bug note in
-// the "extractDocxText" describe block below. mammoth is imported dynamically *inside*
-// extractDocxText (call-time, not module-top-level), so mocking it here reliably
-// intercepts that call and lets most DOCX tests exercise the downstream HTML->markdown
-// conversion. (`node:child_process`/`node:fs`/`node:fs/promises`, by contrast, are
-// imported statically at the top of file-processing.ts, which this test file also
-// statically imports — that ordering means those Node-builtin mocks are not reliably
-// applied here, so PDF-worker subprocess tests below use real spawn/fs instead.)
+// mammoth is imported dynamically *inside* extractDocxText (call-time, not
+// module-top-level), so mocking it here reliably intercepts that call and lets DOCX
+// tests below exercise the downstream HTML->markdown conversion in isolation, without
+// depending on mammoth's actual DOCX parsing. A real, unmocked round trip (verifying
+// extractDocxText's call shape — `{ buffer }`, not `{ arrayBuffer }` — actually works
+// against the real mammoth package) is covered separately in
+// docx-extraction-integration.test.ts, which never mocks mammoth.
+// (`node:child_process`/`node:fs`/`node:fs/promises`, by contrast, are imported
+// statically at the top of file-processing.ts, which this test file also statically
+// imports — that ordering means those Node-builtin mocks are not reliably applied
+// here, so PDF-worker subprocess tests below use real spawn/fs instead.)
 vi.mock("mammoth", () => ({ convertToHtml: vi.fn() }));
 
 const mammothMock = await import("mammoth");
@@ -917,22 +918,12 @@ describe("extractDocxText", () => {
   });
 });
 
-// NOTE ON A REAL (SOURCE) BUG found while writing these tests, not fixed here per
-// task scope ("expand tests, don't patch source"):
-//
-// Real (unmocked) mammoth on Node only accepts `{ path }` / `{ buffer }` inputs, not
-// `{ arrayBuffer }` (see mammoth's own lib/index.d.ts: NodeJsInput = PathInput |
-// BufferInput; BrowserInput = ArrayBufferInput). extractDocxText calls
-// `mammoth.convertToHtml({ arrayBuffer })`, which throws "Could not find file in
-// options" for every real DOCX upload processed server-side (this file is imported
-// from app/lib/canvas/materials.server.ts, a server-only module). Verified directly:
-// `require('mammoth').convertToHtml({ arrayBuffer: buf })` throws that exact error
-// with the installed mammoth@1.12.0. A reliable in-repo regression test for this would
-// need `vi.resetModules()` to get a real (unmocked) mammoth binding, which was found to
-// destabilize *other* tests in this file (leaked pending extraction/mock state across
-// unrelated describe blocks) — so it is intentionally omitted rather than shipped
-// flaky. This is worth a real source fix (e.g. passing `{ buffer: Buffer.from(arrayBuffer) }`
-// instead) — flagged for the code owner rather than patched here.
+// extractDocxText passes `{ buffer: Buffer.from(arrayBuffer) }` to mammoth, which is
+// the only input shape mammoth's Node build accepts (see its own lib/index.d.ts:
+// NodeJsInput = PathInput | BufferInput; BrowserInput = ArrayBufferInput was the
+// previous, broken shape). The real-mammoth regression test for this lives in
+// docx-extraction-integration.test.ts, kept in its own file so it never shares a
+// module registry with the `vi.mock("mammoth", ...)` above.
 
 // ---------------------------------------------------------------------------
 // extractPptxText
@@ -1218,10 +1209,9 @@ describe("processUploadedFile", () => {
     await expect(processUploadedFile(file)).rejects.toThrow(/^Failed to process file broken\.pdf:/);
   });
 
-  // The real (unmocked) DOCX path is not exercised end-to-end here — see the source-bug
-  // note above the "extractPptxText" describe block for why (mammoth's Node build
-  // rejects the `{ arrayBuffer }` shape extractDocxText passes it, and reliably testing
-  // that via `vi.resetModules()` destabilized other tests in this file).
+  // The real (unmocked) DOCX path is not exercised via processUploadedFile here since
+  // `mammoth` is mocked at the top of this file; see docx-extraction-integration.test.ts
+  // for the real-mammoth regression test on extractDocxText itself.
 
   it("processes a PPTX upload end-to-end with slide-derived pageCount/metadata", async () => {
     const zip = new JSZip();
