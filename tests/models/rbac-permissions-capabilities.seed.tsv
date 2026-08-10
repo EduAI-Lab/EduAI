@@ -1,0 +1,5 @@
+Access	Capability	IsPublished	PolicyOn	MaterialOwn
+instructor	view-course-chats	yes	yes	yes
+unit	view-course-chats	yes	yes	yes
+instructor	view-course-chats	yes	no	yes
+unit	view-course-chats	yes	no	yes

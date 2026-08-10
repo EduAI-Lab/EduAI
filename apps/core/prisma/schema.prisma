@@ -169,6 +169,8 @@ model Course {
 model CourseReEmbedJob {
   id                   String           @id @default(cuid())
   courseId             String
+  /// Optional client key for retry-safe starts (#1112). Unique per course when set.
+  idempotencyKey       String?
   status               ReEmbedJobStatus @default(PENDING)
   totalMaterials       Int              @default(0)
   processedCount       Int              @default(0)
@@ -181,6 +183,7 @@ model CourseReEmbedJob {
   updatedAt            DateTime         @updatedAt
   course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
+  @@unique([courseId, idempotencyKey])
   @@index([courseId, status])
   @@map("course_re_embed_jobs")
 }
@@ -500,11 +503,20 @@ model MaterialChunk {
   materialId String
   index      Int
   content    String
+  content_tsv Unsupported("tsvector")
   createdAt  DateTime           @default(now())
   material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
   embedding  MaterialEmbedding?
 
+  // #941: `content_tsv` (GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+  // GIN-indexed) also lives on this table. Prisma has no first-class `tsvector` type
+  // and can't model a generated/STORED column, so it's intentionally left off this
+  // model (same reasoning as the `Unsupported("vector(1024)")` column on
+  // MaterialEmbedding below — raw SQL only). See
+  // prisma/migrations/20260804180000_material_chunks_content_tsv_gin and the hybrid
+  // query in app/lib/ai/embedding.ts (findRelevantContent).
   @@unique([materialId, index])
+  @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_idx")
   @@map("material_chunks")
 }
 
