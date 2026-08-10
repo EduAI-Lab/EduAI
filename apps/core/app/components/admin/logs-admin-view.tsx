@@ -155,6 +155,22 @@ function buildQueryString(
 }
 
 /**
+ * Switching away from Servers must discard the whole rolling-date state. The
+ * loader materializes a preset into dateFrom/dateTo for display, so dropping
+ * only datePreset would turn a rolling window into a frozen custom range when
+ * the admin returns to Servers.
+ */
+export function buildLogsTabLinks(query: LogsQueryState) {
+  const leaveServers = { page: 1, datePreset: undefined, dateFrom: undefined, dateTo: undefined };
+  return {
+    audit: buildQueryString(query, { tab: "audit", ...leaveServers }),
+    security: buildQueryString(query, { tab: "security", ...leaveServers }),
+    system: buildQueryString(query, { tab: "system", ...leaveServers }),
+    servers: buildQueryString(query, { tab: "servers", page: 1 }),
+  };
+}
+
+/**
  * Formats timestamps consistently across all log tabs.
  */
 function formatTimestamp(value: unknown) {
@@ -714,19 +730,7 @@ export function LogsAdminView({
     page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
   const nextHref = hasMore ? buildQueryString(query, { page: page + 1 }) : null;
 
-  const tabLinks = useMemo(
-    () => ({
-      // datePreset is Servers-tab-only state; other tabs don't read it and
-      // can't clear it via their own "Clear filters" link, so it must be
-      // dropped explicitly here rather than riding along via buildQueryString's
-      // default preserve-existing-keys behavior.
-      audit: buildQueryString(query, { tab: "audit", page: 1, datePreset: undefined }),
-      security: buildQueryString(query, { tab: "security", page: 1, datePreset: undefined }),
-      system: buildQueryString(query, { tab: "system", page: 1, datePreset: undefined }),
-      servers: buildQueryString(query, { tab: "servers", page: 1 }),
-    }),
-    [query],
-  );
+  const tabLinks = useMemo(() => buildLogsTabLinks(query), [query]);
 
   const clearFiltersHref = buildClearFiltersHref(tab, query);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
