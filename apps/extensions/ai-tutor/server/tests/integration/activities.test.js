@@ -1678,6 +1678,51 @@ describe('Tutoring-flow: question consumption via Core', () => {
     expect(sessions).toHaveLength(0);
   });
 
+  // #1412: a client-supplied chatId that doesn't resolve to a session owned
+  // by this user/activity/mode must be rejected rather than silently reused
+  // (previously the ownership lookup's result was discarded).
+  it('/teach rejects a chatId belonging to a different user', async () => {
+    const otherStudent = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: otherStudent.id, role: 'STUDENT' },
+    });
+    await prisma.aiChatSession.create({
+      data: {
+        userId: otherStudent.id,
+        activityId: activity.id,
+        mode: 'teach',
+        chatId: 'someone-elses-chat',
+        modelId: 'model-1',
+      },
+    });
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'someone-elses-chat',
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('/teach rejects an unknown/stale chatId', async () => {
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'never-existed',
+      });
+
+    expect(res.status).toBe(403);
+  });
+
   // ── /teach, /guide: id / auth / payload validation ────────────────
 
   describe.each([
@@ -1962,5 +2007,55 @@ describe('teach/guide/custom: enrollment and publish gate (§308)', () => {
       .send({ message: 'Hi', knowledgeLevel: 'beginner' });
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/not enrolled/i);
+  });
+
+  // #1411: /teach and /guide must reject when the activity's own enable flag
+  // is off, mirroring the check /custom already has for enableCustomMode.
+  it('returns 400 on /teach when enableTeachMode is disabled for the activity', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: true });
+    const noTeach = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'No teach mode.',
+        enableTeachMode: false,
+        enableGuideMode: true,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+      },
+    });
+    const student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${noTeach.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/teach mode is not enabled/i);
+  });
+
+  it('returns 400 on /guide when enableGuideMode is disabled for the activity', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: true });
+    const noGuide = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'No guide mode.',
+        enableTeachMode: true,
+        enableGuideMode: false,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+      },
+    });
+    const student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${noGuide.id}/guide`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/guide mode is not enabled/i);
   });
 });
