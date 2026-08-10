@@ -69,6 +69,9 @@ model CourseAccess {
   @@unique([userId, courseId])
   @@index([userId, role])
   @@index([userId, department])
+  // `userId` already leads the unique above; `courseId` leads nothing, and the
+  // Cascade from Course means a course deletion scans this table without it.
+  @@index([courseId])
   @@map("course_access")
 }
 
