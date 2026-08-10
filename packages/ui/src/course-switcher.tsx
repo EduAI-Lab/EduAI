@@ -54,6 +54,25 @@ export interface CourseSwitcherProps {
   searchPlaceholder?: string
   /** Shown in place of the list when `courses` is empty and search is enabled. */
   emptyLabel?: string
+  /**
+   * Trigger label to fall back to when `currentId` isn't in `courses`. Required
+   * for search-driven hosts: once the result set narrows to something the
+   * current course doesn't match, deriving the label from the list alone drops
+   * the breadcrumb to "Select course" while the user is still sitting on that
+   * course.
+   */
+  currentLabel?: string
+  /**
+   * A search request is in flight, so an empty `courses` means "not known yet",
+   * not "nothing matched". Without this the only signal the list has is its own
+   * emptiness, so a host that clears rows while fetching would flash
+   * `emptyLabel` ("No courses match") on every keystroke — the exact false
+   * negative server-side search exists to remove. Purely presentational: the
+   * host owns the pending state, same as it owns the query.
+   */
+  loading?: boolean
+  /** Shown in place of the list while `loading` and no rows are held. */
+  loadingLabel?: string
 }
 
 export function CourseSwitcher({
@@ -68,9 +87,12 @@ export function CourseSwitcher({
   onQueryChange,
   searchPlaceholder = "Search courses…",
   emptyLabel = "No courses found",
+  currentLabel,
+  loading = false,
+  loadingLabel = "Searching…",
 }: CourseSwitcherProps) {
   const current = courses.find((c) => c.id === currentId) ?? null
-  const label = current?.label ?? "Select course"
+  const label = current?.label ?? currentLabel ?? "Select course"
   const searchable = Boolean(onQueryChange)
   const [query, setQuery] = React.useState("")
   const [open, setOpen] = React.useState(false)
@@ -143,7 +165,9 @@ export function CourseSwitcher({
           <DropdownMenuLabel className="text-xs text-muted-foreground">{listLabel}</DropdownMenuLabel>
           <div className="max-h-72 overflow-y-auto">
             {searchable && courses.length === 0 && (
-              <p className="px-2 py-3 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+              <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+                {loading ? loadingLabel : emptyLabel}
+              </p>
             )}
             {courses.map((c) => {
               const active = c.id === currentId
@@ -158,7 +182,7 @@ export function CourseSwitcher({
                   <IconCheck
                     className={cn(
                       "mt-0.5 size-4 shrink-0",
-                      active ? "text-primary opacity-100" : "opacity-0",
+                      active ? "text-primary-text opacity-100" : "opacity-0",
                     )}
                   />
                   <span className="flex min-w-0 flex-col">

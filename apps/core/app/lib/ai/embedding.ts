@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
+import pLimit from "p-limit";
 import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
 import prisma from "../prisma.server";
 import { getCourseRagSettings } from "../courses/server";
@@ -21,6 +22,26 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /** Provider hard limit (e.g. Google Gemini embedMany — "At most 100 requests per batch"). */
 const CLOUD_EMBED_MANY_MAX_BATCH_SIZE = 100;
+
+/**
+ * Max rows per multi-row `material_embeddings` INSERT (#943).
+ *
+ * The payload cap is based on the actual vector dimension (`embedding.length`)
+ * rather than only the number of bind parameters: a vector component is
+ * conservatively budgeted at 8 bytes plus SQL/identifier overhead. This keeps
+ * each bind payload below 2 MiB for 1024-dimension vectors and automatically
+ * reduces the row count when a larger configured dimension is used.
+ */
+export const MATERIAL_EMBEDDING_INSERT_BATCH_SIZE = 500;
+const MATERIAL_EMBEDDING_INSERT_MAX_BYTES = 2_000_000;
+
+function resolveMaterialEmbeddingInsertBatchSize(): number {
+  const configured = Number(process.env.MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+  if (!Number.isSafeInteger(configured) || configured <= 0) {
+    return MATERIAL_EMBEDDING_INSERT_BATCH_SIZE;
+  }
+  return Math.min(configured, MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+}
 
 /** pgvector column dimension — must match LOCAL-EMBEDDINGS and `EMBEDDING_DIMENSION`. */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
@@ -42,6 +63,181 @@ const LOCAL_EMBED_MANY_BATCH_SIZE = Math.min(
 
 function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
   return wantsLocal ? LOCAL_EMBED_MANY_BATCH_SIZE : CLOUD_EMBED_MANY_BATCH_SIZE;
+}
+
+/**
+ * ivfflat.probes (#940): how many of the index's `lists` clusters to scan per
+ * query. Higher = better recall, closer to exact search, at the cost of more
+ * rows scanned; pgvector's own default is 1, which is fast but recall-poor
+ * once `lists` is non-trivial. This is a session/transaction-scoped Postgres
+ * GUC, not an index property, so it can't be "baked into" the migration.
+ *
+ * Env override lets ops raise recall (or lower latency) without a code change;
+ * clamped to the index's 100-list range. `probes = lists` (100) is a valid,
+ * fully-index-scan value in pgvector — it just visits every list rather than
+ * degrading to a sequential scan — and is useful for validating filtered
+ * recall. 0 / invalid input resolves to the code default of 10 (not to
+ * Postgres' own GUC default of 1).
+ */
+const DEFAULT_IVFFLAT_PROBES = 10;
+const MIN_IVFFLAT_PROBES = 1;
+const MAX_IVFFLAT_PROBES = 100;
+
+export function resolveIvfflatProbes(): number {
+  const raw = Number(process.env.RAG_IVFFLAT_PROBES);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_IVFFLAT_PROBES;
+  }
+  return Math.min(MAX_IVFFLAT_PROBES, Math.max(MIN_IVFFLAT_PROBES, Math.round(raw)));
+}
+
+/**
+ * `ivfflat.max_probes` (#940): the ceiling iterative scanning is allowed to
+ * raise the *effective* probe count to while it looks for enough
+ * post-filter rows to satisfy a LIMIT. This is a different knob from
+ * `ivfflat.probes` above (the *initial* number of lists scanned) — probes is
+ * clamped to the index's `lists = 100` because scanning more lists than
+ * exist is meaningless, but `max_probes` must be allowed to reach (and
+ * pgvector recommends comfortably exceed) `lists` so a course-filtered query
+ * can keep asking for more lists instead of coming back short. pgvector's own
+ * documented default/max for this GUC is 32768; we reuse that value rather
+ * than inventing a smaller one that could once again sit below `lists` after
+ * a future re-tune of the index.
+ */
+const IVFFLAT_ITERATIVE_MAX_PROBES = 32768;
+
+/** Minimum pgvector extension version that supports `ivfflat.iterative_scan` / `ivfflat.max_probes`. */
+const IVFFLAT_ITERATIVE_SCAN_MIN_VERSION = [0, 8, 0] as const;
+
+/**
+ * Parses a Postgres extension version string (e.g. "0.8.0", "0.8",
+ * "0.7.4-dev") into a numeric triple for comparison. Missing components
+ * default to 0 so "0.8" compares equal to "0.8.0" instead of sorting before
+ * it (a plain element-wise array compare in SQL would treat the shorter
+ * array as "less than", which is wrong here).
+ */
+function parseExtensionVersion(version: string): [number, number, number] {
+  const parts = version
+    .trim()
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+}
+
+function isVersionAtLeast(
+  version: [number, number, number],
+  minimum: readonly [number, number, number],
+): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (version[i] > minimum[i]) return true;
+    if (version[i] < minimum[i]) return false;
+  }
+  return true;
+}
+
+let cachedPgvectorSupportsIterativeScan: Promise<boolean> | null = null;
+
+/**
+ * Whether the connected Postgres' `vector` extension is new enough
+ * (>= 0.8.0) to support `ivfflat.iterative_scan` / `ivfflat.max_probes`.
+ * Older extensions reject those GUCs with `unrecognized configuration
+ * parameter`, which would abort every retrieval transaction, so this is
+ * checked once and cached for the life of the process rather than compared
+ * inside a per-query `DO $$` block (which also re-ran the version lookup on
+ * every single retrieval call).
+ */
+async function pgvectorSupportsIterativeScan(): Promise<boolean> {
+  if (!cachedPgvectorSupportsIterativeScan) {
+    cachedPgvectorSupportsIterativeScan = (async () => {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ extversion: string }>>`
+          SELECT extversion FROM pg_extension WHERE extname = 'vector'
+        `;
+        const versionText = rows[0]?.extversion;
+        if (!versionText) return false;
+        return isVersionAtLeast(
+          parseExtensionVersion(versionText),
+          IVFFLAT_ITERATIVE_SCAN_MIN_VERSION,
+        );
+      } catch (err) {
+        console.warn("[embeddings] failed to read pgvector extension version; " +
+          "skipping ivfflat.iterative_scan / ivfflat.max_probes", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      }
+    })();
+  }
+  return cachedPgvectorSupportsIterativeScan;
+}
+
+/** Test-only: clears the cached pgvector-version check between test cases. */
+export function __resetPgvectorIterativeScanCacheForTests(): void {
+  cachedPgvectorSupportsIterativeScan = null;
+}
+
+/**
+ * Default number of materials re-embedded concurrently in `reEmbedCourseMaterials`
+ * (#945). Kept modest (rather than unbounded `Promise.all`) so a large re-embed run
+ * doesn't exhaust the Postgres connection pool or burst past the embedding
+ * provider's rate limit — each in-flight material holds a `prisma.$transaction`
+ * connection plus an `embedMany` call for the duration of its chunking/embedding
+ * work. Mirrors the same "small bounded pool, env-overridable" pattern as
+ * `AI_MAX_INFLIGHT` in admission.server.ts. Override via `REINDEX_CONCURRENCY`.
+ */
+const DEFAULT_REINDEX_CONCURRENCY = 4;
+const MAX_REINDEX_CONCURRENCY = 16;
+const REINDEX_TRANSACTION_MAX_WAIT_MS = 10_000;
+const REINDEX_TRANSACTION_TIMEOUT_MS = 60_000;
+const MAX_TRANSIENT_EMBED_ATTEMPTS = 3;
+const TRANSIENT_EMBED_RETRY_DELAY_MS = 500;
+
+function reindexConcurrency(): number {
+  const raw = process.env.REINDEX_CONCURRENCY;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_REINDEX_CONCURRENCY;
+
+  const configured = Number(raw);
+  if (!Number.isSafeInteger(configured) || configured <= 0) {
+    return DEFAULT_REINDEX_CONCURRENCY;
+  }
+
+  return Math.min(configured, MAX_REINDEX_CONCURRENCY);
+}
+
+function isTransientEmbeddingError(err: unknown): boolean {
+  const status =
+    err && typeof err === "object" && "status" in err
+      ? Number((err as { status?: unknown }).status)
+      : NaN;
+  if (status === 429 || status === 503) return true;
+
+  const message = err instanceof Error ? err.message : String(err);
+  return /\b(429|503)\b|rate limit|too many requests|service unavailable/i.test(message);
+}
+
+async function retryTransientEmbeddingError<T>(run: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_EMBED_ATTEMPTS; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      lastError = err;
+      if (!isTransientEmbeddingError(err) || attempt === MAX_TRANSIENT_EMBED_ATTEMPTS) {
+        throw err;
+      }
+
+      const delayMs = TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      console.warn("[embeddings] transient provider failure; retrying", {
+        attempt,
+        maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
+        delayMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError;
 }
 
 function isOllamaBadRequestError(err: unknown): boolean {
@@ -294,6 +490,26 @@ function assertEmbeddingDimension(embedding: number[], context: string): void {
   }
 }
 
+/**
+ * Classifies a `findRelevantContent` / `generateEmbedding` failure for callers
+ * that must distinguish "retrieval genuinely failed" from "zero materials
+ * matched" (#225 RAG-01/RAG-02). `findRelevantContent` never throws for an
+ * empty result set — an exception here always means the query embedding
+ * couldn't be generated/compared (stale dimension vs. the stored corpus, or
+ * the embedding provider is unreachable), so callers must not silently treat
+ * it as "no relevant content" and answer ungrounded (or claim materials don't
+ * cover the question) with no signal that RAG never ran.
+ */
+export function classifyRagRetrievalError(
+  error: unknown,
+): "RAG_DIMENSION_MISMATCH" | "RAG_RETRIEVAL_FAILED" {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/dimension mismatch/i.test(message) || /different vector dimensions/i.test(message)) {
+    return "RAG_DIMENSION_MISMATCH";
+  }
+  return "RAG_RETRIEVAL_FAILED";
+}
+
 const courseSettingsCache = new Map<
   string,
   { settings: EffectiveEmbeddingSettings; expiresAt: number }
@@ -536,7 +752,7 @@ async function embedWithConfiguredProvider<T>(
     : getCloudEmbeddingModel(settings).model;
 
   try {
-    return await run(model);
+    return await retryTransientEmbeddingError(() => run(model));
   } catch (err) {
     if (settings.wantsLocal) {
       throw new Error(
@@ -571,6 +787,12 @@ export async function generateEmbeddings(
           const result = await embedMany({ model, values: batch });
           return result.embeddings;
         }, courseId);
+
+    if (embeddings.length !== batch.length) {
+      throw new Error(
+        `Embedding count mismatch in generateEmbeddings: got ${embeddings.length} vectors for ${batch.length} chunks`,
+      );
+    }
 
     for (let j = 0; j < embeddings.length; j++) {
       assertEmbeddingDimension(embeddings[j], "generateEmbeddings");
@@ -645,15 +867,20 @@ export async function findRelevantContent(
 
   const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
 
-  // Canvas publish-aware gate (#777): always hide unpublished / selectively
-  // excluded Canvas materials from RAG for every caller.
-  const canvasPublishFilter = Prisma.sql`
-    AND cm."unpublishedAt" IS NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM canvas_material_exclusions cme
-      WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
-    )
-  `;
+  // Canvas publish-aware gate (#777): hide unpublished / selectively excluded
+  // Canvas materials from RAG for student callers, same as the REST route's
+  // studentVisibilityWhere (courses.materials.$.ts) — staff bypass this, same
+  // as every other student-visibility clause, so a material an instructor can
+  // read directly is never invisible to that instructor in RAG.
+  const canvasPublishFilter = restrictToStudentVisible
+    ? Prisma.sql`
+        AND cm."unpublishedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM canvas_material_exclusions cme
+          WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+        )
+      `
+    : Prisma.empty;
 
   // §839 student-visibility gate, injected into both retrieval paths. Empty for
   // staff callers so their retrieval is unchanged.
@@ -661,38 +888,84 @@ export async function findRelevantContent(
     ? Prisma.sql`AND cm."visibleToStudents" = true AND (cm."availableAt" IS NULL OR cm."availableAt" <= NOW())`
     : Prisma.empty;
 
+  // #940: ivfflat.probes is a session/transaction-scoped GUC, not an index
+  // property. Prisma's PrismaClient pools connections, so a bare
+  // `$executeRaw(SET ivfflat.probes = ...)` followed by a separate
+  // `$queryRaw` is not guaranteed to land on the same physical connection.
+  // `SET LOCAL` inside an explicit `$transaction` is — Prisma runs every
+  // statement in an interactive/batched transaction over one reserved
+  // connection — so the probes setting reliably applies to the query that
+  // follows it and is automatically reset once the transaction ends.
+  const probes = resolveIvfflatProbes();
+  // Course filtering happens after the ANN scan. Iterative scanning asks
+  // pgvector for additional lists until the filtered LIMIT is satisfied, up
+  // to this bounded ceiling, so a large unrelated course cannot starve a
+  // smaller course's nearest chunks from the candidate set. Only applied on
+  // pgvector >= 0.8.0 — older extensions reject these GUCs outright, which
+  // would abort the whole transaction and take RAG down silently.
+  const supportsIterativeScan = await pgvectorSupportsIterativeScan();
+
+  // Collapse every `SET LOCAL` into one `SELECT set_config(...)` round trip
+  // instead of 2-3 separate statements, so a pooled connection is held for
+  // fewer round trips per retrieval call under concurrent chat streams.
+  const setConfigCalls = [Prisma.sql`set_config('ivfflat.probes', ${String(probes)}, true)`];
+  if (supportsIterativeScan) {
+    setConfigCalls.push(
+      Prisma.sql`set_config('ivfflat.iterative_scan', 'relaxed_order', true)`,
+      Prisma.sql`set_config('ivfflat.max_probes', ${String(IVFFLAT_ITERATIVE_MAX_PROBES)}, true)`,
+    );
+  }
+  const applyIvfflatSettings = Prisma.sql`SELECT ${Prisma.join(setConfigCalls)}`;
+
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
     const bm25Weight = 1 - alpha;
+    // Retrieve a wider semantic candidate pool before lexical reranking so BM25
+    // can still change the final ordering without turning the ANN query back
+    // into a full scan.
+    const hybridCandidateLimit = Number(effectiveLimit) * 4;
 
-    // Hybrid path: weighted sum of vector cosine similarity and BM25 (ts_rank).
-    // Same vector similarity floor as the pure-vector path; combined score ranks survivors.
-    // to_tsvector / plainto_tsquery are built-in PostgreSQL; no extra extension needed.
-    const hybridResults = await prisma.$queryRaw<
-      Array<{ content: string; score: number; material_title: string }>
-    >`
-      SELECT
-        mc.content,
-        cm.title AS material_title,
-        (1 - (me.embedding <=> ${queryEmbedding}::vector)) * ${alpha} +
-        COALESCE(
-          ts_rank(
-            to_tsvector('english', mc.content),
-            plainto_tsquery('english', ${userQuery})
-          ),
-          0
-        ) * ${bm25Weight} AS score
-      FROM material_embeddings me
-      JOIN material_chunks mc ON me."chunkId" = mc.id
-      JOIN course_materials cm ON mc."materialId" = cm.id
-      WHERE cm."courseId" = ${courseId}
-        AND cm."deletedAt" IS NULL
-        ${canvasPublishFilter}
-        ${visibilityFilter}
-        AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-      ORDER BY score DESC
-      LIMIT ${Number(effectiveLimit)}
-    `;
+    // pgvector can use an ANN index only when the index operator itself is the
+    // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
+    // a materialized CTE, then apply the similarity floor and hybrid reranking
+    // to the resulting candidate set.
+    const [, hybridResults] = await prisma.$transaction([
+      prisma.$executeRaw(applyIvfflatSettings),
+      prisma.$queryRaw<
+        Array<{ content: string; score: number; material_title: string }>
+      >`
+        WITH vector_candidates AS MATERIALIZED (
+          SELECT
+            mc.content,
+            cm.title AS material_title,
+            me.embedding <=> ${queryEmbedding}::vector AS distance
+          FROM material_embeddings me
+          JOIN material_chunks mc ON me."chunkId" = mc.id
+          JOIN course_materials cm ON mc."materialId" = cm.id
+          WHERE cm."courseId" = ${courseId}
+            AND cm."deletedAt" IS NULL
+            ${canvasPublishFilter}
+            ${visibilityFilter}
+          ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
+          LIMIT ${hybridCandidateLimit}
+        )
+        SELECT
+          content,
+          material_title,
+          (1 - distance) * ${alpha} +
+          COALESCE(
+            ts_rank(
+              to_tsvector('english', content),
+              plainto_tsquery('english', ${userQuery})
+            ),
+            0
+          ) * ${bm25Weight} AS score
+        FROM vector_candidates
+        WHERE 1 - distance > ${threshold}
+        ORDER BY score DESC
+        LIMIT ${Number(effectiveLimit)}
+      `,
+    ]);
 
     return hybridResults.map((r) => ({
       content: r.content,
@@ -701,28 +974,40 @@ export async function findRelevantContent(
     }));
   }
 
-  const results = await prisma.$queryRaw<
-    Array<{
-      content: string;
-      similarity: number;
-      material_title: string;
-    }>
-  >`
-    SELECT
-      mc.content,
-      1 - (me.embedding <=> ${queryEmbedding}::vector) AS similarity,
-      cm.title as material_title
-    FROM material_embeddings me
-    JOIN material_chunks mc ON me."chunkId" = mc.id
-    JOIN course_materials cm ON mc."materialId" = cm.id
-    WHERE cm."courseId" = ${courseId}
-      AND cm."deletedAt" IS NULL
-      ${canvasPublishFilter}
-      ${visibilityFilter}
-      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-    ORDER BY similarity DESC
-    LIMIT ${Number(effectiveLimit)}
-  `;
+  const [, results] = await prisma.$transaction([
+    prisma.$executeRaw(applyIvfflatSettings),
+    prisma.$queryRaw<
+      Array<{
+        content: string;
+        similarity: number;
+        material_title: string;
+      }>
+    >`
+      WITH vector_candidates AS MATERIALIZED (
+        SELECT
+          mc.content,
+          cm.title AS material_title,
+          me.embedding <=> ${queryEmbedding}::vector AS distance
+        FROM material_embeddings me
+        JOIN material_chunks mc ON me."chunkId" = mc.id
+        JOIN course_materials cm ON mc."materialId" = cm.id
+        WHERE cm."courseId" = ${courseId}
+          AND cm."deletedAt" IS NULL
+          ${canvasPublishFilter}
+          ${visibilityFilter}
+        ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
+        LIMIT ${Number(effectiveLimit)}
+      )
+      SELECT
+        content,
+        1 - distance AS similarity,
+        material_title
+      FROM vector_candidates
+      WHERE 1 - distance > ${threshold}
+      ORDER BY distance ASC
+      LIMIT ${Number(effectiveLimit)}
+    `,
+  ]);
 
   return results.map((result) => ({
     content: result.content,
@@ -782,49 +1067,82 @@ export async function reEmbedCourseMaterials(
   const failed: string[] = [];
   let processed = 0;
 
-  const reportProgress = async (currentMaterialTitle?: string) => {
-    await options?.onProgress?.({
+  // A concurrent worker must not let an older progress write overwrite a
+  // newer one. Snapshot at transition time, then serialize the callback so
+  // persistence observes non-decreasing completed counts. There is no single
+  // current material under concurrency, so omit the title/count pairing.
+  let progressQueue = Promise.resolve();
+  const reportProgress = () => {
+    const snapshot: ReEmbedProgress = {
       total: eligible.length,
       processed,
       failed: [...failed],
-      currentMaterialTitle,
-    });
+    };
+    progressQueue = progressQueue
+      .then(() => options?.onProgress?.(snapshot))
+      .catch((err) => {
+        console.error("[re-embed] progress write failed", err);
+      });
+    return progressQueue;
   };
 
   await reportProgress();
 
-  for (const material of eligible) {
-    const content = material.rawText!.trim();
+  // Bounded concurrency (#945): each material is fully independent (its own
+  // transaction, its own row), so materials run concurrently up to
+  // `reindexConcurrency()` in-flight at a time. Each task is individually
+  // try/caught so one material's failure never cancels or blocks its siblings —
+  // same isolation semantics as the previous serial for-loop.
+  const limit = pLimit(reindexConcurrency());
 
-    await prisma.courseMaterial.update({
-      where: { id: material.id },
-      data: { status: "PROCESSING" },
-    });
-    await reportProgress(material.title);
+  await Promise.all(
+    eligible.map((material) =>
+      limit(async () => {
+        const content = material.rawText!.trim();
 
-    try {
-      await processMaterialEmbeddings(material.id, content, { replace: true });
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "READY", processedAt: new Date() },
-      });
-      processed += 1;
-    } catch (err) {
-      failed.push(material.id);
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "FAILED" },
-      });
-      console.error("[re-embed] material failed", {
-        courseId,
-        materialId: material.id,
-        title: material.title,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+          try {
+            await prisma.courseMaterial.update({
+              where: { id: material.id },
+              data: { status: "PROCESSING" },
+            });
+            await processMaterialEmbeddings(material.id, content, {
+              replace: true,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
+            });
+            await prisma.courseMaterial.update({
+              where: { id: material.id },
+              data: { status: "READY", processedAt: new Date() },
+            });
+            processed += 1;
+          } catch (err) {
+            failed.push(material.id);
+            try {
+              await prisma.courseMaterial.update({
+                where: { id: material.id },
+                data: { status: "FAILED" },
+              });
+            } catch (statusError) {
+              console.error("[re-embed] failed to persist material failure", {
+                courseId,
+                materialId: material.id,
+                error: statusError instanceof Error ? statusError.message : String(statusError),
+              });
+            }
+            console.error("[re-embed] material failed", {
+            courseId,
+            materialId: material.id,
+            title: material.title,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
-    await reportProgress();
-  }
+        await reportProgress();
+      }),
+    ),
+  );
 
   if (processed > 0 && failed.length === 0 && processed === eligible.length) {
     await markCourseEmbedded(courseId);
@@ -836,7 +1154,60 @@ export async function reEmbedCourseMaterials(
 export type ProcessMaterialEmbeddingsOptions = {
   /** Delete existing chunks only after new embeddings succeed, inside the same transaction. */
   replace?: boolean;
+  /** Override interactive transaction limits for a bounded concurrent reindex. */
+  transactionOptions?: { maxWait: number; timeout: number };
 };
+
+/**
+ * Insert one `material_embeddings` row per chunk using batched multi-row
+ * INSERTs instead of one `$executeRaw` round trip per chunk (#943).
+ *
+ * Prisma's typed client can't write the `vector` column type directly, so
+ * raw SQL is required; `Prisma.sql` + `Prisma.join` keep every value
+ * (including the vector literal) bound as a parameter rather than
+ * string-concatenated, and rows are chunked to
+ * `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` and the dimension-aware payload cap
+ * to keep synchronous query construction and bind payloads bounded.
+ */
+export async function insertMaterialEmbeddingsBatched(
+  tx: Prisma.TransactionClient,
+  chunksByIndex: Array<{ id: string }>,
+  embeddings: Array<{ embedding: number[] }>,
+): Promise<void> {
+  if (chunksByIndex.length === 0) {
+    return;
+  }
+  if (chunksByIndex.length !== embeddings.length) {
+    throw new Error(
+      `Embedding count mismatch in insertMaterialEmbeddingsBatched: got ${embeddings.length} vectors for ${chunksByIndex.length} chunks`,
+    );
+  }
+
+  const rowLimit = resolveMaterialEmbeddingInsertBatchSize();
+  for (let start = 0; start < chunksByIndex.length; ) {
+    const batch = [] as Array<{ chunk: { id: string }; embedding: number[] }>;
+    let estimatedBytes = 0;
+    while (start + batch.length < chunksByIndex.length && batch.length < rowLimit) {
+      const index = start + batch.length;
+      const embedding = embeddings[index].embedding;
+      const rowBytes = embedding.length * 8 + 128;
+      if (batch.length > 0 && estimatedBytes + rowBytes > MATERIAL_EMBEDDING_INSERT_MAX_BYTES) break;
+      batch.push({ chunk: chunksByIndex[index], embedding });
+      estimatedBytes += rowBytes;
+    }
+
+    const rows = batch.map(({ chunk, embedding }) => {
+      const vectorLiteral = formatPgVectorLiteral(embedding);
+      return Prisma.sql`(${randomUUID()}, ${chunk.id}, ${vectorLiteral}::vector, NOW())`;
+    });
+
+    await tx.$executeRaw`
+      INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
+      VALUES ${Prisma.join(rows)}
+    `;
+    start += batch.length;
+  }
+}
 
 /**
  * Process and store embeddings for a course material (single transaction).
@@ -876,12 +1247,6 @@ export async function processMaterialEmbeddings(
 
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
 
-    for (let i = 0; i < chunksByIndex.length; i++) {
-      const vectorLiteral = formatPgVectorLiteral(embeddings[i].embedding);
-      await tx.$executeRaw`
-        INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${vectorLiteral}::vector, NOW())
-      `;
-    }
-  });
+    await insertMaterialEmbeddingsBatched(tx, chunksByIndex, embeddings);
+  }, options?.transactionOptions);
 }

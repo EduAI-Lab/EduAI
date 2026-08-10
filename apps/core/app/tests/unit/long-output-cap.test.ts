@@ -1,13 +1,8 @@
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   capTokensForLongOutputIntent,
+  didHitAppliedLongOutputCap,
   resolveLongOutputMaxTokens,
 } from "~/lib/ai/long-output-cap";
 import { isLongOutputIntent } from "~/lib/ai/long-output-intent";
@@ -43,10 +38,7 @@ describe("resolveLongOutputMaxTokens", () => {
   });
 
   it("falls back when the normal cap exceeds the safe integer range", () => {
-    vi.stubEnv(
-      "CHAT_LONG_OUTPUT_MAX_TOKENS",
-      "999999999999999999999",
-    );
+    vi.stubEnv("CHAT_LONG_OUTPUT_MAX_TOKENS", "999999999999999999999");
 
     expect(resolveLongOutputMaxTokens(false)).toBe(1200);
   });
@@ -60,56 +52,30 @@ describe("resolveLongOutputMaxTokens", () => {
   });
 
   it("uses the normal environment override", () => {
-    vi.stubEnv(
-      "CHAT_LONG_OUTPUT_MAX_TOKENS",
-      "1500",
-    );
+    vi.stubEnv("CHAT_LONG_OUTPUT_MAX_TOKENS", "1500");
 
     expect(resolveLongOutputMaxTokens(false)).toBe(1500);
   });
 
   it("uses the ADHD environment override", () => {
-    vi.stubEnv(
-      "CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS",
-      "700",
-    );
+    vi.stubEnv("CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS", "700");
 
     expect(resolveLongOutputMaxTokens(true)).toBe(700);
   });
 
-  it.each([
-    "",
-    "0",
-    "-1",
-    "not-a-number",
-    "600junk",
-    "1.5",
-  ])(
+  it.each(["", "0", "-1", "not-a-number", "600junk", "1.5"])(
     "falls back when the normal env value is invalid: %s",
     (value) => {
-      vi.stubEnv(
-        "CHAT_LONG_OUTPUT_MAX_TOKENS",
-        value,
-      );
+      vi.stubEnv("CHAT_LONG_OUTPUT_MAX_TOKENS", value);
 
       expect(resolveLongOutputMaxTokens(false)).toBe(1200);
     },
   );
 
-  it.each([
-    "",
-    "0",
-    "-1",
-    "not-a-number",
-    "600junk",
-    "1.5",
-  ])(
+  it.each(["", "0", "-1", "not-a-number", "600junk", "1.5"])(
     "falls back when the ADHD env value is invalid: %s",
     (value) => {
-      vi.stubEnv(
-        "CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS",
-        value,
-      );
+      vi.stubEnv("CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS", value);
 
       expect(resolveLongOutputMaxTokens(true)).toBe(600);
     },
@@ -174,10 +140,7 @@ describe("capTokensForLongOutputIntent", () => {
   });
 
   it("respects the normal environment override", () => {
-    vi.stubEnv(
-      "CHAT_LONG_OUTPUT_MAX_TOKENS",
-      "900",
-    );
+    vi.stubEnv("CHAT_LONG_OUTPUT_MAX_TOKENS", "900");
 
     const result = capTokensForLongOutputIntent({
       prompt: "Recap the entire conversation",
@@ -190,10 +153,7 @@ describe("capTokensForLongOutputIntent", () => {
   });
 
   it("respects the ADHD environment override", () => {
-    vi.stubEnv(
-      "CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS",
-      "450",
-    );
+    vi.stubEnv("CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS", "450");
 
     const result = capTokensForLongOutputIntent({
       prompt: "Explain everything we covered",
@@ -211,5 +171,48 @@ describe("capTokensForLongOutputIntent", () => {
         "Continue the previous response from where it stopped. Do not repeat content already provided.",
       ),
     ).toBe(true);
+  });
+});
+
+describe("didHitAppliedLongOutputCap", () => {
+  it("reports a hit from usage when the server cap was applied", () => {
+    expect(
+      didHitAppliedLongOutputCap({
+        capApplied: true,
+        maxTokens: 1200,
+        completionTokens: 1200,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not depend on a provider finish reason", () => {
+    // No finishReason is accepted by this server-owned decision boundary.
+    expect(
+      didHitAppliedLongOutputCap({
+        capApplied: true,
+        maxTokens: 600,
+        completionTokens: 600,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not report a hit when the feature cap was not applied", () => {
+    expect(
+      didHitAppliedLongOutputCap({
+        capApplied: false,
+        maxTokens: 1200,
+        completionTokens: 1200,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not report a hit below the applied cap", () => {
+    expect(
+      didHitAppliedLongOutputCap({
+        capApplied: true,
+        maxTokens: 1200,
+        completionTokens: 875,
+      }),
+    ).toBe(false);
   });
 });

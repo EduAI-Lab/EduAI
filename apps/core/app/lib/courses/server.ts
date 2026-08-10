@@ -9,8 +9,15 @@ import {
   type Pagination,
 } from "~/lib/pagination.server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
+import {
+  enforceAdminIfApiKey,
+  requireServiceKey,
+} from "~/lib/auth/guards.server";
+import {
+  apiError,
+  jsonResponse,
+  validationErrorFromZod,
+} from "~/lib/api-error.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
@@ -33,7 +40,6 @@ import {
   type DeleteCourseTopicInput,
 } from "./schemas";
 
-
 async function parseCreateCourseBody(
   request: Request,
   opts?: { forceInstructorUserIds?: string[] },
@@ -45,14 +51,24 @@ async function parseCreateCourseBody(
     try {
       body = await request.json();
     } catch {
-      return { ok: false as const, response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }) };
+      return {
+        ok: false as const,
+        response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }),
+      };
     }
-    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
+    if (
+      opts?.forceInstructorUserIds?.length &&
+      body &&
+      typeof body === "object"
+    ) {
       body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);
     if (!parsed.success) {
-      return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+      return {
+        ok: false as const,
+        response: validationErrorFromZod(parsed.error),
+      };
     }
     return { ok: true as const, data: parsed.data };
   }
@@ -101,7 +117,10 @@ async function parseCreateCourseBody(
 
   const parsed = CreateCourseSchema.safeParse(data);
   if (!parsed.success) {
-    return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+    return {
+      ok: false as const,
+      response: validationErrorFromZod(parsed.error),
+    };
   }
   return { ok: true as const, data: parsed.data };
 }
@@ -115,7 +134,10 @@ async function parseCreateCourseBody(
 // ---------------------------------------------------------------------------
 
 type RagSettingsCacheEntry = {
-  value: { ragTopK: number | null; ragSimilarityThreshold: number | null } | null;
+  value: {
+    ragTopK: number | null;
+    ragSimilarityThreshold: number | null;
+  } | null;
   expiresAt: number;
 };
 
@@ -123,7 +145,10 @@ const ragSettingsCache = new Map<string, RagSettingsCacheEntry>();
 
 const COURSE_RAG_SETTINGS_CACHE_TTL_MS = Math.min(
   7_200_000, // 2 h ceiling
-  Math.max(5_000, Number(process.env.COURSE_RAG_SETTINGS_CACHE_TTL_MS) || 3_600_000),
+  Math.max(
+    5_000,
+    Number(process.env.COURSE_RAG_SETTINGS_CACHE_TTL_MS) || 3_600_000,
+  ),
 );
 
 /** Remove all entries whose TTL has elapsed. */
@@ -137,6 +162,61 @@ function pruneRagSettingsCache(): void {
 /** Drop a single course's entry so the next read fetches fresh data from DB. */
 export function invalidateCourseRagSettingsCache(courseId: string): void {
   ragSettingsCache.delete(courseId);
+}
+
+// ---------------------------------------------------------------------------
+// Per-course topic-name cache
+//
+// Course-scope classification (course-scope-guardrail.ts) loads topic names
+// on every browser course-chat turn. Same TTL/invalidation shape as the RAG
+// settings cache above to avoid a DB round-trip on that critical path.
+// ---------------------------------------------------------------------------
+
+type CourseTopicNamesCacheEntry = {
+  value: string[];
+  expiresAt: number;
+};
+
+const courseTopicNamesCache = new Map<string, CourseTopicNamesCacheEntry>();
+
+function pruneCourseTopicNamesCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of courseTopicNamesCache) {
+    if (entry.expiresAt <= now) courseTopicNamesCache.delete(key);
+  }
+}
+
+/** Drop a single course's cached topic names so the next read fetches fresh data. */
+export function invalidateCourseTopicNamesCache(courseId: string): void {
+  courseTopicNamesCache.delete(courseId);
+}
+
+/**
+ * Cached topic-name lookup for a course. Backed by getCourseTopics so it stays
+ * consistent with the deletedAt: null filter used everywhere else. Cached in
+ * memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (reuses the RAG settings TTL —
+ * both are low-churn, read-heavy per-course settings) to avoid a DB
+ * round-trip on every course-chat turn.
+ */
+export async function getCourseTopicNamesCached(
+  courseId: string,
+): Promise<string[]> {
+  pruneCourseTopicNamesCache();
+
+  const now = Date.now();
+  const cached = courseTopicNamesCache.get(courseId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const topics = await getCourseTopics(courseId);
+  const value = topics.map((topic) => topic.name);
+
+  courseTopicNamesCache.set(courseId, {
+    value,
+    expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS,
+  });
+  return value;
 }
 
 /**
@@ -249,7 +329,9 @@ export async function getCourses(request: Request) {
     },
     select: { courseId: true, role: true },
   });
-  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
+  const roleByCourseId = new Map(
+    enrollmentRows.map((row) => [row.courseId, row.role]),
+  );
   const coursesWithCallerRole = courses.map((course) => ({
     ...course,
     callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
@@ -272,7 +354,8 @@ export async function createCourse(request: Request) {
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
-    (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
+    (role === "INSTRUCTOR" &&
+      (await getPolicy("instructors.canCreateCourses")));
   if (!session?.user || !canCreate) {
     if (session?.user && role === "INSTRUCTOR") {
       return denyByPolicy({
@@ -287,7 +370,9 @@ export async function createCourse(request: Request) {
 
   const parsedBody = await parseCreateCourseBody(
     request,
-    session.user.role === "INSTRUCTOR" ? { forceInstructorUserIds: [session.user.id] } : undefined,
+    session.user.role === "INSTRUCTOR"
+      ? { forceInstructorUserIds: [session.user.id] }
+      : undefined,
   );
   if (!parsedBody.ok) {
     return parsedBody.response;
@@ -376,7 +461,10 @@ export async function updateCourse(request: Request, courseId: string) {
     return validationErrorFromZod(result.error);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
+  const { course, access } = await resolveCourseAccessWithCourse(
+    user,
+    courseId,
+  );
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -392,7 +480,8 @@ export async function updateCourse(request: Request, courseId: string) {
   if (access && access.level === "ta") {
     const taCanSetAi = await getPolicy("tas.canSetAiInstructions");
     const keys = Object.keys(result.data);
-    const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
+    const aiInstructionsOnly =
+      keys.length > 0 && keys.every((key) => key === "aiInstructions");
     if (!taCanSetAi || !aiInstructionsOnly) {
       return denyByPolicy({
         request,
@@ -437,10 +526,13 @@ export async function updateCourse(request: Request, courseId: string) {
   ) {
     const units = await getAuthorizedUnits(user);
     if (!updateData.department || !units.includes(updateData.department)) {
-      return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" } as const,
-      });
+      return new Response(
+        JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json" } as const,
+        },
+      );
     }
   }
 
@@ -450,7 +542,8 @@ export async function updateCourse(request: Request, courseId: string) {
     if (deptGuard) return deptGuard;
   }
 
-  const newInstructorId = (updateData as any).instructorId as string | undefined;
+  const newInstructorId = (updateData as any).instructorId as
+    string | undefined;
   const instructorChanging =
     newInstructorId !== undefined && newInstructorId !== course.instructorId;
 
@@ -464,7 +557,12 @@ export async function updateCourse(request: Request, courseId: string) {
       }
       await tx.enrollment.upsert({
         where: { courseId_userId: { courseId, userId: newInstructorId! } },
-        create: { courseId, userId: newInstructorId!, role: "INSTRUCTOR", isActive: true },
+        create: {
+          courseId,
+          userId: newInstructorId!,
+          role: "INSTRUCTOR",
+          isActive: true,
+        },
         update: { role: "INSTRUCTOR", isActive: true },
       });
     }
@@ -493,7 +591,10 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessWithCourse(
+    session.user,
+    courseId,
+  );
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -512,7 +613,10 @@ export async function deleteCourse(request: Request, courseId: string) {
   // Policy gate: INSTRUCTOR delete is conditional; ADMIN/UNIT_ADMIN unaffected
   // by this flag (the service-key/enforceAdminIfApiKey path never reaches here
   // as an instructor).
-  if (access.level === "instructor" && !(await getPolicy("instructors.canDeleteCourses"))) {
+  if (
+    access.level === "instructor" &&
+    !(await getPolicy("instructors.canDeleteCourses"))
+  ) {
     return denyByPolicy({
       request,
       policyKey: "instructors.canDeleteCourses",
@@ -523,7 +627,10 @@ export async function deleteCourse(request: Request, courseId: string) {
   }
 
   // Policy gate: UNIT_ADMIN delete is conditional; ADMIN is always allowed.
-  if (access.level === "unit" && !(await getPolicy("unitAdmins.canDeleteCourses"))) {
+  if (
+    access.level === "unit" &&
+    !(await getPolicy("unitAdmins.canDeleteCourses"))
+  ) {
     return denyByPolicy({
       request,
       policyKey: "unitAdmins.canDeleteCourses",
@@ -552,7 +659,11 @@ export async function deleteCourse(request: Request, courseId: string) {
  * Accepts service key (extensions) or user session (ADMIN / UNIT_ADMIN(D) /
  * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
  */
-export async function setPublishState(request: Request, courseId: string, publish: boolean) {
+export async function setPublishState(
+  request: Request,
+  courseId: string,
+  publish: boolean,
+) {
   // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
   if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
@@ -588,7 +699,10 @@ export async function setPublishState(request: Request, courseId: string, publis
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessWithCourse(
+    session.user,
+    courseId,
+  );
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -606,7 +720,10 @@ export async function setPublishState(request: Request, courseId: string, publis
 
   // Policy gate: an INSTRUCTOR may publish only when the flag is on; higher
   // ranks (ADMIN / UNIT_ADMIN) are always allowed.
-  if (access.level === "instructor" && !(await getPolicy("instructors.canPublishCourses"))) {
+  if (
+    access.level === "instructor" &&
+    !(await getPolicy("instructors.canPublishCourses"))
+  ) {
     return denyByPolicy({
       request,
       policyKey: "instructors.canPublishCourses",
@@ -656,6 +773,74 @@ export async function getAccessibleCourseCodes(user: {
   return courses.map((course) => course.code);
 }
 
+/** A course row plus the caller's enrollment role on it, as `listCoursesForUser` returns. */
+type CourseWithCallerRole = Prisma.CourseGetPayload<object> & {
+  callerEnrollmentRole: Prisma.EnrollmentGetPayload<object>["role"] | null;
+};
+
+/**
+ * Data-only course listing for in-process server callers (the dashboard loader)
+ * that already hold the session user and need the same access-scoped page +
+ * `total` GET /api/courses returns, without an HTTP round trip.
+ *
+ * Mirrors the session path of {@link getCourses}: `buildCourseListFilter` access
+ * scoping, an optional `isActive` narrowing, and the per-row caller-enrollment
+ * annotation. It deliberately omits the `?ids=`/`?search=`/`includeDeleted`
+ * lookup surfaces and the service-key path — those are HTTP-only concerns the
+ * dashboard never uses. Pass `countOnly: true` for a `total`-only read: it skips
+ * the page fetch and the enrollment annotation entirely and returns `courses: []`.
+ */
+export async function listCoursesForUser(
+  // Same access-scoping input `buildCourseListFilter` takes (a session user
+  // satisfies it) — deliberately its loose `RbacUser`, not `rbac/types`'.
+  user: Parameters<typeof buildCourseListFilter>[0],
+  opts: { page?: number; pageSize?: number; isActive?: boolean; countOnly?: boolean } = {},
+) {
+  const { page = 1, pageSize = 25, isActive, countOnly = false } = opts;
+
+  const base = await buildCourseListFilter(user);
+  const where: Prisma.CourseWhereInput =
+    isActive === undefined ? base : { AND: [base, { isActive }] };
+
+  if (countOnly) {
+    return { courses: [] as CourseWithCallerRole[], total: await prisma.course.count({ where }) };
+  }
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.course.count({ where }),
+    prisma.course.findMany({
+      where,
+      orderBy: { code: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  // No rows means no enrollment annotation to build — an `in: []` lookup would
+  // round-trip to Postgres only to return nothing.
+  if (rows.length === 0) {
+    return { courses: rows.map((course) => ({ ...course, callerEnrollmentRole: null })), total };
+  }
+
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: {
+      userId: user.id,
+      isActive: true,
+      courseId: { in: rows.map((course) => course.id) },
+    },
+    select: { courseId: true, role: true },
+  });
+  const roleByCourseId = new Map(
+    enrollmentRows.map((row) => [row.courseId, row.role]),
+  );
+  const courses = rows.map((course) => ({
+    ...course,
+    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
+  }));
+
+  return { courses, total };
+}
+
 /**
  * Returns only the RAG-tuning fields for a course.
  * Both fields are nullable — callers should fall back to global defaults when null.
@@ -666,7 +851,10 @@ export async function getAccessibleCourseCodes(user: {
  */
 export async function getCourseRagSettings(
   courseId: string,
-): Promise<{ ragTopK: number | null; ragSimilarityThreshold: number | null } | null> {
+): Promise<{
+  ragTopK: number | null;
+  ragSimilarityThreshold: number | null;
+} | null> {
   pruneRagSettingsCache();
 
   const now = Date.now();
@@ -680,11 +868,17 @@ export async function getCourseRagSettings(
     select: { ragTopK: true, ragSimilarityThreshold: true },
   });
 
-  ragSettingsCache.set(courseId, { value, expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS });
+  ragSettingsCache.set(courseId, {
+    value,
+    expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS,
+  });
   return value;
 }
 
-export async function getCourseTopics(courseId: string, includeDeleted = false) {
+export async function getCourseTopics(
+  courseId: string,
+  includeDeleted = false,
+) {
   return prisma.courseTopic.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     orderBy: { name: "asc" },
@@ -697,7 +891,11 @@ export async function getCourseTopic(
   includeDeleted = false,
 ) {
   return prisma.courseTopic.findFirst({
-    where: { id: topicId, courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: {
+      id: topicId,
+      courseId,
+      ...(includeDeleted ? {} : { deletedAt: null }),
+    },
   });
 }
 
@@ -734,6 +932,7 @@ export async function createCourseTopic(
       },
     });
 
+    invalidateCourseTopicNamesCache(courseId);
     return { status: "201", topic } as const;
   } catch (error: any) {
     if (error?.code === "P2002") {
@@ -777,6 +976,7 @@ export async function updateCourseTopic(
       where: { id: topicId },
       data: { name: parsed.data.name.trim() },
     });
+    invalidateCourseTopicNamesCache(courseId);
     return { status: "200", topic } as const;
   } catch (error: any) {
     if (error?.code === "P2002") {
@@ -831,5 +1031,6 @@ export async function deleteCourseTopic(
     data: { deletedAt: new Date(), deletedBy: deletedBy || null },
   });
 
+  invalidateCourseTopicNamesCache(courseId);
   return { status: "204", topic: target } as const;
 }

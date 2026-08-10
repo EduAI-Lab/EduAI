@@ -24,6 +24,7 @@ server/
     app.js                # Express app factory (createApp), middleware + route mounting
     config/
       database.js         # PrismaClient singleton
+      cors.js             # Exact-origin CORS allowlist configuration
       bootstrapAdmins.js  # Hardcoded admin email list
     middleware/
       auth.js             # requireAuth, requireRole, requireRoles, requireInstructorPolicy
@@ -73,7 +74,7 @@ server/
 
 The middleware chain in `app.js` processes requests in this order:
 
-1. **CORS** — Open origin with `credentials: true`.
+1. **CORS** — Exact-origin allowlist via `CORS_ORIGINS` with `credentials: true`.
 2. **JSON parser** — `express.json()` for all routes.
 3. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
 4. **Auth gate** — `requireAuth` (`middleware/auth.js`) posts the incoming cookie to Core's
@@ -181,12 +182,15 @@ Source of truth: `server/.env.example`.
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
+| `NODE_ENV` | Yes | `development` in the generated local `.env` | Selects runtime defaults; production deployments must set `production` explicitly |
 | `PORT` | No | `4000` | Express listen port |
 | `CORE_URL` | Yes | `http://localhost:3000` | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
 | `EDUAI_BASE_URL` | No | `http://localhost:3000/api` | Core API base URL (course import/sync, policies, chat completion) |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
+| `CORS_ORIGINS` | No | `http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials; deployments must configure every trusted frontend origin |
 | `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
+| `EDUAI_ENFORCE_URL_CONSISTENCY` | No | - | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
 
 When `EDUAI_BASE_URL` is unset, `services/eduaiClient.js` still falls back to `http://localhost:5174/api` (legacy); use `.env.example` or set it explicitly for local dev.
 

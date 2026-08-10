@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { messageToText, reviveStoredMessage } from "~/lib/chat/revive-message.server";
+import {
+  messageToText,
+  reviveStoredMessage,
+} from "~/lib/chat/revive-message.server";
 
 /**
  * Regression tests for chat-history restore rendering. The DB has accumulated
@@ -13,7 +16,9 @@ describe("messageToText", () => {
   });
 
   it("extracts text from an AI-SDK content array (Shape 1)", () => {
-    expect(messageToText([{ type: "text", text: "**Knapsack**" }])).toBe("**Knapsack**");
+    expect(messageToText([{ type: "text", text: "**Knapsack**" }])).toBe(
+      "**Knapsack**",
+    );
   });
 
   it("unwraps a double-serialized message object in a text field (Shape 2)", () => {
@@ -28,7 +33,9 @@ describe("messageToText", () => {
   });
 
   it("reads UIMessage parts", () => {
-    expect(messageToText({ parts: [{ type: "text", text: "hello" }] })).toBe("hello");
+    expect(messageToText({ parts: [{ type: "text", text: "hello" }] })).toBe(
+      "hello",
+    );
   });
 
   it("returns empty string for null/undefined", () => {
@@ -42,7 +49,11 @@ describe("reviveStoredMessage", () => {
     const revived = reviveStoredMessage({
       messageId: "m1",
       role: "assistant",
-      content: { id: "x", role: "assistant", content: [{ type: "text", text: "real answer" }] },
+      content: {
+        id: "x",
+        role: "assistant",
+        content: [{ type: "text", text: "real answer" }],
+      },
     });
     expect(revived.content).toBe("real answer");
     expect(revived.parts).toEqual([{ type: "text", text: "real answer" }]);
@@ -57,7 +68,11 @@ describe("reviveStoredMessage", () => {
     const revived = reviveStoredMessage({
       messageId: "m2",
       role: "assistant",
-      content: { id: "y", role: "assistant", parts: [{ type: "text", text: inner }] },
+      content: {
+        id: "y",
+        role: "assistant",
+        parts: [{ type: "text", text: inner }],
+      },
     });
     expect(revived.content).toBe("recovered");
   });
@@ -72,7 +87,11 @@ describe("reviveStoredMessage", () => {
   });
 
   it("falls back to messageId/role when missing", () => {
-    const revived = reviveStoredMessage({ messageId: "m4", role: "user", content: "plain" });
+    const revived = reviveStoredMessage({
+      messageId: "m4",
+      role: "user",
+      content: "plain",
+    });
     expect(revived.id).toBe("m4");
     expect(revived.role).toBe("user");
     expect(revived.content).toBe("plain");
@@ -104,7 +123,10 @@ describe("reviveStoredMessage", () => {
         id: "m8",
         role: "assistant",
         content: "answer",
-        metadata: { resolvedModelId: "vllm:qwen2.5-7b-instruct", wasAutoRouted: true },
+        metadata: {
+          resolvedModelId: "vllm:qwen2.5-7b-instruct",
+          wasAutoRouted: true,
+        },
       },
     });
 
@@ -131,6 +153,7 @@ describe("reviveStoredMessage", () => {
 
     expect(revived.metadata).toEqual({
       resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
       hitLongOutputCap: true,
     });
   });
@@ -168,5 +191,55 @@ describe("reviveStoredMessage", () => {
 
     expect(malformed).not.toHaveProperty("metadata");
     expect(user).not.toHaveProperty("metadata");
+  });
+
+  it("restores the course-scope redirect flag on assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m8",
+      role: "assistant",
+      content: {
+        id: "m8",
+        role: "assistant",
+        content: "That looks outside the scope of this course.",
+        metadata: { courseScopeRedirect: true },
+      },
+    });
+
+    expect(revived.metadata).toEqual({ courseScopeRedirect: true });
+  });
+
+  it("does not restore the course-scope redirect flag on non-assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m9",
+      role: "user",
+      content: {
+        content: "question",
+        metadata: { courseScopeRedirect: true },
+      },
+    });
+
+    expect(revived).not.toHaveProperty("metadata");
+  });
+
+  it("preserves both resolved-model and course-scope-redirect metadata together", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m10",
+      role: "assistant",
+      content: {
+        id: "m10",
+        role: "assistant",
+        content: "That looks outside the scope of this course.",
+        metadata: {
+          resolvedModelId: "openai:gpt-4o",
+          courseScopeRedirect: true,
+        },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
+      courseScopeRedirect: true,
+    });
   });
 });

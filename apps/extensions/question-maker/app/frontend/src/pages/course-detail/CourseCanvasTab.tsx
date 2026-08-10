@@ -115,7 +115,7 @@ export function CourseCanvasTab({ courseId, canWrite, onImportFromCanvas }: Cour
       <PanelCard title="Move questions in and out of Canvas">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10 text-primary">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10 text-primary-text">
               <IconDownload className="size-5" />
             </div>
             <div>

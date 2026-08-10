@@ -1,7 +1,12 @@
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFetcher, useLocation, useNavigate, useSearchParams } from "react-router";
+import {
+  useFetcher,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router";
 import { IconHistory } from "@tabler/icons-react";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
@@ -41,6 +46,7 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import {
@@ -69,7 +75,8 @@ type ChatNavigationState = {
 };
 
 export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
-  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } = data;
+  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } =
+    data;
   // Only an editable (owned) transcript seeds the live composer; everything else
   // opens in the read-only viewer.
   const editableTranscript =
@@ -78,6 +85,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationState = location.state as ChatNavigationState | null;
+  const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   const { courses } = useCourses({ pageSize: 200 });
@@ -101,7 +109,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       : defaultChatModelId(chatModels, routerAutoEnabled);
   });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
+    editableTranscript?.chat.courseCode ??
+      searchParams.get("courseCode") ??
+      lastCourseCode ??
+      null,
   );
   const [chatId, setChatId] = useState<string | null>(
     editableTranscript?.chat.id ?? null,
@@ -110,18 +121,33 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     editableTranscript?.chat.systemPrompt ?? null,
   );
   const [adhdAssist, setAdhdAssist] = useState(
-    editableTranscript ? Boolean(editableTranscript.chat.adhdAssist) : (assistDefault ?? assistive),
+    editableTranscript
+      ? Boolean(editableTranscript.chat.adhdAssist)
+      : (assistDefault ?? assistive),
   );
-  const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(
-    initialTranscript && !initialTranscript.canEdit ? initialTranscript : null,
-  );
+  const [readOnlyTranscript, setReadOnlyTranscript] =
+    useState<ChatTranscript | null>(
+      initialTranscript && !initialTranscript.canEdit
+        ? initialTranscript
+        : null,
+    );
   // Focus mode and the explicit model choice are carried across the
   // /chat -> /chat/:chatId replace-navigation below. That route swap remounts
   // ChatScreen (see chat.$chatId.tsx's key), so uncarried state would reset to
-  // its defaults — notably switching a concrete model back to Auto.
+  // its defaults — notably switching a concrete model back to Auto. focusMode
+  // is read via focusModeRef at those call sites (see below) to avoid a
+  // stale-closure revert (#1244); selectedModel is read directly since the
+  // model selector is disabled while a request is in flight.
   const [focusMode, setFocusMode] = useState(
     Boolean(navigationState?.focusMode),
   );
+  // onFinish/handleSystemPromptSave fire after the user may have toggled Focus
+  // Mode mid-response; a ref keeps the replace-navigation below reading the
+  // live value instead of whatever was true when that callback was bound (#1244).
+  const focusModeRef = useRef(focusMode);
+  useEffect(() => {
+    focusModeRef.current = focusMode;
+  }, [focusMode]);
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   /** Persisted/header registry ids keyed by their assistant message id. */
@@ -173,9 +199,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
-  const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
-    useChatHistory({ scope: "own", limit: 50 });
-  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    chats,
+    isLoading: historyLoading,
+    error: historyError,
+    refresh: refreshHistory,
+  } = useChatHistory({ scope: "own", limit: 50 });
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
   const [cappedMessageIds, setCappedMessageIds] = useState<Set<string>>(() => {
@@ -183,8 +212,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
     for (const message of editableTranscript?.messages ?? []) {
       const metadata = message.metadata as
-        | LongOutputMessageMetadata
-        | undefined;
+        LongOutputMessageMetadata | undefined;
 
       if (
         typeof message.id === "string" &&
@@ -201,7 +229,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
-      prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
+      prefsFetcher.submit(updates, {
+        method: "post",
+        encType: "application/json",
+      });
     },
     [prefsFetcher],
   );
@@ -213,14 +244,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       setAssistive(checked);
     },
     [setAssistive],
-  );
-
-  const handleCourseChange = useCallback(
-    (code: string | null) => {
-      setSelectedCourseCode(code);
-      persistPreference({ lastCourseCode: code });
-    },
-    [persistPreference],
   );
 
   // Students see a first-visit privacy notice explaining course-chat visibility.
@@ -241,7 +264,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // route is keyed by chatId, so switching chats remounts and re-seeds.
   useEffect(() => {
     if (editableTranscript) {
-      setAssistive(Boolean(editableTranscript.chat.adhdAssist), { silent: true });
+      setAssistive(Boolean(editableTranscript.chat.adhdAssist), {
+        silent: true,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -278,13 +303,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     epoch: reorientationEpoch,
   });
 
-  // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
+  // The state initializer applies ?courseCode= before the default-course effect
+  // can run. Strip the one-shot handoff parameter after mount.
   useEffect(() => {
     if (courseParamApplied.current) return;
     const code = searchParams.get("courseCode");
     if (!code) return;
     courseParamApplied.current = true;
-    setSelectedCourseCode(code);
     const next = new URLSearchParams(searchParams);
     next.delete("courseCode");
     setSearchParams(next, { replace: true });
@@ -317,50 +342,54 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     isLoading,
     stop,
     append,
+    setMessages,
+    setInput,
   } = useChat({
-      api: "/api/chat",
-      // Seed the composer from the route loader's transcript (DB is the source of
-      // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
-      initialMessages: (editableTranscript?.messages as Message[] | undefined) ?? undefined,
-      // Persist stable client message ids to the server. Without this, AI SDK v4
-      // strips `id` from the request body, so the server stamps a fresh UUID for
-      // every user message on every turn — defeating the (chatId, messageId)
-      // dedup and re-saving the entire user history each turn (chat-history dup bug).
-      sendExtraMessageFields: true,
-      body: requestMetadata,
-      // #487: send only the latest turn to the server, not the full history.
-      // Spreads requestBody (carrying the stable message id from
-      // sendExtraMessageFields) so dedup + latest-turn-only both hold.
-      experimental_prepareRequestBody: ({ messages, requestBody }) => ({
-        ...(requestBody ?? requestMetadata),
-        chatMode: "learning",
-        messages: messages.slice(-1),
-      }),
-      onResponse: async (response) => {
-        const routedHeader = response.headers.get("X-Routed-Model")?.trim();
-        const routed =
-          routedHeader && routedHeader.length > 0 ? routedHeader : null;
-        pendingRoutedRegistryIdRef.current = routed;
-        setStreamingRoutedRegistryId(routed);
-        // The selector is disabled while a request is in flight, so this
-        // still reflects what was selected when the request was sent.
-        const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
-        pendingWasAutoRoutedRef.current = wasAutoRouted;
-        setStreamingWasAutoRouted(wasAutoRouted);
+    api: "/api/chat",
+    // Seed the composer from the route loader's transcript (DB is the source of
+    // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
+    initialMessages:
+      (editableTranscript?.messages as Message[] | undefined) ?? undefined,
+    // Persist stable client message ids to the server. Without this, AI SDK v4
+    // strips `id` from the request body, so the server stamps a fresh UUID for
+    // every user message on every turn — defeating the (chatId, messageId)
+    // dedup and re-saving the entire user history each turn (chat-history dup bug).
+    sendExtraMessageFields: true,
+    body: requestMetadata,
+    // #487: send only the latest turn to the server, not the full history.
+    // Spreads requestBody (carrying the stable message id from
+    // sendExtraMessageFields) so dedup + latest-turn-only both hold.
+    experimental_prepareRequestBody: ({ messages, requestBody }) => ({
+      ...(requestBody ?? requestMetadata),
+      chatMode: "learning",
+      messages: messages.slice(-1),
+    }),
+    onResponse: async (response) => {
+      const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+      const routed =
+        routedHeader && routedHeader.length > 0 ? routedHeader : null;
+      pendingRoutedRegistryIdRef.current = routed;
+      setStreamingRoutedRegistryId(routed);
+      // The selector is disabled while a request is in flight, so this
+      // still reflects what was selected when the request was sent.
+      const wasAutoRouted =
+        selectedModel === "auto" || selectedModel === "auto-llm";
+      pendingWasAutoRoutedRef.current = wasAutoRouted;
+      setStreamingWasAutoRouted(wasAutoRouted);
 
-        await logChatApiResponse(response, "learning-chat");
-        const chatIdHeader = response.headers.get("X-Chat-Id");
-        if (chatIdHeader && !chatId) {
-          setChatId(chatIdHeader);
-          pendingNavigateChatId.current = chatIdHeader;
-          void refreshHistory();
-        }
-        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
-        if (webToolsHeader !== null) {
-          setWebToolsEnabled(webToolsHeader === "1");
-        }
-      },
-     onFinish: (message) => {
+      await logChatApiResponse(response, "learning-chat");
+      const chatIdHeader = response.headers.get("X-Chat-Id");
+      if (chatIdHeader && !chatId) {
+        setChatId(chatIdHeader);
+        pendingNavigateChatId.current = chatIdHeader;
+        void refreshHistory();
+      }
+      const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+      if (webToolsHeader !== null) {
+        setWebToolsEnabled(webToolsHeader === "1");
+      }
+    },
+    onFinish: (message) => {
       // Server-owned source of truth for the Continue button.
       const hitLongOutputCap =
         message.role === "assistant" &&
@@ -404,18 +433,70 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         pendingNavigateChatId.current = null;
         navigate(`/chat/${id}`, {
           replace: true,
-          state: { focusMode, selectedModel },
+          state: { focusMode: focusModeRef.current, selectedModel },
         });
       }
     },
-      onError: (error) => {
-        logChatUseChatError(error, "learning-chat");
+    onError: (error) => {
+      logChatUseChatError(error, "learning-chat");
+      pendingRoutedRegistryIdRef.current = null;
+      pendingWasAutoRoutedRef.current = false;
+      setStreamingRoutedRegistryId(null);
+      setStreamingWasAutoRouted(false);
+    },
+  });
+
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      const action = resolveCourseChangeAction({
+        currentCourseCode: selectedCourseCode,
+        nextCourseCode: code,
+        chatId,
+      });
+      if (action.kind === "noop") return;
+
+      persistPreference({ lastCourseCode: code });
+
+      if (action.kind === "new-chat") {
+        // A chat id can arrive in onResponse while the URL is still /chat. A
+        // same-route navigation does not remount this component, so clear all
+        // persisted/in-flight state before handing off the selected course.
+        stop();
+        pendingNavigateChatId.current = null;
         pendingRoutedRegistryIdRef.current = null;
-        pendingWasAutoRoutedRef.current = false;
+        setChatId(null);
+        setSystemPrompt(null);
+        setMessages([]);
+        setInput("");
+        setSelectedCourseCode(action.courseCode);
+        setRoutedModelByMessageId({});
         setStreamingRoutedRegistryId(null);
-        setStreamingWasAutoRouted(false);
-      },
-    });
+        setWebToolsEnabled(false);
+        navigate(action.to, { state: { focusMode } });
+        return;
+      }
+
+      setSelectedCourseCode(action.courseCode);
+    },
+    [
+      chatId,
+      focusMode,
+      navigate,
+      persistPreference,
+      selectedCourseCode,
+      setInput,
+      setMessages,
+      stop,
+    ],
+  );
+
+  // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
+  // Clear the latch here or the next turn keeps the aborted turn's model.
+  const handleStop = useCallback(() => {
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -529,7 +610,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         if (location.pathname === "/chat") {
           navigate(`/chat/${data.chatId}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       }
@@ -577,7 +658,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     webToolsEnabled,
     onInputChange: handleInputChange,
     onSubmit,
-    onStop: stop,
+    onStop: handleStop,
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,
@@ -627,8 +708,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         {...historyListProps}
       />
       {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
-      <Sheet open={readOnlyTranscript !== null} onOpenChange={(open) => { if (!open) setReadOnlyTranscript(null); }}>
-        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
+      <Sheet
+        open={readOnlyTranscript !== null}
+        onOpenChange={(open) => {
+          if (!open) setReadOnlyTranscript(null);
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="w-full sm:max-w-xl flex flex-col p-0"
+        >
           <SheetHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
             <SheetTitle className="text-[15px]">
               {readOnlyTranscript?.chat.title ?? "Conversation"}

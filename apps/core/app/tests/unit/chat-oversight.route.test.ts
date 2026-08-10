@@ -60,6 +60,17 @@ vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// These are oversight tests, not RAG tests: keep retrieval hermetic so the
+// route's #225 RAG-01/RAG-02 fail-closed path (503 when a course-intent turn
+// cannot search materials) never fires on an unmocked embedding call.
+vi.mock("~/lib/ai/embedding", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/embedding")>();
+  return {
+    ...actual,
+    findRelevantContent: vi.fn().mockResolvedValue([]),
+  };
+});
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
 	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },

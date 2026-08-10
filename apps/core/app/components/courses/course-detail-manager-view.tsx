@@ -13,8 +13,8 @@ import {
   IconEye,
   IconEyeOff,
   IconClock,
+  IconDownload,
 } from "@tabler/icons-react";
-import { Download } from "lucide-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
@@ -122,12 +122,12 @@ interface Props {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function fileTypeColor(mime: string): string {
-  if (mime.includes("pdf")) return "oklch(0.63 0.22 25)";
+  if (mime.includes("pdf")) return "var(--color-file-pdf)";
   if (mime.includes("pptx") || mime.includes("presentation"))
-    return "oklch(0.55 0.18 48)";
+    return "var(--color-file-slides)";
   if (mime.includes("docx") || mime.includes("word"))
-    return "oklch(0.52 0.18 230)";
-  return "oklch(0.55 0.12 260)";
+    return "var(--color-file-doc)";
+  return "var(--color-file-generic)";
 }
 
 function formatSize(bytes: number): string {
@@ -1026,7 +1026,7 @@ export function CourseDetailManagerView({
                     size="sm"
                     onClick={() => setCanvasSyncOpen(true)}
                   >
-                    <Download className="h-4 w-4 mr-1.5" />
+                    <IconDownload className="h-4 w-4 mr-1.5" />
                     Sync from Canvas
                   </Button>
                 )}

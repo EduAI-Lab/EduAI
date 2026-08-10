@@ -14,10 +14,13 @@ vi.mock('~/lib/api', () => ({
 function emptyTopicsState(overrides: Partial<CourseTopicsState> = {}): CourseTopicsState {
   return {
     topics: [],
+    total: 0,
     loading: false,
     error: null,
     refresh: vi.fn(),
     createTopic: vi.fn(),
+    loadMore: vi.fn().mockResolvedValue(false),
+    loadingMore: false,
     ...overrides,
   };
 }

@@ -81,37 +81,180 @@ export interface Paginated<T> {
 
 /**
  * Default page size for the structure-bounded "tree" endpoints (modules,
- * lessons, activities, topics). Their readers need the whole set (reorder,
- * ordinals, the lesson player), so they request one bounded page this large
- * rather than rendering a pager. See #1043 Group B. A course whose tree
- * exceeds this silently truncates — tracked as a follow-up.
+ * lessons, activities, topics).
+ *
+ * #1207 turned these into real pagers, so this is now an ordinary page size
+ * rather than a "load everything" bound. The three readers that used to need
+ * the whole set no longer do:
+ *   - reorder goes through `PATCH .../position` with an absolute ordinal, so a
+ *     drag on page 3 never needs page 1 in memory;
+ *   - the lesson player's "3.2" ordinal comes from `GET /lessons/:id/context`;
+ *   - the player's activity walk appends the next page as the student advances.
+ * Callers that still want a large single read pass their own `pageSize`.
  */
-const TREE_PAGE_SIZE = 200;
+export const TREE_PAGE_SIZE = 25;
 
 /**
- * Default page size for course lists (#1043 Group A). The server now REQUIRES
- * page/pageSize, so callers that don't drive an explicit pager (dashboards,
- * the course switcher, the command palette, import-source dropdowns) send this
- * bounded page instead of an unbounded read. Views with a real pager pass their
- * own page/pageSize. A deployment with more courses than this in one of those
- * non-pager surfaces truncates — those surfaces are tracked for a follow-up
- * server-search UX (mirrors #1041's landed course-picker decision).
+ * Single-read bound for the copy/import pickers and the student module page.
+ *
+ * These are the readers #1207 did *not* convert to pagers: a checkbox list of
+ * "which modules to copy" and the student's lesson list have no page controls,
+ * so falling back to `TREE_PAGE_SIZE` would silently hide rows past the 25th
+ * with nothing on screen to say so. Holding them at the pre-#1207 bound keeps
+ * that from regressing until they grow real pagers.
+ */
+export const FULL_TREE_READ_PAGE_SIZE = 200;
+
+/**
+ * Topics stay on a large single read (#1207). Unlike the tree lists they have
+ * no pager: their consumers are `<Select>` dropdowns that must be able to
+ * `.find()` an already-saved value, and a topic row is tiny. The hook layer
+ * (`useCourseTopics`) appends further pages on demand and surfaces the count,
+ * so the bound is not silent.
+ */
+export const TOPIC_PAGE_SIZE = 200;
+
+/**
+ * Page size for the activity import picker. Deliberately small: the picker is a
+ * search-as-you-type surface over the caller's whole activity corpus, not a
+ * pager, so the right move is a short candidate list per keystroke plus a
+ * visible "more matches exist" note.
+ */
+export const IMPORT_PICKER_PAGE_SIZE = 25;
+
+/**
+ * Result of a `move*ToPosition` call: the ordinal the row now occupies and the
+ * sibling count it was resolved against. The server CLAMPS an out-of-range
+ * ordinal, so `position` may differ from what was requested — callers should
+ * trust this value over their own optimistic guess.
+ */
+export interface MoveResult {
+  position: number;
+  total: number;
+}
+
+/**
+ * Structural position of a lesson within its module and course. Ordinals are
+ * 1-based and reflect the caller's visibility: a student's ordinals count only
+ * published siblings, matching the tree they can actually navigate.
+ */
+export interface ModuleContext {
+  moduleOrdinal: number;
+  moduleTotal: number;
+}
+
+export interface LessonContext {
+  moduleOrdinal: number;
+  lessonOrdinal: number;
+  moduleTotal: number;
+  lessonTotal: number;
+  prevLessonId: number | null;
+  nextLessonId: number | null;
+}
+
+/**
+ * Default page size for course lists (#1043 Group A). The server REQUIRES
+ * page/pageSize, so callers that don't drive an explicit pager send this bounded
+ * page instead of an unbounded read; views with a real pager pass their own.
+ *
+ * #1208: `GET /api/courses` now supports server-side `search`, `term`, `status`
+ * and `progress`, so a course past this bound is reachable by narrowing rather
+ * than by paging. The switcher and command palette search server-side; the
+ * instructor and student lists thread their filters through the loader URL. What
+ * this bound still governs is the unsearched first page — surfaces that render
+ * one (the dashboard panels) must disclose the truncation rather than imply the
+ * list is complete; see `TruncatedListNotice`.
+ *
+ * NB: `listImportableActivities` also borrows this constant (#1207 owns that
+ * call site) — don't rename it without coordinating.
  */
 export const COURSE_LIST_PAGE_SIZE = 200;
 
+/** Query params accepted by every paginated list endpoint. */
+export interface ListParams {
+  page?: number;
+  pageSize?: number;
+  /**
+   * #1207: filtering happens SERVER-SIDE, in SQL. Callers pass the raw term and
+   * must NOT also filter the returned page — doing both is the bug this issue
+   * exists to fix, where a match on page 2 renders as "no results" while the
+   * pager below reports a non-zero total.
+   */
+  search?: string | null;
+}
+
 /**
- * Serialize pagination params into a query string. Returns '' when empty so
- * callers can append unconditionally.
+ * Filter/search params accepted by `GET /api/courses` (#1208).
+ *
+ * The array dimensions are repeatable query params — OR within a dimension, AND
+ * across them, matching `CourseListView`'s toolbar semantics.
+ */
+export interface CourseListParams {
+  page?: number;
+  pageSize?: number;
+  /** Free text over title + code. */
+  search?: string;
+  /** Canonical `term::year` keys, e.g. `"W1::2026"`. */
+  term?: string[];
+  /** `"published"` | `"draft"`. */
+  status?: string[];
+  /** `"not-started"` | `"in-progress"` | `"completed"`. */
+  progress?: string[];
+}
+
+/** Filter options for the course list, scoped to the caller (#1208). */
+export interface CourseFacets {
+  terms: string[];
+  statuses: string[];
+  progress: string[];
+  /**
+   * Core was unreachable, so every catalog-side filter fail-closes to zero rows.
+   * The `X-Core-Status` header says the same thing, but `http()` consumes it into
+   * a generic toast and callers never see it — leaving the list to report "No
+   * courses match", which reads as "your course is gone" rather than "search is
+   * degraded". Carried in the body so the routes can say which one it is.
+   */
+  coreUnavailable: boolean;
+}
+
+/**
+ * Serialize course list params. Blank search and empty arrays are omitted
+ * entirely so an unfiltered request is byte-identical to the pre-#1208 one.
+ */
+function courseListQuery(params?: CourseListParams): string {
+  const qs = new URLSearchParams();
+  qs.set('page', String(params?.page ?? 1));
+  qs.set('pageSize', String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
+  const search = params?.search?.trim();
+  if (search) qs.set('search', search);
+  for (const key of ['term', 'status', 'progress'] as const) {
+    for (const value of params?.[key] ?? []) {
+      if (value) qs.append(key, value);
+    }
+  }
+  return `?${qs.toString()}`;
+}
+
+/**
+ * Serialize list params into a query string. Returns '' when empty so callers
+ * can append unconditionally.
  *
  * Callers must pass BOTH `page` and `pageSize` for endpoints that parse in
  * required mode — the server 400s (`PAGINATION_REQUIRED`) on a half-supplied
  * pair, so every call site below defaults `page: 1` alongside its page size.
+ *
+ * An empty or whitespace-only `search` is omitted rather than sent as
+ * `search=`: the server treats both as "no filter", but omitting it keeps the
+ * URL clean and the request cacheable.
  */
-function pageQuery(params?: { page?: number; pageSize?: number }): string {
+function pageQuery(params?: ListParams): string {
   if (!params) return '';
   const qs = new URLSearchParams();
   if (params.page !== undefined) qs.set('page', String(params.page));
   if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
+  if (params.search != null && params.search.trim() !== '') {
+    qs.set('search', params.search.trim());
+  }
   const s = qs.toString();
   return s ? `?${s}` : '';
 }
@@ -326,10 +469,14 @@ export const api = {
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
       ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
     }>,
-  listCourses: (params?: { page?: number; pageSize?: number }) =>
-    http(
-      `/api/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Course>>,
+  listCourses: (params?: CourseListParams) =>
+    http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,
+  /**
+   * Filter options for the course list, spanning the caller's whole accessible
+   * set rather than the loaded page (#1208). Fetch once per mount — these change
+   * rarely, and re-fetching per keystroke would be pure waste.
+   */
+  listCourseFacets: () => http('/api/courses/facets') as Promise<CourseFacets>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
@@ -352,7 +499,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  modulesForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
+  modulesForCourse: (courseId: number, params?: ListParams) =>
     http(
       `/api/courses/${courseId}/modules${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Module>>,
@@ -392,7 +539,7 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  lessonsForModule: (moduleId: number, params?: { page?: number; pageSize?: number }) =>
+  lessonsForModule: (moduleId: number, params?: ListParams) =>
     http(
       `/api/modules/${moduleId}/lessons${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Lesson>>,
@@ -431,7 +578,7 @@ export const api = {
       body: JSON.stringify({ orderedIds }),
     }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
-  activitiesForLesson: (lessonId: number, params?: { page?: number; pageSize?: number }) =>
+  activitiesForLesson: (lessonId: number, params?: ListParams) =>
     http(
       `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Activity>>,
@@ -505,9 +652,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  topicsForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
+  topicsForCourse: (courseId: number, params?: ListParams) =>
     http(
-      `/api/courses/${courseId}/topics${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+      `/api/courses/${courseId}/topics${pageQuery({ page: 1, pageSize: TOPIC_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Topic>>,
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
@@ -740,21 +887,63 @@ export const api = {
     }) as Promise<Activity>,
   listImportableActivities: (
     courseId?: number,
-    params?: { excludeLessonId?: number; page?: number; pageSize?: number },
+    params?: ListParams & { excludeLessonId?: number },
   ) => {
-    const search = new URLSearchParams();
-    if (courseId != null) search.set('courseId', String(courseId));
+    const qs = new URLSearchParams();
+    if (courseId != null) qs.set('courseId', String(courseId));
     if (params?.excludeLessonId != null) {
-      search.set('excludeLessonId', String(params.excludeLessonId));
+      qs.set('excludeLessonId', String(params.excludeLessonId));
     }
-    // Group A endpoint — server requires page/pageSize; the picker takes one
-    // bounded page (server-side excludeLessonId keeps it from emptying).
-    search.set('page', String(params?.page ?? 1));
-    search.set('pageSize', String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
-    return http(`/api/activities/importable?${search.toString()}`) as Promise<
+    // Group A endpoint — server requires page/pageSize. #1207: this endpoint's
+    // scope is every course the caller manages, so one page is a slice of the
+    // instructor's whole activity corpus. `search` is what makes the rest
+    // reachable, and it is applied server-side — the picker must not filter the
+    // returned page again.
+    qs.set('page', String(params?.page ?? 1));
+    qs.set('pageSize', String(params?.pageSize ?? IMPORT_PICKER_PAGE_SIZE));
+    if (params?.search != null && params.search.trim() !== '') {
+      qs.set('search', params.search.trim());
+    }
+    return http(`/api/activities/importable?${qs.toString()}`) as Promise<
       Paginated<ImportableActivity>
     >;
   },
+  /**
+   * Move one module/lesson/activity to an absolute 0-based ordinal within its
+   * siblings (#1207). Unlike the bulk `reorder*` calls this needs no
+   * client-side copy of the full ordered list, so it works from any page: a
+   * drag computes `(page - 1) * pageSize + dropIndex`, and "Move to position…"
+   * sends the typed ordinal directly.
+   */
+  moveModuleToPosition: (moduleId: number, position: number) =>
+    http(`/api/modules/${moduleId}/position`, {
+      method: 'PATCH',
+      body: JSON.stringify({ position }),
+    }) as Promise<{ module: Module } & MoveResult>,
+  moveLessonToPosition: (lessonId: number, position: number) =>
+    http(`/api/lessons/${lessonId}/position`, {
+      method: 'PATCH',
+      body: JSON.stringify({ position }),
+    }) as Promise<{ lesson: Lesson } & MoveResult>,
+  moveActivityToPosition: (activityId: number, position: number) =>
+    http(`/api/activities/${activityId}/position`, {
+      method: 'PATCH',
+      body: JSON.stringify({ position }),
+    }) as Promise<{ activity: Activity } & MoveResult>,
+  /**
+   * Structural position of a lesson in its tree (#1207). Replaces deriving the
+   * "3.2" breadcrumb by `findIndex` over full sibling lists — that read was
+   * wrong the moment a tree exceeded one page.
+   */
+  lessonContext: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}/context`) as Promise<LessonContext>,
+  /**
+   * Structural position of a module in its course (#1207) — the ordinal chip on
+   * the instructor module view. Replaces a `findIndex` over the full sibling
+   * module list, which scored -1 for any module past the first page.
+   */
+  moduleContext: (moduleId: number) =>
+    http(`/api/modules/${moduleId}/context`) as Promise<ModuleContext>,
   dashboardStats: () => http('/api/me/dashboard-stats') as Promise<DashboardStats>,
   adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
     const search = new URLSearchParams();

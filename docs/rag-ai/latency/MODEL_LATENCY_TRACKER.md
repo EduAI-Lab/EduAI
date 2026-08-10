@@ -166,7 +166,7 @@ Long-output intent (for example, “summarise the whole chat”) uses a smaller 
 | `CHAT_LONG_OUTPUT_MAX_TOKENS` | `1200` | Long-output turns in standard chat mode |
 | `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS` | `600` | Long-output turns while ADHD Assist is enabled |
 
-Both overrides must be positive integers. Missing or invalid values use the defaults, and the effective limit is `min(existing model/provider max tokens, configured long-output cap)`, so these settings never increase output length. When generation finishes with `length` after the server applied this cap, the response is persisted with `metadata.hitLongOutputCap=true`; the UI exposes a durable **Continue** action for that response.
+Both overrides must be positive integers. Missing or invalid values use the defaults, and the effective limit is `min(existing model/provider max tokens, configured long-output cap)`, so these settings never increase output length. When the server-applied long-output cap is actually reached, based on reported completion-token usage, the response is persisted with `metadata.hitLongOutputCap=true`; the UI exposes a durable **Continue** action for that response. Provider-specific finish reasons are not used to infer whether the cap was reached. If completion-token usage is unavailable, the cap hit cannot be confirmed and the marker remains false.
 
 When benchmarking a cap change, use the same long-output prompt, model, assistive-mode setting, and warm/cold path before and after. Record TTFT and total response time in separate session rows; do not treat the configured token ceiling as observed token usage.
 

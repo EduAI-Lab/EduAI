@@ -1,6 +1,6 @@
-export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT';
+export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR' | 'STUDENT';
 export type EnrollmentRole = 'INSTRUCTOR' | 'TA' | 'STUDENT';
-export declare const USER_ROLE_VALUES: readonly ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"];
+export declare const USER_ROLE_VALUES: readonly ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
 export declare const ENROLLMENT_ROLE_VALUES: readonly ["INSTRUCTOR", "TA", "STUDENT"];
 /**
  * Prefer an explicit has* flag from the list API; otherwise treat a non-empty
@@ -33,4 +33,7 @@ export type SyncCanvasMaterialsResult = {
         message: string;
     }>;
 };
+export declare const MODEL_SIZE_RANK_PATTERNS: ReadonlyArray<readonly [RegExp, number]>;
+/** Rank a model id/label string by parameter-size token (higher = larger). */
+export declare function modelSizeRankFromText(text: string | null | undefined): number;
 //# sourceMappingURL=index.d.ts.map

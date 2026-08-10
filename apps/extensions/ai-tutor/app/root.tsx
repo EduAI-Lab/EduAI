@@ -16,7 +16,7 @@ import { AssistiveModeProvider } from '~/components/settings/assistive-mode';
 // Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
 // (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
 // even one named member from it forces Vite dev to crawl and transform the
-// whole shared UI library (recharts, shiki, markdown, every Radix primitive,
+// whole shared UI library (shiki, markdown, every Radix primitive,
 // @tabler icons) on first load — for every user, before login. root renders
 // for everyone, so keep its UI imports minimal.
 import { ThemeProvider } from '@eduai/ui/theme-provider';
@@ -24,18 +24,8 @@ import { ThemeSyncInitializer } from '@eduai/ui/theme-sync-initializer';
 import { Toaster } from '@eduai/ui/sonner';
 import { PageLoader } from '@eduai/ui/page-loader';
 
-export const links: Route.LinksFunction = () => [
-  { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-  {
-    rel: 'preconnect',
-    href: 'https://fonts.gstatic.com',
-    crossOrigin: 'anonymous',
-  },
-  {
-    rel: 'stylesheet',
-    href: 'https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap',
-  },
-];
+// No `links()` export: Outfit is self-hosted via @fontsource-variable/outfit,
+// imported from @eduai/ui's base.css and bundled with the app stylesheet (#1221).
 
 export function HydrateFallback() {
   return <PageLoader />;

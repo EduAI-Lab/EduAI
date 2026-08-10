@@ -1,6 +1,10 @@
 import type * as React from "react"
 
-/** Default palette — matches `--color-course-*` tokens in app.css (OKLCH, both modes). */
+/**
+ * Default course accent palette (OKLCH). This module is the single owner of
+ * these values — they are content identity per course, not theme, and do not
+ * flip between light and dark. There is deliberately no CSS-token mirror.
+ */
 export const DEFAULT_COURSE_PALETTE = [
   "oklch(0.56 0.20 255)",
   "oklch(0.56 0.18 145)",
