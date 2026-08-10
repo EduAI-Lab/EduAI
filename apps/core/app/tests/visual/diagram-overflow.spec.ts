@@ -35,11 +35,33 @@ import { DIAGRAM_FIXTURE_NAMES } from "~/tests/visual/diagram-payloads";
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientBuildDir = path.resolve(__dirname, "../../../build/client");
 
-const CSS = fs.readFileSync(
-  path.resolve(__dirname, "../../../build/client/assets/root-C2cupBm1.css"),
-  "utf8",
-);
+/**
+ * The root CSS asset filename is content-hashed by Vite and changes on every
+ * build, so it can't be hardcoded (#1422 review — a clean checkout, or any
+ * build after this one, would 404/ENOENT on a fixed name). Resolve it from
+ * the client manifest globalSetup.ts just produced instead.
+ */
+function resolveRootCssPath(): string {
+  const manifestPath = path.join(clientBuildDir, ".vite", "manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<
+    string,
+    { css?: string[] }
+  >;
+  const rootEntry = Object.entries(manifest).find(([key]) =>
+    key.startsWith("app/root.tsx"),
+  )?.[1];
+  const cssFile = rootEntry?.css?.[0];
+  if (!cssFile) {
+    throw new Error(
+      `Could not find root.tsx's CSS asset in ${manifestPath} — check the manifest shape hasn't changed.`,
+    );
+  }
+  return path.join(clientBuildDir, cssFile);
+}
+
+const CSS = fs.readFileSync(resolveRootCssPath(), "utf8");
 
 // A narrow chat message column — the shape the #1320 bug report actually
 // hit (diagram wider than the surrounding chat panel on a normal-width
@@ -122,9 +144,14 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
 test.describe("diagram containment in a narrow chat column", () => {
   /**
    * Assert the rendered diagram markup stays fully inside a narrow column:
-   * no page-level horizontal overflow, and the diagram shell itself never
-   * extends past the column bounds (a wrapped-but-clipped child would pass
-   * an overflow-only check but still be cut off).
+   * no page-level horizontal overflow, the diagram shell itself never
+   * extends past the column bounds, and — per #1422 review — every visible
+   * descendant (a stage chip, an icon, a label) is checked individually too.
+   * The shell-only check above would still pass if a chip inside a
+   * flex-wrap row extended past the shell and got clipped by
+   * `overflow-hidden`: getBoundingClientRect() reports an element's laid-out
+   * box regardless of clipping, so a per-element check catches that a
+   * shell-only or scrollWidth-only check cannot.
    */
   async function assertContained(page: Page, bodyHtml: string) {
     await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
@@ -143,6 +170,23 @@ test.describe("diagram containment in a narrow chat column", () => {
     expect(shellBox!.x + shellBox!.width).toBeLessThanOrEqual(
       columnBox!.x + columnBox!.width + 1,
     );
+
+    const elementBoxes = await page.evaluate(() => {
+      const shell = document.querySelector("[data-eduai-diagram]")!;
+      return Array.from(shell.querySelectorAll<HTMLElement | SVGElement>("*"))
+        .map((el) => {
+          const box = el.getBoundingClientRect();
+          return { tag: el.tagName.toLowerCase(), x: box.x, width: box.width, height: box.height };
+        })
+        .filter((box) => box.width > 0 && box.height > 0);
+    });
+    expect(elementBoxes.length).toBeGreaterThan(0);
+    for (const box of elementBoxes) {
+      expect(box.x, `${box.tag}: left edge`).toBeGreaterThanOrEqual(columnBox!.x - 1);
+      expect(box.x + box.width, `${box.tag}: right edge`).toBeLessThanOrEqual(
+        columnBox!.x + columnBox!.width + 1,
+      );
+    }
   }
 
   for (const name of DIAGRAM_FIXTURE_NAMES) {
