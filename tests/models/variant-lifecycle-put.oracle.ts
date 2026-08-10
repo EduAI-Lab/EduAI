@@ -13,12 +13,15 @@
  *   - A DRAFT variant may be approved (isDraft:false) only by
  *     instructor-rank or above.
  *   - A DRAFT variant may be edited by a TA only if they created it;
- *     instructor-rank and above may edit any draft. This ownership check
- *     does NOT apply to an already-approved variant — the aiTagOnly path
- *     for an approved variant has no ownership check at all, so a TA who
- *     does not own an approved variant can still retag it. That asymmetry
- *     is asserted deliberately here (filed as a separate finding, not fixed
- *     in this model).
+ *     instructor-rank and above may edit any draft. Per the stated "TA
+ *     own-only edit" invariant (rbac-matrix.md §19, #312), this SAME
+ *     ownership check applies to the aiTagOnly path on an already-approved
+ *     variant too — a TA who does not own an approved variant must not be
+ *     able to retag it either. The handler's aiTagOnly branch does not
+ *     actually check ownership (#1413), so the row exercising a non-owner
+ *     TA's aiTagOnly request on an approved variant is a known, expected
+ *     failure against this oracle until #1413 is fixed (see the test
+ *     file's `isKnownDrift`).
  */
 
 export type AccessLevel = "ta" | "instructor_plus";
@@ -47,10 +50,15 @@ function isAiTagOnly(row: VariantLifecyclePutRow): boolean {
   return row.FieldChangeKind === "onlyAiTag" && row.RequestedIsDraft === "absent";
 }
 
+function isNonOwnerTa(row: VariantLifecyclePutRow): boolean {
+  return row.AccessLevel === "ta" && row.Ownership === "other";
+}
+
 export type Verdict = { status: 200 } | { status: 403; reason: "approve" | "not-own" } | { status: 409 };
 
 export function variantLifecyclePutOracle(row: VariantLifecyclePutRow): Verdict {
   if (row.CurrentIsDraft === "approved") {
+    if (isAiTagOnly(row) && isNonOwnerTa(row)) return { status: 403, reason: "not-own" };
     if (isReverting(row) || isAiTagOnly(row)) return { status: 200 };
     return { status: 409 };
   }

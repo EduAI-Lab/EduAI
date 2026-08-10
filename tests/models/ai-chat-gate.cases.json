@@ -1,51 +1,33 @@
 [
   {
-    "Access": "NON_STUDENT",
+    "Access": "STUDENT_ENROLLED",
     "CoursePublishedLive": "no",
     "ModulePublished": "yes",
     "LessonPublished": "no",
     "Mode": "guide",
-    "DualLoop": "off"
+    "DualLoop": "off",
+    "ModeEnabled": "no",
+    "SessionOwnership": "own"
   },
   {
-    "Access": "NON_STUDENT",
+    "Access": "STUDENT_ENROLLED",
     "CoursePublishedLive": "yes",
     "ModulePublished": "no",
     "LessonPublished": "yes",
     "Mode": "custom",
-    "DualLoop": "on"
+    "DualLoop": "on",
+    "ModeEnabled": "yes",
+    "SessionOwnership": "foreign"
   },
   {
     "Access": "STUDENT_ENROLLED",
     "CoursePublishedLive": "yes",
-    "ModulePublished": "yes",
-    "LessonPublished": "yes",
-    "Mode": "guide",
-    "DualLoop": "on"
-  },
-  {
-    "Access": "NON_STUDENT",
-    "CoursePublishedLive": "no",
-    "ModulePublished": "no",
-    "LessonPublished": "yes",
-    "Mode": "teach",
-    "DualLoop": "off"
-  },
-  {
-    "Access": "STUDENT_NOT_ENROLLED",
-    "CoursePublishedLive": "yes",
-    "ModulePublished": "yes",
-    "LessonPublished": "no",
-    "Mode": "teach",
-    "DualLoop": "on"
-  },
-  {
-    "Access": "STUDENT_ENROLLED",
-    "CoursePublishedLive": "no",
     "ModulePublished": "no",
     "LessonPublished": "no",
     "Mode": "teach",
-    "DualLoop": "off"
+    "DualLoop": "off",
+    "ModeEnabled": "yes",
+    "SessionOwnership": "none"
   },
   {
     "Access": "STUDENT_NOT_ENROLLED",
@@ -53,22 +35,78 @@
     "ModulePublished": "yes",
     "LessonPublished": "yes",
     "Mode": "custom",
-    "DualLoop": "off"
+    "DualLoop": "on",
+    "ModeEnabled": "no",
+    "SessionOwnership": "none"
+  },
+  {
+    "Access": "STUDENT_NOT_ENROLLED",
+    "CoursePublishedLive": "yes",
+    "ModulePublished": "no",
+    "LessonPublished": "yes",
+    "Mode": "guide",
+    "DualLoop": "on",
+    "ModeEnabled": "yes",
+    "SessionOwnership": "own"
+  },
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "yes",
+    "ModulePublished": "yes",
+    "LessonPublished": "no",
+    "Mode": "guide",
+    "DualLoop": "off",
+    "ModeEnabled": "no",
+    "SessionOwnership": "foreign"
+  },
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "no",
+    "LessonPublished": "yes",
+    "Mode": "teach",
+    "DualLoop": "on",
+    "ModeEnabled": "no",
+    "SessionOwnership": "own"
+  },
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "no",
+    "ModulePublished": "yes",
+    "LessonPublished": "yes",
+    "Mode": "guide",
+    "DualLoop": "off",
+    "ModeEnabled": "yes",
+    "SessionOwnership": "none"
   },
   {
     "Access": "STUDENT_NOT_ENROLLED",
     "CoursePublishedLive": "no",
+    "ModulePublished": "yes",
+    "LessonPublished": "no",
+    "Mode": "teach",
+    "DualLoop": "off",
+    "ModeEnabled": "yes",
+    "SessionOwnership": "foreign"
+  },
+  {
+    "Access": "NON_STUDENT",
+    "CoursePublishedLive": "no",
     "ModulePublished": "no",
     "LessonPublished": "no",
-    "Mode": "guide",
-    "DualLoop": "on"
+    "Mode": "custom",
+    "DualLoop": "off",
+    "ModeEnabled": "yes",
+    "SessionOwnership": "own"
   },
   {
     "Access": "STUDENT_ENROLLED",
-    "CoursePublishedLive": "yes",
+    "CoursePublishedLive": "no",
     "ModulePublished": "yes",
     "LessonPublished": "no",
-    "Mode": "custom",
-    "DualLoop": "off"
+    "Mode": "teach",
+    "DualLoop": "on",
+    "ModeEnabled": "no",
+    "SessionOwnership": "foreign"
   }
 ]

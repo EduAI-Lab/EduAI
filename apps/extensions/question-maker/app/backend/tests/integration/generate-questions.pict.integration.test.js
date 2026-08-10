@@ -10,9 +10,9 @@
  * `npm run test:pict:gen` from tests/models/generate-questions.pict), and
  * one world-builder here, reusing tests/integration/eduaiRouteCoverage.integration.test.js's
  * established mocking (no DB / live Core; eduaiService and course-code
- * access resolution are mocked). Shared cases/oracle loading and
- * auth/settings/coreApiService mocks come from tests/helpers/pictModel.js
- * and tests/helpers/pictRouteMocks.js (#1188).
+ * access resolution are mocked). Shared cases/oracle loading comes from
+ * tests/helpers/pictModel.js; shared auth/settings/coreApiService mocks come
+ * from tests/helpers/pictRouteMocks.js (#1188).
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';

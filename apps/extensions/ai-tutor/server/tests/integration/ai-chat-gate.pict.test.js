@@ -32,7 +32,25 @@ import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
 const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/models/ai-chat-gate.cases.json'), 'utf8'));
-const { expectedGateStatus } = await import(path.join(repoRoot, 'tests/models/ai-chat-gate.oracle.ts'));
+const { expectedGateStatus, isAdmittedPastAccessGate } = await import(
+  path.join(repoRoot, 'tests/models/ai-chat-gate.oracle.ts')
+);
+
+/**
+ * #1411: /teach and /guide never check activity.enable{Teach,Guide}Mode
+ * server-side (only /custom does). #1412: a client-supplied chatId that
+ * doesn't belong to the caller is looked up but the result is discarded, so
+ * it's used anyway instead of being rejected. Neither is fixed here —
+ * asserted as known, expected failures against the spec-derived oracle so a
+ * real fix surfaces as a newly-passing (and thus newly-failing `it.fails`)
+ * row instead of silently going unnoticed.
+ */
+function isKnownDrift(row) {
+  if (!isAdmittedPastAccessGate(row)) return false;
+  if (row.ModeEnabled === 'no' && row.Mode !== 'custom') return true; // #1411
+  if (row.SessionOwnership === 'foreign') return true; // #1412
+  return false;
+}
 
 const MODE_PAYLOAD = {
   teach: { message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' },
@@ -75,9 +93,12 @@ async function buildRow(row) {
       instructionsMd: 'Instructions',
       config: { question: 'Q?', questionType: 'MCQ' },
       position: 0,
-      enableTeachMode: true,
-      enableGuideMode: true,
-      enableCustomMode: true,
+      // Only the requested mode's own flag varies with `ModeEnabled`; the
+      // other two stay enabled so the activity always has at least one
+      // enabled mode (router-level invariant, activities.js:491).
+      enableTeachMode: row.Mode === 'teach' ? row.ModeEnabled === 'yes' : true,
+      enableGuideMode: row.Mode === 'guide' ? row.ModeEnabled === 'yes' : true,
+      enableCustomMode: row.Mode === 'custom' ? row.ModeEnabled === 'yes' : true,
       customPrompt: 'Explain like I am five.',
     },
   });
@@ -109,18 +130,31 @@ async function buildRow(row) {
     }
   }
 
+  // A pre-existing chatId for this exact user/activity/mode ("own"), or one
+  // that belongs to a different user ("foreign") — absent entirely when
+  // SessionOwnership is "none" (the new-session case already covered by the
+  // other dimensions).
+  let chatId;
+  if (row.SessionOwnership !== 'none') {
+    const sessionOwnerId = row.SessionOwnership === 'own' ? mockUser.id : makeStudent().id;
+    chatId = `chat-${row.SessionOwnership}-${activity.id}`;
+    await prisma.aiChatSession.create({
+      data: { userId: sessionOwnerId, activityId: activity.id, mode: row.Mode, chatId },
+    });
+  }
+
   const app = await createApp({ mockUser });
-  return { app, activityId: activity.id };
+  return { app, activityId: activity.id, chatId };
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'ai-chat-gate PICT row #$index $row.Access/$row.CoursePublishedLive/$row.ModulePublished/$row.LessonPublished/$row.Mode/$row.DualLoop',
+  'ai-chat-gate PICT row #$index $row.Access/$row.CoursePublishedLive/$row.ModulePublished/$row.LessonPublished/$row.Mode/$row.DualLoop/$row.ModeEnabled/$row.SessionOwnership',
   ({ row }) => {
-    it('matches the oracle', async () => {
-      const { app, activityId } = await buildRow(row);
-      const res = await request(app)
-        .post(`/api/activities/${activityId}/${row.Mode}`)
-        .send(MODE_PAYLOAD[row.Mode]);
+    const run = isKnownDrift(row) ? it.fails : it;
+    run('matches the oracle', async () => {
+      const { app, activityId, chatId } = await buildRow(row);
+      const payload = chatId ? { ...MODE_PAYLOAD[row.Mode], chatId } : MODE_PAYLOAD[row.Mode];
+      const res = await request(app).post(`/api/activities/${activityId}/${row.Mode}`).send(payload);
 
       expect(res.status).toBe(expectedGateStatus(row));
     });

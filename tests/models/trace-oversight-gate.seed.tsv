@@ -1,0 +1,3 @@
+Role	AuthorizedUnits	UnitParam	CoreAvailable	CourseIdParam
+UNIT_ADMIN	nonempty	own	no	absent
+UNIT_ADMIN	nonempty	own	yes	absent

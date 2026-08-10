@@ -11,16 +11,20 @@
 # the gate is already open — so this model is also a regression lock against
 # a future change accidentally coupling them.
 #
-# Two things named in the census note ("mode" enable-flags, "session
-# ownership") are deliberately NOT dimensions here and are not exercised by
-# this model at all: reading the handler showed neither is actually enforced
-# server-side today (POST /teach and /guide never check
-# enableTeachMode/enableGuideMode, and the chatId "ownership" lookup result
-# is discarded rather than acted on) — both filed as separate bugs rather
-# than modeled or fixed here (docs/PICT_CENSUS.md § S8 update, #1187).
+# The census note also names "mode" enable-flags and "session ownership".
+# Both ARE dimensions here (`ModeEnabled`, `SessionOwnership`), asserting the
+# *spec's* expected result rather than the handler's current behavior:
+# neither is actually enforced server-side today for /teach and /guide
+# (POST /teach and /guide never check enableTeachMode/enableGuideMode, #1411)
+# or for a foreign chatId (the ownership lookup result is computed but
+# discarded, #1412). The rows this model reaches for those gaps are asserted
+# as expected failures (see ai-chat-gate.pict.test.js) until #1411/#1412 are
+# fixed, rather than silently encoding the current bugs as correct.
 Access:               STUDENT_ENROLLED, STUDENT_NOT_ENROLLED, NON_STUDENT
 CoursePublishedLive:  yes, no
 ModulePublished:      yes, no
 LessonPublished:      yes, no
 Mode:                 teach, guide, custom
 DualLoop:             on, off
+ModeEnabled:          yes, no
+SessionOwnership:     none, own, foreign

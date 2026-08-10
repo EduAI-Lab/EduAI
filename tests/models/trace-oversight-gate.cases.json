@@ -2,12 +2,12 @@
   {
     "Role": "UNIT_ADMIN",
     "AuthorizedUnits": "nonempty",
-    "UnitParam": "foreign",
+    "UnitParam": "own",
     "CoreAvailable": "no",
-    "CourseIdParam": "invalid"
+    "CourseIdParam": "absent"
   },
   {
-    "Role": "ADMIN",
+    "Role": "UNIT_ADMIN",
     "AuthorizedUnits": "nonempty",
     "UnitParam": "own",
     "CoreAvailable": "yes",
@@ -16,29 +16,8 @@
   {
     "Role": "UNIT_ADMIN",
     "AuthorizedUnits": "empty",
-    "UnitParam": "absent",
-    "CoreAvailable": "no",
-    "CourseIdParam": "valid"
-  },
-  {
-    "Role": "UNIT_ADMIN",
-    "AuthorizedUnits": "empty",
     "UnitParam": "foreign",
-    "CoreAvailable": "yes",
-    "CourseIdParam": "absent"
-  },
-  {
-    "Role": "UNIT_ADMIN",
-    "AuthorizedUnits": "empty",
-    "UnitParam": "own",
     "CoreAvailable": "no",
-    "CourseIdParam": "valid"
-  },
-  {
-    "Role": "ADMIN",
-    "AuthorizedUnits": "nonempty",
-    "UnitParam": "absent",
-    "CoreAvailable": "yes",
     "CourseIdParam": "invalid"
   },
   {
@@ -53,7 +32,21 @@
     "AuthorizedUnits": "empty",
     "UnitParam": "own",
     "CoreAvailable": "no",
+    "CourseIdParam": "valid"
+  },
+  {
+    "Role": "ADMIN",
+    "AuthorizedUnits": "nonempty",
+    "UnitParam": "own",
+    "CoreAvailable": "yes",
     "CourseIdParam": "invalid"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "AuthorizedUnits": "empty",
+    "UnitParam": "absent",
+    "CoreAvailable": "yes",
+    "CourseIdParam": "valid"
   },
   {
     "Role": "ADMIN",
@@ -61,5 +54,19 @@
     "UnitParam": "absent",
     "CoreAvailable": "no",
     "CourseIdParam": "absent"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "AuthorizedUnits": "empty",
+    "UnitParam": "foreign",
+    "CoreAvailable": "yes",
+    "CourseIdParam": "absent"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "AuthorizedUnits": "empty",
+    "UnitParam": "absent",
+    "CoreAvailable": "yes",
+    "CourseIdParam": "invalid"
   }
 ]
