@@ -8,16 +8,22 @@
  *   2) Pre-exported JSON from psql:
  *        RESEARCH_INTERACTION_EXPORT=interactions.json npm run research:backfill-energy
  *
- * Joins by userId + exact query text. Query-only matching is allowed only when
- * the prompt is unique in the interaction set and (if both sides have timestamps)
- * within RESEARCH_BACKFILL_MATCH_WINDOW_MS (default 60s).
+ * Joins by userId + exact query text, preferring the candidate closest in time
+ * to the run row's own timestamp when more than one row shares that userId +
+ * query (e.g. a fixed synthetic userId like "service" reused across many
+ * research runs with repeated prompt text -- plain FIFO order previously
+ * matched runs to the WRONG, unrelated interaction rows in that case; see
+ * backfill-match.test.ts's 2026-08-10 regression case). Query-only matching
+ * (no userId) is allowed only when the prompt is unique in the interaction
+ * set. Both paths respect RESEARCH_BACKFILL_MATCH_WINDOW_MS (default 60s) as
+ * a hard cutoff whenever both sides have timestamps.
  *
  * Env:
  *   RESEARCH_BACKFILL_IN       policy or both-tier JSONL (required)
  *   RESEARCH_BACKFILL_OUT        enriched JSONL (default: <in>-with-energy.jsonl)
  *   RESEARCH_BACKFILL_SINCE      ISO timestamp lower bound (optional)
  *   RESEARCH_BACKFILL_UNTIL      ISO timestamp upper bound (optional)
- *   RESEARCH_BACKFILL_MATCH_WINDOW_MS  query-only time window (default 60000)
+ *   RESEARCH_BACKFILL_MATCH_WINDOW_MS  match time window, both paths (default 60000)
  */
 import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -26,6 +32,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   indexInteractions,
   takeMatch,
+  toMs,
 } from "./backfill-match.mjs";
 
 function readEnv(name) {
@@ -128,11 +135,25 @@ async function main() {
   const index = indexInteractions(interactions);
   const enriched = [];
   let skippedMissingUserId = 0;
+  let rowsWithoutUsableTimestamp = 0;
 
   for (const row of runRows) {
     const promptText = row.prompt ?? row.query ?? "";
     const userId = row.userId ?? row.user_id ?? null;
     const runTs = row.timestamp ?? row.createdAt ?? row.created_at ?? null;
+    // A userId present but no PARSEABLE runTs silently reverts takeMatch()'s
+    // userId::query path to plain FIFO (see backfill-match.mjs) -- which is
+    // exactly the failure mode this whole matching scheme was hardened
+    // against (2026-08-10: a run whose export used a field name not covered
+    // by the fallback chain above got silently FIFO-matched to an unrelated
+    // earlier run's rows, caught only by a human noticing a suspiciously
+    // uniform timestamp offset). Uses toMs() (the exact same parser
+    // takeMatch() uses internally) rather than a plain null check, so a
+    // present-but-unparseable value (e.g. "n/a", a non-ISO string) is also
+    // counted -- not just a genuinely missing field. Counted and surfaced
+    // below so a future field-name mismatch or malformed timestamp shows up
+    // in the summary instead of looking like a clean, fully-verified match.
+    if (userId && toMs(runTs) == null) rowsWithoutUsableTimestamp += 1;
     const match = takeMatch(index, promptText, userId, {
       runTimestamp: runTs,
       windowMs: Number.isFinite(windowMs) ? windowMs : 60_000,
@@ -177,6 +198,7 @@ async function main() {
     `with energy_joules: ${stats.withEnergy}`,
     `with token counts: ${stats.withTokens}`,
     `run rows without userId (query-only path): ${skippedMissingUserId}`,
+    `run rows with userId but no usable timestamp (FIFO fallback, NOT time-verified): ${rowsWithoutUsableTimestamp}`,
     "",
     "Note: energy_joules from DB is ESTIMATED_FROM_TOKENS unless sidecar was active.",
     "Matching prefers userId::query; query-only requires a unique prompt (+ optional time window).",
@@ -184,6 +206,14 @@ async function main() {
   writeFileSync(summaryPath, `${summary}\n`, "utf8");
 
   console.log(summary);
+  if (rowsWithoutUsableTimestamp > 0) {
+    console.warn(
+      `WARNING: ${rowsWithoutUsableTimestamp} row(s) had a userId but no usable timestamp field ` +
+        "(checked row.timestamp/row.createdAt/row.created_at) -- those matches fell back to unverified " +
+        "FIFO and may be wrong if the interaction pool has repeated prompt text across multiple runs. " +
+        "Check your run export's field names.",
+    );
+  }
   if (stats.matched === 0) {
     console.warn("WARNING: no rows matched — check RESEARCH_BACKFILL_SINCE/UNTIL or export window.");
   }
