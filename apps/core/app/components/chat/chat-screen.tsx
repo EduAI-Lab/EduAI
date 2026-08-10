@@ -118,10 +118,20 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // Focus mode and the explicit model choice are carried across the
   // /chat -> /chat/:chatId replace-navigation below. That route swap remounts
   // ChatScreen (see chat.$chatId.tsx's key), so uncarried state would reset to
-  // its defaults — notably switching a concrete model back to Auto.
+  // its defaults — notably switching a concrete model back to Auto. focusMode
+  // is read via focusModeRef at those call sites (see below) to avoid a
+  // stale-closure revert (#1244); selectedModel is read directly since the
+  // model selector is disabled while a request is in flight.
   const [focusMode, setFocusMode] = useState(
     Boolean(navigationState?.focusMode),
   );
+  // onFinish/handleSystemPromptSave fire after the user may have toggled Focus
+  // Mode mid-response; a ref keeps the replace-navigation below reading the
+  // live value instead of whatever was true when that callback was bound (#1244).
+  const focusModeRef = useRef(focusMode);
+  useEffect(() => {
+    focusModeRef.current = focusMode;
+  }, [focusMode]);
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   /** Persisted/header registry ids keyed by their assistant message id. */
@@ -350,7 +360,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           pendingNavigateChatId.current = null;
           navigate(`/chat/${id}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       },
@@ -406,6 +416,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       stop,
     ],
   );
+
+  // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
+  // Clear the latch here or the next turn keeps the aborted turn's model.
+  const handleStop = useCallback(() => {
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -502,7 +520,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         if (location.pathname === "/chat") {
           navigate(`/chat/${data.chatId}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       }
@@ -549,7 +567,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     webToolsEnabled,
     onInputChange: handleInputChange,
     onSubmit,
-    onStop: stop,
+    onStop: handleStop,
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,

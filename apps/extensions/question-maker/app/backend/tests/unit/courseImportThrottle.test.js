@@ -34,6 +34,7 @@ vi.mock('../../src/services/coreApiService.js', () => ({
 
 vi.mock('../../src/services/courseListService.js', () => ({
   listCoursesForUser: vi.fn().mockResolvedValue([]),
+  listCoursesPageForUser: vi.fn().mockResolvedValue({ courses: [], total: 0 }),
   enrichCourseDetail: vi.fn(),
 }));
 
@@ -52,7 +53,9 @@ vi.mock('../../src/utils/logger.js', () => ({
 const { importTaughtCoursesFromCore } = await import(
   '../../src/services/importTaughtCoursesService.js'
 );
-const { listCoursesForUser } = await import('../../src/services/courseListService.js');
+const { listCoursesForUser, listCoursesPageForUser } = await import(
+  '../../src/services/courseListService.js'
+);
 const courseModule = await import('../../src/routes/course.js');
 const courseRouter = courseModule.default;
 const { resetCoreImportThrottleForTests } = courseModule;
@@ -75,6 +78,7 @@ describe('GET /api/course auto-import mirror throttle', () => {
     resetCoreImportThrottleForTests();
     importTaughtCoursesFromCore.mockResolvedValue({ imported: 0, skipped: 0 });
     listCoursesForUser.mockResolvedValue([]);
+    listCoursesPageForUser.mockResolvedValue({ courses: [], total: 0 });
   });
 
   it('triggers the Core mirror on the first list call', async () => {
