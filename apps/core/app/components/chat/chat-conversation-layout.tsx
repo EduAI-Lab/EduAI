@@ -8,6 +8,7 @@ import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatWelcomeProps } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
+import { useChatProgress } from "~/components/chat/use-chat-progress";
 import { displayNameForRegistryId } from "~/lib/chat-auto-model";
 import {
   ASSISTIVE_CHAT_SURFACE_CLASS,
@@ -60,6 +61,24 @@ export function ChatConversationLayout({
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
+  const {
+    startedAt,
+    deadlineMs,
+    typicalExpectedMs,
+    hasAssistantText,
+    hasRoutedModel,
+    activeToolName,
+    awaitingFollowup,
+    showProgressIndicator,
+    compactProgress,
+  } = useChatProgress({
+    isLoading,
+    messages,
+    adhdAssist,
+    selectedModel,
+    streamingRoutedRegistryId,
+  });
+
   return (
     <div
       className={cn(
@@ -160,7 +179,19 @@ export function ChatConversationLayout({
                     );
                   })}
 
-                  {isLoading && <ChatTypingIndicator />}
+                  {showProgressIndicator && (
+                    <ChatTypingIndicator
+                      startedAt={startedAt}
+                      deadlineMs={deadlineMs}
+                      typicalExpectedMs={typicalExpectedMs}
+                      hasAssistantText={hasAssistantText}
+                      hasRoutedModel={hasRoutedModel}
+                      activeToolName={activeToolName}
+                      adhdAssist={adhdAssist}
+                      awaitingFollowup={awaitingFollowup}
+                      compact={compactProgress}
+                    />
+                  )}
                 </>
               )}
             </div>

@@ -1,5 +1,15 @@
 /**
  * Normalize model-produced math into markdown that Streamdown/KaTeX can render.
+ *
+ * Shared across apps (#1401): Core and AI Tutor both render model output through
+ * `MessageContent markdown`, and both need the same normalization or the same
+ * LaTeX renders typeset in one app and literal in the other. This is a pure
+ * `string -> string` transform with no state, auth or secrets, so it belongs in
+ * the shared UI package rather than behind a Core endpoint — AI Tutor's chat does
+ * not route through Core, and a per-message round trip would be a new
+ * cross-service dependency on a render path.
+ *
+ * Callers apply this to assistant output only; user-typed text stays verbatim.
  */
 
 const MATH_COMMAND =
