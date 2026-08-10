@@ -1,5 +1,6 @@
 {
   "name": "ai-tutor",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +27,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@eduai/types": "*",
     "@eduai/ui": "*",
+    "@fontsource-variable/outfit": "5.3.0",
     "@radix-ui/react-avatar": "^1.1.10",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
