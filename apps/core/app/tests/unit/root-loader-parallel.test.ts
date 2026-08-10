@@ -1,10 +1,12 @@
 // @vitest-environment node
 //
 // #1369: the root loader's password-expiry check and `userPreference` lookup both depend
-// only on `session.user.id`, so they now run under a single `Promise.all` instead of
-// serializing on every authenticated render. These tests pin the two things that change
-// could plausibly break: the expiry redirect must still short-circuit the response, and the
-// two queries must genuinely overlap rather than just look parallel in the source.
+// only on `session.user.id`, so the preference read is now fired first and awaited last
+// instead of serializing on every authenticated render. These tests pin the three things
+// that change could plausibly break: the expiry redirect must still short-circuit the
+// response, it must not queue behind the preference read (which is why this is not
+// `Promise.all`/`allSettled`), and the two queries must genuinely overlap rather than just
+// look parallel in the source.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -182,6 +184,23 @@ describe("root loader — #1369 parallel awaits", () => {
 
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(302);
+  });
+
+  it("returns the redirect without waiting for a hung preference read", async () => {
+    signedInAs("STUDENT");
+    vi.mocked(getExpiredPasswordRedirect).mockResolvedValue(
+      new Response(null, { status: 302, headers: { Location: "/settings?expired=1" } }),
+    );
+    // Never settles. Under `Promise.all`/`allSettled` this test would hang until the
+    // suite timeout, which is exactly the pool-timeout delay it exists to rule out.
+    const hung = deferred<null>();
+    prismaMock.userPreference.findUnique.mockReturnValue(hung.promise);
+
+    const result = await run();
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(302);
+    hung.resolve(null);
   });
 
   it("surfaces a preference-read failure when the password is not expired", async () => {

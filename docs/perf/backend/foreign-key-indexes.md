@@ -7,7 +7,8 @@ re-evaluate from evidence instead of re-deriving it.
 
 ## What landed
 
-Migration `20260807120000_index_core_foreign_keys`.
+Migrations `20260807120000_index_account_user_provider`,
+`20260807120001_index_session_user`, `20260807120002_index_courses_department`.
 
 | Index | Column(s) | Why |
 |---|---|---|
@@ -19,22 +20,28 @@ Migration `20260807120000_index_core_foreign_keys`.
 constraint, so better-auth is unaffected — but don't let `prisma migrate dev` regenerate those
 models from the datamodel.
 
-**No `CREATE INDEX CONCURRENTLY`.** Prisma runs each migration inside a transaction, where
-CONCURRENTLY is not permitted, and nothing else in `prisma/migrations` uses it. `CREATE INDEX`
-takes a SHARE lock, so writes to each table block for the length of the build.
+### Why three migrations for three indexes
 
-`courses` and `account` grow with content and are small enough that this is a non-event.
-**`session` is the exception** — it grows with traffic rather than content, and better-auth
-writes it on every sign-in and session refresh, so blocking writes there blocks logins. Check
-`SELECT count(*) FROM "session"` before deploying; above ~1M rows, build that one index
-out-of-band during a quiet window:
+All three use `CREATE INDEX CONCURRENTLY`, which builds without taking the SHARE lock that a
+plain `CREATE INDEX` holds for the length of the build. `session` is what forces the issue: it
+grows with traffic rather than content, and better-auth writes it on every sign-in and session
+refresh, so a locking build blocks logins.
 
-```sql
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "session_userId_idx" ON "session"("userId");
-```
+CONCURRENTLY cannot run inside a transaction block, and this is where Prisma's behaviour is
+easy to get wrong. Prisma never emits `BEGIN`/`COMMIT` and its docs say migrations are not
+wrapped — but **it wraps a migration as soon as the file contains more than one statement**
+([prisma#22922](https://github.com/prisma/prisma/issues/22922),
+[prisma#14456](https://github.com/prisma/prisma/issues/14456)). A single three-`CREATE INDEX`
+file would therefore run transactionally and fail on the first CONCURRENTLY.
 
-then run `prisma migrate deploy` as normal — the `IF NOT EXISTS` in the migration makes it a
-no-op rather than needing `prisma migrate resolve`.
+So each index gets its own single-statement migration. **Do not add a second statement to any
+of those files** — not even a `SET lock_timeout` — or the transaction comes back and deploy
+breaks. Keep semicolons out of the comment headers for the same reason.
+
+The cost of CONCURRENTLY is failure handling: a failed build leaves an `INVALID` index behind
+and marks the migration failed. Recovery is `DROP INDEX IF EXISTS "<name>"`, then
+`prisma migrate resolve --rolled-back <migration>` and a re-run. The `IF NOT EXISTS` on each
+statement also makes a re-run a no-op if the index was built by hand out-of-band.
 
 ## Measured
 

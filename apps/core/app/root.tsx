@@ -148,33 +148,37 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const isExempt =
     url.pathname.startsWith("/settings") ||
     url.pathname.startsWith("/auth/");
-  // #1369: both awaits depend only on `session.user.id`, so run them together instead of
-  // serializing the preference lookup behind the expiry check on every authenticated
-  // render. `isPasswordExpiredForUser` is memoized for 60s per process, so the saved
-  // round-trip lands on the cache miss — roughly one render per user per minute — not on
-  // every render. The costs are one wasted (primary-key indexed) preference read in the
-  // rare expired case, and a second pool connection held for the length of the overlap.
+  // #1369: the preference lookup and the expiry check depend only on `session.user.id`,
+  // so fire the preference read first and await it last instead of serializing it behind
+  // the expiry check on every authenticated render. `isPasswordExpiredForUser` is memoized
+  // for 60s per process, so the saved round-trip lands on the cache miss — roughly one
+  // render per user per minute — not on every render. The costs are one wasted
+  // (primary-key indexed) preference read in the rare expired case, and a second pool
+  // connection held for the length of the overlap.
   //
-  // `allSettled`, not `all`: the expired-password redirect to /settings is the only route
-  // a user has back to the change-password form, so it must not be swallowed by a
-  // rejection in the independent preference read (statement timeout, pool P2024, dropped
-  // connection). The redirect wins; otherwise either rejection still surfaces as before.
-  const [expiryResult, rowResult] = await Promise.allSettled([
-    isExempt ? Promise.resolve(null) : getExpiredPasswordRedirect(session.user.id),
-    prisma.userPreference.findUnique({
-      where: { userId: session.user.id },
-      select: {
-        assistDefault: true,
-        motionReduced: true,
-        density: true,
-        theme: true,
-      },
-    }),
-  ]);
-  if (expiryResult.status === "rejected") throw expiryResult.reason;
-  if (expiryResult.value) return expiryResult.value;
-  if (rowResult.status === "rejected") throw rowResult.reason;
-  const row = rowResult.value;
+  // Deliberately not `Promise.all`/`allSettled`: both wait for the preference read to
+  // settle before the expiry redirect can be returned, so a degraded DB would delay the
+  // redirect to /settings by up to the pool timeout (P2024, ~10s). That redirect is the
+  // only route a user has back to the change-password form, so it must not queue behind an
+  // independent read. Awaiting the promise below still surfaces its rejection on the
+  // non-expired path; the bare `.catch` only marks it handled so an early return cannot
+  // raise an unhandled rejection.
+  const preferencePromise = prisma.userPreference.findUnique({
+    where: { userId: session.user.id },
+    select: {
+      assistDefault: true,
+      motionReduced: true,
+      density: true,
+      theme: true,
+    },
+  });
+  preferencePromise.catch(() => {});
+
+  if (!isExempt) {
+    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
+    if (expiredRedirect) return expiredRedirect;
+  }
+  const row = await preferencePromise;
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
