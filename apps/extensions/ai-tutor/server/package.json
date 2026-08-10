@@ -21,7 +21,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "6.19.3",
     "@eduai/types": "*",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",

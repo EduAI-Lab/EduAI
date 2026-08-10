@@ -1,0 +1,20 @@
+[Unit]
+Description=EduAI GitHub PR Discord notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/eduai-pr-notifier
+EnvironmentFile=%h/.config/eduai/discord-dev-bot.env
+Environment=PATH=%h/.volta/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=VOLTA_HOME=%h/.volta
+Environment=PR_NOTIFIER_PORT=3101
+Environment=PR_NOTIFIER_DATA_DIR=%h/.local/share/eduai-pr-notifier/data
+ExecStart=%h/.volta/bin/node pr-notifier.mjs
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

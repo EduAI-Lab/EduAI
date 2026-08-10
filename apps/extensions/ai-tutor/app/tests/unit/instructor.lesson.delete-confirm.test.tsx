@@ -30,6 +30,9 @@ vi.mock('react-router', async (importActual) => {
   return {
     ...actual,
     useParams: () => ({ lessonId: '1' }),
+    // #1207: the lesson builder now drives a URL-backed pager + search box.
+    useNavigation: () => ({ state: 'idle' }),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
   };
 });
 
@@ -85,7 +88,7 @@ const activity = {
 
 function wrap(activities = [activity]) {
   const props = {
-    loaderData: { course, module, lesson, activities, orderText: '1.1' },
+    loaderData: { course, module, lesson, activities, activitiesTotal: activities.length, orderText: '1.1', page: 1, pageSize: 25, search: '' },
   } as unknown as Route.ComponentProps;
   return render(
     <MemoryRouter>

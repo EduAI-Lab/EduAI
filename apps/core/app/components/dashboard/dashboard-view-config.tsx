@@ -11,12 +11,12 @@
  * `EffectiveRole` alongside the 4 real roles ("TA" replacing "STUDENT" when
  * `isTA` is true).
  *
- * ADMIN is the only role that needs `useUsers()`. Rules-of-hooks forbid
- * calling that hook conditionally inside one component, so instead of one
- * component branching on role, there are two: `DashboardAdminBody` (calls
- * `useUsers()` + the shared hooks) and `DashboardStandardBody` (the shared
- * hooks only, for the other 5 configs). `routes/dashboard.tsx` picks which
- * one to mount — the admin-only hook is never invoked for non-admin roles.
+ * The dashboard's data is resolved in the route's SSR loader (#1220), so this
+ * file is now purely presentational: `DashboardBody` takes the loader's
+ * `DashboardData` and renders the role's `DashboardView`. The old
+ * per-role body components that each called `useUsers()`/`useCourses()`/… are
+ * gone — with server data there is no conditional hook to work around, so one
+ * component covers every role.
  */
 import {
   IconUsers,
@@ -27,15 +27,15 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 
-import { useRecentChats } from "~/hooks/api/use-recent-chats";
-import { useUsers } from "~/hooks/api/use-users";
-import { useCourses } from "~/hooks/api/use-courses";
-import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
-import type { DashboardStats } from "~/hooks/api/use-dashboard-stats";
-import type { Course } from "~/hooks/api/use-courses";
+import type { DashboardStats } from "~/types/dashboard";
+import type { DashboardData } from "~/lib/dashboard/dashboard-data.server";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
 import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
-import type { DashboardStatDef, DashboardQuickAction } from "~/components/dashboard/dashboard-view";
+import type {
+  DashboardCourse,
+  DashboardStatDef,
+  DashboardQuickAction,
+} from "~/components/dashboard/dashboard-view";
 
 /**
  * A platform role, plus "TA" for STUDENT-platform users holding a TA
@@ -62,7 +62,7 @@ export type DashboardHeroCopy = {
  * roles that show them (ADMIN, UNIT_ADMIN).
  */
 export type DashboardStatContext = {
-  courses: Course[];
+  courses: DashboardCourse[];
   coursesLoading: boolean;
   /** Server-side total for the caller's visible course list (#1041). */
   courseTotal: number;
@@ -209,110 +209,42 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
 };
 
 /**
- * ADMIN only — the sole role that needs `useUsers()`, kept out of the other
- * bodies so the hook is never called (and `/api/users` never fetched) for other
- * roles. Its panel is quick actions, so it never renders course cards; both its
- * counts (#1041) are server totals, so it asks for the smallest page and reads
- * `stats.total` / the active-course `total` rather than a loaded array.
+ * Renders the dashboard for any role from the route loader's `DashboardData`
+ * (#1220). Because the data is already resolved server-side, nothing is loading
+ * at first paint — every `*Loading` flag is `false` — and the per-role
+ * course/user aggregates the config's `statBuilder` reads come straight off the
+ * loader (ADMIN gets `userTotal`; ADMIN/UNIT_ADMIN get `activeCourseTotal`; the
+ * course-card roles get `courses` + `courseTotal`). The loader only queries what
+ * each role shows, so the per-role gating (#1041) is preserved upstream.
  */
-export function DashboardAdminBody() {
-  const { stats: userStats, isLoading: usersLoading } = useUsers({ pageSize: 1 });
-  const { total: activeCourseTotal, loading: activeCoursesLoading } = useCourses({
-    pageSize: 1,
-    isActive: true,
-  });
-  const { chats, isLoading: chatsLoading } = useRecentChats();
-  const { stats, isLoading: statsLoading } = useDashboardStats();
-
-  const config = DASHBOARD_CONFIG.ADMIN;
-  const ctx: DashboardStatContext = {
-    courses: [],
-    coursesLoading: false,
-    courseTotal: 0,
-    stats,
-    statsLoading,
-    userTotal: userStats.total,
-    usersLoading,
-    activeCourseTotal,
-    activeCoursesLoading,
-  };
-
-  return (
-    <DashboardView
-      stats={config.statBuilder(ctx)}
-      quickActions={config.quickActions}
-      leftPanelTitle={config.leftPanelTitle}
-      recentChats={chats}
-      recentChatsLoading={chatsLoading}
-      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
-    />
-  );
-}
-
-/**
- * UNIT_ADMIN — like the standard body, but with a second `total`-only read for
- * the active-course count (#1041). Its panel is quick actions too, so it needs
- * course totals, not the loaded page — hence the `pageSize: 1` reads.
- */
-export function DashboardUnitAdminBody() {
-  const { total: courseTotal, loading: coursesLoading } = useCourses({ pageSize: 1 });
-  const { total: activeCourseTotal, loading: activeCoursesLoading } = useCourses({
-    pageSize: 1,
-    isActive: true,
-  });
-  const { chats, isLoading: chatsLoading } = useRecentChats();
-  const { stats, isLoading: statsLoading } = useDashboardStats();
-
-  const config = DASHBOARD_CONFIG.UNIT_ADMIN;
-  const ctx: DashboardStatContext = {
-    courses: [],
-    coursesLoading,
-    courseTotal,
-    stats,
-    statsLoading,
-    activeCourseTotal,
-    activeCoursesLoading,
-  };
-
-  return (
-    <DashboardView
-      stats={config.statBuilder(ctx)}
-      quickActions={config.quickActions}
-      leftPanelTitle={config.leftPanelTitle}
-      recentChats={chats}
-      recentChatsLoading={chatsLoading}
-      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
-    />
-  );
-}
-
-/**
- * INSTRUCTOR, TA, STUDENT — a course-card panel plus a course count. The panel
- * renders the loaded page; the count is the server `total`, not the rows on
- * screen (#1041).
- */
-export function DashboardStandardBody({
+export function DashboardBody({
   effectiveRole,
+  data,
 }: {
-  effectiveRole: Exclude<EffectiveRole, "ADMIN" | "UNIT_ADMIN">;
+  effectiveRole: EffectiveRole;
+  data: DashboardData;
 }) {
-  const { courses, total: courseTotal, loading: coursesLoading } = useCourses();
-  const { chats, isLoading: chatsLoading } = useRecentChats();
-  const { stats, isLoading: statsLoading } = useDashboardStats();
-
   const config = DASHBOARD_CONFIG[effectiveRole];
-  const ctx: DashboardStatContext = { courses, coursesLoading, courseTotal, stats, statsLoading };
+  const ctx: DashboardStatContext = {
+    courses: data.courses,
+    coursesLoading: false,
+    courseTotal: data.courseTotal,
+    stats: data.stats,
+    statsLoading: false,
+    userTotal: data.userTotal,
+    usersLoading: false,
+    activeCourseTotal: data.activeCourseTotal,
+    activeCoursesLoading: false,
+  };
 
   return (
     <DashboardView
       stats={config.statBuilder(ctx)}
-      courses={config.leftPanel === "courses" ? courses : undefined}
-      coursesLoading={config.leftPanel === "courses" ? coursesLoading : undefined}
+      courses={config.leftPanel === "courses" ? data.courses : undefined}
       quickActions={config.leftPanel === "quickActions" ? config.quickActions : undefined}
       leftPanelTitle={config.leftPanelTitle}
-      recentChats={chats}
-      recentChatsLoading={chatsLoading}
-      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
+      recentChats={data.recentChats}
+      analytics={<DashboardAnalytics stats={data.stats} loading={false} />}
     />
   );
 }

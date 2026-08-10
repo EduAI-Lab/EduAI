@@ -4,34 +4,20 @@
  * The counts on these dashboards used to come from `array.length` on a
  * full-list read. Under required paging the lists are one page, so ADMIN and
  * UNIT_ADMIN instead take `pageSize: 1` reads and display `stats.total` / the
- * envelope's `total`. That makes two things worth pinning: each `statBuilder`
- * renders a server total (and an em dash, not a misleading 0, while loading),
- * and the admin bodies really do ask for the smallest possible page rather than
- * pulling a page of rows they never render.
+ * envelope's `total`. Each `statBuilder` renders a server total (and an em dash,
+ * not a misleading 0, while loading — which never happens under SSR but the
+ * fallback is kept). The reads themselves now happen in the route's SSR loader;
+ * their per-role gating is pinned in `dashboard-data.server.test.ts`.
  */
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { MemoryRouter } from "react-router";
-
-const useUsers = vi.fn();
-const useCourses = vi.fn();
-const useRecentChats = vi.fn();
-const useDashboardStats = vi.fn();
-
-vi.mock("~/hooks/api/use-users", () => ({ useUsers: (...a: unknown[]) => useUsers(...a) }));
-vi.mock("~/hooks/api/use-courses", () => ({ useCourses: (...a: unknown[]) => useCourses(...a) }));
-vi.mock("~/hooks/api/use-recent-chats", () => ({
-  useRecentChats: (...a: unknown[]) => useRecentChats(...a),
-}));
-vi.mock("~/hooks/api/use-dashboard-stats", () => ({
-  useDashboardStats: (...a: unknown[]) => useDashboardStats(...a),
-}));
 
 import {
   DASHBOARD_CONFIG,
-  DashboardAdminBody,
-  DashboardUnitAdminBody,
+  DashboardBody,
 } from "~/components/dashboard/dashboard-view-config";
+import type { DashboardData } from "~/lib/dashboard/dashboard-data.server";
 
 const baseCtx = {
   courses: [],
@@ -122,43 +108,46 @@ describe("DASHBOARD_CONFIG statBuilders", () => {
 /** The shared DashboardView renders <Link>s, so a router context is required. */
 const renderInRouter = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
-describe("dashboard role bodies", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useUsers.mockReturnValue({ stats: { total: 500, active: 480, byRole: {} }, isLoading: false });
-    useCourses.mockReturnValue({ total: 12, loading: false });
-    useRecentChats.mockReturnValue({ chats: [], isLoading: false });
-    useDashboardStats.mockReturnValue({ stats: { chatCount: 1 }, isLoading: false });
-  });
+const dataWith = (overrides: Partial<DashboardData> = {}): DashboardData => ({
+  stats: {
+    chatCount: 0,
+    chatCountWeek: 0,
+    materialCount: 0,
+    studentCount: 0,
+    instructorCount: 0,
+    totalUsers: 0,
+    activeCourseCount: 0,
+  },
+  recentChats: [],
+  courses: [],
+  courseTotal: 0,
+  ...overrides,
+});
 
-  it("DashboardAdminBody asks for the smallest page, since it only needs the totals", () => {
-    renderInRouter(<DashboardAdminBody />);
+describe("DashboardBody", () => {
+  it("renders ADMIN quick actions and the platform user total from loader data", () => {
+    renderInRouter(
+      <DashboardBody
+        effectiveRole="ADMIN"
+        data={dataWith({ userTotal: 500, activeCourseTotal: 12 })}
+      />,
+    );
 
-    // Quick-actions panel — no course cards are rendered, so a page of rows
-    // would be fetched and thrown away.
-    expect(useUsers).toHaveBeenCalledWith({ pageSize: 1 });
-    expect(useCourses).toHaveBeenCalledWith({ pageSize: 1, isActive: true });
-  });
-
-  it("DashboardAdminBody renders the platform user total off stats.total", () => {
-    renderInRouter(<DashboardAdminBody />);
-
+    // Admin panel is quick actions, not course cards.
+    expect(screen.getByText("Quick actions")).toBeInTheDocument();
     expect(screen.getByText("Total users")).toBeInTheDocument();
     expect(screen.getByText("500")).toBeInTheDocument();
   });
 
-  it("DashboardUnitAdminBody takes two total-only course reads, one scoped to active", () => {
-    renderInRouter(<DashboardUnitAdminBody />);
-
-    expect(useCourses).toHaveBeenCalledWith({ pageSize: 1 });
-    expect(useCourses).toHaveBeenCalledWith({ pageSize: 1, isActive: true });
-    // Never calls the admin-only users hook.
-    expect(useUsers).not.toHaveBeenCalled();
-  });
-
-  it("DashboardUnitAdminBody renders its unit course total", () => {
-    renderInRouter(<DashboardUnitAdminBody />);
+  it("renders UNIT_ADMIN unit + active course totals off loader data", () => {
+    renderInRouter(
+      <DashboardBody
+        effectiveRole="UNIT_ADMIN"
+        data={dataWith({ courseTotal: 7, activeCourseTotal: 5 })}
+      />,
+    );
 
     expect(screen.getByText("Unit courses")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
   });
 });

@@ -18,7 +18,7 @@ import {
   isCoreCourseInScopedList,
   getCourseEnrollmentsFromCore,
 } from '../services/coreApiService.js';
-import { listCoursesForUser, enrichCourseDetail } from '../services/courseListService.js';
+import { listCoursesPageForUser, enrichCourseDetail } from '../services/courseListService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
@@ -127,18 +127,13 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * RBAC matrix (§5): ADMIN sees all, UNIT_ADMIN sees their units, INSTRUCTOR sees
  * courses they are enrolled in. Optionally includes per-course question/topic stats.
  *
- * Paginated (#1044, required `page`/`pageSize`). Role visibility is resolved in
- * JS after the full local `course.findMany()`, so honest SQL `limit`/`offset`
- * isn't possible without a larger refactor — the visible set is sliced in memory
- * here and `total` reflects the caller's true visible count. Same bounded-interim
- * call #1041 made for Core's pickers.
+ * Paginated (#1044, required `page`/`pageSize`). Role visibility is mirrored
+ * locally and applied in the Prisma predicate, so SQL `limit`/`offset` and
+ * `COUNT` operate on the same visible set.
+ * The local access mirror replaces the previous in-memory visibility slice.
  *
- * The per-request cost is not an N+1: `listCoursesForUser` resolves
- * `callerEnrollmentRole` for every row from one cookie-scoped Core list call
- * (#1072 replaced the per-row roster fetch). What remains is that each page
- * redoes the whole filter — one unfiltered `findMany` plus ~2 uncached Core
- * catalog reads — so a client walking P pages pays that P times. Pushing the
- * role filter into the query (or caching the catalog reads) is #1206.
+ * Core enrollment roles are refreshed once per caller per TTL; subsequent
+ * pages use the local SQL predicate and do not refetch the catalog.
  */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
@@ -148,9 +143,10 @@ router.get('/', authenticateToken, async (req, res, next) => {
 
     const { includeStats = false } = req.query;
 
-    const allCourses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
-    const total = allCourses.length;
-    const courses = allCourses.slice(pagination.offset, pagination.offset + pagination.limit);
+    const { courses, total } = await listCoursesPageForUser(req.user, {
+      cookie: req.headers.cookie,
+      pagination,
+    });
 
     if (includeStats !== 'true') {
       return res.json(paginated(courses, total, pagination));
