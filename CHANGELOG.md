@@ -4,8 +4,8 @@
 
 ### Fixed
 
-- [ai-tutor] fix: `/teach` and `/guide` never checked `activity.enableTeachMode`/`enableGuideMode`, so disabling a mode for an activity only hid it client-side — an enrolled student calling the endpoint directly still got a working AI tutoring response. Both routes now 400 when their mode is disabled, mirroring `/custom`'s existing `enableCustomMode` check. Closes #1411. (@evanbones, 2026-08-10) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
-- [ai-tutor] fix: `handleAiInteraction`'s chat-session ownership lookup (`existingSession`, scoped by `chatId`/`userId`/`activityId`/`mode`) was computed but never enforced — a client-supplied `chatId` was reused unconditionally whenever truthy, so a `chatId` belonging to another user's session (or a stale/unknown one) was passed through to the upstream EduAI call and `upsertChatSession`. Now rejected with 403 when the `chatId` doesn't resolve to a session owned by the caller. Closes #1412. (@evanbones, 2026-08-10) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [ai-tutor] fix: `/teach` and `/guide` never checked `activity.enableTeachMode`/`enableGuideMode`, so disabling a mode for an activity only hid it client-side — an enrolled student calling the endpoint directly still got a working AI tutoring response. Both routes now 400 when their mode is disabled, mirroring `/custom`'s existing `enableCustomMode` check. Closes #1411. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
+- [ai-tutor] fix: `handleAiInteraction`'s chat-session ownership lookup (`existingSession`, scoped by `chatId`/`userId`/`activityId`/`mode`) was computed but never enforced — a client-supplied `chatId` was reused unconditionally whenever truthy, so a `chatId` belonging to another user's session (or a stale/unknown one) was passed through to the upstream EduAI call and `upsertChatSession`. Now rejected with 403 when the `chatId` doesn't resolve to a session owned by the caller. Closes #1412. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
 
 ## [Week 14 - August 3-9, 2026]
 
