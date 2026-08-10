@@ -70,6 +70,10 @@ describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
 
   it("ignores a malicious client-supplied vllm baseUrl and falls back to the server default", () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    // VLLM_BASE_URL being set now disables the vllm-local fallback (#1268);
+    // this test is about the SSRF baseURL guard, not key resolution, so give
+    // it a real key rather than relying on the dev default.
+    process.env.VLLM_API_KEY = "test-key";
 
     createAIProviderRegistry({
       vllm: { isEnabled: true, baseUrl: "http://169.254.169.254/latest/meta-data" },
