@@ -172,12 +172,12 @@ describe("pickFromCandidates", () => {
 
   it("requires tool support when requireTools is set", () => {
     const rows = [
-      row({ registryId: "no-tools", tier: 1, supportsTools: false }),
-      row({ registryId: "has-tools", tier: 1, supportsTools: true }),
+      row({ registryId: "no-tools", tier: 2, supportsTools: false }),
+      row({ registryId: "has-tools", tier: 2, supportsTools: true }),
     ];
     const picked = pickFromCandidates(rows, {
-      kind: "exactTier",
-      tier: 1,
+      kind: "minTier",
+      minTier: 2,
       requireTools: true,
       tieBreak: "energy",
     });
@@ -186,12 +186,12 @@ describe("pickFromCandidates", () => {
 
   it("requires image support when requireImages is set", () => {
     const rows = [
-      row({ registryId: "no-images", tier: 1, supportsImages: false }),
-      row({ registryId: "has-images", tier: 1, supportsImages: true }),
+      row({ registryId: "no-images", tier: 2, supportsImages: false }),
+      row({ registryId: "has-images", tier: 2, supportsImages: true }),
     ];
     const picked = pickFromCandidates(rows, {
-      kind: "exactTier",
-      tier: 1,
+      kind: "minTier",
+      minTier: 2,
       requireImages: true,
       tieBreak: "energy",
     });
@@ -199,10 +199,10 @@ describe("pickFromCandidates", () => {
   });
 
   it("returns null when no candidates match the filters", () => {
-    const rows = [row({ registryId: "a", tier: 1, supportsTools: false })];
+    const rows = [row({ registryId: "a", tier: 2, supportsTools: false })];
     const picked = pickFromCandidates(rows, {
       kind: "minTier",
-      minTier: 1,
+      minTier: 2,
       requireTools: true,
       tieBreak: "energy",
     });

@@ -1189,27 +1189,31 @@ describe("processUploadedFile", () => {
     expect(result.title).toBe("notes");
     expect(result.mimeType).toBe("text/plain");
     expect(result.checksum).toBe(generateChecksum(result.content));
-    expect(result.metadata?.isEnhanced).toBe(true);
-    expect(result.metadata?.processingLibrary).toBe("Native text extraction");
-    expect(typeof result.metadata?.chunkCount).toBe("number");
-    expect(result.metadata?.extractedAt).toBeInstanceOf(Date);
+    // These fields are set at runtime but fall outside FileInfo['metadata']'s declared shape.
+    const metadata = result.metadata as Record<string, unknown> | undefined;
+    expect(metadata?.isEnhanced).toBe(true);
+    expect(metadata?.processingLibrary).toBe("Native text extraction");
+    expect(typeof metadata?.chunkCount).toBe("number");
+    expect(metadata?.extractedAt).toBeInstanceOf(Date);
   });
 
   it("processes a PDF upload end-to-end via the isolated worker", async () => {
     const pdfBuffer = buildTinyValidPdf();
-    const file = new File([pdfBuffer], "lecture.pdf", { type: "application/pdf" });
+    const file = new File([new Uint8Array(pdfBuffer)], "lecture.pdf", { type: "application/pdf" });
 
     const result = await processUploadedFile(file);
 
     expect(result.title).toBe("lecture");
     expect(result.mimeType).toBe("application/pdf");
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
-    expect(result.metadata?.processingLibrary).toBe("@opendocsg/pdf2md");
+    expect((result.metadata as Record<string, unknown> | undefined)?.processingLibrary).toBe(
+      "@opendocsg/pdf2md",
+    );
   });
 
   it("wraps a PDF extraction failure as 'Failed to process file <name>'", async () => {
     const garbage = Buffer.from("%PDF-1.4\nnot really a pdf body%%EOF");
-    const file = new File([garbage], "broken.pdf", { type: "application/pdf" });
+    const file = new File([new Uint8Array(garbage)], "broken.pdf", { type: "application/pdf" });
 
     await expect(processUploadedFile(file)).rejects.toThrow(/^Failed to process file broken\.pdf:/);
   });
@@ -1224,14 +1228,15 @@ describe("processUploadedFile", () => {
     zip.file("ppt/slides/slide1.xml", "<p:sld><p:txBody><a:t>Intro to the course</a:t></p:txBody></p:sld>");
     zip.file("ppt/slides/slide2.xml", "<p:sld><p:txBody><a:t>Grading policy details</a:t></p:txBody></p:sld>");
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-    const file = new File([zipBuffer], "slides.pptx", { type: PPTX_MIME });
+    const file = new File([new Uint8Array(zipBuffer)], "slides.pptx", { type: PPTX_MIME });
 
     const result = await processUploadedFile(file);
 
     expect(result.title).toBe("slides");
     expect(result.pageCount).toBe(2);
-    expect(result.metadata?.slideCount).toBe(2);
-    expect(result.metadata?.processingLibrary).toBe("client-side XML parsing");
+    const metadata = result.metadata as Record<string, unknown> | undefined;
+    expect(metadata?.slideCount).toBe(2);
+    expect(metadata?.processingLibrary).toBe("client-side XML parsing");
     expect(result.content).toContain("Intro to the course");
   });
 

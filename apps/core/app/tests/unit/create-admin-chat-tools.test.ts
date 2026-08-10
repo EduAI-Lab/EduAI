@@ -188,7 +188,7 @@ const call = { toolCallId: "test", messages: [] };
  * next call — turnId is null in `ctx`, so a fresh preview is always confirmable
  * immediately (see admin-write-confirmation.server: same-turn rejection only applies
  * when the preview was bound to a non-null turnId). */
-async function runWrite(tool: { execute: (args: never, call: never) => Promise<unknown> }, args: Record<string, unknown>) {
+async function runWrite(tool: { execute: (args: never, call: never) => PromiseLike<unknown> }, args: Record<string, unknown>) {
   const preview = await tool.execute({ ...args, confirmed: false } as never, call as never);
   expect(preview).toMatchObject({ writeSucceeded: false, error: "CONFIRMATION_REQUIRED" });
   return tool.execute({ ...args, confirmed: true } as never, call as never);

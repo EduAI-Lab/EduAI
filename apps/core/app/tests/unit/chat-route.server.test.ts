@@ -65,8 +65,8 @@ const PREFERENCES = {
   assistDefault: false,
   lastCourseCode: null,
   motionReduced: false,
-  density: "comfortable",
-  theme: "system",
+  density: "comfortable" as const,
+  theme: "system" as const,
 };
 
 beforeEach(() => {
@@ -226,12 +226,12 @@ describe("chatPreferencesAction", () => {
   it("returns 401 for anonymous callers", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
-    const res = await chatPreferencesAction({
+    const res = (await chatPreferencesAction({
       request: new Request("http://localhost/chat", {
         method: "POST",
         body: JSON.stringify({ assistDefault: true }),
       }),
-    } as never);
+    } as never)) as Response;
 
     expect(res.status).toBe(401);
     await expect(res.json()).resolves.toEqual({ error: "Unauthorized" });
@@ -243,12 +243,12 @@ describe("chatPreferencesAction", () => {
       user: { id: "u1", role: "STUDENT" },
     } as never);
 
-    const res = await chatPreferencesAction({
+    const res = (await chatPreferencesAction({
       request: new Request("http://localhost/chat", {
         method: "POST",
         body: JSON.stringify({ unknownField: "x" }),
       }),
-    } as never);
+    } as never)) as Response;
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "No valid preference fields provided" });
@@ -260,13 +260,13 @@ describe("chatPreferencesAction", () => {
       user: { id: "u1", role: "STUDENT" },
     } as never);
 
-    const res = await chatPreferencesAction({
+    const res = (await chatPreferencesAction({
       request: new Request("http://localhost/chat", {
         method: "POST",
         body: "not json",
         headers: { "Content-Type": "application/json" },
       }),
-    } as never);
+    } as never)) as Response;
 
     expect(res.status).toBe(400);
     expect(saveUserPreference).not.toHaveBeenCalled();

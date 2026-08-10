@@ -54,7 +54,7 @@ describe("createLearningChatTools", () => {
   it("invokes the shared fetchPage tool's execute", async () => {
     vi.mocked(fetchPageMock.execute).mockResolvedValue({ url: "https://a.com", title: "A", markdown: "hi" });
     const tools = createLearningChatTools(baseCtx);
-    const result = await tools.fetchPage.execute({ url: "https://a.com" }, {} as never);
+    const result = await tools.fetchPage.execute({ url: "https://a.com", timeoutMs: 10000 }, {} as never);
     expect(result).toEqual({ url: "https://a.com", title: "A", markdown: "hi" });
   });
 
