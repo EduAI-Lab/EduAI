@@ -41,6 +41,8 @@ export async function requireAuth(req, res, next) {
 
     const { user: coreUser } = await response.json();
     const normalizedUser = { ...coreUser, role: normalizeRole(coreUser.role) };
+    // FK integrity only, and memoized per user — `req.user` below is the Core
+    // shape, so the local row is never read back here.
     await findOrCreateUser(normalizedUser);
     req.user = normalizedUser;
     next();
