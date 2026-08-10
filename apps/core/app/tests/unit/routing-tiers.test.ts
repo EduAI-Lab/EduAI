@@ -201,8 +201,8 @@ describe("pickFromCandidates", () => {
   it("returns null when no candidates match the filters", () => {
     const rows = [row({ registryId: "a", tier: 1, supportsTools: false })];
     const picked = pickFromCandidates(rows, {
-      kind: "exactTier",
-      tier: 1,
+      kind: "minTier",
+      minTier: 1,
       requireTools: true,
       tieBreak: "energy",
     });
