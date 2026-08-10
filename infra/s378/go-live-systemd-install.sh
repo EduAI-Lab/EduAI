@@ -135,7 +135,9 @@ Next:
 
 Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
   systemctl restart eduai-dev.target     # must NOT prompt for a password
-  systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+  systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
+  systemctl status eduai-cron-worker.service
+  journalctl -u eduai-cron-worker.service -f
   systemctl --user list-units 'eduai*'   # expect empty
 
 If the restart does prompt, the polkit rule is not taking effect. Fall back to a

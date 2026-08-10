@@ -17,14 +17,15 @@ more. Core stays a node process because it is SSR.
 
 ## Process management
 
-Three **system** units, owned by the `eduai-dev` group:
+Four **system** units, owned by the `eduai-dev` group:
 
 | Unit | Port |
 |------|------|
 | `eduai-core.service` | `:3000` |
+| `eduai-cron-worker.service` | no HTTP port; runs scheduled jobs |
 | `eduai-aitutor-server.service` | `:4000` |
 | `eduai-qm-backend.service` | `:8000` |
-| `eduai-dev.target` | starts/stops all three |
+| `eduai-dev.target` | starts/stops all four |
 
 These are system units, not `systemctl --user` units, so **any** `eduai-dev`
 member can restart the stack — no `loginctl enable-linger`, no being locked to
@@ -32,6 +33,10 @@ one account, and no sudo (a polkit rule in `systemd/49-eduai-dev.rules` grants
 the group lifecycle control over `eduai-*` units).
 
 ### One-time install on s378
+
+For a new host, run the installer before the first build. Existing hosts upgrading
+to the dedicated cron worker must also rerun it once so
+`eduai-cron-worker.service` is installed and enabled.
 
 ```bash
 bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
@@ -42,9 +47,11 @@ bash infra/s378/go-live-build.sh             # build + start
 
 ```bash
 systemctl status eduai-dev.target
-systemctl restart eduai-dev.target       # all three — no sudo, no --user
+systemctl restart eduai-dev.target       # all four — no sudo, no --user
 systemctl restart eduai-aitutor-server   # one app
 journalctl -u eduai-core -f              # logs
+systemctl status eduai-cron-worker.service
+journalctl -u eduai-cron-worker.service -f
 ```
 
 Restarting picks up **server-side** `.env` changes. A `VITE_`-prefixed value is
