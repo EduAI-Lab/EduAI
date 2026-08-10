@@ -19,6 +19,9 @@ before/after delta.
 ```
 docs/perf/
   README.md                    <- this file
+  backend/
+    foreign-key-indexes-ai-tutor.md   AI-Tutor content-tree FK indexes: what landed, what was
+                                      deliberately skipped, before/after EXPLAIN (issue #1374)
   backend/baseline/            the pinned BEFORE snapshot — API + code quality (issue #961)
     endpoints.md               inventory: app / method / path / auth / handler
     response-times.json        p50/p95/p99 + payload bytes + status per route (machine-readable)

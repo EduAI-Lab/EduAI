@@ -8,7 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 /// Reusable system-prompt definitions for AI tutor modes.
 ///
 /// The slugs `learning-prompt`, `exercise-prompt`, and `supervisor-prompt`
@@ -68,6 +67,8 @@ model CourseInstructor {
   courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
 
   @@id([userId, courseOfferingId])
+  // The PK leads with `userId`, so an offering-scoped roster read cannot seek on it (#1374).
+  @@index([courseOfferingId])
 }
 
 /// Student or TA enrollment for a course offering.
@@ -118,6 +119,8 @@ model Module {
   courseOfferingId Int
 
   lessons Lesson[]
+
+  @@index([courseOfferingId])
 }
 
 model Lesson {
@@ -132,6 +135,8 @@ model Lesson {
   moduleId    Int
 
   activities Activity[]
+
+  @@index([moduleId])
 }
 
 /// A single learner-facing activity (question/exercise) under a Lesson.
@@ -179,6 +184,14 @@ model Activity {
   activityAnalytics      ActivityAnalytics?
   activityStudentMetrics ActivityStudentMetric[]
   aiInteractionTraces    AiInteractionTrace[]
+
+  // `mainTopicId` and `promptTemplateId` are deliberately left unindexed (#1374).
+  // Both are only ever written, or read back as a scalar off an already-loaded
+  // activity row — neither appears in a `where` filter, and no code path deletes a
+  // Topic or PromptTemplate, so the referential-integrity check never runs in
+  // anger either. Revisit if a "list activities by topic" or "by prompt template"
+  // read lands, or if topic deletion becomes a real operation.
+  @@index([lessonId])
 }
 
 /// A student's attempt at an Activity. Submissions are versioned per-attempt
@@ -199,6 +212,8 @@ model Submission {
   activity         Activity           @relation(fields: [activityId], references: [id], onDelete: Cascade)
   activityId       Int
   activityFeedback ActivityFeedback[]
+
+  @@index([activityId])
 }
 
 model ActivitySecondaryTopic {
@@ -208,6 +223,9 @@ model ActivitySecondaryTopic {
   topicId    String
 
   @@id([activityId, topicId])
+  // `activityId` needs no index of its own: the PK already leads with it. `topicId`
+  // is the non-leading half, and Topic's onDelete: Cascade has to find these rows (#1374).
+  @@index([topicId])
 }
 
 model SystemPrompt {
@@ -247,6 +265,11 @@ model ActivityFeedback {
   submissionId Int?
 
   @@unique([userId, activityId])
+  // `activityId` is the non-leading half of the unique above, so an activity-scoped
+  // read (and Activity's onDelete: Cascade) can't seek on it. `submissionId` is
+  // onDelete: SetNull, which scans this table on every Submission delete (#1374).
+  @@index([activityId])
+  @@index([submissionId])
 }
 
 /// `userId` stores the Core CUID; no local FK — User table is owned by Core.
@@ -263,6 +286,8 @@ model ActivityStudentMetric {
   activityId               Int
 
   @@unique([userId, activityId])
+  // Non-leading in the unique above; see ActivityFeedback (#1374).
+  @@index([activityId])
 }
 
 model ActivityAnalytics {
@@ -312,6 +337,9 @@ model AiChatSession {
 
   @@index([userId, activityId])
   @@index([userId, activityId, mode])
+  // Both composites lead with `userId`, so an activity-scoped read and Activity's
+  // onDelete: Cascade still fall back to a scan without this (#1374).
+  @@index([activityId])
 }
 
 /// `userId` stores the Core CUID; no local FK — User table is owned by Core.
@@ -333,4 +361,9 @@ model AiInteractionTrace {
   activityId        Int
   aiChatSession     AiChatSession? @relation(fields: [aiChatSessionId], references: [id], onDelete: SetNull)
   aiChatSessionId   Int?
+
+  // No index of any kind existed on this model. `aiChatSessionId` is onDelete:
+  // SetNull, so every AiChatSession delete scanned the whole trace table (#1374).
+  @@index([activityId])
+  @@index([aiChatSessionId])
 }
