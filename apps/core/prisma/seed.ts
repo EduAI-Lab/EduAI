@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
@@ -1158,8 +1158,20 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
+// import.meta.url normally resolves next to this file (true for the CLI path,
+// `tsx prisma/seed.ts`). But when main() is instead imported into the SSR app
+// bundle (the /api/e2e/seed test hook), the bundler relocates this module and
+// import.meta.url points into build/server/, where the CSV was never copied —
+// fall back to a cwd-relative path, which matches WORKDIR in both the CLI
+// (apps/core) and the served-app Docker image (also apps/core).
+function resolveDisciplinesCsvPath(): string {
+  const bundleRelative = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'disciplines.csv');
+  if (existsSync(bundleRelative)) return bundleRelative;
+  return path.join(process.cwd(), 'prisma', 'data', 'disciplines.csv');
+}
+
 async function seedDisciplines(): Promise<number> {
-  const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'disciplines.csv');
+  const csvPath = resolveDisciplinesCsvPath();
   const lines = readFileSync(csvPath, 'utf8').trim().split('\n').slice(1); // drop header
   for (const line of lines) {
     const parts = parseCsvLine(line);
