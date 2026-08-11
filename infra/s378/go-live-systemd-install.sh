@@ -37,12 +37,39 @@ echo "  node $(/usr/local/bin/node -v) at /usr/local/bin/node"
 getent group eduai-dev >/dev/null || { echo "ERROR: group eduai-dev does not exist"; exit 1; }
 echo "  group eduai-dev ok"
 
+# The worker executes the shell jobs as the dedicated account. Keep this
+# separate from ssaada08 (the account used by the web services) so the cron
+# env, backup files, and audit log have one predictable owner.
+getent passwd eduai-cron >/dev/null || {
+  echo "ERROR: user eduai-cron does not exist"
+  echo "       Create it first: sudo useradd -r -s /bin/false eduai-cron"
+  exit 1
+}
+id -nG eduai-cron | tr ' ' '\n' | grep -qx eduai-dev || {
+  echo "ERROR: eduai-cron must be a member of eduai-dev to read the shared service env"
+  echo "       Run: sudo usermod -a -G eduai-dev eduai-cron"
+  exit 1
+}
+echo "  user eduai-cron ok (member of eduai-dev)"
+
 # Core is exec'd directly rather than via `npm run start`, so this path must exist.
 if [ ! -f "$REPO/node_modules/@react-router/serve/bin.js" ]; then
   echo "ERROR: $REPO/node_modules/@react-router/serve/bin.js missing (run npm install)."
   exit 1
 fi
 echo "  react-router-serve ok"
+
+CRON_SRC="$REPO/infra/cron"
+CRON_DIR=/opt/eduai/cron
+[ -d "$CRON_SRC" ] || { echo "ERROR: missing cron scripts at $CRON_SRC"; exit 1; }
+
+echo
+echo "=== installing cron worker scripts ==="
+sudo install -d -m 0750 -o eduai-cron -g eduai-cron "$CRON_DIR"
+for script in "$CRON_SRC"/*.sh; do
+  sudo install -m 0750 -o eduai-cron -g eduai-cron "$script" "$CRON_DIR/"
+done
+echo "  $CRON_DIR (eduai-cron:eduai-cron, 0750)"
 
 echo
 echo "=== retiring the old --user units ==="
@@ -138,6 +165,7 @@ Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
   systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
   systemctl status eduai-cron-worker.service
   journalctl -u eduai-cron-worker.service -f
+  sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh   # smoke the script identity/env
   systemctl --user list-units 'eduai*'   # expect empty
 
 If the restart does prompt, the polkit rule is not taking effect. Fall back to a

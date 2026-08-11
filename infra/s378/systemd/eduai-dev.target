@@ -1,7 +1,7 @@
 [Unit]
-Description=EduAI s378 dev stack (Core + AI Tutor API + Question Maker API)
+Description=EduAI s378 dev stack (Core + cron worker + AI Tutor API + Question Maker API)
 Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/GO-LIVE.md
-# Three units, not five. Both extension frontends are ssr:false, so after a build
+# Four system units, not six. Both extension frontends are ssr:false, so after a build
 # they are plain static files served straight from Apache — no node process.
 Wants=eduai-core.service eduai-cron-worker.service eduai-aitutor-server.service eduai-qm-backend.service
 After=network-online.target

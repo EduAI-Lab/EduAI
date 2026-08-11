@@ -81,11 +81,15 @@ Click **History** on any row to see the last 10 runs with status, duration, and 
 
 ### Infra shell-script jobs
 
-Schedule changes are stored in the database and applied by the dedicated cron worker within 30 seconds. No web-server restart is needed.
+Schedule changes are stored in the database and picked up by the dedicated cron
+worker during its next 30-second reconciliation cycle. No web-server restart is
+needed.
 
 Click **Edit** next to any infra job's schedule to open the schedule editor. Enter a valid 5-field cron expression; the human-readable label auto-fills for common patterns (daily, weekly, monthly) and can be edited freely.
 
-Saving the schedule updates the database. The cron worker reconciles the change within 30 seconds, so no deployment or server restart is needed. A yellow "custom" badge appears on the row.
+Saving the schedule updates the database. The same worker reconciliation cycle
+applies the change within 30 seconds, so no deployment or server restart is
+needed. A yellow "custom" badge appears on the row.
 
 To restore the original schedule, re-open the editor and click **Reset to default**.
 
@@ -144,7 +148,9 @@ Add an entry to `KNOWN_CRON_JOBS` in `apps/core/app/lib/db.cron-jobs.server.ts`:
 },
 ```
 
-The cron worker discovers it during its next 30-second reconciliation cycle. The job will appear in the admin panel, can be triggered manually, and has its schedule editable via the UI.
+The cron worker discovers it during the next 30-second reconciliation cycle. The
+job will appear in the admin panel, can be triggered manually, and has its
+schedule editable via the UI.
 
 ### 3. Deploy
 

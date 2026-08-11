@@ -30,8 +30,8 @@ sudo chmod 750 /opt/eduai/cron/*.sh
 sudo mkdir -p /etc/eduai
 sudo cp infra/cron/cron.env.example /etc/eduai/cron.env
 sudo nano /etc/eduai/cron.env          # set DB_PASS, OFFSITE_BUCKET, ALERT_EMAIL
-sudo chmod 600 /etc/eduai/cron.env
-sudo chown root:root /etc/eduai/cron.env
+sudo chmod 640 /etc/eduai/cron.env
+sudo chown root:eduai-cron /etc/eduai/cron.env
 
 # 4. Create log directory
 sudo mkdir -p /var/log/eduai
@@ -45,7 +45,11 @@ sudo cp infra/cron/logrotate.conf /etc/logrotate.d/eduai-cron
 sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh
 ```
 
-> **Note:** these scripts are scheduled by the Core in-process scheduler (`CRON_SCRIPT_DIR` env var must point to the directory containing them). Schedules are managed via the Admin → Cron Jobs panel and stored in the database — there is no system crontab entry for these jobs.
+> **Note:** these scripts are scheduled by the dedicated Core cron worker running
+> as `eduai-cron` (`CRON_SCRIPT_DIR=/opt/eduai/cron`). Schedules are managed via
+> the Admin → Cron Jobs panel and stored in the database — there is no system
+> crontab entry for these jobs. Install the worker with
+> `infra/s378/go-live-systemd-install.sh` before the first Core deployment.
 
 ## Off-site storage
 
@@ -55,7 +59,7 @@ of the error handling and logging stays the same.
 
 AWS credentials must be accessible to the `eduai-cron` user. An EC2 IAM role
 is preferred over static keys; if using static keys, place them in
-`/home/eduai-cron/.aws/credentials` with `chmod 600`.
+`/var/lib/eduai-cron/.aws/credentials` with `chmod 600`.
 
 ## Legal hold
 

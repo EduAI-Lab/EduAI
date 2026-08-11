@@ -34,7 +34,9 @@ Two categories of automation are defined:
 
 ### 2.2 Shared Environment File
 
-All cron scripts source a single environment file at `/etc/eduai/cron.env`. This file must be root-readable only (`chmod 600`) and must never be committed to version control.
+All cron scripts source a single environment file at `/etc/eduai/cron.env`. This
+file must be readable only by root and the dedicated `eduai-cron` service account
+(`chmod 640`, `root:eduai-cron`) and must never be committed to version control.
 
 ```bash
 # /etc/eduai/cron.env
@@ -580,7 +582,7 @@ Every deletion event is appended to `$AUDIT_LOG` (`/var/log/eduai/data-lifecycle
    ```
 3. Create and populate `/etc/eduai/cron.env` with production values. Set permissions:
    ```bash
-   chmod 600 /etc/eduai/cron.env && chown root:root /etc/eduai/cron.env
+   chmod 640 /etc/eduai/cron.env && chown root:eduai-cron /etc/eduai/cron.env
    ```
 4. Install `/etc/cron.d/eduai` (see Section 6).
 5. Install `/etc/logrotate.d/eduai-cron` (see Section 7.2).

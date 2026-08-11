@@ -218,6 +218,12 @@ fi
 
 if [ "$DO_RESTART" = "1" ]; then
   step "restart"
+  if want core && ! systemctl cat eduai-cron-worker.service >/dev/null 2>&1; then
+    echo "ERROR: eduai-cron-worker.service is not installed on this host."
+    echo "       Run once: sudo bash infra/s378/go-live-systemd-install.sh"
+    echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
+    exit 1
+  fi
   # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
   # members lifecycle control over every eduai-* unit individually, so this does
   # not have to go through eduai-dev.target. Core is skipped when it was already

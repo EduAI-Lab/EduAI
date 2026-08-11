@@ -39,9 +39,16 @@ to the dedicated cron worker must also rerun it once so
 `eduai-cron-worker.service` is installed and enabled.
 
 ```bash
+sudo useradd -r -s /bin/false eduai-cron          # once, if absent
+sudo usermod -a -G eduai-dev eduai-cron           # lets the worker read shared env
 bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
 bash infra/s378/go-live-build.sh             # build + start
 ```
+
+The installer copies `infra/cron/*.sh` to `/opt/eduai/cron` with
+`eduai-cron:eduai-cron` ownership and `0750` mode. The production cron secrets
+file must be readable by the worker but no other users:
+`sudo chown root:eduai-cron /etc/eduai/cron.env && sudo chmod 640 /etc/eduai/cron.env`.
 
 ### Day-to-day
 
@@ -139,8 +146,10 @@ for h in dev.eduai dev.aitutor.eduai dev.questionmaker.eduai; do
   printf '%s -> ' "$h"; curl -sk -o /dev/null -w '%{http_code}\n' "https://$h.ok.ubc.ca/"
 done
 
-# systemd — three units, and nothing left under --user
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+# systemd — four units, and nothing left under --user
+systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
+systemctl status eduai-cron-worker.service --no-pager
+journalctl -u eduai-cron-worker.service -n 50 --no-pager
 systemctl --user list-units 'eduai*'        # expect empty
 pgrep -af 'nodemon|vite|react-router dev'   # expect empty
 
