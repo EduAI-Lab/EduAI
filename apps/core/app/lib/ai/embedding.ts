@@ -162,13 +162,10 @@ async function pgvectorSupportsIterativeScan(): Promise<boolean> {
           IVFFLAT_ITERATIVE_SCAN_MIN_VERSION,
         );
       } catch (err) {
-        console.warn(
-          "[embeddings] failed to read pgvector extension version; " +
-            "skipping ivfflat.iterative_scan / ivfflat.max_probes",
-          {
-            error: err instanceof Error ? err.message : String(err),
-          },
-        );
+        console.warn("[embeddings] failed to read pgvector extension version; " +
+          "skipping ivfflat.iterative_scan / ivfflat.max_probes", {
+          error: providerErrorDiagnostic(err),
+        });
         return false;
       }
     })();
@@ -372,7 +369,7 @@ async function retryTransientEmbeddingError<T>(
         attempt,
         maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
         delayMs,
-        error: err instanceof Error ? err.message : String(err),
+        error: providerErrorDiagnostic(err),
       });
       await waitForEmbeddingRetry(delayMs, signal);
     }
