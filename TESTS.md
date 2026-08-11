@@ -71,6 +71,12 @@ The frontend/UI suites (`@eduai/ui`, AI Tutor client) run coverage through their
 
 The **Test Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs weekly (Mondays 09:00 UTC) and on manual dispatch. It runs `test:coverage` for all six suites — the three backends against Postgres service containers plus `@eduai/ui`, the AI Tutor client, and the Question Maker frontend — aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `docs/coverage` branch. Only the report is committed — coverage build artifacts stay gitignored.
 
+### Per-PR patch coverage
+
+The **Patch coverage** workflow (`.github/workflows/pr-coverage.yml`) runs on every pull request. It runs `test:coverage` for the workspaces the PR touches (`turbo run test:coverage --affected`), then `eduai-summer-2026/scripts/pr-patch-coverage.js` intersects each workspace's `lcov.info` with the PR diff and posts a sticky comment reporting the share of **added or changed** executable lines that a test executed. It is advisory and never blocks merge; the warning threshold is 80%.
+
+Every backend whose suite the workflow measures needs its generated Prisma client present *before* the coverage run, otherwise the imports fail at module load, the suite errors out, and the workspace reports 0% for every touched file rather than reporting nothing. The workflow therefore generates all three (`edu-ai`, AI Tutor server, and Question Maker backend, whose schema outputs to `@eduai/question-maker-prisma-client`) in its "Generate Prisma clients" step. A 0% figure on a file that clearly has tests is the signature of a missing client, not a missing test.
+
 ### Prisma client isolation smoke check
 
 Run the repository-level smoke check after generating the AI Tutor server and Question Maker backend Prisma clients:

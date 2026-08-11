@@ -2,6 +2,10 @@
 
 ## [Week 15 — August 10–16, 2026]
 
+### Fixed
+
+- [ci] fix: Generate the Question Maker Prisma client in the patch-coverage workflow, so its backend suite stops failing at module load and reporting 0% coverage on every touched file. (@abdullahmoh21, 2026-08-11) — [#1468](https://github.com/EduAI-Lab/EduAI/pull/1468)
+
 ### Changed
 
 - [question-maker] perf: Batch assessment variant assembly so both assembly paths resolve every exam's slots in memory against one candidate prefetch, one bulk cursor lock and one bulk cursor flush, cutting a 3-exam × 50-slot assemble from ~750 queries to 17. Closes #1370. (@abdullahmoh21, 2026-08-10) — [#1468](https://github.com/EduAI-Lab/EduAI/pull/1468)
