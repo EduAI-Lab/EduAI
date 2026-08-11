@@ -11,7 +11,6 @@
     "test:watch": "vitest",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:canvas-live": "vitest run --config vitest.canvas-live.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.coverage.config.ts",
     "test:mutation": "stryker run",
     "typecheck": "react-router typegen && tsc",

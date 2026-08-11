@@ -1,16 +1,9 @@
 # Changelog
 
-## [Week 15 — August 10–16, 2026]
-
-### Added
-
-- [docs] docs: Add `docs/end-to-end-user-workflows/` — README plus per-extension (Core, Question Maker, AI Tutor) workflow tracking templates for Epic #1429's pre-pilot end-to-end testing pass, with a role-based (Admin/Unit Admin/Instructor/TA/Student) findings table and the Claude-find/simulate/review/sweep-then-human testing methodology. Closes #1457. (@ariqmuldi, 2026-08-10) — #1458
-
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
 
-- [core] fix: Canvas file downloads now preserve a signed redirect to the live Canvas CDN (`*.canvas-user-content.com`, `*.inscloudgate.net`) instead of rewriting the redirect Location onto the configured Canvas origin, which invalidated the signed URL — only local Docker Canvas aliases are still rewritten. The Canvas bearer token is now sent only to the configured Canvas origin and is never forwarded on a cross-origin redirect hop; any other, non-allowlisted cross-host redirect is rejected before a second request is made. Closes #1264. (@saadtab01, 2026-08-09) — [#1437](https://github.com/EduAI-Lab/EduAI/pull/1437)
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
@@ -31,6 +24,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [monorepo] test: PICT S10 cross-extension + client/server gate drift contracts (#1189) — four models (`cross-ext-read`, `cross-ext-push`, `course-detail-manager-view`, `rbac-permissions-capabilities`) with generated case tables and spec-derived oracles; AT/QM/Core adapters (incl. Core `POST /api/questions` push adapter); `ext↔ext` import-isolation assert; known TA delete-material UI drift via `it.fails` (#1390); unit manage-rag client/server mismatch kept visible as `it.fails` (#1406). (@GlowyBlack, 2026-08-05) — [#1391](https://github.com/EduAI-Lab/EduAI/pull/1391)
 - [core] test: `dashboard-data.server.test.ts` pins the #1041 per-role query gating at its new home in the SSR loader (ADMIN takes one active-course total read + the platform user total; UNIT_ADMIN two total-only reads and no user total; the course-card roles fetch one small page and expose `courseTotal`, no admin aggregates). The dashboard view-config and role-view tests are reworked to drive the presentational `DashboardBody` from loader data. `courses-server.test.ts` covers `listCoursesForUser`'s `countOnly` and empty-page paths, `canvas-integration.server.test.ts` pins `getDashboardCanvasIntegration`'s role/policy gates, and `canvas-dashboard-card.test.tsx` asserts loader-supplied integration data renders without a client fetch. (@yta3216, 2026-08-05) — [#1407](https://github.com/EduAI-Lab/EduAI/pull/1407)
 - [core] test: `insertMaterialEmbeddingsBatched` (#943) coverage in `embedding.test.ts` — zero-chunk no-op, single-batch call count and param binding correctness, `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE + 1` chunk boundary split into `ceil(N/batchSize)` calls with rows correctly partitioned, and unique row ids. (@saadtab01, 2026-08-04) — [#1355](https://github.com/EduAI-Lab/EduAI/pull/1355)
 
@@ -201,6 +195,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Make AI-job enqueue and re-embed start consistent — persist `bullJobId = idempotencyKey` at `AiJob` create time (not after Redis `add`) so a FAILED-not-deleted row from a failed push is discoverable by a same-key retry from the instant it exists; mark (not delete) the row `FAILED` on a push failure, so a caller polling its id or retrying with the same key finds a real terminal state instead of an orphan — a keyed enqueue race now resolves at `create()` itself, so a losing concurrent request never calls Redis at all. Scope re-embed idempotency keys to `(courseId, idempotencyKey)`, replay a terminal row on key reuse within a 24h retry window instead of double-running the work, and recycle it into a fresh run once that window has passed (directly, when the row was found stale by key, instead of falling through to a flow that would otherwise replay the reclaim's own fresh timestamp as a valid result) instead of returning stale `COMPLETED`/`FAILED` state forever; reclaim a `RUNNING` row that's gone 30+ minutes or a `PENDING` row stuck 5+ minutes with no progress as a presumed crash, without proceeding if the reclaim write itself fails, and log (not swallow) a failure to compensate-delete a row after a failed claim; report `keyHonored: false` rather than silent success when an active job already carries a different caller's idempotency key; route the embedding-settings PATCH's `reEmbed=true` path through the same `QueueUnavailableError` → 503 classification as the dedicated endpoint. Classify Redis/DB outages as `QueueUnavailableError` → HTTP 503 (not 400/502) throughout, including a failed best-effort idempotency-key attach onto an active job. (#1112, @Ayyhab, 2026-07-29) — [#1269](https://github.com/EduAI-Lab/EduAI/pull/1269)
 - [ai-tutor] security: Fix an authorization bypass in the three AI Tutor bulk-reorder handlers, which called the async `isUnitAdminForCourse` without awaiting it and so tested an always-truthy Promise, letting any INSTRUCTOR reorder any course's tree. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)
 - [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
