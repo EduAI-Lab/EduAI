@@ -35,6 +35,7 @@ import { prisma } from '../helpers.js';
 /** Every index the #1374 migration is responsible for, as `Table.column`. */
 const EXPECTED_INDEXED_FKS = [
   'Activity.lessonId',
+  'Activity.mainTopicId',
   'ActivityFeedback.activityId',
   'ActivityFeedback.submissionId',
   'ActivitySecondaryTopic.topicId',
@@ -49,15 +50,24 @@ const EXPECTED_INDEXED_FKS = [
 ];
 
 /**
- * FK columns deliberately left without an index (#1374). Both are only ever written,
- * or read back as a scalar off an already-loaded Activity row — neither appears in a
- * `where` filter, and nothing deletes a Topic or a PromptTemplate, so the referential
- * integrity check never runs either.
+ * FK columns deliberately left without an index (#1374). `promptTemplateId` is only ever
+ * written, or read back as a scalar off an already-loaded Activity row — it appears in no
+ * `where` filter, and nothing deletes a PromptTemplate, so its `ON DELETE SET NULL` check
+ * never runs either.
  *
- * Pinned as an exact set rather than ignored: if a "list activities by topic" read
- * lands later, this test is the thing that says the index decision needs revisiting.
+ * Pinned as an exact set rather than ignored: if a "list activities by prompt template"
+ * read lands later, this test is the thing that says the decision needs revisiting.
  */
-const DELIBERATELY_UNINDEXED_FKS = ['Activity.mainTopicId', 'Activity.promptTemplateId'];
+const DELIBERATELY_UNINDEXED_FKS = ['Activity.promptTemplateId'];
+
+/**
+ * Per-user reads on columns the FK audit structurally cannot see: `userId` is a Core CUID
+ * with no local FK (Core owns the User table), so `pg_constraint` has no row for it. Both
+ * are the leading predicate of a hot read — `GET /me/submissions`, and the "my courses"
+ * list plus every `enrollments: { some: { userId } }` access check — and both trail their
+ * table's key, so without these they are seq scans (#1374).
+ */
+const EXPECTED_NON_FK_INDEXES = ['CourseEnrollment_userId_idx', 'Submission_userId_idx'];
 
 /**
  * FK columns that must keep riding an existing leading PK/unique WITHOUT acquiring a
@@ -74,34 +84,18 @@ const COVERED_BY_LEADING_KEY = [
 const unquote = (identifier) => identifier.replace(/"/g, '');
 
 /**
- * `Table.column` for every FK whose leading column has no usable index.
+ * `Table.column` -> every usable index whose leading column is that FK column, with an
+ * empty array for the FKs that have none.
  *
- * Takes the client so the audit-guard test below can run the real query against its
- * transaction's uncommitted DDL instead of keeping a second copy of the SQL in sync.
+ * The leading-column predicate lives here once, so the drop-index self-check at the bottom
+ * exercises the same SQL every other assertion reads through. The LEFT JOIN is what keeps
+ * the unindexed FKs in the result set rather than filtering them out.
+ *
+ * Takes the client so that self-check can run the real query against its transaction's
+ * uncommitted DDL.
  */
-async function findUnindexedForeignKeys(client = prisma) {
+async function indexesByForeignKey(client = prisma) {
   const rows = await client.$queryRaw`
-    SELECT c.conrelid::regclass::text AS table_name, a.attname AS column_name
-    FROM pg_constraint c
-    JOIN pg_attribute a
-      ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-    WHERE c.contype = 'f'
-      AND c.connamespace = 'public'::regnamespace
-      AND NOT EXISTS (
-        SELECT 1 FROM pg_index i
-        WHERE i.indrelid = c.conrelid
-          AND i.indpred IS NULL
-          AND i.indisvalid
-          AND i.indkey[0] = c.conkey[1]
-      )
-    ORDER BY 1, 2
-  `;
-  return rows.map((r) => `${unquote(r.table_name)}.${r.column_name}`);
-}
-
-/** `Table.column` -> every usable index whose leading column is that FK column. */
-async function indexesByForeignKey() {
-  const rows = await prisma.$queryRaw`
     SELECT c.conrelid::regclass::text   AS table_name,
            a.attname                    AS column_name,
            i.indexrelid::regclass::text AS index_name,
@@ -110,13 +104,13 @@ async function indexesByForeignKey() {
     FROM pg_constraint c
     JOIN pg_attribute a
       ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-    JOIN pg_index i
+    LEFT JOIN pg_index i
       ON i.indrelid = c.conrelid
      AND i.indpred IS NULL
      AND i.indisvalid
      AND i.indkey[0] = c.conkey[1]
-    JOIN pg_class ic ON ic.oid = i.indexrelid
-    JOIN pg_am am ON am.oid = ic.relam
+    LEFT JOIN pg_class ic ON ic.oid = i.indexrelid
+    LEFT JOIN pg_am am ON am.oid = ic.relam
     WHERE c.contype = 'f'
       AND c.connamespace = 'public'::regnamespace
   `;
@@ -125,9 +119,22 @@ async function indexesByForeignKey() {
   for (const r of rows) {
     const key = `${unquote(r.table_name)}.${r.column_name}`;
     if (!byColumn.has(key)) byColumn.set(key, []);
+    if (r.index_name === null) continue;
     byColumn.get(key).push({ ...r, index_name: unquote(r.index_name) });
   }
   return byColumn;
+}
+
+/**
+ * `Table.column` for every FK whose leading column has no usable index, derived from the
+ * one audit query above rather than a second copy of its predicate.
+ */
+async function findUnindexedForeignKeys(client = prisma) {
+  const byColumn = await indexesByForeignKey(client);
+  return [...byColumn.entries()]
+    .filter(([, matches]) => matches.length === 0)
+    .map(([fk]) => fk)
+    .toSorted();
 }
 
 describe('foreign key indexes (integration)', () => {
@@ -148,14 +155,14 @@ describe('foreign key indexes (integration)', () => {
       expect(matches.length, `${fk} has no usable index`).toBeGreaterThan(0);
       // Prisma's own naming, so a later `migrate dev` sees no drift and does not drop
       // and recreate these.
-      expect(
-        matches.some((m) => m.index_name === `${table}_${column}_idx`),
-        `${fk} is missing its ${table}_${column}_idx`,
-      ).toBe(true);
-      expect(
-        matches.every((m) => m.method === 'btree'),
-        fk,
-      ).toBe(true);
+      const named = matches.find((m) => m.index_name === `${table}_${column}_idx`);
+      expect(named, `${fk} is missing its ${table}_${column}_idx`).toBeDefined();
+      // Only the index this migration owns has to be a btree — an extra index of another
+      // access method on the same column (a BRIN for an analytics scan, say) is a
+      // legitimate addition, not a regression of FK coverage.
+      expect(named?.method, `${table}_${column}_idx is a ${named?.method}, not a btree`).toBe(
+        'btree',
+      );
     }
   });
 
@@ -164,6 +171,10 @@ describe('foreign key indexes (integration)', () => {
     // serve the per-user reads they were built for. Dropping one in favour of "we already
     // index activityId now" would quietly regress the per-user path, which no other
     // assertion here would catch.
+    //
+    // `AiChatSession_userId_activityId_idx` is NOT in this set on purpose: #1374 dropped it
+    // as a strict leading prefix of the (userId, activityId, mode) index, which serves the
+    // same seeks. It is listed in the query so that re-adding it fails here.
     const rows = await prisma.$queryRaw`
       SELECT indexname FROM pg_indexes
       WHERE schemaname = 'public'
@@ -177,9 +188,19 @@ describe('foreign key indexes (integration)', () => {
     expect(rows.map((r) => r.indexname).toSorted()).toEqual([
       'ActivityFeedback_userId_activityId_key',
       'ActivityStudentMetric_userId_activityId_key',
-      'AiChatSession_userId_activityId_idx',
       'AiChatSession_userId_activityId_mode_idx',
     ]);
+  });
+
+  it('indexes the per-user columns the FK audit cannot see', async () => {
+    // `userId` carries no FK anywhere in this schema (Core owns User), so every other
+    // assertion in this file is blind to it while these are the hottest per-user reads.
+    const rows = await prisma.$queryRaw`
+      SELECT indexname FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname IN ('Submission_userId_idx', 'CourseEnrollment_userId_idx')
+    `;
+    expect(rows.map((r) => r.indexname).toSorted()).toEqual(EXPECTED_NON_FK_INDEXES);
   });
 
   it('keeps the FK columns that ride a leading PK/unique, without giving them their own', async () => {
@@ -227,5 +248,8 @@ describe('foreign key indexes (integration)', () => {
 
     // The rollback must have restored it.
     expect(await findUnindexedForeignKeys()).toEqual(DELIBERATELY_UNINDEXED_FKS);
-  });
+    // Per-test budget above the transaction's own, so a slow runner hits the P2028-free
+    // path the 30s below buys rather than vitest's 15s default killing the test with the
+    // DROP's ACCESS EXCLUSIVE lock still held on the suite's single pooled connection.
+  }, 45_000);
 });

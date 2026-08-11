@@ -22,13 +22,13 @@ docs/perf/
   backend/
     foreign-key-indexes-ai-tutor.md   AI-Tutor content-tree FK indexes: what landed, what was
                                       deliberately skipped, before/after EXPLAIN (issue #1374)
-  backend/baseline/            the pinned BEFORE snapshot — API + code quality (issue #961)
-    endpoints.md               inventory: app / method / path / auth / handler
-    response-times.json        p50/p95/p99 + payload bytes + status per route (machine-readable)
-    SUMMARY.md                 headline numbers + full environment fingerprint
-    duplication/               jscpd report (json + html)
-    dead-code/                 knip + ts-prune output
-    dep-graph/                 madge circular-dep + module graph (json + svg)
+    baseline/                  the pinned BEFORE snapshot — API + code quality (issue #961)
+      endpoints.md             inventory: app / method / path / auth / handler
+      response-times.json      p50/p95/p99 + payload bytes + status per route (machine-readable)
+      SUMMARY.md               headline numbers + full environment fingerprint
+      duplication/             jscpd report (json + html)
+      dead-code/               knip + ts-prune output
+      dep-graph/               madge circular-dep + module graph (json + svg)
   frontend/baseline/           the pinned BEFORE snapshot — per-page browser vitals
     page-vitals.json           TTFB/FCP/LCP/DCL/load/CLS/blocking + JS totals per page
     errors.json                pages that produced no trustworthy number, and why

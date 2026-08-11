@@ -1,24 +1,24 @@
 # Changelog
 
+All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
+
+> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
+
 ## [Week 15 — August 10–16, 2026]
 
 ### Changed
 
-- [ai-tutor] perf: Index the 12 content-tree foreign keys that had no usable leading-column index, turning the seq scans behind every `CourseOffering → Module → Lesson → Activity → Submission` hop and their cascade deletes into index scans (34ms → 0.11ms on `Activity.lessonId` at 200k rows). Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
+- [ai-tutor] perf: Index the content-tree foreign keys and per-user columns that had no usable leading-column index, turning the seq scans behind every `CourseOffering → Module → Lesson → Activity → Submission` hop, their cascade/restrict deletes, and the "my submissions" / "my courses" reads into index scans (34ms → 0.11ms on `Activity.lessonId` at 200k rows), and drop the redundant `AiChatSession(userId, activityId)` prefix index. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
 
 ### Tests
 
-- [ai-tutor] test: Add `foreignKeyIndexes.test.js`, a schema guard that audits the live test database for foreign keys whose leading column has no usable index, pins the unindexed set to the two documented deferrals, and proves the audit reacts by dropping an index inside a rolled-back transaction. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
+- [ai-tutor] test: Add `foreignKeyIndexes.test.js`, a schema guard that audits the live test database for foreign keys whose leading column has no usable index, pins the unindexed set to the one documented deferral, checks the per-user columns the FK audit cannot see, and proves the audit reacts by dropping an index inside a rolled-back transaction. Closes #1374. (@abdullahmoh21, 2026-08-10) — [#1470](https://github.com/EduAI-Lab/EduAI/pull/1470)
 
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
 
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
-
-All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
-
-> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 ## [Week 14 — August 3–9, 2026]
 

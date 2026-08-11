@@ -10,16 +10,22 @@
 -- only seek on a leading column:
 --   ActivityFeedback.activityId       - trailing half of @@unique([userId, activityId])
 --   ActivityStudentMetric.activityId  - trailing half of @@unique([userId, activityId])
---   AiChatSession.activityId          - trailing in both existing (userId, ...) indexes
+--   AiChatSession.activityId          - trailing in the existing (userId, ...) index
 --   ActivitySecondaryTopic.topicId    - trailing half of @@id([activityId, topicId])
+--   CourseEnrollment.userId           - trailing half of @@id([courseOfferingId, userId])
 -- The composites are kept: they serve the per-user reads. The single-column indexes below
 -- serve the activity-scoped reads and the ON DELETE CASCADE / SET NULL integrity checks.
 --
--- Two candidates were evaluated and deliberately NOT indexed: Activity.mainTopicId and
--- Activity.promptTemplateId. Both are only written, or read back as a scalar off an
--- already-loaded activity row; neither appears in a where-filter, and no code path deletes
--- a Topic or a PromptTemplate, so their integrity checks never run. Reasoning is recorded
--- on the Activity model in schema.prisma so it is not re-derived later.
+-- One candidate was evaluated and deliberately NOT indexed: Activity.promptTemplateId. It
+-- is only written, or read back as a scalar off an already-loaded activity row; it appears
+-- in no where-filter, and no code path deletes a PromptTemplate, so its ON DELETE SET NULL
+-- check never runs. Reasoning is recorded on the Activity model in schema.prisma so it is
+-- not re-derived later.
+--
+-- Two user-scoped columns are indexed here even though they carry no FK (the User table is
+-- owned by Core, so a pg_constraint audit cannot see them): Submission.userId and
+-- CourseEnrollment.userId are the leading predicate of the "my submissions" and "my
+-- courses" reads and of every course-access check.
 --
 -- No CREATE INDEX CONCURRENTLY: Prisma runs each migration inside a transaction, where it
 -- is not permitted, and nothing else in prisma/migrations uses it. At current volumes the
@@ -45,3 +51,17 @@ CREATE INDEX IF NOT EXISTS "AiInteractionTrace_aiChatSessionId_idx" ON "AiIntera
 -- Roster and topic join.
 CREATE INDEX IF NOT EXISTS "CourseInstructor_courseOfferingId_idx" ON "CourseInstructor"("courseOfferingId");
 CREATE INDEX IF NOT EXISTS "ActivitySecondaryTopic_topicId_idx" ON "ActivitySecondaryTopic"("topicId");
+
+-- Activity.mainTopicId: the topic remap route filters activity.updateMany({ where:
+-- { mainTopicId } }) and then deletes the source topics, and the relation is required, so
+-- it is ON DELETE RESTRICT — every topic delete (remap, and the CourseOffering cascade)
+-- scans Activity to look for referencing rows without this.
+CREATE INDEX IF NOT EXISTS "Activity_mainTopicId_idx" ON "Activity"("mainTopicId");
+
+-- Per-user reads on Core-owned user ids (no FK, so invisible to the FK audit).
+CREATE INDEX IF NOT EXISTS "Submission_userId_idx" ON "Submission"("userId");
+CREATE INDEX IF NOT EXISTS "CourseEnrollment_userId_idx" ON "CourseEnrollment"("userId");
+
+-- Redundant: a strict leading prefix of AiChatSession_userId_activityId_mode_idx, so it
+-- serves no read that index does not, and costs a write on every session insert.
+DROP INDEX IF EXISTS "AiChatSession_userId_activityId_idx";

@@ -220,19 +220,24 @@ See `server/prisma/schema.prisma` for the full schema.
 
 ### Indexes
 
-Every foreign key in the tree above is indexed with its own leading-column btree (#1374).
-Postgres does not auto-index FK child columns and Prisma only emits indexes for `@id` /
-`@unique` / `@@unique`, so **adding a relation means adding an `@@index` for it** — otherwise
+Every foreign key in the tree above can be seeked on by its leading column (#1374). Postgres
+does not auto-index FK child columns and Prisma only emits indexes for `@id` / `@unique` /
+`@@unique`, so **adding a relation means making sure its column leads some index** — otherwise
 the parent-to-children read and the `ON DELETE CASCADE` both fall back to a sequential scan.
 
-A column that appears only in the *trailing* half of a composite key is not covered: a btree on
-`(userId, activityId)` cannot serve `WHERE activityId = ?`. Conversely a column that *leads* a
-PK or unique needs no index of its own.
+That does not always mean a new `@@index`. A column that appears only in the *trailing* half of
+a composite key is not covered — a btree on `(userId, activityId)` cannot serve
+`WHERE activityId = ?` — but a column that already *leads* a PK or unique is, and giving it a
+standalone index just duplicates that one on every write.
+
+The same rule applies to `userId`, which carries no FK at all (Core owns the User table): it
+leads its own index on `Submission` and `CourseEnrollment` because the per-user reads filter on
+it alone.
 
 `tests/integration/foreignKeyIndexes.test.js` enforces this against the live test database, so a
-new unindexed relation fails CI rather than quietly regressing. The two intentional exceptions
-(`Activity.mainTopicId`, `Activity.promptTemplateId`) are pinned there and explained in
-`docs/perf/backend/foreign-key-indexes-ai-tutor.md`.
+new unindexed relation fails CI rather than quietly regressing. The one intentional exception
+(`Activity.promptTemplateId`, never filtered on and never orphaned) is pinned there and
+explained in `docs/perf/backend/foreign-key-indexes-ai-tutor.md`.
 
 ### Migrations
 

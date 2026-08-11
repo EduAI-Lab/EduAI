@@ -82,6 +82,9 @@ model CourseEnrollment {
   courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
 
   @@id([courseOfferingId, userId])
+  // `userId` is the trailing half of the PK, so the "my courses" list and every
+  // course-access check (`enrollments: { some: { userId } }`) could not seek on it (#1374).
+  @@index([userId])
 }
 
 /// Topic taxonomy scoped to a single CourseOffering.
@@ -185,13 +188,20 @@ model Activity {
   activityStudentMetrics ActivityStudentMetric[]
   aiInteractionTraces    AiInteractionTrace[]
 
-  // `mainTopicId` and `promptTemplateId` are deliberately left unindexed (#1374).
-  // Both are only ever written, or read back as a scalar off an already-loaded
-  // activity row — neither appears in a `where` filter, and no code path deletes a
-  // Topic or PromptTemplate, so the referential-integrity check never runs in
-  // anger either. Revisit if a "list activities by topic" or "by prompt template"
-  // read lands, or if topic deletion becomes a real operation.
+  // `promptTemplateId` is deliberately left unindexed (#1374): it is only ever
+  // written, or read back as a scalar off an already-loaded activity row — it
+  // appears in no `where` filter, and no code path deletes a PromptTemplate, so
+  // its `ON DELETE SET NULL` check never runs in anger. Revisit if a "list
+  // activities by prompt template" read lands, or if template deletion becomes a
+  // real operation.
+  //
+  // `mainTopicId` IS indexed: the topic remap route filters
+  // `activity.updateMany({ where: { mainTopicId } })` and then deletes the source
+  // topics, and the relation is required, so it is `ON DELETE RESTRICT` — every
+  // topic delete (remap, and the CourseOffering cascade) has to check Activity for
+  // referencing rows.
   @@index([lessonId])
+  @@index([mainTopicId])
 }
 
 /// A student's attempt at an Activity. Submissions are versioned per-attempt
@@ -214,6 +224,9 @@ model Submission {
   activityFeedback ActivityFeedback[]
 
   @@index([activityId])
+  // `GET /me/submissions` filters on `userId` alone; without this it is a seq scan
+  // plus sort over the largest table in the tree (#1374).
+  @@index([userId])
 }
 
 model ActivitySecondaryTopic {
@@ -335,9 +348,11 @@ model AiChatSession {
   updatedAt           DateTime             @updatedAt
   aiInteractionTraces AiInteractionTrace[]
 
-  @@index([userId, activityId])
+  // `(userId, activityId)` was dropped in #1374: it is a strict leading prefix of
+  // `(userId, activityId, mode)`, so it served no read the wider index does not and
+  // was pure write amplification on session insert.
   @@index([userId, activityId, mode])
-  // Both composites lead with `userId`, so an activity-scoped read and Activity's
+  // The composite leads with `userId`, so an activity-scoped read and Activity's
   // onDelete: Cascade still fall back to a scan without this (#1374).
   @@index([activityId])
 }

@@ -21,17 +21,20 @@ trailing half of a composite is, for a filter on that column alone, no better th
 | `ActivityStudentMetric.activityId` | `@@unique([userId, activityId])` | trailing |
 | `AiChatSession.activityId` | `@@index([userId, activityId])`, `@@index([userId, activityId, mode])` | trailing in both |
 | `ActivitySecondaryTopic.topicId` | `@@id([activityId, topicId])` | trailing |
+| `CourseEnrollment.userId` | `@@id([courseOfferingId, userId])` | trailing (no FK — see below) |
 
-The composites all stay — they serve the per-user reads they were built for. The new
-single-column indexes serve the activity-scoped reads and the `ON DELETE CASCADE` /
-`ON DELETE SET NULL` integrity checks.
+The composites stay — they serve the per-user reads they were built for. The one exception is
+`AiChatSession(userId, activityId)`, dropped here because it is a strict leading *prefix* of
+`(userId, activityId, mode)`: the wider index already answers every seek the narrow one did.
+The new single-column indexes serve the activity-scoped reads and the `ON DELETE CASCADE` /
+`ON DELETE SET NULL` / `ON DELETE RESTRICT` integrity checks.
 
 The mirror-image case is `ActivitySecondaryTopic.activityId`, which was **not** indexed and
 should not be: the primary key already leads with it. Adding one would be pure write cost.
 
 ## What landed
 
-Migration `20260810000000_index_ai_tutor_foreign_keys` — 12 indexes.
+Migration `20260810000000_index_ai_tutor_foreign_keys` — 15 indexes added, 1 dropped.
 
 | Index | Column | Why |
 |---|---|---|
@@ -42,24 +45,41 @@ Migration `20260810000000_index_ai_tutor_foreign_keys` — 12 indexes.
 | `ActivityFeedback_activityId_idx` | `ActivityFeedback(activityId)` | Trailing in the unique; `onDelete: Cascade` |
 | `ActivityFeedback_submissionId_idx` | `ActivityFeedback(submissionId)` | `onDelete: SetNull` — every Submission delete scanned this table |
 | `ActivityStudentMetric_activityId_idx` | `ActivityStudentMetric(activityId)` | Trailing in the unique; `onDelete: Cascade` |
-| `AiChatSession_activityId_idx` | `AiChatSession(activityId)` | Trailing in both composites; `onDelete: Cascade` |
+| `AiChatSession_activityId_idx` | `AiChatSession(activityId)` | Trailing in the `userId` composite; `onDelete: Cascade` |
+| `Activity_mainTopicId_idx` | `Activity(mainTopicId)` | Topic remap filters on it, then deletes the source topics; relation is required, so `ON DELETE RESTRICT` checks `Activity` on every topic delete |
 | `AiInteractionTrace_activityId_idx` | `AiInteractionTrace(activityId)` | Model had no index at all; `onDelete: Cascade` |
 | `AiInteractionTrace_aiChatSessionId_idx` | `AiInteractionTrace(aiChatSessionId)` | `onDelete: SetNull` — every chat-session delete scanned the trace table |
 | `CourseInstructor_courseOfferingId_idx` | `CourseInstructor(courseOfferingId)` | PK leads with `userId`, so the per-offering roster read couldn't seek |
 | `ActivitySecondaryTopic_topicId_idx` | `ActivitySecondaryTopic(topicId)` | Trailing in the PK; `onDelete: Cascade` from `Topic` |
 
+### Columns with no FK, indexed anyway
+
+`userId` is a Core CUID everywhere in this schema — Core owns the `User` table, so there is no
+local foreign key and a `pg_constraint` audit cannot see these columns at all. Two of them are
+the sole predicate of a hot read and trail their table's key, so they were seq scans:
+
+| Index | Column | Why |
+|---|---|---|
+| `Submission_userId_idx` | `Submission(userId)` | `GET /me/submissions` filters on `userId` alone, over the largest table in the tree |
+| `CourseEnrollment_userId_idx` | `CourseEnrollment(userId)` | PK leads with `courseOfferingId`; the "my courses" list and every `enrollments: { some: { userId } }` access check filter on `userId` |
+
+### Dropped
+
+| Index | Why |
+|---|---|
+| `AiChatSession_userId_activityId_idx` | Strict leading prefix of `AiChatSession_userId_activityId_mode_idx`, so it served no read that index does not, and cost a write on every session insert |
+
 ### Evaluated and deliberately left out
 
 | Column | Why not |
 |---|---|
-| `Activity.mainTopicId` | Required FK, but it is only ever written or read back as a scalar off an already-loaded activity row. It appears in no `where` filter, and no code path deletes a `Topic`, so the referential-integrity check never runs. |
-| `Activity.promptTemplateId` | Same shape — write-only in practice, nullable, and `PromptTemplate` has 3 seeded rows that are never deleted. |
+| `Activity.promptTemplateId` | Write-only in practice — read back as a scalar off an already-loaded activity row, never a `where` filter. Nullable, and `PromptTemplate` has 3 seeded rows that are never deleted, so the `ON DELETE SET NULL` check never runs. |
 
-Revisit both if a "list activities by topic" / "by prompt template" read lands, or if topic
-deletion becomes a real operation. The reasoning is also recorded on the `Activity` model in
-`schema.prisma`, so it doesn't have to be re-derived from this file.
+Revisit if a "list activities by prompt template" read lands, or if template deletion becomes a
+real operation. The reasoning is also recorded on the `Activity` model in `schema.prisma`, so it
+doesn't have to be re-derived from this file.
 
-Audit result: **14 unindexed FKs before → 2 after**, and those 2 are exactly the deferrals above.
+Audit result: **14 unindexed FKs before → 1 after**, and that 1 is exactly the deferral above.
 
 ## No `CREATE INDEX CONCURRENTLY`
 
@@ -106,8 +126,8 @@ for a current hotspot.
 
 ## Cost
 
-12 indexes is 12 write-amplification points. The highest-insert tables here are `Submission`
-and `AiInteractionTrace` (one row per learner attempt / per AI turn). That cost is accepted
-because both are also the tables whose reads and cascade deletes were scanning; the tables that
-would have been pure write cost (`Activity.mainTopicId`, `promptTemplateId`) are the two
-deliberately skipped.
+15 indexes is 15 write-amplification points, less the one redundant `AiChatSession` prefix this
+migration drops. The highest-insert tables here are `Submission` and `AiInteractionTrace` (one
+row per learner attempt / per AI turn). That cost is accepted because both are also the tables
+whose reads and cascade deletes were scanning; the one column that would have been pure write
+cost (`Activity.promptTemplateId`) is the one deliberately skipped.
