@@ -14,11 +14,13 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import {
   resolveCourseAccess,
+  resolveCourseAccessGate,
   resolveCourseAccessWithCourse,
   buildCourseListFilter,
   stripAnswerForStudents,
   getAuthorizedUnits,
   wantsIncludeDeleted,
+  GATE_COURSE_SELECT,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 
@@ -36,9 +38,9 @@ describe("resolveCourseAccess", () => {
     prismaMock.course.findFirst.mockResolvedValue(null);
     const access = await resolveCourseAccess({ id: "u1", role: "ADMIN" }, "missing");
     expect(access).toBeNull();
-    expect(prismaMock.course.findFirst).toHaveBeenCalledWith({
-      where: { id: "missing", deletedAt: null },
-    });
+    expect(prismaMock.course.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "missing", deletedAt: null } }),
+    );
   });
 
   it("resolves ADMIN to rank 4 without touching enrollments", async () => {
@@ -169,6 +171,129 @@ describe("resolveCourseAccess", () => {
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "BOGUS", isActive: true });
     const { access } = await resolveCourseAccessWithCourse({ id: "u1", role: "STUDENT" }, "c1");
     expect(access).toBeNull();
+  });
+});
+
+// #947: `resolveCourseAccessGate` is the narrow-projection twin of
+// `resolveCourseAccessWithCourse`. Both delegate to the same private decision
+// helper, so this suite re-walks every role branch through the gate to prove
+// the projection did not change any access semantics (rbac-matrix.md §3, §19).
+describe("resolveCourseAccessGate", () => {
+  it("projects only the gate columns and still filters soft-deleted courses", async () => {
+    await resolveCourseAccessGate({ id: "u1", role: "ADMIN" }, "c1");
+    expect(prismaMock.course.findFirst).toHaveBeenCalledWith({
+      where: { id: "c1", deletedAt: null },
+      select: GATE_COURSE_SELECT,
+    });
+    expect(GATE_COURSE_SELECT).toEqual({
+      id: true,
+      department: true,
+      isPublished: true,
+      instructorId: true,
+      deletedAt: true,
+    });
+  });
+
+  it("returns { course: null, access: null } for a missing course", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const result = await resolveCourseAccessGate({ id: "u1", role: "INSTRUCTOR" }, "missing");
+    expect(result).toEqual({ course: null, access: null });
+  });
+
+  it("returns { course: null, access: null } for a soft-deleted course", async () => {
+    // The `deletedAt: null` WHERE clause makes a soft-deleted row invisible, so
+    // the query resolves to null exactly as a missing course does.
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const result = await resolveCourseAccessGate(
+      { id: "u1", role: "ADMIN" },
+      "soft-deleted",
+    );
+    expect(result).toEqual({ course: null, access: null });
+    expect(prismaMock.course.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "soft-deleted", deletedAt: null } }),
+    );
+  });
+
+  it("resolves ADMIN to rank 4 without reading enrollments", async () => {
+    const { course, access } = await resolveCourseAccessGate({ id: "u1", role: "ADMIN" }, "c1");
+    expect(access).toEqual({ level: "admin", rank: 4 });
+    expect(course).toEqual(COURSE);
+    expect(prismaMock.enrollment.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("resolves UNIT_ADMIN in-unit to rank 3 without reading enrollments", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "STUDENT", isActive: true });
+    const { access } = await resolveCourseAccessGate(
+      { id: "u1", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
+      "c1",
+    );
+    expect(access).toEqual({ level: "unit", rank: 3 });
+    expect(prismaMock.enrollment.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("§19 unit lock: a null department is never a match for UNIT_ADMIN", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ ...COURSE, department: null });
+    const { access } = await resolveCourseAccessGate(
+      { id: "u1", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
+      "c1",
+    );
+    expect(access).toBeNull();
+  });
+
+  it("falls through to the enrollment check for UNIT_ADMIN outside their units", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
+    const { access } = await resolveCourseAccessGate(
+      { id: "u1", role: "UNIT_ADMIN", authorizedUnits: ["MATH"] },
+      "c1",
+    );
+    expect(access).toEqual({ level: "ta", rank: 1 });
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledWith({
+      where: { courseId_userId: { courseId: "c1", userId: "u1" } },
+    });
+  });
+
+  it.each([
+    ["INSTRUCTOR", { level: "instructor", rank: 2 }],
+    ["TA", { level: "ta", rank: 1 }],
+    ["STUDENT", { level: "student", rank: 0 }],
+  ])("resolves an active %s enrollment", async (enrollmentRole, expected) => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({
+      role: enrollmentRole,
+      isActive: true,
+    });
+    const { course, access } = await resolveCourseAccessGate({ id: "u1", role: "STUDENT" }, "c1");
+    expect(access).toEqual(expected);
+    expect(course).toEqual(COURSE);
+  });
+
+  it("returns the course but no access for an inactive enrollment (404 vs 403)", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: false });
+    const { course, access } = await resolveCourseAccessGate({ id: "u1", role: "STUDENT" }, "c1");
+    expect(access).toBeNull();
+    expect(course).toEqual(COURSE);
+  });
+
+  it("does not re-issue the enrollment query when the parallel read found nothing", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue(null);
+    const { access } = await resolveCourseAccessGate({ id: "u1", role: "STUDENT" }, "c1");
+    expect(access).toBeNull();
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the publish gate to callers — an unpublished course still resolves student", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ ...COURSE, isPublished: false });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "STUDENT", isActive: true });
+    const { course, access } = await resolveCourseAccessGate({ id: "u1", role: "STUDENT" }, "c1");
+    expect(access).toEqual({ level: "student", rank: 0 });
+    expect(course?.isPublished).toBe(false);
+  });
+
+  it("agrees with resolveCourseAccessWithCourse on the access decision", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
+    const user = { id: "u1", role: "STUDENT" };
+    const gate = await resolveCourseAccessGate(user, "c1");
+    const wide = await resolveCourseAccessWithCourse(user, "c1");
+    expect(gate.access).toEqual(wide.access);
   });
 });
 

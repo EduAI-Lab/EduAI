@@ -84,23 +84,33 @@ export type GateCourse = Prisma.CourseGetPayload<{
  * ask for — the RBAC logic is never duplicated.
  *
  * The enrollment lookup is keyed on `courseId`/`userId` alone, so it does not
- * depend on the course row and starts in parallel with it. `getAuthorizedUnits`
- * DOES depend on `course.department` and stays sequential on the UNIT_ADMIN
- * branch. ADMIN keeps its single-query path: the enrollment read is only issued
- * for callers whose decision could need it.
+ * depend on the course row and can start alongside it. It is only *speculated*
+ * for roles whose decision always needs it:
+ *   - ADMIN short-circuits before the enrollment check and never reads it.
+ *   - UNIT_ADMIN reaches it only after the unit check falls through, and that
+ *     check is already sequential behind `course.department` — speculating
+ *     there would add a query without saving a round trip, so it stays lazy.
+ * Every other role always needs the enrollment, so it runs in parallel with the
+ * course fetch. Net effect: no role issues more queries than before, and the
+ * common path drops one round trip.
+ *
+ * `getAuthorizedUnits` DOES depend on `course.department` and stays sequential
+ * on the UNIT_ADMIN branch.
  */
 async function resolveAccess<C extends { department: string | null }>(
   user: RbacUser,
   courseId: string,
   fetchCourse: () => Promise<C | null>,
 ): Promise<{ course: C | null; access: AccessLevel | null }> {
-  const [course, enrollment] = await Promise.all([
+  const findEnrollment = () =>
+    prisma.enrollment.findUnique({
+      where: { courseId_userId: { courseId, userId: user.id } },
+    });
+
+  const speculated = user.role !== "ADMIN" && user.role !== "UNIT_ADMIN";
+  const [course, preloadedEnrollment] = await Promise.all([
     fetchCourse(),
-    user.role === "ADMIN"
-      ? null
-      : prisma.enrollment.findUnique({
-          where: { courseId_userId: { courseId, userId: user.id } },
-        }),
+    speculated ? findEnrollment() : null,
   ]);
 
   if (!course) return { course: null, access: null };
@@ -118,6 +128,10 @@ async function resolveAccess<C extends { department: string | null }>(
     // UNIT_ADMIN outside their units may still hold an enrollment — fall through.
   }
 
+  // `speculated` (not `preloadedEnrollment != null`) decides whether to reuse:
+  // a speculated query that found nothing is a real "no enrollment" answer and
+  // must not be re-issued.
+  const enrollment = speculated ? preloadedEnrollment : await findEnrollment();
   if (!enrollment?.isActive) return { course, access: null };
 
   switch (enrollment.role) {
