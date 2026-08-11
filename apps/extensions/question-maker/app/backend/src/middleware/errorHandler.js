@@ -5,6 +5,7 @@
 import { Prisma } from '@eduai/question-maker-prisma-client';
 import { logger } from '../utils/logger.js';
 import { PaginationError } from '../utils/pagination.js';
+import { forgetUserRow } from '../services/authService.js';
 
 /** Creates a 404 error for unmatched routes so the main handler can respond consistently. */
 export const notFound = (req, res, next) => {
@@ -43,7 +44,11 @@ export const errorHandler = (err, req, res, next) => {
         : 'Resource already exists';
       error = { message, status: 409 };
     } else if (err.code === 'P2003') {
-      // Foreign-key violation → 400 (references a missing record)
+      // Foreign-key violation → 400 (references a missing record). The missing
+      // record may be the caller's own local user row (wiped by a seed/restore
+      // while their id is still memoized), so drop the memo — otherwise every
+      // FK-dependent write keeps failing for the rest of the cache TTL (#1388).
+      forgetUserRow(req.user?.id);
       error = { message: 'Referenced resource does not exist', status: 400 };
     } else if (err.code === 'P2025') {
       // Record required for the operation was not found → 404

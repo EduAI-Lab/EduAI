@@ -105,6 +105,27 @@ describe('requireAuth', () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
+  // A DB failure in the local-row upsert says nothing about the session, so it
+  // must not be reported as 401 — the frontend's 401 interceptor would sign a
+  // perfectly valid user out (#1388 review).
+  it('returns 503, not 401, when the local user row upsert fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+    }));
+    findOrCreateUser.mockRejectedValue(new Error('db down'));
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, error: 'Service temporarily unavailable' }),
+    );
+  });
+
   // #225 edge-case audit SEAM-01 / #1197 fix: a Core 429 (IP rate limit) is
   // passed through as 429 with Retry-After forwarded, instead of collapsing
   // into a generic 401 that would make every extension API call look like

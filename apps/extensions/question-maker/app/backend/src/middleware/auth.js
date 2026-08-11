@@ -8,6 +8,7 @@
 import { findOrCreateUser } from '../services/authService.js';
 import { VALID_ROLES } from './roles.js';
 import { config } from '../config/settings.js';
+import { logger } from '../utils/logger.js';
 
 function normalizeRole(role) {
   return VALID_ROLES.has(role) ? role : 'STUDENT';
@@ -21,8 +22,14 @@ function normalizeRole(role) {
  * forwarded when present, instead of being collapsed into a generic 401 —
  * otherwise every extension API call looks like "logged out" during a
  * rate-limit window (#225 edge-case audit SEAM-01 / #1197).
+ *
+ * The local-row upsert is deliberately outside the session try/catch: a DB
+ * failure there says nothing about the session, and reporting it as 401 would
+ * make the frontend's 401 interceptor sign a valid user out.
  */
 export async function requireAuth(req, res, next) {
+  let normalizedUser;
+
   try {
     const response = await fetch(`${config.coreUrl}/api/sessions/validate`, {
       method: 'POST',
@@ -40,15 +47,23 @@ export async function requireAuth(req, res, next) {
     }
 
     const { user: coreUser } = await response.json();
-    const normalizedUser = { ...coreUser, role: normalizeRole(coreUser.role) };
+    normalizedUser = { ...coreUser, role: normalizeRole(coreUser.role) };
+  } catch (err) {
+    logger.warn({ err }, 'Core session validation failed');
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  try {
     // FK integrity only, and memoized per user — `req.user` below is the Core
     // shape, so the local row is never read back here.
     await findOrCreateUser(normalizedUser);
-    req.user = normalizedUser;
-    next();
-  } catch {
-    res.status(401).json({ success: false, error: 'Authentication required' });
+  } catch (err) {
+    logger.error({ err, userId: normalizedUser.id }, 'Local user row upsert failed');
+    return res.status(503).json({ success: false, error: 'Service temporarily unavailable' });
   }
+
+  req.user = normalizedUser;
+  next();
 }
 
 /**
