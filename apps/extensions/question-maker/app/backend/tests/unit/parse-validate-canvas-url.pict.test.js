@@ -31,8 +31,17 @@ function runQmValidator(rawUrl) {
 describe.each(rows.map((row, index) => [index, row]))(
   "parse-validate-canvas-url PICT QM row #%i %s/%s/%s",
   (index, row) => {
-    it("matches the shared oracle", () => {
-      const expected = parseValidateCanvasUrlOracle(row);
+    it('matches the shared oracle', () => {
+      const sharedExpected = parseValidateCanvasUrlOracle(row);
+      // QM intentionally strengthens the older cross-product oracle: Canvas
+      // configuration is an origin, not an arbitrary URL. Keep the PICT input
+      // coverage while asserting the stricter finding-specific contract.
+      const expected = {
+        accept:
+          sharedExpected.accept &&
+          row.UrlShape === 'https-host' &&
+          row.ExtraPath === 'none',
+      };
       const rawUrl = canvasUrlStringForRow(row);
       const actual = runQmValidator(rawUrl);
       expect(actual.accept).toBe(expected.accept);

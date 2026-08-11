@@ -21,20 +21,43 @@ export class CanvasUrlValidationError extends Error {
   }
 }
 
-/** True for 10/8, 127/8, 169.254/16 (incl. cloud metadata), 172.16/12, 192.168/16, and 0.0.0.0/8. */
-function isPrivateIPv4(address) {
-  const parts = address.split(".").map(Number);
+function ipv4ToInteger(address) {
+  const parts = address.split('.').map(Number);
   if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
-    return false;
+    return null;
   }
-  const [a, b] = parts;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 0) return true;
-  return false;
+  return parts.reduce((value, part) => ((value << 8) | part) >>> 0, 0);
+}
+
+function ipv4IsInCidr(value, base, prefixLength) {
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
+  return (value & mask) === (ipv4ToInteger(base) & mask);
+}
+
+// IANA special-purpose ranges that are not globally routable. Rejecting the
+// complete enclosing blocks is deliberately conservative for an LMS origin:
+// a legitimate Canvas installation should never need one as an IP literal.
+const NON_GLOBAL_IPV4_RANGES = [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.88.99.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+];
+
+function isNonGlobalIPv4(address) {
+  const value = ipv4ToInteger(address);
+  return value === null || NON_GLOBAL_IPV4_RANGES.some(([base, prefix]) => ipv4IsInCidr(value, base, prefix));
 }
 
 /**
@@ -69,25 +92,20 @@ export function isPrivateIPv6(address) {
   if (normalized.startsWith("::ffff:")) {
     // Node's URL parser normalizes an IPv4-mapped literal to hex groups
     // (e.g. `::ffff:127.0.0.1` -> `::ffff:7f00:1`), so handle both forms.
-    const embedded = normalized.slice("::ffff:".length);
-    if (embedded.includes(".")) {
-      return isPrivateIPv4(embedded);
+    const embedded = normalized.slice('::ffff:'.length);
+    if (embedded.includes('.')) {
+      return isNonGlobalIPv4(embedded);
     }
     const [hi, lo] = embedded.split(":").map((part) => parseInt(part, 16));
     if (Number.isInteger(hi) && Number.isInteger(lo)) {
       const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
-      return isPrivateIPv4(ipv4);
+      return isNonGlobalIPv4(ipv4);
     }
     return false;
   }
 
   const groups = expandIPv6Groups(normalized);
   if (!groups || groups.some((g) => !Number.isInteger(g))) return false;
-  const first = groups[0];
-  // fe80::/10: top 10 bits fixed => first group in [0xfe80, 0xfebf].
-  if (first >= 0xfe80 && first <= 0xfebf) return true;
-  // fc00::/7: top 7 bits fixed => first group in [0xfc00, 0xfdff].
-  if (first >= 0xfc00 && first <= 0xfdff) return true;
   // Deprecated IPv4-compatible form (::a.b.c.d, no ffff group): first six
   // groups zero. Node's URL parser normalizes the embedded IPv4 octets into
   // the last two hex groups (e.g. `::127.0.0.1` -> `::7f00:1`), so pull them
@@ -96,8 +114,20 @@ export function isPrivateIPv6(address) {
   if (groups.slice(0, 6).every((g) => g === 0)) {
     const [hi, lo] = groups.slice(6);
     const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
-    if (isPrivateIPv4(ipv4)) return true;
+    return isNonGlobalIPv4(ipv4);
   }
+
+  const first = groups[0];
+  // Globally routable unicast space is currently 2000::/3. Within that space,
+  // reject the broad IETF special-purpose block, documentation, ORCHID and
+  // transition prefixes. This also rejects multicast, link-local, ULA and
+  // unspecified space by construction.
+  if (first < 0x2000 || first > 0x3fff) return true;
+  if (first === 0x2001 && groups[1] < 0x0200) return true; // 2001::/23
+  if (first === 0x2001 && groups[1] === 0x0db8) return true; // documentation
+  if (first === 0x2001 && groups[1] >= 0x0010 && groups[1] <= 0x001f) return true; // ORCHID
+  if (first === 0x2002) return true; // deprecated 6to4
+  if (first === 0x3fff && groups[1] <= 0x0fff) return true; // 3fff::/20 documentation
   return false;
 }
 
@@ -118,10 +148,17 @@ export function validateCanvasUrl(rawUrl) {
     throw new CanvasUrlValidationError("Canvas URL must use HTTPS");
   }
 
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (parsed.username || parsed.password) {
+    throw new CanvasUrlValidationError('Canvas URL may not contain credentials');
+  }
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new CanvasUrlValidationError('Canvas URL must be an HTTPS origin without a path, query, or fragment');
+  }
+
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const ipVersion = net.isIP(hostname);
   if (
-    (ipVersion === 4 && isPrivateIPv4(hostname)) ||
+    (ipVersion === 4 && isNonGlobalIPv4(hostname)) ||
     (ipVersion === 6 && isPrivateIPv6(hostname))
   ) {
     throw new CanvasUrlValidationError(
@@ -144,8 +181,14 @@ export function createPinnedLookup() {
     dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
       if (err) return callback(err);
       if (!addresses.length) return callback(new Error(`No addresses found for ${hostname}`));
-      for (const { address, family } of addresses) {
-        const isPrivate = family === 4 ? isPrivateIPv4(address) : isPrivateIPv6(address);
+      for (const { address } of addresses) {
+        const detectedFamily = net.isIP(address);
+        const isPrivate =
+          detectedFamily === 4
+            ? isNonGlobalIPv4(address)
+            : detectedFamily === 6
+              ? isPrivateIPv6(address)
+              : true;
         if (isPrivate) {
           return callback(
             new CanvasUrlValidationError(
@@ -155,7 +198,7 @@ export function createPinnedLookup() {
         }
       }
       const [{ address, family }] = addresses;
-      callback(null, address, family);
+      callback(null, address, family || net.isIP(address));
     });
   };
 }

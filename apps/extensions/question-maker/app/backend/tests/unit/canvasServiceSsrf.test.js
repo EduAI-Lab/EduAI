@@ -66,6 +66,20 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
 
     await expect(getCanvasCourses(42)).resolves.toEqual([]);
     expect(axiosRequest).toHaveBeenCalled();
+    expect(axiosRequest.mock.calls[0][0].url).toBe(
+      'https://canvas.example.edu/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment',
+    );
+  });
+
+  it('rejects a stored base URL with a path instead of letting string concatenation alter the API target', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu/tenant',
+      apiKey: 'secret-token',
+    });
+
+    await expect(getCanvasCourses(42)).rejects.toThrow();
+    expect(axiosRequest).not.toHaveBeenCalled();
   });
 
   it('does not expose a Canvas response body through the stable service error', async () => {
@@ -148,7 +162,47 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     ).not.toThrow();
   });
 
-  it("beforeRedirect re-brackets an IPv6 hostname before validating, so a public IPv6 hop is not wrongly rejected as malformed", async () => {
+  it('beforeRedirect removes bearer authorization on a cross-origin redirect', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+    await getCanvasCourses(42);
+
+    const { beforeRedirect } = axiosRequest.mock.calls[0][0];
+    const redirectOptions = {
+      protocol: 'https:',
+      hostname: 'canvas-cdn.example.edu',
+      path: '/api/v1/courses',
+      headers: { Authorization: 'Bearer secret-token', 'Content-Type': 'application/json' },
+    };
+    expect(() => beforeRedirect(redirectOptions)).not.toThrow();
+    expect(redirectOptions.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('beforeRedirect preserves bearer authorization for a same-origin Canvas redirect', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+    await getCanvasCourses(42);
+
+    const { beforeRedirect } = axiosRequest.mock.calls[0][0];
+    const redirectOptions = {
+      protocol: 'https:',
+      hostname: 'canvas.example.edu',
+      path: '/api/v1/courses/',
+      headers: { Authorization: 'Bearer secret-token' },
+    };
+    beforeRedirect(redirectOptions);
+    expect(redirectOptions.headers.Authorization).toBe('Bearer secret-token');
+  });
+
+  it('beforeRedirect re-brackets an IPv6 hostname before validating, so a public IPv6 hop is not wrongly rejected as malformed', async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
       canvasUrl: "https://canvas.example.edu",

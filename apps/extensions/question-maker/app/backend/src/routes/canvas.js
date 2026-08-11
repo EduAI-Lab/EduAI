@@ -83,8 +83,9 @@ router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req
 
     // Validate URL format and block SSRF targets (#991) — private/link-local/
     // loopback IPs and non-HTTPS schemes.
+    let canonicalCanvasOrigin;
     try {
-      validateCanvasUrl(canvasUrl);
+      canonicalCanvasOrigin = validateCanvasUrl(canvasUrl).origin;
     } catch (e) {
       if (e instanceof CanvasUrlValidationError) {
         return res.status(400).json({
@@ -96,9 +97,9 @@ router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req
     }
 
     const integration = await saveCanvasIntegration(req.user.id, {
-      canvasUrl,
-      apiKey: apiKey || "test-key", // Use placeholder in test mode
-      isTestMode: isTestMode || false,
+      canvasUrl: canonicalCanvasOrigin,
+      apiKey: apiKey || 'test-key', // Use placeholder in test mode
+      isTestMode: isTestMode || false
     });
 
     res.json({

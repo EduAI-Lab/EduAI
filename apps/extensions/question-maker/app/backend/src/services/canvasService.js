@@ -140,8 +140,9 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
   // integration saved before this guard existed, or one whose row was
   // altered directly, can't pivot the backend into an internal network or
   // cloud metadata endpoint.
-  validateCanvasUrl(integration.canvasUrl);
-  const url = `${integration.canvasUrl}/api/v1${endpoint}`;
+  const canvasOrigin = validateCanvasUrl(integration.canvasUrl).origin;
+  const apiRoot = new URL('/api/v1/', canvasOrigin);
+  const url = new URL(endpoint.replace(/^\//, ''), apiRoot).href;
   const config = {
     method,
     url,
@@ -161,10 +162,17 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
       // follow-redirects strips the [...] brackets from an IPv6 hostname
       // before this callback runs — re-add them so the reconstructed URL
       // parses instead of being wrongly rejected as malformed.
-      const { protocol, hostname, path } = redirectOptions;
+      const { protocol, hostname, port } = redirectOptions;
       const host = net.isIP(hostname) === 6 ? `[${hostname}]` : hostname;
-      validateCanvasUrl(`${protocol}//${host}${path || ""}`);
-    },
+      const redirectOrigin = validateCanvasUrl(`${protocol}//${host}${port ? `:${port}` : ''}`).origin;
+      if (redirectOrigin !== canvasOrigin && redirectOptions.headers) {
+        for (const headerName of Object.keys(redirectOptions.headers)) {
+          if (headerName.toLowerCase() === 'authorization') {
+            delete redirectOptions.headers[headerName];
+          }
+        }
+      }
+    }
   };
 
   if (data) {

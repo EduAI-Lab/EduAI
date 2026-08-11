@@ -24,7 +24,10 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 - **Auth**: session cookie validated against EduAI Core (no local passwords/JWTs issued by this service)
 - **AI**: EduAI's hosted chat/generation API, with direct Groq/OpenAI/DeepSeek as optional fallbacks
 - **File upload**: none — OCR runs client-side in the frontend; the backend receives the already-extracted text
-- **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys
+- **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys,
+  and SSRF-safe Canvas networking. Canvas bases are canonical HTTPS origins (explicit HTTPS ports are
+  supported); IP literals and every DNS answer must be globally routable, DNS is pinned per request,
+  redirects are revalidated, and bearer credentials are removed before any cross-origin redirect.
 
 ## Project Structure
 
