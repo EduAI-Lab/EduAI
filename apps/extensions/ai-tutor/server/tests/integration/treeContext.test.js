@@ -41,9 +41,10 @@ describe("Tree context endpoints (#1207)", () => {
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
       async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
-        const role = course.enrollments.find((row) => row.userId === userId)?.role ?? null;
-        const allowed = allowedRoles.includes(role);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
+        const effectiveRole = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+        const allowed = allowedRoles.includes(effectiveRole);
+        return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
       },
     );
   });
@@ -216,6 +217,32 @@ describe("Tree context endpoints (#1207)", () => {
 
       expect(res.status).toBe(503);
       expect(res.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+    });
+
+    it('denies direct module context to a stale instructor demoted to Core TA', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'denied',
+        role: 'TA',
+      });
+
+      const res = await request(profApp).get(`/api/modules/${seed.module.id}/context`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.moduleOrdinal).toBeUndefined();
+    });
+
+    it('fails closed when Core cannot authorize direct instructor module context', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'unavailable',
+        role: null,
+      });
+
+      const res = await request(profApp).get(`/api/modules/${seed.module.id}/context`);
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('COURSE_AUTH_UNAVAILABLE');
     });
 
     it('403s a student asking about an unpublished module', async () => {

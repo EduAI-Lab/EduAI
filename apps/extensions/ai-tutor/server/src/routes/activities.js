@@ -83,8 +83,24 @@ import {
 import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/schemas/activity.js';
 import { getCoreCourseId } from '../utils/coreCourseId.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
+import { gateCourseThrough } from '../middleware/liveCoursePrincipal.js';
 
 const router = express.Router();
+
+const activityCourseInclude = {
+  lesson: { include: { module: { include: { courseOffering: true } } } },
+};
+router.use(
+  '/lessons/:lessonId/activities',
+  gateCourseThrough('lesson', 'lessonId', {
+    module: { include: { courseOffering: true } },
+  }),
+);
+router.use(
+  '/activities/:activityId',
+  gateCourseThrough('activity', 'activityId', activityCourseInclude),
+);
+router.use('/questions/:id/answer', gateCourseThrough('activity', 'id', activityCourseInclude));
 
 /**
  * Course code for AI-prompt context. `code` is Core-owned (#1072 step 3) —
@@ -477,7 +493,13 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
     }
-    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
+      ? isTa
+        ? 'TA'
+        : isStudent
+          ? 'STUDENT'
+          : null
+      : null;
     if (localRole) {
       const liveEnrollment = await getLiveStudentEnrollment(
         res,

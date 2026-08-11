@@ -5,6 +5,7 @@ import {
   makeProfessor,
   makeStudent,
   makeAdmin,
+  makeUnitAdmin,
   makeTA,
   truncateAll,
   seedMinimalCourse,
@@ -81,7 +82,11 @@ describe("Courses routes", () => {
     vi.mocked(syncCourseEnrollments).mockClear();
     vi.mocked(authorizeLiveStudentEnrollment)
       .mockReset()
-      .mockResolvedValue({ allowed: true, state: 'allowed', role: 'STUDENT' });
+      .mockImplementation(async (_courseId, _userId, { allowedRoles = ['STUDENT'] } = {}) => ({
+        allowed: true,
+        state: 'allowed',
+        role: allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : 'STUDENT',
+      }));
     vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
 
     // Course-owned fields (title/isPublished/etc) are Core-owned (#1072 step
@@ -467,6 +472,21 @@ describe("Courses routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(true);
     });
+
+    it('denies publish when Core no longer reports the local instructor as INSTRUCTOR', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'denied',
+        role: 'STUDENT',
+      });
+
+      const res = await request(profApp)
+        .patch(`/api/courses/${seed.course.id}/publish`)
+        .set('Cookie', 'session=user-session')
+        .set('Sec-Fetch-Site', 'same-origin');
+
+      expect(res.status).toBe(403);
+    });
   });
 
   // ── PATCH /api/courses/:id/unpublish ──────────────────────────────
@@ -521,22 +541,55 @@ describe("Courses routes", () => {
   // ── POST /api/courses/import-external (#578) ─────────────────────
 
   describe('POST /api/courses/import-external', () => {
-    it('rejects a platform instructor who is only a TA in the requested course', async () => {
-      vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: 'core-course-ta',
-        callerEnrollmentRole: 'TA',
-      });
+    it.each([
+      ['ADMIN', 'TA', () => makeAdmin()],
+      ['ADMIN', 'STUDENT', () => makeAdmin()],
+      ['ADMIN', 'INSTRUCTOR', () => makeAdmin()],
+      ['UNIT_ADMIN', 'TA', () => makeUnitAdmin()],
+      ['UNIT_ADMIN', 'STUDENT', () => makeUnitAdmin()],
+      ['UNIT_ADMIN', 'INSTRUCTOR', () => makeUnitAdmin()],
+    ])(
+      'lets %s ensure a %s-visible anchor without creating CourseInstructor',
+      async (_role, courseRole, user) => {
+        vi.mocked(findEduAiCourseById).mockResolvedValue({
+          id: `core-${_role.toLowerCase()}-${courseRole.toLowerCase()}-anchor`,
+          callerEnrollmentRole: courseRole,
+        });
 
-      const res = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .set('Sec-Fetch-Site', 'same-origin')
-        .send({ externalCourseId: 'core-course-ta' });
+        const res = await request(await createApp({ mockUser: user() }))
+          .post('/api/courses/import-external')
+          .set('Cookie', 'session=valid')
+          .set('Sec-Fetch-Site', 'same-origin')
+          .send({
+            externalCourseId: `core-${_role.toLowerCase()}-${courseRole.toLowerCase()}-anchor`,
+          });
 
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('CORE_COURSE_INSTRUCTOR_REQUIRED');
-      expect(await prisma.courseInstructor.count({ where: { userId: prof.id } })).toBe(1);
-    });
+        expect(res.status).toBe(201);
+        expect(
+          await prisma.courseInstructor.count({ where: { courseOfferingId: res.body.id } }),
+        ).toBe(0);
+      },
+    );
+
+    it.each(['TA', 'STUDENT'])(
+      'rejects a platform instructor whose requested-course role is %s',
+      async (courseRole) => {
+        vi.mocked(findEduAiCourseById).mockResolvedValue({
+          id: `core-course-${courseRole.toLowerCase()}`,
+          callerEnrollmentRole: courseRole,
+        });
+
+        const res = await request(profApp)
+          .post('/api/courses/import-external')
+          .set('Cookie', 'session=valid')
+          .set('Sec-Fetch-Site', 'same-origin')
+          .send({ externalCourseId: `core-course-${courseRole.toLowerCase()}` });
+
+        expect(res.status).toBe(403);
+        expect(res.body.error).toBe('CORE_COURSE_INSTRUCTOR_REQUIRED');
+        expect(await prisma.courseInstructor.count({ where: { userId: prof.id } })).toBe(1);
+      },
+    );
 
     it('imports a Core course the instructor is enrolled in', async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({

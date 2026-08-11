@@ -10,6 +10,12 @@ vi.mock('../../src/config/database.js', () => ({
       deleteMany: vi.fn(),
       update: vi.fn(),
     },
+    courseInstructor: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
+    },
   },
 }));
 
@@ -31,6 +37,7 @@ const ACTIVE_STUDENT = {
   role: 'STUDENT',
 };
 const ACTIVE_TA = { ...ACTIVE_STUDENT, role: 'TA' };
+const ACTIVE_INSTRUCTOR = { ...ACTIVE_STUDENT, studentId: 'prof-1', role: 'INSTRUCTOR' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -40,9 +47,28 @@ beforeEach(() => {
   prisma.courseEnrollment.createMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.deleteMany.mockResolvedValue({ count: 1 });
   prisma.courseEnrollment.update.mockResolvedValue({});
+  prisma.courseInstructor.findMany.mockResolvedValue([]);
+  prisma.courseInstructor.findUnique.mockResolvedValue(null);
+  prisma.courseInstructor.createMany.mockResolvedValue({ count: 0 });
+  prisma.courseInstructor.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe('authorizeLiveStudentEnrollment', () => {
+  it('authorizes and mirrors only an exact active Core INSTRUCTOR role', async () => {
+    listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_INSTRUCTOR]);
+    prisma.courseInstructor.findUnique.mockResolvedValue({ userId: 'prof-1' });
+
+    const result = await authorizeLiveStudentEnrollment(1, 'prof-1', {
+      allowedRoles: ['INSTRUCTOR'],
+    });
+
+    expect(result).toEqual({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' });
+    expect(prisma.courseInstructor.createMany).toHaveBeenCalledWith({
+      data: [{ courseOfferingId: 1, userId: 'prof-1', role: 'LEAD' }],
+      skipDuplicates: true,
+    });
+  });
+
   it('allows a local STUDENT row when Core confirms active STUDENT enrollment', async () => {
     listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_STUDENT]);
     prisma.courseEnrollment.findUnique.mockResolvedValue({ role: 'STUDENT' });

@@ -112,8 +112,11 @@ import {
 } from '../services/importTaughtCoursesService.js';
 import { listAdminBugReports } from '../services/bugReports.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
+import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
 
 const router = express.Router();
+
+router.use('/courses/:courseId', gateCourseById());
 
 /**
  * Combine Prisma where-fragments with AND, dropping the absent ones.

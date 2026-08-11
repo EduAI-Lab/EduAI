@@ -93,6 +93,8 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
     error.code = 'CORE_COURSE_INSTRUCTOR_REQUIRED';
     throw error;
   }
+  const shouldLinkInstructor =
+    instructor?.role === 'INSTRUCTOR' && externalCourse?.callerEnrollmentRole === 'INSTRUCTOR';
 
   const alreadyImported = await prisma.courseOffering.findFirst({
     where: { coreOfferingId: externalCourse.id },
@@ -101,16 +103,18 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
   if (alreadyImported) {
     // Ensure the instructor is linked to the existing course (handles seeded
     // courses and courses already imported by another user).
-    await prisma.courseInstructor.upsert({
-      where: {
-        userId_courseOfferingId: {
-          userId: instructor.id,
-          courseOfferingId: alreadyImported.id,
+    if (shouldLinkInstructor) {
+      await prisma.courseInstructor.upsert({
+        where: {
+          userId_courseOfferingId: {
+            userId: instructor.id,
+            courseOfferingId: alreadyImported.id,
+          },
         },
-      },
-      create: { courseOfferingId: alreadyImported.id, userId: instructor.id, role: "LEAD" },
-      update: {},
-    });
+        create: { courseOfferingId: alreadyImported.id, userId: instructor.id, role: 'LEAD' },
+        update: {},
+      });
+    }
 
     return { offering: alreadyImported, created: false };
   }
@@ -124,13 +128,15 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
         },
       });
 
-      await tx.courseInstructor.create({
-        data: {
-          courseOfferingId: offering.id,
-          userId: instructor.id,
-          role: "LEAD",
-        },
-      });
+      if (shouldLinkInstructor) {
+        await tx.courseInstructor.create({
+          data: {
+            courseOfferingId: offering.id,
+            userId: instructor.id,
+            role: 'LEAD',
+          },
+        });
+      }
 
       return offering;
     });

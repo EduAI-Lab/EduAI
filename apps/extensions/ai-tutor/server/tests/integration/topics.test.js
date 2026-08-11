@@ -1,6 +1,17 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
+import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+
+vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi
+      .fn()
+      .mockResolvedValue({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' }),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,
@@ -27,6 +38,11 @@ describe("Topics routes", () => {
 
   beforeEach(async () => {
     await truncateAll();
+    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
+      allowed: true,
+      state: 'allowed',
+      role: 'INSTRUCTOR',
+    });
     listEduAiCourseTopics.mockReset();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);

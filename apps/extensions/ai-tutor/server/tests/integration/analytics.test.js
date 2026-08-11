@@ -1,6 +1,16 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
+
+vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi
+      .fn()
+      .mockResolvedValue({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' }),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,

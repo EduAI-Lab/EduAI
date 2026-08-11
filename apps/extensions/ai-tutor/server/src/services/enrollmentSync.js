@@ -121,13 +121,22 @@ export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, o
         },
         select: { role: true },
       });
-      const role = enrollment?.role ?? null;
+      let role = enrollment?.role ?? null;
       const allowedRoles = new Set(
         Array.isArray(options.allowedRoles) && options.allowedRoles.length > 0
           ? options.allowedRoles
           : ['STUDENT'],
       );
-      const allowed = role != null && allowedRoles.has(role);
+      if (allowedRoles.has('INSTRUCTOR') && db.courseInstructor) {
+        const instructor = await db.courseInstructor.findUnique({
+          where: {
+            userId_courseOfferingId: { courseOfferingId, userId },
+          },
+          select: { userId: true },
+        });
+        if (instructor) role = 'INSTRUCTOR';
+      }
+      const allowed = role !== null && allowedRoles.has(role);
       return { allowed, state: allowed ? 'allowed' : 'denied', role };
     });
   } catch {
@@ -238,6 +247,10 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
   const revokedInstructorIds = existingInstructors
     .map((row) => row.userId)
     .filter((userId) => !activeInstructorIds.has(userId));
+  const existingInstructorIds = new Set(existingInstructors.map((row) => row.userId));
+  const newInstructorIds = [...activeInstructorIds].filter(
+    (userId) => !existingInstructorIds.has(userId),
+  );
 
   try {
     if (toCreate.length > 0) {
@@ -269,6 +282,12 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
     if (revokedInstructorIds.length > 0 && db.courseInstructor) {
       await db.courseInstructor.deleteMany({
         where: { courseOfferingId, userId: { in: revokedInstructorIds } },
+      });
+    }
+    if (newInstructorIds.length > 0 && db.courseInstructor) {
+      await db.courseInstructor.createMany({
+        data: newInstructorIds.map((userId) => ({ courseOfferingId, userId, role: 'LEAD' })),
+        skipDuplicates: true,
       });
     }
   } catch (e) {

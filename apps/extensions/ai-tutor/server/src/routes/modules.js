@@ -13,6 +13,7 @@ import { moveToPosition, parsePositionBody, ReorderError } from '../services/reo
 import { calculateModuleProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 import { sendSafeError } from '../utils/safeErrors.js';
+import { gateCourseById, gateCourseThrough } from '../middleware/liveCoursePrincipal.js';
 import {
   authorizeLiveStudentEnrollment,
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
@@ -20,6 +21,9 @@ import {
 } from '../services/enrollmentSync.js';
 
 const router = express.Router();
+
+router.use('/courses/:courseId/modules', gateCourseById());
+router.use('/modules/:moduleId', gateCourseThrough('module', 'moduleId', { courseOffering: true }));
 
 async function requireLiveLearnerAccess(res, course, authUser, localRole) {
   if (!['STUDENT', 'TA'].includes(localRole)) return true;
@@ -92,7 +96,13 @@ router.get("/courses/:courseId/modules", async (req, res) => {
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
-    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
+      ? isTa
+        ? 'TA'
+        : isStudent
+          ? 'STUDENT'
+          : null
+      : null;
     if (localRole && !(await requireLiveLearnerAccess(res, course, authUser, localRole))) {
       if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this course' });
       return;
@@ -237,7 +247,13 @@ router.get('/modules/:moduleId', async (req, res) => {
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this module" });
     }
-    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
+      ? isTa
+        ? 'TA'
+        : isStudent
+          ? 'STUDENT'
+          : null
+      : null;
     if (
       localRole &&
       !(await requireLiveLearnerAccess(res, module.courseOffering, authUser, localRole))
@@ -515,7 +531,13 @@ router.get("/modules/:moduleId/context", async (req, res) => {
     if (!hasElevatedAccess && !isStudent) {
       return res.status(403).json({ error: "Not authorized for this module" });
     }
-    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
+      ? isTa
+        ? 'TA'
+        : isStudent
+          ? 'STUDENT'
+          : null
+      : null;
     if (localRole && !(await requireLiveLearnerAccess(res, courseOffering, authUser, localRole))) {
       if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this module' });
       return;

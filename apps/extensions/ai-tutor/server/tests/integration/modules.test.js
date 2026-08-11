@@ -46,9 +46,10 @@ describe("Modules routes", () => {
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
       async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
-        const role = course.enrollments.find((row) => row.userId === userId)?.role ?? null;
-        const allowed = allowedRoles.includes(role);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
+        const effectiveRole = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+        const allowed = allowedRoles.includes(effectiveRole);
+        return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
       },
     );
   });
@@ -508,8 +509,25 @@ describe("Modules routes", () => {
 
   // ── PATCH /api/modules/:id (update) ───────────────────────────────
 
-  describe("PATCH /api/modules/:id", () => {
-    it("professor can update title and description", async () => {
+  describe('PATCH /api/modules/:id', () => {
+    it('denies authoring when a stale local instructor is demoted in Core', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'denied',
+        role: 'TA',
+      });
+
+      const res = await request(profApp)
+        .patch(`/api/modules/${seed.module.id}`)
+        .send({ title: 'Must not persist' });
+
+      expect(res.status).toBe(403);
+      expect(await prisma.module.findUnique({ where: { id: seed.module.id } })).toMatchObject({
+        title: 'Test Module',
+      });
+    });
+
+    it('professor can update title and description', async () => {
       const res = await request(profApp)
         .patch(`/api/modules/${seed.module.id}`)
         .send({ title: "Renamed module", description: "New description" });

@@ -18,6 +18,7 @@ import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSyn
 
 describe('activity auth hardening', () => {
   let seed;
+  let professor;
 
   async function createActivity(overrides = {}) {
     return prisma.activity.create({
@@ -49,7 +50,7 @@ describe('activity auth hardening', () => {
 
   beforeEach(async () => {
     await truncateAll();
-    const professor = makeProfessor();
+    professor = makeProfessor();
     seed = await seedMinimalCourse(professor.id);
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
       id: seed.course.coreOfferingId,
@@ -58,11 +59,12 @@ describe('activity auth hardening', () => {
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
       async (_courseOfferingId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
         const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
-        const allowed = allowedRoles.includes(enrollment?.role);
+        const role = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : enrollment?.role;
+        const allowed = allowedRoles.includes(role);
         return {
           allowed,
           state: allowed ? 'allowed' : 'denied',
-          role: enrollment?.role ?? null,
+          role: role ?? null,
         };
       },
     );
@@ -120,14 +122,30 @@ describe('activity auth hardening', () => {
     expect(response.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
   });
 
-  it('retains the answer key for an instructor activity list', async () => {
+  it('denies a stale local instructor after Core reports a per-course TA role', async () => {
     await createActivity();
-    const professor = makeProfessor();
-    await prisma.courseInstructor.create({
-      data: { courseOfferingId: seed.course.id, userId: professor.id, role: 'LEAD' },
+    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+      allowed: false,
+      state: 'denied',
+      role: 'TA',
     });
 
-    const res = await request(await createApp({ mockUser: professor })).get(
+    const response = await request(await createApp({ mockUser: professor })).get(
+      `/api/lessons/${seed.lesson.id}/activities`,
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.body.data).toBeUndefined();
+  });
+
+  it('retains the answer key for an instructor activity list', async () => {
+    await createActivity();
+    const assignedProfessor = makeProfessor();
+    await prisma.courseInstructor.create({
+      data: { courseOfferingId: seed.course.id, userId: assignedProfessor.id, role: 'LEAD' },
+    });
+
+    const res = await request(await createApp({ mockUser: assignedProfessor })).get(
       `/api/lessons/${seed.lesson.id}/activities`,
     );
 
