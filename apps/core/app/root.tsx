@@ -183,7 +183,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
-        <Links />
+        {/* HydratedRouter does not retain ServerRouter's nonce context. */}
+        <Links nonce={nonce} />
         {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
           nonce={nonce}
