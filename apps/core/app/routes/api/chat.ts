@@ -2587,11 +2587,11 @@ ${buildEmptyCourseRagBlock()}`;
             stage: "oversight-provider",
           });
         }
-        console.error("Error in ADHD oversight response:", error);
+        console.error("Error in ADHD oversight response:", providerErrorDiagnostic(error));
         return new Response(
           JSON.stringify({
             error: "Failed to generate overseen response",
-            details: error instanceof Error ? error.message : "Unknown error",
+            code: "ADHD_OVERSIGHT_FAILED",
           }),
           {
             status: 500,
