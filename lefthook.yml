@@ -1,0 +1,17 @@
+# Git hooks for the EduAI monorepo.
+#
+# Installed automatically by the root `prepare` script on `npm install`.
+# To run a hook by hand:      npx lefthook run pre-commit
+# To skip hooks for a commit: git commit --no-verify
+#
+# Only staged files are linted, so hook time stays proportional to the
+# change rather than to the repo. Formatting is deliberately not enforced
+# here — the repo has not been swept with `oxfmt --write` yet, so a format
+# gate would reject nearly every commit.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: oxlint
+      glob: "*.{js,jsx,mjs,cjs,ts,tsx}"
+      run: npx oxlint {staged_files}

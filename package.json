@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/setup-env.js",
+    "prepare": "lefthook install || true",
     "perf:quality": "node scripts/perf-quality.mjs",
     "perf:endpoints": "node scripts/perf-baseline.mjs",
     "perf:pages": "node scripts/page-profile/profile.mjs",
