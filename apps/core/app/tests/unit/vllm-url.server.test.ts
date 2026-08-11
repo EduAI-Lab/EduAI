@@ -88,4 +88,44 @@ describe("resolveAllowedVllmBaseUrl", () => {
       InvalidVllmBaseUrlError,
     );
   });
+
+  it("preserves an exact deployment-owned loopback base in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.VLLM_BASE_URL = "http://127.0.0.1:8001/v1";
+
+    expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:8001/v1")).toBe(
+      "http://127.0.0.1:8001/v1",
+    );
+  });
+
+  it.each(["staging", "preview", "qa", "production", undefined])(
+    "rejects loopback Docker/internal targets when NODE_ENV=%s",
+    (nodeEnv) => {
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      process.env.VLLM_BASE_URL = "https://vllm.example.edu:8001/v1";
+
+      expect(() => resolveAllowedVllmBaseUrl("http://127.0.0.1:2375/docker.sock")).toThrow(
+        InvalidVllmBaseUrlError,
+      );
+      expect(() => resolveAllowedVllmBaseUrl("http://[::1]:2376/internal")).toThrow(
+        InvalidVllmBaseUrlError,
+      );
+    },
+  );
+
+  it.each(["development", "test"])(
+    "allows loopback targets only for explicit local NODE_ENV=%s",
+    (nodeEnv) => {
+      process.env.NODE_ENV = nodeEnv;
+      process.env.VLLM_BASE_URL = "https://vllm.example.edu:8001/v1";
+
+      expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:2375/docker.sock")).toBe(
+        "http://127.0.0.1:2375/docker.sock",
+      );
+      expect(resolveAllowedVllmBaseUrl("http://[::1]:2376/internal")).toBe(
+        "http://[::1]:2376/internal",
+      );
+    },
+  );
 });

@@ -18,6 +18,7 @@ import {
   resolveEffectiveEmbeddingSettings,
 } from "./embedding-config";
 import { formatPgVectorLiteral } from "./pgvector";
+import { providerErrorDiagnostic } from "~/lib/ai/provider-errors.server";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -1380,7 +1381,7 @@ export async function reEmbedCourseMaterials(
     progressQueue = progressQueue
       .then(() => options?.onProgress?.(snapshot))
       .catch((err) => {
-        console.error("[re-embed] progress write failed", err);
+        console.error("[re-embed] progress write failed", providerErrorDiagnostic(err));
       });
     return progressQueue;
   };
@@ -1437,14 +1438,14 @@ export async function reEmbedCourseMaterials(
             console.error("[re-embed] failed to persist material failure", {
               courseId,
               materialId: material.id,
-              error: statusError instanceof Error ? statusError.message : String(statusError),
+              error: providerErrorDiagnostic(statusError),
             });
           }
           console.error("[re-embed] material failed", {
             courseId,
             materialId: material.id,
             title: material.title,
-            error: err instanceof Error ? err.message : String(err),
+            error: providerErrorDiagnostic(err),
           });
         }
 

@@ -37,8 +37,8 @@ export type LocalInferenceUrlOptions = {
 
 /**
  * Restricts user-supplied local-inference endpoints (Ollama/vLLM) to an exact
- * deployment-owned base; non-production development may additionally use
- * loopback. Shared by both provider guards so this boundary stays aligned.
+ * deployment-owned base; explicit local development/test runs may additionally
+ * use loopback. Shared by both provider guards so this boundary stays aligned.
  */
 export function resolveAllowedLocalInferenceBaseUrl(
   raw: string | null | undefined,
@@ -53,10 +53,11 @@ export function resolveAllowedLocalInferenceBaseUrl(
   const candidateHost = candidate.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const exactDeploymentBase = allowedBaseUrls.has(canonicalBaseUrl(candidate));
   const isDevelopmentLoopback =
-    process.env.NODE_ENV !== "production" && LOOPBACK_HOSTS.has(candidateHost);
+    (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") &&
+    LOOPBACK_HOSTS.has(candidateHost);
   if (!exactDeploymentBase && !isDevelopmentLoopback) {
     throw createError(
-      `${label} base URL must match an exact deployment base or development loopback`,
+      `${label} base URL must match an exact deployment base or explicit development/test loopback`,
     );
   }
   return candidate.toString().replace(/\/$/, "");

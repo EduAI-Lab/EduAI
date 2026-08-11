@@ -148,4 +148,26 @@ describe("re-embed lease heartbeat", () => {
       ),
     ).toBe(true);
   });
+
+  it("persists a stable failure when the provider rejects with a secret-bearing error", async () => {
+    mocks.findUnique.mockResolvedValue(job);
+    mocks.findUniqueOrThrow.mockResolvedValue({ ...job, status: "RUNNING" });
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    const providerSecret = "provider-secret-canary";
+    mocks.reEmbedCourseMaterials.mockRejectedValue(
+      new Error(`Embedding request failed: https://provider.test/v1?api_key=${providerSecret}`),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(resumeReEmbedJob(job.id)).resolves.toBe(true);
+
+    const failedWrite = mocks.updateMany.mock.calls.find(
+      (call) => (call[0] as any)?.data?.status === "FAILED",
+    );
+    expect(failedWrite?.[0]?.data?.errorMessage).toBe(
+      "Embedding provider failed. Please try again.",
+    );
+    expect(JSON.stringify(failedWrite)).not.toContain(providerSecret);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(providerSecret);
+  });
 });

@@ -51,4 +51,44 @@ describe("resolveAllowedOllamaBaseUrl", () => {
       InvalidOllamaBaseUrlError,
     );
   });
+
+  it("preserves an exact deployment-owned loopback base in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434/api";
+
+    expect(resolveAllowedOllamaBaseUrl("http://127.0.0.1:11434/api")).toBe(
+      "http://127.0.0.1:11434/api",
+    );
+  });
+
+  it.each(["staging", "preview", "qa", "production", undefined])(
+    "rejects loopback Docker/internal targets when NODE_ENV=%s",
+    (nodeEnv) => {
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      process.env.OLLAMA_BASE_URL = "https://ollama.example.edu:11434/api";
+
+      expect(() => resolveAllowedOllamaBaseUrl("http://127.0.0.1:2375/docker.sock")).toThrow(
+        InvalidOllamaBaseUrlError,
+      );
+      expect(() => resolveAllowedOllamaBaseUrl("http://[::1]:2376/internal")).toThrow(
+        InvalidOllamaBaseUrlError,
+      );
+    },
+  );
+
+  it.each(["development", "test"])(
+    "allows loopback targets only for explicit local NODE_ENV=%s",
+    (nodeEnv) => {
+      process.env.NODE_ENV = nodeEnv;
+      process.env.OLLAMA_BASE_URL = "https://ollama.example.edu:11434/api";
+
+      expect(resolveAllowedOllamaBaseUrl("http://127.0.0.1:2375/docker.sock")).toBe(
+        "http://127.0.0.1:2375/docker.sock",
+      );
+      expect(resolveAllowedOllamaBaseUrl("http://[::1]:2376/internal")).toBe(
+        "http://[::1]:2376/internal",
+      );
+    },
+  );
 });

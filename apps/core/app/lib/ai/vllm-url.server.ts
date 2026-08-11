@@ -44,8 +44,8 @@ function configuredVllmBaseUrls(): Set<string> {
 
 /**
  * Restricts user-supplied vLLM endpoints to an exact deployment-owned base
- * (VLLM_BASE_URL / VLLM_FLEET_CHAT_URLS / VLLM_FLEET_HEAVY_URL); development
- * may additionally use loopback for local tooling.
+ * (VLLM_BASE_URL / VLLM_FLEET_CHAT_URLS / VLLM_FLEET_HEAVY_URL); explicit
+ * development/test runs may additionally use loopback for local tooling.
  */
 export function resolveAllowedVllmBaseUrl(raw?: string | null): string {
   return resolveAllowedLocalInferenceBaseUrl(raw, {

@@ -27,7 +27,7 @@ function configuredOllamaBaseUrls(): Set<string> {
 
 /**
  * Restricts user-supplied Ollama endpoints to an exact deployment-owned base;
- * development may additionally use loopback for local tooling.
+ * explicit development/test runs may additionally use loopback for local tooling.
  */
 export function resolveAllowedOllamaBaseUrl(raw?: string | null): string {
   return resolveAllowedLocalInferenceBaseUrl(raw, {

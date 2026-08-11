@@ -413,7 +413,7 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
     expect(onProgress).toHaveBeenCalledTimes(3);
     expect(progressError).toHaveBeenCalledWith(
       "[re-embed] progress write failed",
-      expect.any(Error),
+      expect.objectContaining({ name: "Error", message: "pool timeout" }),
     );
   });
 

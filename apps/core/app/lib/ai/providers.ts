@@ -98,7 +98,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     const clientOllamaBaseUrl = userSettings.ollama?.baseUrl?.trim();
     const clientOllamaUrlSupplied =
       Boolean(clientOllamaBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.ollama);
-    // SSRF guard: only an exact deployment-owned base (or development loopback)
+    // SSRF guard: only an exact deployment-owned base (or explicit development/test loopback)
     // is trusted. Falls back to the deployment default when the client-supplied
     // host is rejected; if OLLAMA_BASE_URL itself is misconfigured, the fallback
     // is guarded too so a bad env var disables only this provider, not the
@@ -129,7 +129,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
     const clientVllmUrlSupplied =
       Boolean(clientVllmBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.vllm);
-    // SSRF guard: only an exact deployment-owned base (or development loopback)
+    // SSRF guard: only an exact deployment-owned base (or explicit development/test loopback)
     // is trusted. See the Ollama block above for the fallback/logging shape.
     let baseURL = resolveLocalInferenceBaseUrlOrLog({
       resolve: resolveAllowedVllmBaseUrl,
