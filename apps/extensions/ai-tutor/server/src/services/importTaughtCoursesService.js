@@ -14,7 +14,11 @@
 import { prisma } from '../config/database.js';
 import { listEduAiCourses } from './eduaiClient.js';
 import { syncExternalCourseTopics } from './topicSync.js';
-import { syncCourseEnrollments } from './enrollmentSync.js';
+import {
+  AUTO_SYNC_TIMEOUT_MS,
+  syncCourseEnrollments,
+  withCourseEnrollmentLock,
+} from './enrollmentSync.js';
 import { logSafeError } from '../utils/safeErrors.js';
 
 const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR"]);
@@ -141,7 +145,9 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
 
   const [topicResult, enrollmentResult] = await Promise.allSettled([
     syncExternalCourseTopics(created.id),
-    syncCourseEnrollments(created.id),
+    syncCourseEnrollments(created.id, {
+      signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+    }),
   ]);
 
   if (topicResult.status === 'rejected') {
@@ -246,7 +252,10 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
   for (const offering of offerings) {
     const [topicResult, enrollmentResult] = await Promise.allSettled([
       syncExternalCourseTopics(offering.id),
-      syncCourseEnrollments(offering.id, { course: offering }),
+      syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      }),
     ]);
 
     if (topicResult.status === 'rejected') {
@@ -309,19 +318,12 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   for (const coreCourse of taCourses) {
     try {
       const offering = await ensureOfferingFromCore(coreCourse);
-      await prisma.courseEnrollment.upsert({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: offering.id,
-            userId: student.id,
-          },
-        },
-        update: { role: TA_ENROLLMENT_ROLE },
-        create: {
-          courseOfferingId: offering.id,
-          userId: student.id,
-          role: TA_ENROLLMENT_ROLE,
-        },
+      // The broad course list is only a candidate set. Reconcile the
+      // authoritative per-course roster while holding the same lock used by
+      // live authorization; never upsert from a stale list snapshot.
+      await syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
       });
       enrolled++;
     } catch (err) {
@@ -333,19 +335,11 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   for (const coreCourse of studentCourses) {
     try {
       const offering = await ensureOfferingFromCore(coreCourse);
-      await prisma.courseEnrollment.upsert({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: offering.id,
-            userId: student.id,
-          },
-        },
-        update: { role: STUDENT_ENROLLMENT_ROLE },
-        create: {
-          courseOfferingId: offering.id,
-          userId: student.id,
-          role: STUDENT_ENROLLMENT_ROLE,
-        },
+      // See the TA path above: Core's course-list response must not be used
+      // as an enrollment write snapshot after live authorization has run.
+      await syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
       });
       enrolled++;
     } catch (err) {
@@ -377,26 +371,32 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
     },
   });
 
-  const staleOfferingIds = localEnrollments
-    .filter((enrollment) => {
-      const coreId = enrollment.courseOffering.coreOfferingId;
-      if (!coreId) return false;
-      const activeIds =
-        enrollment.role === TA_ENROLLMENT_ROLE ? activeTaCoreIds : activeStudentCoreIds;
-      return !activeIds.has(coreId);
-    })
-    .map((enrollment) => enrollment.courseOfferingId);
+  const staleOfferingIds = [
+    ...new Set(
+      localEnrollments
+        .filter((enrollment) => {
+          const coreId = enrollment.courseOffering.coreOfferingId;
+          if (!coreId) return false;
+          const activeIds =
+            enrollment.role === TA_ENROLLMENT_ROLE ? activeTaCoreIds : activeStudentCoreIds;
+          return !activeIds.has(coreId);
+        })
+        .map((enrollment) => enrollment.courseOfferingId),
+    ),
+  ];
 
   let removed = 0;
-  if (staleOfferingIds.length > 0) {
-    const result = await prisma.courseEnrollment.deleteMany({
-      where: {
-        userId: student.id,
-        role: { in: [STUDENT_ENROLLMENT_ROLE, TA_ENROLLMENT_ROLE] },
-        courseOfferingId: { in: staleOfferingIds },
-      },
-    });
-    removed = result.count;
+  for (const courseOfferingId of staleOfferingIds) {
+    const result = await withCourseEnrollmentLock(courseOfferingId, (db) =>
+      db.courseEnrollment.deleteMany({
+        where: {
+          userId: student.id,
+          role: { in: [STUDENT_ENROLLMENT_ROLE, TA_ENROLLMENT_ROLE] },
+          courseOfferingId,
+        },
+      }),
+    );
+    removed += result.count;
   }
 
   if (enrolled > 0 || removed > 0) {

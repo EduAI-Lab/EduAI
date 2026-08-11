@@ -22,7 +22,8 @@ import {
   clearEnrollmentSyncThrottle,
   resetEnrollmentSyncThrottleForTests,
   syncCourseEnrollments,
-} from "../../src/services/enrollmentSync.js";
+  withCourseEnrollmentLock,
+} from '../../src/services/enrollmentSync.js';
 
 const COURSE = {
   id: 1,
@@ -49,6 +50,7 @@ const TA_ENROLLMENT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prisma.$transaction = undefined;
   resetEnrollmentSyncThrottleForTests();
   prisma.courseOffering.findUnique.mockResolvedValue(COURSE);
   prisma.courseEnrollment.findMany.mockResolvedValue([]);
@@ -61,9 +63,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("syncCourseEnrollments", () => {
-  describe("early return guards", () => {
-    it("returns zeros when courseOfferingId is not a finite number", async () => {
+describe('syncCourseEnrollments', () => {
+  it('uses a transaction-scoped advisory lock when Prisma transactions are available', async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    const tx = { $queryRaw: queryRaw };
+    prisma.$transaction = vi.fn(async (operation) => operation(tx));
+    const operation = vi.fn().mockResolvedValue('locked-result');
+
+    await expect(withCourseEnrollmentLock(1, operation)).resolves.toBe('locked-result');
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(operation).toHaveBeenCalledWith(tx);
+    prisma.$transaction = undefined;
+  });
+
+  describe('early return guards', () => {
+    it('returns zeros when courseOfferingId is not a finite number', async () => {
       const result = await syncCourseEnrollments(NaN);
       expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
       expect(prisma.courseOffering.findUnique).not.toHaveBeenCalled();

@@ -47,9 +47,11 @@ const COURSE_ENROLLMENT_LOCK_PREFIX = 'ai-tutor:course-enrollment:';
  * write would allow an older active snapshot to overwrite a newer revocation.
  * The local queue is only a test/runtime fallback for lightweight Prisma
  * doubles that do not expose `$transaction`; it is bounded by deleting its
- * tail when the operation settles.
+ * tail when the operation settles. Callers must invoke this only at the
+ * outermost reconciliation boundary; do not call it from inside another
+ * `withCourseEnrollmentLock` callback for the same course.
  */
-async function withCourseEnrollmentLock(courseOfferingId, operation) {
+export async function withCourseEnrollmentLock(courseOfferingId, operation) {
   if (typeof prisma.$transaction === 'function') {
     return prisma.$transaction(async (tx) => {
       if (typeof tx.$queryRaw === 'function') {
