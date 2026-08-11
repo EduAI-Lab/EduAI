@@ -227,6 +227,26 @@ describe('listCoursesForUser', () => {
       expect(pageWhere).toEqual(countWhere);
     });
 
+    it('excludes a linked course owned by the caller with no synced grant, even when the mirror is healthy (#1270 review)', async () => {
+      // The Core refresh succeeds, but this particular linked course produced
+      // no CourseAccess row for the caller (never enrolled, or since
+      // unenrolled in Core) — ownership alone must not resurrect visibility.
+      mockListCoursesFromCore.mockResolvedValue([]);
+      mockFindMany.mockResolvedValue([]);
+      mockCount.mockResolvedValue(0);
+
+      await listCoursesPageForUser(
+        { id: 'former-instructor', role: 'INSTRUCTOR' },
+        { cookie: 'session=x', pagination: { offset: 0, limit: 25 } },
+      );
+
+      const pageWhere = mockFindMany.mock.calls[0][0].where;
+      // The owner branch requires `coreCourseId: null` unconditionally now —
+      // a linked course owned by the caller can only match via a real
+      // `accessGrants` clause, never through ownership by itself.
+      expect(pageWhere.OR[0]).toEqual({ userId: 'former-instructor', coreCourseId: null });
+    });
+
     it('reuses the cached ADMIN catalog while resolving only the current page, without a second Core request', async () => {
       mockGetAllCoursesFromCore.mockResolvedValue([{ id: 'core-1', name: 'Course' }]);
       mockFindMany.mockResolvedValue([]);
