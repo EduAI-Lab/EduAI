@@ -15,13 +15,20 @@
  *
  * Redirect credential policy (explicit — adapter asserts hop behavior):
  *   - No redirect hop → credentialsOnRedirect "n/a".
- *   - Bearer is sent only to the configured Canvas origin. Cross-origin
- *     redirects never receive the Canvas token.
- *   - Unapproved cross-host redirects are rejected before the second request.
+ *   - On every redirect hop the client rebuilds headers and sends
+ *     `Authorization: Bearer <apiKey>` **unless** the request URL contains
+ *     `sf_verifier` (Canvas signed download URL). Cross-host redirects do
+ *     **not** strip Bearer; only the sf_verifier pattern omits it.
+ *   - RedirectAuth=keep → Bearer present on the redirect hop.
+ *   - RedirectAuth=drop → sf_verifier on redirect target → Bearer stripped.
  *
- * Redirect host rewrite is limited to local Docker aliases. Live Canvas
- * redirects to the signed Canvas CDN are preserved; arbitrary public hosts
- * are rejected.
+ * Redirect host rewrite: every redirect Location is passed through
+ * `resolveCanvasFileDownloadUrl`, which replaces the Location host with the
+ * configured canvasUrl origin while preserving pathname/search. A cross-host
+ * Location therefore becomes same-origin before fetch and SSRF re-check —
+ * credentials still follow the sf_verifier rule on the rewritten URL.
+ * Request-time SSRF blocking of malicious Location hosts is out of scope for
+ * this model (see ssrf-ipv6-classify / parse-validate-canvas-url in #1184).
  *
  * AuthHeader dimension:
  *   - present → Bearer on the initial request (no sf_verifier on entry URL).
@@ -61,10 +68,6 @@ export function canvasFileDownloadOracle(row: CanvasFileDownloadRow): FileDownlo
     return { outcome: "error", reason: "limit", statusCode: 502 };
   }
 
-  if (row.Redirect === "cross-host") {
-    return { outcome: "error", reason: "redirect-policy", statusCode: 400 };
-  }
-
   if (row.Transport === "http-4xx") {
     return { outcome: "error", reason: "auth", statusCode: 401 };
   }
@@ -91,7 +94,7 @@ export function expectedDownloadErrorStatus(row: CanvasFileDownloadRow): number 
 /** Whether Authorization Bearer should appear on a request to `url`. */
 export function shouldAttachBearer(apiKey: string, url: string): boolean {
   if (!apiKey) return false;
-  return new URL(url).origin === "http://localhost:8080";
+  return !url.includes("sf_verifier");
 }
 
 /** Adapter fixture: canvasUrl profile for a PICT row. */
@@ -104,7 +107,6 @@ export function canvasUrlForRow(row: CanvasFileDownloadRow): string {
 
 /** Rewritten redirect URL the client should request after resolveCanvasFileDownloadUrl. */
 export function expectedRewrittenRedirectUrl(row: CanvasFileDownloadRow, location: string): string {
-  if (row.Redirect === "cross-host") return location;
   const canvasOrigin = new URL(canvasUrlForRow(row)).origin;
   const parsed = new URL(location);
   return `${canvasOrigin}${parsed.pathname}${parsed.search}`;

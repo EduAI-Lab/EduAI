@@ -408,7 +408,7 @@ export async function startAdminCourseReEmbed(
     return adminPayload({ job: serializeReEmbedJob(active), alreadyRunning: true });
   }
 
-  const job = await startReEmbedJob(courseId);
+  const { job } = await startReEmbedJob(courseId);
   return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: false });
 }
 
