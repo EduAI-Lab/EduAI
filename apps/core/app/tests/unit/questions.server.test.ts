@@ -290,6 +290,20 @@ describe("createQuestion", () => {
     expect(db.course.findUnique).not.toHaveBeenCalled();
   });
 
+  it("defensively rejects oversized fields, arrays, and unknown fields before DB access", async () => {
+    for (const body of [
+      { ...baseBody, content: "x".repeat(20_001) },
+      { ...baseBody, answer: "x".repeat(20_001) },
+      { ...baseBody, choices: Array.from({ length: 21 }, (_, i) => ({ letter: String(i), text: "x" })) },
+      { ...baseBody, secondaryTopicIds: Array.from({ length: 51 }, (_, i) => `topic-${i}`) },
+      { ...baseBody, unexpected: true },
+    ]) {
+      expect(await createQuestion(body, CREATOR)).toMatchObject({ error: "VALIDATION_ERROR" });
+    }
+    expect(db.course.findUnique).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("returns INVALID_TOPIC_IDS when a secondary topic id does not exist at all (no FK 500)", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });

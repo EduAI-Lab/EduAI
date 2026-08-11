@@ -42,6 +42,31 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
+    const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
+    const hasCookie = Boolean(request.headers.get("cookie"));
+    const origin = request.headers.get("origin");
+
+    // Gate ambient cookie credentials on unsafe cross-origin requests. Service
+    // requests without cookies are not CSRF-prone and keep their existing path.
+    if (isUnsafeMethod && hasCookie && origin !== null) {
+      let isSameOrigin = false;
+      try {
+        isSameOrigin = new URL(origin).origin === url.origin;
+      } catch {
+        // A malformed Origin cannot prove same-origin intent.
+      }
+      if (!isSameOrigin) {
+        const blocked = new Response(JSON.stringify({ error: "CROSS_ORIGIN_MUTATION" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+        applySecurityHeaders(blocked.headers, {
+          isProd: process.env.NODE_ENV === "production",
+        });
+        return blocked;
+      }
+    }
+
     // `.data` is React Router's internal single-fetch transport. This app does
     // not enable single-fetch (`future.v8_singleFetch`), so no legitimate
     // client request needs this public URL. Reject every variant rather than

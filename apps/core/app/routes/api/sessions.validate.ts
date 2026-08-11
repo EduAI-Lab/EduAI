@@ -20,7 +20,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
   const ip = requestContext.ipAddress ?? "unknown";
 
-  if (isRateLimited(ip)) {
+  const session = await getRequestSession(request);
+  const rateLimitKey = session?.user
+    ? `session-validate:user:${session.user.id}`
+    : `session-validate:anonymous:${ip}`;
+
+  if (isRateLimited(rateLimitKey)) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),
@@ -36,8 +41,6 @@ export async function action({ request }: ActionFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
-
-  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {

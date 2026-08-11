@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment node
+import { describe, expect, it, vi } from "vitest";
 
 import { applySecurityHeaders, generateNonce } from "~/lib/security-headers.server";
 import { middleware } from "~/root";
@@ -135,7 +136,6 @@ describe("root middleware", () => {
       headers: { Accept: "text/html", "Sec-Fetch-Dest": "document" },
     });
     let called = false;
-
     const res = await (middleware[0] as any)({ request }, async () => {
       called = true;
       return new Response("{}");
@@ -173,5 +173,68 @@ describe("root middleware", () => {
 
     expect(res.status).toBe(404);
     expect(called).toBe(false);
+  });
+
+  it("rejects sibling-origin cookie-authenticated API mutations before the route runs", async () => {
+    const request = new Request("https://eduai.example/api/questions", {
+      method: "POST",
+      headers: { Cookie: "better-auth.session_token=secret", Origin: "https://evil.example" },
+    });
+    let called = false;
+    const res = await (middleware[0] as any)({ request }, async () => {
+      called = true;
+      return new Response(null, { status: 204 });
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "CROSS_ORIGIN_MUTATION" });
+    expect(called).toBe(false);
+  });
+
+  it("rejects sibling-origin cookie-authenticated HTML form actions", async () => {
+    const request = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Origin: "https://sibling.eduai.example",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "intent=clear",
+    });
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const res = await (middleware[0] as any)({ request }, next);
+    expect(res.status).toBe(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("does not trust an unverified bearer-looking header to bypass the cookie gate", async () => {
+    const request = new Request("https://eduai.example/api/questions", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Origin: "https://evil.example",
+        Authorization: "Bearer attacker-controlled",
+      },
+    });
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("preserves same-origin cookie mutations and non-cookie service calls", async () => {
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const sameOrigin = new Request("https://eduai.example/admin/logs", {
+      method: "POST",
+      headers: { Cookie: "session=secret", Origin: "https://eduai.example" },
+    });
+    const service = new Request("https://eduai.example/api/questions/q1", {
+      method: "PATCH",
+      headers: { Authorization: "Bearer service-key", Origin: "https://worker.internal" },
+    });
+    expect((await (middleware[0] as any)({ request: sameOrigin }, next)).status).toBe(204);
+    expect((await (middleware[0] as any)({ request: service }, next)).status).toBe(204);
+    expect(next).toHaveBeenCalledTimes(2);
   });
 });

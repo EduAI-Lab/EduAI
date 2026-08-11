@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
-import { z } from "zod";
 import prisma from "~/lib/prisma.server";
+import { validateCreateQuestion } from "~/lib/questions/schema";
 
 export type CreateQuestionBody = {
   courseId: string;
@@ -118,7 +118,6 @@ const CreateQuestionSchema = z
       answer: unique[0],
     };
   });
-
 type CreateQuestionError =
   | { error: "VALIDATION_ERROR"; fields: Record<string, string> }
   | { error: "COURSE_NOT_FOUND" }
@@ -140,15 +139,8 @@ export async function createQuestion(
   body: unknown,
   createdBy: string,
 ): Promise<CreateQuestionError | CreateQuestionSuccess> {
-  const parsed = CreateQuestionSchema.safeParse(body);
-  if (!parsed.success) {
-    const fieldErrors = parsed.error.flatten().fieldErrors;
-    const fields: Record<string, string> = {};
-    for (const [key, messages] of Object.entries(fieldErrors)) {
-      if (messages && messages.length > 0) fields[key] = messages[0];
-    }
-    return { error: "VALIDATION_ERROR", fields };
-  }
+  const parsed = validateCreateQuestion(body);
+  if (!parsed.success) return parsed.error;
 
   const {
     courseId,

@@ -28,9 +28,9 @@ import { isRateLimited } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 
-function makeArgs(method = "POST") {
+function makeArgs(method = "POST", headers: HeadersInit = {}) {
   return {
-    request: new Request("http://localhost/api/sessions/validate", { method }),
+    request: new Request("http://localhost/api/sessions/validate", { method, headers }),
     params: {},
     context: {} as never,
   } as never;
@@ -48,12 +48,46 @@ describe("POST /api/sessions/validate", () => {
   });
 
   it("returns 429 and logs RATE_LIMIT_EXCEEDED when rate-limited", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(isRateLimited).mockReturnValue(true);
     const res = await action(makeArgs());
     expect(res.status).toBe(429);
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "RATE_LIMIT_EXCEEDED", outcome: "DENIED" }),
     );
+  });
+
+  it("does not let junk cookies consume a legitimate user's rate-limit bucket", async () => {
+    vi.mocked(auth.api.getSession)
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValueOnce({
+        user: { id: "u1", email: "u1@ubc.ca", name: "U1", image: null, role: "STUDENT" },
+      } as never);
+    vi.mocked(isRateLimited)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+
+    const junk = await action(makeArgs("POST", {
+      Cookie: "better-auth.session_token=junk",
+      "X-Forwarded-For": "198.51.100.10",
+    }));
+    const legitimate = await action(makeArgs("POST", {
+      Cookie: "better-auth.session_token=valid",
+      "X-Forwarded-For": "198.51.100.10",
+    }));
+
+    expect(junk.status).toBe(429);
+    expect(legitimate.status).toBe(200);
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:anonymous:198.51.100.10",
+      "session-validate:user:u1",
+    ]);
+  });
+
+  it("uses the trusted proxy-appended XFF entry, not a spoofed first entry", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    await action(makeArgs("POST", { "X-Forwarded-For": "203.0.113.99, 198.51.100.20" }));
+    expect(isRateLimited).toHaveBeenCalledWith("session-validate:anonymous:198.51.100.20");
   });
 
   it("returns 401 for anonymous callers", async () => {

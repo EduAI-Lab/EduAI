@@ -110,20 +110,28 @@ describe("POST /api/sessions/validate — contract tests", () => {
     expect(await response.json()).toEqual({ error: "Method not allowed" });
   });
 
-  it("passes the rightmost (Apache-written) x-forwarded-for entry to the rate limiter", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValueOnce(MOCK_SESSION as never);
+  it("passes the rightmost (Apache-written) x-forwarded-for entry to the anonymous rate limiter", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
 
     // Apache appends the real socket peer last; the leftmost token is client-forgeable and ignored.
     await action(makeArgs("POST", { "x-forwarded-for": "10.0.0.1, 10.0.0.2" }));
 
-    expect(isRateLimited).toHaveBeenCalledWith("10.0.0.2");
+    expect(isRateLimited).toHaveBeenCalledWith("session-validate:anonymous:10.0.0.2");
   });
 
-  it("falls back to 'unknown' as the IP when x-forwarded-for is absent", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValueOnce(MOCK_SESSION as never);
+  it("falls back to 'unknown' as the anonymous IP when x-forwarded-for is absent", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
 
     await action(makeArgs());
 
-    expect(isRateLimited).toHaveBeenCalledWith("unknown");
+    expect(isRateLimited).toHaveBeenCalledWith("session-validate:anonymous:unknown");
+  });
+
+  it("uses a per-user bucket for an authenticated session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(MOCK_SESSION as never);
+
+    await action(makeArgs("POST", { "x-forwarded-for": "10.0.0.2" }));
+
+    expect(isRateLimited).toHaveBeenCalledWith(`session-validate:user:${MOCK_USER.id}`);
   });
 });
