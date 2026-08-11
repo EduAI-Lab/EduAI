@@ -231,12 +231,49 @@ Leave either unset in an environment where that extension isn't running — the 
 
 ```bash
 npm run build        # Build all apps (Turborepo caches outputs)
-npm run lint         # Lint all apps
+npm run lint         # Lint every workspace, then the non-workspace directories
 npm run test         # All tests across all apps (unit + integration)
 npm run test:all     # Unit + integration tests
 npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
+
+## Lint, format and typecheck (`#1275`, `#1276`)
+
+The same six commands work at the repo root and inside any workspace. At the
+root they fan out through Turborepo; inside a workspace they act on that
+workspace alone.
+
+```bash
+npm run lint          # oxlint — fails on errors, reports warnings
+npm run lint:fix      # oxlint --fix (auto-fixable rules only)
+npm run format        # oxfmt — rewrites files
+npm run format:check  # oxfmt --check — reports without writing
+npm run typecheck     # tsc for every workspace that has a tsconfig
+npm run test          # vitest
+```
+
+Configuration lives in exactly two files, both at the repo root:
+[`.oxlintrc.json`](.oxlintrc.json) and [`.oxfmtrc.json`](.oxfmtrc.json). oxlint
+and oxfmt resolve their config by walking up from the working directory, so
+workspaces do not carry their own copies and there is nothing to keep in sync.
+Change a rule in one place and every app follows.
+
+A few things worth knowing before you touch the setup:
+
+- **Errors gate, warnings do not.** oxlint exits non-zero only on errors, and
+  the `Lint & Typecheck` CI job inherits that. The repo still carries roughly
+  900 warnings; burning them down belongs to `#1277`, `#1278` and `#1279`.
+- **`no-console` is off on purpose.** The server-path policy is `#1277`'s to
+  set, via `overrides` in the shared config.
+- **Formatting is not enforced yet.** `format:check` is wired and runnable, but
+  the repo has never been swept with `oxfmt --write`, so it currently fails. The
+  sweep is a separate PR, landing as one isolated commit recorded in
+  `.git-blame-ignore-revs`, once the open-PR queue has drained. Until then
+  `format:check` is deliberately absent from CI.
+- **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
+  the root `prepare` script. Use `git commit --no-verify` to bypass it, or
+  `npx lefthook run pre-commit` to run it by hand.
 
 **Fleet routing smoke tests (Core)**
 
