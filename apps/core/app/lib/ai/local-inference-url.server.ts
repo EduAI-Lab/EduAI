@@ -1,5 +1,10 @@
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+function canonicalBaseUrl(url: URL): string {
+  const path = url.pathname.replace(/\/+$/, "");
+  return `${url.protocol}//${url.host}${path}`;
+}
+
 function parseHttpUrl(raw: string, label: string, createError: (message: string) => Error): URL {
   let url: URL;
   try {
@@ -7,7 +12,13 @@ function parseHttpUrl(raw: string, label: string, createError: (message: string)
   } catch {
     throw createError(`Invalid ${label} base URL`);
   }
-  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
     throw createError(`${label} base URL must use HTTP(S) without credentials`);
   }
   return url;
@@ -18,26 +29,68 @@ export type LocalInferenceUrlOptions = {
   label: string;
   /** URL used when `raw` is empty (typically derived from deployment env vars). */
   defaultBaseUrl: string;
-  /** Non-loopback hostnames the deployment has explicitly configured as trusted. */
-  allowedHostnames: Set<string>;
+  /** Exact deployment-owned origins/bases accepted in every environment. */
+  allowedBaseUrls?: Set<string>;
   /** Constructs the provider-specific error subclass so `instanceof` checks keep working. */
   createError: (message: string) => Error;
 };
 
 /**
- * Restricts a user-supplied local-inference endpoint (Ollama, vLLM, ...) to
- * loopback or a hostname explicitly configured by the deployment. Shared by
- * resolveAllowedOllamaBaseUrl and resolveAllowedVllmBaseUrl so the SSRF check
- * only has to be fixed in one place.
+ * Restricts user-supplied local-inference endpoints (Ollama/vLLM) to an exact
+ * deployment-owned base; non-production development may additionally use
+ * loopback. Shared by both provider guards so this boundary stays aligned.
  */
 export function resolveAllowedLocalInferenceBaseUrl(
   raw: string | null | undefined,
-  { label, defaultBaseUrl, allowedHostnames, createError }: LocalInferenceUrlOptions,
+  {
+    label,
+    defaultBaseUrl,
+    allowedBaseUrls = new Set<string>(),
+    createError,
+  }: LocalInferenceUrlOptions,
 ): string {
   const candidate = parseHttpUrl(raw?.trim() || defaultBaseUrl, label, createError);
-  const candidateHost = candidate.hostname.toLowerCase();
-  if (!LOOPBACK_HOSTS.has(candidateHost) && !allowedHostnames.has(candidateHost)) {
-    throw createError(`${label} base URL host must match a server-configured host or be loopback`);
+  const candidateHost = candidate.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const exactDeploymentBase = allowedBaseUrls.has(canonicalBaseUrl(candidate));
+  const isDevelopmentLoopback =
+    process.env.NODE_ENV !== "production" && LOOPBACK_HOSTS.has(candidateHost);
+  if (!exactDeploymentBase && !isDevelopmentLoopback) {
+    throw createError(
+      `${label} base URL must match an exact deployment base or development loopback`,
+    );
   }
   return candidate.toString().replace(/\/$/, "");
+}
+
+/** Canonical form used to build exact deployment-owned base URL allowlists. */
+export function canonicalLocalInferenceBaseUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return null;
+    }
+    return canonicalBaseUrl(url);
+  } catch {
+    return null;
+  }
+}
+
+/** Safe diagnostic form for rejected client URLs; never logs credentials/path/query secrets. */
+export function redactProviderUrlForLog(raw: string): string {
+  try {
+    const url = new URL(raw);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.origin;
+  } catch {
+    return "[redacted invalid URL]";
+  }
 }

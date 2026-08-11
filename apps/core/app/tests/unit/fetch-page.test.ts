@@ -37,6 +37,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  scrapeMock.mockReset();
+  crawlMock.mockReset();
   delete process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK;
 });
 
@@ -59,7 +61,10 @@ describe("runFetchPage - scrape success path", () => {
       title: "Page Title",
       markdown: "# Hello\n\nThis is the page content.",
     });
-    expect(scrapeMock).toHaveBeenCalledWith("https://example.com/page");
+    expect(scrapeMock).toHaveBeenCalledWith(
+      "https://example.com/page",
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
     expect(crawlMock).not.toHaveBeenCalled();
   });
 
@@ -226,5 +231,82 @@ describe("runFetchPage - client construction failure", () => {
       vi.resetModules();
       await loadModule();
     }
+  });
+});
+
+describe("runFetchPage - egress boundaries", () => {
+  it("rejects private and loopback URL targets before calling Firecrawl", async () => {
+    for (const url of [
+      "http://127.0.0.1:8000/private",
+      "http://[::1]/private",
+      "http://169.254.169.254/latest/meta-data",
+      "http://localhost:3000/private",
+    ]) {
+      const result = await runFetchPage({ url });
+      expect(result.error).toMatch(/unavailable|unsafe|public/i);
+    }
+
+    expect(scrapeMock).not.toHaveBeenCalled();
+    expect(crawlMock).not.toHaveBeenCalled();
+  });
+
+  it("bounds a never-resolving scrape", async () => {
+    scrapeMock.mockImplementation(() => new Promise(() => {}));
+    crawlMock.mockImplementation(() => new Promise(() => {}));
+    const started = Date.now();
+
+    const result = await runFetchPage({ url: "https://example.com", timeoutMs: 25 });
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(result.error).toBeDefined();
+    expect(scrapeMock).toHaveBeenCalledTimes(1);
+    expect(crawlMock).not.toHaveBeenCalled();
+  });
+
+  it("bounds a never-resolving fallback crawl", async () => {
+    scrapeMock.mockResolvedValue({ url: "https://example.com", markdown: "" });
+    crawlMock.mockImplementation(() => new Promise(() => {}));
+    const started = Date.now();
+
+    const result = await runFetchPage({ url: "https://example.com", timeoutMs: 25 });
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(result.error).toBeDefined();
+    expect(crawlMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes Firecrawl timeout units to scrape and crawl correctly", async () => {
+    scrapeMock.mockResolvedValue({ url: "https://example.com", markdown: "" });
+    crawlMock.mockResolvedValue({ data: [] });
+
+    await runFetchPage({ url: "https://example.com", timeoutMs: 5000 });
+
+    expect(scrapeMock).toHaveBeenCalledWith(
+      "https://example.com",
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
+    expect(crawlMock).toHaveBeenCalledWith(
+      "https://example.com",
+      expect.objectContaining({
+        timeout: expect.any(Number),
+        scrapeOptions: expect.objectContaining({ timeout: expect.any(Number) }),
+      }),
+    );
+  });
+
+  it("honors a caller abort without waiting for Firecrawl", async () => {
+    scrapeMock.mockImplementation(() => new Promise(() => {}));
+    crawlMock.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runFetchPage({
+      url: "https://example.com",
+      signal: controller.signal,
+    });
+
+    expect(result.error).toBeDefined();
+    expect(scrapeMock).not.toHaveBeenCalled();
+    expect(crawlMock).not.toHaveBeenCalled();
   });
 });

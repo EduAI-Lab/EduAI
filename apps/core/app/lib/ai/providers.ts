@@ -3,18 +3,20 @@
  * Dynamic provider management with user-provided API keys
  */
 
-import { createProviderRegistry } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOllama } from 'ollama-ai-provider';
-import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
-import { resolveAllowedOllamaBaseUrl } from '~/lib/ai/ollama-url.server';
-import { resolveVllmApiKey } from '~/lib/ai/vllm-api-key.server';
-import { resolveAllowedVllmBaseUrl } from '~/lib/ai/vllm-url.server';
-import { vllmThinkingDisabledFetch } from '~/lib/ai/vllm-thinking.server';
+import { createProviderRegistry } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOllama } from "ollama-ai-provider";
+import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
+import { redactProviderUrlForLog } from "~/lib/ai/local-inference-url.server";
+import { resolveAllowedOllamaBaseUrl } from "~/lib/ai/ollama-url.server";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
+import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
+import { vllmThinkingDisabledFetch } from "~/lib/ai/vllm-thinking.server";
 import {
   LOCAL_INFERENCE_PROVIDERS,
+  isDeploymentManagedProviderSettings,
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
   PROVIDER_CONFIGS,
@@ -32,7 +34,7 @@ export {
 };
 
 /** OpenCode's hosted OpenAI-compatible endpoint; never client-configurable. */
-export const OPENCODE_BASE_URL = 'https://opencode.ai/zen/go/v1';
+export const OPENCODE_BASE_URL = "https://opencode.ai/zen/go/v1";
 
 /**
  * Resolves a local-inference base URL (Ollama/vLLM) with logging instead of
@@ -54,7 +56,7 @@ function resolveLocalInferenceBaseUrlOrLog(opts: {
   } catch (error) {
     if (clientBaseUrl) {
       console.error(
-        `[ai/providers] Rejected client-supplied ${providerLabel} base URL "${clientBaseUrl}": ` +
+        `[ai/providers] Rejected client-supplied ${providerLabel} base URL "${redactProviderUrlForLog(clientBaseUrl)}": ` +
           `${error instanceof Error ? error.message : error}. Falling back to the deployment default.`,
       );
     }
@@ -94,7 +96,9 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   // Ollama
   if (userSettings.ollama?.isEnabled) {
     const clientOllamaBaseUrl = userSettings.ollama?.baseUrl?.trim();
-    // SSRF guard: only loopback or the deployment-configured OLLAMA_BASE_URL host
+    const clientOllamaUrlSupplied =
+      Boolean(clientOllamaBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.ollama);
+    // SSRF guard: only an exact deployment-owned base (or development loopback)
     // is trusted. Falls back to the deployment default when the client-supplied
     // host is rejected; if OLLAMA_BASE_URL itself is misconfigured, the fallback
     // is guarded too so a bad env var disables only this provider, not the
@@ -115,7 +119,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
       providers.ollama = createOllama({
         baseURL,
         // Never attach cmps01 internal key for client-supplied base URLs (IP allowlist bypass).
-        headers: clientOllamaBaseUrl ? {} : cmps01InternalAuthHeadersForUrl(baseURL),
+        headers: clientOllamaUrlSupplied ? {} : cmps01InternalAuthHeadersForUrl(baseURL),
       });
     }
   }
@@ -123,8 +127,10 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
   if (userSettings.vllm?.isEnabled) {
     const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
-    // SSRF guard: only loopback or a deployment-configured VLLM host (VLLM_BASE_URL /
-    // VLLM_FLEET_*) is trusted. See the Ollama block above for the fallback/logging shape.
+    const clientVllmUrlSupplied =
+      Boolean(clientVllmBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.vllm);
+    // SSRF guard: only an exact deployment-owned base (or development loopback)
+    // is trusted. See the Ollama block above for the fallback/logging shape.
     let baseURL = resolveLocalInferenceBaseUrlOrLog({
       resolve: resolveAllowedVllmBaseUrl,
       clientBaseUrl: clientVllmBaseUrl,
@@ -138,7 +144,9 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
         baseURL = `${baseURL}/v1`;
       }
 
-      const apiKey = userSettings.vllm?.apiKey || resolveVllmApiKey();
+      const apiKey =
+        userSettings.vllm?.apiKey ||
+        (clientVllmUrlSupplied ? "vllm-local" : resolveVllmApiKey());
       if (apiKey) {
         providers.vllm = createOpenAI({
           apiKey,
@@ -156,7 +164,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   // arbitrary upstream and make the provider identity misleading.
   if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) {
     providers.opencode = createOpenAICompatible({
-      name: 'opencode',
+      name: "opencode",
       baseURL: OPENCODE_BASE_URL,
       apiKey: userSettings.opencode.apiKey,
     });
@@ -230,10 +238,19 @@ export function getModelIdentifier(providerId: SupportedProvider, modelId: strin
 /** Providers that would be registered from current settings (for error messages). */
 export function listEnabledRegistryProviders(userSettings: UserProviderSettings): string[] {
   const ids: string[] = [];
-  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
-  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
-  if (userSettings.ollama?.isEnabled) ids.push('ollama');
-  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey())) ids.push('vllm');
-  if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) ids.push('opencode');
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push("openai");
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push("google");
+  if (userSettings.ollama?.isEnabled) ids.push("ollama");
+  const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
+  const clientVllmUrlSupplied =
+    Boolean(clientVllmBaseUrl) &&
+    !isDeploymentManagedProviderSettings(userSettings.vllm ?? {});
+  if (
+    userSettings.vllm?.isEnabled &&
+    (userSettings.vllm.apiKey || clientVllmUrlSupplied || resolveVllmApiKey())
+  ) {
+    ids.push("vllm");
+  }
+  if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) ids.push("opencode");
   return ids;
 }
