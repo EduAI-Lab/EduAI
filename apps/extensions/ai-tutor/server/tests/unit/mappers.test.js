@@ -511,6 +511,12 @@ describe("mapActivity", () => {
     expect(mapActivity(baseActivity({ config: { answer: "42" } })).answer).toBe("42");
     expect(mapActivity(baseActivity({ config: {} })).answer).toBeNull();
   });
+
+  it('redacts config.answer for an explicit student view', () => {
+    expect(
+      mapActivity(baseActivity({ config: { answer: '42' } }), { role: 'STUDENT' }),
+    ).not.toHaveProperty('answer');
+  });
 });
 
 // ---------------------------------------------------------------------------

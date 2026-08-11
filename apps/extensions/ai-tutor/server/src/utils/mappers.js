@@ -189,7 +189,9 @@ export function mapLesson(lesson) {
  *                            always emits the object form so the client can
  *                            assume one shape.
  *   - `answer`            — Correct answer (string for MCQ index, free text
- *                            for short-answer, etc.). `null` if unset.
+ *                            for short-answer, etc.). `null` if unset for
+ *                            staff/authoring views; omitted for an explicit
+ *                            `{ role: 'STUDENT' }` view.
  *   - `hints`             — Always an array; non-array values become `[]` so
  *                            the client can `.map` without a guard.
  *   - `secondaryTopics`   — Flattened from the M:N join rows
@@ -208,9 +210,15 @@ export function mapLesson(lesson) {
  * but the client cannot safely consume freeform JSON. This mapper is the
  * contract that turns the blob into a stable, typed DTO.
  */
-export function mapActivity(activity) {
+export function mapActivity(activity, options = {}) {
+  // The mapper's historical default is the authoring/staff shape. Callers
+  // serving student content must opt into the redacted shape explicitly so a
+  // future route cannot accidentally put an answer key on the student wire
+  // contract while still preserving answers for instructor authoring views.
+  const viewerRole =
+    typeof options === 'string' ? options : (options?.role ?? options?.viewerRole ?? null);
   const config = activity.config ?? {};
-  return {
+  const mapped = {
     id: activity.id,
     title: activity.title,
     instructionsMd: activity.instructionsMd,
@@ -234,7 +242,6 @@ export function mapActivity(activity) {
       }
       return null;
     })(),
-    answer: config.answer ?? null,
     // Coerce non-array hints to `[]` so the client can iterate safely.
     hints: Array.isArray(config.hints) ? config.hints : [],
     mainTopic: activity.mainTopic
@@ -260,6 +267,12 @@ export function mapActivity(activity) {
       typeof activity.customPromptTitle === "string" ? activity.customPromptTitle : null,
     completionStatus: activity.completionStatus ?? undefined,
   };
+
+  if (viewerRole !== 'STUDENT') {
+    mapped.answer = config.answer ?? null;
+  }
+
+  return mapped;
 }
 
 /**

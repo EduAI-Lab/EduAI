@@ -101,8 +101,15 @@ async function getCourseCode(coreOfferingId) {
 
 function getActivityAccess(course, authUser) {
   const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
-  const isEnrolledStudent = course.enrollments.some((e) => e.userId === authUser.id);
-  return { isInstructorForCourse, isEnrolledStudent };
+  const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+  const isEnrolledStudent = enrollment?.role === 'STUDENT';
+  return { isInstructorForCourse, isEnrolledStudent, enrollment };
+}
+
+function hasStudentEnrollment(course, authUser) {
+  return course.enrollments.some(
+    (enrollment) => enrollment.userId === authUser.id && enrollment.role === 'STUDENT',
+  );
 }
 
 // The student may pick a secondary topic to focus on for an AI session;
@@ -216,7 +223,7 @@ async function loadActivityForChat(activityId) {
                 select: {
                   id: true,
                   coreOfferingId: true,
-                  enrollments: { select: { userId: true } },
+                  enrollments: { select: { userId: true, role: true } },
                 },
               },
             },
@@ -239,9 +246,8 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   if (authUser.role !== "STUDENT") {
     return res.status(403).json({ error: "Only students can use AI tutoring" });
   }
-  const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
-  if (!isEnrolled) {
-    return res.status(403).json({ error: "Not enrolled in this course" });
+  if (!hasStudentEnrollment(course, authUser)) {
+    return res.status(403).json({ error: 'Not enrolled in this course' });
   }
   const lesson = activity.lesson;
   if (
@@ -477,8 +483,13 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
       const statusMap = await getActivityCompletionStatuses(activityIds, authUser.id);
 
       const activitiesWithStatus = activities.map((activity) => {
-        const status = statusMap.get(activity.id) || "not_attempted";
-        return mapActivity({ ...activity, completionStatus: status });
+        const status = statusMap.get(activity.id) || 'not_attempted';
+        return mapActivity(
+          { ...activity, completionStatus: status },
+          // Student DTOs intentionally omit config.answer. Authoring/staff
+          // responses below keep the answer key for instructor tooling.
+          { role: 'STUDENT' },
+        );
       });
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
@@ -1304,11 +1315,8 @@ router.post("/questions/:id/answer", async (req, res) => {
     if (authUser.role !== "STUDENT") {
       return res.status(403).json({ error: "Only students can submit answers" });
     }
-    const isEnrolled = course.enrollments.some(
-      (e) => e.userId === authUser.id && e.role === 'STUDENT',
-    );
-    if (!isEnrolled) {
-      return res.status(403).json({ error: "Not enrolled in this course" });
+    if (!hasStudentEnrollment(course, authUser)) {
+      return res.status(403).json({ error: 'Not enrolled in this course' });
     }
     const answerLesson = activity.lesson;
     if (
@@ -1400,11 +1408,11 @@ router.post("/activities/:activityId/teach", async (req, res) => {
 
     // Auth check before schema parse: unauthorized callers get 403, not 400
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: "Activity course context missing" });
-    if (authUser.role !== "STUDENT")
-      return res.status(403).json({ error: "Only students can use AI tutoring" });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
-      return res.status(403).json({ error: "Not enrolled in this course" });
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!hasStudentEnrollment(course, authUser))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
     if (
       !(await isCoursePublishedLive(course.coreOfferingId)) ||
@@ -1479,11 +1487,11 @@ router.post("/activities/:activityId/guide", async (req, res) => {
 
     // Auth check before schema parse: unauthorized callers get 403, not 400
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: "Activity course context missing" });
-    if (authUser.role !== "STUDENT")
-      return res.status(403).json({ error: "Only students can use AI tutoring" });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
-      return res.status(403).json({ error: "Not enrolled in this course" });
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!hasStudentEnrollment(course, authUser))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
     if (
       !(await isCoursePublishedLive(course.coreOfferingId)) ||
@@ -1557,11 +1565,11 @@ router.post("/activities/:activityId/custom", async (req, res) => {
 
     // Auth check before schema parse: unauthorized callers get 403, not 400
     const course = activity.lesson?.module?.courseOffering;
-    if (!course) return res.status(500).json({ error: "Activity course context missing" });
-    if (authUser.role !== "STUDENT")
-      return res.status(403).json({ error: "Only students can use AI tutoring" });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
-      return res.status(403).json({ error: "Not enrolled in this course" });
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!hasStudentEnrollment(course, authUser))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
     if (
       !(await isCoursePublishedLive(course.coreOfferingId)) ||
@@ -1879,7 +1887,7 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
               include: {
                 courseOffering: {
                   select: {
-                    enrollments: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
                     instructors: { select: { userId: true } },
                   },
                 },
@@ -1994,6 +2002,8 @@ router.get("/me/feedback", async (req, res) => {
 router.get("/activities/:activityId/chat-sessions", async (req, res) => {
   try {
     const authUser = req.user;
+    if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
     const activityId = Number(req.params.activityId);
     if (!Number.isFinite(activityId)) return res.status(400).json({ error: "Invalid activityId" });
 
@@ -2003,9 +2013,17 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
-    if (authUser.role !== "STUDENT" || !isEnrolled) {
-      return res.status(403).json({ error: "Forbidden" });
+    if (authUser.role !== 'STUDENT' || !hasStudentEnrollment(course, authUser)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const lesson = activity.lesson;
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    ) {
+      return res.status(403).json({ error: 'Activity is not available' });
     }
 
     const sessions = await prisma.aiChatSession.findMany({
@@ -2037,6 +2055,8 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
 router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req, res) => {
   try {
     const authUser = req.user;
+    if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
     const activityId = Number(req.params.activityId);
     const { chatId } = req.params;
     if (!Number.isFinite(activityId)) return res.status(400).json({ error: "Invalid activityId" });
@@ -2045,6 +2065,13 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
       where: { chatId, userId: authUser.id, activityId },
     });
     if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const activity = await loadActivityForChat(activityId);
+    const course = activity?.lesson?.module?.courseOffering;
+    if (!course) return res.status(404).json({ error: 'Activity not found' });
+    if (authUser.role !== 'STUDENT' || !hasStudentEnrollment(course, authUser)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
