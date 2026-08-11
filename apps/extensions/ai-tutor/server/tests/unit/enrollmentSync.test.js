@@ -65,15 +65,15 @@ afterEach(() => {
 
 describe('syncCourseEnrollments', () => {
   it('uses a transaction-scoped advisory lock when Prisma transactions are available', async () => {
-    const queryRaw = vi.fn().mockResolvedValue([]);
-    const tx = { $queryRaw: queryRaw };
+    const executeRaw = vi.fn().mockResolvedValue(1);
+    const tx = { $executeRaw: executeRaw };
     prisma.$transaction = vi.fn(async (operation) => operation(tx));
     const operation = vi.fn().mockResolvedValue('locked-result');
 
     await expect(withCourseEnrollmentLock(1, operation)).resolves.toBe('locked-result');
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
     expect(operation).toHaveBeenCalledWith(tx);
     prisma.$transaction = undefined;
   });

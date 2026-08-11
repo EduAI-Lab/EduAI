@@ -54,8 +54,11 @@ const COURSE_ENROLLMENT_LOCK_PREFIX = 'ai-tutor:course-enrollment:';
 export async function withCourseEnrollmentLock(courseOfferingId, operation) {
   if (typeof prisma.$transaction === 'function') {
     return prisma.$transaction(async (tx) => {
-      if (typeof tx.$queryRaw === 'function') {
-        await tx.$queryRaw`
+      if (typeof tx.$executeRaw === 'function') {
+        // `pg_advisory_xact_lock` returns PostgreSQL `void`, which Prisma
+        // cannot deserialize through `$queryRaw` (P2010). Execute the SELECT
+        // for its locking side effect instead.
+        await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtextextended(${`${COURSE_ENROLLMENT_LOCK_PREFIX}${courseOfferingId}`}, 0)
           )
