@@ -1,12 +1,12 @@
 # EduAI GitHub → Discord PR notifier
 
-The standalone service exposes a GitHub webhook for `EduAI-Lab/EduAI`. It creates one Discord text channel per pull request and keeps all PR activity in that channel.
+The standalone service exposes a GitHub webhook for `EduAI-Lab/EduAI`. It creates one public Discord thread per pull request and keeps all PR activity in that thread.
 
 ## Configure Discord
 
 1. Create a Discord application and add its bot to the server.
-2. Give it **Manage Channels**, **View Channel**, and **Send Messages** permissions in the server (and in the optional parent category).
-3. Configure the bot token and guild ID. Optionally set `DISCORD_PR_CATEGORY_ID` to the category under which PR channels should be created.
+2. Give it **View Channel**, **Send Messages**, **Create Public Threads**, and **Send Messages in Threads** permissions in the PR channel.
+3. Configure the bot token, guild ID, and PR parent channel ID.
 4. Configure `DISCORD_HANDLE_MAP` privately if plain-text Discord usernames should be included in targeted messages. The bot does not create pings.
 
 ## Configure GitHub
