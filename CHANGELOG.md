@@ -6,11 +6,15 @@
 
 - [ai-tutor] fix: `/teach` and `/guide` never checked `activity.enableTeachMode`/`enableGuideMode`, so disabling a mode for an activity only hid it client-side — an enrolled student calling the endpoint directly still got a working AI tutoring response. Both routes now 400 when their mode is disabled, mirroring `/custom`'s existing `enableCustomMode` check. Closes #1411. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
 - [ai-tutor] fix: `handleAiInteraction`'s chat-session ownership lookup (`existingSession`, scoped by `chatId`/`userId`/`activityId`/`mode`) was computed but never enforced — a client-supplied `chatId` was reused unconditionally whenever truthy, so a `chatId` belonging to another user's session (or a stale/unknown one) was passed through to the upstream EduAI call and `upsertChatSession`. Now rejected with 403 when the `chatId` doesn't resolve to a session owned by the caller. Closes #1412. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
+### Added
+
+- [docs] docs: Add `docs/end-to-end-user-workflows/` — README plus per-extension (Core, Question Maker, AI Tutor) workflow tracking templates for Epic #1429's pre-pilot end-to-end testing pass, with a role-based (Admin/Unit Admin/Instructor/TA/Student) findings table and the Claude-find/simulate/review/sweep-then-human testing methodology. Closes #1457. (@ariqmuldi, 2026-08-10) — #1458
 
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
 
+- [core] fix: Canvas file downloads now preserve a signed redirect to the live Canvas CDN (`*.canvas-user-content.com`, `*.inscloudgate.net`) instead of rewriting the redirect Location onto the configured Canvas origin, which invalidated the signed URL — only local Docker Canvas aliases are still rewritten. The Canvas bearer token is now sent only to the configured Canvas origin and is never forwarded on a cross-origin redirect hop; any other, non-allowlisted cross-host redirect is rejected before a second request is made. Closes #1264. (@saadtab01, 2026-08-09) — [#1437](https://github.com/EduAI-Lab/EduAI/pull/1437)
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
