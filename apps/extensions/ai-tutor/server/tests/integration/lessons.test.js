@@ -19,8 +19,13 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
+vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
 
-import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
 
 describe("Lessons routes", () => {
   let prof;
@@ -36,6 +41,13 @@ describe("Lessons routes", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+        const role = course.enrollments.find((row) => row.userId === userId)?.role ?? null;
+        const allowed = allowedRoles.includes(role);
+        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+      },
+    );
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -63,6 +75,22 @@ describe("Lessons routes", () => {
     });
     return ta;
   }
+
+  it('fails closed when Core cannot authorize a direct TA lesson list', async () => {
+    const ta = await enrollTa();
+    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+      allowed: false,
+      state: 'unavailable',
+      role: null,
+    });
+
+    const res = await request(await createApp({ mockUser: ta })).get(
+      `/api/modules/${seed.module.id}/lessons`,
+    );
+
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+  });
 
   // ── GET /api/modules/:moduleId/lessons ────────────────────────────
 

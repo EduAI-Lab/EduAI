@@ -106,9 +106,15 @@ describe('course authoring service boundaries', () => {
       return callback(tx);
     });
 
-    const result = await unpublishCourseForUser({ courseId: 20, user });
+    const result = await unpublishCourseForUser({
+      courseId: 20,
+      user,
+      cookie: 'session=user-session',
+    });
 
-    expect(setCoreCoursePublishState).toHaveBeenCalledWith('core-20', false);
+    expect(setCoreCoursePublishState).toHaveBeenCalledWith('core-20', false, {
+      cookie: 'session=user-session',
+    });
     expect(tx.module.updateMany).toHaveBeenCalledWith({
       where: { courseOfferingId: 20 },
       data: { isPublished: false },

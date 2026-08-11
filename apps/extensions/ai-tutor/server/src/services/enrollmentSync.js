@@ -101,8 +101,7 @@ export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, o
   try {
     return await withCourseEnrollmentLock(courseOfferingId, async (db) => {
       const course =
-        options.course ??
-        (await db.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+        options.course ?? (await db.courseOffering.findUnique({ where: { id: courseOfferingId } }));
       if (!course?.coreOfferingId) {
         // Without a Core link there is no authoritative roster to consult. Do
         // not fall back to a local row for a sensitive student operation.
@@ -212,6 +211,9 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
   );
 
   const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
+  const activeInstructorIds = new Set(
+    allEnrollments.filter((e) => e.isActive && e.role === 'INSTRUCTOR').map((e) => e.studentId),
+  );
 
   const existing = await db.courseEnrollment.findMany({
     where: { courseOfferingId },
@@ -227,6 +229,15 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
     const local = existingByUserId.get(e.studentId);
     return local && local.role !== (e.role ?? "STUDENT");
   });
+  const existingInstructors = db.courseInstructor
+    ? await db.courseInstructor.findMany({
+        where: { courseOfferingId },
+        select: { userId: true },
+      })
+    : [];
+  const revokedInstructorIds = existingInstructors
+    .map((row) => row.userId)
+    .filter((userId) => !activeInstructorIds.has(userId));
 
   try {
     if (toCreate.length > 0) {
@@ -253,6 +264,11 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
           courseOfferingId,
           userId: { in: toDelete.map((e) => e.userId) },
         },
+      });
+    }
+    if (revokedInstructorIds.length > 0 && db.courseInstructor) {
+      await db.courseInstructor.deleteMany({
+        where: { courseOfferingId, userId: { in: revokedInstructorIds } },
       });
     }
   } catch (e) {

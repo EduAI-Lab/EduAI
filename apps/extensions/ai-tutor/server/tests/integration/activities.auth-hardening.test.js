@@ -56,9 +56,9 @@ describe('activity auth hardening', () => {
       isPublished: true,
     });
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseOfferingId, userId, { course } = {}) => {
+      async (_courseOfferingId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
         const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
-        const allowed = enrollment?.role === 'STUDENT';
+        const allowed = allowedRoles.includes(enrollment?.role);
         return {
           allowed,
           state: allowed ? 'allowed' : 'denied',

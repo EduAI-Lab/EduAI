@@ -21,15 +21,10 @@ import {
 } from './enrollmentSync.js';
 import { logSafeError } from '../utils/safeErrors.js';
 
-const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR"]);
-const AUTO_ENROLL_ROLES = new Set(["STUDENT", "TA"]);
-const TEACHING_ENROLLMENT_ROLES = new Set(["INSTRUCTOR", "TA"]);
-const STUDENT_ENROLLMENT_ROLE = "STUDENT";
-const TA_ENROLLMENT_ROLE = "TA";
-
-function isTeachingCoreCourse(coreCourse) {
-  return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
-}
+const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
+const AUTO_ENROLL_ROLES = new Set(['STUDENT', 'TA']);
+const STUDENT_ENROLLMENT_ROLE = 'STUDENT';
+const TA_ENROLLMENT_ROLE = 'TA';
 
 function isStudentCoreCourse(coreCourse) {
   return (coreCourse?.callerEnrollmentRole ?? STUDENT_ENROLLMENT_ROLE) === STUDENT_ENROLLMENT_ROLE;
@@ -211,7 +206,10 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
       continue;
     }
 
-    if (!isTeachingCoreCourse(coreCourse)) {
+    // Platform role and per-course role are independent. A platform
+    // INSTRUCTOR who is only a TA in this particular course must retain TA
+    // access, but must never be promoted into the authoring LEAD mirror.
+    if (coreCourse.callerEnrollmentRole !== 'INSTRUCTOR') {
       skipped++;
       continue;
     }

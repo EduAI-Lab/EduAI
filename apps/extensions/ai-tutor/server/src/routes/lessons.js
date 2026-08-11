@@ -13,10 +13,31 @@ import { moveToPosition, parsePositionBody, ReorderError } from '../services/reo
 import { calculateLessonProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 import { sendSafeError } from '../utils/safeErrors.js';
+import {
+  authorizeLiveStudentEnrollment,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+} from '../services/enrollmentSync.js';
 
 const router = express.Router();
 
-router.get("/modules/:moduleId/lessons", async (req, res) => {
+async function requireLiveLearnerAccess(res, course, authUser, localRole) {
+  if (!['STUDENT', 'TA'].includes(localRole)) return true;
+  const result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
+    course,
+    allowedRoles: [localRole],
+  });
+  if (result.state === 'unavailable') {
+    res.status(503).json({
+      error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+    });
+    return false;
+  }
+  return result.allowed && result.role === localRole;
+}
+
+router.get('/modules/:moduleId/lessons', async (req, res) => {
   const authUser = req.user;
   if (!authUser) {
     return res.status(401).json({ error: "Authentication required" });
@@ -55,6 +76,14 @@ router.get("/modules/:moduleId/lessons", async (req, res) => {
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this module" });
+    }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (
+      localRole &&
+      !(await requireLiveLearnerAccess(res, module.courseOffering, authUser, localRole))
+    ) {
+      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this module' });
+      return;
     }
 
     const scope = hasElevatedAccess ? { moduleId } : { moduleId, isPublished: true };
@@ -202,6 +231,14 @@ router.get('/lessons/:lessonId', async (req, res) => {
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
     }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (
+      localRole &&
+      !(await requireLiveLearnerAccess(res, lesson.module.courseOffering, authUser, localRole))
+    ) {
+      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this lesson' });
+      return;
+    }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: "Lesson is not published" });
     }
@@ -270,6 +307,11 @@ router.get("/lessons/:lessonId/context", async (req, res) => {
 
     if (!hasElevatedAccess && !isStudent) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
+    }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (localRole && !(await requireLiveLearnerAccess(res, courseOffering, authUser, localRole))) {
+      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this lesson' });
+      return;
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: "Lesson is not published" });

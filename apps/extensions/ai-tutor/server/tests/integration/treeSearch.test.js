@@ -18,8 +18,13 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
+vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
 
-import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
 
 describe("Tree endpoint search (#1207)", () => {
   let prof;
@@ -35,6 +40,13 @@ describe("Tree endpoint search (#1207)", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+        const role = course.enrollments.find((row) => row.userId === userId)?.role ?? null;
+        const allowed = allowedRoles.includes(role);
+        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+      },
+    );
   });
 
   async function enrollStudent() {

@@ -44,9 +44,9 @@ describe("Activities routes", () => {
       isPublished: true,
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseOfferingId, userId, { course } = {}) => {
+      async (_courseOfferingId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
         const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
-        const allowed = enrollment?.role === 'STUDENT';
+        const allowed = allowedRoles.includes(enrollment?.role);
         return {
           allowed,
           state: allowed ? 'allowed' : 'denied',
@@ -811,7 +811,9 @@ describe("Activities routes", () => {
         status: 500,
         stack: `${canary}\n at privateQuery (db.js:1:1)`,
       });
-      const findUnique = vi.spyOn(prisma.activity, 'findUnique').mockRejectedValueOnce(internalError);
+      const findUnique = vi
+        .spyOn(prisma.activity, 'findUnique')
+        .mockRejectedValueOnce(internalError);
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       try {
@@ -1128,7 +1130,26 @@ describe("Activities routes", () => {
       expect(res.body.isCorrect).toBe(true);
     });
 
-    it("ADMIN can override", async () => {
+    it('fails closed before a TA grade write when Core authorization is unavailable', async () => {
+      const ta = await enrollTa();
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'unavailable',
+        role: null,
+      });
+
+      const res = await request(await createApp({ mockUser: ta }))
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+      expect(await prisma.submission.findUnique({ where: { id: submissionId } })).toMatchObject({
+        isCorrect: false,
+      });
+    });
+
+    it('ADMIN can override', async () => {
       const adminApp = await createApp({ mockUser: makeAdmin() });
 
       const res = await request(adminApp)

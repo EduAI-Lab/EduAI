@@ -13,8 +13,29 @@ import { moveToPosition, parsePositionBody, ReorderError } from '../services/reo
 import { calculateModuleProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 import { sendSafeError } from '../utils/safeErrors.js';
+import {
+  authorizeLiveStudentEnrollment,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+} from '../services/enrollmentSync.js';
 
 const router = express.Router();
+
+async function requireLiveLearnerAccess(res, course, authUser, localRole) {
+  if (!['STUDENT', 'TA'].includes(localRole)) return true;
+  const result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
+    course,
+    allowedRoles: [localRole],
+  });
+  if (result.state === 'unavailable') {
+    res.status(503).json({
+      error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+    });
+    return false;
+  }
+  return result.allowed && result.role === localRole;
+}
 
 async function getCourseMembership(courseId, authUser) {
   const course = await prisma.courseOffering.findUnique({
@@ -70,6 +91,11 @@ router.get("/courses/:courseId/modules", async (req, res) => {
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this course" });
+    }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (localRole && !(await requireLiveLearnerAccess(res, course, authUser, localRole))) {
+      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this course' });
+      return;
     }
 
     const scope = hasElevatedAccess
@@ -210,6 +236,14 @@ router.get('/modules/:moduleId', async (req, res) => {
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this module" });
+    }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (
+      localRole &&
+      !(await requireLiveLearnerAccess(res, module.courseOffering, authUser, localRole))
+    ) {
+      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this module' });
+      return;
     }
     if (isStudent && !hasElevatedAccess && !module.isPublished) {
       return res.status(403).json({ error: "Module is not published" });

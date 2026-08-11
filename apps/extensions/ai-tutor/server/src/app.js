@@ -1,6 +1,7 @@
-import express from "express";
-import cors from "cors";
-import { requireAuth } from "./middleware/auth.js";
+import express from 'express';
+import cors from 'cors';
+import { requireAuth } from './middleware/auth.js';
+import { requireSameOriginMutation } from './middleware/csrf.js';
 
 import authRoutes from "./routes/authentication.js";
 import courseRoutes from "./routes/courses.js";
@@ -52,6 +53,7 @@ export async function createApp(options = {}) {
   const app = express();
 
   app.use(cors(corsOptions));
+  app.use('/api', requireSameOriginMutation);
 
   // JSON parser for our own routes
   app.use(express.json());

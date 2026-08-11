@@ -9,6 +9,11 @@ vi.mock("../../src/config/database.js", () => ({
       deleteMany: vi.fn(),
       update: vi.fn(),
     },
+    courseInstructor: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
+    },
   },
 }));
 
@@ -57,6 +62,9 @@ beforeEach(() => {
   prisma.courseEnrollment.createMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.deleteMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.update.mockResolvedValue({});
+  prisma.courseInstructor.findMany.mockResolvedValue([]);
+  prisma.courseInstructor.createMany.mockResolvedValue({ count: 0 });
+  prisma.courseInstructor.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 afterEach(() => {
@@ -236,8 +244,28 @@ describe('syncCourseEnrollments', () => {
     });
   });
 
-  describe("delete path", () => {
-    it("deletes local STUDENT enrollment rows absent from Core active list", async () => {
+  describe('delete path', () => {
+    it('prunes revoked CourseInstructor rows after a complete authoritative roster response', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseInstructor.findMany.mockResolvedValue([{ userId: 'revoked-instructor' }]);
+
+      await syncCourseEnrollments(1);
+
+      expect(prisma.courseInstructor.deleteMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ['revoked-instructor'] } },
+      });
+    });
+
+    it('does not prune CourseInstructor rows when the authoritative roster is unavailable', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(new Error('Core unavailable'));
+      prisma.courseInstructor.findMany.mockResolvedValue([{ userId: 'existing-instructor' }]);
+
+      await expect(syncCourseEnrollments(1)).rejects.toThrow('Core unavailable');
+
+      expect(prisma.courseInstructor.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('deletes local STUDENT enrollment rows absent from Core active list', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
         { userId: "user-cuid-1", role: "STUDENT" },
@@ -433,7 +461,9 @@ describe('syncCourseEnrollments', () => {
       });
       let first = true;
 
-      prisma.courseEnrollment.findMany.mockImplementation(async () => rows.map((row) => ({ ...row })));
+      prisma.courseEnrollment.findMany.mockImplementation(async () =>
+        rows.map((row) => ({ ...row })),
+      );
       prisma.courseEnrollment.createMany.mockImplementation(async ({ data }) => {
         rows.push(...data.map((row) => ({ userId: row.userId, role: row.role })));
         return { count: data.length };

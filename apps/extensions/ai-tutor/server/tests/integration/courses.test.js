@@ -459,7 +459,9 @@ describe("Courses routes", () => {
         }),
       );
 
-      const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+      const res = await request(profApp)
+        .patch(`/api/courses/${seed.course.id}/publish`)
+        .set('Cookie', 'session=user-session');
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(true);
@@ -493,7 +495,9 @@ describe("Courses routes", () => {
         isPublished: false,
       });
 
-      const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
+      const res = await request(profApp)
+        .patch(`/api/courses/${seed.course.id}/unpublish`)
+        .set('Cookie', 'session=user-session');
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(false);
@@ -1068,7 +1072,9 @@ describe("Course publish state — Core write-through (#477)", () => {
     // above, so the read-back after publish must be set explicitly too.
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: CORE_OFFERING_ID, isPublished: true });
 
-    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+    const res = await request(profApp)
+      .patch(`/api/courses/${seed.course.id}/publish`)
+      .set('Cookie', 'session=user-session');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
@@ -1097,7 +1103,9 @@ describe("Course publish state — Core write-through (#477)", () => {
     // above, so the read-back after unpublish must be set explicitly too.
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: CORE_OFFERING_ID, isPublished: false });
 
-    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
+    const res = await request(profApp)
+      .patch(`/api/courses/${seed.course.id}/unpublish`)
+      .set('Cookie', 'session=user-session');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
@@ -1124,7 +1132,9 @@ describe("Course publish state — Core write-through (#477)", () => {
       }),
     );
 
-    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+    const res = await request(profApp)
+      .patch(`/api/courses/${seed.course.id}/publish`)
+      .set('Cookie', 'session=user-session');
 
     expect(res.status).toBe(500);
     // No local `isPublished` column exists anymore (#1072 step 4) — there is
@@ -1148,7 +1158,9 @@ describe("Course publish state — Core write-through (#477)", () => {
     );
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
 
-    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+    const res = await request(profApp)
+      .patch(`/api/courses/${seed.course.id}/publish`)
+      .set('Cookie', 'session=user-session');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
@@ -1168,7 +1180,9 @@ describe("Course publish state — Core write-through (#477)", () => {
     );
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
 
-    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
+    const res = await request(profApp)
+      .patch(`/api/courses/${seed.course.id}/unpublish`)
+      .set('Cookie', 'session=user-session');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);

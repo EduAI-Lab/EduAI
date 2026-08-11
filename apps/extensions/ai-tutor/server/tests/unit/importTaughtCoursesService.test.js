@@ -138,7 +138,18 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
     );
   });
 
-  it("skips courses already imported by the instructor", async () => {
+  it('does not promote a platform instructor who is a course TA to CourseInstructor LEAD', async () => {
+    listEduAiCourses.mockResolvedValue([
+      { id: 'core-1', callerEnrollmentRole: 'TA', isPublished: true },
+    ]);
+
+    const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
+
+    expect(result.imported).toBe(0);
+    expect(courseInstructorCreate).not.toHaveBeenCalled();
+  });
+
+  it('skips courses already imported by the instructor', async () => {
     listEduAiCourses.mockResolvedValue([
       {
         id: 'core-1',

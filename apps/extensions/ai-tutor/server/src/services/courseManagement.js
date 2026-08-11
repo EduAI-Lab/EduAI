@@ -164,27 +164,27 @@ export async function importCourseContentForUser({ courseId, body, user }) {
   });
 }
 
-async function resolvePublishWrite(courseId, user, published) {
+async function resolvePublishWrite(courseId, user, published, cookie) {
   const course = await loadCourseForAdmin(courseId);
   if (!(await isCourseAdmin(user, course))) {
     throw new CourseMutationError('Not authorized for this course', 403);
   }
 
   if (course.coreOfferingId) {
-    await setCoreCoursePublishState(course.coreOfferingId, published);
+    await setCoreCoursePublishState(course.coreOfferingId, published, { cookie });
   }
   const resolved = await resolveCoreCourseById(course.coreOfferingId);
   return { course, resolved, published };
 }
 
 /** Publish through Core without cascading child content. */
-export async function publishCourseForUser({ courseId, user }) {
-  return resolvePublishWrite(courseId, user, true);
+export async function publishCourseForUser({ courseId, user, cookie }) {
+  return resolvePublishWrite(courseId, user, true, cookie);
 }
 
 /** Unpublish through Core and atomically hide every local child module/lesson. */
-export async function unpublishCourseForUser({ courseId, user }) {
-  const result = await resolvePublishWrite(courseId, user, false);
+export async function unpublishCourseForUser({ courseId, user, cookie }) {
+  const result = await resolvePublishWrite(courseId, user, false, cookie);
   await prisma.$transaction(async (tx) => {
     await tx.module.updateMany({
       where: { courseOfferingId: courseId },

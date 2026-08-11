@@ -378,18 +378,21 @@ export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreSta
 /**
  * Propagate a publish/unpublish action to Core for a linked course offering.
  * Called by the AI Tutor publish/unpublish routes when `coreOfferingId` is set.
- * Uses the service key — Core verifies the key and applies the change.
+ * Uses the acting user's session so Core applies course access and the
+ * instructors.canPublishCourses policy to the real caller.
  * Throws an Error with `status` set on HTTP failure.
  */
-export async function setCoreCoursePublishState(coreOfferingId, publish) {
-  const serviceKey = process.env.EDUAI_API_KEY;
-  if (!serviceKey) {
-    throw new Error("EDUAI_API_KEY not configured");
+export async function setCoreCoursePublishState(coreOfferingId, publish, options = {}) {
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  if (!cookie) {
+    const error = new Error('Session cookie is required to update Core course publish state');
+    error.status = 401;
+    throw error;
   }
   const action = publish ? "publish" : "unpublish";
   return requestEduAi(`/courses/${coreOfferingId}/${action}`, {
-    method: "PATCH",
-    headers: { Authorization: `Bearer ${serviceKey}` },
+    method: 'PATCH',
+    cookie,
   });
 }
 

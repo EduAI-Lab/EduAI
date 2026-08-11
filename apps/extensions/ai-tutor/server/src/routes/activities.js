@@ -105,13 +105,16 @@ async function getCourseCode(coreOfferingId) {
  * authorization denial and never triggers a roster lookup.
  */
 async function getLiveStudentEnrollment(res, course, authUser) {
-  if (authUser.role !== 'STUDENT') {
+  if (!['STUDENT', 'TA'].includes(authUser.role)) {
     return { allowed: false, state: 'denied', role: null };
   }
 
   let result;
   try {
-    result = await authorizeLiveStudentEnrollment(course.id, authUser.id, { course });
+    result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
+      course,
+      allowedRoles: authUser.role === 'TA' ? ['TA'] : ['STUDENT'],
+    });
   } catch {
     result = { allowed: false, state: 'unavailable', role: null };
   }
@@ -1374,6 +1377,13 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: "Not authorized for this activity" });
     }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== 'TA') {
+        return res.status(403).json({ error: 'Not authorized for this activity' });
+      }
+    }
 
     const submissions = await prisma.submission.findMany({
       where: { activityId },
@@ -1464,6 +1474,13 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
     if (!(await isCourseAdmin(authUser, course)) && !isTa) {
       return res.status(403).json({ error: 'Not authorized for this submission' });
     }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== 'TA') {
+        return res.status(403).json({ error: 'Not authorized for this submission' });
+      }
+    }
 
     const updated = await prisma.submission.update({
       where: { id: submissionId },
@@ -1527,6 +1544,13 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: "Not authorized for this activity" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== 'TA') {
+        return res.status(403).json({ error: 'Not authorized for this activity' });
+      }
     }
 
     const feedback = await prisma.activityFeedback.findMany({

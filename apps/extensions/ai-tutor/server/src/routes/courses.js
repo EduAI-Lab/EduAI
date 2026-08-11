@@ -779,7 +779,11 @@ router.patch(
     }
 
     try {
-      const { course, resolved } = await publishCourseForUser({ courseId, user: authUser });
+      const { course, resolved } = await publishCourseForUser({
+        courseId,
+        user: authUser,
+        cookie: req.headers.cookie,
+      });
       if (resolved.coreUnavailable) {
         res.set('X-Core-Status', 'unavailable');
       }
@@ -820,6 +824,7 @@ router.patch(
       const { course, resolved } = await unpublishCourseForUser({
         courseId,
         user: authUser,
+        cookie: req.headers.cookie,
       });
       if (resolved.coreUnavailable) {
         res.set('X-Core-Status', 'unavailable');
