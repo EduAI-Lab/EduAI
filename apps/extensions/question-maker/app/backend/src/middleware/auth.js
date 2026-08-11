@@ -46,6 +46,38 @@ export async function fetchCoreAuth(input, init = {}, callerSignal) {
   }
 }
 
+/**
+ * Fetch Core on behalf of an Express request without using `req.signal`.
+ * Node aborts that signal when a fully-read request body closes, which is a
+ * normal lifecycle event for POST requests and must not cancel authentication.
+ * Express' `aborted` event is reserved for a premature client disconnect.
+ *
+ * The plain `req.signal` fallback keeps the helper usable by small unit-test
+ * request doubles that do not expose EventEmitter methods.
+ */
+export async function fetchCoreAuthForRequest(req, input, init = {}) {
+  if (typeof req?.once !== 'function') {
+    return fetchCoreAuth(input, init, req?.signal);
+  }
+
+  const caller = new AbortController();
+  const abortForDisconnect = () => {
+    if (!caller.signal.aborted) {
+      caller.abort(new DOMException('Client disconnected', 'AbortError'));
+    }
+  };
+
+  if (req.aborted) abortForDisconnect();
+  else req.once('aborted', abortForDisconnect);
+
+  try {
+    return await fetchCoreAuth(input, init, caller.signal);
+  } finally {
+    if (typeof req.off === 'function') req.off('aborted', abortForDisconnect);
+    else req.removeListener?.('aborted', abortForDisconnect);
+  }
+}
+
 export function isCoreAuthTimeoutError(error) {
   return error?.code === 'CORE_AUTH_TIMEOUT';
 }
@@ -65,13 +97,13 @@ function normalizeRole(role) {
  */
 export async function requireAuth(req, res, next) {
   try {
-    const response = await fetchCoreAuth(
+    const response = await fetchCoreAuthForRequest(
+      req,
       `${config.coreUrl}/api/sessions/validate`,
       {
         method: 'POST',
         headers: { cookie: req.headers.cookie ?? '' },
       },
-      req.signal,
     );
 
     if (response.status === 429) {

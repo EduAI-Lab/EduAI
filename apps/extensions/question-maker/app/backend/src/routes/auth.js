@@ -1,5 +1,9 @@
 import express from 'express';
-import { fetchCoreAuth, isCoreAuthTimeoutError, requireAuth } from '../middleware/auth.js';
+import {
+  fetchCoreAuthForRequest,
+  isCoreAuthTimeoutError,
+  requireAuth,
+} from '../middleware/auth.js';
 import { config } from '../config/settings.js';
 import { getMyProfileFromCore } from '../services/coreApiService.js';
 
@@ -33,19 +37,15 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
 // can be invalidated. Only acknowledge logout after Core confirms success.
 router.post('/auth/logout', async (req, res) => {
   try {
-    const coreRes = await fetchCoreAuth(
-      `${config.coreUrl}/api/auth/sign-out`,
-      {
-        method: 'POST',
-        headers: {
-          cookie: req.headers.cookie ?? '',
-          origin: config.corePublicOrigin,
-          'content-type': 'application/json',
-        },
-        body: '{}',
+    const coreRes = await fetchCoreAuthForRequest(req, `${config.coreUrl}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: {
+        cookie: req.headers.cookie ?? '',
+        origin: config.corePublicOrigin,
+        'content-type': 'application/json',
       },
-      req.signal,
-    );
+      body: '{}',
+    });
     if (!coreRes.ok) {
       console.error('[question-maker] Core sign-out failed', coreRes.status);
       if (coreRes.status === 408 || coreRes.status === 504) {
