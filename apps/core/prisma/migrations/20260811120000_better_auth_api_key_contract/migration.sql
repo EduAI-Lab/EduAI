@@ -19,6 +19,28 @@ ALTER TABLE "apiKey"
   ALTER COLUMN "permissions" TYPE TEXT
     USING CASE WHEN "permissions" IS NULL THEN NULL ELSE "permissions"::text END;
 
+-- PostgreSQL defaults only affect future inserts. Rows created by the old
+-- contract can therefore still be perpetual and unmetered (`false` plus NULL
+-- limits/expiry), even though Better Auth 1.6.22 verifies those rows exactly as
+-- stored. Bring every legacy row onto the current bounded policy while keeping
+-- its hash, owner, metadata, and permissions untouched. The one-year cap is
+-- the same maximum accepted by auth.server.ts for newly created keys. A key
+-- older than one year becomes expired immediately and must be rotated; newer
+-- keys continue working with the standard 10 requests/day limit.
+UPDATE "apiKey"
+SET
+  "rateLimitEnabled" = true,
+  "rateLimitTimeWindow" = COALESCE("rateLimitTimeWindow", 86400000),
+  "rateLimitMax" = COALESCE("rateLimitMax", 10),
+  "expiresAt" = LEAST(
+    COALESCE("expiresAt", "createdAt" + INTERVAL '365 days'),
+    "createdAt" + INTERVAL '365 days'
+  )
+WHERE "rateLimitEnabled" = false
+   OR "rateLimitTimeWindow" IS NULL
+   OR "rateLimitMax" IS NULL
+   OR "expiresAt" IS NULL;
+
 ALTER TABLE "apiKey"
   ALTER COLUMN "rateLimitEnabled" SET DEFAULT true,
   ALTER COLUMN "rateLimitTimeWindow" SET DEFAULT 86400000,
