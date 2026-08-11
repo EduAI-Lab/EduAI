@@ -3,10 +3,13 @@
  * generation, and extraction workflows.
  *
  * RBAC (rbac-matrix.md §16, issues #311/#312):
- *  - Flat role gate (AUTHORS) blocks STUDENT before any Core call.
  *  - Course-specific routes add a per-course access gate (requireCourseAccess /
  *    requireQuestionAccess) and scope the service by the authorized course's
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
+ *    This is the source of truth for course-level TA access: Core sessions carry
+ *    a platform STUDENT role for TAs, while the active enrollment resolves to
+ *    `courseAccess.level === 'ta'`. Course-less list/aggregate routes retain the
+ *    platform authoring-role gate so this does not become blanket STUDENT access.
  *  - #312: TA may edit/delete only question_metadata they created.
  *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
  *    remain caller-scoped; AI generation additionally requires a course context
@@ -97,8 +100,7 @@ async function assessmentInCourse(assessmentId, courseId) {
 router.post(
   "/",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId ?? req.body.classId }),
+  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId ?? req.body.classId }),
   async (req, res, next) => {
     try {
       const rawDescription = req.body.description ?? req.body.content;
@@ -159,7 +161,7 @@ router.post(
  * predicate includes every course the caller can author in (ADMIN catalog,
  * UNIT_ADMIN units, and instructor enrollments), including non-owned anchors.
  */
-router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get('/', authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -184,6 +186,13 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       scopeUserId = course.userId;
       scopeCourseId = course.id;
     } else {
+      // The course-bank view is TA-capable only when a concrete course is
+      // supplied and resolved above. Keep the legacy caller-scoped aggregate
+      // path restricted to platform authoring roles; otherwise a STUDENT
+      // session would gain an unscoped list merely by clearing `courseId`.
+      if (!QM_AUTHORIZED.includes(req.user.role)) {
+        return res.status(403).json({ success: false, error: 'Question bank courseId is required' });
+      }
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
       });
@@ -210,7 +219,7 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 });
 
 /** GET /api/questions/stats – returns aggregate stats (counts, types) for the user’s question bank. */
-router.get("/stats", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get('/stats', authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -231,6 +240,9 @@ router.get("/stats", authenticateToken, requireRole(QM_AUTHORIZED), async (req, 
       scopeUserId = course.userId;
       scopeCourseId = course.id;
     } else {
+      if (!QM_AUTHORIZED.includes(req.user.role)) {
+        return res.status(403).json({ success: false, error: 'Question bank courseId is required' });
+      }
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
       });
@@ -266,7 +278,7 @@ function csvCell(value) {
  * above). Reuses getQuestionsByUser (eager-loads course + variants, so no N+1).
  * Registered before `/:id` so the static `export` segment isn't captured as an id.
  */
-router.get("/export", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get('/export', authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId, format = "json" } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -383,8 +395,7 @@ router.get("/export", authenticateToken, requireRole(QM_AUTHORIZED), async (req,
 router.get(
   "/:id",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "ta" }),
+  requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       const question = await getQuestionById(req.params.id, req.qmCourse.userId);
@@ -403,7 +414,6 @@ router.get(
 router.put(
   "/:id",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -507,8 +517,7 @@ router.put(
 router.delete(
   "/:id",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "ta" }),
+  requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       if (denyTaNotOwner(req, res)) return;
@@ -529,7 +538,6 @@ router.delete(
 router.post(
   '/generate',
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   // Legacy generation used to be course-free. Keep it available only when
   // the caller supplies a course they can author in; otherwise deployment API
   // keys could be used as an unscoped generation oracle.
@@ -574,7 +582,6 @@ router.post(
 router.post(
   "/extract",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
   qmAiUserRateLimit,
   async (req, res, next) => {
@@ -618,8 +625,7 @@ router.post(
 router.post(
   "/extract/save",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
+  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
       const { primaryTopicId, topicName, questions, assessment } = req.body;

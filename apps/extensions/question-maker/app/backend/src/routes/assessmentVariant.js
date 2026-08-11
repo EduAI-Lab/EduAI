@@ -1,9 +1,11 @@
 /**
  * Routes for the assessment variant workflow (API path `/api/assessment-variant`).
  *
- * RBAC (rbac-matrix.md §17, issue #313): all routes require QM_AUTHORIZED role
- * (ADMIN, UNIT_ADMIN, INSTRUCTOR — TA excluded). Service scoping keys off the
- * authorized course's owner id (`req.qmCourse.userId`).
+ * RBAC (rbac-matrix.md §17, issue #313): authoring routes are instructor-only,
+ * while blueprint/readiness reads are TA-viewable. The latter use the
+ * enrollment-aware assessment gate because Core identifies a course TA as a
+ * platform STUDENT. Service scoping keys off the authorized course's owner id
+ * (`req.qmCourse.userId`).
  */
 import express from "express";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
@@ -83,8 +85,7 @@ router.patch(
 router.get(
   "/assessments/:id/blueprint-snapshot",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireAssessmentAccess({ min: "ta" }),
+  requireAssessmentAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       const snapshot = await getBlueprintSnapshot(Number(req.params.id), req.qmCourse.userId);
@@ -99,8 +100,7 @@ router.get(
 router.get(
   "/assessments/:id/variant-readiness",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireAssessmentAccess({ min: "ta" }),
+  requireAssessmentAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       // Course is derived from the authorized assessment (req.qmCourse), not the

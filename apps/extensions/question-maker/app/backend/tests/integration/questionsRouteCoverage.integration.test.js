@@ -1,7 +1,7 @@
 /**
  * Coverage-focused route tests for questions.js (issue #1217: questions.js was
  * the single largest uncovered file — 82 uncovered statements). questionRbac.test.js
- * already covers the STUDENT/TA platform-role gates and the INSTRUCTOR
+ * already covers ordinary STUDENT denial, enrollment-scoped TA access, and the INSTRUCTOR
  * edit-any-question case; this file exercises the remaining branches: stats/export
  * course-access gates, PUT/DELETE validation and TA-own-only enforcement, generate/
  * extract/extract-save/approve validation, and the order routes' assessment-in-course
@@ -324,11 +324,9 @@ describe("GET /api/questions/export", () => {
   });
 });
 
-describe("PUT /api/questions/:id", () => {
-  // Note: denyTaNotOwner's "TAs can only modify their own questions" 403 branch
-  // is currently unreachable via any real request — requireRole(QM_AUTHORIZED)
-  // excludes TA entirely (see questionRbac.test.js's "TA blocked at platform
-  // role gate" suite), so TA never reaches this handler. Not chased here.
+describe('PUT /api/questions/:id', () => {
+  // TA own-only behavior is covered in questionRbac.test.js and the real-Postgres
+  // qmTaAuthorization.integration.test.js; these cases focus on payload validation.
 
   it("rejects a non-integer courseId", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");

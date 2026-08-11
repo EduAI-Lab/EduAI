@@ -1,8 +1,8 @@
 /**
  * Coverage-focused route tests for assessmentVariant.js (issue #1217:
  * assessmentVariant.js was one of the worst-covered files at 61.9%).
- * assessmentRbac.test.js already covers the TA role-gate and one INSTRUCTOR
- * happy path (assemble-variants); this file exercises the remaining
+ * assessmentRbac.test.js already covers enrollment-scoped TA assessment views
+ * and one INSTRUCTOR happy path (assemble-variants); this file exercises the remaining
  * validation branches and the other four endpoints' happy paths.
  *
  * Same mocked-DB pattern as assessmentRbac.test.js — no live Core or test DB required.
@@ -59,8 +59,9 @@ vi.mock("../../src/config/database.js", () => ({
 
 const { default: app } = await import("../../src/app.js");
 
-const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
-const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
+const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
+const TA = { id: 'ta-1', role: 'STUDENT', email: 'ta@t.co', name: 'TA' };
+const COURSE = { id: 1, userId: 'owner-1', coreCourseId: 'cuid-core-course' };
 
 function authAs(user, enrollRole) {
   vi.stubGlobal(
@@ -135,9 +136,21 @@ describe("PATCH /api/assessment-variant/assessments/:id/role", () => {
   });
 });
 
-describe("GET /api/assessment-variant/assessments/:id/blueprint-snapshot", () => {
-  it("returns the snapshot", async () => {
-    authAs(INSTRUCTOR, "INSTRUCTOR");
+describe('GET /api/assessment-variant/assessments/:id/blueprint-snapshot', () => {
+  it('admits a platform STUDENT with an active TA enrollment', async () => {
+    authAs(TA, 'TA');
+    variantSvc.getBlueprintSnapshot.mockResolvedValue({ slots: [] });
+
+    const res = await request(app)
+      .get('/api/assessment-variant/assessments/5/blueprint-snapshot')
+      .set('Cookie', 'session=v');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ slots: [] });
+  });
+
+  it('returns the snapshot', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
     variantSvc.getBlueprintSnapshot.mockResolvedValue({ slots: [] });
 
     const res = await request(app)

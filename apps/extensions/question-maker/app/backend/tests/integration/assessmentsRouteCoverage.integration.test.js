@@ -1,7 +1,7 @@
 /**
  * Coverage-focused route tests for assessments.js (issue #1217: assessments.js
- * had 40 uncovered statements). assessmentRbac.test.js already covers the
- * STUDENT/TA role gates and the section/variant course-id forwarding; this
+ * had 40 uncovered statements). assessmentRbac.test.js already covers ordinary
+ * STUDENT denial, enrollment-scoped TA views, and the section/variant course-id forwarding; this
  * file exercises the remaining branches: request-body validation guards, the
  * GET list/detail course-access branches, DELETE, and the question-in-
  * assessment lookup routes.

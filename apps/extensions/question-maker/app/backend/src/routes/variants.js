@@ -2,9 +2,10 @@
  * Router for managing question variants (create/read/update/delete).
  *
  * RBAC (rbac-matrix.md §16 + §19, issues #311/#312):
- *  - Flat role gate blocks STUDENT before any Core call.
  *  - Per-course access gate (requireQuestionAccess / requireVariantAccess) admits
  *    ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C) and pins `req.qmCourse`.
+ *    Core identifies a course TA as platform STUDENT, so these course-scoped
+ *    routes must not apply a flat platform-role gate before enrollment lookup.
  *  - Resource semantics (#312): TA own-only edit/delete, instructor-only approval
  *    (isDraft:false), and the approved-variant 409 lock.
  * Course scoping in the service layer keys off the authorized course's owner id
@@ -71,8 +72,7 @@ function validateVariantEnums({ difficulty, reasoningLevel }) {
 router.post(
   "/:id/variants",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "ta" }),
+  requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       const {
@@ -137,8 +137,7 @@ router.post(
 router.get(
   "/:id/variants",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "ta" }),
+  requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       // Structure-bounded (#1044): always a bounded page — params are optional,
@@ -160,8 +159,7 @@ router.get(
 router.put(
   "/variants/:variantId",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireVariantAccess({ min: "ta" }),
+  requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       const {
@@ -365,8 +363,7 @@ router.patch(
 router.delete(
   "/variants/:variantId",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireVariantAccess({ min: "ta" }),
+  requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
       // §19 TA own-only delete (null createdBy = no owner → TA denied).

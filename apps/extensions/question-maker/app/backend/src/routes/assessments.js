@@ -3,8 +3,11 @@
  *
  * RBAC (rbac-matrix.md §17, issue #313): assessment authoring is instructor-only
  * (ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C)); TAs may VIEW assembled assessments
- * but not mutate them. Reads use min 'ta'; writes use min 'instructor'. The
- * flat role gate (AUTHORS) blocks STUDENT up front; service scoping keys off the
+ * but not mutate them. Reads use min 'ta'; writes use min 'instructor'.
+ * Course-scoped reads intentionally rely on the enrollment-aware course gate:
+ * Core sessions identify a TA as platform STUDENT, and the active TA enrollment
+ * is the only thing that admits them. Course-less aggregate reads retain the
+ * platform authoring-role gate; service scoping keys off the
  * authorized course's owner id (`req.qmCourse.userId`) and, for section/variant/question
  * writes, its course id (`req.qmCourse.id`) so a child resource from another course the
  * same user owns can't be mutated cross-course (#1).
@@ -98,7 +101,7 @@ router.post(
  * course owner. Without a courseId the list stays caller-scoped to the user's
  * own courses.
  */
-router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get('/', authenticateToken, async (req, res, next) => {
   try {
     const { courseId } = req.query;
 
@@ -118,6 +121,11 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       // Owner-scope so an enrolled non-owner viewer still sees the course's assessments.
       scopeUserId = course.userId;
       scopeCourseId = course.id;
+    } else if (!QM_AUTHORIZED.includes(req.user.role)) {
+      // A TA must select a concrete course so the enrollment-aware gate can
+      // resolve course scope. Do not turn this legacy aggregate endpoint into
+      // blanket platform-STUDENT access.
+      return res.status(403).json({ success: false, error: 'Assessment courseId is required' });
     }
 
     const { limit, offset } = parseLimitOffset(req.query);
@@ -138,14 +146,9 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 });
 
 /** GET /api/assessments/:id – fetches a single assessment. */
-router.get(
-  "/:id",
-  authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  viewAssessment,
-  async (req, res, next) => {
-    try {
-      const assessment = await getAssessmentById(req.params.id, req.qmCourse.userId);
+router.get('/:id', authenticateToken, viewAssessment, async (req, res, next) => {
+  try {
+    const assessment = await getAssessmentById(req.params.id, req.qmCourse.userId);
 
       res.json({
         success: true,
@@ -268,22 +271,17 @@ router.delete(
 );
 
 /** GET /api/assessments/:id/questions – returns questions associated with the assessment (TA view). */
-router.get(
-  "/:id/questions",
-  authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  viewAssessment,
-  async (req, res, next) => {
-    try {
-      // Structure-bounded (#1044): always a bounded page. Params are optional so
-      // a caller that sends none still gets a valid first page instead of a 400,
-      // but never the unbounded set — clients needing every row walk pages.
-      // `total` always reports the assessment's full question count. Sliced in
-      // memory because the service query joins per-assessment variant rows and
-      // orders by a JSON display-key, so a nested findAndCountAll would fight the
-      // join/ordering.
-      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
-      const all = await getQuestionsInAssessment(req.params.id, req.qmCourse.userId);
+router.get('/:id/questions', authenticateToken, viewAssessment, async (req, res, next) => {
+  try {
+    // Structure-bounded (#1044): always a bounded page. Params are optional so
+    // a caller that sends none still gets a valid first page instead of a 400,
+    // but never the unbounded set — clients needing every row walk pages.
+    // `total` always reports the assessment's full question count. Sliced in
+    // memory because the service query joins per-assessment variant rows and
+    // orders by a JSON display-key, so a nested findAndCountAll would fight the
+    // join/ordering.
+    const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const all = await getQuestionsInAssessment(req.params.id, req.qmCourse.userId);
 
       res.json(pageOf(all, pagination));
     } catch (error) {
@@ -294,20 +292,15 @@ router.get(
 
 // Section routes
 /** GET /api/assessments/:id/sections – lists sections tied to the assessment (TA view). */
-router.get(
-  "/:id/sections",
-  authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  viewAssessment,
-  async (req, res, next) => {
-    try {
-      // Structure-bounded (#1044): always a bounded page — a caller that sends no
-      // params gets the first page at `defaultPageSize`, not the whole set.
-      // Sliced in memory because the service eager-loads a deep
-      // section→variant→question tree, so a nested findAndCountAll would
-      // miscount/mislimit.
-      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
-      const all = await getSectionsForAssessment(req.params.id, req.qmCourse.userId);
+router.get('/:id/sections', authenticateToken, viewAssessment, async (req, res, next) => {
+  try {
+    // Structure-bounded (#1044): always a bounded page — a caller that sends no
+    // params gets the first page at `defaultPageSize`, not the whole set.
+    // Sliced in memory because the service eager-loads a deep
+    // section→variant→question tree, so a nested findAndCountAll would
+    // miscount/mislimit.
+    const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const all = await getSectionsForAssessment(req.params.id, req.qmCourse.userId);
 
       res.json(pageOf(all, pagination));
     } catch (error) {
@@ -507,17 +500,12 @@ router.delete(
 );
 
 /** GET /api/assessments/questions/:questionId/check-in-assessments – whether a question appears in any sections (TA view). */
-router.get(
-  "/questions/:questionId/check-in-assessments",
-  authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "ta", param: "questionId" }),
-  async (req, res, next) => {
-    try {
-      const result = await checkQuestionInAssessments(
-        Number(req.params.questionId),
-        req.qmCourse.userId,
-      );
+router.get('/questions/:questionId/check-in-assessments', authenticateToken, requireQuestionAccess({ min: 'ta', param: 'questionId' }), async (req, res, next) => {
+  try {
+    const result = await checkQuestionInAssessments(
+      Number(req.params.questionId),
+      req.qmCourse.userId
+    );
 
       res.json({
         success: true,
