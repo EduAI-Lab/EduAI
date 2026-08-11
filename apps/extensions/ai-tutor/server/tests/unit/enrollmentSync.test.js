@@ -404,8 +404,55 @@ describe("syncCourseEnrollments", () => {
     });
   });
 
-  describe("options.ttlMs throttling", () => {
-    it("skips the Core call when a sync succeeded within the TTL window", async () => {
+  describe('concurrent reconciliation', () => {
+    it('does not let a stale active snapshot reintroduce access after a newer revoked snapshot', async () => {
+      let rows = [{ userId: ACTIVE_ENROLLMENT.studentId, role: 'STUDENT' }];
+      let resolveFirstFetchStarted;
+      const firstFetchStarted = new Promise((resolve) => {
+        resolveFirstFetchStarted = resolve;
+      });
+      let releaseFirstFetch;
+      const firstFetch = new Promise((resolve) => {
+        releaseFirstFetch = () => resolve([ACTIVE_ENROLLMENT]);
+      });
+      let first = true;
+
+      prisma.courseEnrollment.findMany.mockImplementation(async () => rows.map((row) => ({ ...row })));
+      prisma.courseEnrollment.createMany.mockImplementation(async ({ data }) => {
+        rows.push(...data.map((row) => ({ userId: row.userId, role: row.role })));
+        return { count: data.length };
+      });
+      prisma.courseEnrollment.deleteMany.mockImplementation(async ({ where }) => {
+        const ids = new Set(where.userId.in);
+        const before = rows.length;
+        rows = rows.filter((row) => !ids.has(row.userId));
+        return { count: before - rows.length };
+      });
+      listEduAiCourseEnrollmentsServiceKey.mockImplementation(async () => {
+        if (first) {
+          first = false;
+          resolveFirstFetchStarted();
+          return firstFetch;
+        }
+        return [];
+      });
+
+      const staleActiveSync = syncCourseEnrollments(1);
+      await firstFetchStarted;
+      const newerRevokedSync = syncCourseEnrollments(1);
+
+      // Give an unsynchronized implementation a turn to fetch and reconcile
+      // the newer revoked snapshot before releasing the stale active fetch.
+      await new Promise((resolve) => setImmediate(resolve));
+      releaseFirstFetch();
+      await Promise.all([staleActiveSync, newerRevokedSync]);
+
+      expect(rows).toEqual([]);
+    });
+  });
+
+  describe('options.ttlMs throttling', () => {
+    it('skips the Core call when a sync succeeded within the TTL window', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([]);
 

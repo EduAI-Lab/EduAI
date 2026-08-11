@@ -56,6 +56,8 @@ vi.mock("../../src/services/topicSync.js", () => ({
 vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE: 'ENROLLMENT_AUTH_UNAVAILABLE',
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE: 'Enrollment authorization unavailable',
   authorizeLiveStudentEnrollment: vi.fn(),
   syncCourseEnrollments: vi
     .fn()
@@ -369,15 +371,35 @@ describe("Courses routes", () => {
       );
     });
 
-    it("falls back to the local mirror when the enrollment auto-sync fails", async () => {
-      vi.mocked(syncCourseEnrollments).mockRejectedValueOnce(new Error("Core unavailable"));
+    it('fails closed with a stable 503 when live enrollment authorization is unavailable', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockRejectedValueOnce(
+        new Error('Core unavailable'),
+      );
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
       const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
 
-      expect(res.status).toBe(200);
-      expect(res.body.id).toBe(seed.course.id);
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({
+        error: 'Enrollment authorization unavailable',
+        code: 'ENROLLMENT_AUTH_UNAVAILABLE',
+      });
+    });
+
+    it('returns 403 when live enrollment sync succeeds but the caller is not enrolled', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'denied',
+        role: null,
+      });
+      const student = makeStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'Not authorized for this course' });
     });
 
     it("bounds the Core course-field lookup with a signal, not just the enrollment sync (#1173 review)", async () => {

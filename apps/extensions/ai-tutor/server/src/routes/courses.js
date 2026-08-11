@@ -35,11 +35,12 @@
  *   - Importing from EduAI fans out into parallel topic + enrollment sync via
  *     `Promise.allSettled` so a partial upstream failure doesn't roll back the
  *     import itself; failures are logged.
- *   - `GET /courses/:courseId` auto-syncs enrollments from Core before its
- *     membership check (#1065) — same throttled sync-before-read pattern as
- *     `routes/topics.js` for #1031. `POST /courses/:courseId/sync-enrollments`
- *     is now dead code kept for API compatibility, same treatment as the old
- *     `POST .../topics/sync`.
+ *   - `GET /courses/:courseId` live-syncs student/TA enrollments from Core
+ *     before its membership check (#1065). A live roster failure fails closed
+ *     for learners; only staff roles may use the bounded local mirror
+ *     fallback. `POST /courses/:courseId/sync-enrollments` is now dead code
+ *     kept for API compatibility, same treatment as the old `POST
+ *     .../topics/sync`.
  *   - Publish has no cascading; unpublish CASCADES to all child modules and
  *     lessons in a transaction so a student can never reach orphaned content.
  *   - `POST /courses` accepts an optional `sourceCourseId` to deep-clone
@@ -97,8 +98,11 @@ import {
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
+  authorizeLiveStudentEnrollment,
   AUTO_SYNC_TIMEOUT_MS,
   AUTO_SYNC_TTL_MS,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
   syncCourseEnrollments,
 } from '../services/enrollmentSync.js';
 import {
@@ -592,12 +596,11 @@ router.post(
  * Why: this route's own membership check reads the local `CourseEnrollment`
  * mirror, so a stale mirror isn't just a display bug here — it's an
  * authorization bug (a removed student could still pass the `isMember`
- * check). Auto-syncs from Core for imported courses before checking
- * membership (#1065, same sync-before-read pattern `GET
- * /courses/:courseId/topics` uses for #1031), throttled to
- * `AUTO_SYNC_TTL_MS` and bounded to `AUTO_SYNC_TIMEOUT_MS`. A failed or
- * timed-out sync falls back to the local mirror rather than failing the
- * request — same fail-soft posture as the Core course-field read below.
+ * check). Student/TA callers use the uncached live authorization helper,
+ * which serializes Core fetch + reconciliation + effective-role read and
+ * fails closed with a stable 503 when Core is unavailable. Staff roles have
+ * authorization independent of the enrollment mirror, so they retain the
+ * bounded local-sync fallback used by management surfaces.
  */
 router.get("/courses/:courseId", async (req, res) => {
   const authUser = req.user;
@@ -623,7 +626,31 @@ router.get("/courses/:courseId", async (req, res) => {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    if (course.coreOfferingId) {
+    const isLearner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+    let liveEnrollment = null;
+
+    if (isLearner) {
+      try {
+        liveEnrollment = await authorizeLiveStudentEnrollment(courseId, authUser.id, {
+          course,
+          allowedRoles: ['STUDENT', 'TA'],
+        });
+      } catch {
+        liveEnrollment = { allowed: false, state: 'unavailable', role: null };
+      }
+
+      if (liveEnrollment?.state === 'unavailable') {
+        return res.status(503).json({
+          error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+    } else if (course.coreOfferingId) {
+      // Staff authorization is based on ADMIN, instructor assignment, or the
+      // live UNIT_ADMIN department check — never on CourseEnrollment. It is
+      // therefore safe for management callers to use the bounded local mirror
+      // when the Core roster is unavailable, while learner callers above fail
+      // closed instead of authorizing from stale rows.
       try {
         await syncCourseEnrollments(courseId, {
           course,
@@ -632,14 +659,19 @@ router.get("/courses/:courseId", async (req, res) => {
         });
       } catch (e) {
         const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        logSafeError(`[courses] Enrollment auto-sync (${phase}) failed; serving local mirror`, e);
+        logSafeError(
+          `[courses] Staff enrollment auto-sync (${phase}) failed; serving local mirror`,
+          e,
+        );
       }
     }
 
-    const enrollments = await prisma.courseEnrollment.findMany({
-      where: { courseOfferingId: courseId },
-      select: { userId: true, role: true },
-    });
+    const enrollments = isLearner
+      ? []
+      : await prisma.courseEnrollment.findMany({
+          where: { courseOfferingId: courseId },
+          select: { userId: true, role: true },
+        });
 
     // #1072 step 2/4: single-course read-through, resolved once and reused
     // for both the UNIT_ADMIN department check below and the response body
@@ -663,7 +695,9 @@ router.get("/courses/:courseId", async (req, res) => {
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = enrollments.find((e) => e.userId === authUser.id);
     const unitAdmin = await isUnitAdminForCourse(authUser, course, coreCourse);
-    const isMember = isAdmin || isInstructor || enrollment != null || unitAdmin;
+    const isMember = isLearner
+      ? liveEnrollment?.allowed === true
+      : isAdmin || isInstructor || enrollment != null || unitAdmin;
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this course" });

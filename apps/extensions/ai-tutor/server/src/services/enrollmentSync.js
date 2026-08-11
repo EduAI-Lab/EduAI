@@ -36,6 +36,42 @@ export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE = 'ENROLLMENT_AUTH_UNAVAILABL
 export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE = 'Enrollment authorization unavailable';
 
 const lastAutoSyncAt = new Map();
+const localCourseLockTails = new Map();
+const COURSE_ENROLLMENT_LOCK_PREFIX = 'ai-tutor:course-enrollment:';
+
+/**
+ * Serialize a course's roster fetch, local reconciliation, and any effective
+ * role read. Production uses a PostgreSQL transaction-scoped advisory lock so
+ * separate API replicas share the same lock. The Core request intentionally
+ * runs inside that short transaction: releasing the lock between the fetch and
+ * write would allow an older active snapshot to overwrite a newer revocation.
+ * The local queue is only a test/runtime fallback for lightweight Prisma
+ * doubles that do not expose `$transaction`; it is bounded by deleting its
+ * tail when the operation settles.
+ */
+async function withCourseEnrollmentLock(courseOfferingId, operation) {
+  if (typeof prisma.$transaction === 'function') {
+    return prisma.$transaction(async (tx) => {
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(${`${COURSE_ENROLLMENT_LOCK_PREFIX}${courseOfferingId}`}, 0)
+          )
+        `;
+      }
+      return operation(tx);
+    });
+  }
+
+  const previous = localCourseLockTails.get(courseOfferingId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(() => operation(prisma));
+  localCourseLockTails.set(courseOfferingId, current);
+  return current.finally(() => {
+    if (localCourseLockTails.get(courseOfferingId) === current) {
+      localCourseLockTails.delete(courseOfferingId);
+    }
+  });
+}
 
 /**
  * Reconcile one caller's course enrollment against Core immediately before a
@@ -57,37 +93,39 @@ export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, o
     return { allowed: false, state: 'denied', role: null };
   }
 
-  let course;
   try {
-    course =
-      options.course ??
-      (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
-  } catch {
-    return { allowed: false, state: 'unavailable', role: null };
-  }
-  if (!course?.coreOfferingId) {
-    // Without a Core link there is no authoritative roster to consult. Do not
-    // fall back to a local row for a sensitive student operation.
-    return { allowed: false, state: 'denied', role: null };
-  }
+    return await withCourseEnrollmentLock(courseOfferingId, async (db) => {
+      const course =
+        options.course ??
+        (await db.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+      if (!course?.coreOfferingId) {
+        // Without a Core link there is no authoritative roster to consult. Do
+        // not fall back to a local row for a sensitive student operation.
+        return { allowed: false, state: 'denied', role: null };
+      }
 
-  try {
-    const signal =
-      options.signal ?? AbortSignal.timeout(options.timeoutMs ?? LIVE_ENROLLMENT_SYNC_TIMEOUT_MS);
-    // Do not pass ttlMs: this is intentionally a live authorization check.
-    await syncCourseEnrollments(courseOfferingId, { course, signal });
-    const enrollment = await prisma.courseEnrollment.findUnique({
-      where: {
-        courseOfferingId_userId: {
-          courseOfferingId,
-          userId,
+      const signal =
+        options.signal ?? AbortSignal.timeout(options.timeoutMs ?? LIVE_ENROLLMENT_SYNC_TIMEOUT_MS);
+      // Do not pass ttlMs: this is intentionally a live authorization check.
+      await syncCourseEnrollmentsLocked(courseOfferingId, { course, signal }, db);
+      const enrollment = await db.courseEnrollment.findUnique({
+        where: {
+          courseOfferingId_userId: {
+            courseOfferingId,
+            userId,
+          },
         },
-      },
-      select: { role: true },
+        select: { role: true },
+      });
+      const role = enrollment?.role ?? null;
+      const allowedRoles = new Set(
+        Array.isArray(options.allowedRoles) && options.allowedRoles.length > 0
+          ? options.allowedRoles
+          : ['STUDENT'],
+      );
+      const allowed = role != null && allowedRoles.has(role);
+      return { allowed, state: allowed ? 'allowed' : 'denied', role };
     });
-    const role = enrollment?.role ?? null;
-    const allowed = role === 'STUDENT';
-    return { allowed, state: allowed ? 'allowed' : 'denied', role };
   } catch {
     // Keep upstream details out of the route contract. The route can log the
     // error with its normal server-side policy, but callers see one stable 503
@@ -129,8 +167,19 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
     return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
   }
 
+  return withCourseEnrollmentLock(courseOfferingId, (db) =>
+    syncCourseEnrollmentsLocked(courseOfferingId, options, db),
+  );
+}
+
+/**
+ * Reconcile one course while the caller holds the course lock. Keeping this
+ * separate prevents `authorizeLiveStudentEnrollment` from releasing the lock
+ * between reconciliation and its effective-role read.
+ */
+async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
   const course =
-    options.course ?? (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+    options.course ?? (await db.courseOffering.findUnique({ where: { id: courseOfferingId } }));
 
   if (!course || !course.coreOfferingId) {
     return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
@@ -159,7 +208,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
 
   const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
 
-  const existing = await prisma.courseEnrollment.findMany({
+  const existing = await db.courseEnrollment.findMany({
     where: { courseOfferingId },
     select: { userId: true, role: true },
   });
@@ -176,7 +225,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
 
   try {
     if (toCreate.length > 0) {
-      await prisma.courseEnrollment.createMany({
+      await db.courseEnrollment.createMany({
         data: toCreate.map((e) => ({
           courseOfferingId,
           userId: e.studentId,
@@ -187,14 +236,14 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
     }
 
     for (const e of toUpdate) {
-      await prisma.courseEnrollment.update({
+      await db.courseEnrollment.update({
         where: { courseOfferingId_userId: { courseOfferingId, userId: e.studentId } },
         data: { role: e.role ?? "STUDENT" },
       });
     }
 
     if (toDelete.length > 0) {
-      await prisma.courseEnrollment.deleteMany({
+      await db.courseEnrollment.deleteMany({
         where: {
           courseOfferingId,
           userId: { in: toDelete.map((e) => e.userId) },
