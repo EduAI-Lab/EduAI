@@ -36,51 +36,139 @@ psql_tutor() { psql -h "$DB_HOST" -p "$DB_PORT_TUTOR" -U "$DB_USER" -d ai-tutor 
 psql_qm()    { psql -h "$DB_HOST" -p "$DB_PORT_QM"    -U "$DB_USER" -d question-maker  "$@"; }
 
 # ── Cron status reporting ────────────────────────────────────────────────────
-# Usage: cron_start <job_name>   → sets CRON_RUN_ID
-#        cron_finish             → marks last run SUCCESS
-#        cron_fail <message>     → marks last run ERROR and calls die
+# Usage: cron_start <job_name>   → sets CRON_RUN_ID and CRON_LEASE_OWNER
+#        cron_finish             → marks the owned run SUCCESS
+#        cron_fail <message>     → marks the owned run ERROR and calls die
+#
+# Core-triggered children receive CORE_CRON_RUN_ID and deliberately skip these
+# helpers. Core owns their lease and terminal transition. A direct invocation
+# (for example from an OS scheduler) creates and owns its own finite lease.
 
 CRON_RUN_ID=""
 CRON_JOB_NAME=""
+CRON_LEASE_OWNER=""
+
+# Standalone jobs do not have a Core heartbeat process. Keep their lease finite
+# and configurable so a crashed process can be reaped by Core later. The Core
+# setting is accepted as a fallback because deployments commonly share one
+# environment; the standalone-specific name wins when both are present.
+cron_standalone_lease_ms() {
+  local lease_ms="${CRON_STANDALONE_LEASE_MS:-${CRON_RUN_LEASE_MS:-600000}}"
+  [[ "$lease_ms" =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "$lease_ms"
+}
 
 cron_start() {
-  local job=$1
+  local job=${1:?"cron_start requires a job name"}
   CRON_JOB_NAME="$job"
-  local now
-  now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-  CRON_RUN_ID=$(psql_core -v job="$job" -v now="$now" -t -A -c "
-    INSERT INTO cron_job_runs (id, \"jobName\", status, \"startedAt\", \"createdAt\")
-    VALUES (gen_random_uuid(), :'job', 'RUNNING', :'now', :'now')
-    RETURNING id
-  " 2>/dev/null || true)
+
+  local lease_ms
+  if ! lease_ms=$(cron_standalone_lease_ms); then
+    die "Invalid standalone cron lease duration; set CRON_STANDALONE_LEASE_MS to a positive integer number of milliseconds"
+  fi
+
+  local result
+  CRON_RUN_ID=""
+  CRON_LEASE_OWNER=""
+  if ! result=$(
+    psql_core \
+      -v ON_ERROR_STOP=1 \
+      -v job="$job" \
+      -v lease_ms="$lease_ms" \
+      -t -A -F '|' <<'SQL'
+      INSERT INTO cron_job_runs (
+        id, "jobName", status, "startedAt", "createdAt",
+        "leaseOwner", "leaseHeartbeatAt", "leaseExpiresAt"
+      )
+      VALUES (
+        gen_random_uuid()::text,
+        :'job',
+        'RUNNING'::"CronJobStatus",
+        statement_timestamp(),
+        statement_timestamp(),
+        gen_random_uuid()::text,
+        statement_timestamp(),
+        statement_timestamp() + (:'lease_ms'::bigint * INTERVAL '1 millisecond')
+      )
+      RETURNING id, "leaseOwner";
+SQL
+  ); then
+    die "Unable to create cron audit run for [$job]"
+  fi
+
+  IFS='|' read -r CRON_RUN_ID CRON_LEASE_OWNER <<<"$result"
+  if [[ -z "$CRON_RUN_ID" || -z "$CRON_LEASE_OWNER" ]]; then
+    die "Core returned an incomplete cron audit run for [$job]"
+  fi
   log "[$job] run started (id=${CRON_RUN_ID:-unknown})"
 }
 
 cron_finish() {
-  local now
-  now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-  if [ -n "$CRON_RUN_ID" ]; then
-    psql_core -v runid="$CRON_RUN_ID" -v now="$now" -c "
+  if [[ -z "$CRON_RUN_ID" || -z "$CRON_LEASE_OWNER" ]]; then
+    log "[$CRON_JOB_NAME] run finished successfully (Core owns audit state)"
+    return 0
+  fi
+
+  local updated
+  if ! updated=$(
+    psql_core \
+      -v ON_ERROR_STOP=1 \
+      -v runid="$CRON_RUN_ID" \
+      -v owner="$CRON_LEASE_OWNER" \
+      -t -A <<'SQL'
       UPDATE cron_job_runs
-      SET status = 'SUCCESS', \"finishedAt\" = :'now',
-          message = 'Completed successfully'
+      SET status = 'SUCCESS'::"CronJobStatus",
+          "finishedAt" = statement_timestamp(),
+          message = 'Completed successfully',
+          "exitCode" = 0,
+          "leaseOwner" = NULL,
+          "leaseHeartbeatAt" = NULL,
+          "leaseExpiresAt" = NULL
       WHERE id = :'runid'
-    " 2>/dev/null || true
+        AND status = 'RUNNING'::"CronJobStatus"
+        AND "leaseOwner" = :'owner'
+        AND "leaseExpiresAt" > statement_timestamp()
+      RETURNING id
+SQL
+  ); then
+    die "Unable to record successful completion for cron run [$CRON_RUN_ID]"
+  fi
+  if [[ -z "$updated" ]]; then
+    die "Cron run [$CRON_RUN_ID] completion rejected: lease ownership was lost or expired"
   fi
   log "[$CRON_JOB_NAME] run finished successfully"
 }
 
 cron_fail() {
   local msg="${1:-unknown error}"
-  local now
-  now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-  if [ -n "$CRON_RUN_ID" ]; then
-    psql_core -v runid="$CRON_RUN_ID" -v now="$now" -v msg="$msg" -c "
-      UPDATE cron_job_runs
-      SET status = 'ERROR', \"finishedAt\" = :'now',
-          message = :'msg', \"exitCode\" = 1
-      WHERE id = :'runid'
-    " 2>/dev/null || true
+  if [[ -n "$CRON_RUN_ID" && -n "$CRON_LEASE_OWNER" ]]; then
+    local updated
+    if ! updated=$(
+      psql_core \
+        -v ON_ERROR_STOP=1 \
+        -v runid="$CRON_RUN_ID" \
+        -v owner="$CRON_LEASE_OWNER" \
+        -v msg="$msg" \
+        -t -A <<'SQL'
+        UPDATE cron_job_runs
+        SET status = 'ERROR'::"CronJobStatus",
+            "finishedAt" = statement_timestamp(),
+            message = :'msg',
+            "exitCode" = 1,
+            "leaseOwner" = NULL,
+            "leaseHeartbeatAt" = NULL,
+            "leaseExpiresAt" = NULL
+        WHERE id = :'runid'
+          AND status = 'RUNNING'::"CronJobStatus"
+          AND "leaseOwner" = :'owner'
+          AND "leaseExpiresAt" > statement_timestamp()
+        RETURNING id
+SQL
+    ); then
+      log "[$CRON_JOB_NAME] could not persist ERROR status for cron run [$CRON_RUN_ID]"
+    elif [[ -z "$updated" ]]; then
+      log "[$CRON_JOB_NAME] ERROR status rejected: lease ownership was lost or expired"
+    fi
   fi
   die "$msg"
 }
