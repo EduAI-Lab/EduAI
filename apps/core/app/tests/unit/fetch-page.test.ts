@@ -25,10 +25,12 @@ vi.mock("@mendable/firecrawl-js", () => ({
 process.env.FIRECRAWL_API_KEY = "test-key";
 
 let runFetchPage: typeof import("~/lib/ai/tools/fetch-page").runFetchPage;
+let fetchPage: typeof import("~/lib/ai/tools/fetch-page").fetchPage;
 
 async function loadModule() {
   const mod = await import("~/lib/ai/tools/fetch-page");
   runFetchPage = mod.runFetchPage;
+  fetchPage = mod.fetchPage;
 }
 
 beforeAll(async () => {
@@ -308,5 +310,28 @@ describe("runFetchPage - egress boundaries", () => {
     expect(result.error).toBeDefined();
     expect(scrapeMock).not.toHaveBeenCalled();
     expect(crawlMock).not.toHaveBeenCalled();
+  });
+
+  it("propagates the AI SDK tool abort signal to the Firecrawl operation", async () => {
+    scrapeMock.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const execute = fetchPage.execute;
+    expect(execute).toBeDefined();
+
+    const startedAt = Date.now();
+    const resultPromise = execute!({
+      url: "https://example.com",
+      timeoutMs: 10_000,
+    }, {
+      toolCallId: "tool-1",
+      messages: [],
+      abortSignal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(resultPromise).resolves.toMatchObject({ error: "Fetch cancelled" });
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(scrapeMock).toHaveBeenCalledTimes(1);
   });
 });

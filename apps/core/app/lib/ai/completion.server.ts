@@ -14,6 +14,7 @@ import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import {
   classifyProviderError,
   createProviderFailure,
+  providerErrorDiagnostic,
 } from "~/lib/ai/provider-errors.server";
 import {
   FleetUnavailableError,
@@ -534,6 +535,11 @@ export async function runCompletion(request: CompletionRequest) {
     // languageModel() can throw before streamText when the selected provider
     // was not registered. Normalize it so SDK details and credentials cannot
     // escape through the public completion contract.
+    console.error("[completion] provider setup failed", {
+      model: validatedModelId,
+      providerId: parsedModel.providerId,
+      diagnostic: providerErrorDiagnostic(error),
+    });
     return classifyProviderError(parsedModel.providerId, error);
   }
 
@@ -554,8 +560,20 @@ export async function runCompletion(request: CompletionRequest) {
       temperature,
       maxTokens,
       abortSignal: request.signal,
+      onError: ({ error }) => {
+        console.error("[completion] provider stream error", {
+          model: validatedModelId,
+          providerId: parsedModel.providerId,
+          diagnostic: providerErrorDiagnostic(error),
+        });
+      },
     });
   } catch (error) {
+    console.error("[completion] provider stream failed", {
+      model: validatedModelId,
+      providerId: parsedModel.providerId,
+      diagnostic: providerErrorDiagnostic(error),
+    });
     return classifyProviderError(parsedModel.providerId, error);
   }
 
@@ -596,6 +614,11 @@ export async function runCompletion(request: CompletionRequest) {
       },
     };
   } catch (error) {
+    console.error("[completion] provider stream failed", {
+      model: validatedModelId,
+      providerId: parsedModel.providerId,
+      diagnostic: providerErrorDiagnostic(error),
+    });
     return classifyProviderError(parsedModel.providerId, error);
   }
 }

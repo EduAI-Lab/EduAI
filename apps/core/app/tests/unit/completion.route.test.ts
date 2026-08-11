@@ -158,6 +158,7 @@ describe("POST /api/completion review regressions", () => {
   it("returns a sanitized provider contract when languageModel() throws", async () => {
     const setupError = new Error("AI_NoSuchProviderError: key sk-do-not-leak");
     setupError.name = "AI_NoSuchProviderError";
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     vi.mocked(createAIProviderRegistry).mockReturnValue({
       languageModel: vi.fn().mockImplementation(() => {
@@ -176,7 +177,9 @@ describe("POST /api/completion review regressions", () => {
       provider: "vllm",
     });
     expect(JSON.stringify(body)).not.toContain("sk-do-not-leak");
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("sk-do-not-leak");
     expect(streamText).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
   it("treats a missing client API key as invalid provider configuration", async () => {

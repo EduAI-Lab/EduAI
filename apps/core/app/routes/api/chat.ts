@@ -9,14 +9,16 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
-import { providerConfigurationHint } from "~/lib/ai/provider-types";
 import {
   classifyProviderError,
   createProviderFailure,
+  isProviderAbortError,
   providerFailureBody,
   providerFailureHeaders,
+  providerErrorDiagnostic,
   type ProviderFailure,
 } from "~/lib/ai/provider-errors.server";
+import { providerConfigurationHint } from "~/lib/ai/provider-types";
 import {
   activeRouterVersion,
   parseRouterMode,
@@ -472,28 +474,14 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 }
 
 function formatStreamError(error: unknown): string {
-  if (error instanceof Error) {
-    const message = error.message || error.name;
-    if (message.includes("Invalid arguments for tool")) {
-      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
-    }
-    return message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown stream error";
-  }
+  return classifyProviderError(error, "stream").message;
 }
 
 function logStreamError(error: unknown, trace: Record<string, unknown>): void {
   console.error("[chat-api] stream error", {
     error: formatStreamError(error),
     trace,
-    raw: error,
+    diagnostic: providerErrorDiagnostic(error),
   });
 }
 
@@ -517,7 +505,7 @@ function providerStreamErrorMessage(
 
 function isClientAbort(error: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true;
-  return error instanceof Error && error.name === "AbortError";
+  return isProviderAbortError(error);
 }
 
 /** Empty response when the client cancelled (e.g. stop button / fetch abort). */
@@ -2753,11 +2741,13 @@ ${buildEmptyCourseRagBlock()}`;
             stage: "non-streaming-provider",
           });
         }
-        console.error("Error in non-streaming response:", error);
+        console.error("[chat-api] non-streaming response finalization failed", {
+          trace: streamTrace,
+          diagnostic: providerErrorDiagnostic(error),
+        });
         return new Response(
           JSON.stringify({
-            error: "Failed to generate non-streaming response",
-            details: error instanceof Error ? error.message : "Unknown error",
+            error: "Failed to finalize non-streaming response",
           }),
           {
             status: 500,
@@ -2770,7 +2760,7 @@ ${buildEmptyCourseRagBlock()}`;
     if (isClientAbort(error, request.signal)) {
       return clientAbortResponse();
     }
-    console.error("Chat API error:", error);
+    console.error("Chat API error:", providerErrorDiagnostic(error));
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

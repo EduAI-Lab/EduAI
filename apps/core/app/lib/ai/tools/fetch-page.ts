@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { tool, type ToolExecutionOptions } from "ai";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { isIP } from "node:net";
 import { z } from "zod";
@@ -191,7 +191,11 @@ export async function runFetchPage({
         };
       }
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError" && Date.now() >= deadlineAt) {
+      if (
+        error instanceof Error &&
+        error.name === "AbortError" &&
+        (error.message === "Web fetch deadline exceeded" || Date.now() >= deadlineAt)
+      ) {
         return failureResult(url, error);
       }
       if (signal?.aborted) return failureResult(url, error);
@@ -243,6 +247,14 @@ export async function runFetchPage({
   }
 }
 
+/** Adapter for AI SDK v4: request cancellation arrives in execute options, not tool arguments. */
+export async function executeFetchPage(
+  args: { url: string; timeoutMs?: number },
+  options: Pick<ToolExecutionOptions, "abortSignal">,
+): Promise<FetchPageResult> {
+  return runFetchPage({ ...args, signal: options.abortSignal });
+}
+
 export const fetchPage = tool({
   description:
     "Fetch and return the main content of a web page as markdown with metadata. Use this after webSearch to read full details from promising URLs.",
@@ -256,5 +268,5 @@ export const fetchPage = tool({
       .default(DEFAULT_FETCH_TIMEOUT_MS)
       .describe("Per-request timeout in milliseconds"),
   }),
-  execute: runFetchPage,
+  execute: executeFetchPage,
 });
