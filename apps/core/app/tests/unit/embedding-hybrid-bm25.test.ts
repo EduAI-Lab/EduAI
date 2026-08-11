@@ -212,11 +212,13 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
 
   it("keeps visibility and deletion filters in both UNION arms", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
-    const [lexical, semantic] = capturedSql().split("UNION");
-    expect(lexical).toContain('cm."deletedAt" IS NULL');
-    expect(semantic).toContain('cm."deletedAt" IS NULL');
-    expect(lexical).toContain('cm."visibleToStudents" = true');
-    expect(semantic).toContain('cm."visibleToStudents" = true');
+    const sql = capturedSql();
+    // Both filters belong to the vector_candidates and lexical_candidates CTEs,
+    // which appear before the UNION that combines them into candidate_chunks.
+    // Count occurrences in the complete query rather than splitting at UNION;
+    // the post-UNION projection intentionally references candidate_chunks only.
+    expect(sql.match(/cm\."deletedAt" IS NULL/g)).toHaveLength(2);
+    expect(sql.match(/cm\."visibleToStudents" = true/g)).toHaveLength(2);
   });
 
   // #941: content_tsv is a GENERATED ALWAYS ... STORED column (GIN-indexed) derived
