@@ -64,4 +64,34 @@ describe('collectAssessmentExportBlocks section ordering', () => {
     const blocks = collectAssessmentExportBlocks(assessment);
     expect(blocks.map((b) => b.stem)).toEqual(['Q3', 'Q1', 'Q2']);
   });
+
+  it('does not interleave sections when displayOrder overlaps across sections', () => {
+    const a0 = variant(1, 'A:Q0');
+    const a1 = variant(2, 'A:Q1');
+    const b0 = variant(3, 'B:Q0');
+    const b1 = variant(4, 'B:Q1');
+
+    const assessment: Assessment = {
+      id: 1,
+      type: 'midterm',
+      name: 'Test',
+      semester: '2026W1',
+      createdAt: '',
+      updatedAt: '',
+      sections: [
+        section(1, 0, [
+          link(10, 1, 1, 0, a0),
+          link(11, 1, 2, 1, a1),
+        ]),
+        section(2, 1, [
+          link(20, 2, 3, 0, b0),
+          link(21, 2, 4, 1, b1),
+        ]),
+      ],
+    };
+
+    const blocks = collectAssessmentExportBlocks(assessment);
+    expect(blocks.map((b) => b.stem)).toEqual(['A:Q0', 'A:Q1', 'B:Q0', 'B:Q1']);
+    expect(blocks.map((b) => b.order)).toEqual([0, 1, 2, 3]);
+  });
 });

@@ -31,8 +31,8 @@ export function collectAssessmentExportBlocks(
     assessment: Assessment,
     resolveVariant?: (variantId: number) => QuestionVariant | undefined
 ): AssessmentExportBlock[] {
-    const aid = assessment.id;
     const blocks: AssessmentExportBlock[] = [];
+    let order = 0;
 
     const sections = [...(assessment.sections ?? [])].sort(
         (a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id,
@@ -56,15 +56,10 @@ export function collectAssessmentExportBlocks(
             const rawAnswer = variant.answer?.trim();
             const answerLine = rawAnswer ? `Correct answer: ${rawAnswer}` : null;
 
-            const orderValue =
-                link.displayOrder ?? variant.questionMetadata?.questionOrder?.[aid];
-            const order = typeof orderValue === 'number' ? orderValue : Number.MAX_SAFE_INTEGER;
-
-            blocks.push({ order, stem, choiceLines, answerLine });
+            blocks.push({ order: order++, stem, choiceLines, answerLine });
         });
     });
 
-    blocks.sort((a, b) => a.order - b.order);
     return blocks;
 }
 
