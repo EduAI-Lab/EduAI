@@ -529,7 +529,8 @@ export const updateQuestion = async (questionId, userId, updateData) => {
       if (parsedCourseId !== question.courseId) {
         throw Object.assign(new Error('Question course relocation is not supported'), {
           status: 409,
-          code: 'COURSE_RELOCATION_NOT_ALLOWED'
+          code: 'COURSE_RELOCATION_NOT_ALLOWED',
+          isPublic: true,
         });
       }
 
@@ -592,7 +593,7 @@ export const updateQuestion = async (questionId, userId, updateData) => {
         where: { questionMetadataId: question.id, isDraft: false }
       });
       if (reviewedVariant) {
-        throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409 });
+        throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409, isPublic: true });
       }
     }
 

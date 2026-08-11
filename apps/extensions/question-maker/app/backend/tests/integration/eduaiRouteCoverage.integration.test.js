@@ -2,8 +2,8 @@
  * Coverage-focused route tests for eduai.js (issue #1217: eduai.js was one of
  * the worst-covered files — GET /courses, /courses/:courseId/topics,
  * /test-api-key, and /ai-models had no coverage at all, and /chat +
- * /generate-questions were only exercised for their 400 validation branches
- * (see eduaiHttpValidation.integration.test.js).
+ * /generate-questions were only exercised for their 400 validation branches;
+ * budget admission and rate-limit canaries now live here as well.
  *
  * eduaiService and the course-code access resolution are mocked — no live
  * Core or test DB required.
@@ -44,6 +44,8 @@ vi.mock("../../src/config/settings.js", () => {
     nodeEnv: "test",
     logLevel: "silent",
     maxQuestions: 50,
+    qmGeneratePromptMaxChars: 20,
+    qmAiRateLimitMax: 100,
   };
   return { config: cfg, default: cfg };
 });
@@ -202,7 +204,33 @@ describe("POST /api/eduai/generate-questions", () => {
     );
   });
 
-  it("omits mcqRequiredChoiceCount when not a finite number", async () => {
+  it('rejects an oversized prompt before resolving a course or calling EduAI', async () => {
+    authAs(INSTRUCTOR);
+    const res = await request(app)
+      .post('/api/eduai/generate-questions')
+      .set('Cookie', 'session=v')
+      .send({ prompt: 'x'.repeat(21), courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe('QM_PROMPT_TOO_LARGE');
+    expect(mockFindCoursesByProjectedCode).not.toHaveBeenCalled();
+    expect(eduaiService.generateQuestions).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-integer or over-limit counts before calling EduAI', async () => {
+    authAs(INSTRUCTOR);
+    for (const numQuestions of [0, 1.5, 51]) {
+      const res = await request(app)
+        .post('/api/eduai/generate-questions')
+        .set('Cookie', 'session=v')
+        .send({ prompt: 'x', courseCode: 'COSC 101', numQuestions });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toMatch(/^QM_QUESTION_COUNT_/);
+    }
+    expect(eduaiService.generateQuestions).not.toHaveBeenCalled();
+  });
+
+  it('omits mcqRequiredChoiceCount when not a finite number', async () => {
     authAs(INSTRUCTOR);
     accessibleCourse();
     eduaiService.generateQuestions.mockResolvedValue([]);

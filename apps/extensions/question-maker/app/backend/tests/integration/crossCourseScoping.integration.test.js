@@ -118,8 +118,47 @@ describeDb("cross-course write scoping (integration, #1)", () => {
     });
   });
 
-  describe("section writes scoped to the authorized course", () => {
-    it("rejects updating a section that lives in another course", async () => {
+  describe('legacy SectionVariants mutation guards', () => {
+    it('rejects removing a malformed foreign-course link', async () => {
+      await prisma.sectionVariants.create({
+        data: { sectionId: sectionA.id, variantId: variantB.id, displayOrder: 2 },
+      });
+
+      await expect(
+        sectionSvc.removeVariantFromSection(sectionA.id, USER.id, variantB.id, courseA.id),
+      ).rejects.toThrow(/Variant not found/);
+
+      expect(await prisma.sectionVariants.count({ where: { sectionId: sectionA.id, variantId: variantB.id } })).toBe(1);
+    });
+
+    it('rejects reordering a malformed foreign-course link', async () => {
+      await prisma.sectionVariants.create({
+        data: { sectionId: sectionA.id, variantId: variantB.id, displayOrder: 2 },
+      });
+
+      await expect(
+        sectionSvc.updateVariantOrderInSection(sectionA.id, USER.id, variantB.id, 9, courseA.id),
+      ).rejects.toThrow(/Variant not found/);
+
+      const link = await prisma.sectionVariants.findUnique({
+        where: { sectionId_variantId: { sectionId: sectionA.id, variantId: variantB.id } },
+      });
+      expect(link.displayOrder).toBe(2);
+    });
+
+    it('does not remove a question link from a foreign-course section', async () => {
+      await prisma.sectionVariants.create({
+        data: { sectionId: sectionB.id, variantId: variantA.id, displayOrder: 3 },
+      });
+
+      const result = await sectionSvc.removeQuestionFromAllSections(questionA.id, USER.id, courseA.id);
+      expect(result.removedLinks).toBe(0);
+      expect(await prisma.sectionVariants.count({ where: { sectionId: sectionB.id, variantId: variantA.id } })).toBe(1);
+    });
+  });
+
+  describe('section writes scoped to the authorized course', () => {
+    it('rejects updating a section that lives in another course', async () => {
       await expect(
         sectionSvc.updateAssessmentSection(sectionB.id, USER.id, { name: "hijack" }, courseA.id),
       ).rejects.toThrow(/Section not found/);

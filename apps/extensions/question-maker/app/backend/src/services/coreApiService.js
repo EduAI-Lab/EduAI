@@ -155,7 +155,14 @@ async function fetchFromCore(
 }
 
 function coreError(message, status, body) {
-  return Object.assign(new Error(message), { status, body });
+  const code = typeof body?.error === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(body.error)
+    ? body.error
+    : null;
+  return Object.assign(new Error(code || 'Core request failed'), {
+    status,
+    body,
+    ...(code ? { code, isPublic: true } : {}),
+  });
 }
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */

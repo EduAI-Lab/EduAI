@@ -8,6 +8,11 @@ import { prisma } from "../config/database.js";
 import eduaiService from "./eduaiService.js";
 import { enrichCourseDetail } from "./courseListService.js";
 import {
+  generationBudgetError,
+  validateGenerationBudget,
+} from "../middleware/aiAdmission.js";
+import { toStableUpstreamError, safeRequestLogFields } from "../utils/safeLogging.js";
+import {
   normalizeExtractText,
   chunkText,
   splitIntoQuestionBlocks,
@@ -43,6 +48,7 @@ const extractionBudgetError = (message, status = 413, code = 'QM_EXTRACT_LIMIT')
   error.status = status;
   error.statusCode = status;
   error.code = code;
+  error.isPublic = true;
   return error;
 };
 
@@ -109,7 +115,7 @@ const callGroqAPI = async (prompt, params) => {
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    throw new Error(`Groq API error: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: "Groq API" });
   }
 };
 
@@ -158,7 +164,7 @@ const callOpenAIAPI = async (prompt, params) => {
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    throw new Error(`OpenAI API error: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
   }
 };
 
@@ -205,7 +211,7 @@ const callDeepSeekAPI = async (prompt, params) => {
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    throw new Error(`DeepSeek API error: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: "DeepSeek API" });
   }
 };
 
@@ -363,7 +369,7 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
         orderBy: { name: "asc" },
       });
     } catch (error) {
-      console.error("Failed to fetch topics for course", error.message);
+      console.error("Failed to fetch topics for course", safeRequestLogFields(error));
       // Continue without topics if fetch fails
     }
   }
@@ -495,7 +501,7 @@ ${chunk}
       }
       console.warn("EduAI extraction chunk failed, retrying with simplified prompt", {
         chunkIndex: i,
-        message: error.message,
+        ...safeRequestLogFields(error),
       });
       try {
         const sanitizedRetry = await runChunkExtraction(
@@ -503,11 +509,11 @@ ${chunk}
           extractionRetryUserPrompt,
         );
         if (sanitizedRetry.length === 0) {
-          throw new Error(error.message || "Extraction produced no questions");
+          throw new Error("Extraction produced no questions");
         }
         extracted.push(...sanitizedRetry);
       } catch (retryError) {
-        console.error("EduAI extraction failed for chunk", retryError.message);
+        console.error("EduAI extraction failed for chunk", safeRequestLogFields(retryError));
         throw retryError;
       }
     }
@@ -550,24 +556,29 @@ Source material:
 ${textChunk}
 """`;
 
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-3.5-turbo",
-      temperature: 0.2,
-      max_tokens: 1500,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.openaiApiKey}`,
-        "Content-Type": "application/json",
+  let response;
+  try {
+    response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-3.5-turbo",
+        temperature: 0.2,
+        max_tokens: 1500,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
       },
-    },
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${config.openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  } catch (error) {
+    throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
+  }
 
   const content = response.data?.choices?.[0]?.message?.content ?? "[]";
   return content;
@@ -645,24 +656,29 @@ Use only IDs from the provided topics. Keep the array order identical to the inp
     2,
   );
 
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-3.5-turbo",
-      temperature: 0,
-      max_tokens: 1200,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: payload },
-      ],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.openaiApiKey}`,
-        "Content-Type": "application/json",
+  let response;
+  try {
+    response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-3.5-turbo",
+        temperature: 0,
+        max_tokens: 1200,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: payload },
+        ],
       },
-    },
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${config.openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  } catch (error) {
+    throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
+  }
 
   return response.data?.choices?.[0]?.message?.content ?? "[]";
 };
@@ -767,7 +783,7 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
       };
     });
   } catch (error) {
-    console.error("Failed to assign topics via AI", error);
+    console.error("Failed to assign topics via AI", safeRequestLogFields(error));
     return questions;
   }
 };
@@ -809,28 +825,46 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
 };
 
 /** Invokes the selected AI provider to generate structured questions, parsing/validating results. */
-export const generateQuestions = async (prompt, provider, params) => {
-  let response;
-
-  switch (provider) {
-    case AI_PROVIDERS.GROQ:
-      response = await callGroqAPI(prompt, params);
-      break;
-    case AI_PROVIDERS.OPENAI:
-      response = await callOpenAIAPI(prompt, params);
-      break;
-    case AI_PROVIDERS.DEEPSEEK:
-      response = await callDeepSeekAPI(prompt, params);
-      break;
-    default:
-      throw new Error(`Unsupported AI provider: ${provider}`);
+export const generateQuestions = async (prompt, provider, params = {}) => {
+  const safeParams = params && typeof params === 'object' ? params : {};
+  const budget = validateGenerationBudget({
+    prompt,
+    numQuestions: safeParams.numQuestions,
+  });
+  if (budget.status) {
+    throw generationBudgetError(budget);
   }
 
-  // Parse and validate response
+  const boundedParams = {
+    ...safeParams,
+    numQuestions: budget.numQuestions,
+    difficultyDistribution: safeParams.difficultyDistribution ?? {
+      easy: 1,
+      medium: 2,
+      hard: 2,
+    },
+  };
+
   try {
-    const questions = JSON.parse(response);
-    if (!Array.isArray(questions)) {
-      throw new Error("Response is not an array");
+    let response;
+
+    switch (provider) {
+      case AI_PROVIDERS.GROQ:
+        response = await callGroqAPI(budget.prompt, boundedParams);
+        break;
+      case AI_PROVIDERS.OPENAI:
+        response = await callOpenAIAPI(budget.prompt, boundedParams);
+        break;
+      case AI_PROVIDERS.DEEPSEEK:
+        response = await callDeepSeekAPI(budget.prompt, boundedParams);
+        break;
+      default:
+        throw Object.assign(new Error("Unsupported AI provider"), {
+          status: 400,
+          statusCode: 400,
+          code: 'QM_PROVIDER_UNSUPPORTED',
+          isPublic: true,
+        });
     }
 
     // Validate each question

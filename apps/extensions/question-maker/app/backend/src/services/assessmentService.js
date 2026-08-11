@@ -260,7 +260,8 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
       if (parsedCourseId !== assessment.courseId) {
         throw Object.assign(new Error('Assessment course relocation is not supported'), {
           status: 409,
-          code: 'COURSE_RELOCATION_NOT_ALLOWED'
+          code: 'COURSE_RELOCATION_NOT_ALLOWED',
+          isPublic: true,
         });
       }
 

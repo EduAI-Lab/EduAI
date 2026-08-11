@@ -3,9 +3,12 @@
  * Tests what each error type SHOULD produce — not what the code happens to return.
  * A failing test here means the handler is misclassifying an error.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { Prisma } from "@eduai/question-maker-prisma-client";
-import { notFound, errorHandler } from "../../src/middleware/errorHandler.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Prisma } from '@eduai/question-maker-prisma-client';
+import { notFound, errorHandler } from '../../src/middleware/errorHandler.js';
+
+const { logger } = vi.hoisted(() => ({ logger: { error: vi.fn(), warn: vi.fn() } }));
+vi.mock('../../src/utils/logger.js', () => ({ logger }));
 
 function prismaError(code, meta) {
   return new Prisma.PrismaClientKnownRequestError("Prisma error", {
@@ -60,10 +63,10 @@ describe("errorHandler middleware", () => {
   let originalEnv;
   beforeEach(() => {
     originalEnv = process.env.NODE_ENV;
+    logger.error.mockReset();
+    logger.warn.mockReset();
   });
-  afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
-  });
+  afterEach(() => { process.env.NODE_ENV = originalEnv; });
 
   it("returns 500 for a generic error with no specific type", () => {
     const res = makeRes();
@@ -129,13 +132,16 @@ describe("errorHandler middleware", () => {
     expect(res._body.error).toBe("Token expired");
   });
 
-  it("includes the stack trace in development mode", () => {
-    process.env.NODE_ENV = "development";
-    const err = new Error("debug me");
-    err.stack = "Error: debug me\n    at Test.fn";
+  it('never includes a stack trace, even in development mode', () => {
+    process.env.NODE_ENV = 'development';
+    const secretCanary = 'DB_STACK_SECRET_CANARY';
+    const err = new Error(secretCanary);
+    err.stack = `Error: ${secretCanary}\n    at Test.fn`;
     const res = makeRes();
     errorHandler(err, makeReq(), res, () => {});
-    expect(res._body.stack).toBeDefined();
+    expect(res._body.stack).toBeUndefined();
+    expect(JSON.stringify(res._body)).not.toContain(secretCanary);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(secretCanary);
   });
 
   it("does NOT include the stack trace in production mode", () => {
@@ -151,5 +157,38 @@ describe("errorHandler middleware", () => {
     const res = makeRes();
     errorHandler(new Error("anything"), makeReq(), res, () => {});
     expect(res._body.success).toBe(false);
+  });
+
+  it('returns a stable generic error and safe metadata for an internal canary', () => {
+    const secretCanary = 'PRISMA_PROVIDER_SECRET_CANARY';
+    const err = new Error(secretCanary);
+    err.stack = `Error: ${secretCanary}`;
+    const res = makeRes();
+
+    errorHandler(err, makeReq(), res, () => {});
+
+    expect(res._status).toBe(500);
+    expect(res._body.error).toBe('Request failed');
+    expect(JSON.stringify(res._body)).not.toContain(secretCanary);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(secretCanary);
+  });
+
+  it('does not trust raw Axios/provider response bodies at the global boundary', () => {
+    const secretCanary = 'AXIOS_RESPONSE_SECRET_CANARY';
+    const err = Object.assign(new Error(secretCanary), {
+      response: {
+        status: 502,
+        data: { error: secretCanary, stack: secretCanary },
+      },
+      code: 'ERR_BAD_RESPONSE',
+    });
+    const res = makeRes();
+
+    errorHandler(err, makeReq(), res, () => {});
+
+    expect(res._status).toBe(500);
+    expect(res._body.error).toBe('Request failed');
+    expect(JSON.stringify(res._body)).not.toContain(secretCanary);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(secretCanary);
   });
 });

@@ -16,7 +16,6 @@
  *    per-course gate alone authorizes that route (see its inline comment).
  */
 import express from 'express';
-import rateLimit from 'express-rate-limit';
 import {
   createQuestion,
   getQuestionsByUser,
@@ -45,33 +44,17 @@ import {
   prepareApprovalQuestions
 } from '../utils/questionApproval.js';
 import { resolveVisibleCourseWhereForUser } from '../services/courseListService.js';
+import {
+  qmAiUserRateLimit,
+  validateGenerationBudget,
+} from '../middleware/aiAdmission.js';
 
 const router = express.Router();
 
-const positiveConfigInt = (value, fallback) =>
-  Number.isInteger(value) && value > 0 ? value : fallback;
-
-/**
- * AI endpoints have a caller-scoped limiter in addition to the deployment's
- * global IP limiter. A user can therefore not bypass the budget by rotating
- * source IPs; the auth identity remains the admission key.
- */
-const qmAiUserRateLimit = rateLimit({
-  windowMs: positiveConfigInt(config.qmAiRateLimitWindowMs, 15 * 60 * 1000),
-  max: positiveConfigInt(config.qmAiRateLimitMax, 60),
-  keyGenerator: (req) => `qm-ai:${req.user?.id ?? req.ip}`,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: 'AI request limit exceeded; try again later',
-  },
-});
-
-const qmGeneratePromptMaxChars = () =>
-  positiveConfigInt(config.qmGeneratePromptMaxChars, 12_000);
 const qmMaxExtractTextChars = () =>
-  positiveConfigInt(config.qmMaxExtractTextChars, 120_000);
+  Number.isInteger(config.qmMaxExtractTextChars) && config.qmMaxExtractTextChars > 0
+    ? config.qmMaxExtractTextChars
+    : 120_000;
 
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
@@ -547,37 +530,17 @@ router.post(
     try {
       const { prompt, provider = AI_PROVIDERS.GROQ, numQuestions = 15, difficultyDistribution } = req.body;
 
-      if (typeof prompt !== 'string' || !prompt.trim()) {
-        return res.status(400).json({
+      const budget = validateGenerationBudget({ prompt, numQuestions });
+      if (budget.status) {
+        return res.status(budget.status).json({
           success: false,
-          error: 'Prompt is required'
-        });
-      }
-
-      const maxPromptChars = qmGeneratePromptMaxChars();
-      if (prompt.length > maxPromptChars) {
-        return res.status(413).json({
-          success: false,
-          error: `Prompt cannot exceed ${maxPromptChars.toLocaleString()} characters`,
-        });
-      }
-
-      const resolvedNumQuestions = Number(numQuestions);
-      if (!Number.isInteger(resolvedNumQuestions) || resolvedNumQuestions < 1) {
-        return res.status(400).json({
-          success: false,
-          error: 'numQuestions must be a positive integer',
-        });
-      }
-      if (resolvedNumQuestions > positiveConfigInt(config.maxQuestions, 50)) {
-        return res.status(400).json({
-          success: false,
-          error: `numQuestions cannot exceed ${positiveConfigInt(config.maxQuestions, 50)}`
+          error: budget.message,
+          code: budget.code,
         });
       }
 
       const params = {
-        numQuestions: resolvedNumQuestions,
+        numQuestions: budget.numQuestions,
         difficultyDistribution: difficultyDistribution || {
           easy: 5,
           medium: 5,
@@ -585,7 +548,7 @@ router.post(
         }
       };
 
-      const questions = await generateQuestions(prompt.trim(), provider, params);
+      const questions = await generateQuestions(budget.prompt, provider, params);
 
       res.json({
         success: true,

@@ -362,6 +362,6 @@ describe("DELETE /api/assessments/questions/:questionId/remove-from-all-sections
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ removed: 2 });
-    expect(sectionSvc.removeQuestionFromAllSections).toHaveBeenCalledWith(3, COURSE.userId);
+    expect(sectionSvc.removeQuestionFromAllSections).toHaveBeenCalledWith(3, COURSE.userId, COURSE.id);
   });
 });

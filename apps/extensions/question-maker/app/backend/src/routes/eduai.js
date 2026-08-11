@@ -9,8 +9,11 @@ import eduaiService from '../services/eduaiService.js';
 import { resolveAccessForCourse, LEVELS } from '../middleware/courseAccess.js';
 import { findCoursesByProjectedCode, listCoursesForUser } from '../services/courseListService.js';
 import { prisma } from '../config/database.js';
-import { config } from '../config/settings.js';
 import { safeRequestLogFields } from '../utils/safeLogging.js';
+import {
+  qmAiUserRateLimit,
+  validateGenerationBudget,
+} from '../middleware/aiAdmission.js';
 
 const router = express.Router();
 
@@ -130,7 +133,7 @@ router.post("/chat", async (req, res) => {
 });
 
 /** POST /api/eduai/generate-questions – requests generated questions from EduAI using the provided prompt and options. */
-router.post("/generate-questions", async (req, res) => {
+router.post('/generate-questions', qmAiUserRateLimit, async (req, res) => {
   try {
     const {
       prompt,
@@ -143,17 +146,20 @@ router.post("/generate-questions", async (req, res) => {
       mcqRequiredChoiceCount,
     } = req.body;
 
-    // Validate required fields
-    if (!prompt || !courseCode) {
-      return res.status(400).json({
-        error: "Prompt and course code are required",
+    // Validate required fields and apply the same prompt/count budget as the
+    // legacy provider endpoint before resolving a course or calling EduAI.
+    const budget = validateGenerationBudget({ prompt, numQuestions });
+    if (budget.status) {
+      return res.status(budget.status).json({
+        success: false,
+        error: budget.message,
+        code: budget.code,
       });
     }
 
-    const resolvedNumQuestions = parseInt(numQuestions, 10) || 5;
-    if (resolvedNumQuestions > config.maxQuestions) {
+    if (!courseCode) {
       return res.status(400).json({
-        error: `numQuestions cannot exceed ${config.maxQuestions}`,
+        error: 'Prompt and course code are required'
       });
     }
 
@@ -182,12 +188,12 @@ router.post("/generate-questions", async (req, res) => {
         : undefined;
 
     const questions = await eduaiService.generateQuestions({
-      prompt,
+      prompt: budget.prompt,
       courseCode: resolvedCourseCode,
       courseId: coreCourseId,
       model: model || "google:gemini-2.5-flash",
       apiKeys: apiKeys || {},
-      numQuestions: resolvedNumQuestions,
+      numQuestions: budget.numQuestions,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },
       reasoningDistribution: reasoningDistribution || {
         factual: 40,

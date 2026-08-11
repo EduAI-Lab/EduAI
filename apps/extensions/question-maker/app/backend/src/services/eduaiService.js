@@ -9,6 +9,10 @@ import {
   safeRequestLogFields,
   toStableUpstreamError,
 } from "../utils/safeLogging.js";
+import {
+  generationBudgetError,
+  validateGenerationBudget,
+} from "../middleware/aiAdmission.js";
 import { campusProbeParams } from "./modelCatalog.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
@@ -303,7 +307,7 @@ class EduAIService {
   }
 
   /** Generates normalized questions via EduAI, enforcing prompt requirements and parsing JSON responses. */
-  async generateQuestions(params) {
+  async generateQuestions(params = {}) {
     const {
       prompt,
       courseCode,
@@ -320,9 +324,19 @@ class EduAIService {
       timeoutMs,
     } = params;
 
-    if (!prompt || (!courseCode && !courseId)) {
-      throw new Error("Prompt and courseCode (or courseId) are required for question generation");
+    const budget = validateGenerationBudget({ prompt, numQuestions });
+    if (budget.status) {
+      throw generationBudgetError(budget);
     }
+
+    if (!courseCode && !courseId) {
+      throw new Error(
+        "Prompt and courseCode (or courseId) are required for question generation"
+      );
+    }
+
+    const boundedPrompt = budget.prompt;
+    const boundedNumQuestions = budget.numQuestions;
 
     const mcqCountEnforced =
       typeof mcqRequiredChoiceCount === "number" &&
@@ -334,10 +348,10 @@ class EduAIService {
       ? `- "choices" is REQUIRED for MCQ: the array MUST contain exactly ${mcqRequiredChoiceCount} items (not ${mcqRequiredChoiceCount - 1} or ${mcqRequiredChoiceCount + 1}). Use consecutive letters ${Array.from({ length: mcqRequiredChoiceCount }, (_, i) => String.fromCharCode(65 + i)).join(", ")}. Each item: {"letter": "A", "text": "the option text"}.`
       : `- "choices" is REQUIRED: you MUST include a "choices" array with at least 2 items (typically 4). Each item: {"letter": "A", "text": "the option text"}.`;
 
-    const defaultSystemPrompt = `You are an expert question generator for educational assessments. Generate exactly ${numQuestions} high-quality questions based on the course material.
+    const defaultSystemPrompt = `You are an expert question generator for educational assessments. Generate exactly ${boundedNumQuestions} high-quality questions based on the course material.
 
 Requirements:
-- Generate exactly ${numQuestions} questions
+- Generate exactly ${boundedNumQuestions} questions
 - Difficulty distribution: Easy: ${difficultyDistribution.easy}, Medium: ${difficultyDistribution.medium}, Hard: ${difficultyDistribution.hard}
 - Reasoning distribution: Factual: ${reasoningDistribution.factual}%, Analytical: ${reasoningDistribution.analytical}%, Application: ${reasoningDistribution.application}%
 - Each question should be relevant to the course material
@@ -383,7 +397,7 @@ IMPORTANT:
 - If you can generate the question(s), return ONLY a valid JSON array of question objects. Do NOT wrap the array in an object (e.g. do not use {"questions": [...]}). Return the array directly, e.g. [{...}, {...}]. No other text, no markdown, no code fence.
 - If you cannot generate the question(s), return ONLY the error object above. No other text.`;
 
-    const defaultUserPrompt = `Generate questions about: ${prompt}
+    const defaultUserPrompt = `Generate questions about: ${boundedPrompt}
 
 Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.
 
@@ -397,7 +411,7 @@ OUTPUT RULES (mandatory):
     try {
       const genStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} generateQuestions calling chat`, {
-        count: numQuestions,
+        count: boundedNumQuestions,
       });
 
       // Extraction/generation can take longer than default 60s (large prompts, multiple questions)

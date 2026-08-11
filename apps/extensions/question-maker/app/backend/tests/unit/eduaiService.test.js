@@ -309,6 +309,22 @@ describe('chat', () => {
 describe("generateQuestions", () => {
   const baseParams = { prompt: "cells", courseCode: "BIO 101" };
 
+  it('enforces prompt and count budgets at the service boundary', async () => {
+    const oversizedPrompt = 'x'.repeat(12_001);
+
+    await expect(eduaiService.generateQuestions({
+      ...baseParams,
+      prompt: oversizedPrompt,
+    })).rejects.toMatchObject({ status: 413, code: 'QM_PROMPT_TOO_LARGE' });
+
+    await expect(eduaiService.generateQuestions({
+      ...baseParams,
+      numQuestions: 51,
+    })).rejects.toMatchObject({ status: 400, code: 'QM_QUESTION_COUNT_TOO_LARGE' });
+
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('never logs malformed model content during the JSON repair path', async () => {
     const firstCanary = 'AUDIT_GENERATION_PREVIEW_CANARY_640eaf';
     const repairCanary = 'AUDIT_REPAIR_PREVIEW_CANARY_4a05c1';

@@ -530,17 +530,13 @@ router.get(
 );
 
 /** DELETE /api/assessments/questions/:questionId/remove-from-all-sections – bulk removes a question (instructor-only). */
-router.delete(
-  "/questions/:questionId/remove-from-all-sections",
-  authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "instructor", param: "questionId" }),
-  async (req, res, next) => {
-    try {
-      const result = await removeQuestionFromAllSections(
-        Number(req.params.questionId),
-        req.qmCourse.userId,
-      );
+router.delete('/questions/:questionId/remove-from-all-sections', authenticateToken, requireRole(QM_AUTHORIZED), requireQuestionAccess({ min: 'instructor', param: 'questionId' }), async (req, res, next) => {
+  try {
+    const result = await removeQuestionFromAllSections(
+      Number(req.params.questionId),
+      req.qmCourse.userId,
+      req.qmCourse.id,
+    );
 
       res.json({
         success: true,
