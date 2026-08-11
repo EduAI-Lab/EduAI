@@ -98,6 +98,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [question-maker] perf: Index the 13 foreign keys that had no usable index, turning the seq scans behind variant, question, and assessment-section lookups into index scans (up to 1461x on `variants.question_metadata_id`). Closes #1368. (@abdullahmoh21, 2026-08-07) — [#1426](https://github.com/EduAI-Lab/EduAI/pull/1426)
 - [question-maker] perf: Mirror per-user Core enrollment access locally and apply course visibility in SQL, so course-list totals use `COUNT` and page windows use database `skip`/`take` with stable ordering; refresh the access snapshot once per TTL to avoid refetching the full catalog on every page. Closes #1206. (@saad, 2026-08-06) — [#1410](https://github.com/EduAI-Lab/EduAI/pull/1410)
 
 - [ai-tutor] perf: Hoist the per-pair topic lookups in `POST /courses/:courseId/topics/remap` into one course-scoped `findMany`, and batch the `ActivitySecondaryTopic` reads whenever the mapping pairs don't observe each other's writes, cutting a caller-sized bulk remap from roughly 8N queries to 3 + 4N without changing any response. Closes #1372. (@abdullahmoh21, 2026-08-07) — [#1427](https://github.com/EduAI-Lab/EduAI/pull/1427)
