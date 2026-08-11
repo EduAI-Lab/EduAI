@@ -32,6 +32,20 @@ const LEVELS: Record<AccessLevel["level"], AccessLevel> = {
   student: { level: "student", rank: 0 },
 };
 
+/** Look up the shared AccessLevel for a resolved course access level string. */
+export function accessLevelFor(level: AccessLevel["level"]): AccessLevel {
+  return LEVELS[level];
+}
+
+/**
+ * RAG settings route gate (`GET`/`PATCH /api/courses/:id/rag-settings`):
+ * instructor-or-above only — `access.rank >= 2` (admin / unit / instructor).
+ * Shared so the route and drift-contract tests cannot diverge.
+ */
+export function canManageCourseRagSettings(access: AccessLevel | null): boolean {
+  return access != null && access.rank >= 2;
+}
+
 /**
  * Session users don't carry `authorizedUnits` (not a better-auth additional
  * field) — fetch lazily, only for UNIT_ADMIN callers.

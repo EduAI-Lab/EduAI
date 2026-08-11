@@ -68,8 +68,8 @@ import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
-import { canManageTopics, canManageInstructors, canManageStudents, courseChatViewPolicyKey, manageEnrollmentsPolicyKey } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
+import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import {
   PolicyTooltip,
   DisabledTooltip,
@@ -252,25 +252,17 @@ export function CourseDetailManagerView({
   }, [materialsSuccess]);
 
   const { isEnabled } = usePolicyGate();
-  const canManage = canManageTopics(access, isEnabled("tas.canManageTopics"));
-  // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
-  // management) also opens to an owning instructor when the enrollment policy is
-  // on. Mirrors the TA endpoint and loader gates.
-  const canAssignInstructor = canManageInstructors(access);
-  // §807: resolve each policy-gated tab to one of show-enabled / show-greyed /
-  // hide. `'always'` → the role qualifies regardless of any flag (admin/unit);
-  // `'never'` → the role can never access it (hide the tab); a PolicyKey → the
-  // role qualifies but the flag decides enabled vs greyed-with-tooltip.
-  const staffGate = manageEnrollmentsPolicyKey(access);
-  const showStaffTab = staffGate !== "never";
-  const canManageStaff =
-    staffGate === "always" || (staffGate !== "never" && isEnabled(staffGate));
-  const chatGate = courseChatViewPolicyKey(access);
-  const showChatTab = chatGate !== "never";
-  const canViewChats =
-    chatGate === "always" || (chatGate !== "never" && isEnabled(chatGate));
-  const canManageStudentEnrollments = canManageStudents(access);
-  const canManageRagSettings = access === "admin" || access === "instructor";
+  const {
+    canManage,
+    canAssignInstructor,
+    showStaffTab,
+    canManageStaff,
+    showChatTab,
+    canViewChats,
+    canManageStudentEnrollments,
+    canManageRagSettings,
+    canDeleteMaterial: canDeleteMaterialForUploader,
+  } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
   // Server already pages active STUDENT rows (#1042 review); keep the client
@@ -279,30 +271,12 @@ export function CourseDetailManagerView({
   const studentCandidates = useStudentCandidates(courseId, "enrolled");
   const taCandidates = useStudentCandidates(courseId, "ta");
 
-  // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
-  // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
-  // TAs can delete only their own uploads (uploadedBy === currentUserId).
-  const canDeleteMaterial = (material: CourseMaterial) => {
-    if (canManage) return true;
-    // TA own-only: check if this is their upload.
-    return (
-      access === 'ta' &&
-      material.uploadedBy !== null &&
-      material.uploadedBy !== undefined &&
-      material.uploadedBy === currentUserId
-    );
-  };
+  const canDeleteMaterial = (material: CourseMaterial) =>
+    canDeleteMaterialForUploader(material.uploadedBy);
 
   // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
-  const canRenameMaterial = (material: CourseMaterial) => {
-    if (canManage) return true;
-    return (
-      access === 'ta' &&
-      material.uploadedBy !== null &&
-      material.uploadedBy !== undefined &&
-      material.uploadedBy === currentUserId
-    );
-  };
+  const canRenameMaterial = (material: CourseMaterial) =>
+    canDeleteMaterialForUploader(material.uploadedBy);
 
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
