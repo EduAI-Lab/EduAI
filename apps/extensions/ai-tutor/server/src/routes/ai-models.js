@@ -31,6 +31,7 @@ import { validateProviderKey } from '../services/aiProviderKeyValidation.js';
 
 const router = express.Router();
 const DEFAULT_KEY_VALIDATION_TIMEOUT_MS = 5_000;
+const DEFAULT_OPENCODE_KEY_VALIDATION_TIMEOUT_MS = 45_000;
 const KEY_VALIDATION_WINDOW_MS = 60_000;
 const KEY_VALIDATION_ATTEMPTS_PER_WINDOW = 10;
 const MAX_CONCURRENT_KEY_VALIDATIONS = 2;
@@ -42,13 +43,17 @@ const activeKeyValidations = new Map();
 // missing or unrecognized req.user.role) gets the allow-list-filtered view.
 const PRIVILEGED_MODEL_ROLES = new Set(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]);
 
-function getKeyValidationTimeoutMs() {
+function getKeyValidationTimeoutMs(provider) {
   const configured = Number(process.env.AI_KEY_VALIDATION_TIMEOUT_MS);
   if (!Number.isFinite(configured) || configured <= 0) {
-    return DEFAULT_KEY_VALIDATION_TIMEOUT_MS;
+    return provider === 'opencode'
+      ? DEFAULT_OPENCODE_KEY_VALIDATION_TIMEOUT_MS
+      : DEFAULT_KEY_VALIDATION_TIMEOUT_MS;
   }
   return Math.min(Math.trunc(configured), 2_147_483_647);
 }
+
+export const __getKeyValidationTimeoutMsForTests = getKeyValidationTimeoutMs;
 
 function getMaxTrackedValidationUsers() {
   const configured = Number(process.env.AI_KEY_VALIDATION_MAX_TRACKED_USERS);
@@ -182,7 +187,7 @@ router.post('/ai-models/validate-key', async (req, res) => {
   const releaseAdmission = admitKeyValidation(req, res);
   if (!releaseAdmission) return;
 
-  const timeoutSignal = AbortSignal.timeout(getKeyValidationTimeoutMs());
+  const timeoutSignal = AbortSignal.timeout(getKeyValidationTimeoutMs(provider));
   const signal = timeoutSignal;
 
   try {

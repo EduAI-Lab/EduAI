@@ -2,8 +2,11 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { default: aiModelsRoutes, __resetKeyValidationStateForTests } =
-  await import('../../src/routes/ai-models.js');
+const {
+  default: aiModelsRoutes,
+  __getKeyValidationTimeoutMsForTests,
+  __resetKeyValidationStateForTests,
+} = await import('../../src/routes/ai-models.js');
 
 function buildApp() {
   const app = express();
@@ -22,6 +25,11 @@ afterEach(() => {
 });
 
 describe('OpenCode key validation', () => {
+  it('uses a provider-specific default deadline for the slower chat probe', () => {
+    expect(__getKeyValidationTimeoutMsForTests('opencode')).toBe(45_000);
+    expect(__getKeyValidationTimeoutMsForTests('google')).toBe(5_000);
+  });
+
   it('uses a bounded chat-completions probe and forwards the key only as Bearer auth', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
