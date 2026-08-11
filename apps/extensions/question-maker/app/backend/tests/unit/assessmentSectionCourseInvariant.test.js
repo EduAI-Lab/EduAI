@@ -92,4 +92,3 @@ describe('assessment section course invariants', () => {
     expect(questionUpdate).not.toHaveBeenCalled();
   });
 });
-

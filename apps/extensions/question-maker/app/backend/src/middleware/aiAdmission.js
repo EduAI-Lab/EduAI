@@ -92,4 +92,3 @@ export function generationBudgetError(validation) {
   error.isPublic = true;
   return error;
 }
-

@@ -23,4 +23,3 @@ export function validateQuestionUploadText(text: string): string | null {
   }
   return null;
 }
-

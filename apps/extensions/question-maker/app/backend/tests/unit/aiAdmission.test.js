@@ -39,4 +39,3 @@ describe('shared QM AI admission limiter', () => {
     expect(second.body.error).toMatch(/AI request limit exceeded/i);
   });
 });
-
