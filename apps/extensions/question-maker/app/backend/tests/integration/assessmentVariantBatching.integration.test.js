@@ -113,6 +113,22 @@ describeDb('assessmentVariantService batching (integration)', () => {
     return { counts, restore: () => spy.mockRestore() };
   }
 
+  /**
+   * Runs `run()` with the counting proxy installed and always removes it afterwards. The restore
+   * has to be in a `finally`: when one of these assemblies throws — which is exactly what a
+   * regression looks like — a leaked spy would break every later test in the file and bury the
+   * one real failure.
+   */
+  async function measureTransactionQueries(run) {
+    const { counts, restore } = countTransactionQueries();
+    try {
+      await run();
+    } finally {
+      restore();
+    }
+    return counts;
+  }
+
   async function makeQuestionWithVariants(variantCount, overrides = {}) {
     const meta = await prisma.questionMetadata.create({
       data: {
@@ -178,56 +194,56 @@ describeDb('assessmentVariantService batching (integration)', () => {
       const examLabels = ['A', 'B'];
 
       const small = await buildReference(3, 3);
-      const smallRun = countTransactionQueries();
-      await assembleEquivalentExamVariants(USER.id, {
-        referenceAssessmentId: small.assessment.id,
-        courseId,
-        examLabels
-      });
-      smallRun.restore();
+      const smallCounts = await measureTransactionQueries(() =>
+        assembleEquivalentExamVariants(USER.id, {
+          referenceAssessmentId: small.assessment.id,
+          courseId,
+          examLabels
+        })
+      );
 
       const large = await buildReference(12, 3);
-      const largeRun = countTransactionQueries();
-      await assembleEquivalentExamVariants(USER.id, {
-        referenceAssessmentId: large.assessment.id,
-        courseId,
-        examLabels
-      });
-      largeRun.restore();
+      const largeCounts = await measureTransactionQueries(() =>
+        assembleEquivalentExamVariants(USER.id, {
+          referenceAssessmentId: large.assessment.id,
+          courseId,
+          examLabels
+        })
+      );
 
-      expect(largeRun.counts.total).toBe(smallRun.counts.total);
+      expect(largeCounts.total).toBe(smallCounts.total);
       // 4 writes per exam (assessment, section, section-variants, variant reassignment).
-      expect(largeRun.counts.byOp['sectionVariants.createMany']).toBe(examLabels.length);
-      expect(largeRun.counts.byOp['sectionVariants.create']).toBeUndefined();
-      expect(largeRun.counts.byOp['variants.updateMany']).toBe(examLabels.length);
-      expect(largeRun.counts.byOp['variants.update']).toBeUndefined();
+      expect(largeCounts.byOp['sectionVariants.createMany']).toBe(examLabels.length);
+      expect(largeCounts.byOp['sectionVariants.create']).toBeUndefined();
+      expect(largeCounts.byOp['variants.updateMany']).toBe(examLabels.length);
+      expect(largeCounts.byOp['variants.update']).toBeUndefined();
       // One candidate prefetch for the whole batch, not one per slot.
-      expect(largeRun.counts.byOp['variants.findMany']).toBe(1);
+      expect(largeCounts.byOp['variants.findMany']).toBe(1);
     });
 
     it('assembleExamVariantsByMetadataSimilarity: bank is fetched once for the whole batch', async () => {
       const examLabels = ['A', 'B'];
 
       const small = await buildReference(3, 3);
-      const smallRun = countTransactionQueries();
-      await assembleExamVariantsByMetadataSimilarity(USER.id, {
-        referenceAssessmentId: small.assessment.id,
-        courseId,
-        examLabels
-      });
-      smallRun.restore();
+      const smallCounts = await measureTransactionQueries(() =>
+        assembleExamVariantsByMetadataSimilarity(USER.id, {
+          referenceAssessmentId: small.assessment.id,
+          courseId,
+          examLabels
+        })
+      );
 
       const large = await buildReference(8, 3);
-      const largeRun = countTransactionQueries();
-      await assembleExamVariantsByMetadataSimilarity(USER.id, {
-        referenceAssessmentId: large.assessment.id,
-        courseId,
-        examLabels
-      });
-      largeRun.restore();
+      const largeCounts = await measureTransactionQueries(() =>
+        assembleExamVariantsByMetadataSimilarity(USER.id, {
+          referenceAssessmentId: large.assessment.id,
+          courseId,
+          examLabels
+        })
+      );
 
-      expect(largeRun.counts.total).toBe(smallRun.counts.total);
-      expect(largeRun.counts.byOp['questionMetadata.findMany']).toBe(1);
+      expect(largeCounts.total).toBe(smallCounts.total);
+      expect(largeCounts.byOp['questionMetadata.findMany']).toBe(1);
     });
   });
 

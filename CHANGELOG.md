@@ -4,7 +4,7 @@
 
 ### Changed
 
-- [question-maker] perf: Batch assessment variant assembly so both assembly paths resolve every exam's slots in memory against one candidate prefetch, one bulk cursor lock and one bulk cursor flush, cutting a 3-exam × 50-slot assemble from ~956 queries to 17. Closes #1370. (@abdullahmoh21, 2026-08-10) — [#1468](https://github.com/EduAI-Lab/EduAI/pull/1468)
+- [question-maker] perf: Batch assessment variant assembly so both assembly paths resolve every exam's slots in memory against one candidate prefetch, one bulk cursor lock and one bulk cursor flush, cutting a 3-exam × 50-slot assemble from ~750 queries to 17. Closes #1370. (@abdullahmoh21, 2026-08-10) — [#1468](https://github.com/EduAI-Lab/EduAI/pull/1468)
 
 ## [Week 14 - August 3-9, 2026]
 
