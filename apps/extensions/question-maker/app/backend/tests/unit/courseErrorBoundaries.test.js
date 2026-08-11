@@ -113,12 +113,28 @@ describe('course route Core error boundaries', () => {
     const response = await request(appFor())
       .patch('/api/course/7/link-core')
       .set('Cookie', 'session=valid')
-      .send({ coreCourseId: 'core-course-2' });
+      .send({ coreCourseId: 'core-course' });
 
     expect(response.status).toBe(502);
     expect(response.body).toMatchObject({ success: false, error: 'Core API error (502)' });
     expect(JSON.stringify(response.body)).not.toContain('core-secret-canary');
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('core-secret-canary');
+  });
+
+  it('rejects a different Core target before scoped lookup or persistence', async () => {
+    const response = await request(appFor())
+      .patch('/api/course/7/link-core')
+      .set('Cookie', 'session=valid')
+      .send({ coreCourseId: 'core-course-2' });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
+      code: 'CORE_COURSE_LINK_IMMUTABLE',
+    });
+    expect(isCoreCourseInScopedList).not.toHaveBeenCalled();
+    const { prisma } = await import('../../src/config/database.js');
+    expect(prisma.course.update).not.toHaveBeenCalled();
   });
 
   it('returns a stable error for POST /api/course/:id/sync-topics failures', async () => {

@@ -32,7 +32,7 @@ describeDb('QM cross-course authorization (real DB)', () => {
   }
 
   function stubCore({ enrolledCourses = [] } = {}) {
-    vi.stubGlobal('fetch', vi.fn(async (input) => {
+    const fetchMock = vi.fn(async (input) => {
       const url = String(input);
       if (url.endsWith('/api/sessions/validate')) {
         return coreResponse({ user: CALLER });
@@ -48,13 +48,28 @@ describeDb('QM cross-course authorization (real DB)', () => {
         });
       }
 
+      const scopedCoursesMatch = url.match(/\/api\/courses\?ids=([^&]+)/);
+      if (scopedCoursesMatch) {
+        const ids = decodeURIComponent(scopedCoursesMatch[1]).split(',');
+        return coreResponse({
+          data: ids
+            .filter((id) => enrolledCourses.includes(id))
+            .map((id) => ({ id })),
+          total: ids.filter((id) => enrolledCourses.includes(id)).length,
+          page: 1,
+          pageSize: 200,
+        });
+      }
+
       const courseMatch = url.match(/\/api\/courses\/([^/]+)$/);
       if (courseMatch) {
         return coreResponse({ id: courseMatch[1], name: 'Test course', code: 'QM-XC', term: 'W1', year: 2026 });
       }
 
       return coreResponse({});
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
   }
 
   beforeAll(async () => {
@@ -135,6 +150,51 @@ describeDb('QM cross-course authorization (real DB)', () => {
     expect(response.body.error).toMatch(/relocation is not supported/i);
     const row = await prisma.assessments.findUnique({ where: { id: assessmentA.id } });
     expect(row.courseId).toBe(courseA.id);
+  });
+
+  it('keeps a linked anchor and all content on A when a caller can see target B', async () => {
+    const fetchMock = stubCore({ enrolledCourses: [courseA.coreCourseId, courseB.coreCourseId] });
+
+    const response = await request(app)
+      .patch(`/api/course/${courseA.id}/link-core`)
+      .set('Cookie', 'session=qm-xc')
+      .send({ coreCourseId: courseB.coreCourseId });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
+      code: 'CORE_COURSE_LINK_IMMUTABLE',
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes(`ids=${courseB.coreCourseId}`))).toBe(false);
+
+    const [anchor, topic, question, assessment] = await Promise.all([
+      prisma.course.findUnique({ where: { id: courseA.id } }),
+      prisma.topics.findUnique({ where: { id: topicA.id } }),
+      prisma.questionMetadata.findUnique({ where: { id: questionA.id } }),
+      prisma.assessments.findUnique({ where: { id: assessmentA.id } }),
+    ]);
+    expect(anchor.coreCourseId).toBe(courseA.coreCourseId);
+    expect(topic.courseId).toBe(courseA.id);
+    expect(question.courseId).toBe(courseA.id);
+    expect(assessment.courseId).toBe(courseA.id);
+  });
+
+  it('returns the same conflict for an unauthorized target without probing it', async () => {
+    const fetchMock = stubCore({ enrolledCourses: [courseA.coreCourseId] });
+
+    const response = await request(app)
+      .patch(`/api/course/${courseA.id}/link-core`)
+      .set('Cookie', 'session=qm-xc')
+      .send({ coreCourseId: courseB.coreCourseId });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
+      code: 'CORE_COURSE_LINK_IMMUTABLE',
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes(`ids=${courseB.coreCourseId}`))).toBe(false);
+    const unchanged = await prisma.course.findUnique({ where: { id: courseA.id } });
+    expect(unchanged.coreCourseId).toBe(courseA.coreCourseId);
   });
 
   it('allows legitimate same-course question and assessment updates', async () => {

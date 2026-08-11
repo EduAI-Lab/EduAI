@@ -491,6 +491,32 @@ router.patch(
   authenticateToken,
   requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
+  try {
+    const { coreCourseId } = req.body;
+
+    if (!coreCourseId || typeof coreCourseId !== 'string') {
+      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
+    }
+
+    const course = req.qmCourse;
+
+    // A linked QM course is a local anchor for the Core course that owns all
+    // of its topics/questions/assessments. Relinking it would leave that
+    // content under the old Core identity while reads and future writes use a
+    // different one. Keep the anchor immutable once set; importantly, reject
+    // before looking up the requested target so an unauthorized target cannot
+    // be probed through this endpoint. Re-sending the existing id remains the
+    // idempotent path below.
+    if (course.coreCourseId && course.coreCourseId !== coreCourseId) {
+      return res.status(409).json({
+        success: false,
+        error: 'Core course link is immutable',
+        code: 'CORE_COURSE_LINK_IMMUTABLE',
+      });
+    }
+
+    const cookie = req.headers.cookie ?? '';
+    let linkable = false;
     try {
       linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
     } catch (err) {
