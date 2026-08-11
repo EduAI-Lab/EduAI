@@ -568,7 +568,6 @@ async function executeClaimedReEmbedJob(claimed: ClaimedReEmbedJob): Promise<voi
       },
     });
     if (!ownsLease) throw new ReEmbedInterruptedError();
-
     const completedAt = new Date();
     const status = resolveReEmbedJobStatus(result);
     const finalized = await reEmbedJobClient().updateMany({

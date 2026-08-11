@@ -194,4 +194,124 @@ describe("durable course re-embed jobs", () => {
       await prisma.courseMaterial.deleteMany({ where: { id: material.id } });
     }
   });
+
+  it(
+    "fails closed on a rejected heartbeat, then lets a successor reclaim after expiry",
+    async () => {
+      const content = "The original worker must not commit after losing its lease.";
+      const material = await prisma.courseMaterial.create({
+        data: {
+          courseId,
+          title: "heartbeat-fenced.txt",
+          mimeType: "text/plain",
+          fileSize: content.length,
+          checksum: `heartbeat-fenced-${Date.now()}`,
+          rawText: content,
+          status: "READY",
+        },
+      });
+      const originalFetch = globalThis.fetch;
+      const originalLease = process.env.RE_EMBED_JOB_LEASE_MS;
+      const originalTimeout = process.env.EMBEDDING_REQUEST_TIMEOUT_MS;
+      let fetchCalls = 0;
+      let firstProviderAborted = false;
+      globalThis.fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        fetchCalls += 1;
+        const signal = init?.signal;
+        if (fetchCalls === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            if (!signal) return reject(new Error("TEST_MISSING_ABORT_SIGNAL"));
+            signal.addEventListener(
+              "abort",
+              () => {
+                firstProviderAborted = true;
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          });
+        }
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ embeddings: [new Array(1024).fill(0.1)] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }) as typeof fetch;
+
+      process.env.RE_EMBED_JOB_LEASE_MS = "15000";
+      process.env.EMBEDDING_REQUEST_TIMEOUT_MS = "60000";
+      const { job } = await acquireReEmbedJob(courseId);
+      const realUpdateMany = prisma.courseReEmbedJob.updateMany.bind(
+        prisma.courseReEmbedJob,
+      );
+      const updateManySpy = vi
+        .spyOn(prisma.courseReEmbedJob, "updateMany")
+        .mockImplementation((args: any) => {
+          const data = args.data ?? {};
+          // Reject only a heartbeat renewal, not the claim/progress/final writes.
+          if (
+            data.leaseHeartbeatAt &&
+            data.leaseExpiresAt &&
+            data.processedCount === undefined &&
+            data.status === undefined
+          ) {
+            return Promise.reject(
+              new Error("simulated heartbeat database rejection"),
+            ) as ReturnType<typeof realUpdateMany>;
+          }
+          return realUpdateMany(args);
+        });
+
+      try {
+        await expect(resumeReEmbedJob(job.id)).resolves.toBe(true);
+        expect(firstProviderAborted).toBe(true);
+
+        const abandoned = await prisma.courseReEmbedJob.findUniqueOrThrow({
+          where: { id: job.id },
+        });
+        expect(abandoned).toMatchObject({
+          id: job.id,
+          status: "RUNNING",
+          attemptCount: 1,
+          leaseOwner: expect.any(String),
+        });
+        expect(abandoned.leaseExpiresAt?.getTime()).toBeGreaterThan(Date.now());
+        await expect(
+          prisma.materialChunk.count({ where: { materialId: material.id } }),
+        ).resolves.toBe(0);
+
+        await prisma.courseReEmbedJob.update({
+          where: { id: job.id },
+          data: { leaseExpiresAt: new Date(Date.now() - 1) },
+        });
+
+        await expect(resumeReEmbedJob(job.id)).resolves.toBe(true);
+        const recovered = await prisma.courseReEmbedJob.findUniqueOrThrow({
+          where: { id: job.id },
+        });
+        expect(recovered).toMatchObject({
+          id: job.id,
+          status: "COMPLETED",
+          attemptCount: 2,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        });
+        expect(fetchCalls).toBe(2);
+        await expect(
+          prisma.materialChunk.count({ where: { materialId: material.id } }),
+        ).resolves.toBeGreaterThan(0);
+      } finally {
+        updateManySpy.mockRestore();
+        globalThis.fetch = originalFetch;
+        if (originalLease === undefined) delete process.env.RE_EMBED_JOB_LEASE_MS;
+        else process.env.RE_EMBED_JOB_LEASE_MS = originalLease;
+        if (originalTimeout === undefined) delete process.env.EMBEDDING_REQUEST_TIMEOUT_MS;
+        else process.env.EMBEDDING_REQUEST_TIMEOUT_MS = originalTimeout;
+        await prisma.courseMaterial.deleteMany({ where: { id: material.id } });
+      }
+    },
+    20_000,
+  );
 });

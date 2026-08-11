@@ -1423,6 +1423,10 @@ export async function reEmbedCourseMaterials(
           processed += 1;
         } catch (err) {
           if (err instanceof ReEmbedInterruptedError || options?.signal?.aborted) throw err;
+          // A provider/material error can race a lease heartbeat failure.
+          // Re-check before recording FAILED so an owner that has just been
+          // fenced cannot write a terminal material state.
+          await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
           failed.push(material.id);
           try {
             await prisma.courseMaterial.update({
