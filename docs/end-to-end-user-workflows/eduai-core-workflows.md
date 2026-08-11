@@ -1,0 +1,79 @@
+# EduAI Core — End-to-End User Workflows
+
+> **How to edit this file:** pick a role section below and work it in stages — Claude finds the paths, Claude simulates them via Playwright, Claude reviews (its own and another Claude's) work, Claude sweeps once more for gaps, then a human walks the same paths (see the [README](./README.md) for the full methodology). Add/update a row per workflow. Prioritize AI-involving workflows and happy paths first. File bugs as GitHub issues and link them in the Bugs column — don't just describe them in prose. Prefix security findings with `SECURITY:`. Bump **Last updated** every time you edit.
+
+**Last updated:** 2026-08-10 — Ayyhab/Claude (Week 15, #1459)
+
+## Table of contents
+- [Admin](#admin)
+- [Unit Admin](#unit-admin)
+- [Instructor](#instructor)
+- [TA](#ta)
+- [Student](#student)
+
+---
+
+## Admin
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs |
+|---|---|---|---|---|---|
+| _e.g. Log in via CWL/OIDC and land on the admin dashboard_ | | Not started | | | |
+
+## Unit Admin
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs |
+|---|---|---|---|---|---|
+| | | Not started | | | |
+
+## Instructor
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs |
+|---|---|---|---|---|---|
+| | | Not started | | | |
+
+## TA
+
+Full-loop pass (find paths -> simulate via Playwright -> self-review -> independent peer-review agent -> gap sweep) done against seeded TA accounts (`ta.cs@eduai.local`, TA in COSC 101/121 only; `ta.math@eduai.local`, TA in MATH 200 only — both have platform `role: STUDENT`, TA status lives entirely in `Enrollment(role=TA)`). Reproducible spec: [`tests/e2e/tests/core/week15-student-ta-exploration.spec.ts`](../../tests/e2e/tests/core/week15-student-ta-exploration.spec.ts) (13/13 passing, idempotent across re-runs). Human pass still required per the epic — see "Known gaps" below for what it should prioritize.
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs |
+|---|---|---|---|---|---|
+| First login -> dashboard | Claude (full loop) | Claude pass done — human pass pending | **Bug found + fixed.** Default post-login landing (`/dashboard`) hit a mandatory "link your UBC student number" onboarding gate with no way to skip, even though the backend already supported skipping. Seeded TAs have no student number and were stuck. See Bugs column. | SECURITY: no issue — gate is auth-scoped correctly, just missing a UI escape hatch. | [#1464](https://github.com/EduAI-Lab/EduAI/issues/1464) — fixed in this branch (added visible "skip for now" button wired to the pre-existing server-side skip action). |
+| Dashboard content once past onboarding | Claude (full loop) | Claude pass done — human pass pending | Correct — dashboard's `isTA` detection (any active TA enrollment) renders TA-specific stats/framing ("Courses assisting", not "Assigned courses"), not the generic Student dashboard. | SECURITY: no issue. | None. |
+| Global identity badge (sidebar/profile chip) | Claude (full loop) | Claude pass done — human pass pending | Shows "Student" for a TA everywhere except the dashboard's own TA-aware content, because `/api/me`'s `role` is literally `STUDENT` (TA status is enrollment-scoped, by design per an inline code comment). Course-specific TA badges elsewhere (e.g. "Courses You Are Assisting In" cards) correctly say "TA". Confusing at a glance but not incorrect — flagging as a design-tradeoff worth a product opinion, not filing as a bug. | SECURITY: no issue — this is a display label, not a permission check; permission checks correctly use `Enrollment.role`. | None filed — deliberate design choice per code comment in `onboarding.server.ts`. |
+| Open own TA course (COSC 101) | Claude (full loop) | Claude pass done — human pass pending | **Bug found + fixed.** "Instructor" card showed "No professor assigned" despite Dr. Ada Lovelace being the active instructor — seed-data bug (`Course.instructorId` never written), not an access-control issue. TA roster ("Teaching assistants: Sam Carter") rendered correctly throughout. | SECURITY: no issue. | [#1463](https://github.com/EduAI-Lab/EduAI/issues/1463) — fixed in this branch (`prisma/seed.ts` now sets `instructorId` on the course upsert). |
+| Open an unrelated course (MATH 200, zero relation) | Claude (full loop) | Claude pass done — human pass pending | Clean, clear UX — redirects to `/courses?access=denied` with a red banner: "You do not have access to that course. Open a course from this list only." | SECURITY: Verified — 403/redirect, no data leaked. | None. |
+| Course chat (AI, own course) | Claude (full loop) | Claude pass done — human pass pending, **needs re-verification with a working LLM backend** | Sent a real message via the browser composer; Auto-routing resolved to a local `vllm:qwen2.5-7b-instruct` tier that is unreachable in this dev environment (no vLLM server running), so no assistant reply arrived and the UI showed no error/timeout indicator within the ~15s test window. Could not verify the course-scope guardrail's off-topic handling as a result — this is a test-environment gap (no local vLLM), not a confirmed product bug, but the complete silence (vs. any loading/error/retry state) is worth a second look in an environment with a reachable model. | SECURITY: N/A — did not reach a response to evaluate. | None filed — flagged for the mandatory human pass to re-run with a working provider. |
+| View questions bank (own course, w/ answers) | Claude (full loop) | Claude pass done — human pass pending | Makes sense — TA sees the full question bank including answers (`GET /api/questions?courseId=...` -> 200, answers present), matching the "TA can grade/prep" use case. | SECURITY: Verified — no issue. | None. |
+| View questions bank (unrelated course) | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked. | SECURITY: Verified — 403, no leak. | None. |
+| Create a question | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked (instructor+ only). | SECURITY: Verified — 403. | None. |
+| View own-course roster (enrollments) | Claude (full loop) | Claude pass done — human pass pending | Works as documented — TA(C) sees the full peer roster for their own course. | SECURITY: Verified — 403 for unrelated courses; 200 with real roster only for the TA's own course. | None. |
+| Add a student/TA enrollment | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked — TA is not a policy-granted inviter by default. | SECURITY: Verified — 403. | None. |
+| Upload / rename / delete course materials | Claude (full loop) | Claude pass done — human pass pending | Makes sense — TA can upload freely, and rename/delete only their own uploads (AUTH-08 own-upload rule). Verified live: renaming/deleting the instructor's material -> 403; renaming their own upload -> 200; uploading a new material -> 200/201. | SECURITY: Verified — AUTH-08 null-uploader fail-closed rule holds; no cross-staff tampering possible. | None. |
+| View course chat oversight (own course's student chats) | Claude (full loop) | Claude pass done — human pass pending | 403 even for the TA's own course. On inspection this is **not** a policy default that's merely off — `courseChatViewPolicyKey()` hardcodes `'never'` for the TA/STUDENT tier; no policy flag can ever grant it. Worth a product question (should TAs get an opt-in oversight view?) but it's a deliberate permanent design decision, not a bug or a misconfigured default. | SECURITY: Verified — correctly, permanently blocked; not policy-configurable. | None. |
+| Admin-only routes (`/api/users`, `/api/ai-models`, `/admin/*`) | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked. | SECURITY: Verified — 403 on every probe. | None. |
+| Mixed role: TA in one course, plain Student in another | Claude (full loop) | Claude pass done — human pass pending | By design (per code comment in `dashboard.tsx`), `isTA` is a single global boolean (any active TA enrollment anywhere), not per-course — so a genuinely mixed-role user sees "TA" dashboard framing site-wide, even for courses where they're purely a Student. Not tested whether this causes any per-course UI to show TA-level controls on a course where the user is only a Student (spot-checked cosc101 for student1-turned-TA-in-hist210 and it correctly kept the Student view for that specific course) — worth a closer human look for edge cases across more course-detail surfaces. | SECURITY: Verified — the mismatched *dashboard framing* does not grant any extra permissions; per-course access checks are independently correct. | None. |
+| Settings page (`/settings`) | Claude (spot-check) | Claude pass done — human pass pending | The "Student number" card renders with the same generic student-facing copy for a TA ("...so your courses sync automatically") as it does for a real student — consistent with the onboarding-gate finding above, but lower severity since `/settings` doesn't force the field. Not filed as a separate bug; same root cause as [#1464](https://github.com/EduAI-Lab/EduAI/issues/1464). | SECURITY: not evaluated in depth (page reachable, no probing done). | None filed separately. |
+
+**Known gaps for the human pass** (per peer review — not covered by the Claude loop above, prioritize in this order): (1) course chat with a real reachable LLM backend, including the off-topic/course-scope-guardrail behavior; (2) `canManageTopics` (topics management), which is genuinely policy-gated (`tas.canManageTopics`) unlike the chat-oversight flag above; (3) chat rename/delete and switching between existing chat threads; (4) submitting a bug report end-to-end (only read-back was tested); (5) `/help` page; (6) account actions on `/settings` beyond viewing (password change, provider keys).
+
+## Student
+
+Full-loop pass done against seeded Student accounts (`student1@eduai.local`, enrolled in 6 published courses; `student2@eduai.local`, enrolled in 7 courses including one **unpublished** one — a useful edge case). Same reproducible spec as the TA section above.
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs |
+|---|---|---|---|---|---|
+| Login -> dashboard | Claude (full loop) | Claude pass done — human pass pending | Clean — "Good evening, Alex", assigned/enrolled courses and recent conversations render correctly, scoped to the student's own enrollments. | SECURITY: Verified — no issue. | None. |
+| Course list (`/courses`) | Claude (full loop) | Claude pass done — human pass pending | Shows only enrolled, published courses, grouped by term with "Enrolled" tags — clear. | SECURITY: Verified — no cross-account leakage. | None. |
+| Open an enrolled, published course | Claude (full loop) | Claude pass done — human pass pending | **Bug found + fixed** (same root cause as the TA row above — [#1463](https://github.com/EduAI-Lab/EduAI/issues/1463)): "No professor assigned" shown despite a real instructor. | SECURITY: no issue. | [#1463](https://github.com/EduAI-Lab/EduAI/issues/1463) — fixed in this branch. |
+| Open a course you're enrolled in but that's unpublished (student2/COSC 211) | Claude (full loop) | Claude pass done — human pass pending | **Bug found + fixed.** Direct navigation silently redirected to `/courses` with zero explanation — indistinguishable from "you were never allowed here." Contrast with the clear "you do not have access" banner shown for a genuinely unrelated course. See Bugs column. | SECURITY: Verified — access itself was correctly denied (course never appeared in the student's list, direct GET was blocked); this was purely a UX/clarity gap, not a leak. | [#1465](https://github.com/EduAI-Lab/EduAI/issues/1465) — fixed in this branch (redirect now carries `?access=unpublished` + explanatory banner, matching the existing `access=denied` pattern). |
+| Course chat (AI, on-topic question in an enrolled course) | Claude (full loop) | Claude pass done — human pass pending, **needs re-verification with a working LLM backend** | Same finding as the TA chat row: Auto-routing resolved to an unreachable local vLLM tier in this dev environment; no reply and no visible error arrived within the test's ~15s window. Not confirmed as a product bug (environment-confounded) — flagged for the human pass with a real provider. | SECURITY: N/A — no response to evaluate. | None filed. |
+| Cross-course IDOR: chat in a course you're not enrolled in | Claude (full loop) | Claude pass done — human pass pending | N/A (correctly rejected before reaching any UI). | SECURITY: Verified — `POST /api/chat` with an unenrolled `courseId` -> 400 (rejected), no cross-course data returned. | None. |
+| Cross-course IDOR: list enrollments (peers) for an unrelated course | Claude (full loop) | Claude pass done — human pass pending | N/A. | SECURITY: Verified — blocked. | None. |
+| List enrollments (peers) for your own enrolled course, as a plain Student | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked — matches the "students can't list peers" RBAC rule (only TA+ can). | SECURITY: Verified — 403. | None. |
+| View the question bank | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked entirely (`GET /api/questions?courseId=...` -> 403) — Students never get direct question-bank access. | SECURITY: Verified — no issue. | None. |
+| View course materials | Claude (full loop) | Claude pass done — human pass pending | Scoped correctly to the enrolled course; RAG-usable content (lecture notes, course overview) visible as expected. | SECURITY: Verified — a manually-inserted `visibleToStudents: false` "staff only" material was excluded from the student's materials list (TA in the same course correctly still saw it), and the RAG retrieval path (`restrictRagToStudentVisible` in `api/chat.ts` -> `lib/ai/embedding.ts`) threads the same flag, backed by a dedicated `material-visibility.integration.test.ts` covering REST, hybrid-BM25, and pure-vector-SQL paths against one shared oracle — unusually solid coverage here. | None. |
+| Submit / view own bug reports | Claude (full loop) | Claude pass done — human pass pending | `GET /api/bug-reports?mine=true` works and returns only the caller's own reports. | SECURITY: Verified, with a correction — initially read a 404 on `GET /api/bug-reports/<other-user's-id>` as "IDOR blocked"; on inspecting server logs this is actually React Router's own "no route matches" error, since **no** `/api/bug-reports/:id` route exists for any non-admin caller (only `/api/admin/bug-reports/:id` does). So: no leak occurred, but there's also no way for any user — including the report's owner — to fetch a single report by id; only the list view works. Not a security issue, just worth knowing precisely what the 404 means. | None. |
+| Admin-only routes (`/api/users`, etc.) | Claude (full loop) | Claude pass done — human pass pending | Correctly blocked. | SECURITY: Verified — 403. | None. |
+| `/settings` and `/help` pages | — | Not started | Reachable, not exercised in depth this pass (see TA section's "Known gaps" — same applies here). | Not evaluated. | None. |
+
+**Environment note for the human pass:** an "Application Error" (`TypeError: Cannot read properties of null (reading 'useContext')` in `useNonce` / `root.tsx`) surfaced twice during this session, on two unrelated pages (chat, settings). Traced to Vite dev-server dependency re-optimization mid-session (stack trace points at Vite's optimized-deps chunks, not app code) — reproduces only in `npm run dev` under heavy first-time-route-discovery, not expected in a production build. A page refresh resolved it both times. Not filed as a bug; flagging so the human tester isn't alarmed if they hit it too.

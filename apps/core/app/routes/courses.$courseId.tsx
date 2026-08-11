@@ -67,7 +67,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!access) return redirect('/courses?access=denied')
 
   // Students cannot view unpublished courses by direct URL
-  if (access === 'student' && !course.isPublished) return redirect('/courses')
+  if (access === 'student' && !course.isPublished) return redirect('/courses?access=unpublished')
 
   // Reassigning the instructor is ADMIN/UNIT_ADMIN only. Load the instructor
   // list only when usable.

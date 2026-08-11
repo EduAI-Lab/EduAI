@@ -71,6 +71,17 @@ export function StudentIdOnboardingForm({
         <Button type="submit" name="intent" value="link" disabled={isLoading} className="min-h-[44px]">
           {isLoading ? "Verifying…" : "Link student number"}
         </Button>
+        <Button
+          type="submit"
+          name="intent"
+          value="skip"
+          variant="ghost"
+          disabled={isLoading}
+          formNoValidate
+          className="min-h-[44px] text-muted-foreground"
+        >
+          I don&apos;t have a UBC student number — skip for now
+        </Button>
       </Form>
     </div>
   );

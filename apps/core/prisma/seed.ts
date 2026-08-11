@@ -1215,6 +1215,7 @@ async function seedCourses() {
         department: course.department,
         isPublished: course.isPublished,
         aiInstructions: course.aiInstructions,
+        instructorId: course.instructorId,
       },
       create: {
         id: course.id,
@@ -1229,6 +1230,7 @@ async function seedCourses() {
         department: course.department,
         isPublished: course.isPublished,
         aiInstructions: course.aiInstructions,
+        instructorId: course.instructorId,
       },
     });
 

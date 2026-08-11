@@ -67,6 +67,7 @@ export default function CoursesPage() {
   const { user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors } = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
   const accessDenied = searchParams.get('access') === 'denied'
+  const accessUnpublished = searchParams.get('access') === 'unpublished'
   const {
     courses,
     total: courseTotal,
@@ -133,6 +134,21 @@ export default function CoursesPage() {
             className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
             You do not have access to that course. Open a course from this list only.
+            <button
+              type="button"
+              className="ml-2 underline"
+              onClick={() => setSearchParams({})}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {accessUnpublished && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            That course isn&apos;t published yet. You&apos;ll be able to open it once your instructor publishes it.
             <button
               type="button"
               className="ml-2 underline"
