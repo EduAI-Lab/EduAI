@@ -36,7 +36,7 @@ flowchart TD
 | Production host          | `s216.ok.ubc.ca` (URL: `aitutor.ok.ubc.ca`)                            |
 | Repo path on host        | `/srv/www/AiTutor` (hardcoded in [`deploy.sh:15`](../deploy.sh))       |
 | API port                 | `4000` (default in `server/src/index.js`; Apache proxies to it)        |
-| DB host port             | `54321` (mapped from container's `5432`)                               |
+| DB host port             | `127.0.0.1:54321` (loopback-only mapping to container `5432`)          |
 | Required SSH auth        | password (per `~/.claude/.../reference_ubc_server.md`)                 |
 | Required local privilege | passwordless `sudo` for `docker compose` and `systemctl restart httpd` |
 
@@ -137,10 +137,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: aitutor
     ports:
-      - '54321:5432'
+      - '127.0.0.1:54321:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
 volumes:
@@ -150,7 +150,7 @@ volumes:
 | Property       | Value                | Notes                                                                                                             |
 | -------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Image          | `postgres:16-alpine` | Pinned to major 16.                                                                                               |
-| Host port      | `54321`              | Non-default to avoid clashing with any host-installed Postgres. The connection string in `.env` must use `54321`. |
+| Host port      | `127.0.0.1:54321`    | Loopback-only because the PM2 backend runs on the host. It is not reachable from the external network.            |
 | Volume         | named `db_data`      | Survives `docker compose down` but **not** `docker compose down -v`.                                              |
 | Restart policy | `unless-stopped`     | Container comes back automatically after host reboot.                                                             |
 
@@ -160,7 +160,9 @@ App processes (API, frontend build, PM2) all run **outside** Docker.
 
 ## Environment Variables
 
-All values default to local-dev sane values; production must override the secrets.
+Production must export a non-default `POSTGRES_PASSWORD` (at least 16 characters) before running
+`deploy.sh`, and the password encoded in `server/.env`'s `DATABASE_URL` must match it. The deploy
+script rejects missing/default passwords and verifies the rendered Compose binding before startup.
 
 ### Frontend (`.env` at repo root)
 
@@ -172,7 +174,7 @@ All values default to local-dev sane values; production must override the secret
 
 | Variable         | Default                     | Purpose                                                                                                                                          |
 | ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`   | (none)                      | Prisma Postgres connection string. Local: `postgresql://postgres:postgres@localhost:54321/aitutor`.                                              |
+| `DATABASE_URL`   | (none)                      | Prisma Postgres connection string. Production uses `127.0.0.1:54321` and the same secret exported as `POSTGRES_PASSWORD`.                        |
 | `PORT`           | `4000`                      | API listen port.                                                                                                                                 |
 | `CORE_URL`       | (none)                      | Core base URL. Session validation is proxied to Core (`POST /api/sessions/validate`), not handled locally — see `server/src/middleware/auth.js`. |
 | `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`).                                                                                   |

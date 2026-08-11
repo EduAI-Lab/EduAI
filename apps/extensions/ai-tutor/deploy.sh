@@ -76,6 +76,12 @@ npm ci --no-audit --no-fund || { echo "npm ci failed. Exiting."; exit 1; }
 
 # ---- Docker (PostgreSQL) ----
 echo "Starting Docker containers..."
+: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to the same non-default secret used by DATABASE_URL}"
+if [ "$POSTGRES_PASSWORD" = "postgres" ]; then
+    echo "Deployment aborted: POSTGRES_PASSWORD must not use the default value."
+    exit 1
+fi
+node "$APP_DIR/scripts/verify-production-compose-network.mjs"
 docker compose -f "$DOCKER_COMPOSE_FILE" up -d || { echo "Docker compose failed. Exiting."; exit 1; }
 
 # ---- Database migrations ----

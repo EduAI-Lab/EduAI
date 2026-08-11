@@ -18,7 +18,7 @@ is a static SPA; nothing about it is server-rendered.
 flowchart LR
     Browser["Browser<br/>(React Router v7 SPA, ssr:false)"]
     API["Express API<br/>:4000<br/>(server/src/index.js)"]
-    DB[("PostgreSQL 16<br/>Docker, host :54321")]
+    DB[("PostgreSQL 16<br/>Docker, loopback 127.0.0.1:54321")]
     EduAI["EduAI<br/>OIDC + Chat API<br/>(default :5174/api)"]
 
     Browser -- "fetch /api/* (cookies)" --> API
@@ -32,7 +32,7 @@ flowchart LR
 | --------- | --------------------------------------------------- | --------------------- | -------------------------------- |
 | SPA       | Static assets served by Apache (prod) or `vite dev` | `app/`                | `5173` (dev)                     |
 | API       | Node/Express, single PM2 process `aitutor-api`      | `server/src/index.js` | `4000`                           |
-| DB        | PostgreSQL 16-alpine in Docker                      | `docker-compose.yml`  | `54321` host -> `5432` container |
+| DB        | PostgreSQL 16-alpine in Docker                      | `docker-compose.yml`  | `127.0.0.1:54321` -> `5432`      |
 | EduAI     | External service (auth + LLM proxy)                 | not in this repo      | `5174` (dev)                     |
 
 The Apache reverse proxy in production sits in front of API and serves the SPA build at the root.
