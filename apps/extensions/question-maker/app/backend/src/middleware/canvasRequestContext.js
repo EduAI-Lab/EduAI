@@ -31,8 +31,14 @@ export function canvasRequestContext(req, res, next) {
     // IncomingMessage.close also fires for a normally completed request body
     // before the response finishes. Only an incomplete body is a disconnect;
     // post-body socket closure is handled by the response close listener.
-    if (!finished && !req.complete && !res.writableEnded) abortForDisconnect();
-    cleanup();
+    if (finished || res.writableEnded) {
+      cleanup();
+      return;
+    }
+    if (!req.complete) {
+      abortForDisconnect();
+      cleanup();
+    }
   };
   const onResponseClose = () => {
     // `close` follows `finish` for a normal response. A close before the

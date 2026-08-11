@@ -47,6 +47,9 @@ describe('canvasRequestContext', () => {
     client.end();
 
     const signal = await signalPromise;
+    // Give Node time to emit the ordinary completed-request `close` event;
+    // that event must not disarm the later response-close cancellation hook.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(signal.aborted).toBe(false);
     const aborted = new Promise((resolve) => {
       if (signal.aborted) resolve(signal.reason);
