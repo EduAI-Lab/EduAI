@@ -21,7 +21,7 @@ import {
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
@@ -462,7 +462,7 @@ export async function updateCourse(request: Request, courseId: string) {
     return validationErrorFromZod(result.error);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     user,
     courseId,
   );
@@ -592,7 +592,7 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     session.user,
     courseId,
   );
@@ -700,7 +700,7 @@ export async function setPublishState(
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     session.user,
     courseId,
   );

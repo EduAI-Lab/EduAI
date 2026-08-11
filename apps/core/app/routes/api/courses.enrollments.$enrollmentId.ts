@@ -14,7 +14,7 @@
  */
 import type { ActionFunctionArgs } from "react-router";
 
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import {
   deactivateEnrollment,
   getEnrollment,
@@ -47,7 +47,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(401, { error: "Unauthorized" });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return json(404, { error: "COURSE_NOT_FOUND" });
