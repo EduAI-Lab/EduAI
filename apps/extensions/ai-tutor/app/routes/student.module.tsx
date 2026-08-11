@@ -76,7 +76,7 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
           <CourseSwitcher
             courseId={course.id}
             basePath="/student"
-            currentTitle={course?.title || "Course"}
+            currentTitle={course?.title || 'Course'}
           />
         ) : undefined,
     },
@@ -91,7 +91,7 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
       value: lessonList.length,
       accent: true,
     },
-    ...(moduleProgress ? [{ label: "Activities", value: moduleProgress.total }] : []),
+    ...(moduleProgress ? [{ label: 'Activities', value: moduleProgress.total }] : []),
   ];
 
   return (

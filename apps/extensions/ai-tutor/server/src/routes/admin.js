@@ -33,18 +33,18 @@ import {
   clearSystemSetting,
   getEduAiApiKeyStatus,
   setSystemSetting,
-} from "../services/systemSettings.js";
-import { getAiModelPolicyState, setAiModelPolicy } from "../services/aiModelPolicy.js";
-import { mapCoreAdminUser, mapCourseOffering } from "../utils/mappers.js";
-import { parsePaginationParams, paginated, PaginationError } from "../utils/pagination.js";
-import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
-import { indexCoreCoursesById, resolveCoreCourseCatalog } from "../services/courseResolver.js";
+} from '../services/systemSettings.js';
+import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
+import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
 import {
   AUTO_SYNC_TIMEOUT_MS,
   AUTO_SYNC_TTL_MS,
   syncCourseEnrollments,
-} from "../services/enrollmentSync.js";
-import { ensureOfferingAnchors } from "../services/importTaughtCoursesService.js";
+} from '../services/enrollmentSync.js';
+import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
   CORE_PAGE_SIZE,
   deleteCoreEnrollment,
@@ -55,7 +55,7 @@ import {
 
 const router = express.Router();
 
-router.get("/admin/users", requireRole("ADMIN"), async (req, res) => {
+router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
   try {
     // #1041: Core requires paging here, so this route pages too rather than
     // proxying a full table. Paging params pass straight through.
@@ -194,7 +194,7 @@ router.get(
       }
 
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       if (course.coreOfferingId) {
@@ -205,7 +205,7 @@ router.get(
             signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
           });
         } catch (e) {
-          const phase = e?.phase === "write" ? "local write" : "Core fetch";
+          const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
           console.warn(
             `[admin] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`,
           );
@@ -231,7 +231,7 @@ router.get(
           }
         } catch (err) {
           console.warn(
-            "[admin] Could not fetch Core enrollment names for course",
+            '[admin] Could not fetch Core enrollment names for course',
             courseId,
             err.message,
           );
@@ -250,6 +250,10 @@ router.get(
         // searchable, role-scoped page for the "add a student" picker.
         const enrolledIds = [...enrolledUserIds];
         const [enrolledEnvelope, studentEnvelope] = await Promise.all([
+          listCoreAdminUsers(cookie, {
+            ids: enrolledIds,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          }),
           listCoreAdminUsers(cookie, {
             ids: enrolledIds,
             signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
@@ -279,7 +283,7 @@ router.get(
         };
       } catch (err) {
         console.warn(
-          "[admin] Could not fetch Core users for enrollment display",
+          '[admin] Could not fetch Core users for enrollment display',
           courseId,
           err.message,
         );
@@ -328,7 +332,7 @@ router.post(
         ? req.body.userId.trim()
         : null;
     const rawRole = req.body?.role;
-    const enrollmentRole = rawRole === "TA" || rawRole === "STUDENT" ? rawRole : "STUDENT";
+    const enrollmentRole = rawRole === 'TA' || rawRole === 'STUDENT' ? rawRole : 'STUDENT';
 
     if (!Number.isFinite(courseId)) {
       return res.status(400).json({ error: "Invalid course id" });
@@ -349,7 +353,7 @@ router.post(
       }
 
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       await prisma.courseEnrollment.upsert({
@@ -401,7 +405,7 @@ router.delete(
       }
 
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // Write through to Core first, so a later sync doesn't re-import the student (#812).
@@ -472,7 +476,7 @@ router.patch(
       }
 
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       const enrollment = await prisma.courseEnrollment.findUnique({

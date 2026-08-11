@@ -32,7 +32,7 @@ function renderSwitcher() {
 
 // Radix opens on pointerdown, which jsdom has no PointerEvent for, so drive the
 // trigger's keyboard path instead (same approach as packages/ui's own tests).
-const openMenu = () => fireEvent.keyDown(screen.getByLabelText("Switch course"), { key: "Enter" });
+const openMenu = () => fireEvent.keyDown(screen.getByLabelText('Switch course'), { key: 'Enter' });
 
 /** Let the debounce elapse and any resulting fetch settle. */
 async function settle() {

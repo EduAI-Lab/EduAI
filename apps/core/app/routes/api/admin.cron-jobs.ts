@@ -69,20 +69,14 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const { findRunningCronRun } = await import("~/lib/db.cron-jobs.server");
-    const alreadyRunning = await findRunningCronRun(jobName);
-    if (alreadyRunning) {
-      return data({ runId: alreadyRunning.id, reused: true });
+    // Acquisition is one atomic database operation: it reaps an expired lease,
+    // fences competing owners, and returns the live run to losing callers.
+    const result = await startCronRun(jobName);
+    if (result.created) {
+      triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
     }
 
-    const { runId, created } = await startCronRun(jobName, {
-      source: "ADMIN_UI",
-      triggeredByUserId: user.id,
-    });
-    // The worker claims ADMIN_UI runs during its next reconciliation cycle;
-    // shell jobs therefore execute under eduai-cron, never the web account.
-
-    return data({ runId, reused: !created });
+    return data({ runId: result.runId, reused: !result.created });
   }
 
   if (intent === "update-schedule" && jobName) {

@@ -8,11 +8,11 @@
  *   2. search is ANDed onto the visibility scope, so a student can never
  *      surface an unpublished row by searching for it.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
-import { MAX_SEARCH_LENGTH } from "../../src/utils/pagination.js";
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
+import { MAX_SEARCH_LENGTH } from '../../src/utils/pagination.js';
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();

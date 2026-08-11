@@ -51,34 +51,34 @@ import {
   SortableItem,
   DragHandle,
   Textarea,
-} from "@eduai/ui";
-import { PublishMenu } from "../components/PublishMenu";
-import { ModuleCard } from "../components/courses/ModuleCard";
+} from '@eduai/ui';
+import { PublishMenu } from '../components/PublishMenu';
+import { ModuleCard } from '../components/courses/ModuleCard';
 import {
   accentForCourse,
   courseCode,
   courseName,
   courseTerm,
   courseYear,
-} from "../lib/course-display";
-import api, { FULL_TREE_READ_PAGE_SIZE } from "../lib/api";
-import type { Course, Module } from "../lib/types";
-import type { Route } from "./+types/instructor.course";
-import { requireClientUser } from "~/lib/client-auth";
-import { useLocalUser } from "../hooks/useLocalUser";
-import { useAtPermissions } from "../hooks/useAtPermissions";
-import { CourseAnalyticsPanel } from "../components/courses/CourseAnalyticsPanel";
-import { CourseTopicsHeroAction } from "../components/courses/CourseTopicsHeroAction";
-import { CourseFeedbackPanel } from "../components/courses/CourseFeedbackPanel";
-import { CourseSubmissionsPanel } from "../components/courses/CourseSubmissionsPanel";
-import { PermissionGate } from "@eduai/ui";
-import { getCourseDetailTabs } from "~/lib/rbac/nav";
-import { useCourseTopics } from "../hooks/useCourseTopics";
-import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
-import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
-import { PaginationControls } from "~/components/common/PaginationControls";
-import { ListSearchInput } from "~/components/common/ListSearchInput";
-import { MoveToPositionDialog } from "~/components/common/MoveToPositionDialog";
+} from '../lib/course-display';
+import api, { FULL_TREE_READ_PAGE_SIZE } from '../lib/api';
+import type { Course, Module } from '../lib/types';
+import type { Route } from './+types/instructor.course';
+import { requireClientUser } from '~/lib/client-auth';
+import { useLocalUser } from '../hooks/useLocalUser';
+import { useAtPermissions } from '../hooks/useAtPermissions';
+import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
+import { CourseTopicsHeroAction } from '../components/courses/CourseTopicsHeroAction';
+import { CourseFeedbackPanel } from '../components/courses/CourseFeedbackPanel';
+import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
+import { PermissionGate } from '@eduai/ui';
+import { getCourseDetailTabs } from '~/lib/rbac/nav';
+import { useCourseTopics } from '../hooks/useCourseTopics';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+import { PaginationControls } from '~/components/common/PaginationControls';
+import { ListSearchInput } from '~/components/common/ListSearchInput';
+import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
 import {
   absoluteOrdinal,
   movedRowIndex,
@@ -139,7 +139,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const tabs = getCourseDetailTabs(
     user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null,
   );
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("content");
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
   const {
     course,
     modules: initialModules,
@@ -676,7 +676,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 <DialogHeader>
                   <DialogTitle>Delete module</DialogTitle>
                   <DialogDescription>
-                    Delete{" "}
+                    Delete{' '}
                     <span className="font-semibold text-foreground">{deletingModule?.title}</span>?
                     This removes its lessons and activities and can't be undone.
                   </DialogDescription>
@@ -696,7 +696,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     onClick={onConfirmDelete}
                     disabled={deleting}
                   >
-                    {deleting ? "Deleting…" : "Delete module"}
+                    {deleting ? 'Deleting…' : 'Delete module'}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -929,7 +929,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           />
         </PageTabsContent>
 
-        {tabs.some((tab) => tab.id === "feedback") && (
+        {tabs.some((tab) => tab.id === 'feedback') && (
           <PageTabsContent value="feedback">
             {numericCourseId ? <CourseFeedbackPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>

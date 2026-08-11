@@ -4,8 +4,9 @@
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
-process.env.CORE_URL = "http://core.test";
-process.env.EXTENSION_URL = "http://qm.test";
+process.env.CORE_URL = 'http://core.test';
+process.env.EXTENSION_URL = 'http://qm.test';
+const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 const findOrCreateUser = vi.fn();
 
@@ -14,8 +15,8 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { requireAuth, requireRole, authenticateToken } =
-  await import("../../src/middleware/auth.js");
-const { config } = await import("../../src/config/settings.js");
+  await import('../../src/middleware/auth.js');
+const { config } = await import('../../src/config/settings.js');
 
 function makeRes() {
   const res = {
@@ -50,16 +51,21 @@ describe("requireAuth", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    if (originalCoreAuthTimeoutMs === undefined) {
+      delete process.env.CORE_AUTH_TIMEOUT_MS;
+    } else {
+      process.env.CORE_AUTH_TIMEOUT_MS = originalCoreAuthTimeoutMs;
+    }
   });
 
-  it("calls next and sets req.user on a valid session", async () => {
+  it('calls next and sets req.user on a valid session', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
-            user: { id: "u1", email: "a@b.com", name: "Alice", role: "INSTRUCTOR" },
+            user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'INSTRUCTOR' },
           }),
       }),
     );
@@ -72,12 +78,12 @@ describe("requireAuth", () => {
     expect(req.user).toMatchObject({ id: "u1", email: "a@b.com", role: "INSTRUCTOR" });
   });
 
-  it("calls findOrCreateUser to maintain the local user row", async () => {
+  it('calls findOrCreateUser to maintain the local user row', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
+        json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
       }),
     );
 
@@ -88,8 +94,8 @@ describe("requireAuth", () => {
     );
   });
 
-  it("returns 401 JSON when Core rejects the session", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  it('returns 401 JSON only when Core verifies that the session is unauthorized', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const req = makeApiReq();
     const res = makeRes();
 
@@ -102,15 +108,99 @@ describe("requireAuth", () => {
     );
   });
 
-  it("returns 401 JSON when fetch throws (Core unreachable)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+  it('preserves a verified Core 403 response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
     const req = makeApiReq();
     const res = makeRes();
 
     await requireAuth(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Authentication forbidden',
+    });
+  });
+
+  it('returns 503 JSON when Core session validation responds with a 5xx', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Authentication service unavailable',
+    });
+    expect(findOrCreateUser).not.toHaveBeenCalled();
+  });
+
+  it('returns 504 when Core session validation never responds before the configured deadline', async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = '5';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(504);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Authentication service timed out',
+    });
+  });
+
+  it('composes an available caller cancellation signal with the deadline', async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = '1000';
+    const caller = new AbortController();
+    let forwardedSignal;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url, { signal }) => {
+        forwardedSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          caller.abort();
+        });
+      }),
+    );
+    const req = makeApiReq({ signal: caller.signal });
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(forwardedSignal).not.toBe(caller.signal);
+    expect(forwardedSignal.aborted).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(401);
+  });
+
+  it('returns 503 JSON when fetch throws (Core unreachable)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Authentication service unavailable',
+    });
   });
 
   // #225 edge-case audit SEAM-01 / #1197 fix: a Core 429 (IP rate limit) is
@@ -177,12 +267,12 @@ describe("requireAuth", () => {
     );
   });
 
-  it("normalizes an unrecognized role to STUDENT", async () => {
+  it('normalizes an unrecognized role to STUDENT', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "UNKNOWN_ROLE" } }),
+        json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'UNKNOWN_ROLE' } }),
       }),
     );
     const req = makeApiReq();
@@ -195,12 +285,12 @@ describe("requireAuth", () => {
   // #225 AUTH-12: 'TA' is no longer a valid platform role (Core drops it from
   // UserRole) — a role of 'TA' from any caller is normalized to STUDENT just
   // like any other unrecognized role.
-  it("normalizes a platform role of TA to STUDENT", async () => {
+  it('normalizes a platform role of TA to STUDENT', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "TA" } }),
+        json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'TA' } }),
       }),
     );
     const req = makeApiReq();
@@ -217,10 +307,10 @@ describe("requireAuth", () => {
     "preserves valid role %s unchanged",
     async (role) => {
       vi.stubGlobal(
-        "fetch",
+        'fetch',
         vi.fn().mockResolvedValue({
           ok: true,
-          json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role } }),
+          json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role } }),
         }),
       );
       const req = makeApiReq();

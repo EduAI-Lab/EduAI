@@ -12,9 +12,9 @@ npm run dev
 npx turbo run dev --filter=ai-tutor --filter=ai-tutor-server
 ```
 
-| Process | URL |
-|---------|-----|
-| Frontend | http://localhost:3001 |
+| Process    | URL                   |
+| ---------- | --------------------- |
+| Frontend   | http://localhost:3001 |
 | API server | http://localhost:4000 |
 
 Databases: use root Docker Compose (`npm run docker:dev:db` / `npm run dev`), not a separate AI-Tutor-only Compose as the primary path. Details: [root README](../../../README.md).
@@ -26,12 +26,12 @@ Nested docs:
 
 ## Tech stack
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | React Router v7 (SPA), Vite, Tailwind v4, `@eduai/ui` |
-| Backend | Express 5, Prisma, PostgreSQL |
-| Auth | Core `POST /api/sessions/validate` (cookie forwarded) |
-| AI | Tutor/supervisor loops via Core `/api/completion` (service key) |
+| Layer    | Technology                                                      |
+| -------- | --------------------------------------------------------------- |
+| Frontend | React Router v7 (SPA), Vite, Tailwind v4, `@eduai/ui`           |
+| Backend  | Express 5, Prisma, PostgreSQL                                   |
+| Auth     | Core `POST /api/sessions/validate` (cookie forwarded)           |
+| AI       | Tutor/supervisor loops via Core `/api/completion` (service key) |
 
 ## Content hierarchy
 

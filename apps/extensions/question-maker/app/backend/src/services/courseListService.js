@@ -411,8 +411,12 @@ export function resetCourseAccessSyncForTests() {
   coreCatalogCache.refreshedAt = 0;
 }
 
-/** SQL-paginated course list. Visibility and totals share one DB predicate. */
-export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+/**
+ * Resolve the SQL predicate used for every multi-course visibility read.
+ * Keeping the access-mirror refresh and fail-closed fallback here prevents
+ * question-bank aggregates from drifting from the course list's RBAC rules.
+ */
+async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
   let accessMirrorHealthy = true;
   if (reqUser.role === "ADMIN") {
     await listCoursesForUser(reqUser, { cookie });
@@ -472,6 +476,24 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
               : []),
           ],
         };
+
+  return { where, authorizedUnits, accessMirrorHealthy };
+}
+
+/**
+ * Return the trusted Prisma CourseWhereInput for all courses visible to a
+ * caller. This is intentionally server-derived; request query parameters must
+ * never be accepted as a course predicate.
+ */
+export async function resolveVisibleCourseWhereForUser(reqUser, opts = {}) {
+  const { where } = await resolveCourseVisibilityContext(reqUser, opts);
+  return where;
+}
+
+/** SQL-paginated course list. Visibility and totals share one DB predicate. */
+export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+  const { where, authorizedUnits, accessMirrorHealthy } =
+    await resolveCourseVisibilityContext(reqUser, { cookie });
 
   const [total, rows] = await Promise.all([
     prisma.course.count({ where }),

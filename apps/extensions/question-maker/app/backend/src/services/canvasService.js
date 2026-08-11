@@ -2,15 +2,16 @@
  * Canvas integration service that manages token storage, course mappings, exports, and imports.
  * Supports both real Canvas API calls and a mock test mode for development/demo flows.
  */
-import axios from "axios";
-import { prisma } from "../config/database.js";
-import { encrypt, decrypt, isEncrypted } from "../utils/encryption.js";
-import { getAssessmentById, createAssessment } from "./assessmentService.js";
-import { createQuestion } from "./questionService.js";
-import { createAssessmentSection } from "./assessmentSectionService.js";
-import { validateCanvasUrl, createPinnedLookup } from "../utils/canvasUrlGuard.js";
-import { logger } from "../utils/logger.js";
-import net from "node:net";
+import axios from 'axios';
+import { prisma } from '../config/database.js';
+import { encrypt, decrypt, isEncrypted } from '../utils/encryption.js';
+import { getAssessmentById, createAssessment } from './assessmentService.js';
+import { createQuestion } from './questionService.js';
+import { createAssessmentSection } from './assessmentSectionService.js';
+import { validateCanvasUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
+import { logger } from '../utils/logger.js';
+import { toStableUpstreamError } from '../utils/safeLogging.js';
+import net from 'node:net';
 
 /**
  * Canvas LMS API Service
@@ -174,12 +175,7 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     const response = await axios(config);
     return response;
   } catch (error) {
-    if (error.response) {
-      throw new Error(
-        `Canvas API error: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`,
-      );
-    }
-    throw new Error(`Canvas API request failed: ${error.message}`);
+    throw toStableUpstreamError(error, { serviceName: 'Canvas API' });
   }
 };
 
@@ -508,22 +504,11 @@ export const getCanvasQuizQuestions = async (userId, canvasCourseId, quizId) => 
     );
 
     const list = Array.isArray(response.data) ? response.data : [response.data];
-    console.log(
-      `${DEBUG_PREFIX} getCanvasQuizQuestions: got ${list.length} question(s). isTestMode=${!!integration?.isTestMode}`,
-    );
-    if (list.length > 0) {
-      const first = list[0];
-      const firstKeys = first && typeof first === "object" ? Object.keys(first) : [];
-      const firstAnswers = first?.answers;
-      console.log(
-        `${DEBUG_PREFIX} list[0] keys: ${firstKeys.join(", ")}; answers type=${typeof firstAnswers}, isArray=${Array.isArray(firstAnswers)}, length=${firstAnswers?.length ?? "N/A"}`,
-      );
-      if (first?.question_text) {
-        console.log(
-          `${DEBUG_PREFIX} list[0] question_text (first 120 chars): ${String(first.question_text).slice(0, 120)}...`,
-        );
-      }
-    }
+    const firstAnswerCount = Array.isArray(list[0]?.answers) ? list[0].answers.length : 0;
+    console.log(`${DEBUG_PREFIX} quiz question list received`, {
+      questionCount: list.length,
+      firstAnswerCount,
+    });
     return list;
   } catch (error) {
     throw new Error(`Failed to get Canvas quiz questions: ${error.message}`);
@@ -548,29 +533,13 @@ export const getCanvasQuizQuestionById = async (userId, canvasCourseId, quizId, 
     );
 
     const data = response.data;
-    const topLevelKeys = data && typeof data === "object" ? Object.keys(data) : [];
-    console.log(
-      `${DEBUG_PREFIX} getCanvasQuizQuestionById(${questionId}) response keys: ${topLevelKeys.join(", ")}; has data.question=${!!data?.question}`,
-    );
 
     // Some Canvas API responses wrap the question in a 'question' key
-    const question =
-      data && typeof data === "object" && data.question != null ? data.question : data;
-    const questionKeys = question && typeof question === "object" ? Object.keys(question) : [];
+    const question = (data && typeof data === 'object' && data.question != null) ? data.question : data;
     const answers = question?.answers;
-    console.log(
-      `${DEBUG_PREFIX} getCanvasQuizQuestionById(${questionId}) question keys: ${questionKeys.join(", ")}; answers type=${typeof answers}, isArray=${Array.isArray(answers)}, length=${answers?.length ?? "N/A"}`,
-    );
-    if (answers?.length > 0) {
-      console.log(
-        `${DEBUG_PREFIX} getCanvasQuizQuestionById(${questionId}) first answer: ${JSON.stringify(answers[0])}`,
-      );
-    }
-    if (question?.question_text) {
-      console.log(
-        `${DEBUG_PREFIX} getCanvasQuizQuestionById(${questionId}) question_text (first 150 chars): ${String(question.question_text).slice(0, 150)}...`,
-      );
-    }
+    console.log(`${DEBUG_PREFIX} quiz question detail received`, {
+      answerCount: Array.isArray(answers) ? answers.length : 0,
+    });
     return question;
   } catch (error) {
     throw new Error(`Failed to get Canvas quiz question: ${error.message}`);
@@ -670,9 +639,10 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
   const questionName = canvasQuestion.question_name || "";
 
   const answersInput = canvasQuestion.answers;
-  console.log(
-    `${DEBUG_PREFIX} convertCanvasQuestionToVariant: question_type raw="${questionTypeRaw}" normalized="${questionType}"; answers type=${typeof answersInput}, length=${answersInput?.length ?? "N/A"}; question_text length=${questionTextRaw?.length ?? 0}`,
-  );
+  console.log(`${DEBUG_PREFIX} converting Canvas question`, {
+    answerCount: Array.isArray(answersInput) ? answersInput.length : 0,
+    questionTextLength: questionTextRaw.length,
+  });
 
   // Extract description from question name first (used in all return paths)
   const descriptionMatch = questionName.match(/^\d+\.\s*(.+)$/);
@@ -682,11 +652,6 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
 
   // Strip HTML tags from question text
   const questionText = stripHtmlTags(questionTextRaw);
-  if (questionType === "multiple_choice_question" && questionText) {
-    console.log(
-      `${DEBUG_PREFIX} convertCanvasQuestionToVariant: questionText after stripHtml (first 200 chars): ${questionText.slice(0, 200)}`,
-    );
-  }
 
   let localType = "SA";
   let processedQuestionText = questionText;
@@ -701,9 +666,9 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
     let correctLetter = null;
 
     if (answers.length > 0) {
-      console.log(
-        `${DEBUG_PREFIX} convertCanvasQuestionToVariant: using answers array (${answers.length} items) for MCQ`,
-      );
+      console.log(`${DEBUG_PREFIX} using Canvas answer array`, {
+        answerCount: answers.length,
+      });
       const correctAnswer = answers.find((a) => isCanvasAnswerCorrect(a));
 
       if (questionType === "true_false_question") {
@@ -739,15 +704,15 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
     // Fallback: when Canvas returns answers as null/empty (common for list or some instances), parse choices from question_text
     if (choices == null && questionType === "multiple_choice_question") {
       const parsed = parseChoicesFromQuestionText(questionText);
-      console.log(
-        `${DEBUG_PREFIX} convertCanvasQuestionToVariant: fallback parseChoicesFromQuestionText => ${parsed.choices.length} choices`,
-      );
+      console.log(`${DEBUG_PREFIX} parsed choices from Canvas question text`, {
+        choiceCount: parsed.choices.length,
+      });
       if (parsed.choices.length > 0) {
         processedQuestionText = parsed.questionText;
         choices = parsed.choices;
-        console.log(
-          `${DEBUG_PREFIX} convertCanvasQuestionToVariant: MCQ result from fallback: choices=${JSON.stringify(choices)}, answer=${answer}`,
-        );
+        console.log(`${DEBUG_PREFIX} Canvas MCQ fallback completed`, {
+          choiceCount: choices.length,
+        });
         // answer stays null; user can set correct answer after import
       } else {
         console.log(
@@ -755,9 +720,9 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
         );
       }
     } else if (choices != null) {
-      console.log(
-        `${DEBUG_PREFIX} convertCanvasQuestionToVariant: MCQ result from answers: choices count=${choices.length}, answer=${answer}`,
-      );
+      console.log(`${DEBUG_PREFIX} Canvas MCQ conversion completed`, {
+        choiceCount: choices.length,
+      });
     }
 
     return {
@@ -896,9 +861,11 @@ export const importQuizFromCanvas = async (
       const listItem = canvasQuestions[i];
       const questionId = listItem.id;
 
-      console.log(
-        `${DEBUG_PREFIX} importQuizFromCanvas: processing question ${i + 1}/${canvasQuestions.length} id=${questionId} type=${listItem.question_type} listItem.answers length=${listItem?.answers?.length ?? "N/A"}`,
-      );
+      console.log(`${DEBUG_PREFIX} processing Canvas question`, {
+        questionIndex: i + 1,
+        questionCount: canvasQuestions.length,
+        answerCount: Array.isArray(listItem?.answers) ? listItem.answers.length : 0,
+      });
 
       // Declared outside the try so the catch can still describe the question it skipped.
       let canvasQuestion = listItem;
@@ -917,13 +884,14 @@ export const importQuizFromCanvas = async (
             if (canvasQuestion.position == null && listItem.position != null) {
               canvasQuestion = { ...canvasQuestion, position: listItem.position };
             }
-            console.log(
-              `${DEBUG_PREFIX} importQuizFromCanvas: after getById question ${i + 1}: answers length=${canvasQuestion?.answers?.length ?? "N/A"}`,
-            );
-          } catch (fetchErr) {
-            console.log(
-              `${DEBUG_PREFIX} importQuizFromCanvas: getCanvasQuizQuestionById failed for id=${questionId}: ${fetchErr.message}; using list item`,
-            );
+            console.log(`${DEBUG_PREFIX} Canvas question detail fetched`, {
+              questionIndex: i + 1,
+              answerCount: Array.isArray(canvasQuestion?.answers) ? canvasQuestion.answers.length : 0,
+            });
+          } catch {
+            console.log(`${DEBUG_PREFIX} Canvas question detail fetch failed`, {
+              questionIndex: i + 1,
+            });
             // Fall back to list item if per-question fetch fails (e.g. permissions)
             canvasQuestion = listItem;
           }
@@ -931,9 +899,10 @@ export const importQuizFromCanvas = async (
 
         // Try to convert the question - this will throw if unsupported
         const converted = convertCanvasQuestionToVariant(canvasQuestion);
-        console.log(
-          `${DEBUG_PREFIX} importQuizFromCanvas: converted question ${i + 1} => type=${converted.type} choices count=${converted.choices?.length ?? 0} answer=${converted.answer ?? "null"}`,
-        );
+        console.log(`${DEBUG_PREFIX} Canvas question converted`, {
+          questionIndex: i + 1,
+          choiceCount: Array.isArray(converted.choices) ? converted.choices.length : 0,
+        });
 
         // Create question metadata
         const questionMetadata = await prisma.questionMetadata.create({
@@ -948,9 +917,9 @@ export const importQuizFromCanvas = async (
         });
 
         // Create variant
-        console.log(
-          `${DEBUG_PREFIX} importQuizFromCanvas: creating variant with answer=${converted.answer ?? "null"}, choices count=${converted.choices?.length ?? 0}`,
-        );
+        console.log(`${DEBUG_PREFIX} creating Canvas question variant`, {
+          choiceCount: Array.isArray(converted.choices) ? converted.choices.length : 0,
+        });
         const variant = await prisma.variants.create({
           data: {
             questionMetadataId: questionMetadata.id,

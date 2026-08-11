@@ -171,7 +171,10 @@ model Course {
   questionBanks               QuestionBank[]
 
   @@unique([code, startDate, section])
-  @@index([externalSource, externalId])
+  // PostgreSQL unique indexes permit multiple NULL values, so ordinary Core
+  // courses remain unconstrained while every populated external identity maps
+  // to exactly one row (including a soft-deleted row that can be reactivated).
+  @@unique([externalSource, externalId])
   // #1369: FK -> Discipline.code (onDelete: Restrict, onUpdate: Cascade). Without an
   // index every discipline rename or delete seq-scans courses to enforce the action.
   @@index([department])
@@ -181,24 +184,35 @@ model Course {
 }
 
 model CourseReEmbedJob {
-  id                   String           @id @default(cuid())
-  courseId             String
+  id                        String           @id @default(cuid())
+  courseId                  String
   /// Optional client key for retry-safe starts (#1112). Unique per course when set.
-  idempotencyKey       String?
-  status               ReEmbedJobStatus @default(PENDING)
-  totalMaterials       Int              @default(0)
-  processedCount       Int              @default(0)
-  failedMaterialIds    String[]         @default([])
-  currentMaterialTitle String?
-  errorMessage         String?
-  startedAt            DateTime?
-  completedAt          DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  idempotencyKey            String?
+  status                    ReEmbedJobStatus @default(PENDING)
+  /// Effective provider/model frozen atomically with job creation.
+  embeddingProviderSnapshot String
+  embeddingModelSnapshot    String
+  totalMaterials            Int              @default(0)
+  processedCount            Int              @default(0)
+  failedMaterialIds         String[]         @default([])
+  currentMaterialTitle      String?
+  errorMessage              String?
+  /// Renewable execution lease. An expired RUNNING row is reclaimable in place.
+  leaseOwner                String?
+  leaseHeartbeatAt          DateTime?
+  leaseExpiresAt            DateTime?
+  attemptCount              Int              @default(0)
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  course                    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, idempotencyKey])
   @@index([courseId, status])
+  @@index([status, leaseExpiresAt])
+  // A PostgreSQL partial unique index enforces one PENDING/RUNNING row per
+  // course; Prisma cannot represent its predicate. See the hardening migration.
   @@map("course_re_embed_jobs")
 }
 
@@ -1029,18 +1043,20 @@ enum CronJobTriggerSource {
 }
 
 model CronJobRun {
-  id         String        @id @default(cuid())
-  jobName    String
-  status     CronJobStatus
-  startedAt  DateTime
-  finishedAt DateTime?
-  message    String?
-  exitCode   Int?
-  triggerSource CronJobTriggerSource @default(UNKNOWN)
-  triggeredByUserId String?
-  createdAt  DateTime      @default(now())
+  id               String        @id @default(cuid())
+  jobName          String
+  status           CronJobStatus
+  startedAt        DateTime
+  finishedAt       DateTime?
+  message          String?
+  exitCode         Int?
+  leaseOwner       String?
+  leaseHeartbeatAt DateTime?
+  leaseExpiresAt   DateTime?
+  createdAt        DateTime      @default(now())
 
   @@index([jobName, startedAt])
+  @@index([status, leaseExpiresAt])
   /// Partial unique index (one RUNNING per jobName) lives in SQL migration —
   /// Prisma cannot express WHERE status = 'RUNNING' in schema.
   @@map("cron_job_runs")

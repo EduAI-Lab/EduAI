@@ -1,9 +1,9 @@
-import { useLocation } from "react-router";
-import { IconSparkles } from "@tabler/icons-react";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@eduai/ui";
-import { useLocalUser } from "~/hooks/useLocalUser";
-import { canAccessStudentTour } from "~/lib/tours/tour-storage";
-import { useAppTour } from "./TourProvider";
+import { useLocation } from 'react-router';
+import { IconSparkles } from '@tabler/icons-react';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@eduai/ui';
+import { useLocalUser } from '~/hooks/useLocalUser';
+import { canAccessStudentTour } from '~/lib/tours/tour-storage';
+import { useAppTour } from './TourProvider';
 
 export default function TourButton() {
   const location = useLocation();

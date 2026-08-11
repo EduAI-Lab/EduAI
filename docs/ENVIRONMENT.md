@@ -82,17 +82,21 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `BETTER_AUTH_SECRET` | required | dev | Auth session signing secret — generate with `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | required | dev | Base URL of the Core app |
 | `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) and shared chat/completion sliding-window limits |
-| `QUEUE_ENQUEUE_ENABLED` | optional (default `false`) | dev/prod | Guarded #914 producer flag. When `true`, opted-in `/api/chat` requests (`enqueue: true`) enqueue an AI job instead of streaming. Keep off until the dispatch worker (#168) can drain the queue |
-| `QUEUE_MAX_DEPTH` | optional (default off) | dev/prod | Backpressure cap (#915): max PENDING jobs per queue before `enqueue()` rejects with 429 + `Retry-After`. Plain positive integer only — unset, `0`, or a non-integer value (e.g. `1e3`) disables the cap. See [Operating `QUEUE_MAX_DEPTH`](#operating-queue_max_depth) before enabling it |
-| `AI_JOB_DEFAULT_MODEL` | optional | dev/prod | Worker model override. When unset, the worker uses Auto routing and falls back to `vllm:qwen2.5-32b-instruct` if routing fails |
-| `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | optional (defaults `8` / `1`) | dev/prod | BullMQ worker concurrency for the chat and heavy fleet-pool queues |
-| `AI_JOB_EXECUTION_TIMEOUT_MS` | optional (default `120000`) | dev/prod | Maximum provider execution time for an async AI job before it is aborted and retried |
-| `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | optional (defaults `3` / `5000`) | dev/prod | BullMQ attempts and exponential retry base delay for async AI jobs |
+| `QUEUE_ENQUEUE_ENABLED` | deprecated (ignored) | dev/prod | Pre-MVP fail-closed boundary: setting this to `true` does not enable queuing. `/api/chat` continues through direct chat. Re-enabling requires a reviewed code change after owner-scoped status/cancellation and server-side model authorization exist. |
+| `QUEUE_MAX_DEPTH` | dormant pre-MVP | dev/prod | Retained for the future queue contract; has no effect on `/api/chat` while the queue is hard-disabled. |
+| `AI_JOB_DEFAULT_MODEL` | dormant pre-MVP | dev/prod | Retained for future worker model authorization; no worker starts while the queue is hard-disabled. |
+| `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | dormant pre-MVP | dev/prod | Retained for future BullMQ worker concurrency. |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | dormant pre-MVP | dev/prod | Retained for the future async-job execution deadline. |
+| `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | dormant pre-MVP | dev/prod | Retained for future BullMQ retry policy. |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
-| `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `VLLM_EMBEDDING_BASE_URL`, `VLLM_EMBEDDING_MODEL`, `CMPS01_INTERNAL_BASE_URL` | optional | dev/prod | RAG embeddings — local OpenAI-compatible CMPS endpoint and independent trust boundary |
+| `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
+| `EMBEDDING_REQUEST_TIMEOUT_MS` | optional (default `30000`, range `100-120000`) | dev/prod | Hard per-attempt deadline for native Ollama `fetch` and cloud SDK `embed` / `embedMany` calls. Timeouts abort the provider request, retry within the fixed three-attempt cap using exponential jitter, then surface as `RAG_RETRIEVAL_TIMEOUT`. Invalid or sub-minimum values use the default; larger values are capped at 120 seconds. |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |
 | `REINDEX_CONCURRENCY` | optional (default `4`, range `1-16`) | dev/prod | #945 — max materials `reEmbedCourseMaterials` (course re-embed background job) processes concurrently via `p-limit`. Non-positive, fractional, blank, and non-numeric values use the default; values above 16 are capped at 16. Keeps large re-embed runs from overwhelming the Postgres connection pool or the embedding provider's rate limit; bump cautiously alongside `OLLAMA_EMBED_MANY_BATCH_SIZE` / `EMBED_MANY_BATCH_SIZE` |
-| `VLLM_BASE_URL`, `VLLM_API_KEY`, `VLLM_TRUSTED_BASE_URLS` | optional | dev/prod | vLLM proxy and independently configured endpoint allowlist |
+| `CRON_RUN_LEASE_MS` | optional (default `60000`, range `15000-600000`) | dev/prod | Lifetime of a Core cron execution lease. The child renews the lease every third of this interval and terminates if renewal fails. Invalid and sub-minimum values use the default; larger values are capped at 10 minutes. |
+| `CRON_OUTPUT_MAX_BYTES` | optional (default `65536`, range `1024-1048576`) | dev/prod | Maximum combined stdout/stderr bytes retained for a spawned cron script. Core terminates and fails a child that exceeds the cap. Invalid and sub-minimum values use the default; larger values are capped at 1 MiB. |
+| `CRON_SCRIPT_DIR` | optional (default repository `infra/cron`) | dev/prod | Directory that contains Core-triggered shell scripts. Production can set `/opt/eduai/cron`. |
+| `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
@@ -104,29 +108,11 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
 
-### Operating `QUEUE_MAX_DEPTH`
+### Future queue settings
 
-**A Redis outage can present as `429 queue full` rather than `502`.** When the BullMQ
-add fails, an enqueue with no `idempotencyKey` deliberately leaves its `PENDING`
-row behind for the (not-yet-shipped) reaper, and depth reads count those rows for
-a 5-minute grace window — they may still be in Redis. So while Redis is down,
-client retries accumulate rows that consume the cap: the first callers get a
-truthful `502`, and once accumulated rows reach `QUEUE_MAX_DEPTH` later callers
-get `429` instead. `/api/chat` requests carry no `idempotencyKey` unless the
-caller supplies one, so this is the common shape of the failure.
-
-Operator guidance when the cap is enabled:
-
-- Treat a `429` spike with no matching rise in *completed* jobs as a suspected
-  queue-transport outage, not real saturation. Check Redis reachability and the
-  `ai_job_enqueue_failed` system log before assuming the cap was hit honestly.
-- Rows age out after 5 minutes, so the condition self-clears once Redis recovers;
-  no manual cleanup of `ai_jobs` is needed.
-- Set the cap generously above expected steady-state depth. A tight cap makes an
-  outage reach the 429 threshold faster and hides the real fault for longer.
-- Client copy for a `429` should stay neutral ("the queue is busy, retry shortly")
-  rather than asserting a specific queue length, since the number can reflect
-  failed-transport rows.
+`QUEUE_MAX_DEPTH` and the `AI_JOB_*` variables describe the dormant future
+contract only. They must not be operated or tuned before the queue's security
+contract is completed and the compile-time disable is deliberately removed.
 
 ## `apps/core/.env.test.example`
 
@@ -149,6 +135,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `NODE_ENV` | required | Runtime mode. The local template actively sets `development`, which `setup-env.js` copies or merges; production deployments must set `production` explicitly. |
 | `PORT` | optional (default 4000) | Server port |
 | `CORE_URL` | required | Core base URL — session validation and login redirect |
+| `CORE_AUTH_TIMEOUT_MS` | optional (default 5000) | Finite deadline for Core session-validation and logout requests; invalid or non-positive values fall back to 5000 ms |
 | `EDUAI_API_KEY` | required | Must match Core's `EDUAI_API_KEY` exactly (Core does not read admin-UI overrides) |
 | `EDUAI_BASE_URL` | required | Core API base for course import/sync |
 | `EDUAI_MODEL` | required | LLM model id, e.g. `google:gemini-2.5-flash` |
@@ -181,6 +168,7 @@ Copied to `apps/extensions/question-maker/.env`, read by both the backend
 | `PORT` | optional (default 8000) | Backend port |
 | `DATABASE_URL` | required | Postgres connection string (use `postgres:5432` host instead of `localhost:55432` inside Docker Compose) |
 | `CORE_URL` | required | Core auth server — used by session validation middleware |
+| `CORE_AUTH_TIMEOUT_MS` | optional (default 5000) | Finite deadline for Core session-validation and logout requests; invalid or non-positive values fall back to 5000 ms |
 | `EXTENSION_URL` | required | This extension's public URL — builds the post-login `?redirect=` param |
 | `CORS_ORIGINS` | required | Comma-separated allowed browser origins, no spaces |
 | `ENCRYPTION_KEY` | required in production | 64-char hex (32 bytes); same format/purpose as Core's `ENCRYPTION_KEY`, separate key |

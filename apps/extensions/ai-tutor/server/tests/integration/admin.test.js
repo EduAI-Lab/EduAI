@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
 import {
   makeProfessor,
   makeAdmin,
@@ -10,7 +10,7 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from "../helpers.js";
+} from '../helpers.js';
 
 vi.mock("../../src/services/eduaiClient.js", () => ({
   listEduAiCourseEnrollmentsServiceKey: vi.fn(),
@@ -725,7 +725,7 @@ describe("Admin routes", () => {
         },
       ]);
       listCoreAdminUsers.mockRejectedValue(
-        new DOMException("The operation was aborted", "TimeoutError"),
+        new DOMException('The operation was aborted', 'TimeoutError'),
       );
 
       const res = await request(unitAdminApp).get(

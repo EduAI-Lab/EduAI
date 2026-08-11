@@ -96,7 +96,7 @@ describe("student clientLoader (#1208)", () => {
     listCourses.mockResolvedValue({ data: [], total: 1, page: 9, pageSize: 200 });
 
     const thrown = await runLoader(
-      "http://x/student?page=9&search=algebra&progress=completed",
+      'http://x/student?page=9&search=algebra&progress=completed',
     ).catch((e: Response) => e);
 
     expect((thrown as Response).status).toBe(302);

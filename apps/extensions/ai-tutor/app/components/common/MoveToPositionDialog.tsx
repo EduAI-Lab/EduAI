@@ -60,7 +60,7 @@ export function MoveToPositionDialog({
   }, [open, currentPosition]);
 
   const parsed = Number(value);
-  const valid = value.trim() !== "" && Number.isInteger(parsed) && parsed >= 1 && parsed <= total;
+  const valid = value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= total;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

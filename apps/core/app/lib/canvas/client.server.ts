@@ -8,6 +8,9 @@ const CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS = 10;
 const CANVAS_PAGE_SIZE = 100;
 const LOCAL_CANVAS_DOCKER_HOST = "canvas.docker";
 
+/** Absolute cap for streamed Canvas response bytes. */
+const MAX_CANVAS_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
 export const CANVAS_EXTERNAL_SOURCE = "canvas";
 
 /**
@@ -612,8 +615,266 @@ function shouldUseLocalCanvasDockerTransport(canvasUrl: string, fileUrl: string)
 type CanvasFileDownloadResponse = {
   status: number;
   getHeader(name: string): string | null;
-  arrayBuffer(): Promise<ArrayBuffer>;
+  body: CanvasFileDownloadBody | null;
 };
+
+type CanvasFileDownloadBody = {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+  cancel(reason: Error): Promise<void>;
+  release(): void;
+};
+
+const SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+const SUPPORTED_CANVAS_FILE_MIME_TYPES = new Set(
+  Object.values(SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION),
+);
+
+const GENERIC_BINARY_MIME_TYPES = new Set([
+  "application/octet-stream",
+  "binary/octet-stream",
+  "application/download",
+  "application/x-download",
+]);
+
+const PDF_SIGNATURE = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]); // %PDF-
+const ZIP_SIGNATURES = [
+  new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+  new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+  new Uint8Array([0x50, 0x4b, 0x07, 0x08]),
+];
+
+function normalizeResponseMimeType(value: string | null | undefined): string | null {
+  const normalized = value?.split(";")[0]?.trim().toLowerCase();
+  return normalized || null;
+}
+
+function resolveExpectedCanvasFileMime(
+  file: Pick<CanvasFileApi, "filename" | "content-type">,
+): string {
+  const filename = file.filename.toLowerCase();
+  for (const [extension, mimeType] of Object.entries(SUPPORTED_CANVAS_FILE_MIME_BY_EXTENSION)) {
+    if (filename.endsWith(extension)) return mimeType;
+  }
+
+  const metadataMime = normalizeResponseMimeType(file["content-type"]);
+  if (metadataMime && SUPPORTED_CANVAS_FILE_MIME_TYPES.has(metadataMime)) {
+    return metadataMime;
+  }
+
+  throw new CanvasApiError("Unsupported Canvas file type", 415);
+}
+
+function responseMimeMatchesExpected(actual: string | null, expected: string): boolean {
+  if (!actual || GENERIC_BINARY_MIME_TYPES.has(actual)) return true;
+
+  if (expected === "text/plain" || expected === "text/markdown") {
+    return actual === "text/plain" || actual === "text/markdown" || actual === "text/x-markdown";
+  }
+
+  if (expected === "application/pdf") {
+    return actual === "application/pdf" || actual === "application/x-pdf";
+  }
+
+  if (
+    expected === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    expected === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return actual === expected || actual === "application/zip" || actual === "application/x-zip-compressed";
+  }
+
+  return actual === expected;
+}
+
+function startsWithBytes(bytes: Uint8Array, signature: Uint8Array): boolean {
+  if (bytes.length < signature.length) return false;
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+function containsAscii(bytes: Uint8Array, text: string): boolean {
+  const needle = new TextEncoder().encode(text);
+  if (needle.length === 0 || bytes.length < needle.length) return false;
+
+  outer: for (let offset = 0; offset <= bytes.length - needle.length; offset++) {
+    for (let index = 0; index < needle.length; index++) {
+      if (bytes[offset + index] !== needle[index]) continue outer;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function looksLikeUtf8Text(bytes: Uint8Array): boolean {
+  const sample = bytes.subarray(0, Math.min(bytes.length, 8 * 1024));
+  if (sample.includes(0)) return false;
+
+  try {
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(sample, {
+      stream: sample.length < bytes.length,
+    });
+    const start = decoded.trimStart().slice(0, 64).toLowerCase();
+    return !start.startsWith("<!doctype html") && !/^<html(?:\s|>)/.test(start);
+  } catch {
+    return false;
+  }
+}
+
+function bytesMatchExpectedType(bytes: Uint8Array, expectedMime: string): boolean {
+  if (expectedMime === "application/pdf") {
+    return startsWithBytes(bytes, PDF_SIGNATURE);
+  }
+
+  if (expectedMime === "text/plain" || expectedMime === "text/markdown") {
+    return looksLikeUtf8Text(bytes);
+  }
+
+  const hasZipSignature = ZIP_SIGNATURES.some((signature) => startsWithBytes(bytes, signature));
+  if (!hasZipSignature) return false;
+
+  if (expectedMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return containsAscii(bytes, "word/");
+  }
+  if (expectedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+    return containsAscii(bytes, "ppt/");
+  }
+
+  return false;
+}
+
+function parseCanvasContentLength(value: string | null): number | null {
+  if (value === null) return null;
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new CanvasApiError("Canvas file response had an invalid Content-Length", 502);
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new CanvasApiError("Canvas file response had an invalid Content-Length", 502);
+  }
+  return parsed;
+}
+
+function createWebDownloadBody(stream: ReadableStream<Uint8Array> | null): CanvasFileDownloadBody | null {
+  if (!stream) return null;
+  const reader = stream.getReader();
+  let released = false;
+
+  return {
+    read: () => reader.read(),
+    cancel: async (reason) => {
+      await reader.cancel(reason);
+    },
+    release: () => {
+      if (released) return;
+      released = true;
+      reader.releaseLock();
+    },
+  };
+}
+
+function createUndiciDownloadBody(
+  stream: AsyncIterable<Uint8Array> & { destroy(error?: Error): unknown },
+): CanvasFileDownloadBody {
+  const iterator = stream[Symbol.asyncIterator]();
+  return {
+    read: async () => {
+      const result = await iterator.next();
+      return {
+        done: Boolean(result.done),
+        value: result.value ? new Uint8Array(result.value) : undefined,
+      };
+    },
+    cancel: async () => {
+      stream.destroy();
+      await iterator.return?.();
+    },
+    release: () => {},
+  };
+}
+
+async function cancelCanvasFileBody(
+  response: CanvasFileDownloadResponse,
+  reason: Error,
+): Promise<void> {
+  if (!response.body) return;
+  try {
+    await response.body.cancel(reason);
+  } catch {
+    // Preserve the validation/transport error that caused cancellation.
+  }
+}
+
+async function readCanvasFileResponse(
+  response: CanvasFileDownloadResponse,
+  file: Pick<CanvasFileApi, "filename" | "content-type">,
+): Promise<Uint8Array> {
+  let failure: Error | null = null;
+
+  try {
+    const expectedMime = resolveExpectedCanvasFileMime(file);
+    const responseMime = normalizeResponseMimeType(response.getHeader("content-type"));
+    if (!responseMimeMatchesExpected(responseMime, expectedMime)) {
+      throw new CanvasApiError("Canvas file response type did not match the requested document", 415);
+    }
+
+    const declaredLength = parseCanvasContentLength(response.getHeader("content-length"));
+    if (declaredLength !== null && declaredLength > MAX_CANVAS_FILE_SIZE_BYTES) {
+      throw new CanvasApiError("Canvas file exceeds the 50 MiB download limit", 413);
+    }
+
+    const contentEncoding = normalizeResponseMimeType(response.getHeader("content-encoding"));
+    const compareDeclaredLength = !contentEncoding || contentEncoding === "identity";
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    while (response.body) {
+      const { done, value } = await response.body.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+
+      if (value.byteLength > MAX_CANVAS_FILE_SIZE_BYTES - totalBytes) {
+        throw new CanvasApiError("Canvas file exceeds the 50 MiB download limit", 413);
+      }
+
+      totalBytes += value.byteLength;
+      if (compareDeclaredLength && declaredLength !== null && totalBytes > declaredLength) {
+        throw new CanvasApiError("Canvas file response exceeded its declared Content-Length", 502);
+      }
+      chunks.push(value);
+    }
+
+    if (compareDeclaredLength && declaredLength !== null && totalBytes !== declaredLength) {
+      throw new CanvasApiError("Canvas file response did not match its declared Content-Length", 502);
+    }
+
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    if (!bytesMatchExpectedType(bytes, expectedMime)) {
+      throw new CanvasApiError("Canvas file contents did not match the requested document type", 415);
+    }
+
+    return bytes;
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error("Canvas file download failed");
+    throw error;
+  } finally {
+    if (failure) await cancelCanvasFileBody(response, failure);
+    response.body?.release();
+  }
+}
 
 async function performCanvasFileDownloadRequest(
   url: string,
@@ -645,7 +906,7 @@ async function performCanvasFileDownloadRequest(
     return {
       status: statusCode,
       getHeader: (name) => normalizedHeaders.get(name),
-      arrayBuffer: () => body.arrayBuffer(),
+      body: createUndiciDownloadBody(body),
     };
   }
 
@@ -658,16 +919,16 @@ async function performCanvasFileDownloadRequest(
   return {
     status: response.status,
     getHeader: (name) => response.headers.get(name),
-    arrayBuffer: () => response.arrayBuffer(),
+    body: createWebDownloadBody(response.body),
   };
 }
 
 async function fetchCanvasFileBytes(
   credentials: CanvasIntegrationCredentials,
-  initialUrl: string,
+  file: Pick<CanvasFileApi, "url" | "filename" | "content-type">,
   fetchImpl: typeof fetch,
 ): Promise<Uint8Array> {
-  let url = resolveCanvasFileDownloadUrl(initialUrl, credentials.canvasUrl);
+  let url = resolveCanvasFileDownloadUrl(file.url, credentials.canvasUrl);
 
   for (
     let redirectCount = 0;
@@ -684,20 +945,32 @@ async function fetchCanvasFileBytes(
     if (response.status >= 300 && response.status < 400) {
       const location = response.getHeader("location");
       if (!location) {
+        await cancelCanvasFileBody(
+          response,
+          new CanvasApiError(`Canvas file download redirect missing Location (${response.status})`, 502),
+        );
+        response.body?.release();
         throw new CanvasApiError(
           `Canvas file download redirect missing Location (${response.status})`,
           502,
         );
       }
+      await cancelCanvasFileBody(response, new Error("Following validated Canvas redirect"));
+      response.body?.release();
       url = resolveCanvasFileDownloadUrl(new URL(location, url).href, credentials.canvasUrl);
       continue;
     }
 
     if (response.status < 200 || response.status >= 300) {
+      await cancelCanvasFileBody(
+        response,
+        new CanvasApiError(`Canvas file download failed: ${response.status}`, response.status),
+      );
+      response.body?.release();
       throw new CanvasApiError(`Canvas file download failed: ${response.status}`, response.status);
     }
 
-    return new Uint8Array(await response.arrayBuffer());
+    return readCanvasFileResponse(response, file);
   }
 
   throw new CanvasApiError("Canvas file download exceeded redirect limit", 502);
@@ -715,7 +988,7 @@ export async function downloadCanvasFile(
   }
 
   try {
-    return await fetchCanvasFileBytes(credentials, file.url, fetchImpl);
+    return await fetchCanvasFileBytes(credentials, file, fetchImpl);
   } catch (error) {
     if (error instanceof CanvasApiError) {
       throw error;

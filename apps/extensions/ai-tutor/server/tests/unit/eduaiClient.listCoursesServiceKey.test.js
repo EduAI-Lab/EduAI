@@ -58,7 +58,7 @@ describe("listEduAiCoursesServiceKey", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(""),
+        text: () => Promise.resolve(''),
         json: () =>
           Promise.resolve({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
       }),
@@ -94,7 +94,7 @@ describe("listEduAiCoursesServiceKey", () => {
       text: () => Promise.resolve(""),
       json: () =>
         Promise.resolve({
-          data: [{ id: "core-1", name: "One" }],
+          data: [{ id: 'core-1', name: 'One' }],
           total: 10_001,
           page: 1,
           pageSize: 200,
@@ -116,7 +116,7 @@ describe("listEduAiCoursesServiceKey", () => {
         text: () => Promise.resolve(""),
         json: () =>
           Promise.resolve({
-            data: [{ id: "core-1", name: "One" }],
+            data: [{ id: 'core-1', name: 'One' }],
             total: 10_000,
             page: 1,
             pageSize: 200,

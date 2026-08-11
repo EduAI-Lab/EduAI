@@ -49,13 +49,13 @@ function catalogModel({ id, modelId, name, provider, isActive = true }) {
 describe("loadAiModelCatalog", () => {
   it("drops inactive models, maps fields, and sorts by name", async () => {
     mockListEduAiModels.mockResolvedValue([
-      catalogModel({ id: "1", modelId: "gemini-2.5-pro", name: "Gemini Pro", provider: "google" }),
-      catalogModel({ id: "2", modelId: "gpt-4o-mini", name: "GPT-4o mini", provider: "openai" }),
+      catalogModel({ id: '1', modelId: 'gemini-2.5-pro', name: 'Gemini Pro', provider: 'google' }),
+      catalogModel({ id: '2', modelId: 'gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai' }),
       catalogModel({
-        id: "3",
-        modelId: "old",
-        name: "Old Model",
-        provider: "openai",
+        id: '3',
+        modelId: 'old',
+        name: 'Old Model',
+        provider: 'openai',
         isActive: false,
       }),
     ]);
@@ -71,17 +71,17 @@ describe("loadAiModelCatalog", () => {
   it("infers LOW cost tier for flash/mini/haiku models", async () => {
     mockListEduAiModels.mockResolvedValue([
       catalogModel({
-        id: "1",
-        modelId: "gemini-2.5-flash",
-        name: "Gemini Flash",
-        provider: "google",
+        id: '1',
+        modelId: 'gemini-2.5-flash',
+        name: 'Gemini Flash',
+        provider: 'google',
       }),
-      catalogModel({ id: "2", modelId: "gpt-4o-mini", name: "GPT-4o mini", provider: "openai" }),
+      catalogModel({ id: '2', modelId: 'gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai' }),
       catalogModel({
-        id: "3",
-        modelId: "claude-haiku",
-        name: "Claude Haiku",
-        provider: "anthropic",
+        id: '3',
+        modelId: 'claude-haiku',
+        name: 'Claude Haiku',
+        provider: 'anthropic',
       }),
     ]);
 
@@ -95,14 +95,14 @@ describe("loadAiModelCatalog", () => {
       // Note: "gemini" itself contains "mini" (ge-MINI-pro), which the LOW
       // heuristic matches first — use a non-Gemini "pro" model to isolate
       // the HIGH-tier "pro" substring check from that overlap.
-      catalogModel({ id: "1", modelId: "ultra-pro", name: "Ultra Pro", provider: "acme" }),
-      catalogModel({ id: "2", modelId: "claude-opus", name: "Claude Opus", provider: "anthropic" }),
-      catalogModel({ id: "3", modelId: "o1", name: "o1", provider: "openai" }),
+      catalogModel({ id: '1', modelId: 'ultra-pro', name: 'Ultra Pro', provider: 'acme' }),
+      catalogModel({ id: '2', modelId: 'claude-opus', name: 'Claude Opus', provider: 'anthropic' }),
+      catalogModel({ id: '3', modelId: 'o1', name: 'o1', provider: 'openai' }),
       catalogModel({
-        id: "4",
-        modelId: "x-reasoning",
-        name: "Reasoning Model",
-        provider: "openai",
+        id: '4',
+        modelId: 'x-reasoning',
+        name: 'Reasoning Model',
+        provider: 'openai',
       }),
     ]);
 
@@ -162,10 +162,10 @@ describe("getAiModelPolicyState", () => {
     mockGetSystemSetting.mockResolvedValue(null);
     mockListEduAiModels.mockResolvedValue([
       catalogModel({
-        id: "1",
-        modelId: "gemini-2.5-flash",
-        name: "Gemini Flash",
-        provider: "google",
+        id: '1',
+        modelId: 'gemini-2.5-flash',
+        name: 'Gemini Flash',
+        provider: 'google',
       }),
     ]);
 
@@ -197,12 +197,12 @@ describe("getAiModelPolicyState", () => {
 describe("setAiModelPolicy", () => {
   const models = [
     catalogModel({
-      id: "1",
-      modelId: "gemini-2.5-flash",
-      name: "Gemini Flash",
-      provider: "google",
+      id: '1',
+      modelId: 'gemini-2.5-flash',
+      name: 'Gemini Flash',
+      provider: 'google',
     }),
-    catalogModel({ id: "2", modelId: "o1", name: "o1", provider: "openai" }),
+    catalogModel({ id: '2', modelId: 'o1', name: 'o1', provider: 'openai' }),
   ];
 
   it("throws when the resolved allow-list is empty", async () => {
@@ -296,10 +296,10 @@ describe("resolveTutorModelSelection", () => {
     mockGetSystemSetting.mockResolvedValue(null);
     mockListEduAiModels.mockResolvedValue([
       catalogModel({
-        id: "1",
-        modelId: "gemini-2.5-flash",
-        name: "Gemini Flash",
-        provider: "google",
+        id: '1',
+        modelId: 'gemini-2.5-flash',
+        name: 'Gemini Flash',
+        provider: 'google',
       }),
     ]);
 
@@ -312,14 +312,14 @@ describe("resolveTutorModelSelection", () => {
     mockGetSystemSetting.mockResolvedValue(null);
     mockListEduAiModels.mockResolvedValue([
       catalogModel({
-        id: "1",
-        modelId: "gemini-2.5-flash",
-        name: "Gemini Flash",
-        provider: "google",
+        id: '1',
+        modelId: 'gemini-2.5-flash',
+        name: 'Gemini Flash',
+        provider: 'google',
       }),
     ]);
 
-    await expect(resolveTutorModelSelection("anything:goes")).rejects.toMatchObject({
+    await expect(resolveTutorModelSelection('anything:goes')).rejects.toMatchObject({
       status: 403,
     });
   });

@@ -25,54 +25,37 @@ import {
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import {
-  Button,
-  Textarea,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  ScrollArea,
-  Badge,
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  Separator,
-  cn,
-} from "@eduai/ui";
-import { PermissionGate } from "@eduai/ui";
-import { Tooltip } from "@/components/ui/tooltip";
-import { useCourses } from "../hooks/useCourses";
-import { courseService } from "../services/courseService";
-import assessmentService from "../services/assessmentService";
-import assessmentVariantService, {
-  type BaselineVariantReadiness,
-  type GenerateBankVariantsResult,
-} from "../services/assessmentVariantService";
-import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
-import { QuestionUploadDialog } from "../components/question-bank/QuestionUploadDialog";
-import { GeneratedVariantsReviewDialog } from "../components/assessments/GeneratedVariantsReviewDialog";
-import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
-import type { Assessment, Course, Question } from "../types/question";
-import type { Topic } from "../types/topic";
-import { buildAiReviewDocxBlob } from "../utils/aiReviewExportDocx";
-import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
-import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from "../utils/aiModels";
-import { toast } from "sonner";
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import {
+  Button, Textarea, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent,
+  DialogDescription, DialogFooter, DialogHeader, DialogTitle, ScrollArea, Badge,
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, Separator, cn,
+} from '@eduai/ui';
+import { PermissionGate } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useCourses } from '../hooks/useCourses';
+import { courseService } from '../services/courseService';
+import assessmentService from '../services/assessmentService';
+import assessmentVariantService, { type BaselineVariantReadiness, type GenerateBankVariantsResult } from '../services/assessmentVariantService';
+import { eduaiService, type EduAIModelOption } from '../services/eduaiService';
+import { QuestionUploadDialog } from '../components/question-bank/QuestionUploadDialog';
+import { GeneratedVariantsReviewDialog } from '../components/assessments/GeneratedVariantsReviewDialog';
+import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
+import type { Assessment, Course, Question } from '../types/question';
+import type { Topic } from '../types/topic';
+import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
+import {
+  useAiReviewHistory,
+  type AiReviewHistoryItem,
+} from '../hooks/use-ai-review-history';
+import { AI_REVIEW_HISTORY_MAX_ITEMS } from '../services/aiReviewHistoryStorage';
+import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from '../utils/aiModels';
+import { toast } from 'sonner';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
-  "Number of reviewed variants for this question in the bank. Draft variants are not included.";
-const AI_REVIEW_HISTORY_KEY = "assessmentVariant.aiReview.history.v1";
-const AI_REVIEW_HISTORY_MAX_ITEMS = 40;
+  'Number of reviewed variants for this question in the bank. Draft variants are not included.';
 
 const DEFAULT_AI_JUDGE_RUBRIC = `Conceptual equivalence (1-5)
 Score 5: The variant assesses the same concept and reasoning process as the original.
@@ -133,42 +116,6 @@ function formatUsabilityLabel(value: string): string {
 }
 
 type AiReviewResult = Awaited<ReturnType<typeof assessmentVariantService.reviewVariantWithAi>>;
-
-interface AiReviewHistoryItem {
-  id: string;
-  createdAt: string;
-  courseId: number;
-  baselineAssessmentId: number;
-  baselineName: string;
-  variantAssessmentId: number;
-  variantName: string;
-  model: string;
-  result: AiReviewResult;
-}
-
-function loadAiReviewHistoryFromStorage(): AiReviewHistoryItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(AI_REVIEW_HISTORY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as AiReviewHistoryItem[];
-    return Array.isArray(parsed) ? parsed.slice(0, AI_REVIEW_HISTORY_MAX_ITEMS) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveAiReviewHistoryToStorage(items: AiReviewHistoryItem[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(
-      AI_REVIEW_HISTORY_KEY,
-      JSON.stringify(items.slice(0, AI_REVIEW_HISTORY_MAX_ITEMS)),
-    );
-  } catch {
-    // Ignore storage write failures and continue.
-  }
-}
 
 function isToday(date: Date): boolean {
   const now = new Date();
@@ -289,8 +236,7 @@ export function AssessmentVariantPage() {
   const [aiReviewRubricText, setAiReviewRubricText] = useState(DEFAULT_AI_JUDGE_RUBRIC);
   const [aiReviewResult, setAiReviewResult] = useState<AiReviewResult | null>(null);
   const [aiReviewHistoryOpen, setAiReviewHistoryOpen] = useState(false);
-  const [aiReviewHistory, setAiReviewHistory] = useState<AiReviewHistoryItem[]>([]);
-  const [aiReviewHistoryReady, setAiReviewHistoryReady] = useState(false);
+  const { items: aiReviewHistory, setItems: setAiReviewHistory } = useAiReviewHistory();
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
@@ -350,16 +296,6 @@ export function AssessmentVariantPage() {
     if (hasSelected) return;
     setAiReviewModel(pickPreferredGenerationModel(availableModels));
   }, [availableModels, aiReviewModel]);
-
-  useEffect(() => {
-    setAiReviewHistory(loadAiReviewHistoryFromStorage());
-    setAiReviewHistoryReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!aiReviewHistoryReady) return;
-    saveAiReviewHistoryToStorage(aiReviewHistory);
-  }, [aiReviewHistory, aiReviewHistoryReady]);
 
   const loadTopics = useCallback(async (courseId: number) => {
     const t = await courseService.getCourseTopics(courseId);

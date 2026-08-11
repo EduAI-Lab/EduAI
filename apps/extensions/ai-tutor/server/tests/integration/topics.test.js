@@ -636,9 +636,9 @@ describe("Topics routes", () => {
       expect(res.body.missingTopics).toMatchObject([{ name: "Test Topic" }]);
     });
 
-    it("maps a failed Core sync to the error status carried on the thrown error", async () => {
+    it('maps a failed Core sync to the error status carried on the thrown error', async () => {
       listEduAiCourseTopics.mockRejectedValue(
-        Object.assign(new Error("Core down"), { status: 503 }),
+        Object.assign(new Error('Core down'), { status: 503 }),
       );
 
       const res = await request(app).post(`/api/courses/${seed.course.id}/topics/sync`).send({});
@@ -673,8 +673,8 @@ describe("Topics routes", () => {
       expect(res.status).toBe(400);
     });
 
-    it("POST returns 400 for a non-numeric course id", async () => {
-      const res = await request(app).post("/api/courses/not-a-number/topics").send({ name: "X" });
+    it('POST returns 400 for a non-numeric course id', async () => {
+      const res = await request(app).post('/api/courses/not-a-number/topics').send({ name: 'X' });
       expect(res.status).toBe(400);
     });
 

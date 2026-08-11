@@ -28,12 +28,12 @@ flowchart LR
     API -- "Better Auth getSession" --> DB
 ```
 
-| Component | Process | Source | Default Port |
-|-----------|---------|--------|--------------|
-| SPA       | Static assets served by Apache (prod) or `vite dev` | `app/` | `5173` (dev) |
-| API       | Node/Express, single PM2 process `aitutor-api`     | `server/src/index.js` | `4000` |
-| DB        | PostgreSQL 16-alpine in Docker                      | `docker-compose.yml` | `54321` host -> `5432` container |
-| EduAI     | External service (auth + LLM proxy)                 | not in this repo | `5174` (dev) |
+| Component | Process                                             | Source                | Default Port                     |
+| --------- | --------------------------------------------------- | --------------------- | -------------------------------- |
+| SPA       | Static assets served by Apache (prod) or `vite dev` | `app/`                | `5173` (dev)                     |
+| API       | Node/Express, single PM2 process `aitutor-api`      | `server/src/index.js` | `4000`                           |
+| DB        | PostgreSQL 16-alpine in Docker                      | `docker-compose.yml`  | `54321` host -> `5432` container |
+| EduAI     | External service (auth + LLM proxy)                 | not in this repo      | `5174` (dev)                     |
 
 The Apache reverse proxy in production sits in front of API and serves the SPA build at the root.
 See [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) for the production layout.
@@ -57,11 +57,11 @@ The SPA's React tree is wrapped by three providers in this exact order at
 
 **Ordering is load-bearing.** Do not rearrange without understanding the dependencies:
 
-| Provider | Source | Why this position |
-|----------|--------|-------------------|
-| `AuthProvider` | [`app/hooks/useLocalUser.tsx`](../app/hooks/useLocalUser.tsx) | Outermost. On mount it calls `GET /api/me` and exposes the session user via context. Every other provider and route loader assumes auth state is resolvable. |
+| Provider            | Source                                                                                                  | Why this position                                                                                                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AuthProvider`      | [`app/hooks/useLocalUser.tsx`](../app/hooks/useLocalUser.tsx)                                           | Outermost. On mount it calls `GET /api/me` and exposes the session user via context. Every other provider and route loader assumes auth state is resolvable.                                                                                         |
 | `BugReportProvider` | [`app/components/bug-report/BugReportProvider.tsx`](../app/components/bug-report/BugReportProvider.tsx) | Wraps the tour layer because `useBugReportCapture` monkey-patches `window.fetch` and `console.{log,warn,error}` on mount. It must be live before any user-facing flow (tours included) starts producing logs we may want to capture in a bug report. |
-| `TourProvider` | [`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx) | Innermost because it consumes `useLocation` / `useNavigate` and drives DOM-level highlighting via `driver.js`. It depends on the route subtree being mounted, and it surfaces UI on top of all other content. |
+| `TourProvider`      | [`app/components/TourProvider.tsx`](../app/components/TourProvider.tsx)                                 | Innermost because it consumes `useLocation` / `useNavigate` and drives DOM-level highlighting via `driver.js`. It depends on the route subtree being mounted, and it surfaces UI on top of all other content.                                        |
 
 If `AuthProvider` is moved inside `BugReportProvider`, the patched `fetch` runs before the
 auth bootstrap and can capture noise from unauthenticated `/api/me` calls in every bug report.
@@ -108,7 +108,7 @@ Key implementation details:
 
 1. **Cookie in, user out.** The browser sends Better Auth's session cookie automatically because
    every `fetch` in `app/lib/api.ts` uses `credentials: 'include'` (see lines 25-32).
-2. **`attachSession` re-reads the user from Postgres on every request.** It does *not* trust the
+2. **`attachSession` re-reads the user from Postgres on every request.** It does _not_ trust the
    role claim from the session — it calls `prisma.user.findUnique({ where: { id } })` so that role
    changes take effect immediately ([`server/src/middleware/auth.js:6-23`](../server/src/middleware/auth.js)).
 3. **Two gates run in series in `createApp()`** ([`server/src/app.js:73-95`](../server/src/app.js)):
@@ -138,14 +138,14 @@ tutor. Better Auth is configured with the
 [`genericOAuth`](https://better-auth.com/docs/plugins/generic-oauth) plugin pointing at EduAI's
 discovery URL ([`server/src/auth.js:72-109`](../server/src/auth.js)).
 
-| Setting | Source | Default |
-|---------|--------|---------|
+| Setting       | Source                | Default                                                           |
+| ------------- | --------------------- | ----------------------------------------------------------------- |
 | Discovery URL | `EDUAI_DISCOVERY_URL` | `http://localhost:5174/api/auth/.well-known/openid-configuration` |
-| Userinfo URL  | `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo` |
-| Client ID     | `EDUAI_CLIENT_ID`     | `aitutor-local` |
-| Client secret | `EDUAI_CLIENT_SECRET` | `aitutor-local-secret` |
-| Scopes        | (hardcoded)           | `openid profile email offline_access` |
-| PKCE          | (hardcoded)           | enabled, with issuer validation |
+| Userinfo URL  | `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo`                  |
+| Client ID     | `EDUAI_CLIENT_ID`     | `aitutor-local`                                                   |
+| Client secret | `EDUAI_CLIENT_SECRET` | `aitutor-local-secret`                                            |
+| Scopes        | (hardcoded)           | `openid profile email offline_access`                             |
+| PKCE          | (hardcoded)           | enabled, with issuer validation                                   |
 
 ### Role mapping
 
@@ -153,17 +153,17 @@ EduAI returns the user's role inside a namespaced claim, `https://eduai.app/role
 `getUserInfo` callback in `auth.js` reads that claim and normalizes it via `normalizeEduAiRole()`
 ([`auth.js:25-30`](../server/src/auth.js)) onto the local Prisma `Role` enum:
 
-| EduAI claim value | Local `Role` |
-|-------------------|--------------|
-| `ADMIN`           | `ADMIN`      |
-| `PROFESSOR`       | `PROFESSOR`  |
-| `TA`              | `TA`         |
-| anything else / missing | `STUDENT` |
+| EduAI claim value       | Local `Role` |
+| ----------------------- | ------------ |
+| `ADMIN`                 | `ADMIN`      |
+| `PROFESSOR`             | `PROFESSOR`  |
+| `TA`                    | `TA`         |
+| anything else / missing | `STUDENT`    |
 
 ### Account linking
 
 `accountLinking.trustedProviders: ['eduai']` ([`auth.js:60-64`](../server/src/auth.js)) means the
-first time a user signs in via EduAI, Better Auth will *automatically link* the OIDC account to
+first time a user signs in via EduAI, Better Auth will _automatically link_ the OIDC account to
 any existing local `User` row matching that email — no email-verification handshake. The
 `updateUserInfoOnLink: true` flag also lets EduAI overwrite name/picture on link. Treat any
 change to this block as security-sensitive.
@@ -203,11 +203,11 @@ flowchart TD
 
 Each mode maps 1:1 to a `PromptTemplate.slug`:
 
-| Mode (API) | Endpoint | Prompt template slug | Purpose |
-|------------|----------|----------------------|---------|
-| `teach`    | `POST /api/activities/:id/teach`  | `learning-prompt`   | Open-ended explanation around a topic. |
-| `guide`    | `POST /api/activities/:id/guide`  | `exercise-prompt`   | Socratic hints for a specific question (uses `config.question/options/answer`). |
-| `custom`   | `POST /api/activities/:id/custom` | (uses `activity.customPrompt` directly) | Per-activity instructor-authored prompt. |
+| Mode (API) | Endpoint                          | Prompt template slug                    | Purpose                                                                         |
+| ---------- | --------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
+| `teach`    | `POST /api/activities/:id/teach`  | `learning-prompt`                       | Open-ended explanation around a topic.                                          |
+| `guide`    | `POST /api/activities/:id/guide`  | `exercise-prompt`                       | Socratic hints for a specific question (uses `config.question/options/answer`). |
+| `custom`   | `POST /api/activities/:id/custom` | (uses `activity.customPrompt` directly) | Per-activity instructor-authored prompt.                                        |
 
 All three use the same supervisor flow. The supervisor itself is driven by a separate template
 with slug `supervisor-prompt`, fetched in `callSupervisor()`
@@ -293,9 +293,9 @@ Notable invariants:
 `SystemSetting` is a flat key/value table. Two keys are in active use today
 ([`server/src/services/systemSettings.js`](../server/src/services/systemSettings.js)):
 
-| Key | Used for |
-|-----|----------|
-| `EDUAI_API_KEY` | Server-wide EduAI API key override (admin UI). Falls back to `process.env.EDUAI_API_KEY` if unset. |
+| Key               | Used for                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `EDUAI_API_KEY`   | Server-wide EduAI API key override (admin UI). Falls back to `process.env.EDUAI_API_KEY` if unset.                                |
 | `AI_MODEL_POLICY` | JSON blob describing the tutor/supervisor model policy and dual-loop defaults; managed via `/api/admin/settings/ai-model-policy`. |
 
 ### Better Auth tables
@@ -314,9 +314,9 @@ Tours are powered by [driver.js](https://driverjs.com) and orchestrated by
 
 The contract that route components must honor:
 
-| Attribute | Purpose | Example |
-|-----------|---------|---------|
-| `data-tour="<step-id>"` | Marks an element as the target for a tour step. The step's `target` selector in `tour-definitions.ts` is `[data-tour="<step-id>"]`. | `<header data-tour="student-dashboard-header">` |
+| Attribute                  | Purpose                                                                                                                                                                                                                                                                                                                       | Example                                             |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `data-tour="<step-id>"`    | Marks an element as the target for a tour step. The step's `target` selector in `tour-definitions.ts` is `[data-tour="<step-id>"]`.                                                                                                                                                                                           | `<header data-tour="student-dashboard-header">`     |
 | `data-tour-route="<href>"` | On a "selectable" card, tells the engine which route to follow next when this card is highlighted. The engine reads it via `readRouteFromElement()` in [`tour-utils.ts:41-45`](../app/lib/tours/tour-utils.ts) and stores it in `selectedCourseRoute` / `selectedModuleRoute` / `selectedLessonRoute` on the session context. | `data-tour-route={`/student/courses/${course.id}`}` |
 
 **Removing or renaming either attribute silently breaks the tour** — `waitForElement()` in
@@ -373,6 +373,7 @@ hand. Adding a field to `mapActivity()` without updating `app/lib/types.ts` prod
 discarded field on the client; renaming one produces `undefined` reads with no compile error.
 
 When you change a mapper:
+
 1. Update the matching type in `app/lib/types.ts`.
 2. Update the call site in `app/lib/api.ts` if the new field is part of a request payload.
 3. Update any consumer that destructures the old shape.

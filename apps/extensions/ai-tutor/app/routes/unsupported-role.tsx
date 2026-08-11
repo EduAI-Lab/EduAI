@@ -1,9 +1,10 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router";
-import { IconInfoCircle } from "@tabler/icons-react";
-import { Button, Card } from "@eduai/ui";
-import { useLocalUser } from "../hooks/useLocalUser";
-import { routeForRole } from "../lib/role-routing";
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router';
+import { IconInfoCircle } from '@tabler/icons-react';
+import { Button, Card } from '@eduai/ui';
+import { toast } from 'sonner';
+import { useLocalUser } from '../hooks/useLocalUser';
+import { routeForRole } from '../lib/role-routing';
 
 export default function UnsupportedRolePage() {
   const navigate = useNavigate();
@@ -19,8 +20,14 @@ export default function UnsupportedRolePage() {
   }, [navigate, user]);
 
   const handleLogout = async () => {
-    await logout();
-    navigate("/", { replace: true });
+    try {
+      await logout();
+      navigate('/', { replace: true });
+    } catch {
+      toast.error('Could not log out', {
+        description: 'Your session is still active. Please try again.',
+      });
+    }
   };
 
   return (

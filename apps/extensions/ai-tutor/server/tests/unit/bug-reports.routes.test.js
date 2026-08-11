@@ -98,8 +98,8 @@ describe("POST /api/bug-reports", () => {
     const app = buildApp({ role: "STUDENT" });
 
     const res = await request(app)
-      .post("/api/bug-reports")
-      .set("Content-Type", "application/json")
+      .post('/api/bug-reports')
+      .set('Content-Type', 'application/json')
       .send();
 
     expect(res.status).toBe(201);
@@ -132,11 +132,11 @@ describe("GET /api/admin/bug-reports", () => {
     expect(mockListAdminBugReports).toHaveBeenCalledWith("cookie=abc");
   });
 
-  it("maps an error status from a rejected promise", async () => {
+  it('maps an error status from a rejected promise', async () => {
     mockListAdminBugReports.mockRejectedValue(
-      Object.assign(new Error("unauthorized"), { status: 401 }),
+      Object.assign(new Error('unauthorized'), { status: 401 }),
     );
-    const app = buildApp({ role: "ADMIN" });
+    const app = buildApp({ role: 'ADMIN' });
 
     const res = await request(app).get("/api/admin/bug-reports");
 
@@ -191,12 +191,12 @@ describe("GET /api/admin/bug-reports/:bugReportId", () => {
   });
 });
 
-describe("PATCH /api/admin/bug-reports/:bugReportId", () => {
-  it("returns 403 for a non-admin", async () => {
-    const app = buildApp({ role: "STUDENT" });
+describe('PATCH /api/admin/bug-reports/:bugReportId', () => {
+  it('returns 403 for a non-admin', async () => {
+    const app = buildApp({ role: 'STUDENT' });
     const res = await request(app)
-      .patch("/api/admin/bug-reports/br-1")
-      .send({ status: "resolved" });
+      .patch('/api/admin/bug-reports/br-1')
+      .send({ status: 'resolved' });
     expect(res.status).toBe(403);
   });
 
@@ -205,19 +205,19 @@ describe("PATCH /api/admin/bug-reports/:bugReportId", () => {
     const app = buildApp({ role: "ADMIN" });
 
     const res = await request(app)
-      .patch("/api/admin/bug-reports/br-1")
-      .send({ status: "resolved" });
+      .patch('/api/admin/bug-reports/br-1')
+      .send({ status: 'resolved' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ id: "br-1", status: "resolved" });
     expect(mockUpdateBugReportStatus).toHaveBeenCalledWith("br-1", "resolved", "cookie=abc");
   });
 
-  it("maps a BugReportError to its status/message", async () => {
+  it('maps a BugReportError to its status/message', async () => {
     mockUpdateBugReportStatus.mockRejectedValue(
-      new MockBugReportError(400, "status must be one of: ..."),
+      new MockBugReportError(400, 'status must be one of: ...'),
     );
-    const app = buildApp({ role: "ADMIN" });
+    const app = buildApp({ role: 'ADMIN' });
 
     const res = await request(app).patch("/api/admin/bug-reports/br-1").send({ status: "bogus" });
 
@@ -229,8 +229,8 @@ describe("PATCH /api/admin/bug-reports/:bugReportId", () => {
     const app = buildApp({ role: "ADMIN" });
 
     const res = await request(app)
-      .patch("/api/admin/bug-reports/br-1")
-      .send({ status: "resolved" });
+      .patch('/api/admin/bug-reports/br-1')
+      .send({ status: 'resolved' });
 
     expect(res.status).toBe(500);
   });

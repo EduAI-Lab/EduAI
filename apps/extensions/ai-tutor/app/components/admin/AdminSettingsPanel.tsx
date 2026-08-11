@@ -475,7 +475,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
               disabled={saving || !apiKey.trim()}
               variant="primary"
             >
-              {saving ? "Saving…" : "Save key"}
+              {saving ? 'Saving…' : 'Save key'}
             </Button>
             <Button
               type="button"

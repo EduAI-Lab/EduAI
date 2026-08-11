@@ -115,6 +115,23 @@ From the command line (as `eduai-cron`):
 sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh
 ```
 
+## Execution safety and crash recovery
+
+Core starts the scheduler when the server process loads. The scheduler does not wait for an
+HTML page or API request. Each Core replica can schedule the same expression, but PostgreSQL
+grants one live execution lease per job. Losing replicas reuse the winner's run ID and do not
+start another child process.
+
+The child renews its lease while it runs. If a process crashes, the lease expires. Server
+startup or the next trigger changes the expired attempt to `ERROR` and creates one successor.
+The expired row remains in history. An old process cannot renew or finish a run after its owner
+token or lease expires.
+
+Core retains at most `CRON_OUTPUT_MAX_BYTES` of combined stdout and stderr (64 KiB by default).
+If a script exceeds the cap, Core sends `SIGTERM`, escalates to `SIGKILL` after five seconds if
+needed, and records a redacted output-limit error. Set `CRON_RUN_LEASE_MS` and
+`CRON_OUTPUT_MAX_BYTES` in `apps/core/.env`; see `docs/ENVIRONMENT.md` for valid ranges.
+
 ---
 
 ## Adding a new cron job

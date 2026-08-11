@@ -6,7 +6,12 @@ import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import redis from "./connection.server";
-import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-schema";
+import { assertAiJobQueueEnabled } from "./availability.server";
+import {
+  JobPayloadSchema,
+  type JobPayload,
+  type QueuedJobPayload,
+} from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { type QueueName } from "./resolve-pool.server";
 import { workerConcurrency } from "./concurrency.server";
@@ -345,6 +350,8 @@ export function createAiJobWorker(
   options: Partial<WorkerOptions> = {},
   execute: ExecuteAiJob = executeAiJobPayload,
 ): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome> {
+  assertAiJobQueueEnabled();
+
   const worker = new Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>(
     queueName,
     (job) => processAiJob(job, queueName, execute),
@@ -364,7 +371,11 @@ export function createAiJobWorker(
   return worker;
 }
 
-export function startAiJobWorkers(): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>[] {
+export function startAiJobWorkers(): Worker<
+  JobPayload | QueuedJobPayload,
+  AiJobWorkerOutcome
+>[] {
+  assertAiJobQueueEnabled();
   return AI_JOB_QUEUE_NAMES.map((queueName) => createAiJobWorker(queueName));
 }
 

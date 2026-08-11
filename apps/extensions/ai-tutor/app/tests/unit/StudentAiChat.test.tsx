@@ -80,7 +80,7 @@ const {
     listAiModels: vi
       .fn()
       .mockResolvedValue([
-        { id: "m1", modelId: "google:gemini-2.5-flash", modelName: "Gemini 2.5 Flash" },
+        { id: 'm1', modelId: 'google:gemini-2.5-flash', modelName: 'Gemini 2.5 Flash' },
       ]),
     ApiTimeoutError,
   };
@@ -132,9 +132,9 @@ function deferredGuideCall() {
   });
   sendGuideMessage.mockImplementationOnce(
     (_activityId: unknown, _params: unknown, signal?: AbortSignal) => {
-      signal?.addEventListener("abort", () => {
-        const err = new Error("Aborted");
-        err.name = "AbortError";
+      signal?.addEventListener('abort', () => {
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
         reject(err);
       });
       return promise;
@@ -185,11 +185,11 @@ beforeEach(() => {
 describe("StudentAiChat — default model selection from isDefaultTutor (#1004)", () => {
   it("selects the model flagged isDefaultTutor by the API, not the first catalog entry", async () => {
     listAiModels.mockResolvedValue([
-      { id: "m1", modelId: "openai:gpt-4o-mini", modelName: "GPT-4o mini" },
+      { id: 'm1', modelId: 'openai:gpt-4o-mini', modelName: 'GPT-4o mini' },
       {
-        id: "m2",
-        modelId: "google:gemini-2.5-pro",
-        modelName: "Gemini 2.5 Pro",
+        id: 'm2',
+        modelId: 'google:gemini-2.5-pro',
+        modelName: 'Gemini 2.5 Pro',
         isDefaultTutor: true,
       },
     ]);
@@ -240,6 +240,19 @@ describe("StudentAiChat — in-flight guard (#998)", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sendGuideMessage).toHaveBeenCalledTimes(1);
   });
+
+  it('drops a second imperative request fired in the same tick', () => {
+    deferredGuideCall();
+    const ref = createRef<StudentAiChatHandle>();
+    renderChat(ref);
+
+    act(() => {
+      ref.current?.sendGuidePrompt();
+      ref.current?.sendGuidePrompt();
+    });
+
+    expect(sendGuideMessage).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ── #999 ──────────────────────────────────────────────────────────────────
@@ -255,7 +268,7 @@ describe("StudentAiChat — stop control and timeout (#999)", () => {
     fireEvent.click(stopBtn);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument(),
     );
     // A user-cancelled turn should not append an error bubble.
     expect(screen.queryByText(/not available right now/i)).not.toBeInTheDocument();
@@ -272,7 +285,7 @@ describe("StudentAiChat — stop control and timeout (#999)", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("That took too long to respond. Please try again."),
+        screen.getByText('That took too long to respond. Please try again.'),
       ).toBeInTheDocument(),
     );
   });

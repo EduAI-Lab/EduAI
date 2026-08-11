@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
 import {
   makeProfessor,
   makeAdmin,
@@ -10,7 +10,7 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from "../helpers.js";
+} from '../helpers.js';
 
 // `department` is Core-owned (#1072 step 4) — UNIT_ADMIN scoping resolves it
 // live via `fetchCoreCourseSafe`, so the UNIT_ADMIN describe block below
@@ -549,7 +549,7 @@ describe("Modules routes", () => {
       });
       await prisma.module.create({
         data: {
-          title: "COSC Module",
+          title: 'COSC Module',
           position: 0,
           isPublished: true,
           courseOfferingId: coscCourse.id,
@@ -557,7 +557,7 @@ describe("Modules routes", () => {
       });
       await prisma.module.create({
         data: {
-          title: "MATH Module",
+          title: 'MATH Module',
           position: 0,
           isPublished: true,
           courseOfferingId: mathCourse.id,

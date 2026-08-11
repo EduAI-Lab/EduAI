@@ -186,11 +186,11 @@ describe("mapBugReportSummary", () => {
     });
   });
 
-  it("defaults every context field to null when absent", () => {
+  it('defaults every context field to null when absent', () => {
     const summary = mapBugReportSummary({
-      id: "br-2",
-      status: "resolved",
-      createdAt: "x",
+      id: 'br-2',
+      status: 'resolved',
+      createdAt: 'x',
       isAnonymous: false,
     });
 
@@ -229,18 +229,18 @@ describe("mapAdminBugReportRow", () => {
       activity: { title: "Activity Title", config: { question: "What is 2+2?" } },
     });
 
-    expect(row.reporterName).toBe("Alice");
-    expect(row.reporterEmail).toBe("alice@example.com");
-    expect(row.reporterRole).toBe("STUDENT");
+    expect(row.reporterName).toBe('Alice');
+    expect(row.reporterEmail).toBe('alice@example.com');
+    expect(row.reporterRole).toBe('STUDENT');
     expect(row.user).toEqual({
-      id: "user-1",
-      name: "Alice",
-      email: "alice@example.com",
-      role: "STUDENT",
+      id: 'user-1',
+      name: 'Alice',
+      email: 'alice@example.com',
+      role: 'STUDENT',
     });
-    expect(row.moduleTitle).toBe("Module Title");
-    expect(row.lessonTitle).toBe("Lesson Title");
-    expect(row.activityTitle).toBe("Activity Title");
+    expect(row.moduleTitle).toBe('Module Title');
+    expect(row.lessonTitle).toBe('Lesson Title');
+    expect(row.activityTitle).toBe('Activity Title');
     expect(row.courseTitle).toBeNull();
   });
 

@@ -25,7 +25,6 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   ],
   listCronJobStatuses: vi.fn(),
   getRecentCronJobRuns: vi.fn(),
-  findRunningCronRun: vi.fn(),
   startCronRun: vi.fn(),
   updateCronSchedule: vi.fn(),
   resetCronSchedule: vi.fn(),
@@ -36,7 +35,6 @@ import { auth } from "~/lib/auth/server";
 import {
   listCronJobStatuses,
   getRecentCronJobRuns,
-  findRunningCronRun,
   startCronRun,
   updateCronSchedule,
   resetCronSchedule,
@@ -69,8 +67,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listCronJobStatuses).mockResolvedValue([]);
   vi.mocked(getRecentCronJobRuns).mockResolvedValue([]);
-  vi.mocked(findRunningCronRun).mockResolvedValue(null);
-  vi.mocked(startCronRun).mockResolvedValue({ runId: "run-1", created: true });
+  vi.mocked(startCronRun).mockResolvedValue({
+    runId: "run-1",
+    created: true,
+    leaseOwner: "owner-1",
+  });
+  vi.mocked(triggerCronJobAsync).mockReturnValue(undefined);
   vi.mocked(updateCronSchedule).mockResolvedValue(undefined);
   vi.mocked(resetCronSchedule).mockResolvedValue(undefined);
 });
@@ -194,27 +196,23 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
       ),
     );
     expect(status(res)).toBe(200);
-    expect(findRunningCronRun).toHaveBeenCalledWith("backup-nightly");
-    expect(startCronRun).toHaveBeenCalledWith("backup-nightly", {
-      source: "ADMIN_UI",
-      triggeredByUserId: ADMIN_USER.id,
-    });
+    expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
+    expect(triggerCronJobAsync).toHaveBeenCalledWith(
+      "backup-nightly",
+      "backup-nightly.sh",
+      "run-1",
+      "owner-1",
+    );
     const b = body(res);
     expect(b.runId).toBe("run-1");
   });
 
   it("reuses an existing RUNNING run instead of spawning again", async () => {
-    vi.mocked(findRunningCronRun).mockResolvedValue({ id: "run-existing" });
-    const res = await action(
-      makeArgs(
-        makeRequest("/api/admin/cron-jobs", "POST", {
-          intent: "trigger",
-          jobName: "backup-nightly",
-        }),
-      ),
-    );
+    vi.mocked(startCronRun).mockResolvedValue({ runId: "run-existing", created: false });
+    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
     expect(status(res)).toBe(200);
-    expect(startCronRun).not.toHaveBeenCalled();
+    expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
+    expect(triggerCronJobAsync).not.toHaveBeenCalled();
     const b = body(res);
     expect(b).toEqual({ runId: "run-existing", reused: true });
   });

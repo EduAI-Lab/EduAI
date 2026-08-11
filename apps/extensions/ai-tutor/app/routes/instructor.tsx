@@ -24,21 +24,21 @@ import {
   PageHeading,
   buildStatusFilterGroup,
   buildTermFilterGroup,
-} from "@eduai/ui";
+} from '@eduai/ui';
 import {
   accentForCourse,
   courseCode,
   courseName,
   courseTerm,
   courseYear,
-} from "../lib/course-display";
-import api from "../lib/api";
-import { getEduAiAppUrl } from "../lib/extension-urls";
-import type { Course } from "../lib/types";
-import type { Route } from "./+types/instructor";
-import { requireClientUser } from "~/lib/client-auth";
-import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
-import { PaginationControls } from "~/components/common/PaginationControls";
+} from '../lib/course-display';
+import api from '../lib/api';
+import { getEduAiAppUrl } from '../lib/extension-urls';
+import type { Course } from '../lib/types';
+import type { Route } from './+types/instructor';
+import { requireClientUser } from '~/lib/client-auth';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { PaginationControls } from '~/components/common/PaginationControls';
 import {
   MAX_COURSE_SEARCH_LENGTH,
   readCourseListSelection,
@@ -146,7 +146,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           year: courseYear(course),
           startDate: course.startDate ?? null,
         })}
-        getSearchText={(course) => `${course.title ?? ""} ${courseCode(course)}`}
+        getSearchText={(course) => `${course.title ?? ''} ${courseCode(course)}`}
         // Controlled: the server already applied search + filters, so the view
         // renders what it is given rather than narrowing the page again.
         searchValue={searchDraft}

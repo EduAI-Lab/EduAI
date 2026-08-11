@@ -30,7 +30,7 @@ beforeEach(() => {
   mockTopicCreate.mockReset();
   mockActivityCreate
     .mockReset()
-    .mockImplementation(({ data }) => Promise.resolve({ id: "new-activity", ...data }));
+    .mockImplementation(({ data }) => Promise.resolve({ id: 'new-activity', ...data }));
 });
 
 afterEach(() => {
@@ -58,7 +58,7 @@ describe("cloneActivityIntoLesson — position", () => {
   it("positions the clone at 1 when the target lesson has no existing activities", async () => {
     mockAggregate.mockResolvedValue({ _max: { position: null } });
     const sourceActivity = baseActivity({
-      mainTopic: { id: 5, name: "Topic", courseOfferingId: 10 },
+      mainTopic: { id: 5, name: 'Topic', courseOfferingId: 10 },
     });
 
     await cloneActivityIntoLesson({
@@ -75,7 +75,7 @@ describe("cloneActivityIntoLesson — position", () => {
   it("positions the clone at max(existing positions) + 1", async () => {
     mockAggregate.mockResolvedValue({ _max: { position: 4 } });
     const sourceActivity = baseActivity({
-      mainTopic: { id: 5, name: "Topic", courseOfferingId: 10 },
+      mainTopic: { id: 5, name: 'Topic', courseOfferingId: 10 },
     });
 
     await cloneActivityIntoLesson({
@@ -90,10 +90,10 @@ describe("cloneActivityIntoLesson — position", () => {
   });
 });
 
-describe("cloneActivityIntoLesson — main topic resolution", () => {
-  it("reuses the source topic id directly when it already belongs to the target course", async () => {
+describe('cloneActivityIntoLesson — main topic resolution', () => {
+  it('reuses the source topic id directly when it already belongs to the target course', async () => {
     const sourceActivity = baseActivity({
-      mainTopic: { id: 7, name: "Physics", courseOfferingId: 10 },
+      mainTopic: { id: 7, name: 'Physics', courseOfferingId: 10 },
     });
 
     await cloneActivityIntoLesson({
@@ -109,11 +109,11 @@ describe("cloneActivityIntoLesson — main topic resolution", () => {
     );
   });
 
-  it("remaps cross-course by reusing an existing target-course topic with the same name", async () => {
+  it('remaps cross-course by reusing an existing target-course topic with the same name', async () => {
     const sourceActivity = baseActivity({
-      mainTopic: { id: 7, name: "Physics", courseOfferingId: 10 },
+      mainTopic: { id: 7, name: 'Physics', courseOfferingId: 10 },
     });
-    mockTopicFindFirst.mockResolvedValue({ id: 99, name: "Physics", courseOfferingId: 30 });
+    mockTopicFindFirst.mockResolvedValue({ id: 99, name: 'Physics', courseOfferingId: 30 });
 
     await cloneActivityIntoLesson({
       sourceActivity,
@@ -130,9 +130,9 @@ describe("cloneActivityIntoLesson — main topic resolution", () => {
     );
   });
 
-  it("creates a new topic in the target course when no name match exists", async () => {
+  it('creates a new topic in the target course when no name match exists', async () => {
     const sourceActivity = baseActivity({
-      mainTopic: { id: 7, name: "Physics", courseOfferingId: 10 },
+      mainTopic: { id: 7, name: 'Physics', courseOfferingId: 10 },
     });
     mockTopicFindFirst.mockResolvedValue(null);
     mockTopicCreate.mockResolvedValue({ id: 123, name: "Physics", courseOfferingId: 30 });

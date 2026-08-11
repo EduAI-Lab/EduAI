@@ -23,11 +23,15 @@ vi.mock("../../src/services/importTaughtCoursesService.js", () => ({
   userHasCoreTaEnrollment: vi.fn(),
 }));
 
-const { listEduAiCourses } = await import("../../src/services/eduaiClient.js");
+const { listEduAiCourses } = await import('../../src/services/eduaiClient.js');
 const { runCoreMirror, userHasCoreTaEnrollment } =
-  await import("../../src/services/importTaughtCoursesService.js");
-const authModule = await import("../../src/routes/authentication.js");
+  await import('../../src/services/importTaughtCoursesService.js');
+const authModule = await import('../../src/routes/authentication.js');
 const authRouter = authModule.default;
+
+process.env.CORE_URL = 'http://core.test';
+process.env.CORE_PUBLIC_ORIGIN = 'http://core-public.test';
+const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 function appFor(user) {
   const app = express();
@@ -100,5 +104,69 @@ describe("GET /api/me effective TA role", () => {
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe("INSTRUCTOR");
     expect(userHasCoreTaEnrollment).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/logout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    if (originalCoreAuthTimeoutMs === undefined) {
+      delete process.env.CORE_AUTH_TIMEOUT_MS;
+    } else {
+      process.env.CORE_AUTH_TIMEOUT_MS = originalCoreAuthTimeoutMs;
+    }
+  });
+
+  it('proxies sign-out to Core and reports success only after Core succeeds', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await request(appFor(null)).post('/api/logout').set('Cookie', 'session=valid');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/auth/sign-out');
+    expect(options.headers.cookie).toBe('session=valid');
+    expect(options.headers.origin).toBe('http://core-public.test');
+  });
+
+  it('returns 503 instead of ok:true when Core rejects logout with a 5xx', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request(appFor(null)).post('/api/logout');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false, error: 'Logout service unavailable' });
+  });
+
+  it('returns 503 instead of ok:true when Core is unreachable during logout', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request(appFor(null)).post('/api/logout');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false, error: 'Logout service unavailable' });
+  });
+
+  it('returns 504 when Core logout never responds before the configured deadline', async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = '5';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request(appFor(null)).post('/api/logout');
+
+    expect(res.status).toBe(504);
+    expect(res.body).toEqual({ ok: false, error: 'Logout service timed out' });
   });
 });

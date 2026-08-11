@@ -14,13 +14,13 @@ vi.mock("~/lib/prisma.server", () => ({
 vi.mock("ai", () => ({ embed: vi.fn(), embedMany: vi.fn() }));
 vi.mock("@ai-sdk/openai", () => ({
   createOpenAI: vi.fn(() => ({
-    embedding: vi.fn(() => ({})),
+    embedding: vi.fn((modelId: string) => ({ modelId })),
   })),
 }));
 vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
-const { reEmbedCourseMaterials, clearCourseEmbeddingSettingsCache } =
+const { reEmbedCourseMaterials, clearCourseEmbeddingSettingsCache, ReEmbedInterruptedError } =
   await import("~/lib/ai/embedding");
 const prisma = (await import("~/lib/prisma.server")).default as any;
 const { embedMany } = await import("ai");
@@ -287,6 +287,84 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
         progressSnapshots[i - 1].processed,
       );
     }
+  });
+
+  it("uses one immutable settings snapshot even when course settings change mid-job", async () => {
+    process.env.REINDEX_CONCURRENCY = "1";
+    mockMaterials([
+      { id: "m0", rawText: "content 0", title: "First" },
+      { id: "m1", rawText: "content 1", title: "Second" },
+    ]);
+
+    const models: string[] = [];
+    (embedManyMock as any).mockImplementation(async ({ model, values }: any) => {
+      models.push(model.modelId);
+      if (models.length === 1) {
+        prisma.course.findUnique.mockResolvedValue({
+          embeddingProvider: "cloud",
+          embeddingModel: "model-b",
+          embeddedWithProvider: null,
+          embeddedWithModel: null,
+          lastEmbeddedAt: null,
+        });
+      }
+      return { embeddings: values.map(() => [...SAMPLE_EMBEDDING]) };
+    });
+
+    const settingsSnapshot = {
+      provider: "cloud" as const,
+      model: "openai/model-a",
+      wantsLocal: false,
+      source: { provider: "course" as const, model: "course" as const },
+    };
+
+    await expect(
+      reEmbedCourseMaterials("course-1", { embeddingSettings: settingsSnapshot }),
+    ).resolves.toEqual({ processed: 2, failed: [], total: 2 });
+
+    expect(models).toEqual(["model-a", "model-a"]);
+    expect(prisma.course.findUnique).not.toHaveBeenCalled();
+    expect(prisma.course.update).toHaveBeenCalledWith({
+      where: { id: "course-1" },
+      data: {
+        embeddedWithProvider: "cloud",
+        embeddedWithModel: "openai/model-a",
+        lastEmbeddedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("fences queued and uncommitted materials after the durable lease is lost", async () => {
+    process.env.REINDEX_CONCURRENCY = "1";
+    mockMaterials([
+      { id: "m0", rawText: "content 0", title: "First" },
+      { id: "m1", rawText: "content 1", title: "Second" },
+    ]);
+
+    let ownsLease = true;
+    (embedManyMock as any).mockImplementation(async ({ values }: any) => {
+      ownsLease = false;
+      return { embeddings: values.map(() => [...SAMPLE_EMBEDDING]) };
+    });
+
+    await expect(
+      reEmbedCourseMaterials("course-1", {
+        embeddingSettings: {
+          provider: "cloud",
+          model: "openai/text-embedding-3-small",
+          wantsLocal: false,
+          source: { provider: "course", model: "course" },
+        },
+        shouldContinue: () => ownsLease,
+      }),
+    ).rejects.toBeInstanceOf(ReEmbedInterruptedError);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "FAILED" } }),
+    );
+    expect(embedManyMock).toHaveBeenCalledTimes(1);
+    expect(prisma.course.update).not.toHaveBeenCalled();
   });
 
   it("serializes async progress writes so completed counts cannot regress", async () => {

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
 import {
   makeProfessor,
   makeStudent,
@@ -9,7 +9,7 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from "../helpers.js";
+} from '../helpers.js';
 
 // `isPublished` (and `code`, used for AI-prompt context) are Core-owned
 // (#1072 step 2/4) — the publish gate on every question/AI-tutoring route
@@ -258,7 +258,7 @@ describe("Activities routes", () => {
       const res = await request(profApp)
         .post(`/api/lessons/${seed.lesson.id}/activities`)
         .send({
-          question: "Cross course secondary?",
+          question: 'Cross course secondary?',
           mainTopicId: seed.topic.id,
           secondaryTopicIds: [otherTopic.id],
         });
@@ -275,7 +275,7 @@ describe("Activities routes", () => {
       const res = await request(profApp)
         .post(`/api/lessons/${seed.lesson.id}/activities`)
         .send({
-          question: "What is friction?",
+          question: 'What is friction?',
           mainTopicId: seed.topic.id,
           secondaryTopicIds: [topicB.id],
         });
@@ -477,6 +477,10 @@ describe("Activities routes", () => {
         where: { id: activity.id },
         data: { promptTemplateId: template.id },
       });
+      await prisma.activity.update({
+        where: { id: activity.id },
+        data: { promptTemplateId: template.id },
+      });
 
       const res = await request(profApp)
         .patch(`/api/activities/${activity.id}`)
@@ -501,10 +505,10 @@ describe("Activities routes", () => {
       expect(res.body.customPrompt).toBe("Be a helpful tutor.");
     });
 
-    it("clears customPrompt when set to null", async () => {
+    it('clears customPrompt when set to null', async () => {
       await prisma.activity.update({
         where: { id: activity.id },
-        data: { customPrompt: "Existing." },
+        data: { customPrompt: 'Existing.' },
       });
       const res = await request(profApp)
         .patch(`/api/activities/${activity.id}`)
@@ -528,10 +532,10 @@ describe("Activities routes", () => {
       expect(res.body.customPromptTitle).toBe("Short Title");
     });
 
-    it("clears customPromptTitle when set to null", async () => {
+    it('clears customPromptTitle when set to null', async () => {
       await prisma.activity.update({
         where: { id: activity.id },
-        data: { customPromptTitle: "Existing" },
+        data: { customPromptTitle: 'Existing' },
       });
       const res = await request(profApp)
         .patch(`/api/activities/${activity.id}`)
@@ -743,7 +747,7 @@ describe("Activities routes", () => {
       expect(res.body.error).toMatch(/not available/i);
     });
 
-    it("returns 403 when course is unpublished", async () => {
+    it('returns 403 when course is unpublished', async () => {
       vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
         id: seed.course.coreOfferingId,
         isPublished: false,
@@ -1298,7 +1302,7 @@ describe("Activities routes", () => {
       expect(res.body.error).toMatch(/excludeLessonId must be a number/i);
     });
 
-    it("returns 400 when page/pageSize are missing (pagination required)", async () => {
+    it('returns 400 when page/pageSize are missing (pagination required)', async () => {
       const res = await request(profApp).get(
         `/api/activities/importable?courseId=${seed.course.id}`,
       );
@@ -1484,15 +1488,15 @@ describe("Tutoring-flow: question consumption via Core", () => {
   it("/teach fetches testable questions from Core and injects them into supervisor hidden context", async () => {
     const coreQuestions = [
       {
-        id: "cuid-q1",
-        type: "MCQ",
-        difficulty: "MEDIUM",
-        content: "What is O(log n)?",
+        id: 'cuid-q1',
+        type: 'MCQ',
+        difficulty: 'MEDIUM',
+        content: 'What is O(log n)?',
         choices: [
-          { letter: "A", text: "Linear" },
-          { letter: "B", text: "Logarithmic" },
+          { letter: 'A', text: 'Linear' },
+          { letter: 'B', text: 'Logarithmic' },
         ],
-        answer: "B",
+        answer: 'B',
       },
     ];
 
@@ -1503,9 +1507,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
       "fetch",
       vi.fn((url) => {
         if (
-          typeof url === "string" &&
-          url.includes("/questions") &&
-          url.includes("testable=true")
+          typeof url === 'string' &&
+          url.includes('/questions') &&
+          url.includes('testable=true')
         ) {
           return Promise.resolve({
             ok: true,
@@ -1562,7 +1566,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
   // generate*Response with an explicitly passed courseId.
   it("/teach and /guide EduAI completion bodies include linked coreOfferingId as courseId (#1021)", async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi
         .fn()
         .mockResolvedValueOnce({
@@ -1585,7 +1589,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const teachCompletionBodies = fetch.mock.calls
       .filter(
         ([url, opts]) =>
-          typeof url === "string" && url.includes("/api/completion") && opts?.method === "POST",
+          typeof url === 'string' && url.includes('/api/completion') && opts?.method === 'POST',
       )
       .map(([, opts]) => JSON.parse(opts.body));
     expect(teachCompletionBodies.length).toBeGreaterThan(0);
@@ -1595,7 +1599,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     fetch.mockClear();
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi
         .fn()
         .mockResolvedValueOnce({
@@ -1618,7 +1622,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const guideCompletionBodies = fetch.mock.calls
       .filter(
         ([url, opts]) =>
-          typeof url === "string" && url.includes("/api/completion") && opts?.method === "POST",
+          typeof url === 'string' && url.includes('/api/completion') && opts?.method === 'POST',
       )
       .map(([, opts]) => JSON.parse(opts.body));
     expect(guideCompletionBodies.length).toBeGreaterThan(0);
@@ -1635,10 +1639,10 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
   it("/teach proceeds with empty question bank and returns 200 when Core questions fetch fails", async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi
         .fn()
-        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockRejectedValueOnce(new Error('ECONNREFUSED'))
         .mockResolvedValue({
           ok: true,
           json: () => Promise.resolve({ content: "AI response", chatId: "chat-1" }),
@@ -1974,8 +1978,86 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
   // ── POST /api/activities/:activityId/custom ────────────────────────
 
-  describe("POST /api/activities/:activityId/custom", () => {
-    it("returns 400 for a non-numeric activity id", async () => {
+  describe('POST /api/activities/:activityId/custom', () => {
+    it('returns a generic correlated error without leaking thrown internals', async () => {
+      const canary = 'AUDIT_INTERNAL_PATH_CANARY_4DE8';
+      const internalError = new Error(
+        `${canary} cookie=session-secret /srv/private/database.js SELECT users`,
+      );
+      internalError.status = 503;
+      internalError.requestId = 'request-custom-123';
+      internalError.correlationId = 'correlation-custom-456';
+      vi.spyOn(prisma.activity, 'findUnique').mockRejectedValueOnce(internalError);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: 'Hi', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({
+        error: 'Unable to generate a custom tutoring response',
+        code: 'AI_TUTOR_CUSTOM_ERROR',
+        requestId: 'request-custom-123',
+        correlationId: 'correlation-custom-456',
+      });
+      expect(JSON.stringify(res.body)).not.toContain(canary);
+      const consoleOutput = errorSpy.mock.calls
+        .flat()
+        .map((value) =>
+          value instanceof Error ? `${value.message}\n${value.stack || ''}` : JSON.stringify(value),
+        )
+        .join('\n');
+      expect(consoleOutput).not.toContain(canary);
+    });
+
+    it('redacts an in-flight custom guidance failure from logs and the client response', async () => {
+      const canary = 'AUDIT_CUSTOM_GUIDANCE_CANARY_A6C1';
+      const upstreamError = new Error(
+        `${canary} cookie=session-secret /provider/private?apiKey=secret`,
+      );
+      upstreamError.status = 502;
+      upstreamError.requestId = 'request-custom-upstream-789';
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url) => {
+          if (typeof url === 'string' && url.includes('/api/completion')) {
+            return Promise.reject(upstreamError);
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: () => Promise.resolve({ questions: [], total: 0 }),
+            text: () => Promise.resolve(''),
+          });
+        }),
+      );
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .set('Cookie', 'session=test-cookie')
+        .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({
+        error: 'Unable to generate an AI tutoring response',
+        code: 'AI_TUTOR_GUIDANCE_ERROR',
+        requestId: 'request-custom-upstream-789',
+      });
+      expect(JSON.stringify(res.body)).not.toContain(canary);
+      const consoleOutput = errorSpy.mock.calls
+        .flat()
+        .map((value) =>
+          value instanceof Error ? `${value.message}\n${value.stack || ''}` : JSON.stringify(value),
+        )
+        .join('\n');
+      expect(consoleOutput).not.toContain(canary);
+    });
+
+    it('returns 400 for a non-numeric activity id', async () => {
       const res = await request(studentApp)
         .post("/api/activities/not-a-number/custom")
         .send({ message: "Hi", knowledgeLevel: "beginner", apiKey: "test-key" });
@@ -2045,9 +2127,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
           enableTeachMode: true,
           enableCustomMode: false,
           config: {
-            questionType: "MCQ",
-            question: "Q?",
-            options: ["A", "B"],
+            questionType: 'MCQ',
+            question: 'Q?',
+            options: ['A', 'B'],
             answer: 0,
             hints: [],
           },
@@ -2071,9 +2153,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
           enableCustomMode: true,
           customPrompt: null,
           config: {
-            questionType: "MCQ",
-            question: "Q?",
-            options: ["A", "B"],
+            questionType: 'MCQ',
+            question: 'Q?',
+            options: ['A', 'B'],
             answer: 0,
             hints: [],
           },
@@ -2096,7 +2178,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     it("returns 200 and forwards the composed custom prompt through EduAI (Core questions + completion)", async () => {
       vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
       vi.stubGlobal(
-        "fetch",
+        'fetch',
         vi
           .fn()
           .mockResolvedValueOnce({
@@ -2201,7 +2283,7 @@ describe("teach/guide/custom: enrollment and publish gate (§308)", () => {
     expect(res.body.error).toMatch(/not available/i);
   });
 
-  it("enrolled STUDENT gets 403 on /teach when course is unpublished", async () => {
+  it('enrolled STUDENT gets 403 on /teach when course is unpublished', async () => {
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
       id: seed.course.coreOfferingId,
       isPublished: false,

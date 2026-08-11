@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     enrollment: {
       findFirst: vi.fn(),
       count: vi.fn(),

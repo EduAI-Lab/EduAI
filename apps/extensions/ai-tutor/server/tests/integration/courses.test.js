@@ -546,8 +546,8 @@ describe("Courses routes", () => {
       expect(res.body.error).toBe("CORE_COURSE_NOT_AUTHORIZED");
     });
 
-    it("returns 400 without externalCourseId", async () => {
-      const res = await request(profApp).post("/api/courses/import-external").send({});
+    it('returns 400 without externalCourseId', async () => {
+      const res = await request(profApp).post('/api/courses/import-external').send({});
 
       expect(res.status).toBe(400);
     });
@@ -751,12 +751,12 @@ describe("Courses routes", () => {
       expect(res.status).toBe(403);
     });
 
-    it("400 when take is not a number", async () => {
+    it('400 when take is not a number', async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback?take=lots`);
       expect(res.status).toBe(400);
     });
 
-    it("400 when skip is not a number", async () => {
+    it('400 when skip is not a number', async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback?skip=lots`);
       expect(res.status).toBe(400);
     });
@@ -801,7 +801,7 @@ describe("Courses routes", () => {
       expect(res.body.error).toMatch(/sourceCourseId/i);
     });
 
-    it("returns 400 when neither moduleIds nor lessonIds are provided", async () => {
+    it('returns 400 when neither moduleIds nor lessonIds are provided', async () => {
       const res = await request(profApp).post(`/api/courses/${seed.course.id}/import`).send({});
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/nothing to import/i);
@@ -1046,7 +1046,7 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     // Verify Core was called with the right URL and method.
     const coreCalls = mockFetch.mock.calls.filter(
-      ([url]) => typeof url === "string" && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
+      ([url]) => typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
     );
     expect(coreCalls).toHaveLength(1);
     expect(coreCalls[0][1].method).toBe("PATCH");
@@ -1074,7 +1074,7 @@ describe("Course publish state — Core write-through (#477)", () => {
     expect(res.body.isPublished).toBe(false);
 
     const coreCalls = mockFetch.mock.calls.filter(
-      ([url]) => typeof url === "string" && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
+      ([url]) => typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
     );
     expect(coreCalls).toHaveLength(1);
 
@@ -1085,13 +1085,13 @@ describe("Course publish state — Core write-through (#477)", () => {
     expect(updatedLesson.isPublished).toBe(false);
   });
 
-  it("publish — surfaces Core errors as 500 without touching local DB", async () => {
+  it('publish — surfaces Core errors as 500 without touching local DB', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 403,
-        text: () => Promise.resolve("Forbidden"),
+        text: () => Promise.resolve('Forbidden'),
       }),
     );
 
@@ -1107,17 +1107,17 @@ describe("Course publish state — Core write-through (#477)", () => {
   // builds the response fails. The route must report the write's own result
   // rather than letting the failed read fall back to "unpublished" — a
   // successful publish must never come back looking like a failure.
-  it("publish — re-read failure after a successful write reports isPublished:true, not a false failure", async () => {
+  it('publish — re-read failure after a successful write reports isPublished:true, not a false failure', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(""),
+        text: () => Promise.resolve(''),
         json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
       }),
     );
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
 
@@ -1127,17 +1127,17 @@ describe("Course publish state — Core write-through (#477)", () => {
     expect(res.headers["x-core-status"]).toBe("unavailable");
   });
 
-  it("unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally", async () => {
+  it('unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(""),
+        text: () => Promise.resolve(''),
         json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
       }),
     );
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
 

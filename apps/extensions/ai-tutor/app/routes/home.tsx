@@ -1,18 +1,19 @@
-import type { Route } from "./+types/home";
-import { useEffect } from "react";
-import { useNavigate } from "react-router";
-import { useLocalUser } from "../hooks/useLocalUser";
-import { IconBrain } from "@tabler/icons-react";
-import { routeForRole } from "../lib/role-routing";
-import { getCoreLoginUrl } from "../lib/coreUrl";
+import type { Route } from './+types/home';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router';
+import { useLocalUser } from '../hooks/useLocalUser';
+import { Button } from '@eduai/ui';
+import { IconAlertTriangle, IconBrain } from '@tabler/icons-react';
+import { routeForRole } from '../lib/role-routing';
+import { getCoreLoginUrl } from '../lib/coreUrl';
 
-export function meta(_args: Route.MetaArgs) {
-  return [{ title: "AI Tutor" }, { name: "description", content: "AI Tutor — Loading" }];
+export function meta({}: Route.MetaArgs) {
+  return [{ title: 'AI Tutor' }, { name: 'description', content: 'AI Tutor — Loading' }];
 }
 
 export default function Home() {
   const navigate = useNavigate();
-  const { user, isInitializing } = useLocalUser();
+  const { user, isInitializing, authError } = useLocalUser();
 
   useEffect(() => {
     if (!user) return;
@@ -20,12 +21,32 @@ export default function Home() {
   }, [navigate, user]);
 
   useEffect(() => {
-    if (isInitializing || user) return;
+    if (isInitializing || user || authError) return;
     // api.ts 401 handler fires first and redirects to Core login, but redirect
     // here too as a safety net for any path that reaches this state without a
     // prior 401 (e.g. a null user returned with 200).
     window.location.href = getCoreLoginUrl();
-  }, [isInitializing, user]);
+  }, [authError, isInitializing, user]);
+
+  if (authError) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background p-6">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-xl border bg-card p-8 text-center shadow-sm">
+          <IconAlertTriangle className="size-10 text-destructive" aria-hidden="true" />
+          <div className="space-y-2">
+            <h1 className="text-xl font-semibold">Authentication service unavailable</h1>
+            <p className="text-sm text-muted-foreground">
+              AI Tutor could not verify your EduAI session. Your browser session was not treated as
+              logged out. Try again when Core is available.
+            </p>
+          </div>
+          <Button type="button" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background">

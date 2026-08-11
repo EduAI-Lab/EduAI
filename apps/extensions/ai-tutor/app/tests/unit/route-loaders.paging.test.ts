@@ -102,10 +102,10 @@ describe("instructor.course clientLoader", () => {
     await expectThrownStatus(load("http://x/instructor/courses/1?page=40"), 302);
   });
 
-  it("throws a 400 Response for a non-numeric course id", async () => {
-    const { clientLoader } = await import("~/routes/instructor.course");
+  it('throws a 400 Response for a non-numeric course id', async () => {
+    const { clientLoader } = await import('~/routes/instructor.course');
     await expectThrownStatus(
-      clientLoader({ params: { courseId: "abc" }, request: req("http://x/c") } as never),
+      clientLoader({ params: { courseId: 'abc' }, request: req('http://x/c') } as never),
       400,
     );
   });
@@ -239,10 +239,10 @@ describe("student.lesson clientLoader", () => {
     expect(api.lessonsForModule).not.toHaveBeenCalled();
   });
 
-  it("throws a 400 Response for a non-numeric lesson id", async () => {
-    const { clientLoader } = await import("~/routes/student.lesson");
+  it('throws a 400 Response for a non-numeric lesson id', async () => {
+    const { clientLoader } = await import('~/routes/student.lesson');
     await expectThrownStatus(
-      clientLoader({ params: { lessonId: "abc" }, request: req("http://x/l") } as never),
+      clientLoader({ params: { lessonId: 'abc' }, request: req('http://x/l') } as never),
       400,
     );
   });

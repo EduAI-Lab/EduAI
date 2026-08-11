@@ -48,7 +48,7 @@ import {
   fetchCoreCourseSafe,
   listEduAiCourses,
   listEduAiCoursesServiceKey,
-} from "./eduaiClient.js";
+} from './eduaiClient.js';
 
 /**
  * Fetch Core's FULL course catalog in one batched service-key call — the

@@ -22,8 +22,8 @@ const envPath = join(projectRoot, ".env");
 const result = dotenv.config({ path: envPath });
 
 // Check if .env file was loaded and DATABASE_URL exists
-if (result.error) {
-  logger.warn({ err: result.error, envPath }, "Could not load .env file");
+if (result.error && !process.env.DATABASE_URL) {
+  logger.warn({ err: result.error, envPath }, 'Could not load .env file');
 }
 
 if (!process.env.DATABASE_URL) {
@@ -34,6 +34,36 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const prisma = new PrismaClient();
+
+const DEFAULT_READINESS_TIMEOUT_MS = 2000;
+
+/**
+ * Runs a lightweight, bounded database probe using the shared Prisma client.
+ * Returns a boolean so HTTP callers can expose readiness without returning
+ * connection details or other internal error information.
+ */
+export const checkDatabaseReadiness = async (options = {}) => {
+  const { timeoutMs = DEFAULT_READINESS_TIMEOUT_MS } = options;
+  let timeout;
+
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Database readiness probe timed out')),
+          timeoutMs,
+        );
+      }),
+    ]);
+    return true;
+  } catch (error) {
+    logger.warn({ err: error }, 'Database readiness probe failed');
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 /**
  * Attempts to connect with exponential backoff until success or the retry limit is reached.

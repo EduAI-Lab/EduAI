@@ -46,9 +46,9 @@ export interface ListUrlParams {
  */
 export function parseListUrlParams(request: Request): ListUrlParams {
   const url = new URL(request.url);
-  const requestedPage = Number(url.searchParams.get("page"));
+  const requestedPage = Number(url.searchParams.get('page'));
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
-  const search = (url.searchParams.get("search") ?? "").trim().slice(0, MAX_SEARCH_LENGTH);
+  const search = (url.searchParams.get('search') ?? '').trim().slice(0, MAX_SEARCH_LENGTH);
   return { page, search };
 }
 

@@ -21,21 +21,21 @@ const stats: DashboardStatDef[] = [
 const courses: DashboardCourseRow[] = [
   {
     id: 1,
-    code: "CPSC 101",
-    name: "Intro to CS",
-    term: "W1",
+    code: 'CPSC 101',
+    name: 'Intro to CS',
+    term: 'W1',
     year: 2026,
-    accentColor: "#123456",
-    progressLabel: "40% complete",
+    accentColor: '#123456',
+    progressLabel: '40% complete',
   },
-  { id: 2, code: "MATH 200", name: "Calculus III", term: "W2", year: 2026, accentColor: "#654321" },
+  { id: 2, code: 'MATH 200', name: 'Calculus III', term: 'W2', year: 2026, accentColor: '#654321' },
 ];
 
 const quickActions: DashboardQuickAction[] = [
   {
-    label: "Browse courses",
-    description: "See everything you teach",
-    href: "/instructor",
+    label: 'Browse courses',
+    description: 'See everything you teach',
+    href: '/instructor',
     icon: <span>icon</span>,
   },
 ];

@@ -147,6 +147,7 @@ Full reference with comments: `apps/extensions/question-maker/.env.example`. Key
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
 | `CORE_URL` | Base URL of EduAI Core (session validation, course/enrollment reads) | Yes |
+| `CORE_AUTH_TIMEOUT_MS` | Deadline in milliseconds for Core session-validation and logout calls (default `5000`) | No |
 | `EXTENSION_URL` | This service's public URL (post-Core-login redirect target) | Yes |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins | Yes |
 | `ENCRYPTION_KEY` | 32-byte hex key for encrypting stored Canvas API keys | Yes in production |

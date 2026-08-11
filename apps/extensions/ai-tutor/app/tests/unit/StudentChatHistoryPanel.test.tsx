@@ -100,7 +100,7 @@ describe("StudentChatHistoryPanel — loading and empty state", () => {
 
   it("shows the no-activity placeholder when activityId is undefined", async () => {
     renderPanel({ activityId: undefined });
-    expect(await screen.findByText("Open an activity to view chat history.")).toBeInTheDocument();
+    expect(await screen.findByText('Open an activity to view chat history.')).toBeInTheDocument();
     expect(listChatSessions).not.toHaveBeenCalled();
   });
 });

@@ -29,7 +29,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 }));
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
-  startReEmbedJob: vi.fn(),
+  startOrResumeReEmbedJob: vi.fn(),
   serializeReEmbedJob: vi.fn((job: unknown) => job),
 }));
 
@@ -42,9 +42,13 @@ import { loader, action } from "~/routes/api/courses.embedding-settings.$";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
-import { parseEmbeddingSettingsUpdate, validateEmbeddingSettingsUpdate } from "~/lib/ai/embedding";
-import { startReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import {
+  parseEmbeddingSettingsUpdate,
+  validateEmbeddingSettingsUpdate,
+} from "~/lib/ai/embedding";
+import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
+import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
 const BASE_COURSE = {
   id: "course-1",
@@ -171,7 +175,7 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     expect(logAuditAction).not.toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "EMBEDDING_SETTINGS_CHANGED" }),
     );
-    expect(startReEmbedJob).not.toHaveBeenCalled();
+    expect(startOrResumeReEmbedJob).not.toHaveBeenCalled();
   });
 
   it("logs EMBEDDING_SETTINGS_CHANGED and starts a re-embed job when reEmbed:true", async () => {
@@ -188,7 +192,10 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
       embeddingProvider: "ollama",
       embeddingModel: "mxbai-embed-large",
     } as never);
-    vi.mocked(startReEmbedJob).mockResolvedValue({ job: { id: "job-1" }, created: true } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job-1" },
+      created: true,
+    } as never);
 
     const res = await action(
       makeActionArgs({
@@ -206,5 +213,62 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     expect(logAuditAction).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "RE_EMBED_JOB_CREATED" }),
     );
+  });
+
+  it("does not log a second creation when reEmbed:true reuses the active job", async () => {
+    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(prisma.course.update).mockResolvedValue({
+      ...BASE_COURSE,
+      embeddingProvider: "ollama",
+      embeddingModel: "mxbai-embed-large",
+    } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job-existing" },
+      created: false,
+    } as never);
+
+    const res = await action(
+      makeActionArgs({
+        embeddingProvider: "ollama",
+        embeddingModel: "mxbai-embed-large",
+        reEmbed: true,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).not.toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "RE_EMBED_JOB_CREATED" }),
+    );
+  });
+
+  it("maps a re-embed database outage to 503", async () => {
+    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(prisma.course.update).mockResolvedValue({
+      ...BASE_COURSE,
+      embeddingProvider: "ollama",
+      embeddingModel: "mxbai-embed-large",
+    } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(
+      new QueueUnavailableError("Database unavailable"),
+    );
+
+    const res = await action(
+      makeActionArgs({ embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large", reEmbed: true }),
+    );
+    expect(res.status).toBe(503);
   });
 });

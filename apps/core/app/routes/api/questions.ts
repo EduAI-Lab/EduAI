@@ -81,9 +81,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const topicId = url.searchParams.get("topicId") ?? undefined;
   const testableParam = url.searchParams.get("testable");
-  const testable = testableParam === "true" ? true : testableParam === "false" ? false : undefined;
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 500);
-  const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
+  const testable =
+    testableParam === "true" ? true : testableParam === "false" ? false : undefined;
+  const rawLimit = url.searchParams.get("limit");
+  const rawOffset = url.searchParams.get("offset");
+  const limit = rawLimit === null || rawLimit.trim() === "" ? undefined : Number(rawLimit);
+  const offset = rawOffset === null || rawOffset.trim() === "" ? undefined : Number(rawOffset);
 
   const result = await listQuestions({
     courseId,

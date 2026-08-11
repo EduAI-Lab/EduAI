@@ -7,6 +7,7 @@ Complete endpoint reference for the AiTutor backend API. All routes are mounted 
 All endpoints require an authenticated session (Better Auth cookie) unless noted otherwise. Requests must include `credentials: "include"` for cookie transmission.
 
 **Error responses:**
+
 - `401 Unauthorized` — No valid session.
 - `403 Forbidden` — Insufficient role or not a course member.
 
@@ -33,11 +34,11 @@ List endpoints return the platform pagination envelope (#1043), matching EduAI C
 - `pageSize` clamps to `1..200` (`MAX_PAGE_SIZE`).
 - Fractional values are floored.
 
-**Two parsing modes.** They differ only on *absent* params; a param that is present but unparseable is a `400` in both, so the same malformed input never gets two different answers depending on the endpoint.
+**Two parsing modes.** They differ only on _absent_ params; a param that is present but unparseable is a `400` in both, so the same malformed input never gets two different answers depending on the endpoint.
 
-| Mode | Endpoints | Params absent |
-| --- | --- | --- |
-| **Required** | `GET /api/courses`, `GET /api/admin/courses`, `GET /api/activities/importable` | `400 PAGINATION_REQUIRED` |
+| Mode         | Endpoints                                                                                                                                                | Params absent                      |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **Required** | `GET /api/courses`, `GET /api/admin/courses`, `GET /api/activities/importable`                                                                           | `400 PAGINATION_REQUIRED`          |
 | **Optional** | `GET /api/courses/:courseId/modules`, `GET /api/modules/:moduleId/lessons`, `GET /api/lessons/:lessonId/activities`, `GET /api/courses/:courseId/topics` | Defaults to page 1, `pageSize` 200 |
 
 Reordering and ordinals for these endpoints are documented under [Ordering and structure](#ordering-and-structure).
@@ -46,21 +47,22 @@ The optional-mode ("tree") endpoints keep a large default page for callers that 
 
 ### Search
 
-Every list endpoint above accepts an optional `search` query param (#1207). Filtering happens **server-side, in SQL**: the term is ANDed onto the endpoint's existing visibility scope, and the same `where` feeds both the count and the page — so `total` is the count of *matching* rows and a pager built on it pages the filtered set.
+Every list endpoint above accepts an optional `search` query param (#1207). Filtering happens **server-side, in SQL**: the term is ANDed onto the endpoint's existing visibility scope, and the same `where` feeds both the count and the page — so `total` is the count of _matching_ rows and a pager built on it pages the filtered set.
 
-| Endpoint | Matched against |
-| --- | --- |
-| `GET /api/courses/:courseId/modules` | `title`, `description` |
-| `GET /api/modules/:moduleId/lessons` | `title` |
-| `GET /api/lessons/:lessonId/activities` | `title`, `instructionsMd`, `config.question` |
-| `GET /api/courses/:courseId/topics` | `name` |
-| `GET /api/activities/importable` | the above, plus the parent lesson and module titles |
+| Endpoint                                | Matched against                                     |
+| --------------------------------------- | --------------------------------------------------- |
+| `GET /api/courses/:courseId/modules`    | `title`, `description`                              |
+| `GET /api/modules/:moduleId/lessons`    | `title`                                             |
+| `GET /api/lessons/:lessonId/activities` | `title`, `instructionsMd`, `config.question`        |
+| `GET /api/courses/:courseId/topics`     | `name`                                              |
+| `GET /api/activities/importable`        | the above, plus the parent lesson and module titles |
 
 Matching is case-insensitive on ordinary columns. An activity's question text lives in the `config` JSON rather than a column, so it is matched with a JSON path filter, which Prisma cannot make case-insensitive; the term is tried as typed, lower-cased, and upper-cased to compensate.
 
 An absent, empty, or whitespace-only `search` means "no filter". Because search is applied server-side, clients **must not** filter the returned page again — doing so is what made a match on page 2 render as "no results" while the pager reported a non-zero total.
 
 **Pagination errors:**
+
 - `400 PAGINATION_REQUIRED` — a required-mode endpoint was called without both `page` and `pageSize`.
 - `400 PAGINATION_INVALID` — `page` or `pageSize` was supplied but is not a finite number.
 - `400 SEARCH_INVALID` — `search` was repeated, which Express parses as an array.
@@ -130,6 +132,7 @@ Returns the current authenticated user.
 **Auth:** Any authenticated user.
 
 **Response:**
+
 ```json
 {
   "user": {
@@ -157,6 +160,7 @@ List courses for the current user.
 **Auth:** PROFESSOR or STUDENT.
 
 **Behavior:**
+
 - Professors see all courses where they are an instructor.
 - Students see published courses where they are enrolled, with progress data.
 
@@ -164,12 +168,12 @@ List courses for the current user.
 
 **Search and filters (#1208):** all optional, all applied server-side and AND-ed onto the caller's role scope — a filter can only narrow what the caller may already see, never widen it.
 
-| Param | Repeatable | Values | Notes |
-| --- | --- | --- | --- |
-| `search` | no | free text, ≤ 200 chars | Matches course title **or** code, case-insensitively. |
-| `term` | yes | `"W1::2026"` (`term::year`) | |
-| `status` | yes | `published` \| `draft` | |
-| `progress` | yes | `not-started` \| `in-progress` \| `completed` | Ignored for roles whose rows carry no progress (instructor/admin), rather than rejected. |
+| Param      | Repeatable | Values                                        | Notes                                                                                    |
+| ---------- | ---------- | --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `search`   | no         | free text, ≤ 200 chars                        | Matches course title **or** code, case-insensitively.                                    |
+| `term`     | yes        | `"W1::2026"` (`term::year`)                   |                                                                                          |
+| `status`   | yes        | `published` \| `draft`                        |                                                                                          |
+| `progress` | yes        | `not-started` \| `in-progress` \| `completed` | Ignored for roles whose rows carry no progress (instructor/admin), rather than rejected. |
 
 Repeated values within one dimension are OR-ed; separate dimensions are AND-ed. `total` reflects the **filtered** count, so the pager stays correct under a filter.
 
@@ -214,6 +218,7 @@ Create a new course.
 **Auth:** PROFESSOR.
 
 **Body:**
+
 ```json
 {
   "title": "string (required)",
@@ -257,6 +262,7 @@ Import modules or lessons from another course.
 **Auth:** PROFESSOR (instructor of both source and target courses).
 
 **Body:**
+
 ```json
 {
   "sourceCourseId": "number",
@@ -291,6 +297,7 @@ Import a course from the EduAI platform.
 **Auth:** PROFESSOR.
 
 **Body:**
+
 ```json
 {
   "externalCourseId": "string"
@@ -336,6 +343,7 @@ Create a module.
 **Auth:** PROFESSOR (course instructor).
 
 **Body:**
+
 ```json
 {
   "title": "string (required)",
@@ -401,6 +409,7 @@ Create a lesson.
 **Auth:** PROFESSOR (course instructor).
 
 **Body:**
+
 ```json
 {
   "title": "string (required)",
@@ -456,6 +465,7 @@ Create an activity. Validated against `CreateActivitySchema` from `shared/schema
 **Auth:** PROFESSOR (course instructor).
 
 **Body:**
+
 ```json
 {
   "title": "string (required)",
@@ -511,6 +521,7 @@ Submit an answer attempt for an activity.
 **Auth:** Enrolled student only — platform role must be STUDENT and course enrollment role must be STUDENT. The server uses the authenticated user for identity; any client-supplied `userId` in the request body is ignored.
 
 **Body:**
+
 ```json
 {
   "userId": "string",
@@ -522,6 +533,7 @@ Submit an answer attempt for an activity.
 Creates a `Submission` record, evaluates correctness, updates `ActivityStudentMetric` and `ActivityAnalytics`.
 
 **Response:**
+
 ```json
 {
   "isCorrect": "boolean",
@@ -539,6 +551,7 @@ AI Teach mode chat. Uses the `learning-prompt` template. Requires `enableTeachMo
 **Auth:** Course member.
 
 **Body:**
+
 ```json
 {
   "knowledgeLevel": "beginner | intermediate | advanced",
@@ -564,6 +577,7 @@ AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, 
 **Auth:** Course member.
 
 **Body:** Same as teach, plus:
+
 ```json
 {
   "studentAnswer": "string (optional, current answer attempt)"
@@ -593,6 +607,7 @@ Submit activity feedback (difficulty rating).
 **Auth:** STUDENT (enrolled in the course).
 
 **Body:**
+
 ```json
 {
   "rating": "number (1-5)",
@@ -603,6 +618,7 @@ Submit activity feedback (difficulty rating).
 One feedback per user per activity (unique constraint). Triggers recalculation of `ActivityAnalytics` including difficulty score.
 
 **Response:**
+
 ```json
 {
   "id": "number",
@@ -635,6 +651,7 @@ Create a new topic. Blocked for imported EduAI courses (those are managed via sy
 **Auth:** PROFESSOR (course instructor).
 
 **Body:**
+
 ```json
 {
   "name": "string (required)"
@@ -654,6 +671,7 @@ Sync topics from EduAI for an imported course. Creates local topics for any upst
 **Auth:** PROFESSOR (course instructor).
 
 **Response:**
+
 ```json
 {
   "topics": "Topic[]",
@@ -672,6 +690,7 @@ Remap activities from one topic to another, then delete the source topic. Handle
 **Auth:** PROFESSOR (course instructor).
 
 **Body:**
+
 ```json
 {
   "mappings": [
@@ -706,6 +725,7 @@ Create a new prompt template. A unique slug is auto-generated from the name.
 **Auth:** PROFESSOR.
 
 **Body:**
+
 ```json
 {
   "name": "string (required)",
@@ -752,6 +772,7 @@ Validate a provider API key against the provider's lightweight model-listing end
 **Auth:** Any authenticated user.
 
 **Body:**
+
 ```json
 {
   "provider": "google | openai",
@@ -760,6 +781,7 @@ Validate a provider API key against the provider's lightweight model-listing end
 ```
 
 **Response:**
+
 ```json
 {
   "valid": "boolean",
@@ -802,6 +824,7 @@ List all course offerings.
 List enrolled students and available (non-enrolled) students for a course.
 
 **Response:**
+
 ```json
 {
   "enrolled": "AdminUser[]",
@@ -816,6 +839,7 @@ List enrolled students and available (non-enrolled) students for a course.
 Enroll a student in a course.
 
 **Body:**
+
 ```json
 {
   "userId": "string"
@@ -849,6 +873,7 @@ Manually sync enrollments from EduAI for an imported course. Creates local users
 Get EduAI API key configuration status.
 
 **Response:**
+
 ```json
 {
   "configured": "boolean",
@@ -863,6 +888,7 @@ Get EduAI API key configuration status.
 Set a database override for the EduAI API key.
 
 **Body:**
+
 ```json
 {
   "apiKey": "string"
@@ -886,6 +912,7 @@ Remove the admin override, falling back to the `EDUAI_API_KEY` environment varia
 Get the current AI model policy.
 
 **Response:**
+
 ```json
 {
   "allowedTutorModels": ["string[]"],
@@ -917,6 +944,7 @@ Create a bug report with diagnostic context.
 **Auth:** STUDENT or PROFESSOR.
 
 **Body:**
+
 ```json
 {
   "description": "string (required)",
@@ -934,6 +962,7 @@ Create a bug report with diagnostic context.
 ```
 
 **Response:**
+
 ```json
 {
   "id": "string (cuid)",
@@ -961,6 +990,7 @@ Update a bug report's status.
 **Auth:** ADMIN.
 
 **Body:**
+
 ```json
 {
   "status": "unhandled | in_progress | resolved"
@@ -975,11 +1005,11 @@ Update a bug report's status.
 
 Request bodies for activities and AI chat are validated using Zod schemas shared between frontend and backend:
 
-| Schema | Location | Used By |
-|--------|----------|---------|
-| `CreateActivitySchema` | `shared/schemas/activity.js` | `POST /lessons/:id/activities` |
-| `UpdateActivitySchema` | `shared/schemas/activity.js` | `PATCH /activities/:id` |
-| `TeachRequestSchema` | `shared/schemas/aiGuidance.js` | `POST /activities/:id/teach` |
-| `GuideRequestSchema` | `shared/schemas/aiGuidance.js` | `POST /activities/:id/guide` |
-| `CustomRequestSchema` | `shared/schemas/aiGuidance.js` | `POST /activities/:id/custom` |
+| Schema                          | Location                       | Used By                         |
+| ------------------------------- | ------------------------------ | ------------------------------- |
+| `CreateActivitySchema`          | `shared/schemas/activity.js`   | `POST /lessons/:id/activities`  |
+| `UpdateActivitySchema`          | `shared/schemas/activity.js`   | `PATCH /activities/:id`         |
+| `TeachRequestSchema`            | `shared/schemas/aiGuidance.js` | `POST /activities/:id/teach`    |
+| `GuideRequestSchema`            | `shared/schemas/aiGuidance.js` | `POST /activities/:id/guide`    |
+| `CustomRequestSchema`           | `shared/schemas/aiGuidance.js` | `POST /activities/:id/custom`   |
 | `ActivityFeedbackRequestSchema` | `shared/schemas/aiGuidance.js` | `POST /activities/:id/feedback` |

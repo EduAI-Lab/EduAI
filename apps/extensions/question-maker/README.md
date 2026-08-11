@@ -79,7 +79,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 | `VITE_API_URL` | No | Default `http://localhost:8000` |
 | `TEST_DATABASE_URL` | Integration tests | Optional |
 
-**Production Compose** may use `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). **Automated server deploys** may use `GITHUB_TOKEN`, `GITHUB_PERSONAL_ACCESS_TOKEN`, or `PERSONAL_ACCESS_TOKEN` — see [docs/deployment/cron.md](docs/deployment/cron.md) and [docs/deployment/README.md](docs/deployment/README.md).
+**Production Compose** requires `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). Automated server deploys use a read-only SSH deploy key or OS credential helper configured outside the application `.env`; see [docs/deployment/cron.md](docs/deployment/cron.md).
 
 ## Campus vLLM defaults
 

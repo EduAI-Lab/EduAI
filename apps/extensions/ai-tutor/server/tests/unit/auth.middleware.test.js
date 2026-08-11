@@ -18,7 +18,8 @@ import {
 import { getPolicy } from "../../src/services/policyService.js";
 import { resolveCoreCourseById } from "../../src/services/courseResolver.js";
 
-process.env.CORE_URL = "http://core.test";
+process.env.CORE_URL = 'http://core.test';
+const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 function makeRes() {
   const res = {
@@ -35,9 +36,9 @@ function makeRes() {
 
 function makeReq(overrides = {}) {
   return {
-    headers: {},
-    path: "/api/something",
-    originalUrl: "/api/something",
+    headers: { cookie: 'session=test' },
+    path: '/api/something',
+    originalUrl: '/api/something',
     ...overrides,
   };
 }
@@ -51,16 +52,21 @@ describe("requireAuth", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    if (originalCoreAuthTimeoutMs === undefined) {
+      delete process.env.CORE_AUTH_TIMEOUT_MS;
+    } else {
+      process.env.CORE_AUTH_TIMEOUT_MS = originalCoreAuthTimeoutMs;
+    }
   });
 
-  it("calls next and populates req.user on a valid session", async () => {
+  it('calls next and populates req.user on a valid session', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
-            user: { id: "u1", email: "a@b.com", name: "Alice", role: "INSTRUCTOR" },
+            user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'INSTRUCTOR' },
           }),
       }),
     );
@@ -73,8 +79,8 @@ describe("requireAuth", () => {
     expect(req.user).toMatchObject({ id: "u1", email: "a@b.com", role: "INSTRUCTOR" });
   });
 
-  it("returns 401 when Core responds with a non-ok status", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  it('returns 401 only when Core verifies that the session is unauthorized', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const req = makeReq();
     const res = makeRes();
 
@@ -83,6 +89,76 @@ describe("requireAuth", () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: "Authentication required" });
+  });
+
+  it('preserves a verified Core 403 response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    const req = makeReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication forbidden' });
+  });
+
+  it('returns 503 when Core session validation responds with a 5xx', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    const req = makeReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication service unavailable' });
+  });
+
+  it('returns 504 when Core session validation never responds before the configured deadline', async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = '5';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+    const req = makeReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(504);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication service timed out' });
+  });
+
+  it('composes an available caller cancellation signal with the deadline', async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = '1000';
+    const caller = new AbortController();
+    let forwardedSignal;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url, { signal }) => {
+        forwardedSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          caller.abort();
+        });
+      }),
+    );
+    const req = makeReq({ signal: caller.signal });
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(forwardedSignal).not.toBe(caller.signal);
+    expect(forwardedSignal.aborted).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(401);
   });
 
   // Edge-case audit #225 (SEAM-01 / #1197 fix): a Core 429 (IP rate limit) is
@@ -129,16 +205,16 @@ describe("requireAuth", () => {
     expect(res.json).toHaveBeenCalledWith({ error: "Rate limited", retryAfter: null });
   });
 
-  it("returns 401 when Core is unreachable (fetch throws)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+  it('returns 503 when Core is unreachable (fetch throws)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const req = makeReq();
     const res = makeRes();
 
     await requireAuth(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: "Authentication required" });
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication service unavailable' });
   });
 
   it("forwards the incoming cookie header to Core", async () => {
@@ -161,29 +237,26 @@ describe("requireAuth", () => {
     );
   });
 
-  it("sends an empty cookie string when the request has no cookie header", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+  it('returns 401 without calling Core when the request has no cookie header', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
     const req = makeReq({ headers: {} });
     const res = makeRes();
 
     await requireAuth(req, res, next);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ headers: { cookie: "" } }),
-    );
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication required' });
   });
 
-  it("normalizes an unrecognized role to STUDENT (least privilege)", async () => {
+  it('normalizes an unrecognized role to STUDENT (least privilege)', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "SUPERUSER" } }),
+        json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'SUPERUSER' } }),
       }),
     );
     const req = makeReq();
@@ -198,10 +271,10 @@ describe("requireAuth", () => {
     "preserves valid role %s unchanged",
     async (role) => {
       vi.stubGlobal(
-        "fetch",
+        'fetch',
         vi.fn().mockResolvedValue({
           ok: true,
-          json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role } }),
+          json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role } }),
         }),
       );
       const req = makeReq();

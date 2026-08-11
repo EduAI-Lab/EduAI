@@ -44,13 +44,157 @@ const SUPERVISOR_ERROR_MESSAGE =
   "AI study buddy encountered an issue reviewing the response. Please try again.";
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
+const GENERATION_ERROR_MESSAGE = 'AI study buddy not available right now. Please try again later.';
 
 // #999/#1001: bound the complete EduAI call, including the one permitted
 // retry, so a transient failure cannot turn into an unbounded wait.
 const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
 const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
-const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try again.";
+const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
+const SAFE_AI_ERROR_CODES = new Set(['TIMEOUT']);
+const SAFE_AI_LOG_EVENTS = new Set([
+  'missing_session_cookie',
+  'missing_user_api_key',
+  'invalid_model_id',
+  'upstream_retry',
+  'upstream_http_error',
+  'unexpected_response_format',
+  'call_timed_out',
+  'call_failed',
+  'supervisor_verdict_parse_failed',
+  'supervisor_review_failed',
+  'teach_response_failed',
+  'guide_response_failed',
+  'custom_response_failed',
+  'guidance_route_failed',
+  'custom_route_failed',
+]);
+const SAFE_AI_LOG_NUMBER_KEYS = ['status', 'attempt', 'maxAttempts', 'durationMs', 'timeoutMs'];
+const SAFE_AI_LOG_IDENTIFIER_KEYS = ['requestId', 'correlationId', 'traceId'];
+const SAFE_AI_LOG_TYPES = new Set([
+  'array',
+  'bigint',
+  'boolean',
+  'function',
+  'null',
+  'number',
+  'object',
+  'string',
+  'symbol',
+  'undefined',
+]);
+const SAFE_AI_LOG_MODES = new Set(['teach', 'guide', 'custom']);
+
+function normalizeDiagnosticIdentifier(value) {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 128) return undefined;
+  return /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(normalized) ? normalized : undefined;
+}
+
+function readHeader(headers, name) {
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') return headers.get(name) || undefined;
+  if (typeof headers !== 'object') return undefined;
+
+  const matchingKey = Object.keys(headers).find((key) => key.toLowerCase() === name.toLowerCase());
+  return matchingKey ? headers[matchingKey] : undefined;
+}
+
+function getCorrelationMetadata(headers) {
+  return {
+    requestId: readHeader(headers, 'x-request-id'),
+    correlationId: readHeader(headers, 'x-correlation-id'),
+    traceId: readHeader(headers, 'x-trace-id'),
+  };
+}
+
+function getValueType(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function sanitizeAiLogMetadata(metadata = {}) {
+  const sanitized = {};
+
+  for (const key of SAFE_AI_LOG_NUMBER_KEYS) {
+    const value = metadata[key];
+    if (Number.isInteger(value) && value >= 0) sanitized[key] = value;
+  }
+
+  for (const key of SAFE_AI_LOG_IDENTIFIER_KEYS) {
+    const value = normalizeDiagnosticIdentifier(metadata[key]);
+    if (value) sanitized[key] = value;
+  }
+
+  if (SAFE_AI_LOG_TYPES.has(metadata.responseType)) {
+    sanitized.responseType = metadata.responseType;
+  }
+  if (SAFE_AI_LOG_TYPES.has(metadata.contentType)) {
+    sanitized.contentType = metadata.contentType;
+  }
+  if (SAFE_AI_LOG_MODES.has(metadata.mode)) sanitized.mode = metadata.mode;
+  if (SAFE_AI_ERROR_CODES.has(metadata.code)) sanitized.code = metadata.code;
+
+  return sanitized;
+}
+
+function getResponseLogMetadata(response, metadata = {}) {
+  return sanitizeAiLogMetadata({
+    ...metadata,
+    status: response?.status,
+    ...getCorrelationMetadata(response?.headers),
+  });
+}
+
+/**
+ * Extract only diagnostics that are safe to log or return as correlation
+ * metadata. Error messages, stacks, causes, response bodies, URLs, and
+ * arbitrary properties are intentionally never copied.
+ */
+export function getSafeAiErrorMetadata(error, depth = 0) {
+  const responseMetadata = sanitizeAiLogMetadata({
+    status: error?.response?.status,
+    ...getCorrelationMetadata(error?.response?.headers),
+  });
+  const directMetadata = sanitizeAiLogMetadata({
+    status: error?.status,
+    code: error?.code,
+    requestId: error?.requestId,
+    correlationId: error?.correlationId,
+    traceId: error?.traceId,
+  });
+  const causeMetadata =
+    depth < 1 && error?.cause && error.cause !== error
+      ? getSafeAiErrorMetadata(error.cause, depth + 1)
+      : {};
+
+  return sanitizeAiLogMetadata({
+    ...causeMetadata,
+    ...responseMetadata,
+    ...directMetadata,
+  });
+}
+
+/**
+ * Emit one structured, allowlisted AI diagnostic event. The final allowlist
+ * drops every field that could carry an error message, body, URL, or stack.
+ */
+export function logAiGuidanceEvent(level, event, metadata = {}) {
+  const safeMetadata = sanitizeAiLogMetadata(metadata);
+  const safeEvent = SAFE_AI_LOG_EVENTS.has(event) ? event : 'unknown_event';
+  const message = `[aiGuidance] ${safeEvent}`;
+
+  if (level === 'warn') {
+    console.warn(message, safeMetadata);
+  } else {
+    console.error(message, safeMetadata);
+  }
+
+  return safeMetadata;
+}
 
 function resolveRetryDelayMs(retryAfter, remainingMs, nowMs = Date.now()) {
   const safeRemainingMs = Math.max(remainingMs, 0);
@@ -137,15 +281,15 @@ async function callEduAI({
   const model = modelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
 
   if (!cookie) {
-    console.error("[aiGuidance] Missing session cookie for EduAI call");
-    const error = new Error("Session cookie is required for EduAI calls");
+    logAiGuidanceEvent('error', 'missing_session_cookie');
+    const error = new Error('Session cookie is required for EduAI calls');
     error.status = 401;
     throw error;
   }
 
   if (!userApiKey) {
-    console.error("[aiGuidance] Missing user API key");
-    const error = new Error("API key is required");
+    logAiGuidanceEvent('error', 'missing_user_api_key');
+    const error = new Error('API key is required');
     error.status = 400;
     throw error;
   }
@@ -154,8 +298,8 @@ async function callEduAI({
   // the provider half indexes into the apiKeys map sent to EduAI.
   const [provider] = model.split(":");
   if (!provider) {
-    console.error("[aiGuidance] Invalid model ID format:", model);
-    throw new Error("Invalid model ID format");
+    logAiGuidanceEvent('error', 'invalid_model_id');
+    throw new Error('Invalid model ID format');
   }
 
   const userMessageId = messageId || randomUUID();
@@ -182,8 +326,10 @@ async function callEduAI({
     ...(trimmedCourseCode ? { courseCode: trimmedCourseCode } : {}),
   };
 
+  const callStartedAt = Date.now();
+
   try {
-    const deadline = Date.now() + EDUAI_CALL_TIMEOUT_MS;
+    const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
     const requestSignal = signal
@@ -191,6 +337,7 @@ async function callEduAI({
       : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
 
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
+      const attemptStartedAt = Date.now();
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -203,15 +350,16 @@ async function callEduAI({
 
       if (!response.ok) {
         const errorText = await response.text();
+        const responseMetadata = getResponseLogMetadata(response, {
+          attempt,
+          maxAttempts: EDUAI_MAX_ATTEMPTS,
+          durationMs: Date.now() - attemptStartedAt,
+        });
         const shouldRetry =
           isRetryableEduAiResponse(response.status, errorText) && attempt < EDUAI_MAX_ATTEMPTS;
 
         if (shouldRetry) {
-          console.warn(
-            "[aiGuidance] Transient API error; retrying once:",
-            response.status,
-            errorText,
-          );
+          logAiGuidanceEvent('warn', 'upstream_retry', responseMetadata);
           const nowMs = Date.now();
           const remainingMs = Math.max(deadline - nowMs, 0);
           const retryDelayMs = resolveRetryDelayMs(
@@ -227,22 +375,36 @@ async function callEduAI({
           continue;
         }
 
-        console.error("[aiGuidance] API error:", response.status, errorText);
+        logAiGuidanceEvent('error', 'upstream_http_error', responseMetadata);
         const error = new Error(eduAiErrorMessage(response.status, errorText));
         error.status = response.status;
+        error.requestId = responseMetadata.requestId;
+        error.correlationId = responseMetadata.correlationId;
+        error.traceId = responseMetadata.traceId;
         throw error;
       }
 
       const data = await response.json();
-      if (data.content && typeof data.content === "string") {
+      if (data?.content && typeof data.content === 'string') {
         return {
           message: data.content,
           chatId: data.chatId || chatId || null,
         };
       }
 
-      console.error("[aiGuidance] Unexpected response format:", data);
-      throw new Error("Invalid response format from AI API");
+      const responseMetadata = getResponseLogMetadata(response, {
+        attempt,
+        maxAttempts: EDUAI_MAX_ATTEMPTS,
+        durationMs: Date.now() - attemptStartedAt,
+        responseType: getValueType(data),
+        contentType: getValueType(data?.content),
+      });
+      logAiGuidanceEvent('error', 'unexpected_response_format', responseMetadata);
+      const error = new Error('Invalid response format from AI API');
+      error.requestId = responseMetadata.requestId;
+      error.correlationId = responseMetadata.correlationId;
+      error.traceId = responseMetadata.traceId;
+      throw error;
     }
   } catch (error) {
     if (signal?.aborted) {
@@ -252,14 +414,21 @@ async function callEduAI({
       // instead of mapping it to a 504.
       throw error;
     }
-    if (error.name === "TimeoutError" || error.name === "AbortError") {
-      console.error("[aiGuidance] EduAI call timed out after", EDUAI_CALL_TIMEOUT_MS, "ms");
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      logAiGuidanceEvent('error', 'call_timed_out', {
+        timeoutMs: EDUAI_CALL_TIMEOUT_MS,
+        durationMs: Date.now() - callStartedAt,
+        ...getSafeAiErrorMetadata(error),
+      });
       const timeoutError = new Error(TIMEOUT_MESSAGE);
       timeoutError.status = 504;
       timeoutError.code = "TIMEOUT";
       throw timeoutError;
     }
-    console.error("[aiGuidance] Error calling eduAI:", error);
+    logAiGuidanceEvent('error', 'call_failed', {
+      durationMs: Date.now() - callStartedAt,
+      ...getSafeAiErrorMetadata(error),
+    });
     throw error;
   }
 }
@@ -380,7 +549,11 @@ RESPOND WITH ONLY VALID JSON.`;
     return { ...second.verdict, parseFailed: false, raw: second.raw };
   }
 
-  console.error("[supervisor] Failed to parse verdict after retry:", second.raw, second.parseError);
+  logAiGuidanceEvent('error', 'supervisor_verdict_parse_failed', {
+    attempt: 2,
+    maxAttempts: 2,
+    ...getSafeAiErrorMetadata(second.parseError),
+  });
   return {
     approved: false,
     reason: "Supervisor response invalid after retry",
@@ -643,7 +816,11 @@ async function supervisedGenerate(generateFn, context) {
       // `[SUPERVISOR FEEDBACK: ...]` to the user message.
       context.lastFeedback = verdict.feedbackToTutor;
     } catch (supervisorError) {
-      console.error("[supervisor] Error during review:", supervisorError);
+      logAiGuidanceEvent(
+        'error',
+        'supervisor_review_failed',
+        getSafeAiErrorMetadata(supervisorError),
+      );
       throw new Error(SUPERVISOR_ERROR_MESSAGE, { cause: supervisorError });
     }
   }
@@ -791,17 +968,16 @@ export async function generateTeachResponse({
       signal,
     });
   } catch (error) {
-    console.error("[aiGuidance] Failed to generate teach response:", error);
+    logAiGuidanceEvent('error', 'teach_response_failed', getSafeAiErrorMetadata(error));
     return {
-      message: error.message || "AI study buddy not available right now. Please try again later.",
+      message: GENERATION_ERROR_MESSAGE,
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
-        finalOutcome: "error",
-        finalResponse:
-          error.message || "AI study buddy not available right now. Please try again later.",
+        finalOutcome: 'error',
+        finalResponse: GENERATION_ERROR_MESSAGE,
         iterationCount: 0,
       },
     };
@@ -869,17 +1045,16 @@ export async function generateGuideResponse({
       signal,
     });
   } catch (error) {
-    console.error("[aiGuidance] Failed to generate guide response:", error);
+    logAiGuidanceEvent('error', 'guide_response_failed', getSafeAiErrorMetadata(error));
     return {
-      message: error.message || "AI study buddy not available right now. Please try again later.",
+      message: GENERATION_ERROR_MESSAGE,
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
-        finalOutcome: "error",
-        finalResponse:
-          error.message || "AI study buddy not available right now. Please try again later.",
+        finalOutcome: 'error',
+        finalResponse: GENERATION_ERROR_MESSAGE,
         iterationCount: 0,
       },
     };
@@ -949,17 +1124,16 @@ export async function generateCustomResponse({
       signal,
     });
   } catch (error) {
-    console.error("[aiGuidance] Failed to generate custom response:", error);
+    logAiGuidanceEvent('error', 'custom_response_failed', getSafeAiErrorMetadata(error));
     return {
-      message: error.message || "AI study buddy not available right now. Please try again later.",
+      message: GENERATION_ERROR_MESSAGE,
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
-        finalOutcome: "error",
-        finalResponse:
-          error.message || "AI study buddy not available right now. Please try again later.",
+        finalOutcome: 'error',
+        finalResponse: GENERATION_ERROR_MESSAGE,
         iterationCount: 0,
       },
     };

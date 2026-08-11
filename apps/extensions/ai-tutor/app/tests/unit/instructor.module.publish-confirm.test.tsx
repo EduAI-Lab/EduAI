@@ -5,17 +5,17 @@ import type { Route } from "../../routes/+types/instructor.module";
 
 const mockPublishLesson = vi
   .fn()
-  .mockResolvedValue({ id: 20, title: "Lesson 1", isPublished: true });
+  .mockResolvedValue({ id: 20, title: 'Lesson 1', isPublished: true });
 const mockUnpublishLesson = vi
   .fn()
-  .mockResolvedValue({ id: 20, title: "Lesson 1", isPublished: false });
+  .mockResolvedValue({ id: 20, title: 'Lesson 1', isPublished: false });
 
 vi.mock("~/lib/api", () => ({
   default: {
     moduleById: vi
       .fn()
-      .mockResolvedValue({ id: 5, title: "Module 1", courseOfferingId: 42, isPublished: true }),
-    courseById: vi.fn().mockResolvedValue({ id: 42, title: "Test Course", isPublished: true }),
+      .mockResolvedValue({ id: 5, title: 'Module 1', courseOfferingId: 42, isPublished: true }),
+    courseById: vi.fn().mockResolvedValue({ id: 42, title: 'Test Course', isPublished: true }),
     lessonsForModule: vi.fn().mockResolvedValue([]),
     modulesForCourse: vi.fn().mockResolvedValue([]),
     publishLesson: (...args: unknown[]) => mockPublishLesson(...args),
@@ -23,9 +23,9 @@ vi.mock("~/lib/api", () => ({
   },
 }));
 
-vi.mock("~/hooks/useLocalUser", () => ({
+vi.mock('~/hooks/useLocalUser', () => ({
   useLocalUser: () => ({
-    user: { id: "u1", name: "Instructor", role: "INSTRUCTOR", authorizedUnits: [] },
+    user: { id: 'u1', name: 'Instructor', role: 'INSTRUCTOR', authorizedUnits: [] },
   }),
 }));
 
@@ -76,14 +76,14 @@ import InstructorModuleLessons from "~/routes/instructor.module";
 
 const module_ = {
   id: 5,
-  title: "Module 1",
-  description: "",
+  title: 'Module 1',
+  description: '',
   position: 0,
   courseOfferingId: 42,
   isPublished: true,
 };
-const course = { id: 42, title: "Test Course", code: "COSC 101", isPublished: true };
-const lesson = { id: 20, title: "Lesson 1", isPublished: false, contentMd: "" };
+const course = { id: 42, title: 'Test Course', code: 'COSC 101', isPublished: true };
+const lesson = { id: 20, title: 'Lesson 1', isPublished: false, contentMd: '' };
 
 function wrap(lessons = [lesson]) {
   const props = {
@@ -95,7 +95,7 @@ function wrap(lessons = [lesson]) {
       moduleOrder: 1,
       page: 1,
       pageSize: 25,
-      search: "",
+      search: '',
     },
   } as unknown as Route.ComponentProps;
   return render(

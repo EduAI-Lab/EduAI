@@ -1,170 +1,116 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockScheduledTask = () => ({ stop: vi.fn(), start: vi.fn() });
+const scheduleMock = vi.hoisted(() => vi.fn());
+const reapExpiredCronRunsMock = vi.hoisted(() => vi.fn());
+const startCronRunMock = vi.hoisted(() => vi.fn());
+const triggerCronJobAsyncMock = vi.hoisted(() => vi.fn());
+const overrideFindManyMock = vi.hoisted(() => vi.fn());
 
-const mockCronSchedule = vi.hoisted(() => vi.fn());
 vi.mock("node-cron", () => ({
-  default: { schedule: mockCronSchedule },
+  default: { schedule: scheduleMock },
 }));
 
-const mockOverrideFindMany = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/db.cron-jobs.server", () => ({
+  KNOWN_CRON_JOBS: [
+    {
+      name: "backup-nightly",
+      schedule: "0 2 * * *",
+      script: "backup-nightly.sh",
+    },
+    {
+      name: "external-job",
+      schedule: "0 3 * * *",
+      script: "",
+      triggerEnabled: false,
+    },
+  ],
+  reapExpiredCronRuns: reapExpiredCronRunsMock,
+  startCronRun: startCronRunMock,
+  triggerCronJobAsync: triggerCronJobAsyncMock,
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    cronJobScheduleOverride: { findMany: mockOverrideFindMany },
+    cronJobScheduleOverride: { findMany: overrideFindManyMock },
   },
 }));
 
-const mockStartCronRun = vi.hoisted(() => vi.fn());
-const mockTriggerCronJobAsync = vi.hoisted(() => vi.fn());
-const mockDispatchManualCronRuns = vi.hoisted(() => vi.fn());
-const mockKnownCronJobs = vi.hoisted(() => [
-  {
-    name: "backup-nightly",
-    description: "Full pg_dump",
-    schedule: "0 2 * * *",
-    scheduleLabel: "Daily at 02:00 UTC",
-    script: "backup-nightly.sh",
-  },
-  {
-    name: "notify-api-key-expiry",
-    description: "Email users whose API keys expire soon",
-    schedule: "0 4 * * *",
-    scheduleLabel: "Daily at 04:00 UTC",
-    script: "Core handler",
-    execution: "CORE" as const,
-  },
-  {
-    name: "ai-tutor-reconcile",
-    description: "External extension job",
-    schedule: "0 2 * * *",
-    scheduleLabel: "Daily at 02:00 UTC (AI Tutor server)",
-    script: "",
-    triggerEnabled: false,
-  },
-]);
-vi.mock("~/lib/db.cron-jobs.server", () => ({
-  KNOWN_CRON_JOBS: mockKnownCronJobs,
-  startCronRun: mockStartCronRun,
-  triggerCronJobAsync: mockTriggerCronJobAsync,
-  dispatchManualCronRuns: mockDispatchManualCronRuns,
-}));
-
-const { refreshCronSchedules, stopCronScheduler } = await import("~/lib/cron-scheduler.server");
+const { ensureCronSchedulerRunning } = await import("~/lib/cron-scheduler.server");
 
 beforeEach(() => {
   vi.clearAllMocks();
-  globalThis.__cronTasks = undefined;
-  globalThis.__cronTaskSchedules = undefined;
-  mockOverrideFindMany.mockResolvedValue([]);
-  mockCronSchedule.mockImplementation(() => mockScheduledTask());
-  mockStartCronRun.mockResolvedValue({ runId: "run-1", created: true });
-  mockDispatchManualCronRuns.mockResolvedValue(undefined);
+  scheduleMock.mockReset();
+  reapExpiredCronRunsMock.mockReset().mockResolvedValue(0);
+  startCronRunMock.mockReset().mockResolvedValue({
+    runId: "run-1",
+    created: true,
+    leaseOwner: "owner-1",
+  });
+  triggerCronJobAsyncMock.mockReset();
+  overrideFindManyMock.mockReset().mockResolvedValue([]);
+  delete globalThis.__cronSchedulerInitPromise;
+  globalThis.__cronTasks?.forEach((task) => task.stop());
+  delete globalThis.__cronTasks;
 });
 
-describe("refreshCronSchedules", () => {
-  it("schedules every job that has a script or runs inside Core, skipping external extension jobs", async () => {
-    await refreshCronSchedules();
-
-    // backup-nightly (script) + notify-api-key-expiry (CORE) = 2 scheduled tasks.
-    // ai-tutor-reconcile has no script and is not CORE, so it's skipped.
-    expect(mockCronSchedule).toHaveBeenCalledTimes(2);
-    expect(mockCronSchedule).toHaveBeenCalledWith("0 2 * * *", expect.any(Function), {
-      timezone: "UTC",
-    });
-    expect(mockCronSchedule).toHaveBeenCalledWith("0 4 * * *", expect.any(Function), {
-      timezone: "UTC",
-    });
+describe("cron scheduler initialization", () => {
+  it("has no import-time scheduler or database side effects", () => {
+    expect(reapExpiredCronRunsMock).not.toHaveBeenCalled();
+    expect(overrideFindManyMock).not.toHaveBeenCalled();
+    expect(scheduleMock).not.toHaveBeenCalled();
   });
 
-  it("applies a database schedule override instead of the job's default schedule", async () => {
-    mockOverrideFindMany.mockResolvedValue([{ jobName: "backup-nightly", schedule: "0 5 * * *" }]);
+  it("shares one initialization, reaps expired leases, and schedules local jobs once", async () => {
+    scheduleMock.mockReturnValue({ stop: vi.fn() });
 
-    await refreshCronSchedules();
+    const first = ensureCronSchedulerRunning();
+    const second = ensureCronSchedulerRunning();
 
-    expect(mockCronSchedule).toHaveBeenCalledWith("0 5 * * *", expect.any(Function), {
-      timezone: "UTC",
-    });
-    expect(mockCronSchedule).not.toHaveBeenCalledWith("0 2 * * *", expect.any(Function), {
-      timezone: "UTC",
-    });
-  });
-
-  it("is idempotent — a second call with unchanged schedules does not re-schedule", async () => {
-    await refreshCronSchedules();
-    expect(mockCronSchedule).toHaveBeenCalledTimes(2);
-
-    mockCronSchedule.mockClear();
-    await refreshCronSchedules();
-
-    expect(mockCronSchedule).not.toHaveBeenCalled();
-  });
-
-  it("re-schedules a job when its schedule changes between calls", async () => {
-    await refreshCronSchedules();
-    mockCronSchedule.mockClear();
-
-    mockOverrideFindMany.mockResolvedValue([{ jobName: "backup-nightly", schedule: "0 6 * * *" }]);
-    await refreshCronSchedules();
-
-    expect(mockCronSchedule).toHaveBeenCalledTimes(1);
-    expect(mockCronSchedule).toHaveBeenCalledWith("0 6 * * *", expect.any(Function), {
-      timezone: "UTC",
-    });
-  });
-
-  it("continues scheduling remaining jobs when one job fails to schedule", async () => {
-    mockCronSchedule.mockImplementationOnce(() => {
-      throw new Error("bad cron expression");
-    });
-
-    await expect(refreshCronSchedules()).resolves.toBeUndefined();
-    // Both jobs were still attempted even though the first threw.
-    expect(mockCronSchedule).toHaveBeenCalledTimes(2);
-  });
-
-  it("invokes startCronRun with SCHEDULE source and triggers the job when the run is newly created", async () => {
-    await refreshCronSchedules();
-
-    const scheduledFn = mockCronSchedule.mock.calls[0][1] as () => void;
-    scheduledFn();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(mockStartCronRun).toHaveBeenCalledWith("backup-nightly", { source: "SCHEDULE" });
-    expect(mockTriggerCronJobAsync).toHaveBeenCalledWith(
-      "backup-nightly",
-      "backup-nightly.sh",
-      "run-1",
-      "SCRIPT",
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(reapExpiredCronRunsMock).toHaveBeenCalledOnce();
+    expect(overrideFindManyMock).toHaveBeenCalledOnce();
+    expect(scheduleMock).toHaveBeenCalledOnce();
+    expect(scheduleMock).toHaveBeenCalledWith(
+      "0 2 * * *",
+      expect.any(Function),
+      { timezone: "UTC" },
     );
   });
 
-  it("does not trigger the job when startCronRun reports the run was not newly created (already running)", async () => {
-    mockStartCronRun.mockResolvedValue({ runId: "run-1", created: false });
-    await refreshCronSchedules();
+  it("passes the acquired owner token to the spawned job", async () => {
+    let scheduledCallback: (() => void) | undefined;
+    scheduleMock.mockImplementation((_schedule, callback) => {
+      scheduledCallback = callback;
+      return { stop: vi.fn() };
+    });
 
-    const scheduledFn = mockCronSchedule.mock.calls[0][1] as () => void;
-    scheduledFn();
+    await ensureCronSchedulerRunning();
+    scheduledCallback?.();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mockTriggerCronJobAsync).not.toHaveBeenCalled();
+    expect(startCronRunMock).toHaveBeenCalledWith("backup-nightly");
+    expect(triggerCronJobAsyncMock).toHaveBeenCalledWith(
+      "backup-nightly",
+      "backup-nightly.sh",
+      "run-1",
+      "owner-1",
+    );
   });
-});
 
-describe("stopCronScheduler", () => {
-  it("stops and clears all scheduled tasks", async () => {
-    await refreshCronSchedules();
-    const task = mockCronSchedule.mock.results[0].value;
+  it("clears a rejected initialization so the process runtime can retry", async () => {
+    reapExpiredCronRunsMock
+      .mockRejectedValueOnce(new Error("database unavailable"))
+      .mockResolvedValueOnce(0);
+    scheduleMock.mockReturnValue({ stop: vi.fn() });
 
-    stopCronScheduler();
+    await expect(ensureCronSchedulerRunning()).rejects.toThrow("database unavailable");
+    await Promise.resolve();
+    await expect(ensureCronSchedulerRunning()).resolves.toBeUndefined();
 
-    expect(task.stop).toHaveBeenCalled();
-
-    // After stopping, refreshCronSchedules should re-schedule from scratch.
-    mockCronSchedule.mockClear();
-    await refreshCronSchedules();
-    expect(mockCronSchedule).toHaveBeenCalledTimes(2);
+    expect(reapExpiredCronRunsMock).toHaveBeenCalledTimes(2);
+    expect(scheduleMock).toHaveBeenCalledOnce();
   });
 });

@@ -5,6 +5,10 @@
 import axios from "axios";
 import { config } from "../config/settings.js";
 import { logger } from "../utils/logger.js";
+import {
+  safeRequestLogFields,
+  toStableUpstreamError,
+} from "../utils/safeLogging.js";
 import { campusProbeParams } from "./modelCatalog.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
@@ -23,6 +27,7 @@ const CLOUD_PROBE_MODELS = {
   openai: "openai:gpt-4o-mini",
   deepseek: "deepseek:deepseek-chat",
   anthropic: "anthropic:claude-3-5-haiku-latest",
+  opencode: "opencode:deepseek-v4-flash",
 };
 
 /** Strip ```json ... ``` / ``` ... ``` fences if the model wrapped its answer. */
@@ -112,14 +117,7 @@ class EduAIService {
     this.baseURL = config.eduaiApiUrl;
     this.apiKey = config.eduaiApiKey;
 
-    logger.info(
-      {
-        baseURL: this.baseURL,
-        hasApiKey: !!this.apiKey,
-        apiKeyLength: this.apiKey ? this.apiKey.length : 0,
-      },
-      "EduAI Service initialized",
-    );
+    logger.info("EduAI Service initialized");
 
     if (!this.apiKey) {
       logger.warn("EduAI API key not configured. EduAI features will be disabled.");
@@ -263,16 +261,8 @@ class EduAIService {
       const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
       chatStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} completion request starting`, {
-        url: `${this.baseURL}/api/completion`,
         timeoutMs,
-        model: requestPayload.model,
-        courseId: requestPayload.courseId ?? null,
-        courseCode: requestPayload.courseCode ?? null,
         messageCount: (requestPayload.messages || []).length,
-        hasSystemPrompt: Boolean(requestPayload.systemPrompt),
-        systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
-        userPromptLength:
-          (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
       const response = await axios.post(`${this.baseURL}/api/completion`, requestPayload, {
@@ -285,81 +275,29 @@ class EduAIService {
 
       const elapsedMs = Date.now() - chatStartMs;
       const responseData = response.data;
-      const responseKeys =
-        responseData && typeof responseData === "object" ? Object.keys(responseData) : [];
-      const contentPreview =
-        responseData?.content != null
-          ? String(responseData.content).slice(0, 200)
-          : responseData?.message != null
-            ? String(responseData.message).slice(0, 200)
-            : "(no content/message)";
-      console.log(`${DEBUG_PREFIX} chat response received`, {
-        elapsedMs,
-        status: response.status,
-        responseKeys,
-        contentLength: responseData?.content?.length ?? responseData?.message?.length ?? "n/a",
-        contentPreview: contentPreview.length > 100 ? contentPreview + "..." : contentPreview,
-      });
+      console.log(
+        `${DEBUG_PREFIX} chat response received`,
+        safeRequestLogFields(response, { elapsedMs }),
+      );
 
       return responseData;
     } catch (error) {
+      const elapsedMs = typeof chatStartMs === "number" ? Date.now() - chatStartMs : undefined;
       if (error.response) {
-        // API returned an error response
-        const errorMessage =
-          error.response.data?.error || error.response.data?.message || error.response.statusText;
-        const statusCode = error.response.status;
-        console.error("EduAI API Error:", {
-          status: statusCode,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          url: `${this.baseURL}/api/completion`,
-          headers: error.response.headers,
-        });
-        throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
+        console.error(
+          `${DEBUG_PREFIX} completion response failed`,
+          safeRequestLogFields(error, { elapsedMs }),
+        );
+        throw toStableUpstreamError(error);
       } else if (error.request) {
-        // Request was made but no response received – log enough to tell real timeout from other failures
-        const elapsedMs = typeof chatStartMs === "number" ? Date.now() - chatStartMs : null;
-        console.error(`${DEBUG_PREFIX} chat request failed (no response)`, {
-          code: error.code,
-          message: error.message,
-          elapsedMs,
-          configuredTimeoutMs: error.config?.timeout,
-          isECONNABORTED: error.code === "ECONNABORTED",
-          messageIncludesTimeout: (error.message || "").toLowerCase().includes("timeout"),
-          url: error.config?.url,
-          baseURL: error.config?.baseURL,
-        });
-        console.error("EduAI Request Error (full):", {
-          request: error.request,
-          message: error.message,
-          code: error.code,
-          config: {
-            url: error.config?.url,
-            method: error.config?.method,
-            timeout: error.config?.timeout,
-          },
-        });
-
-        // Provide more specific error messages based on error code
-        const configuredTimeoutSec =
-          error.config?.timeout != null ? Math.round(error.config.timeout / 1000) : 60;
-        let errorMessage = "EduAI API request failed: No response received";
-        if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
-          errorMessage = `EduAI API request timed out after ${configuredTimeoutSec} seconds. The server may be slow or overloaded. Please try again.`;
-        } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
-          errorMessage = `EduAI API server is unreachable. Please check your network connection and verify the EduAI service URL (${this.baseURL}) is correct.`;
-        } else if (error.code === "ECONNRESET") {
-          errorMessage =
-            "EduAI API connection was reset. The server may have closed the connection. Please try again.";
-        } else if (error.code) {
-          errorMessage = `EduAI API request failed: ${error.code}. Please check your network connection and try again.`;
-        }
-
-        throw new Error(errorMessage);
+        console.error(
+          `${DEBUG_PREFIX} completion request failed`,
+          safeRequestLogFields(error, { elapsedMs }),
+        );
+        throw toStableUpstreamError(error);
       } else {
-        // Something else happened
-        console.error("EduAI Error:", error.message);
-        throw new Error(`EduAI API error: ${error.message}`);
+        console.error(`${DEBUG_PREFIX} completion setup failed`, {});
+        throw toStableUpstreamError(error);
       }
     }
   }
@@ -458,14 +396,7 @@ OUTPUT RULES (mandatory):
     try {
       const genStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} generateQuestions calling chat`, {
-        courseId: courseId ?? null,
-        courseCode: courseCode ?? null,
-        model,
-        numQuestions,
-        mcqRequiredChoiceCount: mcqCountEnforced ? mcqRequiredChoiceCount : undefined,
-        systemPromptLength: systemPrompt.length,
-        userPromptLength: userPrompt.length,
-        usingOverrides: Boolean(systemPromptOverride || userPromptOverride),
+        count: numQuestions,
       });
 
       // Extraction/generation can take longer than default 60s (large prompts, multiple questions)
@@ -484,18 +415,8 @@ OUTPUT RULES (mandatory):
       });
 
       const genElapsedMs = Date.now() - genStartMs;
-      const rawContent = response?.content ?? response?.message ?? response;
-      const rawType = rawContent == null ? "null" : typeof rawContent;
-      const rawLength = typeof rawContent === "string" ? rawContent.length : "n/a";
       console.log(`${DEBUG_PREFIX} generateQuestions chat returned`, {
-        genElapsedMs,
-        responseKeys: response && typeof response === "object" ? Object.keys(response) : [],
-        rawContentType: rawType,
-        rawContentLength: rawLength,
-        rawContentPreview:
-          typeof rawContent === "string"
-            ? rawContent.slice(0, 150) + (rawContent.length > 150 ? "..." : "")
-            : String(rawContent).slice(0, 150),
+        elapsedMs: genElapsedMs,
       });
 
       // Parse the response (EduAI may return string JSON, fenced markdown, or prose + JSON)
@@ -504,19 +425,15 @@ OUTPUT RULES (mandatory):
       if (rawPayload !== null && typeof rawPayload === "object") {
         parsedResponse = rawPayload;
         console.log(`${DEBUG_PREFIX} generateQuestions using pre-parsed response`, {
-          isArray: Array.isArray(rawPayload),
-          keys: Array.isArray(rawPayload) ? "array" : Object.keys(rawPayload || {}),
+          count: Array.isArray(rawPayload) ? rawPayload.length : 1,
         });
       } else {
         const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload ?? "");
         parsedResponse = parseQuestionsPayloadFromText(str);
         if (parsedResponse == null) {
-          console.warn(
-            `${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`,
-            {
-              rawPreview: str.slice(0, 300),
-            },
-          );
+          console.warn(`${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`, {
+            attemptCount: 1,
+          });
           const repairSystem = `${systemPrompt}
 
 CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}). No markdown, no code fences, no prose before or after the JSON.`;
@@ -543,9 +460,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           }
           if (parsedResponse == null) {
             console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed after retry`, {
-              rawType: typeof rawPayload,
-              rawPreview: str.slice(0, 300),
-              repairPreview: String(repairRaw ?? "").slice(0, 300),
+              attemptCount: 2,
             });
             throw new Error(
               "Could not parse response from EduAI (expected a JSON array of questions)",
@@ -555,9 +470,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       }
 
       // Check if the response is an error object
-      if (parsedResponse && typeof parsedResponse === "object" && parsedResponse.error === true) {
-        const errorReason = parsedResponse.reason || "AI was unable to generate the question";
-        throw new Error(errorReason);
+      if (parsedResponse && typeof parsedResponse === 'object' && parsedResponse.error === true) {
+        throw new Error("AI was unable to generate questions");
       }
 
       // Accept raw array or unwrap from common wrapper keys (EduAI/LLM may return { questions: [...] } or { data: [...] })
@@ -633,10 +547,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       };
 
       const normalizedQuestions = validQuestions.map((question, index) => {
-        console.log(`${DEBUG_PREFIX} raw question ${index + 1}`, {
-          type: question.type,
-          choicesLength: Array.isArray(question.choices) ? question.choices.length : "not array",
-          contentLength: question.content?.length ?? 0,
+        console.log(`${DEBUG_PREFIX} normalizing question`, {
+          questionIndex: index + 1,
+          choiceCount: Array.isArray(question.choices) ? question.choices.length : 0,
         });
 
         let content = question.content.trim();
@@ -771,12 +684,15 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       });
       return normalizedQuestions;
     } catch (error) {
-      console.error(`${DEBUG_PREFIX} generateQuestions failed`, {
-        message: error.message,
-        name: error.name,
-        code: error?.code,
-      });
-      throw new Error(`EduAI question generation failed: ${error.message}`);
+      console.error(
+        `${DEBUG_PREFIX} generateQuestions failed`,
+        safeRequestLogFields(error),
+      );
+      const stableError = new Error("EduAI question generation failed");
+      stableError.name = "EduAIQuestionGenerationError";
+      const statusCode = error?.statusCode;
+      if (Number.isInteger(statusCode)) stableError.statusCode = statusCode;
+      throw stableError;
     }
   }
 
@@ -816,24 +732,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         return !ignored.some((k) => code === k || id === k);
       });
     } catch (error) {
-      if (error.response) {
-        const errorMessage =
-          error.response.data?.error || error.response.data?.message || error.response.statusText;
-        const statusCode = error.response.status;
-        console.error("EduAI courses API error:", {
-          status: statusCode,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          url,
-        });
-        throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
-      } else if (error.request) {
-        console.error("EduAI courses request error:", error.request);
-        throw new Error("EduAI API request failed: No response received");
-      } else {
-        console.error("EduAI courses error:", error.message);
-        throw new Error(`EduAI API error: ${error.message}`);
-      }
+      console.error(
+        `${DEBUG_PREFIX} courses request failed`,
+        safeRequestLogFields(error),
+      );
+      throw toStableUpstreamError(error);
     }
   }
 
@@ -862,24 +765,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
 
       return response.data;
     } catch (error) {
-      if (error.response) {
-        const errorMessage =
-          error.response.data?.error || error.response.data?.message || error.response.statusText;
-        const statusCode = error.response.status;
-        console.error("EduAI topics API error:", {
-          status: statusCode,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          url,
-        });
-        throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
-      } else if (error.request) {
-        console.error("EduAI topics request error:", error.request);
-        throw new Error("EduAI API request failed: No response received");
-      } else {
-        console.error("EduAI topics error:", error.message);
-        throw new Error(`EduAI API error: ${error.message}`);
-      }
+      console.error(
+        `${DEBUG_PREFIX} topics request failed`,
+        safeRequestLogFields(error),
+      );
+      throw toStableUpstreamError(error);
     }
   }
 
@@ -919,25 +809,12 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       }
     }
 
-    if (lastError?.response) {
-      const errorMessage =
-        lastError.response.data?.error ||
-        lastError.response.data?.message ||
-        lastError.response.statusText;
-      const statusCode = lastError.response.status;
-      console.error("EduAI AI models API error:", {
-        status: statusCode,
-        statusText: lastError.response.statusText,
-        data: lastError.response.data,
-        url,
-      });
-      throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
-    } else if (lastError?.request) {
-      console.error("EduAI AI models request error:", lastError.request);
-      throw new Error("EduAI API request failed: No response received");
-    } else if (lastError) {
-      console.error("EduAI AI models error:", lastError.message);
-      throw new Error(`EduAI API error: ${lastError.message}`);
+    if (lastError) {
+      console.error(
+        `${DEBUG_PREFIX} AI models request failed`,
+        safeRequestLogFields(lastError, { attemptCount: headerVariants.length }),
+      );
+      throw toStableUpstreamError(lastError);
     }
 
     throw new Error(
@@ -977,7 +854,10 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       try {
         campusModels = await this.listAIModels({ cookie });
       } catch (err) {
-        console.warn(`${DEBUG_PREFIX} campus model catalog unavailable for probe`, err.message);
+        console.warn(
+          `${DEBUG_PREFIX} campus model catalog unavailable for probe`,
+          safeRequestLogFields(err),
+        );
       }
     }
 
@@ -1005,17 +885,17 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         response: response,
       };
     } catch (error) {
-      if (error.message.includes("401") || error.message.includes("Unauthorized")) {
+      if (error.statusCode === 401) {
         return {
           success: false,
           error: "AI authentication failed — sign in via Core again",
         };
-      } else if (error.message.includes("403") || error.message.includes("Forbidden")) {
+      } else if (error.statusCode === 403) {
         return {
           success: false,
           error: "AI access forbidden for this session",
         };
-      } else if (error.message.includes("Invalid API key") || error.message.includes("test-key")) {
+      } else if (error.reasonCode === "PROVIDER_API_KEY_REQUIRED") {
         return {
           success: true,
           message: "EduAI API key is valid (provider API key test failed as expected)",
@@ -1025,8 +905,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         return {
           success: false,
           provider,
-          error: `API key test failed: ${error.message}`,
-          statusCode: error.response?.status,
+          error: "API key test failed",
+          statusCode: error.statusCode,
         };
       }
     }

@@ -1,6 +1,7 @@
-import { useSyncExternalStore, useCallback } from "react";
-import type { UserProviderSettings } from "~/lib/ai/provider-types";
-import { LOCAL_INFERENCE_PROVIDERS } from "~/lib/ai/provider-types";
+import { useSyncExternalStore, useCallback } from 'react';
+import { useCurrentUserId } from '~/contexts/current-user';
+import type { UserProviderSettings } from '~/lib/ai/provider-types';
+import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/provider-types';
 
 /**
  * Sentinel stored in the client-side state when the real key lives in the DB.
@@ -44,6 +45,8 @@ interface ApiKeysStore {
 
 let storeState: ApiKeysStore = { data: {}, isLoading: true };
 let fetchInitiated = false;
+let storeOwnerId: string | null = null;
+let loadGeneration = 0;
 const listeners = new Set<() => void>();
 
 function emitChange() {
@@ -55,10 +58,31 @@ function setState(next: ApiKeysStore) {
   emitChange();
 }
 
-// One-time fetch on the first component mount.
-function ensureLoaded() {
-  if (fetchInitiated || typeof window === "undefined") return;
+function normalizeOwnerId(userId: string | null): string {
+  return userId?.trim() || '__anonymous__';
+}
+
+// Load once per authenticated account, not once per JavaScript runtime. Core
+// uses client-side logout/login navigation, so the same module can serve two
+// different users without a document reload.
+function ensureLoaded(userId: string | null) {
+  if (typeof window === 'undefined') return;
+
+  const ownerId = normalizeOwnerId(userId);
+  if (storeOwnerId !== ownerId) {
+    storeOwnerId = ownerId;
+    fetchInitiated = false;
+    loadGeneration += 1;
+    storeState = { data: {}, isLoading: true };
+  }
+
+  if (fetchInitiated) return;
   fetchInitiated = true;
+  const generation = loadGeneration;
+
+  // The old key was global plaintext with no owner metadata. It cannot be
+  // safely attributed to the current account, so never upload or reuse it.
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
 
   fetch("/api/user-provider-settings", { credentials: "include" })
     .then((r) => {
@@ -73,85 +97,14 @@ function ensureLoaded() {
       return r.json() as Promise<ServerRow[]>;
     })
     .then((rows) => {
-      if (rows === null) return;
+      if (rows === null || storeOwnerId !== ownerId || loadGeneration !== generation) return;
       const data = rowsToSettings(rows);
-      const configuredProviders = new Set(rows.map((row) => row.providerName));
-
-      // Migrate any legacy localStorage key that doesn't already have a DB
-      // row, rather than skipping migration entirely once any row exists.
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (raw) {
-        try {
-          const localKeys = JSON.parse(raw) as UserProviderSettings;
-          const toMigrate = Object.fromEntries(
-            Object.entries(localKeys).filter(
-              ([providerName, v]) => v.isEnabled && !configuredProviders.has(providerName),
-            ),
-          );
-          if (Object.keys(toMigrate).length > 0) {
-            setState({ data: { ...data, ...toMigrate }, isLoading: false });
-            migrateFromLocalStorage(localKeys, toMigrate);
-            return;
-          }
-        } catch {
-          // ignore parse errors — fall through to server state
-        }
-      }
-
       setState({ data, isLoading: false });
     })
     .catch(() => {
-      // Server unreachable: fall back to localStorage so offline devs aren't blocked.
-      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
-      try {
-        const data = raw ? (JSON.parse(raw) as UserProviderSettings) : {};
-        setState({ data, isLoading: false });
-      } catch {
-        setState({ data: {}, isLoading: false });
-      }
+      if (storeOwnerId !== ownerId || loadGeneration !== generation) return;
+      setState({ data: {}, isLoading: false });
     });
-}
-
-async function migrateFromLocalStorage(
-  allLocalKeys: UserProviderSettings,
-  toMigrate: UserProviderSettings,
-): Promise<void> {
-  const entries = Object.entries(toMigrate);
-  const results = await Promise.allSettled(
-    entries.map(([providerName, settings]) =>
-      fetch("/api/user-provider-settings", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          providerName,
-          isEnabled: settings.isEnabled,
-          apiKey: settings.apiKey,
-          baseUrl: settings.baseUrl,
-        }),
-      }).then((r) => {
-        if (!r.ok) throw new Error(`Migration failed for ${providerName}: ${r.status}`);
-      }),
-    ),
-  );
-
-  // Only drop the legacy keys that actually persisted to the server; keep
-  // the rest in localStorage so a failed write doesn't permanently lose the
-  // user's key.
-  const migratedProviders = new Set(
-    entries
-      .filter((_, i) => results[i].status === "fulfilled")
-      .map(([providerName]) => providerName),
-  );
-  const remaining = Object.fromEntries(
-    Object.entries(allLocalKeys).filter(([providerName]) => !migratedProviders.has(providerName)),
-  );
-
-  if (Object.keys(remaining).length > 0) {
-    localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(remaining));
-  } else {
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -175,8 +128,10 @@ function optimisticDelete(providerName: string) {
 // Public hook
 // ---------------------------------------------------------------------------
 
-export function useApiKeys() {
-  ensureLoaded();
+export function useApiKeys(ownerIdOverride?: string | null) {
+  const contextualOwnerId = useCurrentUserId();
+  const ownerId = normalizeOwnerId(ownerIdOverride ?? contextualOwnerId);
+  ensureLoaded(ownerId);
 
   const store = useSyncExternalStore(
     (listener) => {
@@ -191,33 +146,62 @@ export function useApiKeys() {
   const isLoading = store.isLoading;
 
   const updateProviderSettings = useCallback(
-    (providerId: string, settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean }) => {
+    (
+      providerId: string,
+      settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean },
+    ) => {
+      const mutationOwnerId = ownerId;
+      const previous = storeState;
+
       // Optimistic: show change immediately.
       optimisticSet(providerId, {
         ...settings,
         apiKey: settings.apiKey ?? storeState.data[providerId]?.apiKey,
       });
 
-      fetch("/api/user-provider-settings", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+      void fetch('/api/user-provider-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerName: providerId, ...settings }),
-      }).catch(console.error);
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to save provider settings: ${response.status}`);
+          }
+          if (storeOwnerId === mutationOwnerId && settings.apiKey) {
+            optimisticSet(providerId, { apiKey: DB_STORED_KEY });
+          }
+        })
+        .catch((error) => {
+          if (storeOwnerId === mutationOwnerId) setState(previous);
+          console.error(error);
+        });
     },
-    [],
+    [ownerId],
   );
 
   const removeProviderSettings = useCallback((providerId: string) => {
+    const mutationOwnerId = ownerId;
+    const previous = storeState;
     optimisticDelete(providerId);
 
-    fetch("/api/user-provider-settings", {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
+    void fetch('/api/user-provider-settings', {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ providerName: providerId }),
-    }).catch(console.error);
-  }, []);
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to remove provider settings: ${response.status}`);
+        }
+      })
+      .catch((error) => {
+        if (storeOwnerId === mutationOwnerId) setState(previous);
+        console.error(error);
+      });
+  }, [ownerId]);
 
   const getValidApiKeys = useCallback((): UserProviderSettings => {
     const valid: UserProviderSettings = {};
@@ -266,5 +250,7 @@ export function useApiKeys() {
 export function __resetForTesting(): void {
   storeState = { data: {}, isLoading: true };
   fetchInitiated = false;
+  storeOwnerId = null;
+  loadGeneration = 0;
   listeners.clear();
 }

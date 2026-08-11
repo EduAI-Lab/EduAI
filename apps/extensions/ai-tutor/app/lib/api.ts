@@ -381,7 +381,7 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   if (callerSignal) {
     if (callerSignal.aborted) controller.abort(callerSignal.reason);
     else
-      callerSignal.addEventListener("abort", () => controller.abort(callerSignal.reason), {
+      callerSignal.addEventListener('abort', () => controller.abort(callerSignal.reason), {
         once: true,
       });
   }
@@ -463,7 +463,7 @@ export const api = {
     // #446: bound the session probe so a hung upstream can't strand the
     // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
     meInFlight = (
-      http("/api/me", { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>
+      http('/api/me', { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>
     ).finally(() => {
       meInFlight = null;
     });
@@ -972,10 +972,28 @@ export const api = {
    * session is already stale by the time logout is called.
    */
   logout: async () => {
-    await fetch(`${API_BASE}/api/logout`, {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => {});
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/api/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      throw new ApiNetworkError('Logout service unreachable');
+    }
+    if (!response.ok) {
+      let message = `Logout failed: ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: unknown };
+        if (typeof payload?.error === 'string' && payload.error.trim()) {
+          message = payload.error;
+        }
+      } catch {
+        // A status-bearing error is still actionable when the body is empty or malformed.
+      }
+      if (response.status === 504) throw new ApiTimeoutError(message);
+      throw new Error(message);
+    }
     return { ok: true } as const;
   },
 };

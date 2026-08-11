@@ -273,22 +273,24 @@ export const enrichQuestionRows = async (rows) => {
  * over the assembled set (#1044 export).
  */
 export const getQuestionsByUser = async (userId, options = {}) => {
-  const {
-    courseId,
-    questionBankId,
-    search,
-    types,
-    difficulties,
-    reasoningLevels,
-    aiGenerated,
-    draftStatus,
-    sortBy,
-    limit = 50,
-    offset = 0,
-    enrich = true,
-  } = options;
-  const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
-  const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
+  try {
+    const {
+      courseId,
+      questionBankId,
+      courseWhere,
+      search,
+      types,
+      difficulties,
+      reasoningLevels,
+      aiGenerated,
+      draftStatus,
+      sortBy,
+      limit = 50,
+      offset = 0,
+      enrich = true,
+    } = options;
+    const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
+    const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
 
   const { where: filterWhere, orderBy } = buildQuestionListQuery({
     search,
@@ -300,7 +302,12 @@ export const getQuestionsByUser = async (userId, options = {}) => {
     sortBy,
   });
 
-  const whereClause = { ...filterWhere, course: { userId } };
+    // Global bank reads pass the same trusted CourseWhereInput used by the
+    // course list. Legacy and course-specific callers keep the owner scope.
+    const whereClause = {
+      ...filterWhere,
+      course: courseWhere === undefined ? { userId } : courseWhere,
+    };
 
   if (courseId) {
     const parsedCourseId = Number(courseId);
@@ -823,12 +830,16 @@ export const saveExtractedQuestions = async (userId, payload) => {
  * from a single paginated page (#1040 review).
  */
 export const getQuestionStats = async (userId, options = {}) => {
-  const { courseId } = options;
-  const metadataWhere = { course: { userId } };
-  if (courseId != null && courseId !== "") {
-    const parsedCourseId = Number(courseId);
-    if (Number.isInteger(parsedCourseId)) {
-      metadataWhere.courseId = parsedCourseId;
+  try {
+    const { courseId, courseWhere } = options;
+    const metadataWhere = {
+      course: courseWhere === undefined ? { userId } : courseWhere,
+    };
+    if (courseId != null && courseId !== '') {
+      const parsedCourseId = Number(courseId);
+      if (Number.isInteger(parsedCourseId)) {
+        metadataWhere.courseId = parsedCourseId;
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 /** Shared provider types and static config — safe for client hooks and unit tests. */
 
-export type SupportedProvider = "openai" | "google" | "ollama" | "vllm";
+export type SupportedProvider = 'openai' | 'google' | 'ollama' | 'vllm' | 'opencode';
 
 /** Local inference providers that do not require a user API key. */
 export const LOCAL_INFERENCE_PROVIDERS: SupportedProvider[] = ["ollama", "vllm"];
@@ -53,7 +53,28 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     defaultBaseUrl: "http://localhost:8001/v1",
     envVarName: "VLLM_BASE_URL",
   },
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode Go',
+    description: 'OpenCode Go subscription models, including DeepSeek V4 Flash',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://opencode.ai/zen/go/v1',
+  },
 };
+
+/**
+ * Explains where a missing provider configuration belongs. Cloud providers
+ * are account-scoped BYOK settings; local providers remain deployment env.
+ */
+export function providerConfigurationHint(providerId: string): string {
+  if (providerId === 'ollama') {
+    return 'Set OLLAMA_BASE_URL in apps/core/.env and restart the dev process.';
+  }
+  if (providerId === 'vllm') {
+    return 'Set VLLM_BASE_URL in apps/core/.env and restart the dev process.';
+  }
+  return "Configure this provider in the calling app's API-key settings.";
+}
 
 export function parseModelIdentifier(
   identifier: string,

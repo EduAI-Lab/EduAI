@@ -1,6 +1,7 @@
-import express from "express";
-import { toPublicUser } from "../utils/mappers.js";
-import { listEduAiCourses } from "../services/eduaiClient.js";
+import express from 'express';
+import { fetchCoreAuth, isCoreAuthTimeoutError } from '../middleware/auth.js';
+import { toPublicUser } from '../utils/mappers.js';
+import { listEduAiCourses } from '../services/eduaiClient.js';
 import {
   runCoreMirror,
   resetCoreMirrorThrottleForTests,
@@ -53,28 +54,45 @@ router.get("/me", async (req, res) => {
 });
 
 // Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.
-// No requireAuth — signing out an invalid session is a no-op, not an error.
-router.post("/logout", async (req, res) => {
-  const coreUrl = process.env.CORE_URL || "http://localhost:3000";
+// No requireAuth — Core remains the authority on whether the forwarded session
+// can be invalidated. Only acknowledge logout after Core confirms success.
+router.post('/logout', async (req, res) => {
+  const coreUrl = process.env.CORE_URL || 'http://localhost:3000';
   const corePublicOrigin = process.env.CORE_PUBLIC_ORIGIN || coreUrl;
   try {
-    const coreRes = await fetch(`${coreUrl}/api/auth/sign-out`, {
-      method: "POST",
-      headers: {
-        cookie: req.headers.cookie ?? "",
-        origin: corePublicOrigin,
-        "content-type": "application/json",
+    const coreRes = await fetchCoreAuth(
+      `${coreUrl}/api/auth/sign-out`,
+      {
+        method: 'POST',
+        headers: {
+          cookie: req.headers.cookie ?? '',
+          origin: corePublicOrigin,
+          'content-type': 'application/json',
+        },
+        body: '{}',
       },
-      body: "{}",
-    });
+      req.signal,
+    );
     if (!coreRes.ok) {
-      console.error("[ai-tutor] Core sign-out failed", coreRes.status);
+      console.error('[ai-tutor] Core sign-out failed', coreRes.status);
+      if (coreRes.status === 408 || coreRes.status === 504) {
+        return res.status(504).json({ ok: false, error: 'Logout service timed out' });
+      }
+      if (coreRes.status === 429) {
+        const retryAfter = coreRes.headers?.get?.('retry-after') ?? null;
+        if (retryAfter !== null) res.set('Retry-After', retryAfter);
+        return res.status(429).json({ ok: false, error: 'Logout rate limited', retryAfter });
+      }
+      return res.status(503).json({ ok: false, error: 'Logout service unavailable' });
     }
+    return res.json({ ok: true });
   } catch (err) {
-    console.error("[ai-tutor] Core sign-out request failed", err);
-    // Proceed even if Core is unreachable
+    console.error('[ai-tutor] Core sign-out request failed', err);
+    if (isCoreAuthTimeoutError(err)) {
+      return res.status(504).json({ ok: false, error: 'Logout service timed out' });
+    }
+    return res.status(503).json({ ok: false, error: 'Logout service unavailable' });
   }
-  res.json({ ok: true });
 });
 
 export default router;

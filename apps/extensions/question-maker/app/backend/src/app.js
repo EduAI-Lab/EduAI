@@ -9,20 +9,21 @@ import pinoHttp from "pino-http";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 
-import { errorHandler, notFound } from "./middleware/errorHandler.js";
-import questionRoutes from "./routes/questions.js";
-import courseRoutes from "./routes/course.js";
-import assessmentRoutes from "./routes/assessments.js";
-import variantRoutes from "./routes/variants.js";
-import eduaiRoutes from "./routes/eduai.js";
-import canvasRoutes from "./routes/canvas.js";
-import assessmentVariantRoutes from "./routes/assessmentVariant.js";
-import topicRoutes from "./routes/topics.js";
-import authRoutes from "./routes/auth.js";
-import bugReportRoutes from "./routes/bug-reports.js";
-import internalRoutes from "./routes/internal.js";
-import { config } from "./config/settings.js";
-import { logger } from "./utils/logger.js";
+import { errorHandler, notFound } from './middleware/errorHandler.js';
+import questionRoutes from './routes/questions.js';
+import courseRoutes from './routes/course.js';
+import assessmentRoutes from './routes/assessments.js';
+import variantRoutes from './routes/variants.js';
+import eduaiRoutes from './routes/eduai.js';
+import canvasRoutes from './routes/canvas.js';
+import assessmentVariantRoutes from './routes/assessmentVariant.js';
+import topicRoutes from './routes/topics.js';
+import authRoutes from './routes/auth.js';
+import bugReportRoutes from './routes/bug-reports.js';
+import internalRoutes from './routes/internal.js';
+import { config } from './config/settings.js';
+import { checkDatabaseReadiness } from './config/database.js';
+import { logger } from './utils/logger.js';
 
 const app = express();
 
@@ -80,7 +81,7 @@ const pinoHttpConfig = {
   },
   autoLogging: {
     ignore: (req) => {
-      return req.url === "/healthz" || req.url === "/";
+      return req.url === '/healthz' || req.url === '/readyz' || req.url === '/';
     },
   },
 };
@@ -91,7 +92,17 @@ app.get("/healthz", (req, res) => {
   res.status(200).send("ok");
 });
 
-app.get("/", (req, res) => {
+app.get('/readyz', async (req, res) => {
+  const ready = await checkDatabaseReadiness();
+
+  if (!ready) {
+    return res.status(503).json({ status: 'unavailable' });
+  }
+
+  return res.status(200).json({ status: 'ready' });
+});
+
+app.get('/', (req, res) => {
   res.json({
     status: "ok",
     message: "EduQuery.ai API is running",

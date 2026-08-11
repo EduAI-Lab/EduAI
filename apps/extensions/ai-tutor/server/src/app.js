@@ -61,8 +61,8 @@ export async function createApp(options = {}) {
     try {
       await prisma.$queryRaw`SELECT 1`;
       res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e) });
+    } catch {
+      res.status(503).json({ ok: false, error: 'Database unavailable' });
     }
   });
 

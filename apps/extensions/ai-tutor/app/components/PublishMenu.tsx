@@ -101,7 +101,7 @@ export function PublishMenu({
                 <IconWorldUpload className="size-4 text-primary-text" aria-hidden="true" />
               )}
               {pending
-                ? "Saving…"
+                ? 'Saving…'
                 : isPublished
                   ? `Unpublish ${itemLabel}`
                   : `Publish ${itemLabel}`}

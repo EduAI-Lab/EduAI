@@ -212,31 +212,17 @@ bash infra/s378/go-live-build.sh
 sets their public URLs. The canonical script and operational notes live in
 [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md).
 
-### Async AI-job worker
+### Async AI-job queue (hard-disabled pre-MVP)
 
-The durable BullMQ queue is drained by a separate Core process. Run one worker
-process per Core deployment:
+Do not deploy the standalone BullMQ worker. The authenticated owner-scoped
+status/cancellation API and server-side model authorization contract are not
+complete, so Core intentionally keeps the queue unavailable before MVP.
 
-```bash
-cd apps/core
-npm run queue:worker
-```
-
-The process consumes `ai-jobs-chat` and `ai-jobs-heavy`, claims the authoritative
-`AiJob` row, routes inference through the matching fleet pool, and writes
-`COMPLETED` or `FAILED`. Graceful `SIGINT`/`SIGTERM` shutdown closes both BullMQ
-workers before disconnecting Redis.
-
-| Variable | Purpose |
-| -------- | ------- |
-| `REDIS_URL` | Shared Redis used by the producer and worker |
-| `QUEUE_ENQUEUE_ENABLED` | Enables the guarded producer path; turn on only when the worker service is healthy |
-| `AI_JOB_DEFAULT_MODEL` | Optional explicit worker model; otherwise Auto routing is used |
-| `AI_JOB_CHAT_CONCURRENCY` | Chat-pool worker concurrency (default `8`) |
-| `AI_JOB_HEAVY_CONCURRENCY` | Heavy-pool worker concurrency (default `1`) |
-| `AI_JOB_EXECUTION_TIMEOUT_MS` | Per-attempt provider timeout in milliseconds (default `120000`) |
-| `AI_JOB_ATTEMPTS` | Total BullMQ attempts per job (default `3`) |
-| `AI_JOB_RETRY_DELAY_MS` | Exponential retry base delay (default `5000`) |
+`QUEUE_ENQUEUE_ENABLED` is deprecated and ignored even when set to `true`.
+`/api/chat` always uses direct chat, and `npm run queue:worker` exits before
+opening Redis or constructing a BullMQ worker. Re-enabling the queue requires a
+reviewed code change after those security contracts and their client flow ship;
+deployment configuration alone cannot enable it.
 
 ### Apache reverse proxy
 

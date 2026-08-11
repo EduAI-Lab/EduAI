@@ -134,8 +134,8 @@ describe("POST /api/prompts", () => {
     const app = buildApp("INSTRUCTOR");
 
     const res = await request(app)
-      .post("/api/prompts")
-      .send({ name: "My Prompt", systemPrompt: "Y" });
+      .post('/api/prompts')
+      .send({ name: 'My Prompt', systemPrompt: 'Y' });
 
     expect(res.status).toBe(201);
     expect(res.body.slug).toBe("my-prompt-2");
@@ -151,8 +151,8 @@ describe("POST /api/prompts", () => {
     const app = buildApp("INSTRUCTOR");
 
     const res = await request(app)
-      .post("/api/prompts")
-      .send({ name: "My Prompt", systemPrompt: "Y" });
+      .post('/api/prompts')
+      .send({ name: 'My Prompt', systemPrompt: 'Y' });
 
     expect(res.status).toBe(201);
     expect(res.body.slug).toBe("my-prompt-4");

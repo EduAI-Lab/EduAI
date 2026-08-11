@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
 import {
   makeProfessor,
   makeAdmin,
@@ -9,7 +9,7 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from "../helpers.js";
+} from '../helpers.js';
 
 // `isPublished` is Core-owned (#1072 step 4) — the "parent course is
 // published" gate on lesson publish resolves it live via
@@ -416,8 +416,8 @@ describe("Lessons routes", () => {
       expect(res.status).toBe(400);
     });
 
-    it("returns 404 for non-existent lesson", async () => {
-      const res = await request(profApp).patch("/api/lessons/9999999").send({ title: "Ghost" });
+    it('returns 404 for non-existent lesson', async () => {
+      const res = await request(profApp).patch('/api/lessons/9999999').send({ title: 'Ghost' });
       expect(res.status).toBe(404);
     });
   });

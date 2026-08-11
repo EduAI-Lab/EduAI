@@ -146,9 +146,9 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
   if (topicResult.status === "rejected") {
     console.error("[eduai] Failed to sync topics for auto-imported course", topicResult.reason);
   }
-  if (enrollmentResult.status === "rejected") {
+  if (enrollmentResult.status === 'rejected') {
     console.error(
-      "[eduai] Failed to sync enrollments for auto-imported course",
+      '[eduai] Failed to sync enrollments for auto-imported course',
       enrollmentResult.reason,
     );
   }
@@ -251,9 +251,9 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
     if (topicResult.status === "rejected") {
       console.error("[eduai] Topic sync failed for course", offering.id, topicResult.reason);
     }
-    if (enrollmentResult.status === "rejected") {
+    if (enrollmentResult.status === 'rejected') {
       console.error(
-        "[eduai] Enrollment sync failed for course",
+        '[eduai] Enrollment sync failed for course',
         offering.id,
         enrollmentResult.reason,
       );

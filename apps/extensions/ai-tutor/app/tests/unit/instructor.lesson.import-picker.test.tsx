@@ -104,10 +104,10 @@ const module_ = {
 };
 const lesson = {
   id: 1,
-  title: "Lesson 1",
+  title: 'Lesson 1',
   moduleId: 1,
   isPublished: true,
-  contentMd: "",
+  contentMd: '',
   courseOfferingId: 1,
 };
 

@@ -83,34 +83,34 @@ describe("coreStatusValue", () => {
 describe("coreFacetWhere", () => {
   const catalog = [
     course({
-      id: "a",
-      name: "Intro to Computing",
-      code: "COSC 111",
-      term: "W1",
+      id: 'a',
+      name: 'Intro to Computing',
+      code: 'COSC 111',
+      term: 'W1',
       year: 2026,
       isPublished: true,
     }),
     course({
-      id: "b",
-      name: "Data Structures",
-      code: "COSC 221",
-      term: "W2",
+      id: 'b',
+      name: 'Data Structures',
+      code: 'COSC 221',
+      term: 'W2',
       year: 2026,
       isPublished: false,
     }),
     course({
-      id: "c",
-      name: "Linear Algebra",
-      code: "MATH 221",
-      term: "W1",
+      id: 'c',
+      name: 'Linear Algebra',
+      code: 'MATH 221',
+      term: 'W1',
       year: 2026,
       isPublished: true,
     }),
     course({
-      id: "d",
-      name: "Organic Chemistry",
-      code: "CHEM 203",
-      term: "S1",
+      id: 'd',
+      name: 'Organic Chemistry',
+      code: 'CHEM 203',
+      term: 'S1',
       year: 2025,
       isPublished: true,
     }),
@@ -158,10 +158,10 @@ describe("coreFacetWhere", () => {
     expect(coreFacetWhere([], { search: "cosc" })).toEqual({ coreOfferingId: { in: [] } });
   });
 
-  it("skips catalog entries without a usable id", () => {
-    expect(coreFacetWhere([null, { id: 42, name: "x" }, ...catalog], { search: "linear" })).toEqual(
+  it('skips catalog entries without a usable id', () => {
+    expect(coreFacetWhere([null, { id: 42, name: 'x' }, ...catalog], { search: 'linear' })).toEqual(
       {
-        coreOfferingId: { in: ["c"] },
+        coreOfferingId: { in: ['c'] },
       },
     );
   });
@@ -188,21 +188,21 @@ describe("coreFacets", () => {
     expect(facets.terms).toEqual(["W2::2026", "W1::2026", "S2::2026", "S1::2026"]);
   });
 
-  it("omits courses with no resolvable term", () => {
+  it('omits courses with no resolvable term', () => {
     const facets = coreFacets([
-      course({ id: "a", term: null }),
-      course({ id: "b", term: "W1", year: 2026 }),
+      course({ id: 'a', term: null }),
+      course({ id: 'b', term: 'W1', year: 2026 }),
     ]);
-    expect(facets.terms).toEqual(["W1::2026"]);
+    expect(facets.terms).toEqual(['W1::2026']);
   });
 
   it("lists only the statuses actually present, published first", () => {
     expect(coreFacets([course({ isPublished: true })]).statuses).toEqual(["published"]);
     expect(coreFacets([course({ isPublished: false })]).statuses).toEqual(["draft"]);
     expect(
-      coreFacets([course({ id: "a", isPublished: false }), course({ id: "b", isPublished: true })])
+      coreFacets([course({ id: 'a', isPublished: false }), course({ id: 'b', isPublished: true })])
         .statuses,
-    ).toEqual(["published", "draft"]);
+    ).toEqual(['published', 'draft']);
   });
 
   it("returns empty facets for an empty catalog", () => {

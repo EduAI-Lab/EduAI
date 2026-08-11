@@ -60,15 +60,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("runReconciliation — CourseOffering", () => {
-  it("deletes the CourseOffering (cascading to modules/lessons/activities) when Core returns 404", async () => {
-    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: "core-cuid-1" }]);
+describe('runReconciliation — CourseOffering', () => {
+  it('deletes the CourseOffering (cascading to modules/lessons/activities) when Core returns 404', async () => {
+    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: 'core-cuid-1' }]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        text: () => Promise.resolve("COURSE_NOT_FOUND"),
+        text: () => Promise.resolve('COURSE_NOT_FOUND'),
       }),
     );
 
@@ -77,14 +77,14 @@ describe("runReconciliation — CourseOffering", () => {
     expect(mockDeleteOffering).toHaveBeenCalledWith({ where: { id: 1 } });
   });
 
-  it("does not delete when Core returns the course (200)", async () => {
-    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: "core-cuid-1" }]);
+  it('does not delete when Core returns the course (200)', async () => {
+    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: 'core-cuid-1' }]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ id: "core-cuid-1", name: "Test" }),
+        json: () => Promise.resolve({ id: 'core-cuid-1', name: 'Test' }),
       }),
     );
 
@@ -93,14 +93,14 @@ describe("runReconciliation — CourseOffering", () => {
     expect(mockDeleteOffering).not.toHaveBeenCalled();
   });
 
-  it("skips the row without deleting when Core returns 5xx", async () => {
-    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: "core-cuid-1" }]);
+  it('skips the row without deleting when Core returns 5xx', async () => {
+    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: 'core-cuid-1' }]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 503,
-        text: () => Promise.resolve("Service Unavailable"),
+        text: () => Promise.resolve('Service Unavailable'),
       }),
     );
 
@@ -115,14 +115,14 @@ describe("runReconciliation — CourseOffering", () => {
       { id: 2, coreOfferingId: "core-cuid-2" },
     ]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce({ ok: false, status: 503, text: () => Promise.resolve("error") })
+        .mockResolvedValueOnce({ ok: false, status: 503, text: () => Promise.resolve('error') })
         .mockResolvedValueOnce({
           ok: false,
           status: 404,
-          text: () => Promise.resolve("not found"),
+          text: () => Promise.resolve('not found'),
         }),
     );
 
@@ -132,14 +132,14 @@ describe("runReconciliation — CourseOffering", () => {
     expect(mockDeleteOffering).toHaveBeenCalledWith({ where: { id: 2 } });
   });
 
-  it("evicts the enrollment sync throttle entry for a deleted CourseOffering", async () => {
-    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: "core-cuid-1" }]);
+  it('evicts the enrollment sync throttle entry for a deleted CourseOffering', async () => {
+    mockFindManyOfferings.mockResolvedValue([{ id: 1, coreOfferingId: 'core-cuid-1' }]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        text: () => Promise.resolve("COURSE_NOT_FOUND"),
+        text: () => Promise.resolve('COURSE_NOT_FOUND'),
       }),
     );
 
@@ -153,17 +153,17 @@ describe("runReconciliation — Topic", () => {
   it("nullifies coreTopicId when Core returns 404", async () => {
     mockFindManyTopics.mockResolvedValue([
       {
-        id: "topic-cuid-1",
-        coreTopicId: "core-topic-1",
-        courseOffering: { coreOfferingId: "core-cuid-1" },
+        id: 'topic-cuid-1',
+        coreTopicId: 'core-topic-1',
+        courseOffering: { coreOfferingId: 'core-cuid-1' },
       },
     ]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        text: () => Promise.resolve("TOPIC_NOT_FOUND"),
+        text: () => Promise.resolve('TOPIC_NOT_FOUND'),
       }),
     );
 
@@ -191,17 +191,17 @@ describe("runReconciliation — Topic", () => {
   it("skips the topic row without updating when Core returns 5xx", async () => {
     mockFindManyTopics.mockResolvedValue([
       {
-        id: "topic-cuid-1",
-        coreTopicId: "core-topic-1",
-        courseOffering: { coreOfferingId: "core-cuid-1" },
+        id: 'topic-cuid-1',
+        coreTopicId: 'core-topic-1',
+        courseOffering: { coreOfferingId: 'core-cuid-1' },
       },
     ]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        text: () => Promise.resolve("Internal Server Error"),
+        text: () => Promise.resolve('Internal Server Error'),
       }),
     );
 
@@ -218,11 +218,11 @@ describe("runReconciliation — CourseEnrollment (Phase 3, #1065)", () => {
     mockFindManyOfferings.mockResolvedValue([offeringA, offeringB]);
     mockFindManyTopics.mockResolvedValue([]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ id: "core-cuid-1", name: "Test" }),
+        json: () => Promise.resolve({ id: 'core-cuid-1', name: 'Test' }),
       }),
     );
 
@@ -243,11 +243,11 @@ describe("runReconciliation — CourseEnrollment (Phase 3, #1065)", () => {
     mockFindManyOfferings.mockResolvedValue([offering]);
     mockFindManyTopics.mockResolvedValue([]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        text: () => Promise.resolve("COURSE_NOT_FOUND"),
+        text: () => Promise.resolve('COURSE_NOT_FOUND'),
       }),
     );
 
@@ -263,11 +263,11 @@ describe("runReconciliation — CourseEnrollment (Phase 3, #1065)", () => {
     mockFindManyOfferings.mockResolvedValue([offeringA, offeringB]);
     mockFindManyTopics.mockResolvedValue([]);
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ id: "core-cuid-1", name: "Test" }),
+        json: () => Promise.resolve({ id: 'core-cuid-1', name: 'Test' }),
       }),
     );
     vi.mocked(syncCourseEnrollments)

@@ -376,4 +376,33 @@ describe("enrollment management lifecycle (#305)", () => {
       await cleanupRbac({ userIds: [instructor.id], courseIds: [course.id] });
     }
   });
+
+  it("keeps one active instructor when two removals race", async () => {
+    const { deactivateEnrollment } = await import("~/lib/courses/enrollments.server");
+    const { seedUser, seedCourse, enroll, cleanupRbac } = await import("../helpers/rbac");
+
+    const instructorA = await seedUser({ role: "INSTRUCTOR" });
+    const instructorB = await seedUser({ role: "INSTRUCTOR" });
+    const course = await seedCourse();
+    const enrollmentA = await enroll(course.id, instructorA.id, "INSTRUCTOR");
+    const enrollmentB = await enroll(course.id, instructorB.id, "INSTRUCTOR");
+
+    try {
+      const results = await Promise.all([
+        deactivateEnrollment(course.id, enrollmentA.id),
+        deactivateEnrollment(course.id, enrollmentB.id),
+      ]);
+      const activeInstructorCount = await prisma.enrollment.count({
+        where: { courseId: course.id, role: "INSTRUCTOR", isActive: true },
+      });
+
+      expect(activeInstructorCount).toBe(1);
+      expect(results.map((result) => result.status).sort()).toEqual(["204", "409"]);
+    } finally {
+      await cleanupRbac({
+        userIds: [instructorA.id, instructorB.id],
+        courseIds: [course.id],
+      });
+    }
+  });
 });

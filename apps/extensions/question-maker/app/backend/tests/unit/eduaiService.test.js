@@ -44,13 +44,31 @@ function requestError({ code, message = "no response" } = {}) {
   });
 }
 
+function capturedConsoleOutput() {
+  return ['log', 'warn', 'error']
+    .flatMap((method) => console[method].mock.calls)
+    .flatMap((call) => call)
+    .map((value) => {
+      if (typeof value === 'string') return value;
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    })
+    .join('\n');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   config.eduaiIgnoredCourseCodes = [];
-  eduaiService.apiKey = "test-key-123456";
-  eduaiService.baseURL = "http://eduai.test";
-  vi.spyOn(console, "log").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  config.eduaiProbeCourseId = '';
+  config.eduaiProbeCourseCode = '';
+  eduaiService.apiKey = 'test-key-123456';
+  eduaiService.baseURL = 'http://eduai.test';
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -73,9 +91,105 @@ describe("isConfigured", () => {
   });
 });
 
-describe("chat", () => {
-  it("throws when neither a session cookie nor a service key is available", async () => {
-    eduaiService.apiKey = "";
+describe('chat', () => {
+  it('never logs completion content returned by Core', async () => {
+    const contentCanary = 'AUDIT_MODEL_CONTENT_CANARY_7f45a2';
+    axios.post.mockResolvedValue({ status: 200, data: { content: contentCanary } });
+
+    await eduaiService.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(capturedConsoleOutput()).not.toContain(contentCanary);
+  });
+
+  it('does not expose response bodies, headers, or stable-error canaries', async () => {
+    const bodyCanary = 'AUDIT_RESPONSE_BODY_CANARY_b19c0e';
+    const authCanary = 'AUDIT_RESPONSE_AUTH_CANARY_82e711';
+    const cookieCanary = 'AUDIT_RESPONSE_COOKIE_CANARY_13ec50';
+    const correlationId = 'core-request-7d1ec9';
+    axios.post.mockRejectedValue(
+      Object.assign(new Error('Request failed'), {
+        response: {
+          status: 502,
+          statusText: `Bad Gateway ${bodyCanary}`,
+          data: { error: bodyCanary, prompt: `student-${bodyCanary}` },
+          headers: {
+            authorization: `Bearer ${authCanary}`,
+            'set-cookie': `session=${cookieCanary}`,
+            'x-request-id': correlationId,
+          },
+        },
+      }),
+    );
+
+    const thrown = await eduaiService.chat({ messages: [] }).catch((error) => error);
+    const output = `${capturedConsoleOutput()}\n${thrown.message}`;
+
+    expect(output).not.toContain(bodyCanary);
+    expect(output).not.toContain(authCanary);
+    expect(output).not.toContain(cookieCanary);
+    expect(capturedConsoleOutput()).toContain(correlationId);
+    const failureLog = console.error.mock.calls.find(
+      ([event]) => event === '[EduAI] completion response failed',
+    );
+    expect(failureLog?.[1]).toMatchObject({
+      status: 502,
+      correlationId,
+      elapsedMs: expect.any(Number),
+    });
+    expect(Object.keys(failureLog?.[1] ?? {}).sort()).toEqual([
+      'correlationId',
+      'elapsedMs',
+      'status',
+    ]);
+  });
+
+  it('does not serialize raw Axios request/config data or transport messages', async () => {
+    const requestCanary = 'AUDIT_RAW_REQUEST_CANARY_d89444';
+    const configCanary = 'AUDIT_CONFIG_SECRET_CANARY_cba290';
+    const cookieCanary = 'AUDIT_REQUEST_COOKIE_CANARY_2057fb';
+    axios.post.mockRejectedValue(
+      Object.assign(new Error(`connect failed ${requestCanary}`), {
+        code: 'ECONNREFUSED',
+        request: {
+          rawHeaders: ['Authorization', `Bearer ${requestCanary}`],
+          config: {
+            headers: { cookie: `session=${cookieCanary}` },
+            data: { systemPrompt: configCanary },
+          },
+        },
+        config: {
+          url: 'http://eduai.test/api/completion',
+          method: 'post',
+          timeout: 60000,
+          headers: { authorization: `Bearer ${configCanary}` },
+          data: { messages: [{ content: requestCanary }] },
+        },
+      }),
+    );
+
+    const thrown = await eduaiService.chat({ messages: [] }).catch((error) => error);
+    const output = `${capturedConsoleOutput()}\n${thrown.message}`;
+
+    expect(output).not.toContain(requestCanary);
+    expect(output).not.toContain(configCanary);
+    expect(output).not.toContain(cookieCanary);
+    const failureLog = console.error.mock.calls.find(
+      ([event]) => event === '[EduAI] completion request failed',
+    );
+    expect(failureLog?.[1]).toMatchObject({
+      code: 'ECONNREFUSED',
+      elapsedMs: expect.any(Number),
+      timeoutMs: 60000,
+    });
+    expect(Object.keys(failureLog?.[1] ?? {}).sort()).toEqual([
+      'code',
+      'elapsedMs',
+      'timeoutMs',
+    ]);
+  });
+
+  it('throws when neither a session cookie nor a service key is available', async () => {
+    eduaiService.apiKey = '';
     await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/not configured/i);
     expect(axios.post).not.toHaveBeenCalled();
   });
@@ -159,11 +273,9 @@ describe("chat", () => {
     expect(axios.post.mock.calls[0][2].timeout).toBe(5000);
   });
 
-  it("translates a server error response into a descriptive error", async () => {
-    axios.post.mockRejectedValue(responseError({ status: 502, data: { error: "upstream down" } }));
-    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(
-      /EduAI API error \(502\): upstream down/,
-    );
+  it('translates a server error response without relaying its body', async () => {
+    axios.post.mockRejectedValue(responseError({ status: 502, data: { error: 'upstream down' } }));
+    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/^EduAI API error \(502\)$/);
   });
 
   it("reports a timeout when the request aborts (ECONNABORTED)", async () => {
@@ -188,20 +300,31 @@ describe("chat", () => {
     await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/EPIPE/);
   });
 
-  it("wraps an error with neither response nor request", async () => {
-    axios.post.mockRejectedValue(new Error("boom"));
-    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/EduAI API error: boom/);
+  it('wraps an error with neither response nor request', async () => {
+    axios.post.mockRejectedValue(new Error('boom'));
+    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/^EduAI API error$/);
   });
 });
 
 describe("generateQuestions", () => {
   const baseParams = { prompt: "cells", courseCode: "BIO 101" };
 
-  it("throws when prompt is missing, or both courseCode and courseId are missing", async () => {
-    await expect(eduaiService.generateQuestions({ prompt: "x" })).rejects.toThrow(/required/i);
-    await expect(eduaiService.generateQuestions({ courseCode: "BIO 101" })).rejects.toThrow(
-      /required/i,
-    );
+  it('never logs malformed model content during the JSON repair path', async () => {
+    const firstCanary = 'AUDIT_GENERATION_PREVIEW_CANARY_640eaf';
+    const repairCanary = 'AUDIT_REPAIR_PREVIEW_CANARY_4a05c1';
+    axios.post
+      .mockResolvedValueOnce({ status: 200, data: { content: firstCanary } })
+      .mockResolvedValueOnce({ status: 200, data: { content: repairCanary } });
+
+    await expect(eduaiService.generateQuestions(baseParams)).rejects.toThrow();
+
+    expect(capturedConsoleOutput()).not.toContain(firstCanary);
+    expect(capturedConsoleOutput()).not.toContain(repairCanary);
+  });
+
+  it('throws when prompt is missing, or both courseCode and courseId are missing', async () => {
+    await expect(eduaiService.generateQuestions({ prompt: 'x' })).rejects.toThrow(/required/i);
+    await expect(eduaiService.generateQuestions({ courseCode: 'BIO 101' })).rejects.toThrow(/required/i);
   });
 
   it("accepts courseId without courseCode", async () => {
@@ -352,12 +475,9 @@ describe("generateQuestions", () => {
     expect(out).toHaveLength(1);
   });
 
-  it("throws the model-reported reason when the response is an error object", async () => {
-    axios.post.mockResolvedValue({
-      status: 200,
-      data: { content: { error: true, reason: "topic not covered" } },
-    });
-    await expect(eduaiService.generateQuestions(baseParams)).rejects.toThrow(/topic not covered/);
+  it('does not relay a model-reported reason from an error object', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: { error: true, reason: 'topic not covered' } } });
+    await expect(eduaiService.generateQuestions(baseParams)).rejects.toThrow(/^EduAI question generation failed$/);
   });
 
   it("throws when the parsed response is not a question array", async () => {
@@ -508,9 +628,35 @@ describe("generateQuestions", () => {
   });
 });
 
-describe("listCourses", () => {
-  it("throws when not configured", async () => {
-    eduaiService.apiKey = "";
+describe('listCourses', () => {
+  it.each([
+    ['courses', () => eduaiService.listCourses()],
+    ['topics', () => eduaiService.getCourseTopics(42)],
+    ['models', () => eduaiService.listAIModels()],
+  ])('does not log the raw Axios request for %s failures', async (_name, invoke) => {
+    const requestCanary = 'AUDIT_CATALOG_REQUEST_CANARY_384b37';
+    const cookieCanary = 'AUDIT_CATALOG_COOKIE_CANARY_a4c861';
+    axios.get.mockRejectedValue(
+      Object.assign(new Error(`network ${requestCanary}`), {
+        code: 'ECONNRESET',
+        request: {
+          rawHeaders: ['cookie', cookieCanary],
+          body: { prompt: requestCanary },
+        },
+        config: {
+          headers: { authorization: `Bearer ${requestCanary}` },
+        },
+      }),
+    );
+
+    await invoke().catch(() => {});
+
+    expect(capturedConsoleOutput()).not.toContain(requestCanary);
+    expect(capturedConsoleOutput()).not.toContain(cookieCanary);
+  });
+
+  it('throws when not configured', async () => {
+    eduaiService.apiKey = '';
     await expect(eduaiService.listCourses()).rejects.toThrow(/not configured/i);
   });
 
@@ -544,19 +690,19 @@ describe("listCourses", () => {
     expect(out).toEqual([{ id: 2, code: "BIO 200" }]);
   });
 
-  it("translates a server error response", async () => {
-    axios.get.mockRejectedValue(responseError({ status: 404, data: { message: "nope" } }));
-    await expect(eduaiService.listCourses()).rejects.toThrow(/EduAI API error \(404\): nope/);
+  it('translates a server error response without relaying its body', async () => {
+    axios.get.mockRejectedValue(responseError({ status: 404, data: { message: 'nope' } }));
+    await expect(eduaiService.listCourses()).rejects.toThrow(/^EduAI API error \(404\)$/);
   });
 
-  it("reports a no-response failure", async () => {
-    axios.get.mockRejectedValue(requestError({ code: "ETIMEDOUT" }));
-    await expect(eduaiService.listCourses()).rejects.toThrow(/No response received/);
+  it('reports a no-response failure', async () => {
+    axios.get.mockRejectedValue(requestError({ code: 'ETIMEDOUT' }));
+    await expect(eduaiService.listCourses()).rejects.toThrow(/timed out/i);
   });
 
-  it("wraps a setup error", async () => {
-    axios.get.mockRejectedValue(new Error("weird"));
-    await expect(eduaiService.listCourses()).rejects.toThrow(/EduAI API error: weird/);
+  it('wraps a setup error', async () => {
+    axios.get.mockRejectedValue(new Error('weird'));
+    await expect(eduaiService.listCourses()).rejects.toThrow(/^EduAI API error$/);
   });
 });
 
@@ -582,9 +728,9 @@ describe("getCourseTopics", () => {
     await expect(eduaiService.getCourseTopics(42)).rejects.toThrow(/EduAI API error \(500\)/);
   });
 
-  it("reports a no-response failure", async () => {
-    axios.get.mockRejectedValue(requestError({ code: "ECONNRESET" }));
-    await expect(eduaiService.getCourseTopics(42)).rejects.toThrow(/No response received/);
+  it('reports a no-response failure', async () => {
+    axios.get.mockRejectedValue(requestError({ code: 'ECONNRESET' }));
+    await expect(eduaiService.getCourseTopics(42)).rejects.toThrow(/connection was reset/i);
   });
 });
 
@@ -603,14 +749,14 @@ describe("listAIModels", () => {
     expect(out).toEqual(["a", "b"]);
   });
 
-  it("translates a server error response", async () => {
-    axios.get.mockRejectedValue(responseError({ status: 503, data: { error: "busy" } }));
-    await expect(eduaiService.listAIModels()).rejects.toThrow(/EduAI API error \(503\): busy/);
+  it('translates a server error response without relaying its body', async () => {
+    axios.get.mockRejectedValue(responseError({ status: 503, data: { error: 'busy' } }));
+    await expect(eduaiService.listAIModels()).rejects.toThrow(/^EduAI API error \(503\)$/);
   });
 
-  it("wraps a setup error", async () => {
-    axios.get.mockRejectedValue(new Error("odd"));
-    await expect(eduaiService.listAIModels()).rejects.toThrow(/EduAI API error: odd/);
+  it('wraps a setup error', async () => {
+    axios.get.mockRejectedValue(new Error('odd'));
+    await expect(eduaiService.listAIModels()).rejects.toThrow(/^EduAI API error$/);
   });
 });
 
@@ -700,6 +846,16 @@ describe("testApiKey", () => {
       expect(out.success).toBe(true);
       expect(out.provider).toBe(provider);
     }
+  });
+
+  it('selects OpenCode and forwards its dedicated catalog model and key', async () => {
+    const out = await eduaiService.testApiKey({
+      apiKeys: { opencode: { apiKey: 'opencode-secret', isEnabled: true } },
+    });
+    expect(out.provider).toBe('opencode');
+    const [, body] = axios.post.mock.calls.at(-1);
+    expect(body.model).toBe('opencode:deepseek-v4-flash');
+    expect(body.apiKeys.opencode).toEqual({ apiKey: 'opencode-secret', isEnabled: true });
   });
 });
 

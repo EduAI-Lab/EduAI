@@ -248,7 +248,7 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
           }
         />
         <StatCard label="Correct" value={stats.correct} />
-        <StatCard label="Pass rate" value={stats.passRate != null ? `${stats.passRate}%` : "—"} />
+        <StatCard label="Pass rate" value={stats.passRate != null ? `${stats.passRate}%` : '—'} />
       </div>
 
       <Card>

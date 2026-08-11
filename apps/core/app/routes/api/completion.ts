@@ -5,6 +5,11 @@ import {
   providerFailureBody,
   providerFailureHeaders,
 } from "~/lib/ai/provider-errors.server";
+import {
+  acquireAiAdmission,
+  AdmissionTimeoutError,
+  withAdmissionRelease,
+} from "~/lib/ai/admission.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -25,6 +30,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
+  // Completion is stateless, but retain a stable principal for admission and
+  // billing-abuse controls. Service-key traffic is intentionally one shared
+  // bucket until extension callers carry a signed end-user identity.
   let rateLimitIdentity = apiKeySession?.user?.id ?? null;
   if (!apiKeySession?.user) {
     const session = await getRequestSession(request);
@@ -67,19 +75,60 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  const outcome = await runCompletion({
-    model: typeof payload.model === "string" ? payload.model : "",
-    apiKeys: payload.apiKeys,
-    systemPrompt: payload.systemPrompt,
-    messages: Array.isArray(payload.messages) ? payload.messages : [],
-    streaming: payload.streaming,
-    temperature: payload.temperature,
-    maxTokens: payload.maxTokens,
-    routingContext: payload.routingContext,
-    signal: request.signal,
-  });
+  const model = typeof payload.model === "string" ? payload.model : "";
+  const needsAdmission = model.startsWith("vllm:") || model.startsWith("ollama:");
+  let admissionRelease: (() => void) | null = null;
+  let admissionWaitedMs = 0;
+  if (needsAdmission) {
+    try {
+      const admission = await acquireAiAdmission(request.signal);
+      admissionRelease = admission.release;
+      admissionWaitedMs = admission.waitedMs;
+    } catch (error) {
+      if (error instanceof AdmissionTimeoutError) {
+        return new Response(
+          JSON.stringify({
+            error: "Server busy — too many concurrent AI requests. Try again shortly.",
+            code: "AI_ADMISSION_TIMEOUT",
+          }),
+          { status: 503, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (request.signal.aborted) {
+        return new Response(JSON.stringify({ error: "Request aborted" }), {
+          status: 499,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw error;
+    }
+  }
+
+  const releaseAdmission = () => {
+    admissionRelease?.();
+    admissionRelease = null;
+  };
+
+  let outcome;
+  try {
+    outcome = await runCompletion({
+      model,
+      apiKeys: payload.apiKeys,
+      systemPrompt: payload.systemPrompt,
+      messages: Array.isArray(payload.messages) ? payload.messages : [],
+      streaming: payload.streaming,
+      temperature: payload.temperature,
+      maxTokens: payload.maxTokens,
+      routingContext: payload.routingContext,
+      signal: request.signal,
+    });
+  } catch (error) {
+    releaseAdmission();
+    throw error;
+  }
 
   if (!outcome.ok) {
+    releaseAdmission();
     const isProviderFailure = "code" in outcome;
     const responseBody = isProviderFailure
       ? providerFailureBody(outcome)
@@ -94,24 +143,45 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (outcome.streaming) {
-    return outcome.result.toDataStreamResponse({
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
-      },
-      // HTTP status/headers are immutable once this 200 stream begins. Route
-      // late provider errors through the same sanitized contract as the
-      // pre-stream path via the AI SDK stream error channel.
-      getErrorMessage: (error) =>
-        JSON.stringify(providerFailureBody(classifyProviderError(outcome.provider, error))),
-    });
+    try {
+      const response = outcome.result.toDataStreamResponse({
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          ...(outcome.fleetServerId
+            ? { "X-Fleet-Server": outcome.fleetServerId }
+            : {}),
+          ...(admissionWaitedMs > 0
+            ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) }
+            : {}),
+        },
+        // HTTP status/headers are immutable once this 200 stream begins. Route
+        // late provider errors through the same sanitized contract as the
+        // pre-stream path via the AI SDK stream error channel.
+        getErrorMessage: (error) =>
+          JSON.stringify(
+            providerFailureBody(classifyProviderError(outcome.provider, error)),
+          ),
+      });
+      const release = admissionRelease;
+      admissionRelease = null;
+      return withAdmissionRelease(response, release);
+    } catch (error) {
+      releaseAdmission();
+      throw error;
+    }
   }
 
+  releaseAdmission();
   return new Response(JSON.stringify(outcome.body), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
+      ...(outcome.fleetServerId
+        ? { "X-Fleet-Server": outcome.fleetServerId }
+        : {}),
+      ...(admissionWaitedMs > 0
+        ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) }
+        : {}),
     },
   });
 }

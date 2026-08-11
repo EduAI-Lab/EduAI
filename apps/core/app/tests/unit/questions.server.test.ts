@@ -44,6 +44,7 @@ const db = prisma as unknown as {
 
 const CREATOR = "user-cuid-creator";
 const COURSE_ID = "course-cuid-abc";
+const OTHER_COURSE_ID = "course-cuid-other";
 const TOPIC_ID = "topic-cuid-primary";
 const SEC_TOPIC_ID = "topic-cuid-secondary";
 const QUESTION_ID = "question-cuid-xyz";
@@ -80,21 +81,39 @@ describe("createQuestion", () => {
 
   it("returns TOPIC_NOT_FOUND when primary topic is soft-deleted", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: new Date() });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: new Date(),
+    });
     expect(await createQuestion(baseBody, CREATOR)).toEqual({ error: "TOPIC_NOT_FOUND" });
+  });
+
+  it("returns TOPIC_NOT_FOUND when the primary topic belongs to another course", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: OTHER_COURSE_ID,
+      deletedAt: null,
+    });
+
+    expect(await createQuestion(baseBody, CREATOR)).toEqual({ error: "TOPIC_NOT_FOUND" });
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 
   it("returns DUPLICATE_TOPIC when topicId also appears in secondaryTopicIds", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
     const result = await createQuestion({ ...baseBody, secondaryTopicIds: [TOPIC_ID] }, CREATOR);
     expect(result).toEqual({ error: "DUPLICATE_TOPIC", conflictingIds: [TOPIC_ID] });
   });
 
   it("returns INVALID_TOPIC_IDS with the deleted topic's id when a secondary topic is soft-deleted", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.courseTopic.findMany.mockResolvedValue([{ id: SEC_TOPIC_ID, deletedAt: new Date() }]);
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findMany.mockResolvedValue([
+      { id: SEC_TOPIC_ID, courseId: COURSE_ID, deletedAt: new Date() },
+    ]);
     const result = await createQuestion(
       { ...baseBody, secondaryTopicIds: [SEC_TOPIC_ID] },
       CREATOR,
@@ -106,10 +125,54 @@ describe("createQuestion", () => {
     });
   });
 
+  it("returns INVALID_TOPIC_IDS when a secondary topic belongs to another course", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+    db.courseTopic.findMany.mockResolvedValue([
+      { id: SEC_TOPIC_ID, courseId: OTHER_COURSE_ID, deletedAt: null },
+    ]);
+
+    const result = await createQuestion(
+      { ...baseBody, secondaryTopicIds: [SEC_TOPIC_ID] },
+      CREATOR,
+    );
+
+    expect(result).toEqual({
+      error: "INVALID_TOPIC_IDS",
+      deletedTopicIds: [SEC_TOPIC_ID],
+      conflictingWithPrimary: [],
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns DUPLICATE_TOPIC when secondaryTopicIds contains the same topic twice", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
+
+    const result = await createQuestion(
+      { ...baseBody, secondaryTopicIds: [SEC_TOPIC_ID, SEC_TOPIC_ID] },
+      CREATOR,
+    );
+
+    expect(result).toEqual({ error: "DUPLICATE_TOPIC", conflictingIds: [SEC_TOPIC_ID] });
+    expect(db.courseTopic.findMany).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("writes correct data to question.create inside the transaction", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.courseTopic.findMany.mockResolvedValue([{ id: SEC_TOPIC_ID, deletedAt: null }]);
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findMany.mockResolvedValue([
+      { id: SEC_TOPIC_ID, courseId: COURSE_ID, deletedAt: null },
+    ]);
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       db.questionSecondaryTopic.createMany.mockResolvedValue({ count: 1 });
@@ -229,7 +292,7 @@ describe("createQuestion", () => {
 
   it("returns INVALID_TOPIC_IDS when a secondary topic id does not exist at all (no FK 500)", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
     // findMany returns nothing — the requested secondary id is absent in Core
     db.courseTopic.findMany.mockResolvedValue([]);
     const result = await createQuestion(
@@ -246,7 +309,7 @@ describe("createQuestion", () => {
 
   it("does NOT call createMany when secondaryTopicIds is empty", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
@@ -336,6 +399,26 @@ describe("listQuestions", () => {
 
     expect(result.offset).toBe(20);
     expect(db.question.findMany.mock.calls[0][0].skip).toBe(20);
+  });
+
+  it("normalizes negative limit and offset before passing them to Prisma", async () => {
+    db.question.findMany.mockResolvedValue([]);
+    db.question.count.mockResolvedValue(0);
+
+    const result = await listQuestions({ courseId: COURSE_ID, limit: -25, offset: -10 });
+
+    expect(result).toMatchObject({ limit: 1, offset: 0 });
+    expect(db.question.findMany.mock.calls[0][0]).toMatchObject({ take: 1, skip: 0 });
+  });
+
+  it("caps an excessive offset before passing it to Prisma", async () => {
+    db.question.findMany.mockResolvedValue([]);
+    db.question.count.mockResolvedValue(0);
+
+    const result = await listQuestions({ courseId: COURSE_ID, offset: 100_001 });
+
+    expect(result.offset).toBe(100_000);
+    expect(db.question.findMany.mock.calls[0][0].skip).toBe(100_000);
   });
 
   // #315: ADMIN forensics opt-in. Gating to ADMIN happens at the route layer;

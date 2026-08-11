@@ -9,6 +9,7 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
+import { providerConfigurationHint } from "~/lib/ai/provider-types";
 import {
   classifyProviderError,
   createProviderFailure,
@@ -1245,6 +1246,7 @@ export async function action({ request }: ActionFunctionArgs) {
           HYBRID_RAG_MAX_CHUNKS,
           undefined,
           restrictRagToStudentVisible,
+          { signal: request.signal },
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
@@ -1760,6 +1762,7 @@ export async function action({ request }: ActionFunctionArgs) {
             HYBRID_RAG_MAX_CHUNKS,
             undefined,
             restrictRagToStudentVisible,
+            { signal: request.signal },
           );
           return { hits };
         } catch (error) {

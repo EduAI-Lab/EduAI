@@ -90,10 +90,15 @@ export const ProfileCoursesDialog = ({
       }
     };
 
-    void loadCourses();
-
-    return () => {
-      isMounted = false;
+    const handleLogout = async () => {
+        try {
+            await logout();
+            onClose();
+        } catch {
+            toast.error('Could not log out', {
+                description: 'Your session is still active. Please try again.',
+            });
+        }
     };
   }, [open]);
 

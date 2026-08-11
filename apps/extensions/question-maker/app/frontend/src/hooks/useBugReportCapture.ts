@@ -17,6 +17,7 @@ interface NetworkEntry {
 
 const MAX_CONSOLE_ENTRIES = 100;
 const MAX_NETWORK_ENTRIES = 50;
+
 /**
  * Patches console + fetch to buffer recent diagnostics for bug reports.
  * When `enabled` is false, restores originals and clears buffers.
@@ -139,32 +140,21 @@ export function useBugReportCapture(enabled: boolean) {
   }, [enabled]);
 
   const captureScreenshot = useCallback(async () => {
-    if (!enabled || typeof window === "undefined") return;
-    if (capturePromiseRef.current) return capturePromiseRef.current;
-
-    const generation = captureGenerationRef.current;
-    let capturePromise!: Promise<void>;
-    capturePromise = (async () => {
-      try {
-        const canvas = await html2canvas(document.body, {
-          logging: false,
-          useCORS: true,
-          scale: 0.5,
-        });
-        // JPEG keeps the report below Core's screenshot size cap.
-        if (captureGenerationRef.current === generation) {
-          screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
-        }
-      } catch {
-        // ignore capture failures
-      } finally {
-        if (capturePromiseRef.current === capturePromise) {
-          capturePromiseRef.current = null;
-        }
-      }
-    })();
-    capturePromiseRef.current = capturePromise;
-    return capturePromise;
+    if (!enabled || typeof window === 'undefined') return null;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(document.body, {
+        logging: false,
+        useCORS: true,
+        scale: 0.5
+      });
+      // JPEG, not PNG: PNG ignores the quality arg, and a full-page PNG data
+      // URL easily exceeds Core's 512k screenshot cap (dropped server-side).
+      screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
+      return screenshotRef.current;
+    } catch {
+      return null;
+    }
   }, [enabled]);
 
   const getCapturedData = useCallback(() => {

@@ -30,23 +30,10 @@ import {
   normalizePrimaryTopicId,
 } from "../services/questionService.js";
 import {
-  generateQuestions,
-  AI_PROVIDERS,
-  extractQuestionsFromText,
-} from "../services/aiService.js";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { QM_AUTHORIZED } from "../middleware/roles.js";
-import {
-  requireCourseAccess,
-  resolveCourseAccessWithCourse,
-  LEVELS,
-} from "../middleware/courseAccess.js";
-import { requireQuestionAccess } from "../middleware/resourceAccess.js";
-import { prisma } from "../config/database.js";
-import { config } from "../config/settings.js";
-import { parseLimitOffset } from "../utils/listPagination.js";
-import { parseQuestionListFilters } from "../utils/questionListQuery.js";
-import { parseApprovalTarget, prepareApprovalQuestions } from "../utils/questionApproval.js";
+  parseApprovalTarget,
+  prepareApprovalQuestions
+} from '../utils/questionApproval.js';
+import { resolveVisibleCourseWhereForUser } from '../services/courseListService.js';
 
 const router = express.Router();
 
@@ -148,8 +135,9 @@ router.post(
  * When a courseId is supplied (the UI's course-bank view), any caller with
  * view access to that course — including an enrolled TA who doesn't own it —
  * sees the whole bank: we verify course access (§16 view, min 'ta') and scope
- * by the course owner. Without a courseId the list stays caller-scoped to the
- * user's own courses.
+ * by the course owner. Without a courseId the shared course-list visibility
+ * predicate includes every course the caller can author in (ADMIN catalog,
+ * UNIT_ADMIN units, and instructor enrollments), including non-owned anchors.
  */
 router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
@@ -160,6 +148,7 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 
     let scopeUserId = req.user.id;
     let scopeCourseId = normalizedCourseId;
+    let courseWhere;
 
     if (normalizedCourseId !== undefined) {
       const { course, access } = await resolveCourseAccessWithCourse(req.user, normalizedCourseId, {
@@ -174,6 +163,10 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       // Owner-scope so an enrolled non-owner viewer still sees the course bank.
       scopeUserId = course.userId;
       scopeCourseId = course.id;
+    } else {
+      courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
+        cookie: req.headers.cookie,
+      });
     }
 
     const { limit, offset } = parseLimitOffset(req.query);
@@ -181,6 +174,7 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
     const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
       questionBankId: req.query.questionBankId,
+      courseWhere,
       ...listFilters,
       limit,
       offset,
@@ -202,6 +196,7 @@ router.get("/stats", authenticateToken, requireRole(QM_AUTHORIZED), async (req, 
     const requestedCourseId = courseId ?? classId;
     let scopeUserId = req.user.id;
     let scopeCourseId;
+    let courseWhere;
 
     if (requestedCourseId !== undefined && requestedCourseId !== "") {
       const { course, access } = await resolveCourseAccessWithCourse(req.user, requestedCourseId, {
@@ -215,9 +210,16 @@ router.get("/stats", authenticateToken, requireRole(QM_AUTHORIZED), async (req, 
       }
       scopeUserId = course.userId;
       scopeCourseId = course.id;
+    } else {
+      courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
+        cookie: req.headers.cookie,
+      });
     }
 
-    const stats = await getQuestionStats(scopeUserId, { courseId: scopeCourseId });
+    const stats = await getQuestionStats(scopeUserId, {
+      courseId: scopeCourseId,
+      courseWhere,
+    });
 
     res.json({
       success: true,

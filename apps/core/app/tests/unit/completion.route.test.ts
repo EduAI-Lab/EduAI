@@ -234,4 +234,14 @@ describe("POST /api/completion review regressions", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("X-Fleet-Server")).toBe("cmps03");
   });
+
+  it("rejects an excessive completion token budget before provider work", async () => {
+    mockStream();
+
+    const res = await action(makeRequest(baseBody({ maxTokens: 1_000_000 })));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "maxTokens must be between 1 and 16384" });
+    expect(streamText).not.toHaveBeenCalled();
+  });
 });

@@ -68,7 +68,31 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     expect(axiosRequest).toHaveBeenCalled();
   });
 
-  it("pins the DNS lookup and re-validates each redirect hop, so a resolved/redirected private address cannot be reached", async () => {
+  it('does not expose a Canvas response body through the stable service error', async () => {
+    const bodyCanary = 'AUDIT_CANVAS_ERROR_BODY_CANARY_e4f601';
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockRejectedValue(
+      Object.assign(new Error(`request failed ${bodyCanary}`), {
+        response: {
+          status: 502,
+          statusText: `Bad Gateway ${bodyCanary}`,
+          data: { message: bodyCanary },
+          headers: { authorization: `Bearer ${bodyCanary}` },
+        },
+      }),
+    );
+
+    const thrown = await getCanvasCourses(42).catch((error) => error);
+
+    expect(thrown.message).toBe('Failed to get Canvas courses: Canvas API error (502)');
+    expect(thrown.message).not.toContain(bodyCanary);
+  });
+
+  it('pins the DNS lookup and re-validates each redirect hop, so a resolved/redirected private address cannot be reached', async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
       canvasUrl: "https://canvas.example.edu",

@@ -89,14 +89,14 @@ import {
   resolveCoreCourseById,
   resolveCoreCourseCatalog,
   resolveIsPublished,
-} from "../services/courseResolver.js";
-import { mapEduAiServiceKeyError } from "../services/eduaiServiceKeyErrors.js";
-import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
+} from '../services/courseResolver.js';
+import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
   AUTO_SYNC_TIMEOUT_MS,
   AUTO_SYNC_TTL_MS,
   syncCourseEnrollments,
-} from "../services/enrollmentSync.js";
+} from '../services/enrollmentSync.js';
 import {
   ensureOfferingAnchors,
   importExternalCourseForUser,
@@ -158,8 +158,8 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
  * import the same EduAI course independently into their own offerings.
  */
 router.get(
-  "/eduai/courses",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/eduai/courses',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     try {
       // #578: list the caller's Core-scoped courses using their session cookie
@@ -177,13 +177,13 @@ router.get(
 
       const importedIds = new Set(imported.map((row) => row.coreOfferingId).filter(Boolean));
       const filtered = Array.isArray(courses)
-        ? courses.filter((c) => c && typeof c.id === "string" && !importedIds.has(c.id))
+        ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
         : [];
 
       res.json(filtered);
     } catch (error) {
-      console.error("[eduai] Failed to list courses", error);
-      return respondEduAiUpstreamError(res, error, "Unable to fetch EduAI courses");
+      console.error('[eduai] Failed to list courses', error);
+      return respondEduAiUpstreamError(res, error, 'Unable to fetch EduAI courses');
     }
   },
 );
@@ -355,8 +355,8 @@ router.get("/courses", async (req, res) => {
     const progressIds = courses
       .filter(
         (course) =>
-          access.kind === "student" ||
-          (access.kind === "taUnion" && !access.taOfferingIdSet.has(course.id)),
+          access.kind === 'student' ||
+          (access.kind === 'taUnion' && !access.taOfferingIdSet.has(course.id)),
       )
       .map((course) => course.id);
     const progressById = await calculateCourseProgressBatch(progressIds, authUser.id);
@@ -494,14 +494,14 @@ router.get("/courses/facets", async (req, res) => {
  * import. The instructor can rerun sync explicitly afterwards.
  */
 router.post(
-  "/courses/import-external",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/courses/import-external',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const instructor = req.user;
     const { externalCourseId } = req.body || {};
 
-    if (!externalCourseId || typeof externalCourseId !== "string") {
-      return res.status(400).json({ error: "externalCourseId is required" });
+    if (!externalCourseId || typeof externalCourseId !== 'string') {
+      return res.status(400).json({ error: 'externalCourseId is required' });
     }
 
     try {
@@ -511,7 +511,7 @@ router.post(
         cookie: req.headers.cookie,
       });
       if (!externalCourse) {
-        return res.status(403).json({ error: "CORE_COURSE_NOT_AUTHORIZED" });
+        return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
       }
 
       // coreOfferingId is @unique — one AI Tutor offering per Core course
@@ -527,8 +527,8 @@ router.post(
       // second Core call.
       res.status(created ? 201 : 200).json(mapCourseOffering(offering, externalCourse));
     } catch (error) {
-      console.error("[eduai] Failed to import course", error);
-      return respondEduAiUpstreamError(res, error, "Unable to import course");
+      console.error('[eduai] Failed to import course', error);
+      return respondEduAiUpstreamError(res, error, 'Unable to import course');
     }
   },
 );
@@ -547,13 +547,13 @@ router.post(
  * pull from, so it returns 400 rather than a misleading empty sync.
  */
 router.post(
-  "/courses/:courseId/sync-enrollments",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/courses/:courseId/sync-enrollments',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: "Invalid course id" });
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
     try {
@@ -561,19 +561,19 @@ router.post(
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!course) return res.status(404).json({ error: 'Course not found' });
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
       if (!course.coreOfferingId) {
-        return res.status(400).json({ error: "Course was not imported from EduAI" });
+        return res.status(400).json({ error: 'Course was not imported from EduAI' });
       }
 
       const result = await syncCourseEnrollments(courseId, { course });
       res.json(result);
     } catch (error) {
-      console.error("[eduai] Failed to sync enrollments", error);
-      return respondEduAiUpstreamError(res, error, "Unable to sync enrollments");
+      console.error('[eduai] Failed to sync enrollments', error);
+      return respondEduAiUpstreamError(res, error, 'Unable to sync enrollments');
     }
   },
 );
@@ -625,7 +625,7 @@ router.get("/courses/:courseId", async (req, res) => {
           signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
         });
       } catch (e) {
-        const phase = e?.phase === "write" ? "local write" : "Core fetch";
+        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
         console.warn(
           `[courses] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`,
         );
@@ -677,7 +677,7 @@ router.get("/courses/:courseId", async (req, res) => {
  */
 router.post("/courses", requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]), async (_req, res) => {
   return res.status(403).json({
-    error: "Course creation is managed in EduAI Core. Import or enable courses from Core instead.",
+    error: 'Course creation is managed in EduAI Core. Import or enable courses from Core instead.',
   });
 });
 
@@ -696,13 +696,13 @@ router.post("/courses", requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]), asyn
  * their structure.
  */
 router.post(
-  "/courses/:courseId/import",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/courses/:courseId/import',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: "Invalid course id" });
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
     const { sourceCourseId, moduleIds, lessonIds, targetModuleId } = req.body || {};
@@ -716,21 +716,21 @@ router.post(
       : [];
 
     const numericTargetModuleId =
-      typeof targetModuleId === "number" || typeof targetModuleId === "string"
+      typeof targetModuleId === 'number' || typeof targetModuleId === 'string'
         ? Number(targetModuleId)
         : null;
 
     const numericSourceCourseId =
-      typeof sourceCourseId === "number" || typeof sourceCourseId === "string"
+      typeof sourceCourseId === 'number' || typeof sourceCourseId === 'string'
         ? Number(sourceCourseId)
         : null;
 
     if (numericSourceCourseId !== null && !Number.isFinite(numericSourceCourseId)) {
-      return res.status(400).json({ error: "Invalid sourceCourseId" });
+      return res.status(400).json({ error: 'Invalid sourceCourseId' });
     }
 
     if (normalizedModuleIds.length === 0 && normalizedLessonIds.length === 0) {
-      return res.status(400).json({ error: "Nothing to import" });
+      return res.status(400).json({ error: 'Nothing to import' });
     }
 
     try {
@@ -739,7 +739,7 @@ router.post(
       // every lesson source course below, instead of a live Core lookup per
       // course (#1072 unified contract; ADMIN/INSTRUCTOR never call Core here).
       let catalogById = null;
-      if (authUser.role === "UNIT_ADMIN") {
+      if (authUser.role === 'UNIT_ADMIN') {
         const { courses: catalogCourses } = await resolveCoreCourseCatalog();
         catalogById = new Map(catalogCourses.map((c) => [c.id, c]));
       }
@@ -752,14 +752,14 @@ router.post(
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!destCourse) return res.status(404).json({ error: "Course not found" });
+      if (!destCourse) return res.status(404).json({ error: 'Course not found' });
       if (!(await isCourseAdmin(authUser, destCourse, resolveFromCatalog(destCourse)))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       if (normalizedModuleIds.length > 0) {
         if (numericSourceCourseId === null) {
-          return res.status(400).json({ error: "sourceCourseId required when importing modules" });
+          return res.status(400).json({ error: 'sourceCourseId required when importing modules' });
         }
 
         const sourceCourse = await prisma.courseOffering.findUnique({
@@ -770,7 +770,7 @@ router.post(
           !sourceCourse ||
           !(await isCourseAdmin(authUser, sourceCourse, resolveFromCatalog(sourceCourse)))
         ) {
-          return res.status(403).json({ error: "Not authorized for source course" });
+          return res.status(403).json({ error: 'Not authorized for source course' });
         }
 
         const moduleCount = await prisma.module.count({
@@ -783,7 +783,7 @@ router.post(
         if (moduleCount !== normalizedModuleIds.length) {
           return res
             .status(400)
-            .json({ error: "One or more modules do not belong to source course" });
+            .json({ error: 'One or more modules do not belong to source course' });
         }
 
         await cloneCourseContent(numericSourceCourseId, courseId, {
@@ -793,7 +793,7 @@ router.post(
 
       if (normalizedLessonIds.length > 0) {
         if (numericTargetModuleId === null || !Number.isFinite(numericTargetModuleId)) {
-          return res.status(400).json({ error: "targetModuleId required when importing lessons" });
+          return res.status(400).json({ error: 'targetModuleId required when importing lessons' });
         }
 
         const targetModule = await prisma.module.findUnique({
@@ -804,7 +804,7 @@ router.post(
         if (!targetModule || targetModule.courseOfferingId !== courseId) {
           return res
             .status(400)
-            .json({ error: "targetModuleId does not belong to destination course" });
+            .json({ error: 'targetModuleId does not belong to destination course' });
         }
 
         const lessons = await prisma.lesson.findMany({
@@ -815,7 +815,7 @@ router.post(
         });
 
         if (lessons.length !== normalizedLessonIds.length) {
-          return res.status(400).json({ error: "One or more lessons were not found" });
+          return res.status(400).json({ error: 'One or more lessons were not found' });
         }
 
         const sourceCourseIds = new Set(lessons.map((lesson) => lesson.module.courseOfferingId));
@@ -826,7 +826,7 @@ router.post(
             include: { instructors: { select: { userId: true } } },
           });
           if (!sc || !(await isCourseAdmin(authUser, sc, resolveFromCatalog(sc)))) {
-            return res.status(403).json({ error: "Not authorized for lesson source course" });
+            return res.status(403).json({ error: 'Not authorized for lesson source course' });
           }
         }
 
@@ -837,12 +837,12 @@ router.post(
         where: { id: courseId },
         include: {
           modules: {
-            orderBy: { position: "asc" },
+            orderBy: { position: 'asc' },
             include: {
               lessons: {
-                orderBy: { position: "asc" },
+                orderBy: { position: 'asc' },
                 include: {
-                  activities: { orderBy: { position: "asc" } },
+                  activities: { orderBy: { position: 'asc' } },
                 },
               },
             },
@@ -867,13 +867,13 @@ router.post(
  * half-finished module can't leak to students.
  */
 router.patch(
-  "/courses/:courseId/publish",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/courses/:courseId/publish',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: "Invalid course id" });
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
     try {
@@ -881,9 +881,9 @@ router.patch(
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!course) return res.status(404).json({ error: 'Course not found' });
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // #477: write through to Core first. If Core rejects, surface 500. There is
@@ -899,7 +899,7 @@ router.patch(
       // opposite ("unpublished") state (see mapCourseOfferingAfterPublishWrite).
       const resolved = await resolveCoreCourseById(course.coreOfferingId);
       if (resolved.coreUnavailable) {
-        res.set("X-Core-Status", "unavailable");
+        res.set('X-Core-Status', 'unavailable');
       }
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
     } catch (e) {
@@ -922,13 +922,13 @@ router.patch(
  * module/lesson could remain reachable by direct URL.
  */
 router.patch(
-  "/courses/:courseId/unpublish",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/courses/:courseId/unpublish',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: "Invalid course id" });
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
     try {
@@ -936,9 +936,9 @@ router.patch(
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!courseForAuth) return res.status(404).json({ error: "Course not found" });
+      if (!courseForAuth) return res.status(404).json({ error: 'Course not found' });
       if (!(await isCourseAdmin(authUser, courseForAuth))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // #477: write through to Core first; a Core failure aborts the local cascade.
@@ -975,7 +975,7 @@ router.patch(
       // #225 SEAM-04: same re-read-after-write trust as the publish route above.
       const resolved = await resolveCoreCourseById(courseForAuth.coreOfferingId);
       if (resolved.coreUnavailable) {
-        res.set("X-Core-Status", "unavailable");
+        res.set('X-Core-Status', 'unavailable');
       }
       res.json(mapCourseOfferingAfterPublishWrite(courseForAuth, resolved, false));
     } catch (e) {
@@ -1103,7 +1103,7 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
       where,
       // `id` last: Submission has no unique constraint covering the leading
       // keys, so without it tied rows could shift between offset pages.
-      orderBy: [{ activityId: "asc" }, { userId: "asc" }, { attemptNumber: "asc" }, { id: "asc" }],
+      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }, { id: 'asc' }],
       take,
       skip,
       include: {
@@ -1334,7 +1334,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
       // Core list degrades the department scope to empty, not an error.
       const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
       const deptCoreIds =
-        authUser.role === "UNIT_ADMIN" && units.length > 0
+        authUser.role === 'UNIT_ADMIN' && units.length > 0
           ? catalogCourses
               .filter((c) => c?.department && units.includes(c.department))
               .map((c) => c.id)
@@ -1392,8 +1392,8 @@ router.get("/me/dashboard-stats", async (req, res) => {
     // TA — either the platform role is TA, or a STUDENT account also holds a
     // TA enrollment on at least one course (mirrors GET /courses §174).
     const isEffectiveTa =
-      authUser.role === "TA" ||
-      (authUser.role === "STUDENT" && (await userHasTaEnrollment(authUser.id)));
+      authUser.role === 'TA' ||
+      (authUser.role === 'STUDENT' && (await userHasTaEnrollment(authUser.id)));
 
     if (isEffectiveTa) {
       const taEnrollments = await prisma.courseEnrollment.findMany({

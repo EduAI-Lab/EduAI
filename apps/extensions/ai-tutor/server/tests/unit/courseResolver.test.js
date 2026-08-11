@@ -18,7 +18,7 @@ import {
   fetchCoreCourseSafe,
   listEduAiCourses,
   listEduAiCoursesServiceKey,
-} from "../../src/services/eduaiClient.js";
+} from '../../src/services/eduaiClient.js';
 import {
   indexCoreCoursesById,
   resolveCoreCourseById,
@@ -46,9 +46,9 @@ describe("resolveCoreCourseList", () => {
     expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: "session=abc", all: true });
   });
 
-  it("degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)", async () => {
+  it('degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)', async () => {
     vi.mocked(listEduAiCourses).mockRejectedValue(
-      Object.assign(new Error("boom"), { status: 503 }),
+      Object.assign(new Error('boom'), { status: 503 }),
     );
 
     const result = await resolveCoreCourseList({ cookie: "session=abc" });
@@ -75,15 +75,15 @@ describe("resolveCoreCourseList", () => {
   });
 });
 
-describe("indexCoreCoursesById", () => {
-  it("indexes courses by id for O(1) lookup", () => {
+describe('indexCoreCoursesById', () => {
+  it('indexes courses by id for O(1) lookup', () => {
     const byId = indexCoreCoursesById([
-      { id: "a", name: "A" },
-      { id: "b", name: "B" },
+      { id: 'a', name: 'A' },
+      { id: 'b', name: 'B' },
     ]);
-    expect(byId.get("a")).toEqual({ id: "a", name: "A" });
-    expect(byId.get("b")).toEqual({ id: "b", name: "B" });
-    expect(byId.get("missing")).toBeUndefined();
+    expect(byId.get('a')).toEqual({ id: 'a', name: 'A' });
+    expect(byId.get('b')).toEqual({ id: 'b', name: 'B' });
+    expect(byId.get('missing')).toBeUndefined();
   });
 
   it("skips entries with no id and handles null/undefined input", () => {
@@ -106,7 +106,7 @@ describe("resolveCoreCourseById", () => {
     const result = await resolveCoreCourseById("core-1");
 
     expect(result).toEqual({
-      course: { id: "core-1", name: "Algorithms" },
+      course: { id: 'core-1', name: 'Algorithms' },
       coreUnavailable: false,
     });
   });
@@ -119,9 +119,9 @@ describe("resolveCoreCourseById", () => {
     expect(result).toEqual({ course: null, coreUnavailable: false });
   });
 
-  it("degrades to null course + coreUnavailable:true on a thrown error (network/5xx)", async () => {
+  it('degrades to null course + coreUnavailable:true on a thrown error (network/5xx)', async () => {
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(
-      Object.assign(new Error("down"), { status: 503 }),
+      Object.assign(new Error('down'), { status: 503 }),
     );
 
     const result = await resolveCoreCourseById("core-1");
@@ -138,9 +138,9 @@ describe("resolveCoreCourseById", () => {
     expect(fetchCoreCourseSafe).toHaveBeenCalledWith("core-1", { signal });
   });
 
-  it("degrades to null course + coreUnavailable:true when the signal aborts (hung Core)", async () => {
+  it('degrades to null course + coreUnavailable:true when the signal aborts (hung Core)', async () => {
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(
-      new DOMException("The operation was aborted", "TimeoutError"),
+      new DOMException('The operation was aborted', 'TimeoutError'),
     );
 
     const result = await resolveCoreCourseById("core-1", { signal: AbortSignal.timeout(3_000) });
@@ -183,11 +183,11 @@ describe("resolveIsPublished (#819)", () => {
 // regardless of the caller's Core enrollment, so the #1082 class of bug
 // (AT-only-enrolled caller's course invisible because the cookie-scoped
 // list omitted it) is impossible by construction — locked in below.
-describe("resolveCoreCourseCatalog", () => {
-  it("returns the full catalog and coreUnavailable:false on success", async () => {
+describe('resolveCoreCourseCatalog', () => {
+  it('returns the full catalog and coreUnavailable:false on success', async () => {
     const catalog = [
-      { id: "c1", isPublished: true },
-      { id: "c2", isPublished: false },
+      { id: 'c1', isPublished: true },
+      { id: 'c2', isPublished: false },
     ];
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(catalog);
 
@@ -232,13 +232,13 @@ describe("resolveCoreCourseCatalog", () => {
     expect(result).toEqual({ courses: [], coreUnavailable: true });
     // Publish gates keyed off the empty map fail closed.
     expect(
-      resolveIsPublished({ coreOfferingId: "core-1" }, indexCoreCoursesById(result.courses)),
+      resolveIsPublished({ coreOfferingId: 'core-1' }, indexCoreCoursesById(result.courses)),
     ).toBe(false);
   });
 
-  it("a course absent from the catalog (deleted in Core) stays unresolved and fails closed", async () => {
+  it('a course absent from the catalog (deleted in Core) stays unresolved and fails closed', async () => {
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-      { id: "core-unrelated", isPublished: true },
+      { id: 'core-unrelated', isPublished: true },
     ]);
 
     const { courses } = await resolveCoreCourseCatalog();

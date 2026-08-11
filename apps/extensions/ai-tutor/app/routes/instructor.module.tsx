@@ -689,7 +689,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                     onClick={onImportLessons}
                     disabled={importing || selectedLessonIds.size === 0}
                   >
-                    {importing ? "Importing…" : "Import selected lessons"}
+                    {importing ? 'Importing…' : 'Import selected lessons'}
                   </Button>
                 </div>
               )}
@@ -829,7 +829,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             <DialogHeader>
               <DialogTitle>Delete lesson</DialogTitle>
               <DialogDescription>
-                Delete{" "}
+                Delete{' '}
                 <span className="font-semibold text-foreground">{deletingLesson?.title}</span>? This
                 removes its activities and can't be undone.
               </DialogDescription>
@@ -849,7 +849,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 onClick={onConfirmDelete}
                 disabled={deleting}
               >
-                {deleting ? "Deleting…" : "Delete lesson"}
+                {deleting ? 'Deleting…' : 'Delete lesson'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -892,9 +892,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               const canPublish = course?.isPublished && module?.isPublished;
               const blocked = !lesson.isPublished && !canPublish;
               const parentName = !course?.isPublished
-                ? course?.title || "the parent course"
+                ? course?.title || 'the parent course'
                 : !module?.isPublished
-                  ? module?.title || "the parent module"
+                  ? module?.title || 'the parent module'
                   : null;
               const tooltipMessage =
                 blocked && parentName

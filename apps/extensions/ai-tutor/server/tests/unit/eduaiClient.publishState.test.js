@@ -65,13 +65,13 @@ describe("setCoreCoursePublishState", () => {
     expect(url).toBe(`http://core.test/api/courses/${OFFERING_ID}/unpublish`);
   });
 
-  it("throws with status on a Core HTTP error so the AI Tutor route can propagate it", async () => {
+  it('throws with status on a Core HTTP error so the AI Tutor route can propagate it', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 403,
-        text: () => Promise.resolve("Forbidden"),
+        text: () => Promise.resolve('Forbidden'),
       }),
     );
 
@@ -80,13 +80,13 @@ describe("setCoreCoursePublishState", () => {
     });
   });
 
-  it("throws with status 404 when Core reports course not found", async () => {
+  it('throws with status 404 when Core reports course not found', async () => {
     vi.stubGlobal(
-      "fetch",
+      'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        text: () => Promise.resolve("COURSE_NOT_FOUND"),
+        text: () => Promise.resolve('COURSE_NOT_FOUND'),
       }),
     );
 

@@ -19,10 +19,9 @@ import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import { InvalidOllamaBaseUrlError, ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import {
-  findActiveReEmbedJob,
   getReEmbedJobForCourse,
   serializeReEmbedJob,
-  startReEmbedJob,
+  startOrResumeReEmbedJob,
 } from "~/lib/ai/re-embed-job.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import {
@@ -399,13 +398,8 @@ export async function startAdminCourseReEmbed(
   const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
-  const active = await findActiveReEmbedJob(courseId);
-  if (active) {
-    return adminPayload({ job: serializeReEmbedJob(active), alreadyRunning: true });
-  }
-
-  const { job } = await startReEmbedJob(courseId);
-  return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: false });
+  const { job, created } = await startOrResumeReEmbedJob(courseId);
+  return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: !created });
 }
 
 export async function getAdminCourseReEmbedJob(
@@ -755,19 +749,11 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { error: "CRON_JOB_NOT_TRIGGERABLE" };
   }
 
-  const { findRunningCronRun, startCronRun } = await import("~/lib/db.cron-jobs.server");
-  const alreadyRunning = await findRunningCronRun(jobName);
-  if (alreadyRunning) {
-    return { ok: true, runId: alreadyRunning.id, jobName, reused: true };
+  const result = await startCronRun(jobName);
+  if (result.created) {
+    triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
   }
-
-  const { runId, created } = await startCronRun(jobName, {
-    source: "ADMIN_CHAT",
-    triggeredByUserId: actor.id,
-  });
-  // The dedicated cron worker claims ADMIN_CHAT runs during reconciliation so
-  // shell jobs execute under eduai-cron instead of the Core web account.
-  return { ok: true, runId, jobName, reused: !created };
+  return { ok: true, runId: result.runId, jobName, reused: !result.created };
 }
 
 export async function updateAdminCronSchedule(

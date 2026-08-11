@@ -257,7 +257,7 @@ export function LessonActivityView({
               size="lg"
               onClick={onSubmit}
               disabled={
-                submitting || (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
+                submitting || (activity?.type === 'MCQ' ? mcq === null : text.trim() === '')
               }
             >
               {submitting ? (

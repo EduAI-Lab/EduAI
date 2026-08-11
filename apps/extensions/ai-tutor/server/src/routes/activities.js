@@ -54,9 +54,11 @@ import {
   generateCustomResponse,
   generateGuideResponse,
   generateTeachResponse,
-} from "../services/aiGuidance.js";
-import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
-import { getEduAiBaseUrl, listCourseTestableQuestions } from "../services/eduaiClient.js";
+  getSafeAiErrorMetadata,
+  logAiGuidanceEvent,
+} from '../services/aiGuidance.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
 import {
   isCoursePublishedLive,
   resolveCoreCourseById,
@@ -247,7 +249,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     !lesson?.module?.isPublished ||
     !lesson?.isPublished
   ) {
-    return res.status(403).json({ error: "Activity is not available" });
+    return res.status(403).json({ error: 'Activity is not available' });
   }
 
   // #999 review: forward a client disconnect (e.g. the Stop button aborting
@@ -362,9 +364,20 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       // cancelled.
       return;
     }
-    console.error(`Error generating ${mode} guidance:`, error);
-    const status = Number.isInteger(error?.status) ? error.status : 500;
-    return res.status(status).json({ error: String(error.message || error) });
+    const metadata = getSafeAiErrorMetadata(error);
+    logAiGuidanceEvent('error', 'guidance_route_failed', { mode, ...metadata });
+    const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
+    const timedOut = metadata.code === 'TIMEOUT';
+    const body = {
+      error: timedOut
+        ? 'The AI study buddy took too long to respond. Please try again.'
+        : 'Unable to generate an AI tutoring response',
+      code: timedOut ? 'AI_TUTOR_TIMEOUT' : 'AI_TUTOR_GUIDANCE_ERROR',
+      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
+      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
+      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
+    };
+    return res.status(status).json(body);
   } finally {
     res.removeListener("close", onClientClose);
   }
@@ -490,13 +503,13 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
  * frontend never has to render a tutor screen with no available modes.
  */
 router.post(
-  "/lessons/:lessonId/activities",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/lessons/:lessonId/activities',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const lessonId = Number(req.params.lessonId);
     if (!Number.isFinite(lessonId)) {
-      return res.status(400).json({ error: "Invalid lesson id" });
+      return res.status(400).json({ error: 'Invalid lesson id' });
     }
 
     // Accept legacy `prompt` field by mapping it to question before validation
@@ -506,12 +519,12 @@ router.post(
     try {
       payload = CreateActivitySchema.parse(raw);
     } catch (e) {
-      return res.status(400).json({ error: "Invalid payload", details: e?.errors || String(e) });
+      return res.status(400).json({ error: 'Invalid payload', details: e?.errors || String(e) });
     }
 
     // Validate at least one AI mode is enabled
     if (!payload.enableTeachMode && !payload.enableGuideMode && !payload.enableCustomMode) {
-      return res.status(400).json({ error: "At least one AI mode must be enabled" });
+      return res.status(400).json({ error: 'At least one AI mode must be enabled' });
     }
 
     try {
@@ -527,22 +540,22 @@ router.post(
       });
 
       if (!lesson) {
-        return res.status(404).json({ error: "Lesson not found" });
+        return res.status(404).json({ error: 'Lesson not found' });
       }
 
       const isInstructor = lesson.module.courseOffering.instructors.some(
         (i) => i.userId === authUser.id,
       );
       const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
       }
 
       const courseOfferingId = lesson.module.courseOffering.id;
 
       const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
       if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-        return res.status(400).json({ error: "mainTopicId must belong to the lesson course" });
+        return res.status(400).json({ error: 'mainTopicId must belong to the lesson course' });
       }
 
       const normalizedSecondaryIds = Array.isArray(payload.secondaryTopicIds)
@@ -550,7 +563,7 @@ router.post(
             new Set(
               payload.secondaryTopicIds.filter(
                 (value) =>
-                  typeof value === "string" && value.length > 0 && value !== payload.mainTopicId,
+                  typeof value === 'string' && value.length > 0 && value !== payload.mainTopicId,
               ),
             ),
           )
@@ -564,7 +577,7 @@ router.post(
         if (invalid || topics.length !== normalizedSecondaryIds.length) {
           return res
             .status(400)
-            .json({ error: "secondaryTopicIds must belong to the lesson course" });
+            .json({ error: 'secondaryTopicIds must belong to the lesson course' });
         }
       }
 
@@ -573,7 +586,7 @@ router.post(
       // undefined; assign max(position)+1 so new activities append (issue #1047).
       const lastActivity = await prisma.activity.findFirst({
         where: { lessonId },
-        orderBy: { position: "desc" },
+        orderBy: { position: 'desc' },
         select: { position: true },
       });
       const resolvedPosition = lastActivity ? lastActivity.position + 1 : 0;
@@ -581,7 +594,7 @@ router.post(
       const activity = await prisma.activity.create({
         data: {
           title: payload.title ?? null,
-          instructionsMd: payload.instructionsMd ?? "Answer the question.",
+          instructionsMd: payload.instructionsMd ?? 'Answer the question.',
           position: resolvedPosition,
           lessonId,
           promptTemplateId: payload.promptTemplateId ?? null,
@@ -593,7 +606,7 @@ router.post(
           enableCustomMode: payload.enableCustomMode ?? false,
           config: {
             question: payload.question,
-            questionType: payload.type ?? "MCQ",
+            questionType: payload.type ?? 'MCQ',
             options: payload.options,
             answer: payload.answer ?? null,
             hints: Array.isArray(payload.hints) ? payload.hints : [],
@@ -635,40 +648,40 @@ router.post(
  * fields appear, leaving other config keys untouched.
  */
 router.patch(
-  "/activities/:activityId",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/activities/:activityId',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const instructor = req.user;
     const activityId = Number(req.params.activityId);
     if (!Number.isFinite(activityId)) {
-      return res.status(400).json({ error: "Invalid activity id" });
+      return res.status(400).json({ error: 'Invalid activity id' });
     }
 
     let payload;
     try {
       payload = UpdateActivitySchema.parse(req.body || {});
     } catch (e) {
-      return res.status(400).json({ error: "Invalid payload", details: e?.errors || String(e) });
+      return res.status(400).json({ error: 'Invalid payload', details: e?.errors || String(e) });
     }
     const noUpdatableFields =
-      typeof payload.promptTemplateId === "undefined" &&
-      typeof payload.customPrompt === "undefined" &&
-      typeof payload.customPromptTitle === "undefined" &&
-      typeof payload.enableCustomMode === "undefined" &&
-      typeof payload.mainTopicId === "undefined" &&
-      typeof payload.secondaryTopicIds === "undefined" &&
-      typeof payload.title === "undefined" &&
-      typeof payload.instructionsMd === "undefined" &&
-      typeof payload.question === "undefined" &&
-      typeof payload.type === "undefined" &&
-      typeof payload.options === "undefined" &&
-      typeof payload.answer === "undefined" &&
-      typeof payload.hints === "undefined" &&
-      typeof payload.enableTeachMode === "undefined" &&
-      typeof payload.enableGuideMode === "undefined";
+      typeof payload.promptTemplateId === 'undefined' &&
+      typeof payload.customPrompt === 'undefined' &&
+      typeof payload.customPromptTitle === 'undefined' &&
+      typeof payload.enableCustomMode === 'undefined' &&
+      typeof payload.mainTopicId === 'undefined' &&
+      typeof payload.secondaryTopicIds === 'undefined' &&
+      typeof payload.title === 'undefined' &&
+      typeof payload.instructionsMd === 'undefined' &&
+      typeof payload.question === 'undefined' &&
+      typeof payload.type === 'undefined' &&
+      typeof payload.options === 'undefined' &&
+      typeof payload.answer === 'undefined' &&
+      typeof payload.hints === 'undefined' &&
+      typeof payload.enableTeachMode === 'undefined' &&
+      typeof payload.enableGuideMode === 'undefined';
 
     if (noUpdatableFields) {
-      return res.status(400).json({ error: "Nothing to update" });
+      return res.status(400).json({ error: 'Nothing to update' });
     }
 
     try {
@@ -691,7 +704,7 @@ router.patch(
       });
 
       if (!activity) {
-        return res.status(404).json({ error: "Activity not found" });
+        return res.status(404).json({ error: 'Activity not found' });
       }
 
       const isInstructor = activity.lesson.module.courseOffering.instructors.some(
@@ -702,15 +715,15 @@ router.patch(
         activity.lesson.module.courseOffering,
       );
 
-      if (!isInstructor && !unitAdmin && instructor.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this activity" });
+      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this activity' });
       }
 
       const courseOfferingId = activity.lesson.module.courseOfferingId;
 
       const updateData = {};
 
-      if (typeof payload.title !== "undefined") {
+      if (typeof payload.title !== 'undefined') {
         if (payload.title === null) {
           updateData.title = null;
         } else {
@@ -719,32 +732,32 @@ router.patch(
         }
       }
 
-      if (typeof payload.instructionsMd !== "undefined") {
+      if (typeof payload.instructionsMd !== 'undefined') {
         updateData.instructionsMd = payload.instructionsMd;
       }
 
       const currentConfig =
-        activity.config && typeof activity.config === "object" ? { ...activity.config } : {};
+        activity.config && typeof activity.config === 'object' ? { ...activity.config } : {};
       let configChanged = false;
 
-      if (typeof payload.question !== "undefined") {
+      if (typeof payload.question !== 'undefined') {
         const questionText = payload.question.trim();
         if (questionText.length === 0) {
-          return res.status(400).json({ error: "question must not be empty" });
+          return res.status(400).json({ error: 'question must not be empty' });
         }
         currentConfig.question = questionText;
         configChanged = true;
       }
 
-      if (typeof payload.type !== "undefined") {
+      if (typeof payload.type !== 'undefined') {
         currentConfig.questionType = payload.type;
-        if (payload.type === "SHORT_TEXT") {
+        if (payload.type === 'SHORT_TEXT') {
           currentConfig.options = null;
         }
         configChanged = true;
       }
 
-      if (typeof payload.options !== "undefined") {
+      if (typeof payload.options !== 'undefined') {
         if (payload.options === null) {
           currentConfig.options = null;
         } else {
@@ -753,12 +766,12 @@ router.patch(
         configChanged = true;
       }
 
-      if (typeof payload.answer !== "undefined") {
+      if (typeof payload.answer !== 'undefined') {
         currentConfig.answer = payload.answer;
         configChanged = true;
       }
 
-      if (typeof payload.hints !== "undefined") {
+      if (typeof payload.hints !== 'undefined') {
         const normalizedHints = Array.isArray(payload.hints)
           ? payload.hints.map((hint) => hint.trim()).filter((hint) => hint.length > 0)
           : [];
@@ -770,64 +783,64 @@ router.patch(
         updateData.config = currentConfig;
       }
 
-      if (typeof payload.promptTemplateId !== "undefined") {
+      if (typeof payload.promptTemplateId !== 'undefined') {
         if (payload.promptTemplateId === null) {
           updateData.promptTemplateId = null;
-        } else if (typeof payload.promptTemplateId === "number") {
+        } else if (typeof payload.promptTemplateId === 'number') {
           const prompt = await prisma.promptTemplate.findUnique({
             where: { id: payload.promptTemplateId },
           });
           if (!prompt) {
-            return res.status(400).json({ error: "Invalid promptTemplateId" });
+            return res.status(400).json({ error: 'Invalid promptTemplateId' });
           }
           updateData.promptTemplateId = payload.promptTemplateId;
         } else {
-          return res.status(400).json({ error: "promptTemplateId must be a number or null" });
+          return res.status(400).json({ error: 'promptTemplateId must be a number or null' });
         }
       }
 
-      if (typeof payload.customPrompt !== "undefined") {
+      if (typeof payload.customPrompt !== 'undefined') {
         if (payload.customPrompt === null) {
           updateData.customPrompt = null;
-        } else if (typeof payload.customPrompt === "string") {
+        } else if (typeof payload.customPrompt === 'string') {
           updateData.customPrompt = normalizeCustomPrompt(payload.customPrompt);
         } else {
-          return res.status(400).json({ error: "customPrompt must be a string or null" });
+          return res.status(400).json({ error: 'customPrompt must be a string or null' });
         }
       }
 
-      if (typeof payload.customPromptTitle !== "undefined") {
+      if (typeof payload.customPromptTitle !== 'undefined') {
         if (payload.customPromptTitle === null) {
           updateData.customPromptTitle = null;
-        } else if (typeof payload.customPromptTitle === "string") {
+        } else if (typeof payload.customPromptTitle === 'string') {
           updateData.customPromptTitle = normalizeCustomPromptTitle(payload.customPromptTitle);
         } else {
-          return res.status(400).json({ error: "customPromptTitle must be a string or null" });
+          return res.status(400).json({ error: 'customPromptTitle must be a string or null' });
         }
       }
 
       let resolvedMainTopicId = activity.mainTopicId;
-      if (typeof payload.mainTopicId !== "undefined") {
-        if (typeof payload.mainTopicId !== "string" || payload.mainTopicId.length === 0) {
-          return res.status(400).json({ error: "mainTopicId must be a string" });
+      if (typeof payload.mainTopicId !== 'undefined') {
+        if (typeof payload.mainTopicId !== 'string' || payload.mainTopicId.length === 0) {
+          return res.status(400).json({ error: 'mainTopicId must be a string' });
         }
         const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
         if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-          return res.status(400).json({ error: "mainTopicId must belong to the activity course" });
+          return res.status(400).json({ error: 'mainTopicId must belong to the activity course' });
         }
         updateData.mainTopicId = payload.mainTopicId;
         resolvedMainTopicId = payload.mainTopicId;
       }
 
-      if (typeof payload.secondaryTopicIds !== "undefined") {
+      if (typeof payload.secondaryTopicIds !== 'undefined') {
         if (!Array.isArray(payload.secondaryTopicIds)) {
-          return res.status(400).json({ error: "secondaryTopicIds must be an array of ids" });
+          return res.status(400).json({ error: 'secondaryTopicIds must be an array of ids' });
         }
         const normalizedSecondaryIds = Array.from(
           new Set(
             payload.secondaryTopicIds.filter(
               (value) =>
-                typeof value === "string" && value.length > 0 && value !== resolvedMainTopicId,
+                typeof value === 'string' && value.length > 0 && value !== resolvedMainTopicId,
             ),
           ),
         );
@@ -840,7 +853,7 @@ router.patch(
           if (invalid || topics.length !== normalizedSecondaryIds.length) {
             return res
               .status(400)
-              .json({ error: "secondaryTopicIds must belong to the activity course" });
+              .json({ error: 'secondaryTopicIds must belong to the activity course' });
           }
         }
 
@@ -853,37 +866,37 @@ router.patch(
       }
 
       const requestedModeUpdate =
-        typeof payload.enableTeachMode !== "undefined" ||
-        typeof payload.enableGuideMode !== "undefined" ||
-        typeof payload.enableCustomMode !== "undefined";
+        typeof payload.enableTeachMode !== 'undefined' ||
+        typeof payload.enableGuideMode !== 'undefined' ||
+        typeof payload.enableCustomMode !== 'undefined';
 
       // Handle AI mode updates with validation
       if (requestedModeUpdate) {
         const newTeachMode =
-          typeof payload.enableTeachMode !== "undefined"
+          typeof payload.enableTeachMode !== 'undefined'
             ? payload.enableTeachMode
             : activity.enableTeachMode;
         const newGuideMode =
-          typeof payload.enableGuideMode !== "undefined"
+          typeof payload.enableGuideMode !== 'undefined'
             ? payload.enableGuideMode
             : activity.enableGuideMode;
         const newCustomMode =
-          typeof payload.enableCustomMode !== "undefined"
+          typeof payload.enableCustomMode !== 'undefined'
             ? payload.enableCustomMode
             : activity.enableCustomMode;
 
         // Validate at least one mode is enabled
         if (!newTeachMode && !newGuideMode && !newCustomMode) {
-          return res.status(400).json({ error: "At least one AI mode must be enabled" });
+          return res.status(400).json({ error: 'At least one AI mode must be enabled' });
         }
 
-        if (typeof payload.enableTeachMode !== "undefined") {
+        if (typeof payload.enableTeachMode !== 'undefined') {
           updateData.enableTeachMode = payload.enableTeachMode;
         }
-        if (typeof payload.enableGuideMode !== "undefined") {
+        if (typeof payload.enableGuideMode !== 'undefined') {
           updateData.enableGuideMode = payload.enableGuideMode;
         }
-        if (typeof payload.enableCustomMode !== "undefined") {
+        if (typeof payload.enableCustomMode !== 'undefined') {
           updateData.enableCustomMode = payload.enableCustomMode;
         }
       }
@@ -908,13 +921,13 @@ router.patch(
 );
 
 router.delete(
-  "/activities/:activityId",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/activities/:activityId',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const instructor = req.user;
     const activityId = Number(req.params.activityId);
     if (!Number.isFinite(activityId)) {
-      return res.status(400).json({ error: "Invalid activity id" });
+      return res.status(400).json({ error: 'Invalid activity id' });
     }
 
     try {
@@ -936,7 +949,7 @@ router.delete(
       });
 
       if (!activity) {
-        return res.status(404).json({ error: "Activity not found" });
+        return res.status(404).json({ error: 'Activity not found' });
       }
 
       const isInstructor = activity.lesson.module.courseOffering.instructors.some(
@@ -947,8 +960,8 @@ router.delete(
         activity.lesson.module.courseOffering,
       );
 
-      if (!isInstructor && !unitAdmin && instructor.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this activity" });
+      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this activity' });
       }
 
       await prisma.activity.delete({ where: { id: activityId } });
@@ -1006,7 +1019,7 @@ router.post(
 
       const course = activity.lesson.module.courseOffering;
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this activity" });
+        return res.status(403).json({ error: 'Not authorized for this activity' });
       }
 
       const clone = await cloneActivityIntoLesson({
@@ -1068,7 +1081,7 @@ router.post(
 
       const targetCourse = targetLesson.module.courseOffering;
       if (!(await isCourseAdmin(authUser, targetCourse))) {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
       }
 
       const sourceActivity = await prisma.activity.findUnique({
@@ -1093,7 +1106,7 @@ router.post(
 
       const sourceCourse = sourceActivity.lesson.module.courseOffering;
       if (!(await isCourseAdmin(authUser, sourceCourse))) {
-        return res.status(403).json({ error: "Not authorized for the source activity" });
+        return res.status(403).json({ error: 'Not authorized for the source activity' });
       }
 
       const clone = await cloneActivityIntoLesson({
@@ -1152,7 +1165,7 @@ router.get(
         return res.status(404).json({ error: "Course not found" });
       }
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: "Not authorized for this course" });
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // Mirrors the manageable-courses logic in routes/courses.js `GET /courses`.
@@ -1292,7 +1305,7 @@ router.post("/questions/:id/answer", async (req, res) => {
       return res.status(403).json({ error: "Only students can submit answers" });
     }
     const isEnrolled = course.enrollments.some(
-      (e) => e.userId === authUser.id && e.role === "STUDENT",
+      (e) => e.userId === authUser.id && e.role === 'STUDENT',
     );
     if (!isEnrolled) {
       return res.status(403).json({ error: "Not enrolled in this course" });
@@ -1303,7 +1316,7 @@ router.post("/questions/:id/answer", async (req, res) => {
       !answerLesson.module.isPublished ||
       !answerLesson.isPublished
     ) {
-      return res.status(403).json({ error: "Activity is not available" });
+      return res.status(403).json({ error: 'Activity is not available' });
     }
 
     const { isCorrect } = evaluateQuestion(activity, {
@@ -1398,7 +1411,7 @@ router.post("/activities/:activityId/teach", async (req, res) => {
       !lesson?.module?.isPublished ||
       !lesson?.isPublished
     )
-      return res.status(403).json({ error: "Activity is not available" });
+      return res.status(403).json({ error: 'Activity is not available' });
 
     if (!activity.enableTeachMode) {
       return res.status(400).json({ error: "Teach mode is not enabled for this activity" });
@@ -1477,7 +1490,7 @@ router.post("/activities/:activityId/guide", async (req, res) => {
       !lesson?.module?.isPublished ||
       !lesson?.isPublished
     )
-      return res.status(403).json({ error: "Activity is not available" });
+      return res.status(403).json({ error: 'Activity is not available' });
 
     if (!activity.enableGuideMode) {
       return res.status(400).json({ error: "Guide mode is not enabled for this activity" });
@@ -1555,7 +1568,7 @@ router.post("/activities/:activityId/custom", async (req, res) => {
       !lesson?.module?.isPublished ||
       !lesson?.isPublished
     )
-      return res.status(403).json({ error: "Activity is not available" });
+      return res.status(403).json({ error: 'Activity is not available' });
 
     // Check if custom mode is enabled and has a prompt
     if (!activity.enableCustomMode) {
@@ -1593,9 +1606,18 @@ router.post("/activities/:activityId/custom", async (req, res) => {
           ...context,
         }),
     });
-  } catch (e) {
-    console.error("Error generating custom response:", e);
-    res.status(500).json({ error: String(e) });
+  } catch (error) {
+    const metadata = getSafeAiErrorMetadata(error);
+    logAiGuidanceEvent('error', 'custom_route_failed', metadata);
+    const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
+    const body = {
+      error: 'Unable to generate a custom tutoring response',
+      code: 'AI_TUTOR_CUSTOM_ERROR',
+      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
+      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
+      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
+    };
+    return res.status(status).json(body);
   }
 });
 
@@ -1737,9 +1759,9 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
+    const isTa = enrollment?.role === 'TA';
     if (!(await isCourseAdmin(authUser, course)) && !isTa) {
-      return res.status(403).json({ error: "Not authorized for this submission" });
+      return res.status(403).json({ error: 'Not authorized for this submission' });
     }
 
     const updated = await prisma.submission.update({
@@ -1988,7 +2010,7 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
 
     const sessions = await prisma.aiChatSession.findMany({
       where: { userId: authUser.id, activityId },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
         chatId: true,

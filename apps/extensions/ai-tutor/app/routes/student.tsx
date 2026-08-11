@@ -10,21 +10,21 @@ import {
   PageHeading,
   buildTermFilterGroup,
   type CourseFilterGroup,
-} from "@eduai/ui";
-import type { Course } from "../lib/types";
-import type { Route } from "./+types/student";
+} from '@eduai/ui';
+import type { Course } from '../lib/types';
+import type { Route } from './+types/student';
 import {
   accentForCourse,
   courseCode,
   courseName,
   courseTerm,
   courseYear,
-} from "../lib/course-display";
-import { useLocalUser } from "../hooks/useLocalUser";
-import api from "~/lib/api";
-import { requireClientUser } from "~/lib/client-auth";
-import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
-import { PaginationControls } from "~/components/common/PaginationControls";
+} from '../lib/course-display';
+import { useLocalUser } from '../hooks/useLocalUser';
+import api from '~/lib/api';
+import { requireClientUser } from '~/lib/client-auth';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { PaginationControls } from '~/components/common/PaginationControls';
 import {
   MAX_COURSE_SEARCH_LENGTH,
   readCourseListSelection,

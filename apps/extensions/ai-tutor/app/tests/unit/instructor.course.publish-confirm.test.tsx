@@ -5,10 +5,10 @@ import type { Route } from "../../routes/+types/instructor.course";
 
 const mockPublishModule = vi
   .fn()
-  .mockResolvedValue({ id: 10, title: "Module 1", isPublished: true });
+  .mockResolvedValue({ id: 10, title: 'Module 1', isPublished: true });
 const mockUnpublishModule = vi
   .fn()
-  .mockResolvedValue({ id: 10, title: "Module 1", isPublished: false });
+  .mockResolvedValue({ id: 10, title: 'Module 1', isPublished: false });
 
 vi.mock("~/lib/api", () => ({
   default: {
@@ -19,9 +19,9 @@ vi.mock("~/lib/api", () => ({
   },
 }));
 
-vi.mock("~/hooks/useLocalUser", () => ({
+vi.mock('~/hooks/useLocalUser', () => ({
   useLocalUser: () => ({
-    user: { id: "u1", name: "Instructor", role: "INSTRUCTOR", authorizedUnits: [] },
+    user: { id: 'u1', name: 'Instructor', role: 'INSTRUCTOR', authorizedUnits: [] },
   }),
 }));
 
@@ -56,7 +56,7 @@ vi.mock("~/components/layout/CourseSwitcher", () => ({ CourseSwitcher: () => nul
 vi.mock("~/hooks/useCourseTopics", () => ({
   useCourseTopics: () => ({ topics: [], loading: false, refresh: vi.fn() }),
 }));
-vi.mock("~/components/courses/CourseTopicsHeroAction", () => ({
+vi.mock('~/components/courses/CourseTopicsHeroAction', () => ({
   CourseTopicsHeroAction: () => null,
 }));
 
@@ -67,8 +67,8 @@ vi.mock("@eduai/ui", async (importOriginal) => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("~/components/courses/CourseAnalyticsPanel", () => ({ CourseAnalyticsPanel: () => null }));
-vi.mock("~/components/courses/CourseSubmissionsPanel", () => ({
+vi.mock('~/components/courses/CourseAnalyticsPanel', () => ({ CourseAnalyticsPanel: () => null }));
+vi.mock('~/components/courses/CourseSubmissionsPanel', () => ({
   CourseSubmissionsPanel: () => null,
 }));
 
@@ -96,7 +96,7 @@ function wrap(modules = [module_]) {
       modulesTotal: modules.length,
       page: 1,
       pageSize: 25,
-      search: "",
+      search: '',
     },
   } as unknown as Route.ComponentProps;
   return render(

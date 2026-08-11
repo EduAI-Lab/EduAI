@@ -25,11 +25,11 @@ import { prisma } from "../config/database.js";
 /** Roles AI Tutor understands on a course surface. */
 export function isSupportedCourseRole(role) {
   return (
-    role === "STUDENT" ||
-    role === "INSTRUCTOR" ||
-    role === "TA" ||
-    role === "ADMIN" ||
-    role === "UNIT_ADMIN"
+    role === 'STUDENT' ||
+    role === 'INSTRUCTOR' ||
+    role === 'TA' ||
+    role === 'ADMIN' ||
+    role === 'UNIT_ADMIN'
   );
 }
 

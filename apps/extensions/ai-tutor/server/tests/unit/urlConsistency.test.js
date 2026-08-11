@@ -33,10 +33,10 @@ describe("assertCoreUrlConsistency", () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it("is consistent when only one of the two vars is set", () => {
-    expect(assertCoreUrlConsistency({ CORE_URL: "http://localhost:3000" }).consistent).toBe(true);
+  it('is consistent when only one of the two vars is set', () => {
+    expect(assertCoreUrlConsistency({ CORE_URL: 'http://localhost:3000' }).consistent).toBe(true);
     expect(
-      assertCoreUrlConsistency({ EDUAI_BASE_URL: "http://localhost:3000/api" }).consistent,
+      assertCoreUrlConsistency({ EDUAI_BASE_URL: 'http://localhost:3000/api' }).consistent,
     ).toBe(true);
     expect(assertCoreUrlConsistency({}).consistent).toBe(true);
     expect(warnSpy).not.toHaveBeenCalled();

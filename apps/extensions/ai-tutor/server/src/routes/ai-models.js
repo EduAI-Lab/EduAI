@@ -18,17 +18,107 @@
  *     for any 4xx response from the upstream provider — only true network
  *     failures bubble out as 5xx. Consumers should branch on `valid`, NOT on
  *     status code.
+ *   - Key validation uses provider-specific lightweight probes. OpenCode's
+ *     public models endpoint requires a bounded one-token chat probe so a key
+ *     is actually exercised.
  * Related: services/aiModelPolicy.js, routes/admin.js (policy editor)
  */
 
-import express from "express";
-import { getAiModelPolicyState } from "../services/aiModelPolicy.js";
+import express from 'express';
+import { AiProviderKeySchema } from '../../../shared/schemas/aiProviderKey.js';
+import { getAiModelPolicyState } from '../services/aiModelPolicy.js';
+import { validateProviderKey } from '../services/aiProviderKeyValidation.js';
 
 const router = express.Router();
+const DEFAULT_KEY_VALIDATION_TIMEOUT_MS = 5_000;
+const KEY_VALIDATION_WINDOW_MS = 60_000;
+const KEY_VALIDATION_ATTEMPTS_PER_WINDOW = 10;
+const MAX_CONCURRENT_KEY_VALIDATIONS = 2;
+const DEFAULT_MAX_TRACKED_VALIDATION_USERS = 10_000;
+const keyValidationWindows = new Map();
+const activeKeyValidations = new Map();
 
 // Roles that may preview admin-only models. Everyone else (including a
 // missing or unrecognized req.user.role) gets the allow-list-filtered view.
 const PRIVILEGED_MODEL_ROLES = new Set(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]);
+
+function getKeyValidationTimeoutMs() {
+  const configured = Number(process.env.AI_KEY_VALIDATION_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_KEY_VALIDATION_TIMEOUT_MS;
+  }
+  return Math.min(Math.trunc(configured), 2_147_483_647);
+}
+
+function getMaxTrackedValidationUsers() {
+  const configured = Number(process.env.AI_KEY_VALIDATION_MAX_TRACKED_USERS);
+  if (!Number.isInteger(configured) || configured <= 0) {
+    return DEFAULT_MAX_TRACKED_VALIDATION_USERS;
+  }
+  return configured;
+}
+
+function pruneExpiredValidationWindows(now) {
+  for (const [userId, window] of keyValidationWindows) {
+    if (now - window.startedAt >= KEY_VALIDATION_WINDOW_MS && !activeKeyValidations.has(userId)) {
+      keyValidationWindows.delete(userId);
+    }
+  }
+}
+
+export function __resetKeyValidationStateForTests() {
+  keyValidationWindows.clear();
+  activeKeyValidations.clear();
+}
+
+function admitKeyValidation(req, res) {
+  const userId = req.user?.id;
+  // The application mounts this router behind requireAuth. Keeping the helper
+  // permissive for a missing user also lets isolated route tests exercise
+  // provider behavior without inventing an authentication layer.
+  if (!userId) return () => {};
+
+  const now = Date.now();
+  const previousWindow = keyValidationWindows.get(userId);
+  if (!previousWindow && keyValidationWindows.size >= getMaxTrackedValidationUsers()) {
+    pruneExpiredValidationWindows(now);
+    if (keyValidationWindows.size >= getMaxTrackedValidationUsers()) {
+      res.status(503).json({ valid: false, error: 'Validation service busy' });
+      return null;
+    }
+  }
+  const currentWindow =
+    previousWindow && now - previousWindow.startedAt < KEY_VALIDATION_WINDOW_MS
+      ? previousWindow
+      : { startedAt: now, attempts: 0 };
+
+  if (currentWindow.attempts >= KEY_VALIDATION_ATTEMPTS_PER_WINDOW) {
+    const retryAfter = Math.max(
+      1,
+      Math.ceil((KEY_VALIDATION_WINDOW_MS - (now - currentWindow.startedAt)) / 1000),
+    );
+    res.set('Retry-After', String(retryAfter));
+    res.status(429).json({ valid: false, error: 'Too many validation attempts' });
+    return null;
+  }
+
+  const active = activeKeyValidations.get(userId) ?? 0;
+  if (active >= MAX_CONCURRENT_KEY_VALIDATIONS) {
+    res.set('Retry-After', '1');
+    res.status(429).json({ valid: false, error: 'Too many validation attempts' });
+    return null;
+  }
+
+  currentWindow.attempts += 1;
+  keyValidationWindows.set(userId, currentWindow);
+  activeKeyValidations.set(userId, active + 1);
+
+  return () => {
+    const remaining = (activeKeyValidations.get(userId) ?? 1) - 1;
+    if (remaining <= 0) activeKeyValidations.delete(userId);
+    else activeKeyValidations.set(userId, remaining);
+  };
+}
 
 /**
  * GET /ai-models — list tutor-eligible models for the current user.
@@ -57,54 +147,58 @@ router.get("/ai-models", async (req, res) => {
 
     res.json(models);
   } catch (error) {
-    console.error("Failed to load AI models:", error);
-    res.status(500).json({ error: "Failed to load AI models", detail: String(error) });
+    console.error('Failed to load AI models', { errorName: error?.name ?? 'UnknownError' });
+    res.status(500).json({ error: 'Failed to load AI models' });
   }
 });
 
 /**
- * Validate an API key by making a minimal request to the provider.
- * Uses lightweight endpoints (list models) that don't consume tokens.
+ * Validate an API key by making a provider-specific minimal request.
+ * Most providers use a lightweight models endpoint; OpenCode uses a bounded
+ * one-token chat probe because its models endpoint is public.
  *
  * Returns 200 with { valid: true/false, error? } so the client can read
  * provider-specific error messages. Only returns 4xx/5xx for actual request errors.
  */
-router.post("/ai-models/validate-key", async (req, res) => {
-  const { provider, apiKey } = req.body;
-
-  if (!provider || !apiKey) {
-    return res.status(400).json({ valid: false, error: "Missing provider or apiKey" });
+router.post('/ai-models/validate-key', async (req, res) => {
+  const parsedBody = AiProviderKeySchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    const missingRequiredField = parsedBody.error.issues.some(
+      (issue) =>
+        (issue.code === 'invalid_type' && issue.received === 'undefined') ||
+        (issue.code === 'too_small' && issue.minimum === 1),
+    );
+    return res.status(400).json({
+      valid: false,
+      error: missingRequiredField ? 'Missing provider or apiKey' : 'Invalid provider or apiKey',
+    });
   }
 
-  try {
-    if (provider === "google") {
-      // Gemini: list models endpoint is free/lightweight
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(apiKey)}`,
-      );
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        const message = body?.error?.message || "Invalid API key";
-        return res.json({ valid: false, error: message });
-      }
-    } else if (provider === "openai") {
-      // OpenAI: GET /models is free
-      const resp = await fetch("https://api.openai.com/v1/models", {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        const message = body?.error?.message || "Invalid API key";
-        return res.json({ valid: false, error: message });
-      }
-    } else {
-      return res.json({ valid: false, error: `Unsupported provider: ${provider}` });
-    }
+  const { provider, apiKey } = parsedBody.data;
+  if (provider !== 'google' && provider !== 'openai' && provider !== 'opencode') {
+    return res.json({ valid: false, error: 'Unsupported provider' });
+  }
 
-    res.json({ valid: true });
+  const releaseAdmission = admitKeyValidation(req, res);
+  if (!releaseAdmission) return;
+
+  const timeoutSignal = AbortSignal.timeout(getKeyValidationTimeoutMs());
+  const signal = timeoutSignal;
+
+  try {
+    const validation = await validateProviderKey({ provider, apiKey, signal });
+    return res.json(validation);
   } catch (error) {
-    console.error("API key validation failed:", error);
-    res.status(500).json({ valid: false, error: "Validation request failed" });
+    if (timeoutSignal.aborted) {
+      return res.status(504).json({ valid: false, error: 'Validation request timed out' });
+    }
+    console.error('API key validation failed', {
+      provider,
+      errorName: error?.name ?? 'UnknownError',
+    });
+    res.status(500).json({ valid: false, error: 'Validation request failed' });
+  } finally {
+    releaseAdmission();
   }
 });
 

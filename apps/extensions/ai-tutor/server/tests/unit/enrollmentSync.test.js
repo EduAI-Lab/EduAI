@@ -162,7 +162,7 @@ describe("syncCourseEnrollments", () => {
     it("skips createMany when all active users already exist locally", async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
-        { userId: "user-cuid-1", role: "STUDENT" },
+        { userId: 'user-cuid-1', role: 'STUDENT' },
       ]);
 
       const result = await syncCourseEnrollments(1);
@@ -180,6 +180,9 @@ describe("syncCourseEnrollments", () => {
       prisma.courseEnrollment.findMany.mockResolvedValue([
         { userId: "user-cuid-1", role: "STUDENT" },
       ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: 'user-cuid-1', role: 'STUDENT' },
+      ]);
 
       const result = await syncCourseEnrollments(1);
 
@@ -193,7 +196,7 @@ describe("syncCourseEnrollments", () => {
     it("does not update when role is unchanged", async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
-        { userId: "user-cuid-1", role: "STUDENT" },
+        { userId: 'user-cuid-1', role: 'STUDENT' },
       ]);
 
       await syncCourseEnrollments(1);
@@ -251,7 +254,7 @@ describe("syncCourseEnrollments", () => {
     it("skips deleteMany when no stale STUDENT rows exist", async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
-        { userId: "user-cuid-1", role: "STUDENT" },
+        { userId: 'user-cuid-1', role: 'STUDENT' },
       ]);
 
       await syncCourseEnrollments(1);
@@ -349,9 +352,9 @@ describe("syncCourseEnrollments", () => {
     });
   });
 
-  describe("error propagation", () => {
-    it("propagates errors thrown by the Core client without swallowing them", async () => {
-      const err = Object.assign(new Error("EDUAI_API_KEY not configured"), { status: 500 });
+  describe('error propagation', () => {
+    it('propagates errors thrown by the Core client without swallowing them', async () => {
+      const err = Object.assign(new Error('EDUAI_API_KEY not configured'), { status: 500 });
       listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(err);
 
       await expect(syncCourseEnrollments(1)).rejects.toThrow("EDUAI_API_KEY not configured");
@@ -395,7 +398,7 @@ describe("syncCourseEnrollments", () => {
 
       await syncCourseEnrollments(1, { signal });
 
-      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledWith("core-course-cuid-1", {
+      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledWith('core-course-cuid-1', {
         signal,
       });
     });

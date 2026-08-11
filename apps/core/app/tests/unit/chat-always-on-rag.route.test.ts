@@ -87,7 +87,10 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import {
+  EmbeddingRequestTimeoutError,
+  findRelevantContent,
+} from "~/lib/ai/embedding";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-metrics";
@@ -337,6 +340,18 @@ describe("Smart course RAG gate (#484)", () => {
       expect(streamText).not.toHaveBeenCalled();
     });
 
+    it("fails closed with RAG_RETRIEVAL_TIMEOUT when the embedding deadline expires", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(new EmbeddingRequestTimeoutError(100));
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say?" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      expect((await res.json()).code).toBe("RAG_RETRIEVAL_TIMEOUT");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
     it("fails closed on prefetch failure even when intent heuristics skip grounding (#225 RAG-01/RAG-02)", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
@@ -397,6 +412,7 @@ describe("Smart course RAG gate (#484)", () => {
         expect.any(Number),
         undefined,
         expect.any(Boolean),
+        { signal: expect.any(AbortSignal) },
       );
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");
       expect(lastStreamConfig().system).not.toContain("did not return relevant excerpts");

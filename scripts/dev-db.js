@@ -64,7 +64,7 @@ async function main() {
   } catch {}
 
   run(
-    "docker compose -f docker-compose.dev.yml up -d --wait eduai-db ai-tutor-db question-maker-db",
+    'docker compose -f docker-compose.dev.yml up -d --wait eduai-db ai-tutor-db question-maker-db eduai-redis',
   );
 }
 

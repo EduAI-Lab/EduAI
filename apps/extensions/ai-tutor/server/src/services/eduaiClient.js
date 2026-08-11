@@ -3,9 +3,9 @@ import {
   EduAiTopicListSchema,
   EduAiEnrollmentListSchema,
   EduAiQuestionListSchema,
-} from "../schemas/eduai.js";
-import { getEffectiveEduAiApiKey } from "./systemSettings.js";
-const DEFAULT_BASE_URL = "http://localhost:5174/api";
+} from '../schemas/eduai.js';
+import { getEffectiveEduAiApiKey } from './systemSettings.js';
+const DEFAULT_BASE_URL = 'http://localhost:5174/api';
 
 function normalizeBaseUrl(rawUrl) {
   if (!rawUrl) return DEFAULT_BASE_URL;
@@ -219,7 +219,7 @@ function getCoreBaseUrl() {
  */
 export async function listCoreAdminBugReports(
   cookie,
-  { source = "AI_TUTOR", limit = 100, offset = 0 } = {},
+  { source = 'AI_TUTOR', limit = 100, offset = 0 } = {},
 ) {
   if (!cookie) {
     const error = new Error("Session cookie is required to list Core bug reports");

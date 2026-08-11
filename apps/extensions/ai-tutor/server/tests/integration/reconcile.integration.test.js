@@ -36,8 +36,8 @@ describe("runReconciliation (integration)", () => {
     });
     const mod = await prisma.module.create({
       data: {
-        title: "Mod",
-        description: "mod",
+        title: 'Mod',
+        description: 'mod',
         position: 0,
         isPublished: false,
         courseOfferingId: offering.id,
@@ -86,9 +86,9 @@ describe("runReconciliation (integration)", () => {
     });
     const topic = await prisma.topic.create({
       data: {
-        name: "Linked Topic",
+        name: 'Linked Topic',
         courseOfferingId: offering.id,
-        coreTopicId: "core-topic-soft-1",
+        coreTopicId: 'core-topic-soft-1',
       },
     });
 

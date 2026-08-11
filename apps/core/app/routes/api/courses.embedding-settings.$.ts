@@ -135,13 +135,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
       lastEmbeddedAt: updated.lastEmbeddedAt,
     };
 
-    let reEmbedJob:
-      | Awaited<ReturnType<typeof import("~/lib/ai/re-embed-job.server").serializeReEmbedJob>>
-      | undefined;
-    if (reEmbedAfterSave) {
-      const { startReEmbedJob, serializeReEmbedJob } = await import("~/lib/ai/re-embed-job.server");
-      const { job, created } = await startReEmbedJob(courseId);
-      reEmbedJob = serializeReEmbedJob(job);
+  let reEmbedJob:
+    | Awaited<ReturnType<typeof import("~/lib/ai/re-embed-job.server").serializeReEmbedJob>>
+    | undefined;
+  if (reEmbedAfterSave) {
+    const { startOrResumeReEmbedJob, serializeReEmbedJob } = await import(
+      "~/lib/ai/re-embed-job.server"
+    );
+    const { job, created } = await startOrResumeReEmbedJob(courseId);
+    reEmbedJob = serializeReEmbedJob(job);
 
       // A re-embed started through the settings PATCH must be audited the same way
       // the dedicated /re-embed route audits it, so this path is not a coverage gap.

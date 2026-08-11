@@ -80,6 +80,20 @@ export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /**
+ * Serialize enrollment mutations that can affect the instructor floor. A row
+ * lock on the parent course makes the subsequent count-and-write decision
+ * observe any earlier concurrent mutation before it proceeds.
+ */
+async function lockCourseEnrollmentMutations(tx: TxClient, courseId: string) {
+  await tx.$queryRaw`
+    SELECT "id"
+    FROM "courses"
+    WHERE "id" = ${courseId}
+    FOR UPDATE
+  `;
+}
+
+/**
  * §6 instructor-floor invariant: a course must always retain >= 1 active
  * INSTRUCTOR enrollment. Returns a 409 result when `enrollment` is the last
  * active instructor and the operation would demote/deactivate it. Applies to
@@ -203,6 +217,7 @@ export async function updateEnrollmentRole(
 
   const role = payload.role;
   return prisma.$transaction(async (tx) => {
+    await lockCourseEnrollmentMutations(tx, courseId);
     const existing = await tx.enrollment.findFirst({
       where: { id: enrollmentId, courseId },
     });
@@ -231,6 +246,7 @@ export async function updateEnrollmentRole(
  */
 export async function deactivateEnrollment(courseId: string, enrollmentId: string) {
   return prisma.$transaction(async (tx) => {
+    await lockCourseEnrollmentMutations(tx, courseId);
     const existing = await tx.enrollment.findFirst({
       where: { id: enrollmentId, courseId },
     });

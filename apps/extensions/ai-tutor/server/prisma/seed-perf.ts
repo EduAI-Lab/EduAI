@@ -8,9 +8,9 @@
  * (Module/Lesson/Activity ids are autoincrement → not guessable).
  *
  * Key design points (from the endpoint spec):
- *  - A NATIVE course (externalId/coreOfferingId = null) is required: publish/
- *    unpublish stay purely local (a linked course writes through to Core), and
- *    topic-create is allowed (external courses 403).
+ *  - CourseOffering is now a pure anchor for a real Core course. The Core perf
+ *    seed must run first; this seed links its subtree to `sharedCourseId` from
+ *    `.perf-pool/core.json`.
  *  - Destructive endpoints (DELETE module/lesson/activity, DELETE enrollment)
  *    consume victims → a perf run may deplete them; re-run this seed between runs.
  *
@@ -27,7 +27,6 @@ const prisma = new PrismaClient();
 const CORE_INSTRUCTOR = "seed_user_instructor_cs"; // mirrors apps/core SEED_IDS
 const CORE_STUDENT = "seed_user_student_01";
 const POOL = Number(process.env.PERF_POOL_SIZE ?? 15);
-const NATIVE_TITLE = "PERF-POOL Native Course";
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 function poolDir(): string {
@@ -37,8 +36,8 @@ function poolDir(): string {
     const pkg = path.join(d, "package.json");
     if (existsSync(pkg)) {
       try {
-        const j = JSON.parse(readFileSync(pkg, "utf8"));
-        if (j.workspaces) return path.join(d, ".perf-pool");
+        const j = JSON.parse(readFileSync(pkg, 'utf8'));
+        if (j.workspaces) return path.join(d, '.perf-pool');
       } catch {
         /* ignore */
       }
@@ -54,12 +53,11 @@ function writeManifest(obj: unknown) {
   writeFileSync(f, JSON.stringify(obj, null, 2));
   console.log(`  ✓ wrote pool manifest → ${f}`);
 }
-// Reads the Core perf manifest's readChatId — a real Core chat owned by the seed
-// student — so the AiChatSession points at a chat the messages proxy can fetch.
-function readCoreChatId(): string | null {
+type CorePerfManifest = { sharedCourseId?: string; readChatId?: string };
+
+function readCoreManifest(): CorePerfManifest | null {
   try {
-    const core = JSON.parse(readFileSync(path.join(poolDir(), "core.json"), "utf8"));
-    return typeof core.readChatId === "string" ? core.readChatId : null;
+    return JSON.parse(readFileSync(path.join(poolDir(), 'core.json'), 'utf8')) as CorePerfManifest;
   } catch {
     return null;
   }
@@ -72,7 +70,7 @@ async function resetPool() {
   // Delete the activities first (cascades their chats/metrics), then the course.
   const ids = (
     await prisma.courseOffering.findMany({
-      where: { title: NATIVE_TITLE },
+      where: { modules: { some: { title: { startsWith: 'PERF-POOL ' } } } },
       select: { id: true },
     })
   ).map((c) => c.id);
@@ -88,11 +86,18 @@ async function main() {
   console.log(`▶ ai-tutor perf pool: ${POOL} victims/endpoint`);
   await resetPool();
 
-  // --- native course + instructor + topic ---
+  const coreManifest = readCoreManifest();
+  if (!coreManifest?.sharedCourseId) {
+    throw new Error(
+      'Core perf manifest is missing sharedCourseId; run the Core db:seed:perf step first',
+    );
+  }
+
+  // --- Core-linked course anchor + instructor + topic ---
   // Published: module/lesson publish endpoints reject when the parent course is
   // unpublished ("Cannot publish module: parent course is not published").
   const course = await prisma.courseOffering.create({
-    data: { title: NATIVE_TITLE, description: "perf", isPublished: true },
+    data: { coreOfferingId: coreManifest.sharedCourseId },
   });
   await prisma.courseInstructor.create({
     data: { userId: CORE_INSTRUCTOR, courseOfferingId: course.id, role: "LEAD" },
@@ -105,8 +110,8 @@ async function main() {
   const newModule = (title: string, pos: number) =>
     prisma.module.create({ data: { title, position: pos, courseOfferingId: course.id } });
   const poolModulesReuse = [
-    (await newModule("PERF-POOL Module Reuse 0", 0)).id,
-    (await newModule("PERF-POOL Module Reuse 1", 1)).id,
+    (await newModule('PERF-POOL Module Reuse 0', 0)).id,
+    (await newModule('PERF-POOL Module Reuse 1', 1)).id,
   ];
   const poolModulesDrop: number[] = [];
   for (const i of range(POOL))
@@ -116,8 +121,8 @@ async function main() {
   const newLesson = (title: string, pos: number) =>
     prisma.lesson.create({ data: { title, position: pos, moduleId: poolModulesReuse[0] } });
   const poolLessonsReuse = [
-    (await newLesson("PERF-POOL Lesson Reuse 0", 0)).id,
-    (await newLesson("PERF-POOL Lesson Reuse 1", 1)).id,
+    (await newLesson('PERF-POOL Lesson Reuse 0', 0)).id,
+    (await newLesson('PERF-POOL Lesson Reuse 1', 1)).id,
   ];
   const poolLessonsDrop: number[] = [];
   for (const i of range(POOL))
@@ -128,15 +133,15 @@ async function main() {
     prisma.activity.create({
       data: {
         title,
-        instructionsMd: "perf",
+        instructionsMd: 'perf',
         position: pos,
         lessonId: poolLessonsReuse[0],
         mainTopicId: topic.id,
       },
     });
   const poolActivitiesReuse = [
-    (await newActivity("PERF-POOL Activity Reuse 0", 0)).id,
-    (await newActivity("PERF-POOL Activity Reuse 1", 1)).id,
+    (await newActivity('PERF-POOL Activity Reuse 0', 0)).id,
+    (await newActivity('PERF-POOL Activity Reuse 1', 1)).id,
   ];
   const poolActivitiesDrop: number[] = [];
   for (const i of range(POOL))
@@ -148,7 +153,7 @@ async function main() {
   const enrollRoleUserIds = [0, 1].map((i) => `perf_user_role_${String(i).padStart(4, "0")}`);
   for (const uid of [...enrollDropUserIds, ...enrollRoleUserIds]) {
     await prisma.courseEnrollment.create({
-      data: { courseOfferingId: course.id, userId: uid, role: "STUDENT" },
+      data: { courseOfferingId: course.id, userId: uid, role: 'STUDENT' },
     });
   }
   // The chat-session reads run as the seed STUDENT — GET chat-sessions requires
@@ -161,7 +166,7 @@ async function main() {
   // The messages endpoint proxies Core `GET /api/chats/:chatId/messages`, so the
   // session's chatId must be a REAL Core chat owned by this student — reuse the
   // one the Core perf seed exported (readChatId). A synthetic id → Core 404.
-  const coreChatId = readCoreChatId();
+  const coreChatId = typeof coreManifest.readChatId === 'string' ? coreManifest.readChatId : null;
   const chat = await prisma.aiChatSession.create({
     data: {
       userId: CORE_STUDENT,
@@ -172,7 +177,7 @@ async function main() {
   });
   if (!coreChatId) {
     console.warn(
-      "  ⚠ core.json readChatId missing — messages endpoint will 404 (run core db:seed:perf first)",
+      '  ⚠ core.json readChatId missing — messages endpoint will 404 (run core db:seed:perf first)',
     );
   }
 
@@ -191,7 +196,7 @@ async function main() {
     poolActivitiesDrop,
     enrollDropUserIds,
     enrollRoleUserIds,
-    // reads reuse the pool entities (all exist under the native course):
+    // reads reuse the pool entities (all exist under the Core-linked course):
     seededModuleId: poolModulesReuse[0],
     seededLessonId: poolLessonsReuse[0],
     seededActivityId: poolActivitiesReuse[0],

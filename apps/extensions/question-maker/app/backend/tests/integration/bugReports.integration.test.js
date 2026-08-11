@@ -57,8 +57,8 @@ describe("POST /api/bug-reports (proxy to Core)", () => {
     vi.restoreAllMocks();
   });
 
-  it("rejects unauthenticated requests with 401", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false }));
+  it('rejects unauthenticated requests with 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }));
 
     const res = await request(app).post("/api/bug-reports").send({ description: "test" });
 

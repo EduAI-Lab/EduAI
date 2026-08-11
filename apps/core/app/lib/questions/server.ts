@@ -128,6 +128,14 @@ type CreateQuestionError =
 
 type CreateQuestionSuccess = { id: string };
 
+const MAX_QUESTIONS_LIMIT = 500;
+const MAX_QUESTIONS_OFFSET = 100_000;
+
+function boundedInteger(value: number, fallback: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
 export async function createQuestion(
   body: unknown,
   createdBy: string,
@@ -162,33 +170,45 @@ export async function createQuestion(
 
   const primaryTopic = await prisma.courseTopic.findUnique({
     where: { id: topicId },
-    select: { id: true, deletedAt: true },
+    select: { id: true, courseId: true, deletedAt: true },
   });
-  if (!primaryTopic || primaryTopic.deletedAt !== null) return { error: "TOPIC_NOT_FOUND" };
+  if (
+    !primaryTopic
+    || primaryTopic.deletedAt !== null
+    || primaryTopic.courseId !== courseId
+  ) {
+    return { error: "TOPIC_NOT_FOUND" };
+  }
 
-  if (secondaryTopicIds.includes(topicId)) {
-    return { error: "DUPLICATE_TOPIC", conflictingIds: [topicId] };
+  const seenSecondaryTopicIds = new Set<string>();
+  const duplicateSecondaryTopicIds = new Set<string>();
+  for (const id of secondaryTopicIds) {
+    if (seenSecondaryTopicIds.has(id)) duplicateSecondaryTopicIds.add(id);
+    seenSecondaryTopicIds.add(id);
+  }
+  if (secondaryTopicIds.includes(topicId)) duplicateSecondaryTopicIds.add(topicId);
+  if (duplicateSecondaryTopicIds.size > 0) {
+    return {
+      error: "DUPLICATE_TOPIC",
+      conflictingIds: [...duplicateSecondaryTopicIds],
+    };
   }
 
   if (secondaryTopicIds.length > 0) {
     const secondaryTopics = await prisma.courseTopic.findMany({
       where: { id: { in: secondaryTopicIds } },
-      select: { id: true, deletedAt: true },
+      select: { id: true, courseId: true, deletedAt: true },
     });
-    const foundIds = new Set(secondaryTopics.map((t) => t.id));
-    const deletedTopicIds = secondaryTopics.filter((t) => t.deletedAt !== null).map((t) => t.id);
-    // Genuinely-absent IDs would otherwise slip past this check and trigger an
-    // FK violation (P2003) → 500 when writing question_secondary_topics. Fold
-    // them in with the soft-deleted ones: both are invalid Core references and
-    // QM's remediation (null its core_topic_id) is identical for either case.
-    const missingTopicIds = [...new Set(secondaryTopicIds)].filter((id) => !foundIds.has(id));
-    const invalidTopicIds = [...deletedTopicIds, ...missingTopicIds];
+    const topicsById = new Map(secondaryTopics.map((topic) => [topic.id, topic]));
+    const invalidTopicIds = [...seenSecondaryTopicIds].filter((id) => {
+      const topic = topicsById.get(id);
+      return !topic || topic.deletedAt !== null || topic.courseId !== courseId;
+    });
     if (invalidTopicIds.length > 0) {
-      return {
-        error: "INVALID_TOPIC_IDS",
-        deletedTopicIds: invalidTopicIds,
-        conflictingWithPrimary: [],
-      };
+      // Keep `deletedTopicIds` for extension API compatibility. The field is
+      // the established remediation list for every unusable Core topic ID,
+      // including missing and cross-course references.
+      return { error: "INVALID_TOPIC_IDS", deletedTopicIds: invalidTopicIds, conflictingWithPrimary: [] };
     }
   }
 
@@ -232,7 +252,8 @@ export type ListQuestionsParams = {
 
 export async function listQuestions(params: ListQuestionsParams) {
   const { courseId, topicId, testable, limit = 100, offset = 0, includeDeleted = false } = params;
-  const clampedLimit = Math.min(limit, 500);
+  const safeLimit = boundedInteger(limit, 100, 1, MAX_QUESTIONS_LIMIT);
+  const safeOffset = boundedInteger(offset, 0, 0, MAX_QUESTIONS_OFFSET);
 
   const where: Prisma.QuestionWhereInput = {
     courseId,
@@ -246,13 +267,13 @@ export async function listQuestions(params: ListQuestionsParams) {
       where,
       include: { secondaryTopics: true },
       orderBy: { createdAt: "desc" },
-      take: clampedLimit,
-      skip: offset,
+      take: safeLimit,
+      skip: safeOffset,
     }),
     prisma.question.count({ where }),
   ]);
 
-  return { questions, total, limit: clampedLimit, offset };
+  return { questions, total, limit: safeLimit, offset: safeOffset };
 }
 
 export async function getQuestionById(id: string, includeDeleted = false) {

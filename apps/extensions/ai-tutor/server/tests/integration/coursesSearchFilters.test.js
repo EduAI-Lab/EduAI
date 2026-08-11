@@ -310,7 +310,7 @@ describe("GET /api/courses — search and filters (#1208)", () => {
     });
 
     it("filters AND with a unit admin's department scope instead of widening it", async () => {
-      const unitAdmin = makeProfessor({ role: "UNIT_ADMIN", authorizedUnits: ["Mathematics"] });
+      const unitAdmin = makeProfessor({ role: 'UNIT_ADMIN', authorizedUnits: ['Mathematics'] });
       const unitApp = await createApp({ mockUser: unitAdmin });
 
       // Unscoped: only the Mathematics course is visible.

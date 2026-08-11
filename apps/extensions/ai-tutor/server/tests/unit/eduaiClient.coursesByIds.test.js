@@ -87,7 +87,7 @@ describe("findEduAiCourseById", () => {
     );
 
     await expect(
-      findEduAiCourseById("core-missing", { cookie: "session=abc" }),
+      findEduAiCourseById('core-missing', { cookie: 'session=abc' }),
     ).resolves.toBeNull();
   });
 });
@@ -160,7 +160,7 @@ describe("listEduAiCoursesServiceKey (ids)", () => {
       }),
     );
 
-    await expect(listEduAiCoursesServiceKey({ ids: ["c1"] })).rejects.toMatchObject({
+    await expect(listEduAiCoursesServiceKey({ ids: ['c1'] })).rejects.toMatchObject({
       status: 502,
     });
   });

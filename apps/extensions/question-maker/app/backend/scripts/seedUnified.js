@@ -28,15 +28,12 @@ const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, "../../../");
 const envPath = join(projectRoot, ".env");
 
-if (!existsSync(envPath)) {
-  console.error(`Error: .env file not found at ${envPath}`);
-  process.exit(1);
+if (existsSync(envPath)) {
+  dotenv.config({ path: envPath });
 }
 
-dotenv.config({ path: envPath });
-
 if (!process.env.DATABASE_URL) {
-  console.error("Error: DATABASE_URL must be set in .env");
+  console.error('Error: DATABASE_URL must be set in the environment or .env');
   process.exit(1);
 }
 

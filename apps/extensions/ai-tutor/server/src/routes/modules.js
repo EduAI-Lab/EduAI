@@ -118,41 +118,41 @@ router.get("/courses/:courseId/modules", async (req, res) => {
 });
 
 router.post(
-  "/courses/:courseId/modules",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/courses/:courseId/modules',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: "Invalid course id" });
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
     const { title, description, position } = req.body || {};
-    if (!title) return res.status(400).json({ error: "title required" });
+    if (!title) return res.status(400).json({ error: 'title required' });
 
     try {
       const course = await prisma.courseOffering.findUnique({
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!course) return res.status(404).json({ error: 'Course not found' });
 
       const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
       const unitAdmin = await isUnitAdminForCourse(authUser, course);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this course" });
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // When the client does not supply an explicit position, append the new
       // module to the end of the list rather than defaulting to 0, which would
       // push it to the top and shift every existing module down (issue #1046).
       let resolvedPosition;
-      if (typeof position === "number") {
+      if (typeof position === 'number') {
         resolvedPosition = position;
       } else {
         const last = await prisma.module.findFirst({
           where: { courseOfferingId: courseId },
-          orderBy: { position: "desc" },
+          orderBy: { position: 'desc' },
           select: { position: true },
         });
         resolvedPosition = last ? last.position + 1 : 0;
@@ -173,7 +173,7 @@ router.post(
   },
 );
 
-router.get("/modules/:moduleId", async (req, res) => {
+router.get('/modules/:moduleId', async (req, res) => {
   const authUser = req.user;
   if (!authUser) {
     return res.status(401).json({ error: "Authentication required" });
@@ -222,13 +222,13 @@ router.get("/modules/:moduleId", async (req, res) => {
 
 // Publish a module (requires parent course to be published)
 router.patch(
-  "/modules/:moduleId/publish",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/modules/:moduleId/publish',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const instructor = req.user;
     const moduleId = Number(req.params.moduleId);
     if (!Number.isFinite(moduleId)) {
-      return res.status(400).json({ error: "Invalid module id" });
+      return res.status(400).json({ error: 'Invalid module id' });
     }
 
     try {
@@ -242,15 +242,15 @@ router.patch(
       });
 
       if (!module) {
-        return res.status(404).json({ error: "Module not found" });
+        return res.status(404).json({ error: 'Module not found' });
       }
 
       const isInstructor = module.courseOffering.instructors.some(
         (i) => i.userId === instructor.id,
       );
       const unitAdmin = await isUnitAdminForCourse(instructor, module.courseOffering);
-      if (!isInstructor && !unitAdmin && instructor.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this module" });
+      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this module' });
       }
 
       // Validate parent course is published — `isPublished` is Core-owned
@@ -258,7 +258,7 @@ router.patch(
       if (!(await isCoursePublishedLive(module.courseOffering.coreOfferingId))) {
         return res
           .status(400)
-          .json({ error: "Cannot publish module: parent course is not published" });
+          .json({ error: 'Cannot publish module: parent course is not published' });
       }
 
       const updated = await prisma.module.update({
@@ -275,13 +275,13 @@ router.patch(
 
 // Unpublish a module (cascades to all lessons)
 router.patch(
-  "/modules/:moduleId/unpublish",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/modules/:moduleId/unpublish',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const instructor = req.user;
     const moduleId = Number(req.params.moduleId);
     if (!Number.isFinite(moduleId)) {
-      return res.status(400).json({ error: "Invalid module id" });
+      return res.status(400).json({ error: 'Invalid module id' });
     }
 
     try {
@@ -295,15 +295,15 @@ router.patch(
       });
 
       if (!module) {
-        return res.status(404).json({ error: "Module not found" });
+        return res.status(404).json({ error: 'Module not found' });
       }
 
       const isInstructor = module.courseOffering.instructors.some(
         (i) => i.userId === instructor.id,
       );
       const unitAdmin = await isUnitAdminForCourse(instructor, module.courseOffering);
-      if (!isInstructor && !unitAdmin && instructor.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this module" });
+      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this module' });
       }
 
       // Unpublish module and cascade to all lessons
@@ -331,13 +331,13 @@ router.patch(
 );
 
 router.delete(
-  "/modules/:moduleId",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/modules/:moduleId',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const moduleId = Number(req.params.moduleId);
     if (!Number.isFinite(moduleId)) {
-      return res.status(400).json({ error: "Invalid module id" });
+      return res.status(400).json({ error: 'Invalid module id' });
     }
 
     try {
@@ -351,14 +351,14 @@ router.delete(
       });
 
       if (!module) {
-        return res.status(404).json({ error: "Module not found" });
+        return res.status(404).json({ error: 'Module not found' });
       }
 
       const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
       const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
-      const isAdmin = authUser.role === "ADMIN";
+      const isAdmin = authUser.role === 'ADMIN';
       if (!isInstructor && !unitAdmin && !isAdmin) {
-        return res.status(403).json({ error: "Not authorized for this module" });
+        return res.status(403).json({ error: 'Not authorized for this module' });
       }
 
       await prisma.module.delete({ where: { id: moduleId } });
@@ -371,25 +371,25 @@ router.delete(
 
 // Update a module's editable fields (title / description / position)
 router.patch(
-  "/modules/:moduleId",
-  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  '/modules/:moduleId',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const authUser = req.user;
     const moduleId = Number(req.params.moduleId);
     if (!Number.isFinite(moduleId)) {
-      return res.status(400).json({ error: "Invalid module id" });
+      return res.status(400).json({ error: 'Invalid module id' });
     }
 
     const { title, description, position } = req.body || {};
     if (title === undefined && description === undefined && position === undefined) {
-      return res.status(400).json({ error: "Nothing to update" });
+      return res.status(400).json({ error: 'Nothing to update' });
     }
     if (title !== undefined && !title) {
-      return res.status(400).json({ error: "title cannot be empty" });
+      return res.status(400).json({ error: 'title cannot be empty' });
     }
     const numericPosition = position !== undefined ? Number(position) : undefined;
     if (numericPosition !== undefined && !Number.isFinite(numericPosition)) {
-      return res.status(400).json({ error: "position must be a number" });
+      return res.status(400).json({ error: 'position must be a number' });
     }
 
     try {
@@ -403,14 +403,14 @@ router.patch(
       });
 
       if (!module) {
-        return res.status(404).json({ error: "Module not found" });
+        return res.status(404).json({ error: 'Module not found' });
       }
 
       const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
       const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
-      const isAdmin = authUser.role === "ADMIN";
+      const isAdmin = authUser.role === 'ADMIN';
       if (!isInstructor && !unitAdmin && !isAdmin) {
-        return res.status(403).json({ error: "Not authorized for this module" });
+        return res.status(403).json({ error: 'Not authorized for this module' });
       }
 
       const updated = await prisma.module.update({

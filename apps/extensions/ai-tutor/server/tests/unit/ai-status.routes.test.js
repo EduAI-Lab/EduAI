@@ -22,13 +22,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("GET /api/ai-status", () => {
-  it("proxies Core status through on a healthy response", async () => {
+describe('GET /api/ai-status', () => {
+  it('proxies Core status through on a healthy response', async () => {
     const payload = {
-      cloud: { state: "online", detail: "ok" },
-      ubc: { state: "offline", detail: "no" },
+      cloud: { state: 'online', detail: 'ok' },
+      ubc: { state: 'offline', detail: 'no' },
     };
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => payload });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => payload });
 
     const res = await request(app).get("/api/ai-status");
     expect(res.status).toBe(200);
@@ -58,8 +58,8 @@ describe("GET /api/ai-status", () => {
     expect(res.body).toEqual({ cloud: UNKNOWN, ubc: UNKNOWN });
   });
 
-  it("falls back to UNKNOWN chips on a non-ok upstream response", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+  it('falls back to UNKNOWN chips on a non-ok upstream response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 502,
       json: async () => ({}),

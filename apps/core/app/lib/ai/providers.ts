@@ -3,15 +3,16 @@
  * Dynamic provider management with user-provided API keys
  */
 
-import { createProviderRegistry } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOllama } from "ollama-ai-provider";
-import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
-import { resolveAllowedOllamaBaseUrl } from "~/lib/ai/ollama-url.server";
-import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
-import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
-import { vllmThinkingDisabledFetch } from "~/lib/ai/vllm-thinking.server";
+import { createProviderRegistry } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOllama } from 'ollama-ai-provider';
+import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
+import { resolveAllowedOllamaBaseUrl } from '~/lib/ai/ollama-url.server';
+import { resolveVllmApiKey } from '~/lib/ai/vllm-api-key.server';
+import { resolveAllowedVllmBaseUrl } from '~/lib/ai/vllm-url.server';
+import { vllmThinkingDisabledFetch } from '~/lib/ai/vllm-thinking.server';
 import {
   LOCAL_INFERENCE_PROVIDERS,
   mergeLocalInferenceFromEnv,
@@ -29,6 +30,9 @@ export {
   parseModelIdentifier,
   PROVIDER_CONFIGS,
 };
+
+/** OpenCode's hosted OpenAI-compatible endpoint; never client-configurable. */
+export const OPENCODE_BASE_URL = 'https://opencode.ai/zen/go/v1';
 
 /**
  * Resolves a local-inference base URL (Ollama/vLLM) with logging instead of
@@ -147,6 +151,17 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     }
   }
 
+  // OpenCode Zen (OpenAI-compatible). Keep the endpoint fixed: unlike local
+  // inference providers, accepting a request-supplied base URL would permit an
+  // arbitrary upstream and make the provider identity misleading.
+  if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) {
+    providers.opencode = createOpenAICompatible({
+      name: 'opencode',
+      baseURL: OPENCODE_BASE_URL,
+      apiKey: userSettings.opencode.apiKey,
+    });
+  }
+
   // Create and return the registry
   return createProviderRegistry(providers, { separator: ":" });
 }
@@ -215,10 +230,10 @@ export function getModelIdentifier(providerId: SupportedProvider, modelId: strin
 /** Providers that would be registered from current settings (for error messages). */
 export function listEnabledRegistryProviders(userSettings: UserProviderSettings): string[] {
   const ids: string[] = [];
-  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push("openai");
-  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push("google");
-  if (userSettings.ollama?.isEnabled) ids.push("ollama");
-  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey()))
-    ids.push("vllm");
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
+  if (userSettings.ollama?.isEnabled) ids.push('ollama');
+  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey())) ids.push('vllm');
+  if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) ids.push('opencode');
   return ids;
 }

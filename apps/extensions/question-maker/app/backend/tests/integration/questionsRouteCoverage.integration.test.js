@@ -30,6 +30,7 @@ const {
   mockCourseFindOne,
   mockAssessmentFindOne,
   mockEnrollments,
+  mockVisibleCourseWhere,
 } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
   mockDelete: vi.fn().mockResolvedValue(true),
@@ -48,6 +49,7 @@ const {
   mockCourseFindOne: vi.fn(),
   mockAssessmentFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
+  mockVisibleCourseWhere: vi.fn(),
 }));
 
 vi.mock("../../src/services/authService.js", () => ({
@@ -93,7 +95,12 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
 }));
 
-vi.mock("../../src/config/database.js", () => ({
+vi.mock('../../src/services/courseListService.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveVisibleCourseWhereForUser: mockVisibleCourseWhere,
+}));
+
+vi.mock('../../src/config/database.js', () => ({
   prisma: {
     course: { findUnique: mockCourseFindOne },
     questionMetadata: { findUnique: mockQuestionFindOne },
@@ -106,7 +113,8 @@ vi.mock("../../src/config/database.js", () => ({
 
 const { default: app } = await import("../../src/app.js");
 
-const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
+const ADMIN = { id: 'admin-1', role: 'ADMIN', email: 'admin@t.co', name: 'Admin' };
 // Not the course owner and not enrolled — used to exercise the "insufficient
 // course access" branch (the owner-fallback in resolveAccessForCourse only
 // applies to the course's own userId).
@@ -136,6 +144,7 @@ function loadQuestion(createdBy) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockDelete.mockResolvedValue(true);
+  mockVisibleCourseWhere.mockResolvedValue({ userId: INSTRUCTOR.id });
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -173,14 +182,51 @@ describe("GET /api/questions/stats", () => {
     expect(mockStats).toHaveBeenCalledWith(COURSE.userId, { courseId: COURSE.id });
   });
 
-  it("scopes stats to the caller when no courseId is supplied", async () => {
+  it('scopes global stats to every course visible to a non-owner instructor', async () => {
     authAs(INSTRUCTOR, null);
     mockStats.mockResolvedValue({ total: 1 });
+    const courseWhere = {
+      accessGrants: { some: { userId: INSTRUCTOR.id, role: 'INSTRUCTOR' } },
+    };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
 
     const res = await request(app).get("/api/questions/stats").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
-    expect(mockStats).toHaveBeenCalledWith(INSTRUCTOR.id, { courseId: undefined });
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(INSTRUCTOR, { cookie: 'session=v' });
+    expect(mockStats).toHaveBeenCalledWith(INSTRUCTOR.id, {
+      courseId: undefined,
+      courseWhere,
+    });
+  });
+});
+
+describe('GET /api/questions global visibility', () => {
+  it('uses the full ADMIN course visibility predicate instead of ownership', async () => {
+    authAs(ADMIN, null);
+    mockVisibleCourseWhere.mockResolvedValue({});
+
+    const res = await request(app).get('/api/questions').set('Cookie', 'session=v');
+
+    expect(res.status).toBe(200);
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(ADMIN, { cookie: 'session=v' });
+    expect(mockList).toHaveBeenCalledWith(ADMIN.id, expect.objectContaining({ courseWhere: {} }));
+  });
+
+  it('uses permitted non-owner courses for an instructor', async () => {
+    authAs(INSTRUCTOR, null);
+    const courseWhere = {
+      accessGrants: { some: { userId: INSTRUCTOR.id, role: 'INSTRUCTOR' } },
+    };
+    mockVisibleCourseWhere.mockResolvedValue(courseWhere);
+
+    const res = await request(app).get('/api/questions').set('Cookie', 'session=v');
+
+    expect(res.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith(
+      INSTRUCTOR.id,
+      expect.objectContaining({ courseId: undefined, courseWhere }),
+    );
   });
 });
 

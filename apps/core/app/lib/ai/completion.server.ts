@@ -19,6 +19,7 @@ import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-
 
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 8192;
+const MAX_COMPLETION_TOKENS = 16_384;
 
 export type CompletionMessage = {
   id?: string;
@@ -107,6 +108,20 @@ export async function runCompletion(request: CompletionRequest) {
     return { ok: false as const, status: 400, error: "model is required" };
   }
 
+  if (
+    request.maxTokens !== undefined &&
+    (!Number.isFinite(request.maxTokens) ||
+      !Number.isInteger(request.maxTokens) ||
+      request.maxTokens < 1 ||
+      request.maxTokens > MAX_COMPLETION_TOKENS)
+  ) {
+    return {
+      ok: false as const,
+      status: 400,
+      error: `maxTokens must be between 1 and ${MAX_COMPLETION_TOKENS}`,
+    };
+  }
+
   const apiKeysParsed = clientApiKeysBodySchema.safeParse(request.apiKeys);
   if (!apiKeysParsed.success) {
     return {
@@ -175,9 +190,7 @@ export async function runCompletion(request: CompletionRequest) {
       ? request.temperature
       : DEFAULT_TEMPERATURE;
   const maxTokens =
-    typeof request.maxTokens === "number" && request.maxTokens > 0
-      ? Math.floor(request.maxTokens)
-      : DEFAULT_MAX_TOKENS;
+    typeof request.maxTokens === "number" ? request.maxTokens : DEFAULT_MAX_TOKENS;
 
   let result;
   try {

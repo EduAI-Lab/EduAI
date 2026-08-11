@@ -74,9 +74,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("GET /api/topics/sync-status/:courseId", () => {
-  it("rejects unauthenticated requests with 401", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+describe('GET /api/topics/sync-status/:courseId', () => {
+  it('rejects unauthenticated requests with 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
 
     const res = await request(app).get("/api/topics/sync-status/1");
 

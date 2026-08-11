@@ -286,10 +286,17 @@ const FALLBACK_AI_MODELS = [
     isActive: true,
   },
   {
-    provider: "vllm",
-    modelId: "qwen2.5-7b-instruct",
-    name: "Qwen2.5 7B Instruct (UBC hosted)",
-    description: "UBC-hosted vLLM. Requires UBC network/VPN. Fast connectivity probe.",
+    provider: 'opencode',
+    modelId: 'deepseek-v4-flash',
+    name: 'DeepSeek V4 Flash (OpenCode Go)',
+    description: 'Requires your own OpenCode Go subscription and API key.',
+    isActive: true,
+  },
+  {
+    provider: 'vllm',
+    modelId: 'qwen2.5-7b-instruct',
+    name: 'Qwen2.5 7B Instruct (UBC hosted)',
+    description: 'UBC-hosted vLLM. Requires UBC network/VPN. Fast connectivity probe.',
     isActive: true,
   },
   {

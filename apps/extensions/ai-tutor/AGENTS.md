@@ -46,6 +46,7 @@
 ## Pre-Commit Hook
 
 The `.githooks/pre-commit` hook runs scoped checks on staged files:
+
 - Format check (oxfmt) on staged source files.
 - Lint (oxlint) on staged source files.
 - Typecheck (tsgo) if `.ts`/`.tsx` files are staged.

@@ -15,12 +15,12 @@
  * too, matching Core's counterpart row for the same (PlatformRole,
  * Enrollment) pair.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import request from "supertest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import { createApp } from "../../src/app.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import request from 'supertest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { createApp } from '../../src/app.js';
 import {
   makeStudent,
   makeAdmin,
@@ -28,7 +28,7 @@ import {
   makeProfessor,
   truncateAll,
   prisma,
-} from "../helpers.js";
+} from '../helpers.js';
 
 vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn().mockResolvedValue(true),
@@ -90,9 +90,9 @@ describe.each(rows.map((row, index) => [index, row]))(
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
         {
           id: course.coreOfferingId,
-          name: "PICT Course",
+          name: 'PICT Course',
           department: DEPARTMENT,
-          isPublished: row.Published === "yes",
+          isPublished: row.Published === 'yes',
         },
       ]);
 

@@ -55,7 +55,7 @@ describe("Bug report routes", () => {
     expect(postCoreBugReport).toHaveBeenCalledWith(
       student.id,
       expect.objectContaining({
-        description: "The lesson page froze after I clicked submit twice.",
+        description: 'The lesson page froze after I clicked submit twice.',
       }),
     );
   });

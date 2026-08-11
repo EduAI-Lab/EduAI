@@ -8,10 +8,10 @@
  * the prev/next links, and the rule that a student's ordinals count only the
  * siblings they can actually see.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { createApp } from "../../src/app.js";
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from '../../src/app.js';
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();

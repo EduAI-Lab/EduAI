@@ -34,8 +34,8 @@ describe("GET /api/eduai/courses", () => {
     expect(res.body.error).toContain("EDUAI_API_KEY");
   });
 
-  it("returns filtered catalog for instructors when upstream succeeds", async () => {
-    listEduAiCourses.mockResolvedValue([{ id: "core-1", name: "COSC 101", code: "COSC101" }]);
+  it('returns filtered catalog for instructors when upstream succeeds', async () => {
+    listEduAiCourses.mockResolvedValue([{ id: 'core-1', name: 'COSC 101', code: 'COSC101' }]);
 
     const res = await request(profApp).get("/api/eduai/courses");
 

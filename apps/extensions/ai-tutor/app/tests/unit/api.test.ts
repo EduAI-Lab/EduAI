@@ -125,7 +125,7 @@ describe("api methods", () => {
 
       expect(mockFetch.mock.calls[0][0]).toBe(
         `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}` +
-          "&term=W1%3A%3A2026&term=W2%3A%3A2025",
+          '&term=W1%3A%3A2026&term=W2%3A%3A2025',
       );
     });
 
@@ -152,8 +152,8 @@ describe("api methods", () => {
       });
 
       expect(mockFetch.mock.calls[0][0]).toBe(
-        "http://localhost:4000/api/courses?page=2&pageSize=10&search=algebra" +
-          "&term=W1%3A%3A2026&status=draft&progress=completed",
+        'http://localhost:4000/api/courses?page=2&pageSize=10&search=algebra' +
+          '&term=W1%3A%3A2026&status=draft&progress=completed',
       );
     });
 
@@ -209,7 +209,7 @@ describe("api methods", () => {
 
     const { api } = await import("~/lib/api");
 
-    await expect(api.listCourses()).rejects.toThrow("Authentication required");
+    await expect(api.listCourses()).rejects.toThrow('Authentication required');
     expect(window.location.href).toMatch(/^http:\/\/localhost:3000\/login\?force=1&redirect=/);
   });
 
@@ -347,10 +347,10 @@ describe("api methods", () => {
 
     await expect(
       api.sendGuideMessage(1, {
-        knowledgeLevel: "beginner",
-        message: "hi",
-        modelId: "m",
-        apiKey: "k",
+        knowledgeLevel: 'beginner',
+        message: 'hi',
+        modelId: 'm',
+        apiKey: 'k',
       }),
     ).rejects.toThrow(ApiTimeoutError);
   });
@@ -390,6 +390,26 @@ describe("api methods", () => {
     expect(options.method).toBe("POST");
     expect(options.credentials).toBe("include");
     expect(result).toEqual({ ok: true });
+  });
+
+  it('api.logout propagates a non-OK response instead of reporting success', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({ ok: false, error: 'Logout service unavailable' }),
+    });
+
+    const { api } = await import('~/lib/api');
+
+    await expect(api.logout()).rejects.toThrow('Logout service unavailable');
+  });
+
+  it('api.logout propagates a network failure instead of reporting success', async () => {
+    mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const { api, ApiNetworkError } = await import('~/lib/api');
+
+    await expect(api.logout()).rejects.toThrow(ApiNetworkError);
   });
 
   // #1041: Core's user list is server-paginated, so these two calls always send

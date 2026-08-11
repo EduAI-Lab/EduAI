@@ -126,7 +126,7 @@ export function searchWhere(term, fields) {
   if (!term || fields.length === 0) return null;
   const match = { contains: term, mode: "insensitive" };
   const OR = fields.map((field) =>
-    field.split(".").reduceRight((acc, segment) => ({ [segment]: acc }), match),
+    field.split('.').reduceRight((acc, segment) => ({ [segment]: acc }), match),
   );
   return { OR };
 }
@@ -167,7 +167,7 @@ export function parsePaginationParams(req, opts = {}) {
   const hasPageSize = rawPageSize !== undefined && rawPageSize !== "";
 
   if (required && (!hasPage || !hasPageSize)) {
-    throw new PaginationError("page and pageSize query params are required", "PAGINATION_REQUIRED");
+    throw new PaginationError('page and pageSize query params are required', 'PAGINATION_REQUIRED');
   }
 
   const pageNum = hasPage ? Number(rawPage) : 1;
@@ -177,7 +177,7 @@ export function parsePaginationParams(req, opts = {}) {
   // unparseable is a 400 in both modes; an absent one already either threw
   // above (required) or fell back to its default (optional).
   if ((hasPage && !Number.isFinite(pageNum)) || (hasPageSize && !Number.isFinite(pageSizeNum))) {
-    throw new PaginationError("page and pageSize must be numbers", "PAGINATION_INVALID");
+    throw new PaginationError('page and pageSize must be numbers', 'PAGINATION_INVALID');
   }
 
   const page = clampInt(pageNum, 1, MAX_PAGE);
@@ -232,7 +232,7 @@ export function parseSearchParam(req, { param = "search", maxLength = MAX_SEARCH
   if (raw.length > maxLength) {
     throw new PaginationError(
       `${param} must be at most ${maxLength} characters`,
-      "SEARCH_TOO_LONG",
+      'SEARCH_TOO_LONG',
     );
   }
   const normalized = raw.trim().replace(/\s+/g, " ");
