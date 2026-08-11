@@ -70,10 +70,11 @@ function buildRedirectLocation(row: CanvasFileDownloadRow): string {
   return `${origin}${INITIAL_PATH}&follow=1`;
 }
 
-function buildOverLimitRedirectChain(): string[] {
+function buildOverLimitRedirectChain(row: CanvasFileDownloadRow): string[] {
+  const origin = canvasUrlForRow(row);
   const locations: string[] = [];
   for (let i = 0; i <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS; i++) {
-    locations.push(`${LOCAL_ORIGIN}/redirect/${i}`);
+    locations.push(`${origin}/redirect/${i}`);
   }
   return locations;
 }
@@ -86,7 +87,7 @@ type FetchCall = {
 function installFetchMock(row: CanvasFileDownloadRow): FetchCall[] {
   const calls: FetchCall[] = [];
   const redirectLocations =
-    row.ByteLimit === "over" ? buildOverLimitRedirectChain() : [buildRedirectLocation(row)];
+    row.ByteLimit === "over" ? buildOverLimitRedirectChain(row) : [buildRedirectLocation(row)];
 
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
@@ -195,7 +196,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
 );
 
 describe("canvas-file-download PICT adapter — public cross-host CDN (hand-written complement)", () => {
-  it("keeps Bearer on redirect to a public CDN when canvasUrl is local dev", async () => {
+  it("rejects an unapproved public CDN redirect without forwarding Bearer", async () => {
     assertPublicHostnameMock.mockImplementation(async () => {});
 
     const calls: FetchCall[] = [];
@@ -213,18 +214,20 @@ describe("canvas-file-download PICT adapter — public cross-host CDN (hand-writ
       }),
     );
 
-    const bytes = await downloadCanvasFile(
-      { canvasUrl: LOCAL_ORIGIN, apiKey: API_KEY, isTestMode: false },
-      {
-        id: 1,
-        url: `${LOCAL_ORIGIN}${INITIAL_PATH}`,
-        filename: "lecture.pdf",
-        "content-type": "application/pdf",
-      },
-    );
+    await expect(
+      downloadCanvasFile(
+        { canvasUrl: LOCAL_ORIGIN, apiKey: API_KEY, isTestMode: false },
+        {
+          id: 1,
+          url: `${LOCAL_ORIGIN}${INITIAL_PATH}`,
+          filename: "lecture.pdf",
+          "content-type": "application/pdf",
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
 
-    expect(Buffer.from(bytes).toString()).toBe("cdn-bytes");
-    expect(calls[1]?.init?.headers).toMatchObject({ Authorization: `Bearer ${API_KEY}` });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init?.headers).toMatchObject({ Authorization: `Bearer ${API_KEY}` });
   });
 });
 

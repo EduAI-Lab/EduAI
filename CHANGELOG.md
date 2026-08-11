@@ -1,9 +1,16 @@
 # Changelog
 
+## [Week 15 — August 10–16, 2026]
+
+### Added
+
+- [docs] docs: Add `docs/end-to-end-user-workflows/` — README plus per-extension (Core, Question Maker, AI Tutor) workflow tracking templates for Epic #1429's pre-pilot end-to-end testing pass, with a role-based (Admin/Unit Admin/Instructor/TA/Student) findings table and the Claude-find/simulate/review/sweep-then-human testing methodology. Closes #1457. (@ariqmuldi, 2026-08-10) — #1458
+
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
 
+- [core] fix: Canvas file downloads now preserve a signed redirect to the live Canvas CDN (`*.canvas-user-content.com`, `*.inscloudgate.net`) instead of rewriting the redirect Location onto the configured Canvas origin, which invalidated the signed URL — only local Docker Canvas aliases are still rewritten. The Canvas bearer token is now sent only to the configured Canvas origin and is never forwarded on a cross-origin redirect hop; any other, non-allowlisted cross-host redirect is rejected before a second request is made. Closes #1264. (@saadtab01, 2026-08-09) — [#1437](https://github.com/EduAI-Lab/EduAI/pull/1437)
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
