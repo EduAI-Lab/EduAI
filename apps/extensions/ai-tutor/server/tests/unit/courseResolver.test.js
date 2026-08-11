@@ -77,7 +77,7 @@ describe('resolveCoreCourseList', () => {
 
     const result = await resolveCoreCourseList({});
 
-    expect(result).toEqual({ courses: [], coreUnavailable: false });
+    expect(result).toEqual({ courses: [], coreUnavailable: true });
   });
 });
 
@@ -264,7 +264,7 @@ describe('resolveCoreCourseCatalog', () => {
 
     const result = await resolveCoreCourseCatalog();
 
-    expect(result).toEqual({ courses: [], coreUnavailable: false });
+    expect(result).toEqual({ courses: [], coreUnavailable: true });
   });
 });
 

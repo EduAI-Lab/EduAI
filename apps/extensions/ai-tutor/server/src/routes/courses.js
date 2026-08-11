@@ -78,11 +78,7 @@ import {
   publishCourseForUser,
   unpublishCourseForUser,
 } from '../services/courseManagement.js';
-import {
-  isSupportedCourseRole,
-  resolveCourseAccess,
-  userHasTaEnrollment,
-} from "../services/courseAccess.js";
+import { isSupportedCourseRole, resolveCourseAccess } from '../services/courseAccess.js';
 import {
   findEduAiCourseById,
   listCoreAdminUsers,
@@ -93,6 +89,7 @@ import {
   indexCoreCoursesById,
   resolveCoreCourseById,
   resolveCoreCourseCatalog,
+  resolveCoreCourseList,
   resolveIsPublished,
 } from '../services/courseResolver.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
@@ -108,7 +105,6 @@ import {
 import {
   ensureOfferingAnchors,
   importExternalCourseForUser,
-  runCoreMirror,
 } from '../services/importTaughtCoursesService.js';
 import { listAdminBugReports } from '../services/bugReports.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
@@ -117,6 +113,47 @@ import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
 const router = express.Router();
 
 router.use('/courses/:courseId', gateCourseById());
+
+const COURSE_COLLECTION_AUTH_UNAVAILABLE_CODE = 'COURSE_COLLECTION_AUTH_UNAVAILABLE';
+const COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE = 'Course collection authorization unavailable';
+
+async function resolveCourseCollectionContext(req, res) {
+  const authUser = req.user;
+  const needsCallerRoles = ['INSTRUCTOR', 'STUDENT', 'TA'].includes(authUser.role);
+  const cookie = getEduAiCookieForRequest(req);
+  const [catalog, caller] = await Promise.all([
+    resolveCoreCourseCatalog(),
+    needsCallerRoles
+      ? resolveCoreCourseList({ cookie })
+      : Promise.resolve({ courses: [], coreUnavailable: false }),
+  ]);
+
+  if (authUser.role !== 'ADMIN' && (catalog.coreUnavailable || caller.coreUnavailable)) {
+    res.status(503).json({
+      error: COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE,
+      code: COURSE_COLLECTION_AUTH_UNAVAILABLE_CODE,
+    });
+    return null;
+  }
+
+  if (catalog.coreUnavailable) res.set('X-Core-Status', 'unavailable');
+  return {
+    catalogCourses: catalog.courses,
+    callerCourses: caller.courses,
+    coreUnavailable: catalog.coreUnavailable,
+  };
+}
+
+async function ensureAuthorizedCollectionAnchors(authUser, catalogCourses, callerCourses) {
+  let coreIds = callerCourses.map((course) => course?.id).filter(Boolean);
+  if (authUser.role === 'UNIT_ADMIN') {
+    const units = new Set(Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : []);
+    coreIds = catalogCourses
+      .filter((course) => course?.department && units.has(course.department))
+      .map((course) => course.id);
+  }
+  if (coreIds.length > 0) await ensureOfferingAnchors(coreIds);
+}
 
 /**
  * Combine Prisma where-fragments with AND, dropping the absent ones.
@@ -240,8 +277,6 @@ router.get("/courses", async (req, res) => {
     return res.status(403).json({ error: "Role is not supported in AI Tutor" });
   }
 
-  const cookie = getEduAiCookieForRequest(req);
-
   try {
     // #1043: unbounded list — require explicit paging (Group A contract,
     // mirrors #1041). One envelope shape across every role branch below.
@@ -264,7 +299,9 @@ router.get("/courses", async (req, res) => {
     // On catalog failure this degrades to an empty Core map (fields null,
     // publish gates fail closed) plus an `X-Core-Status` header the client
     // can render (see #1066's topic fail-soft pattern) — never a hard error.
-    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const collectionContext = await resolveCourseCollectionContext(req, res);
+    if (!collectionContext) return;
+    const { catalogCourses, callerCourses, coreUnavailable } = collectionContext;
     const coreCoursesById = indexCoreCoursesById(catalogCourses);
     if (coreUnavailable) {
       res.set("X-Core-Status", "unavailable");
@@ -281,21 +318,17 @@ router.get("/courses", async (req, res) => {
     // filter yields `{ in: [] }` → no rows, matching the old behaviour.
     const publishedCoreIds = catalogCourses.filter((c) => c?.isPublished === true).map((c) => c.id);
 
-    if (authUser.role === "STUDENT" || authUser.role === "TA" || authUser.role === "INSTRUCTOR") {
-      // Unified contract: the mirror is a throttled fire-and-forget side
-      // effect (shared runCoreMirror) — the list response never waits on it.
-      // It fetches its own cookie-scoped list internally (authorization
-      // context / callerEnrollmentRole); a fresh Core enrollment (or a newly
-      // assigned instructor course) shows up on the caller's next request,
-      // same trade-off as QM's list mirror.
-      runCoreMirror(authUser, cookie);
-    }
+    await ensureAuthorizedCollectionAnchors(authUser, catalogCourses, callerCourses);
 
     // #1208: role → visibility lives in services/courseAccess.js so this
     // endpoint and GET /courses/facets cannot disagree about what the caller
     // may see. A facet value the list can never return would offer the user a
     // filter that always yields nothing.
-    const access = await resolveCourseAccess(authUser, { catalogCourses, publishedCoreIds });
+    const access = await resolveCourseAccess(authUser, {
+      catalogCourses,
+      publishedCoreIds,
+      callerCourses,
+    });
 
     if (access.kind === "admin") {
       // Platform admins see Core's full course catalog (#1074), not just
@@ -333,13 +366,17 @@ router.get("/courses", async (req, res) => {
     if (progressBuckets.length > 0 && access.hasProgress) {
       const candidates = await prisma.courseOffering.findMany({
         where: andWhere([access.where, facetWhere]),
-        select: { id: true },
+        select: { id: true, coreOfferingId: true },
       });
       // In the TA union, TA-held courses are returned without progress, so they
       // belong to no bucket and any progress filter excludes them.
       const scopedIds = candidates
         .map((c) => c.id)
-        .filter((id) => access.kind !== "taUnion" || !access.taOfferingIdSet.has(id));
+        .filter((id) => {
+          if (access.kind !== 'taUnion') return true;
+          const course = candidates.find((candidate) => candidate.id === id);
+          return !access.taCoreIdSet.has(course?.coreOfferingId);
+        });
       const bucketed = await calculateCourseProgressBatch(scopedIds, authUser.id);
       progressWhere = {
         id: {
@@ -369,7 +406,7 @@ router.get("/courses", async (req, res) => {
       .filter(
         (course) =>
           access.kind === 'student' ||
-          (access.kind === 'taUnion' && !access.taOfferingIdSet.has(course.id)),
+          (access.kind === 'taUnion' && !access.taCoreIdSet.has(course.coreOfferingId)),
       )
       .map((course) => course.id);
     const progressById = await calculateCourseProgressBatch(progressIds, authUser.id);
@@ -431,13 +468,17 @@ router.get("/courses/facets", async (req, res) => {
   }
 
   try {
-    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
-    if (coreUnavailable) {
-      res.set("X-Core-Status", "unavailable");
-    }
+    const collectionContext = await resolveCourseCollectionContext(req, res);
+    if (!collectionContext) return;
+    const { catalogCourses, callerCourses, coreUnavailable } = collectionContext;
+    await ensureAuthorizedCollectionAnchors(authUser, catalogCourses, callerCourses);
     const publishedCoreIds = catalogCourses.filter((c) => c?.isPublished === true).map((c) => c.id);
 
-    const access = await resolveCourseAccess(authUser, { catalogCourses, publishedCoreIds });
+    const access = await resolveCourseAccess(authUser, {
+      catalogCourses,
+      publishedCoreIds,
+      callerCourses,
+    });
 
     // ADMIN sees the whole catalog, so skip the id query entirely. Everyone else
     // is scoped to the Core courses behind the offerings they can actually see.
@@ -470,9 +511,11 @@ router.get("/courses/facets", async (req, res) => {
         // their own, so there is nothing to enumerate.
         progress = [];
       } else {
-        const ids = scopedOfferingIds.filter(
-          (id) => access.kind !== "taUnion" || !access.taOfferingIdSet.has(id),
-        );
+        const ids = scopedOfferingIds.filter((id) => {
+          if (access.kind !== 'taUnion') return true;
+          const course = visible.find((candidate) => candidate.id === id);
+          return !access.taCoreIdSet.has(course?.coreOfferingId);
+        });
         const bucketed = await calculateCourseProgressBatch(ids, authUser.id);
         const present = new Set(ids.map((id) => progressBucket(bucketed.get(id))));
         progress = COURSE_PROGRESS_VALUES.filter((v) => present.has(v));
@@ -1147,7 +1190,9 @@ router.get("/me/dashboard-stats", async (req, res) => {
     // contents depend on the caller's own Core enrollment). No cookie-scoped
     // Core call happens in this route at all; nothing here consumes
     // `callerEnrollmentRole`.
-    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const collectionContext = await resolveCourseCollectionContext(req, res);
+    if (!collectionContext) return;
+    const { catalogCourses, callerCourses, coreUnavailable } = collectionContext;
     const coreCoursesById = indexCoreCoursesById(catalogCourses);
     if (coreUnavailable) {
       res.set("X-Core-Status", "unavailable");
@@ -1191,30 +1236,21 @@ router.get("/me/dashboard-stats", async (req, res) => {
       return res.json(stats);
     }
 
-    if (authUser.role === "INSTRUCTOR" || authUser.role === "UNIT_ADMIN") {
+    await ensureAuthorizedCollectionAnchors(authUser, catalogCourses, callerCourses);
+    const publishedCoreIds = catalogCourses.filter((c) => c?.isPublished === true).map((c) => c.id);
+    const access = await resolveCourseAccess(authUser, {
+      catalogCourses,
+      publishedCoreIds,
+      callerCourses,
+    });
+
+    if (authUser.role === 'INSTRUCTOR' || authUser.role === 'UNIT_ADMIN') {
       // `department` is Core-owned (#1072 step 4) — join the batch fetched
       // above rather than filtering by a local column. Same fail-soft
       // posture as `GET /courses`'s UNIT_ADMIN branch: an empty/unavailable
       // Core list degrades the department scope to empty, not an error.
-      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
-      const deptCoreIds =
-        authUser.role === 'UNIT_ADMIN' && units.length > 0
-          ? catalogCourses
-              .filter((c) => c?.department && units.includes(c.department))
-              .map((c) => c.id)
-          : [];
-      const courseWhere =
-        authUser.role === "INSTRUCTOR"
-          ? { instructors: { some: { userId: authUser.id } } }
-          : {
-              OR: [
-                ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
-                { instructors: { some: { userId: authUser.id } } },
-              ],
-            };
-
       const courses = await prisma.courseOffering.findMany({
-        where: courseWhere,
+        where: access.where,
         select: { id: true, coreOfferingId: true },
       });
       const courseIds = courses.map((c) => c.id);
@@ -1255,32 +1291,24 @@ router.get("/me/dashboard-stats", async (req, res) => {
 
     // TA — either the platform role is TA, or a STUDENT account also holds a
     // TA enrollment on at least one course (mirrors GET /courses §174).
-    const isEffectiveTa =
-      authUser.role === 'TA' ||
-      (authUser.role === 'STUDENT' && (await userHasTaEnrollment(authUser.id)));
+    const isEffectiveTa = authUser.role === 'TA' || access.kind === 'taUnion';
 
     if (isEffectiveTa) {
-      const taEnrollments = await prisma.courseEnrollment.findMany({
-        where: { userId: authUser.id, role: "TA" },
-        select: { courseOfferingId: true },
+      const taCourses = await prisma.courseOffering.findMany({
+        where: { coreOfferingId: { in: [...access.taCoreIdSet] } },
+        select: { id: true, coreOfferingId: true },
       });
-      const courseIds = taEnrollments.map((e) => e.courseOfferingId);
+      const courseIds = taCourses.map((course) => course.id);
 
-      const [submissionsToReview, taCourses] =
+      const submissionsToReview =
         courseIds.length > 0
-          ? await Promise.all([
-              prisma.submission.count({
-                where: {
-                  isCorrect: null,
-                  activity: { lesson: { module: { courseOfferingId: { in: courseIds } } } },
-                },
-              }),
-              prisma.courseOffering.findMany({
-                where: { id: { in: courseIds } },
-                select: { coreOfferingId: true },
-              }),
-            ])
-          : [0, []];
+          ? await prisma.submission.count({
+              where: {
+                isCorrect: null,
+                activity: { lesson: { module: { courseOfferingId: { in: courseIds } } } },
+              },
+            })
+          : 0;
       const publishedCourses = taCourses.filter(isCorePublished).length;
 
       return res.json({
@@ -1292,18 +1320,10 @@ router.get("/me/dashboard-stats", async (req, res) => {
     }
 
     // STUDENT (default)
-    const enrollments = await prisma.courseEnrollment.findMany({
-      where: { userId: authUser.id, role: "STUDENT" },
-      select: { courseOfferingId: true },
+    const rawCourses = await prisma.courseOffering.findMany({
+      where: access.where,
+      select: { id: true, coreOfferingId: true },
     });
-    const enrolledCourseIds = enrollments.map((e) => e.courseOfferingId);
-    const rawCourses =
-      enrolledCourseIds.length > 0
-        ? await prisma.courseOffering.findMany({
-            where: { id: { in: enrolledCourseIds } },
-            select: { id: true, coreOfferingId: true },
-          })
-        : [];
     const courses = rawCourses.filter(isCorePublished);
 
     // #1208: one batched call across every enrolled course — this was a

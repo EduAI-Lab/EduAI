@@ -70,7 +70,10 @@ export async function resolveCoreCourseCatalog() {
     // so there is no id set to narrow it with. Callers that already know which
     // ids they want should use `resolveCoreCoursesByIds` instead.
     const courses = await listEduAiCoursesServiceKey({ all: true });
-    return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
+    if (!Array.isArray(courses)) {
+      return { courses: [], coreUnavailable: true };
+    }
+    return { courses, coreUnavailable: false };
   } catch (err) {
     logSafeError('[courseResolver] Core course catalog unavailable', err);
     return { courses: [], coreUnavailable: true };
@@ -88,7 +91,10 @@ export async function resolveCoreCourseList({ cookie } = {}) {
   try {
     // Authorization context for the caller's own courses; page-walked (#1041).
     const courses = await listEduAiCourses({ cookie, all: true });
-    return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
+    if (!Array.isArray(courses)) {
+      return { courses: [], coreUnavailable: true };
+    }
+    return { courses, coreUnavailable: false };
   } catch (err) {
     logSafeError('[courseResolver] Core course list unavailable', err);
     return { courses: [], coreUnavailable: true };

@@ -77,8 +77,7 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       chem: await seedMinimalCourse(prof.id),
     };
 
-    // `callerEnrollmentRole: 'NONE'` is the non-match sentinel used across the
-    // course tests — it keeps the auto-import mirror from creating enrollments.
+    // The default caller is the instructor assigned to all four seeded courses.
     catalog = [
       {
         id: seeds.computing.course.coreOfferingId,
@@ -88,7 +87,7 @@ describe("GET /api/courses — search and filters (#1208)", () => {
         year: 2026,
         department: "Computer Science",
         isPublished: true,
-        callerEnrollmentRole: "NONE",
+        callerEnrollmentRole: 'INSTRUCTOR',
       },
       {
         id: seeds.data.course.coreOfferingId,
@@ -98,7 +97,7 @@ describe("GET /api/courses — search and filters (#1208)", () => {
         year: 2026,
         department: "Computer Science",
         isPublished: false,
-        callerEnrollmentRole: "NONE",
+        callerEnrollmentRole: 'INSTRUCTOR',
       },
       {
         id: seeds.algebra.course.coreOfferingId,
@@ -108,7 +107,7 @@ describe("GET /api/courses — search and filters (#1208)", () => {
         year: 2026,
         department: "Mathematics",
         isPublished: true,
-        callerEnrollmentRole: "NONE",
+        callerEnrollmentRole: 'INSTRUCTOR',
       },
       {
         id: seeds.chem.course.coreOfferingId,
@@ -118,7 +117,7 @@ describe("GET /api/courses — search and filters (#1208)", () => {
         year: 2025,
         department: "Chemistry",
         isPublished: true,
-        callerEnrollmentRole: "NONE",
+        callerEnrollmentRole: 'INSTRUCTOR',
       },
     ];
 
@@ -253,22 +252,23 @@ describe("GET /api/courses — search and filters (#1208)", () => {
 
   // ── fail-soft ────────────────────────────────────────────────────
 
-  it("returns an empty result and flags the outage when Core is unavailable", async () => {
-    vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(new Error("core down"));
+  it('fails closed with a stable error when Core is unavailable', async () => {
+    vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(new Error('core down'));
 
     const res = await request(profApp).get(`/api/courses?${PAGE}&search=computing`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual([]);
-    // Without this header the client would render "no courses match" for what is
-    // actually an outage.
-    expect(res.headers["x-core-status"]).toBe("unavailable");
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('COURSE_COLLECTION_AUTH_UNAVAILABLE');
   });
 
   // ── authorization: filters must never widen scope ────────────────
 
-  describe("scoping", () => {
-    it("a student cannot reach an unpublished course via ?status=draft", async () => {
+  describe('scoping', () => {
+    it('a student cannot reach an unpublished course via ?status=draft', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { ...catalog[0], callerEnrollmentRole: 'STUDENT' },
+        { ...catalog[1], callerEnrollmentRole: 'STUDENT' },
+      ]);
       const student = makeStudent();
       // Enrolled in BOTH the published and the unpublished course.
       await prisma.courseEnrollment.createMany({
@@ -286,7 +286,10 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       expect(res.body.total).toBe(0);
     });
 
-    it("a student cannot reach a course they are not enrolled in via search", async () => {
+    it('a student cannot reach a course they are not enrolled in via search', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { ...catalog[0], callerEnrollmentRole: 'STUDENT' },
+      ]);
       const student = makeStudent();
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seeds.computing.course.id, userId: student.id, role: "STUDENT" },
@@ -299,7 +302,8 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       expect(res.body.data).toEqual([]);
     });
 
-    it("an instructor cannot reach a course they do not lead via search", async () => {
+    it('an instructor cannot reach a course they do not lead via search', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]);
       const other = makeProfessor();
       const otherApp = await createApp({ mockUser: other });
 
@@ -322,7 +326,11 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       expect(res.body.data).toEqual([]);
     });
 
-    it("applies filters across the TA union", async () => {
+    it('applies filters across the TA union', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { ...catalog[1], callerEnrollmentRole: 'TA' },
+        { ...catalog[2], callerEnrollmentRole: 'STUDENT' },
+      ]);
       const ta = makeTA();
       await prisma.courseEnrollment.createMany({
         data: [
@@ -373,6 +381,11 @@ describe("GET /api/courses — search and filters (#1208)", () => {
     }
 
     beforeEach(async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { ...catalog[0], callerEnrollmentRole: 'STUDENT' },
+        { ...catalog[2], callerEnrollmentRole: 'STUDENT' },
+        { ...catalog[3], callerEnrollmentRole: 'STUDENT' },
+      ]);
       student = makeStudent();
       // Enrolled in the three published courses.
       await prisma.courseEnrollment.createMany({
@@ -458,7 +471,8 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       expect(res.body.data).toEqual([]);
     });
 
-    it("is ignored, not rejected, for a role whose rows carry no progress", async () => {
+    it('is ignored, not rejected, for a role whose rows carry no progress', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue(catalog);
       const res = await request(profApp).get(`/api/courses?${PAGE}&progress=completed`);
 
       expect(res.status).toBe(200);
@@ -475,8 +489,20 @@ describe("GET /api/courses — search and filters (#1208)", () => {
 
   // ── GET /api/courses/facets ──────────────────────────────────────
 
-  describe("GET /api/courses/facets", () => {
-    it("offers every term across the whole accessible set, not just one page", async () => {
+  describe('GET /api/courses/facets', () => {
+    it('does not expose facets from a stale local instructor assignment', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue(
+        catalog.map((course) => ({ ...course, callerEnrollmentRole: 'TA' })),
+      );
+
+      const res = await request(profApp).get('/api/courses/facets');
+
+      expect(res.status).toBe(200);
+      expect(res.body.terms).toEqual([]);
+      expect(res.body.statuses).toEqual([]);
+    });
+
+    it('offers every term across the whole accessible set, not just one page', async () => {
       // One course per page — the facets must still span all four.
       const page = await request(profApp).get("/api/courses?page=1&pageSize=1");
       expect(page.body.data).toHaveLength(1);
@@ -494,6 +520,9 @@ describe("GET /api/courses — search and filters (#1208)", () => {
     });
 
     it("scopes to the caller — a student sees only their own courses' terms", async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { ...catalog[3], callerEnrollmentRole: 'STUDENT' },
+      ]);
       const student = makeStudent();
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seeds.chem.course.id, userId: student.id, role: "STUDENT" },
@@ -506,7 +535,10 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       expect(res.body.statuses).toEqual(["published"]);
     });
 
-    it("offers progress buckets to a student but not an instructor", async () => {
+    it('offers progress buckets to a student but not an instructor', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { ...catalog[3], callerEnrollmentRole: 'STUDENT' },
+      ]);
       const student = makeStudent();
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seeds.chem.course.id, userId: student.id, role: "STUDENT" },
@@ -527,22 +559,13 @@ describe("GET /api/courses — search and filters (#1208)", () => {
       expect(forProf.body.progress).toEqual([]);
     });
 
-    it("returns empty facets rather than 500ing when Core is unavailable", async () => {
-      vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(new Error("core down"));
+    it('fails closed with a stable error when Core is unavailable', async () => {
+      vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(new Error('core down'));
 
       const res = await request(profApp).get("/api/courses/facets");
 
-      expect(res.status).toBe(200);
-      // `coreUnavailable` rides in the body because the client's `http()` wrapper
-      // swallows `X-Core-Status` into a toast, so the route never sees it — and
-      // without it a fail-closed search renders "No courses match".
-      expect(res.body).toEqual({
-        terms: [],
-        statuses: [],
-        progress: [],
-        coreUnavailable: true,
-      });
-      expect(res.headers["x-core-status"]).toBe("unavailable");
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('COURSE_COLLECTION_AUTH_UNAVAILABLE');
     });
 
     it("is not shadowed by GET /courses/:courseId", async () => {
