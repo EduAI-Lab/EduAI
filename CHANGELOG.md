@@ -6,6 +6,10 @@
 
 - [ai-tutor] perf: Index the 12 content-tree foreign keys that had no usable leading-column index, turning the seq scans behind every `CourseOffering → Module → Lesson → Activity → Submission` hop and their cascade deletes into index scans (34ms → 0.11ms on `Activity.lessonId` at 200k rows). Closes #1374. (@abdullahmoh21, 2026-08-10)
 
+### Tests
+
+- [ai-tutor] test: Add `foreignKeyIndexes.test.js`, a schema guard that audits the live test database for foreign keys whose leading column has no usable index, pins the unindexed set to the two documented deferrals, and proves the audit reacts by dropping an index inside a rolled-back transaction. Closes #1374. (@abdullahmoh21, 2026-08-10)
+
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed

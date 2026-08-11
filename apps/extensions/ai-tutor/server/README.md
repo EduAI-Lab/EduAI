@@ -218,6 +218,22 @@ CourseOffering ─┬─ Module ─── Lesson ─── Activity ─┬─ Su
 
 See `server/prisma/schema.prisma` for the full schema.
 
+### Indexes
+
+Every foreign key in the tree above is indexed with its own leading-column btree (#1374).
+Postgres does not auto-index FK child columns and Prisma only emits indexes for `@id` /
+`@unique` / `@@unique`, so **adding a relation means adding an `@@index` for it** — otherwise
+the parent-to-children read and the `ON DELETE CASCADE` both fall back to a sequential scan.
+
+A column that appears only in the *trailing* half of a composite key is not covered: a btree on
+`(userId, activityId)` cannot serve `WHERE activityId = ?`. Conversely a column that *leads* a
+PK or unique needs no index of its own.
+
+`tests/integration/foreignKeyIndexes.test.js` enforces this against the live test database, so a
+new unindexed relation fails CI rather than quietly regressing. The two intentional exceptions
+(`Activity.mainTopicId`, `Activity.promptTemplateId`) are pinned there and explained in
+`docs/perf/backend/foreign-key-indexes-ai-tutor.md`.
+
 ### Migrations
 
 ```bash
