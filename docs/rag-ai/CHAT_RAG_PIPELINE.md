@@ -178,7 +178,7 @@ Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
 1. **`generateEmbedding(userQuery)`** — `embed()` via OpenRouter `google/gemini-embedding-001` (if `OPENROUTER_API_KEY`), else direct Gemini `gemini-embedding-001`, else OpenAI `text-embedding-3-small`. Normalized query text is cached in-memory (`QUERY_EMBED_CACHE_TTL_MS` default 90s, `QUERY_EMBED_CACHE_MAX` default 300 entries).
 2. **Retrieval SQL** — branches on **`RAG_HYBRID_BM25`**:
-   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): pre-filters with the same vector cosine floor as the pure-vector path (`1 − (embedding <=> query) > threshold`), then ranks survivors by combined score: `(1 − (embedding <=> query)) × α + ts_rank(content, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). `ORDER BY score DESC`, `LIMIT`. Improves label queries ("assignment 4") and vague queries ("I'm confused about what prof said") that pure vector search misses, without returning top-k chunks that fail the similarity floor.
+   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): unions lexical candidates selected by the GIN-backed `content_tsv @@ query` predicate with semantic candidates above the vector cosine floor (`1 − (embedding <=> query) > threshold`), then ranks the union by `(1 − (embedding <=> query)) × α + ts_rank(content_tsv, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). `ORDER BY score DESC`, `LIMIT`. Exact labels can enter through full-text search while semantically relevant chunks remain eligible even when they do not contain the query terms.
    - **Pure-vector path** (default when flag is off): `1 - (embedding <=> query)`, filtered by threshold from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**), `ORDER BY similarity DESC`.
 3. **Returns** `{ content, similarity, materialTitle }[]` — same shape for both paths; `similarity` holds the combined score in hybrid mode.
 
@@ -217,7 +217,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | --------- | -------- |
 | No course selected | Hybrid `isRAGQuery` is false; `getInformation` returns `{ error: "No course selected for RAG search" }` if called |
 | Hybrid retrieval (inject) | Smart inject gate (`needsCourseRag` + similarity thresholds); prefetch always when course selected. Override: `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` |
-| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines vector + full-text BM25 ranking after the same vector similarity floor as pure-vector search; no schema migration needed (uses built-in PostgreSQL `ts_rank`/`plainto_tsquery`). Recommended for production. |
+| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines GIN-backed lexical candidates (`content_tsv @@ query`) with independent vector-threshold candidates, then reranks their union; `content_tsv` is a generated (`GENERATED ALWAYS ... STORED`) `tsvector` column, so content is not tokenized per query. Recommended for production. |
 | Latency on RAG turns | Cached embed (hit) or one embed API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two credential paths |
 | Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned routing work |
