@@ -49,6 +49,9 @@ The installer copies `infra/cron/*.sh` to `/opt/eduai/cron` with
 `eduai-cron:eduai-cron` ownership and `0750` mode. The production cron secrets
 file must be readable by the worker but no other users:
 `sudo chown root:eduai-cron /etc/eduai/cron.env && sudo chmod 640 /etc/eduai/cron.env`.
+It also creates the worker-owned local backup directory and audit-log directory:
+`/var/backups/eduai` (`eduai-cron:eduai-cron`, `0750`) and `/var/log/eduai`
+(`eduai-cron:adm`, `0750`).
 
 ### Day-to-day
 

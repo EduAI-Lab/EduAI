@@ -36,6 +36,8 @@ echo "  node $(/usr/local/bin/node -v) at /usr/local/bin/node"
 
 getent group eduai-dev >/dev/null || { echo "ERROR: group eduai-dev does not exist"; exit 1; }
 echo "  group eduai-dev ok"
+getent group adm >/dev/null || { echo "ERROR: group adm does not exist (needed for audit-log access)"; exit 1; }
+echo "  group adm ok"
 
 # The worker executes the shell jobs as the dedicated account. Keep this
 # separate from ssaada08 (the account used by the web services) so the cron
@@ -70,6 +72,10 @@ for script in "$CRON_SRC"/*.sh; do
   sudo install -m 0750 -o eduai-cron -g eduai-cron "$script" "$CRON_DIR/"
 done
 echo "  $CRON_DIR (eduai-cron:eduai-cron, 0750)"
+sudo install -d -m 0750 -o eduai-cron -g eduai-cron /var/backups/eduai
+sudo install -d -m 0750 -o eduai-cron -g adm /var/log/eduai
+echo "  /var/backups/eduai (eduai-cron:eduai-cron, 0750)"
+echo "  /var/log/eduai (eduai-cron:adm, 0750)"
 
 echo
 echo "=== retiring the old --user units ==="

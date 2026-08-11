@@ -38,10 +38,15 @@ sudo mkdir -p /var/log/eduai
 sudo chown eduai-cron:adm /var/log/eduai
 sudo chmod 750 /var/log/eduai
 
-# 5. Install logrotate
+# 5. Create the local backup directory
+sudo mkdir -p /var/backups/eduai
+sudo chown eduai-cron:eduai-cron /var/backups/eduai
+sudo chmod 750 /var/backups/eduai
+
+# 6. Install logrotate
 sudo cp infra/cron/logrotate.conf /etc/logrotate.d/eduai-cron
 
-# 6. Dry-run the nightly backup to verify connectivity before the first scheduled run
+# 7. Dry-run the nightly backup to verify connectivity before the first scheduled run
 sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh
 ```
 
