@@ -140,7 +140,15 @@ SQL
 }
 
 cron_fail() {
-  local msg="${1:-unknown error}"
+  # Callers may pass upstream response bodies. Never persist, log, or email
+  # that untrusted text: it can contain API keys, bearer tokens, database
+  # diagnostics, or user content. The detailed command output remains in the
+  # command's own restricted logs; the shared audit channel gets one stable
+  # operator-safe failure message.
+  local safe_job="${CRON_JOB_NAME:-unknown}"
+  safe_job="${safe_job//[^[:alnum:]_.:-]/_}"
+  safe_job="${safe_job:0:128}"
+  local msg="Cron job [$safe_job] failed"
   if [[ -n "$CRON_RUN_ID" && -n "$CRON_LEASE_OWNER" ]]; then
     local updated
     if ! updated=$(

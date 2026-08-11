@@ -25,6 +25,10 @@ cat >"$TEST_DIR/bin/psql" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+printf 'argv:' >>"$FAKE_PSQL_SQL_LOG"
+printf ' %q' "$@" >>"$FAKE_PSQL_SQL_LOG"
+printf '\n' >>"$FAKE_PSQL_SQL_LOG"
+
 sql=""
 while (($#)); do
   case "$1" in
@@ -74,6 +78,14 @@ assert_contains() {
     echo "expected $file to contain: $needle" >&2
     exit 1
   }
+}
+
+assert_not_contains() {
+  local needle=$1 file=$2
+  if grep -Fq "$needle" "$file"; then
+    echo "expected $file not to contain: $needle" >&2
+    exit 1
+  fi
 }
 
 run_start_failure_must_be_fatal() {
@@ -137,6 +149,23 @@ run_error_contract() {
   assert_contains '"leaseExpiresAt" = NULL' "$FAKE_PSQL_SQL_LOG"
 }
 
+run_error_message_never_persists_or_emails_secrets() {
+  : >"$FAKE_PSQL_SQL_LOG"
+  : >"$AUDIT_LOG"
+  cron_start "secret-error-job"
+
+  local canary='sk-live-cron-secret-abc123'
+  local output
+  output=$( (cron_fail "Core HTTP 500: {\"apiKey\":\"$canary\"}") 2>&1 || true )
+
+  [[ "$output" != *"$canary"* ]] || {
+    echo "cron_fail exposed a secret in its operator output" >&2
+    exit 1
+  }
+  assert_not_contains "$canary" "$FAKE_PSQL_SQL_LOG"
+  assert_not_contains "$canary" "$AUDIT_LOG"
+}
+
 run_terminal_database_failure_must_be_fatal() {
   : >"$FAKE_PSQL_SQL_LOG"
   cron_start "finish-failure"
@@ -165,6 +194,7 @@ run_start_failure_must_be_fatal
 run_success_contract
 run_stale_owner_cannot_finalize
 run_error_contract
+run_error_message_never_persists_or_emails_secrets
 run_terminal_database_failure_must_be_fatal
 run_error_database_failure_is_reported
 
