@@ -84,7 +84,8 @@ const TA = { id: "ta-1", role: "TA", email: "t@t.co", name: "TA" };
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
 const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
 
-const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
+const COURSE = { id: 1, userId: 'owner-1', coreCourseId: 'cuid-core-course' };
+const OTHER_COURSE = { id: 2, userId: 'owner-1', coreCourseId: 'cuid-other-course' };
 
 function authAs(user, enrollRole) {
   vi.stubGlobal(
@@ -160,5 +161,27 @@ describe("INSTRUCTOR may edit/delete any question in the course (C)", () => {
       "owner-1",
       expect.objectContaining({ createdBy: INSTRUCTOR.id, courseId: 1 }),
     );
+  });
+
+  it('does not allow a source-authorized caller to move a question into an inaccessible course', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    loadQuestion('ta-1');
+    mockCourseFindOne.mockImplementation(({ where }) =>
+      Promise.resolve(where.id === OTHER_COURSE.id ? OTHER_COURSE : COURSE)
+    );
+    mockEnrollments.mockImplementation((coreCourseId) => Promise.resolve({
+      enrollments: coreCourseId === COURSE.coreCourseId
+        ? [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }]
+        : [],
+    }));
+    mockUpdate.mockResolvedValue({ id: 7, courseId: OTHER_COURSE.id });
+
+    const res = await request(app)
+      .put('/api/questions/7')
+      .set('Cookie', 'session=v')
+      .send({ courseId: OTHER_COURSE.id, description: 'move' });
+
+    expect(res.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

@@ -201,3 +201,47 @@ export function requireCourseAccess({ min, getCourseId }) {
     }
   };
 }
+
+/**
+ * Gate an optional course supplied alongside a resource addressed by another
+ * course (for example, a PUT that attempts to change `courseId`). The resource
+ * middleware has already attached `req.qmCourse` for the source row; this
+ * guard re-resolves the caller's access for the client-supplied target without
+ * replacing that source context. An omitted target is a same-course update and
+ * continues through the existing resource access decision.
+ */
+export function requireOptionalCourseAccess({ min, getCourseId, attachAs = 'targetQmCourse' }) {
+  const required = minRank(min);
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const courseId = await getCourseId(req);
+      if (courseId === undefined) {
+        return next();
+      }
+      if (courseId === null || courseId === '') {
+        return res.status(404).json({ success: false, error: 'Course not found' });
+      }
+
+      const { course, access } = await resolveCourseAccessWithCourse(req.user, courseId, {
+        cookie: req.headers.cookie,
+      });
+
+      if (!course) {
+        return res.status(404).json({ success: false, error: 'Course not found' });
+      }
+      if (!access || access.rank < required) {
+        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+      }
+
+      req[attachAs] = course;
+      req[`${attachAs}Access`] = access;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}

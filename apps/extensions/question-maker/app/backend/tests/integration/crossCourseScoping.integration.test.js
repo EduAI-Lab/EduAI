@@ -22,7 +22,8 @@ const describeDb = hasTestDb ? describe : describe.skip;
 describeDb("cross-course write scoping (integration, #1)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
-  let createAssessment, addQuestionToAssessment, removeQuestionFromAssessment;
+  let createQuestion, updateQuestion, createAssessment, updateAssessment, addQuestionToAssessment, removeQuestionFromAssessment;
+  let createVariant, updateVariant;
   let sectionSvc;
 
   const USER = { id: "cuid-xc-user", email: "xc@test.com", name: "XC User" };
@@ -32,15 +33,18 @@ describeDb("cross-course write scoping (integration, #1)", () => {
     ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
-    ({ createAssessment, addQuestionToAssessment, removeQuestionFromAssessment } =
-      await import("../../src/services/assessmentService.js"));
-    sectionSvc = await import("../../src/services/assessmentSectionService.js");
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
+    ({ createQuestion, updateQuestion, createVariant, updateVariant } = await import('../../src/services/questionService.js'));
+    ({ createAssessment, addQuestionToAssessment, removeQuestionFromAssessment } = await import(
+      '../../src/services/assessmentService.js'
+    ));
+    ({ updateAssessment } = await import('../../src/services/assessmentService.js'));
+    sectionSvc = await import('../../src/services/assessmentSectionService.js');
   });
 
   // Two courses owned by the same user.
-  let courseA, courseB, topicA, topicB;
-  let assessmentA, sectionA, variantA;
+  let courseA, courseB, topicA, topicASecondary, topicB;
+  let assessmentA, sectionA, variantA, questionA;
   let assessmentB, sectionB, variantB, questionB;
 
   async function makeVariant(courseId, topicId, text = "Q?") {
@@ -65,17 +69,12 @@ describeDb("cross-course write scoping (integration, #1)", () => {
     courseA = courses[0];
     courseB = courses[1];
     topicA = await prisma.topics.findFirst({ where: { courseId: courseA.id } });
+    topicASecondary = await prisma.topics.findFirst({ where: { courseId: courseA.id, id: { not: topicA.id } } });
     topicB = await prisma.topics.findFirst({ where: { courseId: courseB.id } });
 
-    assessmentA = await createAssessment(USER.id, {
-      type: "Quiz",
-      name: "A Exam",
-      courseId: courseA.id,
-    });
-    sectionA = await sectionSvc.createAssessmentSection(assessmentA.id, USER.id, {
-      name: "A-Section",
-    });
-    ({ variant: variantA } = await makeVariant(courseA.id, topicA.id, "A?"));
+    assessmentA = await createAssessment(USER.id, { type: 'Quiz', name: 'A Exam', courseId: courseA.id });
+    sectionA = await sectionSvc.createAssessmentSection(assessmentA.id, USER.id, { name: 'A-Section' });
+    ({ qm: questionA, variant: variantA } = await makeVariant(courseA.id, topicA.id, 'A?'));
 
     assessmentB = await createAssessment(USER.id, {
       type: "Quiz",
@@ -154,6 +153,89 @@ describeDb("cross-course write scoping (integration, #1)", () => {
       await expect(
         removeQuestionFromAssessment(assessmentA.id, questionB.id, USER.id),
       ).rejects.toThrow(/Question not found/);
+    });
+  });
+
+  describe('resource relocation and relation integrity', () => {
+    it('rejects moving a question to another course, even when the same owner has both courses', async () => {
+      await expect(
+        updateQuestion(questionA.id, USER.id, { courseId: courseB.id })
+      ).rejects.toMatchObject({ status: 409, code: 'COURSE_RELOCATION_NOT_ALLOWED' });
+    });
+
+    it('rejects moving an assessment to another course, even when the same owner has both courses', async () => {
+      await expect(
+        updateAssessment(assessmentA.id, { courseId: courseB.id }, USER.id)
+      ).rejects.toMatchObject({ status: 409, code: 'COURSE_RELOCATION_NOT_ALLOWED' });
+    });
+
+    it('allows a legitimate same-course question and assessment update', async () => {
+      const question = await updateQuestion(questionA.id, USER.id, {
+        courseId: courseA.id,
+        description: 'same course question',
+        primaryTopicId: topicA.id,
+      });
+      expect(question.courseId).toBe(courseA.id);
+      expect(question.primaryTopicId).toBe(topicA.id);
+
+      const assessment = await updateAssessment(
+        assessmentA.id,
+        { courseId: courseA.id, name: 'same course assessment' },
+        USER.id
+      );
+      expect(assessment.courseId).toBe(courseA.id);
+      expect(assessment.name).toBe('same course assessment');
+    });
+
+    it('rejects creating a question with a primary topic from another course', async () => {
+      await expect(
+        createQuestion(USER.id, {
+          courseId: courseA.id,
+          primaryTopicId: topicB.id,
+          type: 'SA',
+          description: 'foreign topic',
+        })
+      ).rejects.toThrow(/Primary topic not found for this course/);
+    });
+
+    it('rejects updating a question with a primary topic from another course', async () => {
+      await expect(
+        updateQuestion(questionA.id, USER.id, { primaryTopicId: topicB.id })
+      ).rejects.toThrow(/Primary topic not found for this course/);
+    });
+
+    it.each([
+      ['assessment', ({ assessmentB: foreignAssessment }) => ({ assessmentId: foreignAssessment.id }), /Assessment not found for this course/],
+      ['secondary topic', ({ topicB: foreignTopic }) => ({ secondaryTopicsId: [foreignTopic.id] }), /Secondary topic not found for this course/],
+      ['reference variant', ({ variantB: foreignVariant }) => ({ referenceId: foreignVariant.id }), /Reference variant not found for this course/],
+    ])('rejects creating a variant with a foreign-course %s', async (_label, payloadFactory, matcher) => {
+      const payload = payloadFactory({ assessmentB, topicB, variantB });
+      await expect(
+        createVariant(questionA.id, { questionText: 'foreign relation', ...payload }, USER.id)
+      ).rejects.toThrow(matcher);
+    });
+
+    it.each([
+      ['assessment', ({ assessmentB: foreignAssessment }) => ({ assessmentId: foreignAssessment.id }), /Assessment not found for this course/],
+      ['secondary topic', ({ topicB: foreignTopic }) => ({ secondaryTopicsId: [foreignTopic.id] }), /Secondary topic not found for this course/],
+      ['reference variant', ({ variantB: foreignVariant }) => ({ referenceId: foreignVariant.id }), /Reference variant not found for this course/],
+    ])('rejects updating a variant with a foreign-course %s', async (_label, payloadFactory, matcher) => {
+      const payload = payloadFactory({ assessmentB, topicB, variantB });
+      await expect(
+        updateVariant(variantA.id, payload, USER.id)
+      ).rejects.toThrow(matcher);
+    });
+
+    it('allows a variant with same-course assessment, topic, and reference relations', async () => {
+      const created = await createVariant(questionA.id, {
+        questionText: 'same course relation',
+        assessmentId: assessmentA.id,
+        secondaryTopicsId: [topicASecondary.id],
+        referenceId: variantA.id,
+      }, USER.id);
+      expect(created.assessmentId).toBe(assessmentA.id);
+      expect(created.secondaryTopicsId).toEqual([topicASecondary.id]);
+      expect(created.referenceId).toBe(variantA.id);
     });
   });
 });

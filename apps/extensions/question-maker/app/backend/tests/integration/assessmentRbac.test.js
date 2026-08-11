@@ -80,10 +80,11 @@ vi.mock("../../src/config/database.js", () => ({
 
 const { default: app } = await import("../../src/app.js");
 
-const TA = { id: "ta-1", role: "TA", email: "t@t.co", name: "TA" };
-const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
-const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
-const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
+const TA = { id: 'ta-1', role: 'TA', email: 't@t.co', name: 'TA' };
+const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
+const STUDENT = { id: 'stu-1', role: 'STUDENT', email: 's@t.co', name: 'S' };
+const COURSE = { id: 1, userId: 'owner-1', coreCourseId: 'cuid-core-course' };
+const OTHER_COURSE = { id: 2, userId: 'owner-1', coreCourseId: 'cuid-other-course' };
 
 function authAs(user, enrollRole) {
   vi.stubGlobal(
@@ -166,8 +167,29 @@ describe("INSTRUCTOR authoring path (§17)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("assembles variants → 201", async () => {
-    authAs(INSTRUCTOR, "INSTRUCTOR");
+  it('does not allow a source-authorized caller to move an assessment into an inaccessible course', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    mockCourseFindOne.mockImplementation(({ where }) =>
+      Promise.resolve(where.id === OTHER_COURSE.id ? OTHER_COURSE : COURSE)
+    );
+    mockEnrollments.mockImplementation((coreCourseId) => Promise.resolve({
+      enrollments: coreCourseId === COURSE.coreCourseId
+        ? [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }]
+        : [],
+    }));
+    svc.updateAssessment.mockResolvedValue({ id: 5, courseId: OTHER_COURSE.id });
+
+    const res = await request(app)
+      .put('/api/assessments/5')
+      .set('Cookie', 'session=v')
+      .send({ courseId: OTHER_COURSE.id, name: 'move' });
+
+    expect(res.status).toBe(403);
+    expect(svc.updateAssessment).not.toHaveBeenCalled();
+  });
+
+  it('assembles variants → 201', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
     variantSvc.assembleEquivalentExamVariants.mockResolvedValue({ created: [] });
     const res = await request(app)
       .post("/api/assessment-variant/assemble-variants")

@@ -30,18 +30,14 @@ import {
   removeVariantFromSection,
   updateVariantOrderInSection,
   removeQuestionFromAllSections,
-  checkQuestionInAssessments,
-} from "../services/assessmentSectionService.js";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { QM_AUTHORIZED } from "../middleware/roles.js";
-import {
-  requireCourseAccess,
-  resolveCourseAccessWithCourse,
-  LEVELS,
-} from "../middleware/courseAccess.js";
-import { requireAssessmentAccess, requireQuestionAccess } from "../middleware/resourceAccess.js";
-import { parseLimitOffset } from "../utils/listPagination.js";
-import { parsePaginationParams, pageOf } from "../utils/pagination.js";
+  checkQuestionInAssessments
+} from '../services/assessmentSectionService.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
+import { requireCourseAccess, requireOptionalCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
+import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
+import { parseLimitOffset } from '../utils/listPagination.js';
+import { parsePaginationParams, pageOf } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -163,35 +159,32 @@ router.get(
 
 /** PUT /api/assessments/:id – updates assessment metadata/blueprint (instructor-only). */
 router.put(
-  "/:id",
+  '/:id',
   authenticateToken,
   requireRole(QM_AUTHORIZED),
   writeAssessment,
+  requireOptionalCourseAccess({ min: 'instructor', getCourseId: (req) => req.body?.courseId }),
   async (req, res, next) => {
     try {
       const { type, name, description, courseId, blueprintConfig } = req.body;
 
-      const assessment = await updateAssessment(
-        req.params.id,
-        {
-          type,
-          name,
-          description,
-          courseId,
-          blueprintConfig,
-        },
-        req.qmCourse.userId,
-      );
+      const assessment = await updateAssessment(req.params.id, {
+        type,
+        name,
+        description,
+        courseId,
+        blueprintConfig
+      }, req.qmCourse.userId);
 
       res.json({
         success: true,
-        message: "Assessment updated successfully",
-        data: assessment,
+        message: 'Assessment updated successfully',
+        data: assessment
       });
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 /** DELETE /api/assessments/:id – deletes the specified assessment (instructor-only). */

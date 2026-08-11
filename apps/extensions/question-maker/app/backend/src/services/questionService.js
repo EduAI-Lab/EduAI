@@ -87,6 +87,66 @@ const normalizeSecondaryTopics = (value) => {
   return [];
 };
 
+/** Build a stable 4xx domain error for a missing/foreign QM relation. */
+const relationNotFound = (message) => Object.assign(new Error(message), { status: 404 });
+
+/** Course ids are integer PKs; reject NaN, fractional, zero, and negatives. */
+const parseCourseId = (value) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+/** Ensure a primary/secondary topic belongs to the question's effective course. */
+async function assertTopicsInCourse(topicIds, courseId, label = 'Topic') {
+  const ids = [...new Set(topicIds.filter(Boolean))];
+  if (ids.length === 0) return;
+
+  const rows = await prisma.topics.findMany({
+    where: { id: { in: ids }, courseId },
+    select: { id: true },
+  });
+  const validIds = new Set(rows.map((row) => row.id));
+  const missing = ids.find((id) => !validIds.has(id));
+  if (missing) {
+    throw relationNotFound(`${label} not found for this course`);
+  }
+}
+
+/** Validate optional variant relations against the owning question's course. */
+async function assertVariantRelationsInCourse({ courseId, assessmentId, secondaryTopicsId, referenceId }) {
+  if (assessmentId !== undefined && assessmentId !== null) {
+    const parsedAssessmentId = Number(assessmentId);
+    if (!Number.isInteger(parsedAssessmentId) || parsedAssessmentId <= 0) {
+      throw relationNotFound('Assessment not found for this course');
+    }
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: parsedAssessmentId, courseId },
+      select: { id: true },
+    });
+    if (!assessment) {
+      throw relationNotFound('Assessment not found for this course');
+    }
+  }
+
+  if (secondaryTopicsId !== undefined && secondaryTopicsId !== null) {
+    await assertTopicsInCourse(normalizeSecondaryTopics(secondaryTopicsId), courseId, 'Secondary topic');
+  }
+
+  if (referenceId !== undefined && referenceId !== null) {
+    const parsedReferenceId = Number(referenceId);
+    if (!Number.isInteger(parsedReferenceId) || parsedReferenceId <= 0) {
+      throw relationNotFound('Reference variant not found for this course');
+    }
+    const reference = await prisma.variants.findFirst({
+      where: { id: parsedReferenceId, questionMetadata: { courseId } },
+      select: { id: true },
+    });
+    if (!reference) {
+      throw relationNotFound('Reference variant not found for this course');
+    }
+  }
+}
+
 /**
  * Validates and normalizes MCQ choices array.
  * Returns normalized choices array or null if invalid.
@@ -185,55 +245,51 @@ export const createQuestion = async (userId, questionData) => {
   const normalizedDescription =
     typeof description === "string" && description.trim() ? description.trim() : null;
 
-  const parsedCourseId = Number(courseId);
-  if (!Number.isInteger(parsedCourseId)) {
-    throw new Error("Valid courseId is required");
-  }
-
-  const parsedPrimaryTopicId = normalizePrimaryTopicId(primaryTopicId);
-  if (!parsedPrimaryTopicId) {
-    throw new Error("Valid primaryTopicId is required");
-  }
-
-  const course = await prisma.course.findFirst({
-    where: { id: parsedCourseId, userId },
-    select: { id: true },
+    const parsedCourseId = parseCourseId(courseId);
+    if (!parsedCourseId) {
+      throw new Error('Valid courseId is required');
+    }
   });
 
-  if (!course) {
-    throw new Error("Course not found");
-  }
+    const parsedPrimaryTopicId = normalizePrimaryTopicId(primaryTopicId);
+    if (!parsedPrimaryTopicId) {
+      throw new Error('Valid primaryTopicId is required');
+    }
 
-  const allowedTypes = ["MCQ", "SA", "LA"];
-  const normalizedType = allowedTypes.includes(type) ? type : "MCQ";
+    const course = await prisma.course.findFirst({
+      where: { id: parsedCourseId, userId },
+      select: { id: true }
+    });
 
-  const question = await prisma.questionMetadata.create({
-    data: {
-      courseId: parsedCourseId,
-      primaryTopicId: parsedPrimaryTopicId,
-      type: normalizedType,
-      description: normalizedDescription,
-      questionOrder: questionOrder && typeof questionOrder === "object" ? questionOrder : {},
-      createdBy: questionData.createdBy ?? null,
-    },
-  });
+    if (!course) {
+      throw new Error('Course not found');
+    }
 
-  // Soft-fail default attach when Core is unlinked; fail loud for explicit banks.
-  if (!skipBankAttach) {
-    const hasExplicitBank =
-      (questionBankId != null && questionBankId !== "") ||
-      (Array.isArray(questionBankIds) && questionBankIds.length > 0);
-    try {
-      await attachQuestionToBanks(parsedCourseId, userId, question.id, {
-        questionBankId,
-        questionBankIds,
-      });
-    } catch (attachError) {
-      logger.warn(
-        {
-          err: attachError,
-          questionId: question.id,
-          courseId: parsedCourseId,
+    // Topic ids are globally addressable CUIDs, so an FK alone is not enough:
+    // the selected topic must belong to this course as well.
+    await assertTopicsInCourse([parsedPrimaryTopicId], parsedCourseId, 'Primary topic');
+
+    const allowedTypes = ['MCQ', 'SA', 'LA'];
+    const normalizedType = allowedTypes.includes(type) ? type : 'MCQ';
+
+    const question = await prisma.questionMetadata.create({
+      data: {
+        courseId: parsedCourseId,
+        primaryTopicId: parsedPrimaryTopicId,
+        type: normalizedType,
+        description: normalizedDescription,
+        questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {},
+        createdBy: questionData.createdBy ?? null
+      }
+    });
+
+    // Soft-fail default attach when Core is unlinked; fail loud for explicit banks.
+    if (!skipBankAttach) {
+      const hasExplicitBank =
+        (questionBankId != null && questionBankId !== '') ||
+        (Array.isArray(questionBankIds) && questionBankIds.length > 0);
+      try {
+        await attachQuestionToBanks(parsedCourseId, userId, question.id, {
           questionBankId,
           questionBankIds,
         },
@@ -449,7 +505,106 @@ export const updateQuestion = async (questionId, userId, updateData) => {
       throw new Error("Course not found");
     }
 
-    updates.courseId = parsedCourseId;
+    const updates = { ...updateData };
+
+    if (updates.description !== undefined) {
+      const desc = updates.description;
+      updates.description = typeof desc === 'string' && desc.trim()
+        ? desc.trim()
+        : null;
+    }
+
+    if (updates.courseId !== undefined) {
+      const parsedCourseId = parseCourseId(updates.courseId);
+      if (!parsedCourseId) {
+        throw new Error('Valid courseId is required');
+      }
+
+      // Course relocation is intentionally not a supported primitive. Moving a
+      // question would also require atomically migrating its primary topic,
+      // variants, assessment links, and ordering maps; rejecting it keeps the
+      // pre-MVP data model's same-course invariant intact. The route performs
+      // target access authorization first, while this service guard remains
+      // authoritative for direct/service-key callers and owner-sharing cases.
+      if (parsedCourseId !== question.courseId) {
+        throw Object.assign(new Error('Question course relocation is not supported'), {
+          status: 409,
+          code: 'COURSE_RELOCATION_NOT_ALLOWED'
+        });
+      }
+
+      const course = await prisma.course.findFirst({
+        where: { id: parsedCourseId, userId },
+        select: { id: true }
+      });
+
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      updates.courseId = parsedCourseId;
+    }
+
+    if (updates.primaryTopicId !== undefined) {
+      const parsedPrimaryTopicId = normalizePrimaryTopicId(updates.primaryTopicId);
+      if (!parsedPrimaryTopicId) {
+        throw new Error('Valid primaryTopicId is required');
+      }
+      updates.primaryTopicId = parsedPrimaryTopicId;
+    }
+
+    const effectiveCourseId = updates.courseId ?? question.courseId;
+    if (updates.primaryTopicId !== undefined) {
+      await assertTopicsInCourse([updates.primaryTopicId], effectiveCourseId, 'Primary topic');
+    } else {
+      // Also check the existing relation when a caller attempts a course
+      // update. This protects rows created before the scoped topic invariant
+      // existed and prevents a same-course check from masking stale data.
+      await assertTopicsInCourse([question.primaryTopicId], effectiveCourseId, 'Primary topic');
+    }
+
+    if (updates.type !== undefined) {
+      const allowedTypes = ['MCQ', 'SA', 'LA'];
+      if (!allowedTypes.includes(updates.type)) {
+        throw new Error(`Invalid question type. Allowed values: ${allowedTypes.join(', ')}`);
+      }
+    }
+
+    if (updates.questionOrder !== undefined && typeof updates.questionOrder !== 'object') {
+      throw new Error('questionOrder must be an object');
+    }
+
+    // isAiGenerated and isDraft are variant-level fields and should not be updated via updateQuestion
+    // They should be updated via updateVariant instead
+    if (updates.isAiGenerated !== undefined || updates.isDraft !== undefined) {
+      throw new Error('isAiGenerated and isDraft are variant-level fields. Use updateVariant to update individual variants.');
+    }
+
+    // §19/#1080 post-review lock, extended: `type` and `primaryTopicId` feed the Core
+    // push payload (coreWiringService.js `type`/`topicId`) exactly like a variant's
+    // questionText/difficulty. Once any sibling variant is reviewed (isDraft:false)
+    // and pushed, editing either here would silently diverge from the immutable Core
+    // copy — so the SAME 409 VARIANT_LOCKED convention as the variants.js content
+    // lock applies. Un-review the reviewed variant(s) first (which clears
+    // coreQuestionId) to unlock these fields again.
+    if (updates.type !== undefined || updates.primaryTopicId !== undefined) {
+      const reviewedVariant = await prisma.variants.findFirst({
+        where: { questionMetadataId: question.id, isDraft: false }
+      });
+      if (reviewedVariant) {
+        throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409 });
+      }
+    }
+
+    const ALLOWED_QUESTION_UPDATE_FIELDS = ['description', 'courseId', 'primaryTopicId', 'type', 'questionOrder'];
+    const data = Object.fromEntries(
+      Object.entries(updates).filter(([key]) => ALLOWED_QUESTION_UPDATE_FIELDS.includes(key))
+    );
+
+    const updated = await prisma.questionMetadata.update({ where: { id: question.id }, data });
+    return updated;
+  } catch (error) {
+    throw error;
   }
 
   if (updates.primaryTopicId !== undefined) {
@@ -966,8 +1121,79 @@ export const createVariant = async (questionId, variantData, userId) => {
     where: { id: questionId, course: { userId } },
   });
 
-  if (!question) {
-    throw new Error("Question not found");
+    if (!question) {
+      throw new Error('Question not found');
+    }
+
+    const secondaryTopics = normalizeSecondaryTopics(variantData.secondaryTopicsId);
+    await assertVariantRelationsInCourse({
+      courseId: question.courseId,
+      assessmentId: variantData.assessmentId,
+      secondaryTopicsId: secondaryTopics,
+      referenceId: variantData.referenceId,
+    });
+    const validReasoningLevels = ['factual', 'analytical', 'application'];
+    const reasoningLevel = variantData.reasoningLevel && validReasoningLevels.includes(variantData.reasoningLevel)
+      ? variantData.reasoningLevel
+      : 'factual';
+
+    // Handle choices for MCQ questions
+    let choices = null;
+    let answer = variantData.answer;
+    let selectAllThatApply = false;
+    let correctAnswers = null;
+    
+    if (question.type === 'MCQ') {
+      if (variantData.choices !== undefined) {
+        choices = validateMCQChoices(variantData.choices, question.type);
+        // If choices are provided but invalid, throw error
+        if (variantData.choices !== null && choices === null) {
+          throw new Error('Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.');
+        }
+      }
+      
+      // Normalize answer to just letter for MCQ
+      if (typeof answer === 'string' && answer.trim()) {
+        answer = extractAnswerLetter(answer) || answer.trim();
+      }
+
+      const normalized = normalizeMcqCorrectness({
+        selectAllThatApply: Boolean(variantData.selectAllThatApply),
+        answer,
+        correctAnswers: variantData.correctAnswers,
+        choiceLetters: (choices || []).map((c) => c.letter),
+      });
+      answer = normalized.answer;
+      selectAllThatApply = normalized.selectAllThatApply;
+      correctAnswers = normalized.correctAnswers;
+    } else if (typeof answer === 'string' && answer.trim()) {
+      answer = answer.trim();
+    } else {
+      answer = null;
+    }
+
+    const variant = await prisma.variants.create({
+      data: {
+        questionMetadataId: questionId,
+        questionText: variantData.questionText,
+        difficulty: variantData.difficulty || 'medium',
+        reasoningLevel,
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null,
+        secondaryTopicsId: secondaryTopics,
+        answer,
+        choices,
+        selectAllThatApply,
+        correctAnswers,
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
+        isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
+        isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
+        createdBy: variantData.createdBy ?? null
+      }
+    });
+
+    return variant;
+  } catch (error) {
+    throw error;
   }
 
   const secondaryTopics = normalizeSecondaryTopics(variantData.secondaryTopicsId);
@@ -1039,16 +1265,144 @@ export const createVariant = async (questionId, variantData, userId) => {
 
 /** Updates a variant’s content/difficulty/associations, normalizing secondary topics. */
 export const updateVariant = async (variantId, variantData, userId) => {
-  variantId = Number(variantId);
-  const variant = await prisma.variants.findFirst({
-    where: { id: variantId, questionMetadata: { course: { userId } } },
-    include: {
-      questionMetadata: { select: { id: true, type: true } },
-    },
+  try {
+    variantId = Number(variantId);
+    const variant = await prisma.variants.findFirst({
+      where: { id: variantId, questionMetadata: { course: { userId } } },
+      include: {
+        questionMetadata: { select: { id: true, type: true, courseId: true } }
+      }
+    });
+
+    if (!variant) {
+      throw new Error('Variant not found');
+    }
   });
 
-  if (!variant) {
-    throw new Error("Variant not found");
+    // Handle choices and answer normalization for MCQ
+    let normalizedChoices = variantData.choices;
+    let normalizedAnswer = variantData.answer;
+    let normalizedSelectAllThatApply;
+    let normalizedCorrectAnswers;
+    const isMcq = variant.questionMetadata && variant.questionMetadata.type === 'MCQ';
+    const touchesCorrectness = isMcq && (
+      variantData.answer !== undefined
+      || variantData.correctAnswers !== undefined
+      || variantData.selectAllThatApply !== undefined
+    );
+    
+    if (isMcq) {
+      if (variantData.choices !== undefined) {
+        normalizedChoices = validateMCQChoices(variantData.choices, 'MCQ');
+        // If choices are provided but invalid, throw error
+        if (variantData.choices !== null && normalizedChoices === null) {
+          throw new Error('Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.');
+        }
+      }
+      
+      // Normalize answer to just letter for MCQ
+      if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
+        normalizedAnswer = extractAnswerLetter(variantData.answer) || variantData.answer.trim();
+      }
+
+      if (touchesCorrectness) {
+        const choiceSource = normalizedChoices !== undefined ? normalizedChoices : variant.choices;
+        const normalized = normalizeMcqCorrectness({
+          selectAllThatApply: variantData.selectAllThatApply !== undefined
+            ? Boolean(variantData.selectAllThatApply)
+            : Boolean(variant.selectAllThatApply),
+          answer: normalizedAnswer !== undefined ? normalizedAnswer : variant.answer,
+          correctAnswers: variantData.correctAnswers !== undefined
+            ? variantData.correctAnswers
+            : variant.correctAnswers,
+          choiceLetters: (choiceSource || []).map((c) => c.letter),
+        });
+        normalizedAnswer = normalized.answer;
+        normalizedSelectAllThatApply = normalized.selectAllThatApply;
+        normalizedCorrectAnswers = normalized.correctAnswers;
+      }
+    } else {
+      // Non-MCQ: never persist multi-correct fields from raw client payloads.
+      normalizedSelectAllThatApply = false;
+      normalizedCorrectAnswers = null;
+      if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
+        normalizedAnswer = variantData.answer.trim();
+      }
+    }
+
+    const nextIsDraft = variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : undefined;
+    // #1080 un-review: reopening a reviewed variant back to draft must clear its Core
+    // link so the next approval re-pushes a fresh copy instead of the state-based push
+    // guard (`variants.js` — `isDraft === false && !variant.coreQuestionId`) skipping it
+    // as "already linked". Only fires on the false→true transition (not a no-op resend).
+    const unreviewing = variant.isDraft === false && nextIsDraft === true;
+
+    // Variant relation IDs are globally guessable. Validate each supplied
+    // assessment/topic/reference against the owning question's course before
+    // allowing Prisma to persist the scalar FK/array value; ownership alone
+    // is insufficient when one user owns multiple courses.
+    await assertVariantRelationsInCourse({
+      courseId: variant.questionMetadata.courseId,
+      assessmentId: variantData.assessmentId,
+      secondaryTopicsId: variantData.secondaryTopicsId,
+      referenceId: variantData.referenceId,
+    });
+
+    const ALLOWED_VARIANT_UPDATE_FIELDS = [
+      'questionText', 'difficulty', 'reasoningLevel', 'assessmentId', 'secondaryTopicsId',
+      'answer', 'choices', 'selectAllThatApply', 'correctAnswers',
+      'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
+    ];
+    const normalizedData = {
+      ...Object.fromEntries(
+        Object.entries(variantData).filter(([key]) => ALLOWED_VARIANT_UPDATE_FIELDS.includes(key))
+      ),
+      ...(variantData.assessmentId !== undefined && {
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null
+      }),
+      ...(variantData.referenceId !== undefined && {
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null
+      }),
+      ...(variantData.secondaryTopicsId !== undefined && {
+        secondaryTopicsId: normalizeSecondaryTopics(variantData.secondaryTopicsId)
+      }),
+      ...(variantData.isAiGenerated !== undefined && {
+        isAiGenerated: Boolean(variantData.isAiGenerated)
+      }),
+      ...(nextIsDraft !== undefined && {
+        isDraft: nextIsDraft
+      }),
+      ...(normalizedChoices !== undefined && {
+        choices: normalizedChoices
+      }),
+      ...(normalizedAnswer !== undefined && {
+        answer: normalizedAnswer
+      }),
+      ...(normalizedSelectAllThatApply !== undefined && {
+        selectAllThatApply: normalizedSelectAllThatApply
+      }),
+      ...(normalizedCorrectAnswers !== undefined && {
+        correctAnswers: normalizedCorrectAnswers
+      }),
+      ...(unreviewing && {
+        coreQuestionId: null
+      })
+    };
+
+    // `variants.js`'s post-approval Core push reads `variant.questionMetadata.course.coreCourseId`
+    // off this return value — must include it, not just the bare row.
+    const updated = await prisma.variants.update({
+      where: { id: variant.id },
+      data: normalizedData,
+      include: {
+        questionMetadata: {
+          select: { id: true, type: true, primaryTopicId: true, course: { select: { id: true, coreCourseId: true } } }
+        }
+      }
+    });
+    return updated;
+  } catch (error) {
+    throw error;
   }
 
   // Handle choices and answer normalization for MCQ

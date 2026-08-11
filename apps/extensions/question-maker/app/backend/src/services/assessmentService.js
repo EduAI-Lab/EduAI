@@ -241,8 +241,71 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     where: { id: Number(assessmentId), course: { userId } },
   });
 
-  if (!assessment) {
-    throw new Error("Assessment not found");
+    if (!assessment) {
+      throw new Error('Assessment not found');
+    }
+
+    if (updateData.courseId !== undefined) {
+      const parsedCourseId = Number(updateData.courseId);
+      if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
+        throw new Error('Valid courseId is required');
+      }
+
+      // Course relocation is intentionally not a supported primitive. An
+      // assessment carries variants, section links, and question-order state;
+      // moving only its course row would leave those relations cross-course.
+      // The route checks caller access to the requested target first, while
+      // this service guard remains authoritative for direct callers and
+      // same-owner ID-knowledge cases.
+      if (parsedCourseId !== assessment.courseId) {
+        throw Object.assign(new Error('Assessment course relocation is not supported'), {
+          status: 409,
+          code: 'COURSE_RELOCATION_NOT_ALLOWED'
+        });
+      }
+
+      const targetCourse = await prisma.course.findFirst({
+        where: { id: parsedCourseId, userId },
+        select: { id: true }
+      });
+
+      if (!targetCourse) {
+        throw new Error('Course not found');
+      }
+
+      updateData = { ...updateData, courseId: parsedCourseId };
+    }
+
+    // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
+    // even if a legacy caller still sends one.
+    const ALLOWED_ASSESSMENT_UPDATE_FIELDS = ['type', 'name', 'courseId', 'description', 'blueprintConfig'];
+    const { semester: _ignoredSemester, ...updateFields } = updateData;
+    const normalizedUpdates = {
+      ...Object.fromEntries(
+        Object.entries(updateFields).filter(([key]) => ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key))
+      ),
+      ...(updateData.courseId !== undefined && { courseId: Number(updateData.courseId) }),
+      description: updateData.description !== undefined
+        ? (updateData.description?.trim() || null)
+        : assessment.description,
+      blueprintConfig: updateData.blueprintConfig !== undefined
+        ? updateData.blueprintConfig
+        : assessment.blueprintConfig
+    };
+
+    // `include: { course: true }` returns the POST-update course relation — if
+    // the update moved the assessment to another course, the response's
+    // course/semester projection describes the NEW course (no separate reload
+    // needed, unlike Sequelize's `.update()` + `.reload()` two-step).
+    const updated = await prisma.assessments.update({
+      where: { id: assessment.id },
+      data: normalizedUpdates,
+      include: { course: true }
+    });
+
+    return withDerivedSemester(await enrichRowWithCourse(updated));
+  } catch (error) {
+    throw error;
   }
 
   if (updateData.courseId) {

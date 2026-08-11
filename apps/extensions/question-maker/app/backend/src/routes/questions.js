@@ -27,8 +27,17 @@ import {
   updateQuestionOrder,
   removeQuestionFromAssessment,
   saveExtractedQuestions,
-  normalizePrimaryTopicId,
-} from "../services/questionService.js";
+  normalizePrimaryTopicId
+} from '../services/questionService.js';
+import { generateQuestions, AI_PROVIDERS, extractQuestionsFromText } from '../services/aiService.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
+import { requireCourseAccess, requireOptionalCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
+import { requireQuestionAccess } from '../middleware/resourceAccess.js';
+import { prisma } from '../config/database.js';
+import { config } from '../config/settings.js';
+import { parseLimitOffset } from '../utils/listPagination.js';
+import { parseQuestionListFilters } from '../utils/questionListQuery.js';
 import {
   parseApprovalTarget,
   prepareApprovalQuestions
@@ -384,7 +393,8 @@ router.put(
   "/:id",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: "ta" }),
+  requireQuestionAccess({ min: 'ta' }),
+  requireOptionalCourseAccess({ min: 'ta', getCourseId: (req) => req.body?.courseId ?? req.body?.classId }),
   async (req, res, next) => {
     try {
       if (denyTaNotOwner(req, res)) return;
