@@ -8,6 +8,38 @@ const CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS = 10;
 const CANVAS_PAGE_SIZE = 100;
 const LOCAL_CANVAS_DOCKER_HOST = "canvas.docker";
 
+/**
+ * Pagination is driven by an upstream `Link` header, so it needs its own
+ * bounds in addition to the per-request timeout. These defaults are generous
+ * enough for a large Canvas course while making a hostile or broken endpoint
+ * finite. They can be overridden per call with `CanvasPaginationOptions` or
+ * with the corresponding environment variables.
+ */
+export const CANVAS_PAGINATION_MAX_PAGES = 100;
+export const CANVAS_PAGINATION_MAX_ITEMS = 10_000;
+export const CANVAS_PAGINATION_DEADLINE_MS = 120_000;
+
+export type CanvasPaginationOptions = {
+  maxPages?: number;
+  maxItems?: number;
+  deadlineMs?: number;
+  signal?: AbortSignal;
+};
+
+export const CANVAS_PAGINATION_LINK_ERROR =
+  "Canvas pagination link is invalid or outside the configured Canvas origin";
+export const CANVAS_PAGINATION_CYCLE_ERROR = "Canvas pagination cycle detected";
+export const CANVAS_PAGINATION_PAGE_LIMIT_ERROR =
+  "Canvas pagination exceeded the page limit";
+export const CANVAS_PAGINATION_ITEM_LIMIT_ERROR =
+  "Canvas pagination exceeded the item limit";
+export const CANVAS_PAGINATION_DEADLINE_ERROR =
+  "Canvas pagination exceeded its deadline";
+export const CANVAS_PAGINATION_CANCELLED_ERROR =
+  "Canvas pagination was cancelled";
+const CANVAS_PAGINATION_CONFIG_ERROR =
+  "Canvas pagination limits must be positive integers";
+
 /** Absolute cap for streamed Canvas response bytes. */
 const MAX_CANVAS_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -170,6 +202,119 @@ export class CanvasApiError extends Error {
     this.name = "CanvasApiError";
     this.statusCode = statusCode;
   }
+}
+
+type AbortSignalHandle = {
+  signal: AbortSignal;
+  cancel: () => void;
+};
+
+/** Creates a cancellable deadline signal without leaving a timer behind. */
+function createAbortDeadline(ms: number, reason: string): AbortSignalHandle {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(reason)), ms);
+  // A pagination deadline should not keep a short-lived server process alive.
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+/** Composes signals while remaining compatible with runtimes without AbortSignal.any. */
+function composeAbortSignals(signals: Array<AbortSignal | undefined>): AbortSignalHandle {
+  const present = signals.filter((signal): signal is AbortSignal => signal !== undefined);
+  if (present.length === 0) {
+    const controller = new AbortController();
+    return { signal: controller.signal, cancel: () => controller.abort() };
+  }
+
+  const controller = new AbortController();
+  const listeners: Array<() => void> = [];
+  const abort = (signal: AbortSignal) => {
+    if (!controller.signal.aborted) controller.abort(signal.reason);
+  };
+
+  for (const signal of present) {
+    if (signal.aborted) {
+      abort(signal);
+      break;
+    }
+    const listener = () => abort(signal);
+    signal.addEventListener("abort", listener, { once: true });
+    listeners.push(() => signal.removeEventListener("abort", listener));
+  }
+
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      for (const removeListener of listeners) removeListener();
+    },
+  };
+}
+
+/**
+ * A test fetch implementation may not observe an AbortSignal. Race it anyway
+ * so a pagination deadline remains deterministic while real fetch still gets
+ * the same signal and can cancel its underlying socket.
+ */
+async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("The operation was aborted");
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(
+        signal.reason instanceof Error ? signal.reason : new Error("The operation was aborted"),
+      );
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function parsePositiveInteger(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function resolvePaginationOption(
+  explicit: number | undefined,
+  envName: string,
+  fallback: number,
+): number {
+  if (explicit !== undefined) {
+    if (!Number.isSafeInteger(explicit) || explicit <= 0) {
+      throw new CanvasApiError(CANVAS_PAGINATION_CONFIG_ERROR, 500);
+    }
+    return explicit;
+  }
+  return parsePositiveInteger(process.env[envName]) ?? fallback;
+}
+
+function resolvePaginationOptions(options: CanvasPaginationOptions): Required<
+  Pick<CanvasPaginationOptions, "maxPages" | "maxItems" | "deadlineMs">
+> & Pick<CanvasPaginationOptions, "signal"> {
+  return {
+    maxPages: resolvePaginationOption(
+      options.maxPages,
+      "CANVAS_PAGINATION_MAX_PAGES",
+      CANVAS_PAGINATION_MAX_PAGES,
+    ),
+    maxItems: resolvePaginationOption(
+      options.maxItems,
+      "CANVAS_PAGINATION_MAX_ITEMS",
+      CANVAS_PAGINATION_MAX_ITEMS,
+    ),
+    deadlineMs: resolvePaginationOption(
+      options.deadlineMs,
+      "CANVAS_PAGINATION_DEADLINE_MS",
+      CANVAS_PAGINATION_DEADLINE_MS,
+    ),
+    signal: options.signal,
+  };
 }
 
 /** Hostnames allowed to use plain HTTP (local Canvas dev). Production must use HTTPS. */
@@ -390,13 +535,64 @@ function parseLinkHeaderNextUrl(linkHeader: string | null): string | null {
   }
 
   for (const part of linkHeader.split(",")) {
-    const match = part.match(/<([^>]+)>;\s*rel="next"/);
-    if (match?.[1]) {
-      return match[1];
+    const relMatch = part.match(/(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^\s;,]+))/i);
+    if (!relMatch) continue;
+
+    const rels = (relMatch[1] ?? relMatch[2] ?? "").split(/\s+/);
+    if (!rels.some((rel) => rel.toLowerCase() === "next")) continue;
+
+    const urlMatch = part.match(/^\s*<([^>]*)>/);
+    if (!urlMatch?.[1]) {
+      throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
     }
+    return urlMatch[1];
   }
 
   return null;
+}
+
+/**
+ * Canvas controls pagination links. Resolve relative links against the page
+ * that emitted them, then require the effective origin (protocol, hostname,
+ * and port) to exactly match the configured Canvas origin before a bearer is
+ * ever attached to the next request.
+ */
+function resolveCanvasPaginationNextUrl(
+  rawUrl: string,
+  currentUrl: string,
+  canvasUrl: string,
+): string {
+  // WHATWG URL accepts spaces and malformed percent escapes by normalizing
+  // them into a relative path. They are not valid URI references in a Link
+  // header, so reject them before normalization makes the error ambiguous.
+  if (
+    rawUrl.length === 0 ||
+    /[\u0000-\u0020<>]/.test(rawUrl) ||
+    /%(?![0-9a-f]{2})/i.test(rawUrl)
+  ) {
+    throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
+  }
+
+  let next: URL;
+  let configured: URL;
+  try {
+    next = new URL(rawUrl, currentUrl);
+    configured = parseAndValidateCanvasUrl(canvasUrl);
+  } catch {
+    throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
+  }
+
+  if (next.origin !== configured.origin || next.username !== "" || next.password !== "") {
+    throw new CanvasApiError(CANVAS_PAGINATION_LINK_ERROR, 502);
+  }
+
+  // Fragments are not sent over HTTP and make cycle detection ambiguous.
+  next.hash = "";
+  return next.href;
+}
+
+function canonicalizeCanvasPaginationUrl(url: string): string {
+  return new URL(url).href;
 }
 
 async function canvasFetchJson<T>(
@@ -404,16 +600,30 @@ async function canvasFetchJson<T>(
   canvasUrl: string,
   apiKey: string,
   fetchImpl: typeof fetch,
+  options: {
+    signal?: AbortSignal;
+    deadlineSignal?: AbortSignal;
+    cancellationSignal?: AbortSignal;
+  } = {},
 ): Promise<{ data: T; linkHeader: string | null }> {
-  try {
-    await assertSafeCanvasRequestHost(url, canvasUrl);
+  const requestDeadline = createAbortDeadline(
+    CANVAS_REQUEST_TIMEOUT_MS,
+    "Canvas request timed out",
+  );
+  const requestSignal = composeAbortSignals([options.signal, requestDeadline.signal]);
 
-    const response = await fetchImpl(url, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
-      redirect: "manual",
-      dispatcher: canvasRequestDispatcher(url, canvasUrl),
-    } as CanvasFetchInit);
+  try {
+    await raceWithAbort(assertSafeCanvasRequestHost(url, canvasUrl), requestSignal.signal);
+
+    const response = await raceWithAbort(
+      fetchImpl(url, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: requestSignal.signal,
+        redirect: "manual",
+        dispatcher: canvasRequestDispatcher(url, canvasUrl),
+      } as CanvasFetchInit),
+      requestSignal.signal,
+    );
 
     if (isRedirect(response.status)) {
       throw new CanvasApiError(REDIRECT_REFUSED_MESSAGE, 502);
@@ -427,13 +637,22 @@ async function canvasFetchJson<T>(
       throw new CanvasApiError(`Canvas API error: ${response.status}`, response.status);
     }
 
-    const data = (await response.json()) as T;
+    const data = (await raceWithAbort(response.json(), requestSignal.signal)) as T;
     return { data, linkHeader: response.headers.get("link") };
   } catch (error) {
     if (error instanceof CanvasApiError || error instanceof CanvasVerificationError) {
       throw error;
     }
+    if (options.deadlineSignal?.aborted) {
+      throw new CanvasApiError(CANVAS_PAGINATION_DEADLINE_ERROR, 504);
+    }
+    if (options.cancellationSignal?.aborted) {
+      throw new CanvasApiError(CANVAS_PAGINATION_CANCELLED_ERROR, 499);
+    }
     throw new CanvasApiError("Could not reach Canvas", 502);
+  } finally {
+    requestSignal.cancel();
+    requestDeadline.cancel();
   }
 }
 
@@ -441,33 +660,102 @@ async function canvasFetchJson<T>(
 export async function canvasGetPaginated<T>(
   credentials: CanvasIntegrationCredentials,
   path: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImplOrOptions: typeof fetch | CanvasPaginationOptions = fetch,
+  suppliedOptions: CanvasPaginationOptions = {},
 ): Promise<T[]> {
   if (credentials.isTestMode) {
     return getMockPaginatedResponse<T>(path);
   }
+
+  const fetchImpl = typeof fetchImplOrOptions === "function" ? fetchImplOrOptions : fetch;
+  const options =
+    typeof fetchImplOrOptions === "function" ? suppliedOptions : fetchImplOrOptions;
+  const limits = resolvePaginationOptions(options);
 
   const separator = path.includes("?") ? "&" : "?";
   let nextUrl: string | null = buildCanvasApiUrl(
     credentials.canvasUrl,
     `${path}${separator}per_page=${CANVAS_PAGE_SIZE}`,
   );
+
+  const deadline = createAbortDeadline(
+    limits.deadlineMs,
+    CANVAS_PAGINATION_DEADLINE_ERROR,
+  );
+  const paginationSignal = composeAbortSignals([deadline.signal, limits.signal]);
+
   const results: T[] = [];
+  const visitedUrls = new Set<string>();
+  let pageCount = 0;
 
-  while (nextUrl) {
-    const { data, linkHeader } = await canvasFetchJson<T[]>(
-      nextUrl,
-      credentials.canvasUrl,
-      credentials.apiKey,
-      fetchImpl,
-    );
-    if (Array.isArray(data) && data.length > 0) {
-      results.push(...data);
+  try {
+    while (nextUrl) {
+      if (deadline.signal.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_DEADLINE_ERROR, 504);
+      }
+      if (limits.signal?.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_CANCELLED_ERROR, 499);
+      }
+      if (pageCount >= limits.maxPages) {
+        throw new CanvasApiError(CANVAS_PAGINATION_PAGE_LIMIT_ERROR, 502);
+      }
+      const canonicalNextUrl = canonicalizeCanvasPaginationUrl(nextUrl);
+      if (visitedUrls.has(canonicalNextUrl)) {
+        throw new CanvasApiError(CANVAS_PAGINATION_CYCLE_ERROR, 502);
+      }
+      visitedUrls.add(canonicalNextUrl);
+      pageCount += 1;
+
+      const { data, linkHeader } = await canvasFetchJson<T[]>(
+        nextUrl,
+        credentials.canvasUrl,
+        credentials.apiKey,
+        fetchImpl,
+        {
+          signal: paginationSignal.signal,
+          deadlineSignal: deadline.signal,
+          cancellationSignal: limits.signal,
+        },
+      );
+
+      if (deadline.signal.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_DEADLINE_ERROR, 504);
+      }
+      if (limits.signal?.aborted) {
+        throw new CanvasApiError(CANVAS_PAGINATION_CANCELLED_ERROR, 499);
+      }
+
+      if (Array.isArray(data) && data.length > 0) {
+        if (results.length + data.length > limits.maxItems) {
+          throw new CanvasApiError(CANVAS_PAGINATION_ITEM_LIMIT_ERROR, 502);
+        }
+        results.push(...data);
+      }
+
+      const rawNextUrl = parseLinkHeaderNextUrl(linkHeader);
+      if (rawNextUrl && results.length >= limits.maxItems) {
+        throw new CanvasApiError(CANVAS_PAGINATION_ITEM_LIMIT_ERROR, 502);
+      }
+      if (!rawNextUrl) {
+        nextUrl = null;
+      } else {
+        const resolvedNextUrl = resolveCanvasPaginationNextUrl(
+          rawNextUrl,
+          nextUrl,
+          credentials.canvasUrl,
+        );
+        if (visitedUrls.has(canonicalizeCanvasPaginationUrl(resolvedNextUrl))) {
+          throw new CanvasApiError(CANVAS_PAGINATION_CYCLE_ERROR, 502);
+        }
+        nextUrl = resolvedNextUrl;
+      }
     }
-    nextUrl = parseLinkHeaderNextUrl(linkHeader);
-  }
 
-  return results;
+    return results;
+  } finally {
+    paginationSignal.cancel();
+    deadline.cancel();
+  }
 }
 
 function getMockPaginatedResponse<T>(path: string): T[] {

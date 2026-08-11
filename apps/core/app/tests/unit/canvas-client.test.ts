@@ -15,6 +15,12 @@ vi.mock("~/lib/net/ssrf-guard.server", async (importOriginal) => ({
 import {
   CanvasApiError,
   CanvasVerificationError,
+  CANVAS_PAGINATION_CANCELLED_ERROR,
+  CANVAS_PAGINATION_CYCLE_ERROR,
+  CANVAS_PAGINATION_DEADLINE_ERROR,
+  CANVAS_PAGINATION_ITEM_LIMIT_ERROR,
+  CANVAS_PAGINATION_LINK_ERROR,
+  CANVAS_PAGINATION_PAGE_LIMIT_ERROR,
   canvasGetPaginated,
   computeCanvasFilePublishState,
   downloadCanvasFile,
@@ -320,12 +326,9 @@ describe("SSRF guard for real Canvas requests", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    // First call is for the initial page (canvas.attacker.example itself,
-    // resolved publicly); second is for the Link-header URL (127.0.0.1).
+    // The first call is for the initial page. A cross-origin Link is rejected
+    // before the host guard or fetch can see it.
     assertPublicHostnameMock.mockResolvedValueOnce(undefined);
-    assertPublicHostnameMock.mockRejectedValueOnce(
-      new Error('Host "127.0.0.1" resolves to a disallowed network address'),
-    );
 
     await expect(
       listTeacherCanvasCourses({
@@ -333,9 +336,12 @@ describe("SSRF guard for real Canvas requests", () => {
         apiKey: "token",
         isTestMode: false,
       }),
-    ).rejects.toThrow(CanvasApiError);
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_LINK_ERROR,
+      statusCode: 502,
+    });
 
-    expect(assertPublicHostnameMock).toHaveBeenCalledWith("127.0.0.1");
+    expect(assertPublicHostnameMock).toHaveBeenCalledWith("canvas.attacker.example");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -352,9 +358,6 @@ describe("SSRF guard for real Canvas requests", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    assertPublicHostnameMock.mockRejectedValueOnce(
-      new Error('Host "127.0.0.1" resolves to a disallowed network address'),
-    );
 
     await expect(
       listTeacherCanvasCourses({
@@ -362,12 +365,14 @@ describe("SSRF guard for real Canvas requests", () => {
         apiKey: "token",
         isTestMode: false,
       }),
-    ).rejects.toThrow(CanvasApiError);
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_LINK_ERROR,
+      statusCode: 502,
+    });
 
     // The first page (the local dev Canvas itself, over http) still skips the
-    // guard; only the https Link-header URL is checked.
-    expect(assertPublicHostnameMock).toHaveBeenCalledTimes(1);
-    expect(assertPublicHostnameMock).toHaveBeenCalledWith("127.0.0.1");
+    // guard, and the cross-origin next page is rejected before it can run.
+    expect(assertPublicHostnameMock).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -398,10 +403,7 @@ describe("SSRF guard for real Canvas requests", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("pins the connection for an https loopback request even when canvasUrl is local dev", async () => {
-    // Same asymmetry seen from the dispatcher side: the https request is not
-    // the dev-Canvas case, so it gets the pinned dispatcher rather than the
-    // unpinned local-dev path.
+  it("rejects a cross-origin pagination link even when canvasUrl is local dev", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify([{ id: 1, name: "Course 1" }]), {
         status: 200,
@@ -410,16 +412,41 @@ describe("SSRF guard for real Canvas requests", () => {
         },
       }),
     );
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listTeacherCanvasCourses({
+        canvasUrl: "http://localhost:8080",
+        apiKey: "token",
+        isTestMode: false,
+      }),
+    ).rejects.toMatchObject({ message: CANVAS_PAGINATION_LINK_ERROR });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ dispatcher: undefined });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("pins same-origin paginated requests for a non-local Canvas", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ id: 1, name: "Course 1" }]), {
+          status: 200,
+          headers: {
+            link: '<https://canvas.ubc.ca/api/v1/courses?page=2>; rel="next"',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await listTeacherCanvasCourses({
-      canvasUrl: "http://localhost:8080",
+      canvasUrl: "https://canvas.ubc.ca",
       apiKey: "token",
       isTestMode: false,
     });
 
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ dispatcher: undefined });
+    expect(fetchMock.mock.calls[0]?.[1]?.dispatcher).toBeDefined();
     expect(fetchMock.mock.calls[1]?.[1]?.dispatcher).toBeDefined();
   });
 });
@@ -741,6 +768,172 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
 
     expect(files).toHaveLength(101);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "http://localhost:9090/api/v1/courses/42/users?page=2",
+    "https://localhost:8080/api/v1/courses/42/users?page=2",
+    "<http://[invalid>; rel=\"next\"",
+    "<not a valid URI>; rel=\"next\"",
+  ])(
+    "rejects an unsafe or malformed next link before forwarding the bearer (%s)",
+    async (link) => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: {
+            link: link.startsWith("<") ? link : `<${link}>; rel="next"`,
+          },
+        }),
+      );
+
+      await expect(
+        canvasGetPaginated(
+          NON_TEST_CREDENTIALS,
+          "/courses/42/users",
+          fetchMock,
+          { maxPages: 10, maxItems: 100 },
+        ),
+      ).rejects.toMatchObject({
+        message: CANVAS_PAGINATION_LINK_ERROR,
+        statusCode: 502,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+        headers: { Authorization: "Bearer token" },
+      });
+    },
+  );
+
+  it("terminates a self-referential next link without a second request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1 }]), {
+        status: 200,
+        headers: {
+          link: '<http://localhost:8080/api/v1/courses/42/users?per_page=100>; rel="next"',
+        },
+      }),
+    );
+
+    await expect(
+      canvasGetPaginated(
+        NON_TEST_CREDENTIALS,
+        "/courses/42/users",
+        fetchMock,
+        { maxPages: 10, maxItems: 100 },
+      ),
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_CYCLE_ERROR,
+      statusCode: 502,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails deterministically when the page cap is reached", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: {
+            link: '<http://localhost:8080/api/v1/courses/42/users?page=2>; rel="next"',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ id: 2 }]), {
+          status: 200,
+          headers: {
+            link: '<http://localhost:8080/api/v1/courses/42/users?page=3>; rel="next"',
+          },
+        }),
+      );
+
+    await expect(
+      canvasGetPaginated(
+        NON_TEST_CREDENTIALS,
+        "/courses/42/users",
+        fetchMock,
+        { maxPages: 2, maxItems: 10 },
+      ),
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_PAGE_LIMIT_ERROR,
+      statusCode: 502,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails before exceeding the overall item cap", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1 }, { id: 2 }]), {
+        status: 200,
+        headers: {
+          link: '<http://localhost:8080/api/v1/courses/42/users?page=2>; rel="next"',
+        },
+      }),
+    );
+
+    await expect(
+      canvasGetPaginated(
+        NON_TEST_CREDENTIALS,
+        "/courses/42/users",
+        fetchMock,
+        { maxPages: 10, maxItems: 2 },
+      ),
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_ITEM_LIMIT_ERROR,
+      statusCode: 502,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels an in-flight request when the pagination deadline expires", async () => {
+    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+      }),
+    );
+
+    await expect(
+      canvasGetPaginated(
+        NON_TEST_CREDENTIALS,
+        "/courses/42/users",
+        fetchMock,
+        { deadlineMs: 10, maxPages: 10, maxItems: 100 },
+      ),
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_DEADLINE_ERROR,
+      statusCode: 504,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("composes caller cancellation with the per-request signal", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+        controller.abort();
+      }),
+    );
+
+    await expect(
+      canvasGetPaginated(
+        NON_TEST_CREDENTIALS,
+        "/courses/42/users",
+        fetchMock,
+        { signal: controller.signal, maxPages: 10, maxItems: 100 },
+      ),
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_CANCELLED_ERROR,
+      statusCode: 499,
+    });
   });
 });
 
