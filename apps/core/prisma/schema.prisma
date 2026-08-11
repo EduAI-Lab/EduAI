@@ -432,14 +432,26 @@ model CourseMaterial {
   /// never be set/cleared by the same code path. Student-facing reads filter
   /// `unpublishedAt: null` alongside `deletedAt: null`.
   unpublishedAt     DateTime?
+  /// Upload receipt pointer (#949). Extraction moved off the upload request, so
+  /// the content checksum — and therefore duplicate detection — is only known
+  /// after the response has been sent. When the background pass finds this
+  /// upload's content already on the course, the row becomes terminal FAILED
+  /// and points here at the material that won, which is how a client learns
+  /// that its 202 resolved to an existing material instead of a new one. This
+  /// is the asynchronous successor to the old synchronous 409. Null on every
+  /// row that is not a duplicate receipt.
+  duplicateOfId     String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   processedAt       DateTime?
   course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   uploader          User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  duplicateOf       CourseMaterial? @relation("MaterialDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates        CourseMaterial[] @relation("MaterialDuplicate")
   chunks            MaterialChunk[]
 
   @@unique([courseId, checksum])
+  @@index([duplicateOfId])
   @@index([externalSource, externalId])
   @@index([uploadedBy])
   @@index([courseId, deletedAt])

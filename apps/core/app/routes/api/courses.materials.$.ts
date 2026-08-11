@@ -4,11 +4,11 @@
  * Extensions may rely on deletedAt being set to detect EduAI-side removals.
  */
 
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { createHash } from "crypto";
-import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { processUploadedFile } from "~/lib/ai/file-processing";
-import prisma from "~/lib/prisma.server";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
+import { createHash } from 'crypto';
+import { processMaterialEmbeddings } from '~/lib/ai/embedding';
+import { extractUploadedFileContent, validateUploadedFile } from '~/lib/ai/file-processing';
+import prisma from '~/lib/prisma.server';
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
@@ -363,47 +363,258 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-async function persistFailedUploadMaterial(
-  courseId: string,
-  file: File,
-  userId: string,
-): Promise<string> {
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const checksum = `failed:${createHash("sha256").update(bytes).digest("hex")}`;
-  const title = (file.name || "upload").replace(/\.[^/.]+$/, "") || "upload";
+/**
+ * Namespace for the provisional checksum a material carries between the upload
+ * response and the end of background extraction (#949).
+ *
+ * The `(courseId, checksum)` unique index is keyed on a hash of the *extracted
+ * text*, which is not known until extraction finishes — so a row that must be
+ * persisted before the response needs a stand-in. This mirrors the Canvas
+ * importer's `canvas-pending:<canvasFileId>` idiom
+ * (`lib/canvas/materials.server.ts`); user uploads have no external id, so the
+ * raw bytes supply the stable key instead. `finalizeMaterial` overwrites it
+ * with the real content checksum, so a surviving `pending:` row means
+ * extraction never completed.
+ */
+const PENDING_CHECKSUM_PREFIX = 'pending:';
 
-  const existing = await prisma.courseMaterial.findFirst({
-    where: { courseId, checksum },
-    select: { id: true },
-  });
+const DUPLICATE_CONTENT_MESSAGE =
+  'A file with identical content already exists in this course';
 
-  if (existing) {
+/**
+ * Move a material to terminal FAILED and record why. Lifted verbatim out of the
+ * old inline upload path so background failures keep the same audit surface:
+ * the row is the client-visible signal, `logSystemError` is the operator one.
+ */
+async function failMaterial(
+  materialId: string,
+  code: 'MATERIAL_EXTRACT_FAILED' | 'MATERIAL_EMBED_FAILED',
+  message: string,
+  error: unknown,
+  requestContext: ReturnType<typeof getRequestContext>,
+): Promise<void> {
+  console.error(`${code}:`, error);
+  try {
     await prisma.courseMaterial.update({
-      where: { id: existing.id },
-      data: {
-        status: "FAILED",
-        uploadedBy: userId,
-        deletedAt: null,
-        deletedBy: null,
-        processedAt: null,
-      },
+      where: { id: materialId },
+      data: { status: 'FAILED' },
     });
-    return existing.id;
+  } catch (updateError) {
+    console.error('Additionally failed to mark material FAILED:', updateError);
+  }
+  fireAndForget(
+    logSystemError({
+      ...requestContext,
+      source: 'AI',
+      code,
+      message,
+      error,
+    }),
+  );
+}
+
+/**
+ * Terminal state for an upload whose extracted content turned out to already
+ * exist on the course. This is the asynchronous successor to the synchronous
+ * 409 the endpoint used to return: the provisional row stays as a receipt so a
+ * client polling its `materialId` can resolve the outcome, marked FAILED and
+ * pointing at the winner. Clients are expected to read it and then delete it,
+ * so duplicate attempts don't accumulate in the materials list.
+ */
+async function markDuplicateReceipt(materialId: string, winnerId: string): Promise<void> {
+  await prisma.courseMaterial.update({
+    where: { id: materialId },
+    data: { status: 'FAILED', duplicateOfId: winnerId, processedAt: new Date() },
+  });
+}
+
+/**
+ * Background half of an upload (#949): extract, resolve duplicates against the
+ * now-known content checksum, embed, and land the row in READY or FAILED.
+ *
+ * Started with `void` from the request path, following the `CourseReEmbedJob`
+ * precedent (`lib/ai/re-embed-job.server.ts` — `void runReEmbedJob(...)`): the
+ * DB row is the source of truth and the caller does not await it.
+ *
+ * KNOWN HOLE (same one `CourseReEmbedJob` has): in-process fire-and-forget dies
+ * with the process. A restart mid-extraction strands the row in PROCESSING with
+ * its `pending:` checksum intact, and nothing currently sweeps it — a re-upload
+ * of the same bytes reclaims it (see `reclaimProvisionalRow`), but an untouched
+ * row stays PROCESSING forever. A sweeper cron is deliberately out of scope here
+ * and is flagged on #949.
+ */
+async function processMaterialAsync(
+  materialId: string,
+  file: File,
+  courseId: string,
+  userId: string,
+  requestContext: ReturnType<typeof getRequestContext>,
+): Promise<void> {
+  let fileInfo;
+  try {
+    fileInfo = await extractUploadedFileContent(file);
+  } catch (extractError) {
+    // Unlike the old inline path, the row already exists here, so a killed PDF
+    // worker always leaves an auditable record (#1018 / #1161) — there is no
+    // longer a window where extraction fails before anything is persisted.
+    await failMaterial(
+      materialId,
+      'MATERIAL_EXTRACT_FAILED',
+      'Material extraction failed during background processing',
+      extractError,
+      requestContext,
+    );
+    return;
   }
 
-  const created = await prisma.courseMaterial.create({
+  try {
+    // Late duplicate detection, mirroring the Canvas importer's post-extraction
+    // check (`lib/canvas/materials.server.ts`). Unlike that one, the P2002 catch
+    // below also covers the findFirst-to-update race this check cannot close.
+    const duplicate = await prisma.courseMaterial.findFirst({
+      where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
+    });
+
+    if (duplicate) {
+      if (duplicate.deletedAt) {
+        // Restore-on-re-upload (#685) — preserved from the old synchronous path,
+        // just deferred: the soft-deleted original comes back and is re-embedded
+        // with `replace: true`, and this upload's row becomes its receipt.
+        await prisma.courseMaterial.update({
+          where: { id: duplicate.id },
+          data: {
+            deletedAt: null,
+            deletedBy: null,
+            status: 'PROCESSING',
+            uploadedBy: userId,
+            processedAt: null,
+            duplicateOfId: null,
+            rawText: fileInfo.content,
+          },
+        });
+        await markDuplicateReceipt(materialId, duplicate.id);
+        try {
+          // Replace any stale chunks/embeddings from before the soft-delete so
+          // restoring a material doesn't append duplicate RAG content (#685 review).
+          await processMaterialEmbeddings(duplicate.id, fileInfo.content, {
+            replace: true,
+          });
+          await prisma.courseMaterial.update({
+            where: { id: duplicate.id },
+            data: { status: 'READY', processedAt: new Date() },
+          });
+        } catch (embeddingError) {
+          await failMaterial(
+            duplicate.id,
+            'MATERIAL_EMBED_FAILED',
+            'Material embedding failed while restoring a soft-deleted material',
+            embeddingError,
+            requestContext,
+          );
+        }
+        return;
+      }
+
+      await markDuplicateReceipt(materialId, duplicate.id);
+      return;
+    }
+
+    // Promote the provisional row: real title/type/size from the extracted
+    // metadata, and the content checksum that makes the dedup index meaningful.
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: {
+        title: fileInfo.title,
+        mimeType: fileInfo.mimeType,
+        fileSize: fileInfo.fileSize,
+        checksum: fileInfo.checksum,
+        rawText: fileInfo.content,
+      },
+    });
+  } catch (finalizeError) {
+    // #225 RAG-04, deferred: two uploads of *different bytes* that extract to
+    // identical text both pass the findFirst above and race into this update.
+    // The unique index is the real guard; the loser becomes a receipt.
+    if (isChecksumConflict(finalizeError)) {
+      const winner = await prisma.courseMaterial.findFirst({
+        where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
+        select: { id: true },
+      });
+      if (winner) {
+        await markDuplicateReceipt(materialId, winner.id);
+        return;
+      }
+    }
+    await failMaterial(
+      materialId,
+      'MATERIAL_EXTRACT_FAILED',
+      'Material finalization failed during background processing',
+      finalizeError,
+      requestContext,
+    );
+    return;
+  }
+
+  try {
+    await processMaterialEmbeddings(materialId, fileInfo.content);
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: { status: 'READY', processedAt: new Date() },
+    });
+  } catch (embeddingError) {
+    await failMaterial(
+      materialId,
+      'MATERIAL_EMBED_FAILED',
+      'Material embedding failed during background processing',
+      embeddingError,
+      requestContext,
+    );
+  }
+}
+
+/**
+ * Resolve a `(courseId, pending:<bytehash>)` collision — two uploads of the
+ * exact same bytes to the same course.
+ *
+ * A `pending:` checksum only survives while a row is mid-flight or has died
+ * before finalization, so the collision is meaningful rather than incidental:
+ *
+ *   - still PROCESSING → a genuine concurrent upload of the same file. 409,
+ *     which keeps byte-identical re-uploads failing fast exactly as they did
+ *     before #949; only content-identical-but-byte-different duplicates became
+ *     asynchronous.
+ *   - FAILED or soft-deleted → a stranded row from an earlier attempt (failed
+ *     extraction, or a process that died mid-run). Reclaim it and retry, which
+ *     is also the only recovery path for the fire-and-forget hole above.
+ */
+async function reclaimProvisionalRow(
+  courseId: string,
+  provisionalChecksum: string,
+  userId: string,
+): Promise<{ outcome: 'conflict' | 'reclaimed'; materialId: string } | null> {
+  const existing = await prisma.courseMaterial.findFirst({
+    where: { courseId, checksum: provisionalChecksum },
+    select: { id: true, status: true, deletedAt: true },
+  });
+  if (!existing) return null;
+
+  if (existing.status === 'PROCESSING' && !existing.deletedAt) {
+    return { outcome: 'conflict', materialId: existing.id };
+  }
+
+  await prisma.courseMaterial.update({
+    where: { id: existing.id },
     data: {
-      courseId,
-      title,
-      mimeType: file.type || "application/octet-stream",
-      fileSize: file.size || bytes.length,
-      checksum,
-      rawText: null,
-      status: "FAILED",
+      status: 'PROCESSING',
       uploadedBy: userId,
+      deletedAt: null,
+      deletedBy: null,
+      processedAt: null,
+      duplicateOfId: null,
+      rawText: null,
     },
   });
-  return created.id;
+  return { outcome: 'reclaimed', materialId: existing.id };
 }
 
 async function uploadMaterial(
@@ -430,176 +641,98 @@ async function uploadMaterial(
     return json(400, { error: "No file provided" });
   }
 
-  let fileInfo;
+  // Type/size caps and the #225 RAG-05 magic-byte sniff stay inline: they are
+  // cheap, and a rejected file must still fail synchronously with a 400 rather
+  // than becoming a background FAILED row the caller has to poll for.
   try {
-    fileInfo = await processUploadedFile(file);
-  } catch (extractError) {
-    // Extraction (e.g. PDF worker kill) happens before a material row exists — persist
-    // FAILED so a killed worker still leaves an auditable record (#1018 / #1161).
-    console.error("Error extracting material upload:", extractError);
-    let materialId: string | undefined;
-    try {
-      materialId = await persistFailedUploadMaterial(courseId, file, user.id);
-      fireAndForget(
-        logSystemError({
-          ...requestContext,
-          source: "AI",
-          code: "MATERIAL_EXTRACT_FAILED",
-          message: "Material extraction failed during upload processing",
-          error: extractError,
-        }),
-      );
-    } catch (persistError) {
-      console.error("Additionally failed to persist FAILED material:", persistError);
-    }
-    return json(500, {
-      error: toMaterialUploadUserMessage(extractError),
-      ...(materialId ? { materialId } : {}),
-    });
+    await validateUploadedFile(file);
+  } catch (validationError) {
+    return json(400, { error: toMaterialUploadUserMessage(validationError) });
   }
 
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const provisionalChecksum = `${PENDING_CHECKSUM_PREFIX}${createHash('sha256')
+    .update(bytes)
+    .digest('hex')}`;
+  const title = (file.name || 'upload').replace(/\.[^/.]+$/, '') || 'upload';
+
+  let materialId: string;
   try {
-    const existingMaterial = await prisma.courseMaterial.findFirst({
-      where: { courseId, checksum: fileInfo.checksum },
+    const created = await prisma.courseMaterial.create({
+      data: {
+        courseId,
+        title,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size || bytes.length,
+        checksum: provisionalChecksum,
+        rawText: null,
+        status: 'PROCESSING',
+        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
+      },
     });
-
-    if (existingMaterial) {
-      // If the existing material is soft-deleted, restore it instead of 409.
-      if (existingMaterial.deletedAt) {
-        // Restore: clear deletedAt/deletedBy, reset status to PROCESSING, re-run embeddings.
-        await prisma.courseMaterial.update({
-          where: { id: existingMaterial.id },
-          data: {
-            deletedAt: null,
-            deletedBy: null,
-            status: "PROCESSING",
-            uploadedBy: user.id,
-            processedAt: null,
-          },
-        });
-        try {
-          // Replace any stale chunks/embeddings from before the soft-delete so
-          // restoring a material doesn't append duplicate RAG content (#685 review).
-          await processMaterialEmbeddings(existingMaterial.id, fileInfo.content, {
-            replace: true,
-          });
-          await prisma.courseMaterial.update({
-            where: { id: existingMaterial.id },
-            data: { status: "READY", processedAt: new Date() },
-          });
-          return json(200, {
-            success: true,
-            materialId: existingMaterial.id,
-            message: "Material restored and processed successfully",
-          });
-        } catch (embeddingError) {
-          await prisma.courseMaterial.update({
-            where: { id: existingMaterial.id },
-            data: { status: "FAILED" },
-          });
-          throw embeddingError;
-        }
-      }
-      // Not soft-deleted: it's a real duplicate.
-      return json(409, {
-        error: "A file with identical content already exists in this course",
-        materialId: existingMaterial.id,
-      });
-    }
-
-    let material;
-    try {
-      material = await prisma.courseMaterial.create({
-        data: {
-          courseId,
-          title: fileInfo.title,
-          mimeType: fileInfo.mimeType,
-          fileSize: fileInfo.fileSize,
-          checksum: fileInfo.checksum,
-          rawText: fileInfo.content,
-          status: "PROCESSING",
-          uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
-        },
-      });
-    } catch (createError) {
-      // #225 RAG-04: a concurrent upload with the same (courseId, checksum)
-      // won the findFirst-to-create race above — the unique index rejected
-      // this insert, so no duplicate corpus was created. Respond the same
-      // way the findFirst dedupe path would, instead of leaking a raw Prisma
-      // conflict as a 500.
-      if (isChecksumConflict(createError)) {
-        const winner = await prisma.courseMaterial.findFirst({
-          where: { courseId, checksum: fileInfo.checksum, deletedAt: null },
-        });
-        if (winner) {
-          return json(409, {
-            error: "A file with identical content already exists in this course",
-            materialId: winner.id,
-          });
-        }
-      }
-      throw createError;
-    }
-
-    // Audit the upload as soon as the material row is persisted, independent of embedding.
-    // A material that uploads successfully but later fails to embed is still a real upload
-    // and must leave an audit trail (the embedding failure is recorded separately below).
-    // actorUserId/actorRole come from getActorContext; email/name and the material's
-    // type/size go in details so the audit line carries who-added-what in full.
-    fireAndForget(
-      logAuditAction({
-        ...getActorContext(user ?? null),
-        ...requestContext,
-        actionCode: "MATERIAL_UPLOADED",
-        category: "MATERIAL",
-        entityType: "CourseMaterial",
-        entityId: material.id,
-        entityLabel: material.title,
-        details: {
-          courseId,
-          actorEmail: user.email,
-          actorName: user.name,
-          mimeType: material.mimeType,
-          fileSize: material.fileSize,
-        },
-      }),
-    );
-
-    try {
-      await processMaterialEmbeddings(material.id, fileInfo.content);
-
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "READY", processedAt: new Date() },
-      });
-
-      return json(200, {
-        success: true,
-        materialId: material.id,
-        message: "Material uploaded and processed successfully",
-      });
-    } catch (embeddingError) {
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "FAILED" },
-      });
-      fireAndForget(
-        logSystemError({
-          ...requestContext,
-          source: "AI",
-          code: "MATERIAL_EMBED_FAILED",
-          message: "Material embedding failed during upload processing",
-          error: embeddingError,
-        }),
+    materialId = created.id;
+  } catch (createError) {
+    if (isChecksumConflict(createError)) {
+      const resolution = await reclaimProvisionalRow(
+        courseId,
+        provisionalChecksum,
+        user.id,
       );
-      throw embeddingError;
+      if (resolution?.outcome === 'conflict') {
+        return json(409, {
+          error: 'This file is already being processed in this course',
+          materialId: resolution.materialId,
+        });
+      }
+      if (resolution?.outcome === 'reclaimed') {
+        materialId = resolution.materialId;
+      } else {
+        // The colliding row disappeared between the failed insert and the
+        // lookup — another request finalized or deleted it. Nothing to reclaim.
+        return json(409, {
+          error: DUPLICATE_CONTENT_MESSAGE,
+        });
+      }
+    } else {
+      console.error('Error persisting material upload:', createError);
+      return json(500, { error: toMaterialUploadUserMessage(createError) });
     }
-  } catch (error) {
-    console.error("Error processing material upload:", error);
-    return json(500, {
-      error: toMaterialUploadUserMessage(error),
-    });
   }
+
+  // Audit the upload as soon as the material row is persisted, independent of
+  // extraction and embedding. A material that uploads successfully but later
+  // fails to process is still a real upload and must leave an audit trail (the
+  // processing failure is recorded separately by `failMaterial`).
+  // actorUserId/actorRole come from getActorContext; email/name and the
+  // material's type/size go in details so the audit line carries who-added-what.
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext(user ?? null),
+      ...requestContext,
+      actionCode: 'MATERIAL_UPLOADED',
+      category: 'MATERIAL',
+      entityType: 'CourseMaterial',
+      entityId: materialId,
+      entityLabel: title,
+      details: {
+        courseId,
+        actorEmail: user.email,
+        actorName: user.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size || bytes.length,
+      },
+    }),
+  );
+
+  // Fire-and-forget, `CourseReEmbedJob` style — the row carries the state.
+  void processMaterialAsync(materialId, file, courseId, user.id, requestContext);
+
+  return json(202, {
+    success: true,
+    materialId,
+    status: 'PROCESSING',
+    message: 'Material accepted and is being processed',
+  });
 }
 
 const PREVIEW_EXCERPT_MAX = 4000;
@@ -638,6 +771,9 @@ const MATERIAL_LIST_SELECT = {
   deletedAt: true,
   deletedBy: true,
   unpublishedAt: true,
+  // #949: how a client polling after a 202 learns its upload resolved to an
+  // already-present material instead of a new one.
+  duplicateOfId: true,
   createdAt: true,
   updatedAt: true,
   processedAt: true,

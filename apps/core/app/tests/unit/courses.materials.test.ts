@@ -35,6 +35,8 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/ai/file-processing", () => ({
   processUploadedFile: vi.fn(),
+  validateUploadedFile: vi.fn(),
+  extractUploadedFileContent: vi.fn(),
 }));
 
 // getPolicy resolves to each flag's real code default unless a test overrides it.
@@ -54,7 +56,10 @@ import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { processUploadedFile } from "~/lib/ai/file-processing";
+import {
+  extractUploadedFileContent,
+  validateUploadedFile,
+} from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE_ID = "course-1";
@@ -136,8 +141,31 @@ function stubUploadArgs() {
   return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never } as any;
 }
 
+/**
+ * The upload action starts `processMaterialAsync` with `void` and returns 202
+ * immediately (#949). Yielding to the macrotask queue lets the whole chain of
+ * already-resolved mock promises settle before assertions run.
+ */
+async function flushBackgroundWork() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Standard extracted-content stub for the background half of an upload. */
+function mockExtraction(overrides: Record<string, unknown> = {}) {
+  vi.mocked(extractUploadedFileContent).mockResolvedValue({
+    checksum: "content-checksum",
+    title: "file",
+    mimeType: "application/pdf",
+    fileSize: 100,
+    content: "text",
+    ...overrides,
+  } as never);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(validateUploadedFile).mockResolvedValue(undefined);
+  mockExtraction();
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
   mockAccess({ level: "instructor", rank: 2 });
@@ -547,18 +575,12 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("admits a TA upload (rank 1)", async () => {
     mockSession("STUDENT", "ta-user");
     mockAccess({ level: "ta", rank: 1 });
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "c1",
-      title: "f.pdf",
-      mimeType: "application/pdf",
-      fileSize: 1,
-      content: "x",
-    } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
   });
 
   it("returns 403 for a TA upload when tas.canManageMaterials is off", async () => {
@@ -575,18 +597,12 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockSession("STUDENT");
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(getPolicy).mockResolvedValue(true);
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "c2",
-      title: "f.pdf",
-      mimeType: "application/pdf",
-      fileSize: 1,
-      content: "x",
-    } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-2" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-2" } as never);
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
   });
 
   it("returns 403 for a STUDENT uploading to an UNPUBLISHED course even when students.canUploadMaterials is on (§7/§19 publish gate)", async () => {
@@ -613,151 +629,163 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 500 with a sanitized message when embedding fails with a Prisma error (#54)", async () => {
+  it("returns 400 when the file fails validation or MIME sniffing (stays synchronous)", async () => {
     mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "prisma-fail",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
+    vi.mocked(validateUploadedFile).mockRejectedValueOnce(
+      new Error("File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX"),
+    );
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(400);
+    // Nothing is persisted for a file that never passes the gate.
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("returns 202 with a PROCESSING row before extraction runs (#949)", async () => {
+    mockSession("INSTRUCTOR");
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-prisma" } as never);
-    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-prisma" } as never);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-202" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-202" } as never);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.materialId).toBe("mat-202");
+    expect(body.status).toBe("PROCESSING");
+    // The row is persisted with the provisional byte-hash checksum and no text.
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "PROCESSING",
+          rawText: null,
+          checksum: expect.stringMatching(/^pending:[0-9a-f]{64}$/),
+        }),
+      }),
+    );
+    await flushBackgroundWork();
+  });
+
+  it("finalizes the checksum and rawText in the background, then marks READY", async () => {
+    mockSession("INSTRUCTOR");
+    mockExtraction({ checksum: "final-checksum", content: "extracted text", title: "file" });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-ok" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-ok" } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-ok" },
+        data: expect.objectContaining({
+          checksum: "final-checksum",
+          rawText: "extracted text",
+        }),
+      }),
+    );
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-ok", "extracted text");
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-ok" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+  });
+
+  it("marks the row FAILED in the background when extraction dies (#1018)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(extractUploadedFileContent).mockRejectedValueOnce(
+      new Error("Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)"),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-failed" } as never);
+
+    // The caller is already gone by the time extraction dies — the row, not the
+    // response, is the auditable record now.
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
+      where: { id: "mat-failed" },
+      data: { status: "FAILED" },
+    });
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("marks the row FAILED in the background when embedding fails (#54)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-embed" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-embed" } as never);
     vi.mocked(processMaterialEmbeddings).mockRejectedValue(
       new Error("Invalid `prisma.$executeRaw()` invocation:\nRaw query failed."),
     );
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe(
-      "Couldn't save this material's search data due to a database error. Please try again or contact support.",
-    );
-    expect(body.error).not.toMatch(/prisma/i);
-  });
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
 
-  it("persists a FAILED material when PDF extraction dies before create (#1018)", async () => {
-    mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockRejectedValueOnce(
-      new Error(
-        "Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)",
-      ),
-    );
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
-
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.materialId).toBe("mat-failed");
-    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: "FAILED",
-          checksum: expect.stringMatching(/^failed:[0-9a-f]{64}$/),
-        }),
-      }),
-    );
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
+      where: { id: "mat-embed" },
+      data: { status: "FAILED" },
+    });
   });
 
   it("persists uploadedBy as the session user on create (#294)", async () => {
     mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "new-checksum",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ uploadedBy: "user-1" }),
       }),
     );
+    await flushBackgroundWork();
   });
 
-  it("returns 409 when duplicate file checksum exists", async () => {
+  it("leaves a FAILED receipt pointing at the winner when the content is a late duplicate", async () => {
     mockSession("ADMIN");
     mockAccess({ level: "admin", rank: 4 });
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "abc123",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-dupe" } as never);
+    // Post-extraction lookup finds an existing, live row with the same content.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: null,
     } as never);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({ id: "existing-mat" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-dupe" } as never);
 
+    // The old synchronous 409 is now a 202 whose outcome lands on the row.
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(409);
-  });
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
 
-  it("returns 409 (not 500) when a concurrent upload wins the checksum race (#225 RAG-04)", async () => {
-    mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "race-checksum",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    // Our findFirst dedupe check sees no existing row (the race window)...
-    vi.mocked(prisma.courseMaterial.findFirst)
-      .mockResolvedValueOnce(null)
-      // ...but a concurrent request's create() already committed by the time
-      // we look the winner up to build the 409 response.
-      .mockResolvedValueOnce({ id: "winner-mat" } as never);
-    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
-      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
-        code: "P2002",
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-dupe" },
+        data: expect.objectContaining({
+          status: "FAILED",
+          duplicateOfId: "existing-mat",
+        }),
       }),
     );
-
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.materialId).toBe("winner-mat");
+    // The duplicate's content must never be embedded a second time.
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
-  it("re-throws a create() failure unrelated to the checksum unique constraint", async () => {
-    mockSession("INSTRUCTOR");
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "other-failure",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
-    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(new Error("connection refused"));
-
-    const res = await action(stubUploadArgs());
-    expect(res.status).toBe(500);
-    // Only the checksum-conflict path re-queries for a winner; any other
-    // create() failure should not trigger the extra findFirst lookup.
-    expect(prisma.courseMaterial.findFirst).toHaveBeenCalledTimes(1);
-  });
-
-  it("restores a soft-deleted material on re-upload instead of 409", async () => {
+  it("restores a soft-deleted material in the background, re-embedding with replace (#685)", async () => {
     mockSession("ADMIN");
     mockAccess({ level: "admin", rank: 4 });
-    vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "abc123",
-      title: "file.pdf",
-      mimeType: "application/pdf",
-      fileSize: 100,
-      content: "text",
-    } as never);
-    // Same-checksum row exists but is soft-deleted → should restore, not 409.
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "existing-mat",
       deletedAt: new Date(),
@@ -765,8 +793,10 @@ describe("POST /api/courses/:courseId/materials action", () => {
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
 
     const res = await action(stubUploadArgs());
-    expect(res.status).toBe(200);
-    // First update call clears the soft-delete markers and re-queues processing.
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    // The soft-deleted original comes back...
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "existing-mat" },
@@ -777,7 +807,118 @@ describe("POST /api/courses/:courseId/materials action", () => {
         }),
       }),
     );
-    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    // ...and its stale chunks are replaced rather than appended (#685 review).
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("existing-mat", "text", {
+      replace: true,
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing-mat" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+    // This upload's own row becomes the receipt pointing at the restored one.
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-restore" },
+        data: expect.objectContaining({ duplicateOfId: "existing-mat" }),
+      }),
+    );
+  });
+
+  it("returns 409 when the identical bytes are already being processed", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    // The colliding `pending:` row is still mid-flight → a genuine concurrent
+    // upload of the same file, which still fails fast exactly as before #949.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "inflight-mat",
+      status: "PROCESSING",
+      deletedAt: null,
+    } as never);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.materialId).toBe("inflight-mat");
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("reclaims and retries a stranded pending row instead of 409ing", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    // A previous attempt died and left the row FAILED — re-uploading the same
+    // bytes is the recovery path for the fire-and-forget hole.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "stranded-mat",
+      status: "FAILED",
+      deletedAt: null,
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.materialId).toBe("stranded-mat");
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "stranded-mat" },
+        data: expect.objectContaining({ status: "PROCESSING", duplicateOfId: null }),
+      }),
+    );
+    await flushBackgroundWork();
+    expect(extractUploadedFileContent).toHaveBeenCalled();
+  });
+
+  it("returns 500 for a create() failure unrelated to the checksum unique constraint", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(new Error("connection refused"));
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(500);
+    // Only the checksum-conflict path re-queries; any other create() failure
+    // must not trigger the reclaim lookup.
+    expect(prisma.courseMaterial.findFirst).not.toHaveBeenCalled();
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("turns a finalize-time unique violation into a receipt (#225 RAG-04, deferred)", async () => {
+    mockSession("INSTRUCTOR");
+    mockExtraction({ checksum: "race-checksum" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "loser-mat" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst)
+      // The duplicate pre-check sees nothing (the race window)...
+      .mockResolvedValueOnce(null)
+      // ...but a concurrent finalize committed first, so the winner is only
+      // visible after our own update is rejected by the unique index.
+      .mockResolvedValueOnce({ id: "winner-mat" } as never);
+    vi.mocked(prisma.courseMaterial.update)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      )
+      .mockResolvedValue({ id: "loser-mat" } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "loser-mat" },
+        data: expect.objectContaining({
+          status: "FAILED",
+          duplicateOfId: "winner-mat",
+        }),
+      }),
+    );
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 });
 

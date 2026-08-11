@@ -1464,9 +1464,12 @@ function addContextHeaders(chunk: string, headers: string[]): string {
 }
 
 /**
- * Process uploaded file and extract text content (client-side optimized)
+ * Cheap, synchronous-cost half of the upload pipeline: type/size caps plus the
+ * declared-MIME-vs-actual-bytes sniff. Split out of `processUploadedFile` for
+ * #949 so an HTTP upload can reject a bad file inline (400) while deferring the
+ * expensive extraction half to a background task. Throws on the first failure.
  */
-export async function processUploadedFile(file: File): Promise<FileInfo> {
+export async function validateUploadedFile(file: File): Promise<void> {
   // Validate file
   const validation = validateFile(file);
   if (!validation.isValid) {
@@ -1479,7 +1482,18 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
   if (!signatureCheck.isValid) {
     throw new Error(signatureCheck.error);
   }
+}
 
+/**
+ * Expensive half of the upload pipeline: extraction, semantic chunking, and the
+ * content checksum. Assumes `validateUploadedFile` has already passed — callers
+ * that have not run it should use `processUploadedFile`, which does both.
+ *
+ * The PDF branch still goes through the out-of-process `pdf-extract-worker` and
+ * its admission queue; DOCX/PPTX still run mammoth/jszip on this thread, which
+ * is why #949 moves this whole function off the request path.
+ */
+export async function extractUploadedFileContent(file: File): Promise<FileInfo> {
   let content: string;
   let pageCount: number | undefined;
   let metadata: any = {};
@@ -1562,6 +1576,18 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
       `Failed to process file ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
   }
+}
+
+/**
+ * Process uploaded file and extract text content (client-side optimized).
+ *
+ * Validate-then-extract, in one call. Kept as the single entry point for
+ * callers that run both halves in the same pass — notably the Canvas importer
+ * (`lib/canvas/materials.server.ts`), which is already off the request path.
+ */
+export async function processUploadedFile(file: File): Promise<FileInfo> {
+  await validateUploadedFile(file);
+  return extractUploadedFileContent(file);
 }
 
 /**

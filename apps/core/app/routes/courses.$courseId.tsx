@@ -182,8 +182,31 @@ export default function CourseDetailPage() {
     setMaterialsError(null);
     setMaterialsSuccess(null);
     try {
-      await uploadMaterial(file);
-      setMaterialsSuccess("Material uploaded successfully");
+      // The upload endpoint returns 202 and processes in the background (#949),
+      // so the outcome arrives from polling rather than from the POST status.
+      const outcome = await uploadMaterial(file)
+      switch (outcome.status) {
+        case 'ready':
+          setMaterialsSuccess('Material uploaded and processed successfully')
+          break
+        case 'duplicate': {
+          const existing = materials.find((m) => m.id === outcome.duplicateOfId)
+          setMaterialsError(
+            existing
+              ? `"${existing.title}" already contains identical content — nothing was added`
+              : 'A file with identical content already exists in this course',
+          )
+          break
+        }
+        case 'failed':
+          setMaterialsError('Processing failed for this file. Please try again.')
+          break
+        case 'processing':
+          setMaterialsSuccess(
+            'Upload accepted. Processing is taking a while — the list will update when it finishes.',
+          )
+          break
+      }
     } catch (e) {
       setMaterialsError(e instanceof Error ? e.message : "Upload failed");
     } finally {
