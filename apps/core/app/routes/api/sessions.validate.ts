@@ -1,10 +1,15 @@
 import type { ActionFunctionArgs } from "react-router";
 
-import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+
+const PREAUTH_RATE_LIMIT = parseEnvInt(
+  process.env.SESSION_VALIDATE_PREAUTH_RATE_LIMIT,
+  1_200,
+);
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -19,6 +24,26 @@ export async function action({ request }: ActionFunctionArgs) {
   // last, trusted-proxy-written x-forwarded-for entry).
   const requestContext = getRequestContext(request);
   const ip = requestContext.ipAddress ?? "unknown";
+
+  // Reject abusive sources before Better Auth touches its session store. This
+  // IP identity comes only from the trusted proxy-appended rightmost XFF entry;
+  // it is an admission bound, not the authenticated caller identity.
+  if (isRateLimited(`session-validate:preauth:${ip}`, PREAUTH_RATE_LIMIT)) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...requestContext,
+        actionCode: "RATE_LIMIT_EXCEEDED",
+        outcome: "DENIED",
+        entityType: "Session",
+        details: { ip, stage: "preauth" },
+      }),
+    );
+    return new Response(JSON.stringify({ error: "Too Many Requests" }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const session = await getRequestSession(request);
   const rateLimitKey = session?.user

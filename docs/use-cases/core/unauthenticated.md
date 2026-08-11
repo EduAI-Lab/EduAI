@@ -195,11 +195,12 @@ Core has no single global auth gate: `apps/core/app/root.tsx`'s loader calls `au
 - **Entry point(s):** `apps/core/app/routes/api/sessions.validate.ts`
 - **Flow:**
   1. Attacker sends `POST /api/sessions/validate` with a forged/expired `Cookie` header
-  2. Route first derives the request IP via `getRequestContext` and checks `isRateLimited(ip)` (`apps/core/app/lib/auth/rate-limit.server.ts`, in-memory, default 300/min via `SESSION_VALIDATE_RATE_LIMIT`); if tripped, logs `RATE_LIMIT_EXCEEDED` and returns `429`
+  2. Route first derives the request IP via `getRequestContext` (the trusted proxy-appended rightmost XFF entry) and applies the coarse `session-validate:preauth:<ip>` admission ceiling before any Better Auth lookup (default 1200/min via `SESSION_VALIDATE_PREAUTH_RATE_LIMIT`); if tripped, it logs `RATE_LIMIT_EXCEEDED` and returns `429`
   3. Otherwise calls `auth.api.getSession({ headers: request.headers })`; better-auth verifies the session token/signature against its `Session` table and expiry — a tampered or unknown token fails verification and resolves to `null`
-  4. `if (!session?.user)` returns `401 { error: "Unauthorized" }`
-- **Expected outcome:** `401 { "error": "Unauthorized" }` for any cookie that doesn't map to a live, non-expired, non-deactivated-owner `Session` row; `429` if the same IP has exceeded the validate-endpoint rate limit.
-- **Failure modes / what could go wrong:** The rate limiter (`apps/core/app/lib/auth/rate-limit.server.ts`) is a plain in-memory `Map` keyed by IP with no persistence or distributed coordination — it resets on process restart and does not share state across multiple server instances, so it is a soft mitigation against brute-force/credential-stuffing probing of this endpoint rather than a hard guarantee in a multi-instance deployment. Token verification itself relies entirely on better-auth's internal session-lookup/expiry logic; no separate signature-tampering check was found or needed to be — a modified token simply won't match a stored session.
+  4. The route applies the normal post-auth limit using `session-validate:user:<userId>` for a verified user or `session-validate:anonymous:<ip>` for junk/anonymous traffic (default 300/min via `SESSION_VALIDATE_RATE_LIMIT`)
+  5. `if (!session?.user)` returns `401 { error: "Unauthorized" }`
+- **Expected outcome:** `401 { "error": "Unauthorized" }` for any cookie that doesn't map to a live, non-expired, non-deactivated-owner `Session` row; `429` when either the coarse pre-auth IP ceiling or the isolated post-auth bucket is exceeded.
+- **Failure modes / what could go wrong:** Both stages use the same bounded in-memory rate-limit store with no persistence or distributed coordination. Counters reset on process restart and are not shared across instances, so they are soft abuse controls rather than a hard multi-instance guarantee. The deliberately higher pre-auth ceiling bounds session-store work while avoiding the former low shared extension bucket; sufficiently heavy traffic from one proxy client IP can still trip that coarse ceiling. Token verification itself relies on better-auth's session-lookup/expiry logic; a modified token simply will not match a stored session.
 - **Related code:**
   - `apps/core/app/routes/api/sessions.validate.ts`
   - `apps/core/app/lib/auth/rate-limit.server.ts`

@@ -9,6 +9,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/rate-limit.server", () => ({
   isRateLimited: vi.fn().mockReturnValue(false),
+  parseEnvInt: vi.fn((_value: string | undefined, fallback: number) => fallback),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -48,10 +49,11 @@ describe("POST /api/sessions/validate", () => {
   });
 
   it("returns 429 and logs RATE_LIMIT_EXCEEDED when rate-limited", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(isRateLimited).mockReturnValue(true);
     const res = await action(makeArgs());
     expect(res.status).toBe(429);
+    expect(isRateLimited).toHaveBeenCalledWith("session-validate:preauth:unknown", 1_200);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "RATE_LIMIT_EXCEEDED", outcome: "DENIED" }),
     );
@@ -64,7 +66,9 @@ describe("POST /api/sessions/validate", () => {
         user: { id: "u1", email: "u1@ubc.ca", name: "U1", image: null, role: "STUDENT" },
       } as never);
     vi.mocked(isRateLimited)
+      .mockReturnValueOnce(false)
       .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
       .mockReturnValueOnce(false);
 
     const junk = await action(makeArgs("POST", {
@@ -79,7 +83,9 @@ describe("POST /api/sessions/validate", () => {
     expect(junk.status).toBe(429);
     expect(legitimate.status).toBe(200);
     expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:198.51.100.10",
       "session-validate:anonymous:198.51.100.10",
+      "session-validate:preauth:198.51.100.10",
       "session-validate:user:u1",
     ]);
   });
@@ -87,7 +93,8 @@ describe("POST /api/sessions/validate", () => {
   it("uses the trusted proxy-appended XFF entry, not a spoofed first entry", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     await action(makeArgs("POST", { "X-Forwarded-For": "203.0.113.99, 198.51.100.20" }));
-    expect(isRateLimited).toHaveBeenCalledWith("session-validate:anonymous:198.51.100.20");
+    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:198.51.100.20", 1_200);
+    expect(isRateLimited).toHaveBeenNthCalledWith(2, "session-validate:anonymous:198.51.100.20");
   });
 
   it("returns 401 for anonymous callers", async () => {

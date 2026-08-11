@@ -29,6 +29,8 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
+import { hasValidServiceKey } from "~/lib/auth/guards.server";
 
 /**
  * Root middleware — the single request chokepoint that every route matches.
@@ -46,16 +48,32 @@ export const middleware: Route.MiddlewareFunction[] = [
     const hasCookie = Boolean(request.headers.get("cookie"));
     const origin = request.headers.get("origin");
 
-    // Gate ambient cookie credentials on unsafe cross-origin requests. Service
-    // requests without cookies are not CSRF-prone and keep their existing path.
-    if (isUnsafeMethod && hasCookie && origin !== null) {
+    // Origin is the primary browser proof. Referer and Fetch Metadata are
+    // fallback evidence for clients that omit Origin. Missing or malformed
+    // evidence fails closed for ambient-cookie mutations. A non-browser call
+    // may bypass only by proving the configured service key in constant time.
+    if (isUnsafeMethod && hasCookie) {
       let isSameOrigin = false;
-      try {
-        isSameOrigin = new URL(origin).origin === url.origin;
-      } catch {
-        // A malformed Origin cannot prove same-origin intent.
+      if (origin !== null) {
+        try {
+          isSameOrigin = new URL(origin).origin === url.origin;
+        } catch {
+          // A malformed Origin cannot prove same-origin intent.
+        }
+      } else {
+        const referer = request.headers.get("referer");
+        if (referer !== null) {
+          try {
+            isSameOrigin = new URL(referer).origin === url.origin;
+          } catch {
+            // A malformed Referer cannot prove same-origin intent.
+          }
+        } else {
+          isSameOrigin = request.headers.get("sec-fetch-site") === "same-origin";
+        }
       }
-      if (!isSameOrigin) {
+
+      if (!isSameOrigin && !hasValidServiceKey(request)) {
         const blocked = new Response(JSON.stringify({ error: "CROSS_ORIGIN_MUTATION" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
