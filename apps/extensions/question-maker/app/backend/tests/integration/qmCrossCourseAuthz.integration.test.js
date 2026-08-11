@@ -86,14 +86,15 @@ describeDb('QM cross-course authorization (real DB)', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  it('returns 403 before question service mutation when target B is inaccessible', async () => {
+  it('returns stable relocation conflict before question service mutation', async () => {
     stubCore({ enrolledCourses: [courseA.coreCourseId] });
     const response = await request(app)
       .put(`/api/questions/${questionA.id}`)
       .set('Cookie', 'session=qm-xc')
       .send({ description: 'attempted move', courseId: courseB.id });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({ code: 'COURSE_RELOCATION_NOT_ALLOWED' });
     const row = await prisma.questionMetadata.findUnique({ where: { id: questionA.id } });
     expect(row.courseId).toBe(courseA.id);
   });

@@ -13,6 +13,7 @@ const { isCoreCourseInScopedList, syncTopicsFromCoreForCourse } = vi.hoisted(() 
 
 vi.mock('../../src/middleware/auth.js', () => ({
   authenticateToken: (req, _res, next) => next(),
+  requireRole: () => (_req, _res, next) => next(),
 }));
 
 vi.mock('../../src/middleware/courseAccess.js', () => ({

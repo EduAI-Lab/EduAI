@@ -66,8 +66,14 @@ describe("resolveCourseAccess", () => {
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
-    it("denies a non-owner (even a TA enrolled elsewhere)", async () => {
-      const access = await resolveCourseAccess({ id: "someone-else", role: "TA" }, 2);
+    it('denies a STUDENT owner access to an unlinked course', async () => {
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'STUDENT' }, 2);
+      expect(access).toBeNull();
+      expect(mockEnrollments).not.toHaveBeenCalled();
+    });
+
+    it('denies a non-owner (even a TA enrolled elsewhere)', async () => {
+      const access = await resolveCourseAccess({ id: 'someone-else', role: 'TA' }, 2);
       expect(access).toBeNull();
     });
   });

@@ -27,14 +27,10 @@ const { default: app } = await import("../../src/app.js");
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const OWNER = { id: "cuid-rbac-owner", email: "owner@test.com", role: "INSTRUCTOR", name: "Owner" };
-const STRANGER = {
-  id: "cuid-rbac-stranger",
-  email: "stranger@test.com",
-  role: "INSTRUCTOR",
-  name: "Stranger",
-};
-const ADMIN = { id: "cuid-rbac-admin", email: "admin@test.com", role: "ADMIN", name: "Admin" };
+const OWNER = { id: 'cuid-rbac-owner', email: 'owner@test.com', role: 'INSTRUCTOR', name: 'Owner' };
+const STUDENT_OWNER = { ...OWNER, role: 'STUDENT' };
+const STRANGER = { id: 'cuid-rbac-stranger', email: 'stranger@test.com', role: 'INSTRUCTOR', name: 'Stranger' };
+const ADMIN = { id: 'cuid-rbac-admin', email: 'admin@test.com', role: 'ADMIN', name: 'Admin' };
 
 /** Routes the session-validate fetch to a user based on the cookie value. */
 function multiUserHandlers(ownerFetch) {
@@ -43,8 +39,14 @@ function multiUserHandlers(ownerFetch) {
     const path = target.split("?")[0];
     const cookie = opts?.headers?.cookie ?? "";
 
-    if (path.endsWith("/api/sessions/validate")) {
-      const user = cookie.includes("owner") ? OWNER : cookie.includes("admin") ? ADMIN : STRANGER;
+    if (path.endsWith('/api/sessions/validate')) {
+      const user = cookie.includes('student-owner')
+        ? STUDENT_OWNER
+        : cookie.includes('owner')
+          ? OWNER
+          : cookie.includes('admin')
+            ? ADMIN
+            : STRANGER;
       return { ok: true, json: async () => ({ user }) };
     }
 
@@ -59,9 +61,10 @@ function multiUserHandlers(ownerFetch) {
   };
 }
 
-const asOwner = () => ({ Cookie: "session=owner" });
-const asStranger = () => ({ Cookie: "session=stranger" });
-const asAdmin = () => ({ Cookie: "session=admin" });
+const asOwner = () => ({ Cookie: 'session=owner' });
+const asStudentOwner = () => ({ Cookie: 'session=student-owner' });
+const asStranger = () => ({ Cookie: 'session=stranger' });
+const asAdmin = () => ({ Cookie: 'session=admin' });
 
 describeDb("course RBAC (integration)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
@@ -104,12 +107,20 @@ describeDb("course RBAC (integration)", () => {
       expect(res.body.data).toBeNull();
     });
 
-    it('returns instructor level for the owner of an unlinked QM-native course', async () => {
+    it('does not grant an owner access to an unlinked QM-native course', async () => {
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
 
       const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({ level: "instructor", rank: 2 });
+      expect(res.body.data).toBeNull();
+    });
+
+    it('does not grant a STUDENT owner access to an unlinked QM-native course', async () => {
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
+
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asStudentOwner());
+      expect(res.status).toBe(200);
+      expect(res.body.data).toBeNull();
     });
 
     it("returns admin level for an ADMIN on a course they do not own", async () => {

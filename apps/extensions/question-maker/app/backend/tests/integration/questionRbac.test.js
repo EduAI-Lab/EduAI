@@ -181,7 +181,8 @@ describe("INSTRUCTOR may edit/delete any question in the course (C)", () => {
       .set('Cookie', 'session=v')
       .send({ courseId: OTHER_COURSE.id, description: 'move' });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'COURSE_RELOCATION_NOT_ALLOWED' });
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

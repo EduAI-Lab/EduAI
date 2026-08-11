@@ -90,8 +90,28 @@ describeDb("course.js route coverage (integration)", () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  describe("POST /api/course", () => {
-    it("creates a new course anchor when the Core course is in the caller scoped list", async () => {
+  describe('POST /api/course', () => {
+    it('blocks a platform STUDENT before creating a local course anchor', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ user: { ...USER, role: 'STUDENT' } }),
+        }),
+      );
+
+      const res = await request(app)
+        .post('/api/course')
+        .set(cookie())
+        .send({ coreCourseId: 'core-student-must-not-create' });
+
+      expect(res.status).toBe(403);
+      expect(
+        await prisma.course.findUnique({ where: { coreCourseId: 'core-student-must-not-create' } }),
+      ).toBeNull();
+    });
+
+    it('creates a new course anchor when the Core course is in the caller scoped list', async () => {
       vi.stubGlobal(
         "fetch",
         routedFetch([

@@ -33,7 +33,7 @@ import {
 import { generateQuestions, AI_PROVIDERS, extractQuestionsFromText } from '../services/aiService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
-import { requireCourseAccess, requireOptionalCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
+import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
@@ -405,7 +405,6 @@ router.put(
   authenticateToken,
   requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
-  requireOptionalCourseAccess({ min: 'ta', getCourseId: (req) => req.body?.courseId ?? req.body?.classId }),
   async (req, res, next) => {
     try {
       if (denyTaNotOwner(req, res)) return;
@@ -435,6 +434,16 @@ router.put(
           return res.status(400).json({
             success: false,
             error: "Valid courseId is required",
+          });
+        }
+        // Question course ownership is immutable. Reject relocation here so
+        // same-course updates resolve Core access only once; the service keeps
+        // the same invariant for direct callers that bypass this route.
+        if (resolvedCourseId !== Number(req.qmCourse.id)) {
+          return res.status(409).json({
+            success: false,
+            error: 'Question course relocation is not supported',
+            code: 'COURSE_RELOCATION_NOT_ALLOWED',
           });
         }
         updates.courseId = resolvedCourseId;
