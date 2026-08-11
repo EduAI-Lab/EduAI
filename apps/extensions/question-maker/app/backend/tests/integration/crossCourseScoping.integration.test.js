@@ -184,14 +184,14 @@ describeDb("cross-course write scoping (integration, #1)", () => {
   describe("addQuestionToAssessment", () => {
     it("rejects adding a question from another course to this assessment", async () => {
       await expect(
-        addQuestionToAssessment(assessmentA.id, questionB.id, 1, USER.id),
-      ).rejects.toThrow(/Question not found/);
+        addQuestionToAssessment(assessmentA.id, questionB.id, 1, USER.id)
+      ).rejects.toMatchObject({ status: 404, message: 'Question not found' });
     });
 
     it("rejects removing a cross-course question from this assessment", async () => {
       await expect(
-        removeQuestionFromAssessment(assessmentA.id, questionB.id, USER.id),
-      ).rejects.toThrow(/Question not found/);
+        removeQuestionFromAssessment(assessmentA.id, questionB.id, USER.id)
+      ).rejects.toMatchObject({ status: 404, message: 'Question not found' });
     });
 
     it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(

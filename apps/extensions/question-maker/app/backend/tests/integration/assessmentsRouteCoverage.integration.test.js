@@ -205,6 +205,22 @@ describe("POST /api/assessments/:id/questions", () => {
     expect(svc.addQuestionToAssessment).toHaveBeenCalledWith("5", 3, 1, COURSE.userId);
   });
 
+  it('does not expose cross-course question details when the service returns a typed 404', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    svc.addQuestionToAssessment.mockRejectedValue(
+      Object.assign(new Error('Question not found'), { status: 404 }),
+    );
+
+    const res = await request(app)
+      .post('/api/assessments/5/questions')
+      .set('Cookie', 'session=v')
+      .send({ questionId: 3, orderNumber: 1 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, error: 'Not Found' });
+    expect(JSON.stringify(res.body)).not.toContain('Question not found');
+  });
+
   it.each([
     ['zero', 0],
     ['negative', -1],
@@ -236,6 +252,21 @@ describe("DELETE /api/assessments/:id/questions/:questionId", () => {
 
     expect(res.status).toBe(200);
     expect(svc.removeQuestionFromAssessment).toHaveBeenCalledWith("5", "3", COURSE.userId);
+  });
+
+  it('does not expose cross-course question details when the service returns a typed 404', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    svc.removeQuestionFromAssessment.mockRejectedValue(
+      Object.assign(new Error('Question not found'), { status: 404 }),
+    );
+
+    const res = await request(app)
+      .delete('/api/assessments/5/questions/3')
+      .set('Cookie', 'session=v');
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, error: 'Not Found' });
+    expect(JSON.stringify(res.body)).not.toContain('Question not found');
   });
 });
 

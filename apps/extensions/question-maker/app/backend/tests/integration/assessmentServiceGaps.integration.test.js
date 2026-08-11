@@ -273,6 +273,21 @@ describeDb(
       expect(ids).not.toContain(crossCourse.id);
     });
 
+    it('excludes zero and leading-zero legacy questionOrder values', async () => {
+      const assessment = await makeAssessment('Positive order invariant');
+
+      const good = await makeQuestion({ [assessment.id]: 2 });
+      const zero = await makeQuestion({ [assessment.id]: 0 });
+      const zeroPadded = await makeQuestion({ [assessment.id]: '00' });
+      const negative = await makeQuestion({ [assessment.id]: '-1' });
+
+      const result = await getQuestionsInAssessment(assessment.id, USER.id);
+      const ids = result.map((question) => question.id);
+
+      expect(ids).toEqual([good.id]);
+      expect(ids).not.toEqual(expect.arrayContaining([zero.id, zeroPadded.id, negative.id]));
+    });
+
     it('returns an empty array when the assessment has no questions', async () => {
       const assessment = await makeAssessment();
       const result = await getQuestionsInAssessment(assessment.id, USER.id);

@@ -14,6 +14,9 @@ import {
   requirePositiveSafeInteger,
 } from '../utils/questionOrder.js';
 
+/** Keep foreign child-resource writes on the same typed 404 contract as other relation guards. */
+const relationNotFound = (message) => Object.assign(new Error(message), { status: 404 });
+
 /**
  * Overwrites the transitional `semester` column value with the display string
  * derived from the row's (already-enriched) course term/year (#1072 §4 step 8 /
@@ -417,7 +420,7 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
     // The question and assessment must live in the same course — owner scoping alone
     // would let a question from another course the user owns be linked here (#1).
     if (question.courseId !== assessment.courseId) {
-      throw new Error('Question not found');
+      throw relationNotFound('Question not found');
     }
 
     // Update question order
@@ -493,7 +496,7 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
 
     // The question and assessment must live in the same course (#1).
     if (question.courseId !== assessment.courseId) {
-      throw new Error('Question not found');
+      throw relationNotFound('Question not found');
     }
 
     // Remove from question order
@@ -570,9 +573,9 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
       WHERE c.user_id = ${userId}
         AND qm.course_id = ${assessment.courseId}
         AND qm.question_order ->> ${assessmentKey} IS NOT NULL
-        AND qm.question_order ->> ${assessmentKey} ~ '^[0-9]+$'
+        AND qm.question_order ->> ${assessmentKey} ~ '^[1-9][0-9]*$'
       ORDER BY CASE
-        WHEN qm.question_order ->> ${assessmentKey} ~ '^[0-9]+$'
+        WHEN qm.question_order ->> ${assessmentKey} ~ '^[1-9][0-9]*$'
         THEN CAST(qm.question_order ->> ${assessmentKey} AS NUMERIC)
         ELSE NULL
       END ASC, qm.id ASC
