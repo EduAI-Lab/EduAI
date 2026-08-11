@@ -87,6 +87,7 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
@@ -2544,6 +2545,7 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
               priorAssistantText,
               toolsUsed: adhdToolsUsed,
+              onlyDeterministic: isAdhdOversightDeterministicOnly(),
             })
           : emptyOversightAuditResult();
 
