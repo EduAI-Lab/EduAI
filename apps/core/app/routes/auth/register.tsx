@@ -2,14 +2,37 @@ import { Form, Link, useActionData, useLoaderData, redirect } from "react-router
 import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { RegisterForm } from "~/components/register-form";
-import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
-import { signUpSchema, type SignUpInput } from "~/lib/auth";
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
-import { auth } from "~/lib/auth/server";
-import { getPolicy } from "~/lib/policy.server";
-import { getRequestSession } from "~/lib/auth/request-session.server";
+import { RegisterForm } from "~/components/register-form"
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server"
+import { signUpSchema, type SignUpInput } from "~/lib/auth"
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
+import { auth } from "~/lib/auth/server"
+import { getPolicy } from "~/lib/policy.server"
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server"
+import { getRequestSession } from "~/lib/auth/request-session.server"
+
+export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+
+function formBodyErrorResponse(error: unknown): Response | null {
+  if (error instanceof MultipartBodyTooLargeError) {
+    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (error instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -39,12 +62,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const formData = Object.fromEntries(await request.formData());
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
   const input = {
-    name: String(formData.name || ""),
-    email: String(formData.email || ""),
-    password: String(formData.password || ""),
-    confirmPassword: String(formData.confirmPassword || ""),
+    name: String(values.name || ""),
+    email: String(values.email || ""),
+    password: String(values.password || ""),
+    confirmPassword: String(values.confirmPassword || ""),
   };
   const result = signUpSchema.safeParse(input);
   if (!result.success) {
@@ -182,5 +213,5 @@ export default function RegisterPage() {
         University of British Columbia · EduAI Platform
       </p>
     </div>
-  );
+  )
 }

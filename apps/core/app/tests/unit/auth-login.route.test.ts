@@ -85,7 +85,14 @@ describe("auth/login loader", () => {
       redirectTo: "/dashboard",
       allowRegistration: false,
       forceReauth: false,
+      showDemoLogin: false,
     });
+  });
+
+  it("does not expose demo-login behavior when deployment mode is ambiguous", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const result = await loader(makeLoaderArgs());
+    expect(result).toMatchObject({ showDemoLogin: false });
   });
 });
 
@@ -95,6 +102,29 @@ describe("auth/login action", () => {
       fieldErrors?: Record<string, string>;
     };
     expect(result.fieldErrors).toBeTruthy();
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
+  it("returns HTTP 413 for an oversized declared form before auth parsing", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("email=a@ubc.ca"));
+      },
+    });
+    const result = (await action({
+      request: new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": String(64 * 1024 + 1),
+        },
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
     expect(auth.handler).not.toHaveBeenCalled();
   });
 

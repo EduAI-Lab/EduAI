@@ -8,7 +8,8 @@ import {
   prepareStudentIdStorage,
 } from "../app/lib/canvas/student-id.server";
 // Canonical UBC term code + academic-year attribution (source of truth: packages/ui/src/lib/term.ts).
-import { termInfoFromDate, type TermCode } from "@eduai/ui/term";
+import { termInfoFromDate, type TermCode } from '@eduai/ui/term';
+import { assertLocalDemoEnvironment } from '../app/lib/deployment-safety.server';
 
 export const prisma = new PrismaClient();
 
@@ -2187,6 +2188,15 @@ const isMainModule =
   path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
+  try {
+    // This seed creates deterministic privileged accounts with a documented
+    // fixture password. Never permit it in shared/production/ambiguous modes.
+    assertLocalDemoEnvironment();
+  } catch (error) {
+    console.error('Seed refused:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+
   main()
     .then(async () => {
       await prisma.$disconnect();

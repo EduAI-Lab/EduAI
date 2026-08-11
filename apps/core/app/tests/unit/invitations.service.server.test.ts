@@ -6,7 +6,7 @@ import type { Invitation } from "@prisma/client";
 const prismaMock = vi.hoisted(() => {
   const tx = {
     user: { update: vi.fn() },
-    invitation: { update: vi.fn() },
+    invitation: { update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() },
   };
   return {
     invitation: { findUnique: vi.fn(), updateMany: vi.fn() },
@@ -103,15 +103,7 @@ describe("getInvitationByToken", () => {
 });
 
 describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
-  /**
-   * Concurrent accept race (documented, not fully simulated here): acceptInvitation
-   * validates PENDING + expiry once via getInvitationByToken, then sign-up runs
-   * outside a transaction. The final status flip uses `update({ where: { id } })`
-   * without a PENDING guard, so two callers that both pass the initial lookup can
-   * race through sign-up; the second typically dead-ends on USER_EXISTS or a
-   * duplicate-email sign-up failure rather than a second ACCEPTED row.
-   */
-  it("marks ACCEPTED without re-checking PENDING on the final invitation update", async () => {
+  it("consumes with an atomic original-token/PENDING/expiry conditional", async () => {
     prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation());
     prismaMock.user.findUnique
       .mockResolvedValueOnce(null)
@@ -124,7 +116,9 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
       email: "invitee@ubc.ca",
       role: "INSTRUCTOR",
     });
-    prismaMock.__tx.invitation.update.mockResolvedValue({});
+    prismaMock.__tx.invitation.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.__tx.invitation.findUnique.mockResolvedValue(baseInvitation());
+    prismaMock.user.delete.mockResolvedValue({});
 
     const result = await acceptInvitation(
       { token: TOKEN, name: "Invitee", password: "password1", confirmPassword: "password1" },
@@ -132,9 +126,15 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(prismaMock.__tx.invitation.update).toHaveBeenCalledWith({
-      where: { id: "inv1" },
+    expect(prismaMock.__tx.invitation.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "inv1",
+        tokenHash: TOKEN_HASH,
+        status: "PENDING",
+        expiresAt: { gte: expect.any(Date) },
+      },
       data: expect.objectContaining({ status: "ACCEPTED" }),
     });
+    expect(prismaMock.__tx.invitation.update).not.toHaveBeenCalled();
   });
 });

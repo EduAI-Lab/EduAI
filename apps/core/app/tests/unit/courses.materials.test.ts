@@ -46,7 +46,7 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   };
 });
 
-import { loader, action } from "~/routes/api/courses.materials.$";
+import { loader, action, MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/routes/api/courses.materials.$";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
@@ -459,6 +459,37 @@ describe("POST /api/courses/:courseId/materials action", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
     const res = await action(makeArgs("POST"));
     expect(res.status).toBe(401);
+  });
+
+  it("returns HTTP 413 for an oversized declared multipart body before formData parsing", async () => {
+    mockSession("INSTRUCTOR");
+    expect(MATERIAL_UPLOAD_BODY_MAX_BYTES).toBe(52 * 1024 * 1024);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("--boundary\r\n"));
+        controller.close();
+      },
+    });
+    const oversizedRequest = {
+      url: `http://localhost/api/courses/${COURSE_ID}/materials`,
+      method: "POST",
+      headers: new Headers({
+        "Content-Type": "multipart/form-data; boundary=boundary",
+        "Content-Length": String(52 * 1024 * 1024 + 1),
+      }),
+      body,
+      signal: new AbortController().signal,
+    } as unknown as Request;
+    expect(oversizedRequest.headers.get("content-length")).toBe(String(52 * 1024 * 1024 + 1));
+    const res = await action({
+      request: oversizedRequest,
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any);
+    const responseBody = await res.text();
+    expect(responseBody).toContain("PAYLOAD_TOO_LARGE");
+    expect(res.status).toBe(413);
+    expect(processUploadedFile).not.toHaveBeenCalled();
   });
 
   it("returns 404 when course not found", async () => {

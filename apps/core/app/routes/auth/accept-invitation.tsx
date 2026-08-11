@@ -3,12 +3,35 @@ import { IconStack2 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas";
-import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server";
-import { PasswordRequirements } from "~/components/password-requirements";
-import { fireAndForget, logAuditAction } from "~/lib/logging.server";
-import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
+import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
+import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
+import { PasswordRequirements } from "~/components/password-requirements"
+import { fireAndForget, logAuditAction } from "~/lib/logging.server"
+import { getActorContext, getRequestContext } from "~/lib/request-context.server"
+import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server"
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server"
+
+export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+
+function formBodyErrorResponse(error: unknown): Response | null {
+  if (error instanceof MultipartBodyTooLargeError) {
+    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (error instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
@@ -48,12 +71,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
-  const formData = Object.fromEntries(await request.formData());
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
   const input = {
-    token: String(formData.token || ""),
-    name: String(formData.name || ""),
-    password: String(formData.password || ""),
-    confirmPassword: String(formData.confirmPassword || ""),
+    token: String(values.token || ""),
+    name: String(values.name || ""),
+    password: String(values.password || ""),
+    confirmPassword: String(values.confirmPassword || ""),
   };
 
   const parsed = acceptInvitationSchema.safeParse(input);
