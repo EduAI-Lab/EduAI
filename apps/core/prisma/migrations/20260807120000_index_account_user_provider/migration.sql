@@ -1,0 +1,21 @@
+-- #1369: gap-fill the unindexed foreign keys that measured hot against the perf seed.
+-- Core already carries 47 @@index declarations, so this is a targeted fill, not a
+-- blanket add — every index costs write throughput. Candidates that were evaluated and
+-- deliberately left out are documented inline in schema.prisma.
+--
+-- One CREATE INDEX per migration, on purpose. Prisma does not emit BEGIN/COMMIT, but it
+-- wraps a migration in a transaction as soon as the file holds more than one statement,
+-- and CONCURRENTLY cannot run inside a transaction block. Splitting the three indexes
+-- across three migrations keeps each file single-statement, so each one runs unwrapped
+-- and CONCURRENTLY is legal. Keep it that way — adding a second statement to any of
+-- these files silently reintroduces the transaction and breaks deploy.
+--
+-- CONCURRENTLY builds without taking a write lock, so sign-ins, session refreshes and
+-- course writes keep flowing during deploy. The tradeoff: a CONCURRENTLY build that
+-- fails leaves an INVALID index behind and marks the migration failed. Recovery is
+-- DROP INDEX IF EXISTS on the name below, then prisma migrate resolve --rolled-back
+-- followed by a re-run. IF NOT EXISTS makes a re-run safe after a manual build.
+--
+-- account — getPasswordChangedAt() filters { userId, providerId: 'credential' } on every
+-- authenticated render, and the existing unique leads with providerId so it cannot serve it.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "account_userId_providerId_idx" ON "account"("userId", "providerId");

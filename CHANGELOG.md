@@ -98,6 +98,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] perf: Index the three measured-hot unindexed foreign keys that back a real query (`account(userId, providerId)`, `session.userId`, `courses.department`), parallelize the root loader's password-expiry and preference lookups, and narrow `getCourseEnrollments` to an explicit `select`. Closes #1369. (@abdullahmoh21, 2026-08-07) — [#1425](https://github.com/EduAI-Lab/EduAI/pull/1425)
 - [question-maker] perf: Index the 13 foreign keys that had no usable index, turning the seq scans behind variant, question, and assessment-section lookups into index scans (up to 1461x on `variants.question_metadata_id`). Closes #1368. (@abdullahmoh21, 2026-08-07) — [#1426](https://github.com/EduAI-Lab/EduAI/pull/1426)
 - [question-maker] perf: Mirror per-user Core enrollment access locally and apply course visibility in SQL, so course-list totals use `COUNT` and page windows use database `skip`/`take` with stable ordering; refresh the access snapshot once per TTL to avoid refetching the full catalog on every page. Closes #1206. (@saad, 2026-08-06) — [#1410](https://github.com/EduAI-Lab/EduAI/pull/1410)
 
@@ -109,6 +110,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Add `root-loader-parallel.test.ts` (holds the expiry check open to prove the preference query is already in flight, so a re-serialization fails deterministically) and extend `enrollments.server.test.ts` with query-shape assertions for both enrollment readers, covering the cursor and no-cursor branches. Closes #1369. (@abdullahmoh21, 2026-08-07) — [#1425](https://github.com/EduAI-Lab/EduAI/pull/1425)
 - [core] tests: Cover image inputs after image-rule retirement across kNN, hybrid, and LLM classifier routing modes. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
 - [core] test: Add `routing-rules-fp-guardrail.test.ts` — asserts realistic easy/topic-adjacent homework prompts do not escalate under the broadened rules, plus two abstract-question regression tests for a false-positive caught during dev-split re-evaluation. (@superbolt08, 2026-08-05) — [#1394](https://github.com/EduAI-Lab/EduAI/pull/1394)
 - [core] test: Add `chat-rag-context-token-estimate.test.ts` — covers `ragContextTokenEstimateForCourseRagHits` (zero hits, multi-hit summation with per-hit ceiling, threshold-shape check against rule5's `>2000` tokens / `>=4` chunks expectation). (@superbolt08, 2026-08-05) — [#1396](https://github.com/EduAI-Lab/EduAI/pull/1396)
