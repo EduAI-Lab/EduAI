@@ -36,6 +36,14 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
+  // seedPasswords -> student-id.server.ts's encrypted student-number storage
+  // requires ENCRYPTION_KEY, which the E2E docker stack doesn't set (it's only
+  // ever needed by the Canvas student-ID feature, never exercised by an E2E
+  // spec before this hook). Fall back to a fixed test key rather than adding
+  // it to docker-compose.e2e.yml, which affects every PR's CI run — this
+  // route is already unreachable outside NODE_ENV=test + E2E_SEED_SECRET.
+  process.env.ENCRYPTION_KEY ??= "e2e-test-encryption-key-not-for-production";
+
   try {
     await runSeed();
   } catch (e) {
