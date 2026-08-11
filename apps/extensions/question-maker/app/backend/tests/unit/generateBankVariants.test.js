@@ -17,7 +17,7 @@ const {
   mockGenerateQuestions,
   mockCourseFindOne,
   mockTopicsFindAll,
-  mockMetaFindOne,
+  mockMetaFindMany,
   mockVariantCreate,
   mockVariantUpdate,
 } = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ const {
   mockGenerateQuestions: vi.fn(),
   mockCourseFindOne: vi.fn(),
   mockTopicsFindAll: vi.fn().mockResolvedValue([]),
-  mockMetaFindOne: vi.fn(),
+  mockMetaFindMany: vi.fn(),
   mockVariantCreate: vi.fn(),
   mockVariantUpdate: vi.fn().mockResolvedValue(undefined),
 }));
@@ -65,7 +65,9 @@ vi.mock('../../src/config/database.js', () => ({
   prisma: {
     course: { findFirst: mockCourseFindOne },
     topics: { findMany: mockTopicsFindAll },
-    questionMetadata: { findFirst: mockMetaFindOne },
+    // The service prefetches every requested question in one batched read, so the
+    // mock resolves an array of the metadata rows visible for that course.
+    questionMetadata: { findMany: mockMetaFindMany },
     variants: { create: mockVariantCreate, update: mockVariantUpdate },
   },
 }));
@@ -80,8 +82,8 @@ const USER_ID = 'cuid-user-1';
 const COURSE = { id: 1, code: 'CS 101', name: 'Intro to CS' };
 const BASE_PARAMS = { courseId: 1, questionIds: [10], variantsToAdd: 1 };
 
-function makeMeta({ type = 'SA', variants = [] } = {}) {
-  return { id: 10, type, courseId: 1, variants };
+function makeMeta({ id = 10, type = 'SA', variants = [] } = {}) {
+  return { id, type, courseId: 1, variants };
 }
 
 function makePrimaryVariant(overrides = {}) {
@@ -148,7 +150,9 @@ describe('generateBankVariantsForQuestions — validation guards', () => {
 
 describe('generateBankVariantsForQuestions — per-question orchestration', () => {
   it('records an error (does not throw) when a question is not found in the DB', async () => {
-    mockMetaFindOne.mockResolvedValueOnce(null);
+    // The batched read returns no row for the id, i.e. it does not exist or is not
+    // visible for this course.
+    mockMetaFindMany.mockResolvedValueOnce([]);
 
     const { results, errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
@@ -158,7 +162,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
   });
 
   it('records an error when a question has no variants in the DB', async () => {
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [] })]);
 
     const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
@@ -168,7 +172,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
   it('promotes the first (primary) variant to isDraft=false before calling AI', async () => {
     const primary = makePrimaryVariant();
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -178,7 +182,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
   it('calls generateQuestions once per variantsToAdd iteration', async () => {
     const primary = makePrimaryVariant();
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions
       .mockResolvedValueOnce(makeGeneratedQuestion())
       .mockResolvedValueOnce(makeGeneratedQuestion());
@@ -190,7 +194,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
   it('creates a variant with isAiGenerated=true and isDraft=true (draft pending review)', async () => {
     const primary = makePrimaryVariant();
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -202,7 +206,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
   it('returns full createdVariants payloads for in-place review', async () => {
     const primary = makePrimaryVariant();
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     const { results } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -214,7 +218,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
   it('sets referenceId to the primary variant id on the created variant', async () => {
     const primary = makePrimaryVariant({ id: 777 });
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -225,10 +229,10 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
   });
 
   it('continues processing remaining questions after one fails — does not abort the batch', async () => {
-    // qid 10 → not found (error); qid 20 → found (result)
-    mockMetaFindOne
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(makeMeta({ variants: [makePrimaryVariant()] }));
+    // qid 10 → absent from the batched read (error); qid 20 → present (result)
+    mockMetaFindMany.mockResolvedValueOnce([
+      makeMeta({ id: 20, variants: [makePrimaryVariant()] })
+    ]);
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
 
     const { results, errors } = await generateBankVariantsForQuestions(USER_ID, {
@@ -261,7 +265,7 @@ describe('generateBankVariantsForQuestions — MCQ choice-count retry', () => {
       difficulty: 'easy',
       reasoningLevel: 'factual'
     });
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ type: 'MCQ', variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ type: 'MCQ', variants: [primary] })]);
 
     // First call returns only 1 choice (wrong count) → retry
     mockGenerateQuestions
@@ -293,7 +297,7 @@ describe('generateBankVariantsForQuestions — MCQ choice-count retry', () => {
       { letter: 'C', text: 'Three' }
     ];
     const primary = makePrimaryVariant({ choices });
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ type: 'MCQ', variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ type: 'MCQ', variants: [primary] })]);
 
     const wrongCount = [{ content: 'X', difficulty: 'medium', reasoning_level: 'factual', answer: 'A', choices: [{ letter: 'A', text: 'Only' }] }];
     mockGenerateQuestions.mockResolvedValue(wrongCount);
@@ -306,7 +310,7 @@ describe('generateBankVariantsForQuestions — MCQ choice-count retry', () => {
 
   it('records an error (not a throw) when the AI returns no content', async () => {
     const primary = makePrimaryVariant();
-    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
     mockGenerateQuestions.mockResolvedValueOnce([{ content: null }]);
 
     const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);

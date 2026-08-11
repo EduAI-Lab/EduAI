@@ -163,6 +163,25 @@ describeDb('assessmentSectionService (integration)', () => {
       const reloadedV = await prisma.variants.findUnique({ where: { id: v.id } });
       expect(reloadedV.assessmentId).toBeNull();
     });
+
+    it('keeps the assessment link on a variant still placed in another section of the same assessment', async () => {
+      const doomed = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'Doomed' });
+      const survivor = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'Survivor' });
+
+      // `shared` sits in both sections, `only` sits in the deleted one alone.
+      const shared = await makeVariant('Shared?');
+      const only = await makeVariant('Only?');
+      await svc.addVariantToSection(doomed.id, USER.id, shared.id);
+      await svc.addVariantToSection(survivor.id, USER.id, shared.id);
+      await svc.addVariantToSection(doomed.id, USER.id, only.id);
+
+      await svc.deleteAssessmentSection(doomed.id, USER.id);
+
+      const reloadedShared = await prisma.variants.findUnique({ where: { id: shared.id } });
+      const reloadedOnly = await prisma.variants.findUnique({ where: { id: only.id } });
+      expect(reloadedShared.assessmentId).toBe(assessmentId);
+      expect(reloadedOnly.assessmentId).toBeNull();
+    });
   });
 
   describe('checkQuestionInAssessments / removeQuestionFromAllSections', () => {

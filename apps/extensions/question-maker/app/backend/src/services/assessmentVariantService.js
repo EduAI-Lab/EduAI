@@ -45,32 +45,55 @@ export async function getBaselineVariantReadiness(userId, { assessmentId, course
   }
 
   const orderedVariants = await loadOrderedVariantsForAssessment(assessment.id);
-  const seenMeta = new Set();
-  const slots = [];
 
+  // Dedupe to one entry per question metadata id, preserving placement order.
+  const seenMeta = new Set();
+  const orderedMeta = [];
   for (const v of orderedVariants) {
     const mid = v.questionMetadata?.id;
     if (mid == null || seenMeta.has(mid)) continue;
     seenMeta.add(mid);
+    orderedMeta.push(v.questionMetadata);
+  }
 
-    const metaRow = await prisma.questionMetadata.findFirst({
-      where: { id: mid, courseId: Number(courseId) },
+  const slots = [];
+
+  if (orderedMeta.length > 0) {
+    const metaIds = orderedMeta.map((m) => m.id);
+
+    // `loadOrderedVariantsForAssessment` does not select `courseId`, so this is the
+    // course-scope authorization check, not a convenience filter — ids outside the
+    // requested course must stay out of the response.
+    const authorized = await prisma.questionMetadata.findMany({
+      where: { id: { in: metaIds }, courseId: Number(courseId) },
       select: { id: true }
     });
-    if (!metaRow) continue;
+    const authorizedIds = new Set(authorized.map((m) => m.id));
 
-    const nonDraftVariantCount = await prisma.variants.count({
-      where: { questionMetadataId: mid, isDraft: false }
-    });
+    // Counted over the authorized ids only. groupBy omits zero-row groups, hence the
+    // `?? 0` below — a question with no non-draft variants still belongs in `slots`.
+    const counts = authorizedIds.size
+      ? await prisma.variants.groupBy({
+          by: ['questionMetadataId'],
+          where: { questionMetadataId: { in: [...authorizedIds] }, isDraft: false },
+          _count: { _all: true }
+        })
+      : [];
+    const countByMeta = new Map(counts.map((c) => [c.questionMetadataId, c._count._all]));
 
-    slots.push({
-      order: slots.length + 1,
-      questionMetadataId: mid,
-      description: v.questionMetadata?.description ?? null,
-      questionType: v.questionMetadata?.type ?? null,
-      nonDraftVariantCount,
-      ready: nonDraftVariantCount >= MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW
-    });
+    for (const meta of orderedMeta) {
+      if (!authorizedIds.has(meta.id)) continue;
+
+      const nonDraftVariantCount = countByMeta.get(meta.id) ?? 0;
+      slots.push({
+        order: slots.length + 1,
+        questionMetadataId: meta.id,
+        description: meta.description ?? null,
+        questionType: meta.type ?? null,
+        nonDraftVariantCount,
+        ready: nonDraftVariantCount >= MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW
+      });
+    }
   }
 
   return {
@@ -651,13 +674,22 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const results = [];
   const errors = [];
 
+  // Prefetched once for the whole batch. Safe despite the writes below: each iteration
+  // reads only its own question's `type` and lowest-id variant, writes only that same
+  // question's rows, and newly created variants take higher ids, so no iteration can
+  // invalidate the snapshot another iteration reads. `courseId` keeps the authorization
+  // scope the per-question lookup had — unauthorized ids simply miss the map and fall
+  // into `errors` exactly as before.
+  const metas = await prisma.questionMetadata.findMany({
+    where: { id: { in: questionIds.map(Number) }, courseId: course.id },
+    include: {
+      variants: { orderBy: { id: 'asc' } }
+    }
+  });
+  const metaById = new Map(metas.map((m) => [m.id, m]));
+
   for (const qid of questionIds) {
-    const meta = await prisma.questionMetadata.findFirst({
-      where: { id: qid, courseId: course.id },
-      include: {
-        variants: { orderBy: { id: 'asc' } }
-      }
-    });
+    const meta = metaById.get(Number(qid));
 
     if (!meta || !meta.variants?.length) {
       errors.push({ questionId: qid, error: 'Question not found or has no variants' });

@@ -261,6 +261,58 @@ describeDb('assessmentVariantService (integration)', () => {
       expect(result.allReady).toBe(false);
     });
 
+    it('keeps a slot whose variants are all drafts, reporting a count of 0', async () => {
+      const assessment = await makeAssessment();
+      const section = await prisma.assessmentSections.create({
+        data: { assessmentId: assessment.id, name: 'Main', position: 0 }
+      });
+      const meta = await makeQuestion();
+      const draft = await makeVariant(meta.id, { isDraft: true });
+      await prisma.sectionVariants.create({
+        data: { sectionId: section.id, variantId: draft.id, displayOrder: 0 }
+      });
+
+      const result = await getBaselineVariantReadiness(USER.id, { assessmentId: assessment.id, courseId });
+
+      // The grouped count omits questions with no non-draft variants, so the slot must
+      // still be reported with an explicit 0 rather than dropping out of the response.
+      expect(result.slots).toHaveLength(1);
+      expect(result.slots[0].questionMetadataId).toBe(meta.id);
+      expect(result.slots[0].nonDraftVariantCount).toBe(0);
+      expect(result.slots[0].ready).toBe(false);
+      expect(result.allReady).toBe(false);
+    });
+
+    it('excludes a placed question that belongs to a different course', async () => {
+      const assessment = await makeAssessment();
+      const section = await prisma.assessmentSections.create({
+        data: { assessmentId: assessment.id, name: 'Main', position: 0 }
+      });
+
+      const mine = await makeQuestion();
+      const v1 = await makeVariant(mine.id, { isDraft: false });
+      await prisma.sectionVariants.create({
+        data: { sectionId: section.id, variantId: v1.id, displayOrder: 0 }
+      });
+
+      // Same owner, different course — the course scope is an authorization boundary,
+      // so this question must not surface in the readiness response.
+      const otherCourse = await prisma.course.create({ data: { userId: USER.id } });
+      const otherTopic = await prisma.topics.findFirst({ where: { courseId } });
+      const foreignMeta = await prisma.questionMetadata.create({
+        data: { courseId: otherCourse.id, primaryTopicId: otherTopic.id, type: 'SA', questionOrder: {} }
+      });
+      const v2 = await makeVariant(foreignMeta.id, { isDraft: false });
+      await prisma.sectionVariants.create({
+        data: { sectionId: section.id, variantId: v2.id, displayOrder: 1 }
+      });
+
+      const result = await getBaselineVariantReadiness(USER.id, { assessmentId: assessment.id, courseId });
+
+      expect(result.slots.map((s) => s.questionMetadataId)).toEqual([mine.id]);
+      expect(result.slots[0].order).toBe(1);
+    });
+
     it('includes minRequiredNonDraft in the response', async () => {
       const { assessment } = await buildReferenceWithVariants(1, 2);
       const result = await getBaselineVariantReadiness(USER.id, { assessmentId: assessment.id, courseId });

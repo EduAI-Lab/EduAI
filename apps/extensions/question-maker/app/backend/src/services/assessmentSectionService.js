@@ -136,19 +136,26 @@ export const deleteAssessmentSection = async (sectionId, userId, courseId = null
   // Delete the section (this will cascade delete SectionVariants)
   await prisma.assessmentSections.delete({ where: { id: section.id } });
 
-  // For each variant, check if it's still in any other sections of the same assessment
-  for (const variantId of variantIds) {
-    const otherSectionsCount = await prisma.sectionVariants.count({
-      where: { variantId, section: { assessmentId } }
-    });
+  if (variantIds.length === 0) return true;
 
-    // If variant is not in any other sections of this assessment, clear the assessmentId
-    if (otherSectionsCount === 0) {
-      const variant = await prisma.variants.findUnique({ where: { id: variantId } });
-      if (variant && variant.assessmentId === assessmentId) {
-        await prisma.variants.update({ where: { id: variantId }, data: { assessmentId: null } });
-      }
-    }
+  // Which of those variants are still placed in another section of the same assessment?
+  // This runs after the delete above, so the cascaded rows are already gone and the
+  // grouping only sees surviving links. groupBy omits empty groups, so a variant absent
+  // from the result is exactly one whose remaining link count is zero.
+  const stillLinked = await prisma.sectionVariants.groupBy({
+    by: ['variantId'],
+    where: { variantId: { in: variantIds }, section: { assessmentId } }
+  });
+  const linkedIds = new Set(stillLinked.map(row => row.variantId));
+  const orphanedIds = variantIds.filter(id => !linkedIds.has(id));
+
+  // Clear the assessment link on the orphans. The `assessmentId` predicate carries the
+  // per-variant guard the old read performed, so no lookup is needed.
+  if (orphanedIds.length > 0) {
+    await prisma.variants.updateMany({
+      where: { id: { in: orphanedIds }, assessmentId },
+      data: { assessmentId: null }
+    });
   }
 
   return true;
