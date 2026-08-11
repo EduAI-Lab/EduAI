@@ -29,7 +29,12 @@ import {
   addQuestionToBank,
   removeQuestionFromBank,
   ensureDefaultBank,
-} from "../services/questionBankService.js";
+} from '../services/questionBankService.js';
+import {
+  safeRequestLogFields,
+  safeStatusCode,
+  toStableUpstreamError,
+} from '../utils/safeLogging.js';
 
 const router = express.Router();
 
@@ -38,6 +43,27 @@ const courseIdFromParam = (req) => req.params.id;
 
 /** Active Core enrollment roles that may materialize a QM course anchor (#1114). */
 const TEACHING_ENROLLMENT_ROLES = new Set(["INSTRUCTOR", "TA"]);
+
+const PUBLIC_CORE_ERROR_RE = /^CORE_[A-Z0-9_]{1,63}$/;
+
+/** Converts a Core failure into stable response text and allowlisted log metadata. */
+function stableCoreFailure(error, fallbackMessage) {
+  const statusCode = safeStatusCode(error);
+  const status = statusCode !== null && statusCode >= 400 ? statusCode : 502;
+  const publicCode =
+    error?.isPublic === true &&
+    typeof error?.code === 'string' &&
+    PUBLIC_CORE_ERROR_RE.test(error.code)
+      ? error.code
+      : null;
+  const stable = toStableUpstreamError(error, { serviceName: 'Core API' });
+
+  return {
+    status,
+    message: publicCode || stable.message || fallbackMessage,
+    logFields: safeRequestLogFields(error),
+  };
+}
 
 // The Core course mirror (`importTaughtCoursesFromCore`) is a background side
 // effect, not a dependency of the list response: it fetches Core's cookie-
@@ -95,10 +121,11 @@ router.post("/", authenticateToken, requireRole(INSTRUCTORS), async (req, res, n
     try {
       linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
     } catch (err) {
-      const status = Number.isInteger(err?.status) ? err.status : 502;
-      return res.status(status).json({
+      const failure = stableCoreFailure(err, 'Failed to verify Core course access');
+      logger.warn(failure.logFields, 'Core course access check failed');
+      return res.status(failure.status).json({
         success: false,
-        error: err.message || "Failed to verify Core course access",
+        error: failure.message,
       });
     }
 
@@ -465,33 +492,13 @@ router.patch(
   requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
-      const { coreCourseId } = req.body;
-
-      if (!coreCourseId || typeof coreCourseId !== "string") {
-        return res.status(400).json({ success: false, error: "coreCourseId is required" });
-      }
-
-      const course = req.qmCourse;
-
-      const cookie = req.headers.cookie ?? "";
-      let linkable = false;
-      try {
-        linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
-      } catch (err) {
-        const status = Number.isInteger(err?.status) ? err.status : 502;
-        return res.status(status).json({
-          success: false,
-          error: err.message || "Failed to verify Core course access",
-        });
-      }
-
-      if (!linkable) {
-        return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
-      }
-
-      const updatedCourse = await prisma.course.update({
-        where: { id: course.id },
-        data: { coreCourseId },
+      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+    } catch (err) {
+      const failure = stableCoreFailure(err, 'Failed to verify Core course access');
+      logger.warn(failure.logFields, 'Core course access check failed');
+      return res.status(failure.status).json({
+        success: false,
+        error: failure.message,
       });
 
       res.json({
@@ -511,7 +518,15 @@ router.post(
   requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
-      const course = req.qmCourse;
+      synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
+    } catch (err) {
+      const failure = stableCoreFailure(err, 'Core request failed');
+      logger.warn(failure.logFields, 'Core topic sync failed');
+      return res.status(failure.status).json({
+        success: false,
+        error: failure.message,
+      });
+    }
 
       const cookie = req.headers.cookie ?? "";
       if (!course.coreCourseId) {
