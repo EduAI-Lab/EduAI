@@ -264,19 +264,14 @@ model AIInteraction {
   /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed or pre-tracking. */
   serverId         String?
   /**
-   * Owning chat, when this turn came from the interactive /chat UI. Null for
-   * async Question Maker/background completions (AiJob) and pre-tracking
-   * rows, which have no Chat at all — required for distinct-chat-count
-   * reporting on the admin Servers tab (#1351). SetNull (not Cascade) so
-   * deleting a chat doesn't delete its telemetry/cost/energy history — this
-   * table is a durable metrics trail independent of chat lifecycle, same
-   * intent as AssistiveEvent.chatId.
+   * Durable correlation id for metrics. Null for async Question Maker /
+   * background completions and pre-tracking rows. This is intentionally not a
+   * relation to Chat, so deleting a chat cannot rewrite historical metrics.
    */
   chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
-  chat             Chat?                    @relation(fields: [chatId], references: [id], onDelete: SetNull)
 
   @@index([serverId])
   @@index([chatId])
@@ -583,7 +578,6 @@ model Chat {
   course          Course?          @relation("CourseChats", fields: [courseId], references: [id], onDelete: SetNull)
   messages        ChatMessage[]
   assistiveEvents AssistiveEvent[]
-  aiInteractions  AIInteraction[]
 
   @@index([userId])
   @@index([courseId, updatedAt])

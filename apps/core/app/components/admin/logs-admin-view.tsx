@@ -161,11 +161,17 @@ function buildQueryString(
  * the admin returns to Servers.
  */
 export function buildLogsTabLinks(query: LogsQueryState) {
-  const leaveServers = { page: 1, datePreset: undefined, dateFrom: undefined, dateTo: undefined };
+  // Only discard the materialized rolling range when the current tab is
+  // Servers. Audit/Security/System share the ordinary date range, so moving
+  // between those tabs must preserve dateFrom/dateTo instead of resetting it.
+  const leavingServers = query.tab === "servers";
+  const tabSwitchOverrides = leavingServers
+    ? { page: 1, datePreset: undefined, dateFrom: undefined, dateTo: undefined }
+    : { page: 1 };
   return {
-    audit: buildQueryString(query, { tab: "audit", ...leaveServers }),
-    security: buildQueryString(query, { tab: "security", ...leaveServers }),
-    system: buildQueryString(query, { tab: "system", ...leaveServers }),
+    audit: buildQueryString(query, { tab: "audit", ...tabSwitchOverrides }),
+    security: buildQueryString(query, { tab: "security", ...tabSwitchOverrides }),
+    system: buildQueryString(query, { tab: "system", ...tabSwitchOverrides }),
     servers: buildQueryString(query, { tab: "servers", page: 1 }),
   };
 }
