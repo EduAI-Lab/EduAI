@@ -98,6 +98,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] perf: Index the three measured-hot unindexed foreign keys that back a real query (`account(userId, providerId)`, `session.userId`, `courses.department`), parallelize the root loader's password-expiry and preference lookups, and narrow `getCourseEnrollments` to an explicit `select`. Closes #1369. (@abdullahmoh21, 2026-08-07) — [#1425](https://github.com/EduAI-Lab/EduAI/pull/1425)
+- [question-maker] perf: Index the 13 foreign keys that had no usable index, turning the seq scans behind variant, question, and assessment-section lookups into index scans (up to 1461x on `variants.question_metadata_id`). Closes #1368. (@abdullahmoh21, 2026-08-07) — [#1426](https://github.com/EduAI-Lab/EduAI/pull/1426)
 - [question-maker] perf: Mirror per-user Core enrollment access locally and apply course visibility in SQL, so course-list totals use `COUNT` and page windows use database `skip`/`take` with stable ordering; refresh the access snapshot once per TTL to avoid refetching the full catalog on every page. Closes #1206. (@saad, 2026-08-06) — [#1410](https://github.com/EduAI-Lab/EduAI/pull/1410)
 
 - [ai-tutor] perf: Hoist the per-pair topic lookups in `POST /courses/:courseId/topics/remap` into one course-scoped `findMany`, and batch the `ActivitySecondaryTopic` reads whenever the mapping pairs don't observe each other's writes, cutting a caller-sized bulk remap from roughly 8N queries to 3 + 4N without changing any response. Closes #1372. (@abdullahmoh21, 2026-08-07) — [#1427](https://github.com/EduAI-Lab/EduAI/pull/1427)
@@ -108,6 +110,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Add `root-loader-parallel.test.ts` (holds the expiry check open to prove the preference query is already in flight, so a re-serialization fails deterministically) and extend `enrollments.server.test.ts` with query-shape assertions for both enrollment readers, covering the cursor and no-cursor branches. Closes #1369. (@abdullahmoh21, 2026-08-07) — [#1425](https://github.com/EduAI-Lab/EduAI/pull/1425)
 - [core] tests: Cover image inputs after image-rule retirement across kNN, hybrid, and LLM classifier routing modes. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
 - [core] test: Add `routing-rules-fp-guardrail.test.ts` — asserts realistic easy/topic-adjacent homework prompts do not escalate under the broadened rules, plus two abstract-question regression tests for a false-positive caught during dev-split re-evaluation. (@superbolt08, 2026-08-05) — [#1394](https://github.com/EduAI-Lab/EduAI/pull/1394)
 - [core] test: Add `chat-rag-context-token-estimate.test.ts` — covers `ragContextTokenEstimateForCourseRagHits` (zero hits, multi-hit summation with per-hit ceiling, threshold-shape check against rule5's `>2000` tokens / `>=4` chunks expectation). (@superbolt08, 2026-08-05) — [#1396](https://github.com/EduAI-Lab/EduAI/pull/1396)
@@ -133,6 +136,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] test: `security-headers.test.ts` now asserts the HTML CSP allows no third-party font origins and additionally that `fonts.googleapis.com` / `fonts.gstatic.com` stay absent, so re-adding a Google Fonts `<link>` cannot quietly reintroduce the origins. (@yta3216, 2026-08-05)
 - [packages/ui] test: New `self-hosted-font.test.ts` pins the #1221 contract — `base.css` imports `@fontsource-variable/outfit`, all three `--font-sans` declarations name the `"Outfit Variable"` family (dropping `Variable` leaves valid CSS that silently falls through to the system sans), and none of the three app document heads reference a Google Fonts origin. The deleted `<link>` blocks were identical across the apps, so a merge can resurrect one of them alone without anything visibly breaking. (@yta3216, 2026-08-05)
 ## [Week 13 — July 27 – August 2, 2026]
+
+### Fixed
+
+- [infra/core] fix: Reject example LiteLLM / cmps01 secrets at deploy — `deploy-edge-proxy.sh` exits before starting services when `CMPS01_INTERNAL_KEY` is unset, empty, too short, or a known placeholder (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`), matched case-insensitively so a capitalized copy of the same value isn't a bypass. LiteLLM `master_key` and health-check bearers use the same secret. `resolveVllmApiKey()` no longer falls back to `vllm-local` once a deployment explicitly points at a real vLLM host — `NODE_ENV=production`, or `VLLM_BASE_URL` set — rather than gating on `NODE_ENV` alone, since s378 intentionally runs `NODE_ENV=development` (`docs/DEPLOYMENT.md`) but sets `VLLM_BASE_URL` to point at cmps01, and that's the one deployment this guard exists to protect. Breaking change for the existing cmps01/s378 deployment: once this lands, both `CMPS01_INTERNAL_KEY` on cmps01 and `VLLM_API_KEY` on Core's production `.env` must be a real generated secret (`openssl rand -hex 32`) — the old `vllm-local` value now hard-fails instead of silently working. (#1115, @Ayyhab, 2026-07-29) — [#1268](https://github.com/EduAI-Lab/EduAI/pull/1268)
 
 ### Added
 
