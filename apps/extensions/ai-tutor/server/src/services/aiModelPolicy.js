@@ -33,8 +33,9 @@
  * Related: `aiGuidance.js`, `eduaiClient.js`, `systemSettings.js`.
  */
 
-import { listEduAiModels } from "./eduaiClient.js";
-import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from "./systemSettings.js";
+import { listEduAiModels } from './eduaiClient.js';
+import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from './systemSettings.js';
+import { logSafeError } from '../utils/safeErrors.js';
 
 export const DEFAULT_TUTOR_MODEL = "google:gemini-2.5-flash";
 export const DEFAULT_MAX_SUPERVISOR_ITERATIONS = 3;
@@ -213,7 +214,7 @@ export async function getStoredAiModelPolicy() {
   try {
     return normalizeStoredAiModelPolicy(JSON.parse(stored.value));
   } catch (error) {
-    console.error("Failed to parse stored AI model policy:", error);
+    logSafeError('Failed to parse stored AI model policy', error);
     return normalizeStoredAiModelPolicy();
   }
 }
@@ -244,11 +245,11 @@ export async function getAiModelPolicyState() {
       availableModelsError: null,
     };
   } catch (error) {
-    console.error("Failed to load AI model catalog:", error);
+    logSafeError('Failed to load AI model catalog', error);
     return {
       policy: resolveAiModelPolicy(storedPolicy, []),
       availableModels: [],
-      availableModelsError: String(error),
+      availableModelsError: 'AI model catalog unavailable',
     };
   }
 }

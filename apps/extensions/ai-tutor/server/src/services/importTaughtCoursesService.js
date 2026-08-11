@@ -11,10 +11,11 @@
  * copied here, and `reconcileOfferingFromCore` is gone entirely — there is
  * nothing left to reconcile once the row holds no Core-owned data.
  */
-import { prisma } from "../config/database.js";
-import { listEduAiCourses } from "./eduaiClient.js";
-import { syncExternalCourseTopics } from "./topicSync.js";
-import { syncCourseEnrollments } from "./enrollmentSync.js";
+import { prisma } from '../config/database.js';
+import { listEduAiCourses } from './eduaiClient.js';
+import { syncExternalCourseTopics } from './topicSync.js';
+import { syncCourseEnrollments } from './enrollmentSync.js';
+import { logSafeError } from '../utils/safeErrors.js';
 
 const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR"]);
 const AUTO_ENROLL_ROLES = new Set(["STUDENT", "TA"]);
@@ -143,11 +144,11 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
     syncCourseEnrollments(created.id),
   ]);
 
-  if (topicResult.status === "rejected") {
-    console.error("[eduai] Failed to sync topics for auto-imported course", topicResult.reason);
+  if (topicResult.status === 'rejected') {
+    logSafeError('[eduai] Failed to sync topics for auto-imported course', topicResult.reason);
   }
   if (enrollmentResult.status === 'rejected') {
-    console.error(
+    logSafeError(
       '[eduai] Failed to sync enrollments for auto-imported course',
       enrollmentResult.reason,
     );
@@ -176,8 +177,8 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
       // #1041: import reconciles against every course the caller can see.
       coreCourses = await listEduAiCourses({ cookie, all: true });
     } catch (err) {
-      console.error("[eduai] Auto-import skipped: could not list Core courses", err);
-      return { imported: 0, skipped: 0, error: err.message };
+      logSafeError('[eduai] Auto-import skipped: could not list Core courses', err);
+      return { imported: 0, skipped: 0, error: 'Core course listing unavailable' };
     }
   }
 
@@ -223,7 +224,7 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
         skipped++;
       }
     } catch (err) {
-      console.error("[eduai] Auto-import failed for Core course", coreCourse.id, err);
+      logSafeError('[eduai] Auto-import failed for Core course', err);
       skipped++;
     }
   }
@@ -248,15 +249,11 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
       syncCourseEnrollments(offering.id, { course: offering }),
     ]);
 
-    if (topicResult.status === "rejected") {
-      console.error("[eduai] Topic sync failed for course", offering.id, topicResult.reason);
+    if (topicResult.status === 'rejected') {
+      logSafeError('[eduai] Topic sync failed for course', topicResult.reason);
     }
     if (enrollmentResult.status === 'rejected') {
-      console.error(
-        '[eduai] Enrollment sync failed for course',
-        offering.id,
-        enrollmentResult.reason,
-      );
+      logSafeError('[eduai] Enrollment sync failed for course', enrollmentResult.reason);
     }
     if (topicResult.status === "fulfilled" || enrollmentResult.status === "fulfilled") {
       synced++;
@@ -285,8 +282,13 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
       // #1041: import reconciles against every course the caller can see.
       coreCourses = await listEduAiCourses({ cookie, all: true });
     } catch (err) {
-      console.error("[eduai] Student enrollment mirror skipped: could not list Core courses", err);
-      return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
+      logSafeError('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
+      return {
+        enrolled: 0,
+        skipped: 0,
+        removed: 0,
+        error: 'Core enrollment listing unavailable',
+      };
     }
   }
 
@@ -323,7 +325,7 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
       });
       enrolled++;
     } catch (err) {
-      console.error("[eduai] TA enrollment mirror failed for Core course", coreCourse.id, err);
+      logSafeError('[eduai] TA enrollment mirror failed for Core course', err);
       skipped++;
     }
   }
@@ -347,7 +349,7 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
       });
       enrolled++;
     } catch (err) {
-      console.error("[eduai] Student enrollment mirror failed for Core course", coreCourse.id, err);
+      logSafeError('[eduai] Student enrollment mirror failed for Core course', err);
       skipped++;
     }
   }
@@ -454,10 +456,10 @@ export function runCoreMirror(authUser, cookie, sharedOptions = {}) {
   // work; running them in parallel is safe.
   void Promise.allSettled([
     importTaughtCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
-      console.error("[eduai] Auto-import taught courses failed", err),
+      logSafeError('[eduai] Auto-import taught courses failed', err),
     ),
     importEnrolledCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
-      console.error("[eduai] Student enrollment mirror failed", err),
+      logSafeError('[eduai] Student enrollment mirror failed', err),
     ),
   ]);
 }

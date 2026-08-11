@@ -6,7 +6,7 @@
  * (network/5xx failures degrade to empty/null + `coreUnavailable: true`,
  * never a thrown error) and the #819 isPublished read-through gate.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock("../../src/services/eduaiClient.js", () => ({
   fetchCoreCourseSafe: vi.fn(),
@@ -34,9 +34,13 @@ beforeEach(() => {
   vi.mocked(listEduAiCoursesServiceKey).mockReset();
 });
 
-describe("resolveCoreCourseList", () => {
-  it("returns the courses array and coreUnavailable:false on success", async () => {
-    const courses = [{ id: "c1" }, { id: "c2" }];
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('resolveCoreCourseList', () => {
+  it('returns the courses array and coreUnavailable:false on success', async () => {
+    const courses = [{ id: 'c1' }, { id: 'c2' }];
     vi.mocked(listEduAiCourses).mockResolvedValue(courses);
 
     const result = await resolveCoreCourseList({ cookie: "session=abc" });
@@ -47,13 +51,15 @@ describe("resolveCoreCourseList", () => {
   });
 
   it('degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)', async () => {
-    vi.mocked(listEduAiCourses).mockRejectedValue(
-      Object.assign(new Error('boom'), { status: 503 }),
-    );
+    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+    const error = Object.assign(new Error(canary), { status: 503 });
+    vi.mocked(listEduAiCourses).mockRejectedValue(error);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await resolveCoreCourseList({ cookie: "session=abc" });
 
     expect(result).toEqual({ courses: [], coreUnavailable: true });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
   });
 
   it("never loops a per-course fetch — exactly one listEduAiCourses call regardless of catalog size", async () => {
@@ -120,13 +126,15 @@ describe("resolveCoreCourseById", () => {
   });
 
   it('degrades to null course + coreUnavailable:true on a thrown error (network/5xx)', async () => {
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(
-      Object.assign(new Error('down'), { status: 503 }),
-    );
+    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+    const error = Object.assign(new Error(canary), { status: 503 });
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(error);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await resolveCoreCourseById("core-1");
 
     expect(result).toEqual({ course: null, coreUnavailable: true });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
   });
 
   it("forwards options.signal to fetchCoreCourseSafe so a hung Core lookup can be bounded (#1173 review)", async () => {
@@ -222,14 +230,17 @@ describe('resolveCoreCourseCatalog', () => {
     expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
   });
 
-  it("degrades to empty + coreUnavailable:true on a thrown error (Core down / missing service key)", async () => {
+  it('degrades to empty + coreUnavailable:true on a thrown error (Core down / missing service key)', async () => {
+    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
     vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(
-      Object.assign(new Error("Core unreachable"), { status: 503 }),
+      Object.assign(new Error(canary), { status: 503 }),
     );
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await resolveCoreCourseCatalog();
 
     expect(result).toEqual({ courses: [], coreUnavailable: true });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
     // Publish gates keyed off the empty map fail closed.
     expect(
       resolveIsPublished({ coreOfferingId: 'core-1' }, indexCoreCoursesById(result.courses)),

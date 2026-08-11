@@ -69,9 +69,14 @@ import {
   COURSE_STATUS_VALUES,
   coreFacetWhere,
   coreFacets,
-} from "../utils/courseSearch.js";
-import { cloneCourseContent, cloneLessonsFromOffering } from "../services/courseCloning.js";
-import { calculateCourseProgressBatch, progressBucket } from "../services/progressCalculation.js";
+} from '../utils/courseSearch.js';
+import { calculateCourseProgressBatch, progressBucket } from '../services/progressCalculation.js';
+import {
+  CourseMutationError,
+  importCourseContentForUser,
+  publishCourseForUser,
+  unpublishCourseForUser,
+} from '../services/courseManagement.js';
 import {
   isSupportedCourseRole,
   resolveCourseAccess,
@@ -82,8 +87,7 @@ import {
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   listEduAiCourses,
-  setCoreCoursePublishState,
-} from "../services/eduaiClient.js";
+} from '../services/eduaiClient.js';
 import {
   indexCoreCoursesById,
   resolveCoreCourseById,
@@ -628,10 +632,7 @@ router.get("/courses/:courseId", async (req, res) => {
         });
       } catch (e) {
         const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        logSafeError(
-          `[courses] Enrollment auto-sync (${phase}) failed; serving local mirror`,
-          e,
-        );
+        logSafeError(`[courses] Enrollment auto-sync (${phase}) failed; serving local mirror`, e);
       }
     }
 
@@ -708,153 +709,17 @@ router.post(
       return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    const { sourceCourseId, moduleIds, lessonIds, targetModuleId } = req.body || {};
-
-    const normalizedModuleIds = Array.isArray(moduleIds)
-      ? moduleIds.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-      : [];
-
-    const normalizedLessonIds = Array.isArray(lessonIds)
-      ? lessonIds.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-      : [];
-
-    const numericTargetModuleId =
-      typeof targetModuleId === 'number' || typeof targetModuleId === 'string'
-        ? Number(targetModuleId)
-        : null;
-
-    const numericSourceCourseId =
-      typeof sourceCourseId === 'number' || typeof sourceCourseId === 'string'
-        ? Number(sourceCourseId)
-        : null;
-
-    if (numericSourceCourseId !== null && !Number.isFinite(numericSourceCourseId)) {
-      return res.status(400).json({ error: 'Invalid sourceCourseId' });
-    }
-
-    if (normalizedModuleIds.length === 0 && normalizedLessonIds.length === 0) {
-      return res.status(400).json({ error: 'Nothing to import' });
-    }
-
     try {
-      // UNIT_ADMIN department checks resolve from Core — one batched catalog
-      // fetch reused for the destination course, the module source course, and
-      // every lesson source course below, instead of a live Core lookup per
-      // course (#1072 unified contract; ADMIN/INSTRUCTOR never call Core here).
-      let catalogById = null;
-      if (authUser.role === 'UNIT_ADMIN') {
-        const { courses: catalogCourses } = await resolveCoreCourseCatalog();
-        catalogById = new Map(catalogCourses.map((c) => [c.id, c]));
-      }
-      // undefined = "resolve yourself" (non-UNIT_ADMIN, no Core call happens);
-      // null = "resolved, not in catalog" (fail-closed department mismatch).
-      const resolveFromCatalog = (row) =>
-        catalogById ? (catalogById.get(row?.coreOfferingId) ?? null) : undefined;
-
-      const destCourse = await prisma.courseOffering.findUnique({
-        where: { id: courseId },
-        include: { instructors: { select: { userId: true } } },
+      const updated = await importCourseContentForUser({
+        courseId,
+        body: req.body,
+        user: authUser,
       });
-      if (!destCourse) return res.status(404).json({ error: 'Course not found' });
-      if (!(await isCourseAdmin(authUser, destCourse, resolveFromCatalog(destCourse)))) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
-      }
-
-      if (normalizedModuleIds.length > 0) {
-        if (numericSourceCourseId === null) {
-          return res.status(400).json({ error: 'sourceCourseId required when importing modules' });
-        }
-
-        const sourceCourse = await prisma.courseOffering.findUnique({
-          where: { id: numericSourceCourseId },
-          include: { instructors: { select: { userId: true } } },
-        });
-        if (
-          !sourceCourse ||
-          !(await isCourseAdmin(authUser, sourceCourse, resolveFromCatalog(sourceCourse)))
-        ) {
-          return res.status(403).json({ error: 'Not authorized for source course' });
-        }
-
-        const moduleCount = await prisma.module.count({
-          where: {
-            id: { in: normalizedModuleIds },
-            courseOfferingId: numericSourceCourseId,
-          },
-        });
-
-        if (moduleCount !== normalizedModuleIds.length) {
-          return res
-            .status(400)
-            .json({ error: 'One or more modules do not belong to source course' });
-        }
-
-        await cloneCourseContent(numericSourceCourseId, courseId, {
-          moduleIds: normalizedModuleIds,
-        });
-      }
-
-      if (normalizedLessonIds.length > 0) {
-        if (numericTargetModuleId === null || !Number.isFinite(numericTargetModuleId)) {
-          return res.status(400).json({ error: 'targetModuleId required when importing lessons' });
-        }
-
-        const targetModule = await prisma.module.findUnique({
-          where: { id: numericTargetModuleId },
-          select: { courseOfferingId: true },
-        });
-
-        if (!targetModule || targetModule.courseOfferingId !== courseId) {
-          return res
-            .status(400)
-            .json({ error: 'targetModuleId does not belong to destination course' });
-        }
-
-        const lessons = await prisma.lesson.findMany({
-          where: { id: { in: normalizedLessonIds } },
-          include: {
-            module: { select: { courseOfferingId: true } },
-          },
-        });
-
-        if (lessons.length !== normalizedLessonIds.length) {
-          return res.status(400).json({ error: 'One or more lessons were not found' });
-        }
-
-        const sourceCourseIds = new Set(lessons.map((lesson) => lesson.module.courseOfferingId));
-
-        for (const scId of sourceCourseIds) {
-          const sc = await prisma.courseOffering.findUnique({
-            where: { id: scId },
-            include: { instructors: { select: { userId: true } } },
-          });
-          if (!sc || !(await isCourseAdmin(authUser, sc, resolveFromCatalog(sc)))) {
-            return res.status(403).json({ error: 'Not authorized for lesson source course' });
-          }
-        }
-
-        await cloneLessonsFromOffering(normalizedLessonIds, numericTargetModuleId);
-      }
-
-      const updated = await prisma.courseOffering.findUnique({
-        where: { id: courseId },
-        include: {
-          modules: {
-            orderBy: { position: 'asc' },
-            include: {
-              lessons: {
-                orderBy: { position: 'asc' },
-                include: {
-                  activities: { orderBy: { position: 'asc' } },
-                },
-              },
-            },
-          },
-        },
-      });
-
       res.json(updated);
     } catch (e) {
+      if (e instanceof CourseMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
       sendSafeError(res, e, 'Internal server error');
     }
   },
@@ -880,32 +745,15 @@ router.patch(
     }
 
     try {
-      const course = await prisma.courseOffering.findUnique({
-        where: { id: courseId },
-        include: { instructors: { select: { userId: true } } },
-      });
-      if (!course) return res.status(404).json({ error: 'Course not found' });
-      if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
-      }
-
-      // #477: write through to Core first. If Core rejects, surface 500. There is
-      // no local `isPublished` column to keep in sync anymore (#1072 step 4) —
-      // Core is the sole store for publish state; this route now only proxies
-      // the write and re-reads it back for the response.
-      if (course.coreOfferingId) {
-        await setCoreCoursePublishState(course.coreOfferingId, true);
-      }
-
-      // #225 SEAM-04: the write above already succeeded — if this re-read
-      // fails, trust that write instead of letting the failed read report the
-      // opposite ("unpublished") state (see mapCourseOfferingAfterPublishWrite).
-      const resolved = await resolveCoreCourseById(course.coreOfferingId);
+      const { course, resolved } = await publishCourseForUser({ courseId, user: authUser });
       if (resolved.coreUnavailable) {
         res.set('X-Core-Status', 'unavailable');
       }
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
     } catch (e) {
+      if (e instanceof CourseMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
       sendSafeError(res, e, 'Internal server error');
     }
   },
@@ -935,53 +783,18 @@ router.patch(
     }
 
     try {
-      const courseForAuth = await prisma.courseOffering.findUnique({
-        where: { id: courseId },
-        include: { instructors: { select: { userId: true } } },
+      const { course, resolved } = await unpublishCourseForUser({
+        courseId,
+        user: authUser,
       });
-      if (!courseForAuth) return res.status(404).json({ error: 'Course not found' });
-      if (!(await isCourseAdmin(authUser, courseForAuth))) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
-      }
-
-      // #477: write through to Core first; a Core failure aborts the local cascade.
-      if (courseForAuth.coreOfferingId) {
-        await setCoreCoursePublishState(courseForAuth.coreOfferingId, false);
-      }
-
-      // Cascade to all modules and lessons. No local courseOffering.isPublished
-      // write anymore (#1072 step 4) — Core already got the write-through above.
-      await prisma.$transaction(async (tx) => {
-        // Update all modules in this course
-        await tx.module.updateMany({
-          where: { courseOfferingId: courseId },
-          data: { isPublished: false },
-        });
-
-        // Update all lessons in modules of this course
-        const modules = await tx.module.findMany({
-          where: { courseOfferingId: courseId },
-          select: { id: true },
-        });
-        const moduleIds = modules.map((m) => m.id);
-
-        if (moduleIds.length > 0) {
-          await tx.lesson.updateMany({
-            where: { moduleId: { in: moduleIds } },
-            data: { isPublished: false },
-          });
-        }
-      });
-
-      // No local courseOffering fields changed by the cascade above, so
-      // `courseForAuth` (already fetched) is still an accurate anchor row.
-      // #225 SEAM-04: same re-read-after-write trust as the publish route above.
-      const resolved = await resolveCoreCourseById(courseForAuth.coreOfferingId);
       if (resolved.coreUnavailable) {
         res.set('X-Core-Status', 'unavailable');
       }
-      res.json(mapCourseOfferingAfterPublishWrite(courseForAuth, resolved, false));
+      res.json(mapCourseOfferingAfterPublishWrite(course, resolved, false));
     } catch (e) {
+      if (e instanceof CourseMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
       sendSafeError(res, e, 'Internal server error');
     }
   },

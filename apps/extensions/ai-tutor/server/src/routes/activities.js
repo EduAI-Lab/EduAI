@@ -35,11 +35,16 @@ import {
   searchWhere,
   activitySearchWhere,
   PaginationError,
-} from "../utils/pagination.js";
-import { evaluateQuestion } from "../services/activityEvaluation.js";
-import { getActivityCompletionStatuses } from "../services/progressCalculation.js";
-import { cloneActivityIntoLesson } from "../services/activityCloning.js";
-import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
+} from '../utils/pagination.js';
+import { evaluateQuestion } from '../services/activityEvaluation.js';
+import {
+  ActivityMutationError,
+  createActivityForLesson,
+  updateActivityForEditor,
+} from '../services/activityManagement.js';
+import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
+import { cloneActivityIntoLesson } from '../services/activityCloning.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import {
   hasActivityFeedback,
   recordActivityFeedback,
@@ -80,18 +85,6 @@ import { getCoreCourseId } from '../utils/coreCourseId.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 
 const router = express.Router();
-
-const normalizeCustomPrompt = (value) => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const normalizeCustomPromptTitle = (value) => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().slice(0, 20);
-  return trimmed.length > 0 ? trimmed : null;
-};
 
 /**
  * Course code for AI-prompt context. `code` is Core-owned (#1072 step 3) —
@@ -556,7 +549,7 @@ router.post(
       return res.status(400).json({ error: 'Invalid lesson id' });
     }
 
-    // Accept legacy `prompt` field by mapping it to question before validation
+    // Accept legacy `prompt` field by mapping it to question before validation.
     const raw = { ...req.body };
     if (!raw.question && raw.prompt) raw.question = raw.prompt;
     let payload;
@@ -566,115 +559,17 @@ router.post(
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    // Validate at least one AI mode is enabled
-    if (!payload.enableTeachMode && !payload.enableGuideMode && !payload.enableCustomMode) {
-      return res.status(400).json({ error: 'At least one AI mode must be enabled' });
-    }
-
     try {
-      const lesson = await prisma.lesson.findUnique({
-        where: { id: lessonId },
-        include: {
-          module: {
-            include: {
-              courseOffering: { include: { instructors: { select: { userId: true } } } },
-            },
-          },
-        },
+      const activity = await createActivityForLesson({
+        lessonId,
+        payload,
+        user: authUser,
       });
-
-      if (!lesson) {
-        return res.status(404).json({ error: 'Lesson not found' });
-      }
-
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
-      }
-
-      const courseOfferingId = lesson.module.courseOffering.id;
-
-      const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
-      if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-        return res.status(400).json({ error: 'mainTopicId must belong to the lesson course' });
-      }
-
-      const normalizedSecondaryIds = Array.isArray(payload.secondaryTopicIds)
-        ? Array.from(
-            new Set(
-              payload.secondaryTopicIds.filter(
-                (value) =>
-                  typeof value === 'string' && value.length > 0 && value !== payload.mainTopicId,
-              ),
-            ),
-          )
-        : [];
-
-      if (normalizedSecondaryIds.length > 0) {
-        const topics = await prisma.topic.findMany({
-          where: { id: { in: normalizedSecondaryIds } },
-        });
-        const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
-        if (invalid || topics.length !== normalizedSecondaryIds.length) {
-          return res
-            .status(400)
-            .json({ error: 'secondaryTopicIds must belong to the lesson course' });
-        }
-      }
-
-      // Append to the end of the lesson's activity list. Historically create
-      // never set a position, so every activity landed at 0 and order was
-      // undefined; assign max(position)+1 so new activities append (issue #1047).
-      const lastActivity = await prisma.activity.findFirst({
-        where: { lessonId },
-        orderBy: { position: 'desc' },
-        select: { position: true },
-      });
-      const resolvedPosition = lastActivity ? lastActivity.position + 1 : 0;
-
-      const activity = await prisma.activity.create({
-        data: {
-          title: payload.title ?? null,
-          instructionsMd: payload.instructionsMd ?? 'Answer the question.',
-          position: resolvedPosition,
-          lessonId,
-          promptTemplateId: payload.promptTemplateId ?? null,
-          customPrompt: normalizeCustomPrompt(payload.customPrompt),
-          customPromptTitle: normalizeCustomPromptTitle(payload.customPromptTitle),
-          mainTopicId: payload.mainTopicId,
-          enableTeachMode: payload.enableTeachMode,
-          enableGuideMode: payload.enableGuideMode,
-          enableCustomMode: payload.enableCustomMode ?? false,
-          config: {
-            question: payload.question,
-            questionType: payload.type ?? 'MCQ',
-            options: payload.options,
-            answer: payload.answer ?? null,
-            hints: Array.isArray(payload.hints) ? payload.hints : [],
-          },
-          secondaryTopics:
-            normalizedSecondaryIds.length > 0
-              ? {
-                  create: normalizedSecondaryIds.map((topicId) => ({
-                    topic: { connect: { id: topicId } },
-                  })),
-                }
-              : undefined,
-        },
-        include: {
-          promptTemplate: { select: { id: true, name: true } },
-          mainTopic: true,
-          secondaryTopics: {
-            include: { topic: true },
-          },
-        },
-      });
-
       res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
+      if (e instanceof ActivityMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
       sendSafeError(res, e, 'Internal server error');
     }
   },
@@ -707,258 +602,18 @@ router.patch(
     } catch {
       return res.status(400).json({ error: 'Invalid payload' });
     }
-    const noUpdatableFields =
-      typeof payload.promptTemplateId === 'undefined' &&
-      typeof payload.customPrompt === 'undefined' &&
-      typeof payload.customPromptTitle === 'undefined' &&
-      typeof payload.enableCustomMode === 'undefined' &&
-      typeof payload.mainTopicId === 'undefined' &&
-      typeof payload.secondaryTopicIds === 'undefined' &&
-      typeof payload.title === 'undefined' &&
-      typeof payload.instructionsMd === 'undefined' &&
-      typeof payload.question === 'undefined' &&
-      typeof payload.type === 'undefined' &&
-      typeof payload.options === 'undefined' &&
-      typeof payload.answer === 'undefined' &&
-      typeof payload.hints === 'undefined' &&
-      typeof payload.enableTeachMode === 'undefined' &&
-      typeof payload.enableGuideMode === 'undefined';
-
-    if (noUpdatableFields) {
-      return res.status(400).json({ error: 'Nothing to update' });
-    }
 
     try {
-      const activity = await prisma.activity.findUnique({
-        where: { id: activityId },
-        include: {
-          lesson: {
-            include: {
-              module: {
-                include: {
-                  courseOffering: {
-                    include: { instructors: true },
-                  },
-                },
-              },
-            },
-          },
-          mainTopic: true,
-        },
+      const updated = await updateActivityForEditor({
+        activityId,
+        payload,
+        user: instructor,
       });
-
-      if (!activity) {
-        return res.status(404).json({ error: 'Activity not found' });
-      }
-
-      const isInstructor = activity.lesson.module.courseOffering.instructors.some(
-        (assignment) => assignment.userId === instructor.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(
-        instructor,
-        activity.lesson.module.courseOffering,
-      );
-
-      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this activity' });
-      }
-
-      const courseOfferingId = activity.lesson.module.courseOfferingId;
-
-      const updateData = {};
-
-      if (typeof payload.title !== 'undefined') {
-        if (payload.title === null) {
-          updateData.title = null;
-        } else {
-          const trimmedTitle = payload.title.trim();
-          updateData.title = trimmedTitle.length > 0 ? trimmedTitle : null;
-        }
-      }
-
-      if (typeof payload.instructionsMd !== 'undefined') {
-        updateData.instructionsMd = payload.instructionsMd;
-      }
-
-      const currentConfig =
-        activity.config && typeof activity.config === 'object' ? { ...activity.config } : {};
-      let configChanged = false;
-
-      if (typeof payload.question !== 'undefined') {
-        const questionText = payload.question.trim();
-        if (questionText.length === 0) {
-          return res.status(400).json({ error: 'question must not be empty' });
-        }
-        currentConfig.question = questionText;
-        configChanged = true;
-      }
-
-      if (typeof payload.type !== 'undefined') {
-        currentConfig.questionType = payload.type;
-        if (payload.type === 'SHORT_TEXT') {
-          currentConfig.options = null;
-        }
-        configChanged = true;
-      }
-
-      if (typeof payload.options !== 'undefined') {
-        if (payload.options === null) {
-          currentConfig.options = null;
-        } else {
-          currentConfig.options = payload.options.map((choice) => choice);
-        }
-        configChanged = true;
-      }
-
-      if (typeof payload.answer !== 'undefined') {
-        currentConfig.answer = payload.answer;
-        configChanged = true;
-      }
-
-      if (typeof payload.hints !== 'undefined') {
-        const normalizedHints = Array.isArray(payload.hints)
-          ? payload.hints.map((hint) => hint.trim()).filter((hint) => hint.length > 0)
-          : [];
-        currentConfig.hints = normalizedHints;
-        configChanged = true;
-      }
-
-      if (configChanged) {
-        updateData.config = currentConfig;
-      }
-
-      if (typeof payload.promptTemplateId !== 'undefined') {
-        if (payload.promptTemplateId === null) {
-          updateData.promptTemplateId = null;
-        } else if (typeof payload.promptTemplateId === 'number') {
-          const prompt = await prisma.promptTemplate.findUnique({
-            where: { id: payload.promptTemplateId },
-          });
-          if (!prompt) {
-            return res.status(400).json({ error: 'Invalid promptTemplateId' });
-          }
-          updateData.promptTemplateId = payload.promptTemplateId;
-        } else {
-          return res.status(400).json({ error: 'promptTemplateId must be a number or null' });
-        }
-      }
-
-      if (typeof payload.customPrompt !== 'undefined') {
-        if (payload.customPrompt === null) {
-          updateData.customPrompt = null;
-        } else if (typeof payload.customPrompt === 'string') {
-          updateData.customPrompt = normalizeCustomPrompt(payload.customPrompt);
-        } else {
-          return res.status(400).json({ error: 'customPrompt must be a string or null' });
-        }
-      }
-
-      if (typeof payload.customPromptTitle !== 'undefined') {
-        if (payload.customPromptTitle === null) {
-          updateData.customPromptTitle = null;
-        } else if (typeof payload.customPromptTitle === 'string') {
-          updateData.customPromptTitle = normalizeCustomPromptTitle(payload.customPromptTitle);
-        } else {
-          return res.status(400).json({ error: 'customPromptTitle must be a string or null' });
-        }
-      }
-
-      let resolvedMainTopicId = activity.mainTopicId;
-      if (typeof payload.mainTopicId !== 'undefined') {
-        if (typeof payload.mainTopicId !== 'string' || payload.mainTopicId.length === 0) {
-          return res.status(400).json({ error: 'mainTopicId must be a string' });
-        }
-        const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
-        if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-          return res.status(400).json({ error: 'mainTopicId must belong to the activity course' });
-        }
-        updateData.mainTopicId = payload.mainTopicId;
-        resolvedMainTopicId = payload.mainTopicId;
-      }
-
-      if (typeof payload.secondaryTopicIds !== 'undefined') {
-        if (!Array.isArray(payload.secondaryTopicIds)) {
-          return res.status(400).json({ error: 'secondaryTopicIds must be an array of ids' });
-        }
-        const normalizedSecondaryIds = Array.from(
-          new Set(
-            payload.secondaryTopicIds.filter(
-              (value) =>
-                typeof value === 'string' && value.length > 0 && value !== resolvedMainTopicId,
-            ),
-          ),
-        );
-
-        if (normalizedSecondaryIds.length > 0) {
-          const topics = await prisma.topic.findMany({
-            where: { id: { in: normalizedSecondaryIds } },
-          });
-          const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
-          if (invalid || topics.length !== normalizedSecondaryIds.length) {
-            return res
-              .status(400)
-              .json({ error: 'secondaryTopicIds must belong to the activity course' });
-          }
-        }
-
-        updateData.secondaryTopics = {
-          deleteMany: {},
-          create: normalizedSecondaryIds.map((topicId) => ({
-            topic: { connect: { id: topicId } },
-          })),
-        };
-      }
-
-      const requestedModeUpdate =
-        typeof payload.enableTeachMode !== 'undefined' ||
-        typeof payload.enableGuideMode !== 'undefined' ||
-        typeof payload.enableCustomMode !== 'undefined';
-
-      // Handle AI mode updates with validation
-      if (requestedModeUpdate) {
-        const newTeachMode =
-          typeof payload.enableTeachMode !== 'undefined'
-            ? payload.enableTeachMode
-            : activity.enableTeachMode;
-        const newGuideMode =
-          typeof payload.enableGuideMode !== 'undefined'
-            ? payload.enableGuideMode
-            : activity.enableGuideMode;
-        const newCustomMode =
-          typeof payload.enableCustomMode !== 'undefined'
-            ? payload.enableCustomMode
-            : activity.enableCustomMode;
-
-        // Validate at least one mode is enabled
-        if (!newTeachMode && !newGuideMode && !newCustomMode) {
-          return res.status(400).json({ error: 'At least one AI mode must be enabled' });
-        }
-
-        if (typeof payload.enableTeachMode !== 'undefined') {
-          updateData.enableTeachMode = payload.enableTeachMode;
-        }
-        if (typeof payload.enableGuideMode !== 'undefined') {
-          updateData.enableGuideMode = payload.enableGuideMode;
-        }
-        if (typeof payload.enableCustomMode !== 'undefined') {
-          updateData.enableCustomMode = payload.enableCustomMode;
-        }
-      }
-
-      const updated = await prisma.activity.update({
-        where: { id: activityId },
-        data: updateData,
-        include: {
-          promptTemplate: { select: { id: true, name: true } },
-          mainTopic: true,
-          secondaryTopics: {
-            include: { topic: true },
-          },
-        },
-      });
-
       res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
+      if (e instanceof ActivityMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
       sendSafeError(res, e, 'Internal server error');
     }
   },
@@ -1466,9 +1121,7 @@ router.post("/activities/:activityId/teach", async (req, res) => {
     try {
       payload = TeachRequestSchema.parse(req.body || {});
     } catch {
-      return res
-        .status(400)
-        .json({ error: 'Invalid payload' });
+      return res.status(400).json({ error: 'Invalid payload' });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1548,9 +1201,7 @@ router.post("/activities/:activityId/guide", async (req, res) => {
     try {
       payload = GuideRequestSchema.parse(req.body || {});
     } catch {
-      return res
-        .status(400)
-        .json({ error: 'Invalid payload' });
+      return res.status(400).json({ error: 'Invalid payload' });
     }
 
     return handleAiInteraction({
@@ -1634,9 +1285,7 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     try {
       payload = CustomRequestSchema.parse(req.body || {});
     } catch {
-      return res
-        .status(400)
-        .json({ error: 'Invalid payload' });
+      return res.status(400).json({ error: 'Invalid payload' });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1916,9 +1565,7 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
   try {
     payload = ActivityFeedbackRequestSchema.parse(req.body || {});
   } catch {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload' });
+    return res.status(400).json({ error: 'Invalid payload' });
   }
 
   try {

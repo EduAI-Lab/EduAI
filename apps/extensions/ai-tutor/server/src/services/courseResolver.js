@@ -49,6 +49,7 @@ import {
   listEduAiCourses,
   listEduAiCoursesServiceKey,
 } from './eduaiClient.js';
+import { logSafeError } from '../utils/safeErrors.js';
 
 /**
  * Fetch Core's FULL course catalog in one batched service-key call — the
@@ -71,7 +72,7 @@ export async function resolveCoreCourseCatalog() {
     const courses = await listEduAiCoursesServiceKey({ all: true });
     return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
   } catch (err) {
-    console.error("[courseResolver] Core course catalog unavailable", err);
+    logSafeError('[courseResolver] Core course catalog unavailable', err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -89,7 +90,7 @@ export async function resolveCoreCourseList({ cookie } = {}) {
     const courses = await listEduAiCourses({ cookie, all: true });
     return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
   } catch (err) {
-    console.error("[courseResolver] Core course list unavailable", err);
+    logSafeError('[courseResolver] Core course list unavailable', err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -108,7 +109,7 @@ export async function resolveCoreCoursesByIds(ids) {
     const courses = await listEduAiCoursesServiceKey({ ids: wanted });
     return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
   } catch (err) {
-    console.error("[courseResolver] Core course lookup unavailable", err);
+    logSafeError('[courseResolver] Core course lookup unavailable', err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -145,7 +146,7 @@ export async function resolveCoreCourseById(coreOfferingId, options = {}) {
     const course = await fetchCoreCourseSafe(coreOfferingId, { signal: options.signal });
     return { course, coreUnavailable: false };
   } catch (err) {
-    console.error("[courseResolver] Core course fetch failed", coreOfferingId, err);
+    logSafeError('[courseResolver] Core course fetch failed', err);
     return { course: null, coreUnavailable: true };
   }
 }

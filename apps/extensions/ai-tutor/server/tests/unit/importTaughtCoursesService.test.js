@@ -1,7 +1,7 @@
 /**
  * Unit tests for importTaughtCoursesFromCore (AI Tutor server).
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const courseOfferingFindFirst = vi.fn();
 const courseOfferingFindMany = vi.fn();
@@ -82,8 +82,27 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
     courseEnrollmentDeleteMany.mockResolvedValue({ count: 0 });
   });
 
-  it("skips auto-import for students", async () => {
-    const result = await importTaughtCoursesFromCore({ id: "s1", role: "STUDENT" }, "session=abc");
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does not return upstream error details when Core course listing fails', async () => {
+    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+    listEduAiCourses.mockRejectedValue(new Error(canary));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
+
+    expect(result).toEqual({
+      imported: 0,
+      skipped: 0,
+      error: 'Core course listing unavailable',
+    });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
+  });
+
+  it('skips auto-import for students', async () => {
+    const result = await importTaughtCoursesFromCore({ id: 's1', role: 'STUDENT' }, 'session=abc');
 
     expect(result).toEqual({ imported: 0, skipped: 0 });
     expect(listEduAiCourses).not.toHaveBeenCalled();
