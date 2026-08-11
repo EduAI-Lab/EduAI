@@ -17,6 +17,7 @@ interface AssessmentBuilderProps {
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
+    onReorderSections?: (sectionIds: number[]) => void;
     readOnly?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function AssessmentBuilder({
     onViewQuestion,
     onToggleDraft,
     onCreateVariant,
+    onReorderSections,
     readOnly = false,
 }: AssessmentBuilderProps) {
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -48,6 +50,16 @@ export function AssessmentBuilder({
         if (!section || !section.sectionVariants) return [];
         return section.sectionVariants.map((link) => link.variantId);
     }, [pickerSectionId, sections]);
+
+    const move = (fromIndex: number, toIndex: number) => {
+        if (!onReorderSections) return;
+        if (toIndex < 0 || toIndex >= sections.length) return;
+        const ids = sections.map((s) => s.id);
+        const tmp = ids[fromIndex];
+        ids[fromIndex] = ids[toIndex];
+        ids[toIndex] = tmp;
+        onReorderSections(ids);
+    };
 
     return (
         <div className="flex flex-col gap-5">
@@ -114,6 +126,10 @@ export function AssessmentBuilder({
                                     setPickerSectionId(section.id);
                                     setPickerOpen(true);
                                 }}
+                                canMoveUp={index > 0}
+                                canMoveDown={index < sections.length - 1}
+                                onMoveUp={onReorderSections ? () => move(index, index - 1) : undefined}
+                                onMoveDown={onReorderSections ? () => move(index, index + 1) : undefined}
                                 readOnly={readOnly}
                             />
                         ))}
