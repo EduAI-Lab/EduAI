@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { EventEmitter } from 'node:events';
 
 vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn(),
@@ -79,6 +82,40 @@ describe("requireAuth", () => {
     expect(req.user).toMatchObject({ id: "u1", email: "a@b.com", role: "INSTRUCTOR" });
   });
 
+  it('does not treat normal Express POST body completion as caller cancellation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            setImmediate(() =>
+              resolve({
+                ok: true,
+                status: 200,
+                json: () =>
+                  Promise.resolve({
+                    user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'INSTRUCTOR' },
+                  }),
+              }),
+            );
+          }),
+      ),
+    );
+
+    const app = express();
+    app.use(express.json());
+    app.post('/protected', requireAuth, (_req, res) => res.json({ ok: true }));
+
+    const response = await request(app)
+      .post('/protected')
+      .set('Cookie', 'session=test')
+      .send({ provider: 'opencode' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+  });
+
   it('returns 401 only when Core verifies that the session is unauthorized', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const req = makeReq();
@@ -156,6 +193,29 @@ describe("requireAuth", () => {
     await requireAuth(req, res, next);
 
     expect(forwardedSignal).not.toBe(caller.signal);
+    expect(forwardedSignal.aborted).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(401);
+  });
+
+  it('cancels Core authentication when an Express request is actually aborted', async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = '1000';
+    const req = Object.assign(new EventEmitter(), makeReq());
+    let forwardedSignal;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url, { signal }) => {
+        forwardedSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          setImmediate(() => req.emit('aborted'));
+        });
+      }),
+    );
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
     expect(forwardedSignal.aborted).toBe(true);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.status).not.toHaveBeenCalledWith(401);

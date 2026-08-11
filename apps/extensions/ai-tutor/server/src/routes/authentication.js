@@ -1,5 +1,5 @@
 import express from 'express';
-import { fetchCoreAuth, isCoreAuthTimeoutError } from '../middleware/auth.js';
+import { fetchCoreAuthForRequest, isCoreAuthTimeoutError } from '../middleware/auth.js';
 import { toPublicUser } from '../utils/mappers.js';
 import { listEduAiCourses } from '../services/eduaiClient.js';
 import { logSafeError } from '../utils/safeErrors.js';
@@ -61,19 +61,15 @@ router.post('/logout', async (req, res) => {
   const coreUrl = process.env.CORE_URL || 'http://localhost:3000';
   const corePublicOrigin = process.env.CORE_PUBLIC_ORIGIN || coreUrl;
   try {
-    const coreRes = await fetchCoreAuth(
-      `${coreUrl}/api/auth/sign-out`,
-      {
-        method: 'POST',
-        headers: {
-          cookie: req.headers.cookie ?? '',
-          origin: corePublicOrigin,
-          'content-type': 'application/json',
-        },
-        body: '{}',
+    const coreRes = await fetchCoreAuthForRequest(req, `${coreUrl}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: {
+        cookie: req.headers.cookie ?? '',
+        origin: corePublicOrigin,
+        'content-type': 'application/json',
       },
-      req.signal,
-    );
+      body: '{}',
+    });
     if (!coreRes.ok) {
       console.error('[ai-tutor] Core sign-out failed', coreRes.status);
       if (coreRes.status === 408 || coreRes.status === 504) {
