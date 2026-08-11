@@ -21,7 +21,13 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
 
 describe("Activities routes", () => {
   let prof;
@@ -37,6 +43,17 @@ describe("Activities routes", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseOfferingId, userId, { course } = {}) => {
+        const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+        const allowed = enrollment?.role === 'STUDENT';
+        return {
+          allowed,
+          state: allowed ? 'allowed' : 'denied',
+          role: enrollment?.role ?? null,
+        };
+      },
+    );
   });
 
   // ── Helper to create an activity directly in DB ───────────────────

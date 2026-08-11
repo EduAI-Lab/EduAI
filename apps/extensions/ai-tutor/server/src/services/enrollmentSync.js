@@ -25,7 +25,80 @@ export const AUTO_SYNC_TTL_MS = 30_000;
  */
 export const AUTO_SYNC_TIMEOUT_MS = 3_000;
 
+/**
+ * Live student operations must not rely on the read-path mirror throttle. A
+ * revoked Core enrollment therefore gets one bounded roster check per
+ * sensitive request; there is deliberately no TTL here because a cache window
+ * would turn revocation into a privilege-lag window.
+ */
+export const LIVE_ENROLLMENT_SYNC_TIMEOUT_MS = 3_000;
+export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE = 'ENROLLMENT_AUTH_UNAVAILABLE';
+export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE = 'Enrollment authorization unavailable';
+
 const lastAutoSyncAt = new Map();
+
+/**
+ * Reconcile one caller's course enrollment against Core immediately before a
+ * sensitive student operation. Core is authoritative: a local row is only
+ * considered after an uncached, successful roster sync, and a missing/TA row
+ * is denied even when a stale local STUDENT row existed beforehand.
+ *
+ * A Core/network/timeout/malformed-response or local-write/read failure is a
+ * stable, fail-closed `unavailable` result. Callers must return 503 and must
+ * not perform their provider or resource write in that case.
+ *
+ * @param {number} courseOfferingId Local CourseOffering primary key
+ * @param {string} userId Authenticated Core user id
+ * @param {{ course?: object, signal?: AbortSignal, timeoutMs?: number }} options
+ * @returns {Promise<{allowed: boolean, state: 'allowed'|'denied'|'unavailable', role: string|null}>}
+ */
+export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, options = {}) {
+  if (!Number.isFinite(courseOfferingId) || typeof userId !== 'string' || userId.length === 0) {
+    return { allowed: false, state: 'denied', role: null };
+  }
+
+  let course;
+  try {
+    course =
+      options.course ??
+      (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+  } catch {
+    return { allowed: false, state: 'unavailable', role: null };
+  }
+  if (!course?.coreOfferingId) {
+    // Without a Core link there is no authoritative roster to consult. Do not
+    // fall back to a local row for a sensitive student operation.
+    return { allowed: false, state: 'denied', role: null };
+  }
+
+  try {
+    const signal =
+      options.signal ?? AbortSignal.timeout(options.timeoutMs ?? LIVE_ENROLLMENT_SYNC_TIMEOUT_MS);
+    // Do not pass ttlMs: this is intentionally a live authorization check.
+    await syncCourseEnrollments(courseOfferingId, { course, signal });
+    const enrollment = await prisma.courseEnrollment.findUnique({
+      where: {
+        courseOfferingId_userId: {
+          courseOfferingId,
+          userId,
+        },
+      },
+      select: { role: true },
+    });
+    const role = enrollment?.role ?? null;
+    const allowed = role === 'STUDENT';
+    return { allowed, state: allowed ? 'allowed' : 'denied', role };
+  } catch {
+    // Keep upstream details out of the route contract. The route can log the
+    // error with its normal server-side policy, but callers see one stable 503
+    // shape and never proceed with a provider/write side effect.
+    return {
+      allowed: false,
+      state: 'unavailable',
+      role: null,
+    };
+  }
+}
 
 /**
  * Sync active student + TA enrollments from Core into the local

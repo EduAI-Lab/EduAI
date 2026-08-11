@@ -31,9 +31,12 @@ import {
   listEduAiCourses,
   listEduAiCoursesServiceKey,
   listEduAiCourseEnrollmentsServiceKey,
-} from "../../src/services/eduaiClient.js";
-import { syncExternalCourseTopics } from "../../src/services/topicSync.js";
-import { syncCourseEnrollments } from "../../src/services/enrollmentSync.js";
+} from '../../src/services/eduaiClient.js';
+import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
+import {
+  authorizeLiveStudentEnrollment,
+  syncCourseEnrollments,
+} from '../../src/services/enrollmentSync.js';
 
 // Course routes call Core's policy service (instructors.canCreateCourses) via
 // requireInstructorPolicy. Core isn't reachable in the integration env, so the
@@ -53,6 +56,7 @@ vi.mock("../../src/services/topicSync.js", () => ({
 vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
+  authorizeLiveStudentEnrollment: vi.fn(),
   syncCourseEnrollments: vi
     .fn()
     .mockResolvedValue({ synced: 2, created: 1, deleted: 0, errors: [] }),
@@ -73,6 +77,9 @@ describe("Courses routes", () => {
     vi.mocked(listEduAiCoursesServiceKey).mockReset();
     vi.mocked(syncExternalCourseTopics).mockClear();
     vi.mocked(syncCourseEnrollments).mockClear();
+    vi.mocked(authorizeLiveStudentEnrollment)
+      .mockReset()
+      .mockResolvedValue({ allowed: true, state: 'allowed', role: 'STUDENT' });
     vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
 
     // Course-owned fields (title/isPublished/etc) are Core-owned (#1072 step

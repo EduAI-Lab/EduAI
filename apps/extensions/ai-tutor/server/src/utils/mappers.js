@@ -189,9 +189,10 @@ export function mapLesson(lesson) {
  *                            always emits the object form so the client can
  *                            assume one shape.
  *   - `answer`            — Correct answer (string for MCQ index, free text
- *                            for short-answer, etc.). `null` if unset for
- *                            staff/authoring views; omitted for an explicit
- *                            `{ role: 'STUDENT' }` view.
+ *                            for short-answer, etc.). Included only when a
+ *                            caller explicitly opts into the staff/authoring
+ *                            shape with `{ includeAnswer: true }`; omitted
+ *                            by default (including all student views).
  *   - `hints`             — Always an array; non-array values become `[]` so
  *                            the client can `.map` without a guard.
  *   - `secondaryTopics`   — Flattened from the M:N join rows
@@ -211,12 +212,9 @@ export function mapLesson(lesson) {
  * contract that turns the blob into a stable, typed DTO.
  */
 export function mapActivity(activity, options = {}) {
-  // The mapper's historical default is the authoring/staff shape. Callers
-  // serving student content must opt into the redacted shape explicitly so a
-  // future route cannot accidentally put an answer key on the student wire
-  // contract while still preserving answers for instructor authoring views.
-  const viewerRole =
-    typeof options === 'string' ? options : (options?.role ?? options?.viewerRole ?? null);
+  // Answer keys are opt-in. A safe default means a new caller cannot expose
+  // `config.answer` simply by forgetting to pass a viewer role.
+  const includeAnswer = typeof options === 'object' && options?.includeAnswer === true;
   const config = activity.config ?? {};
   const mapped = {
     id: activity.id,
@@ -268,7 +266,7 @@ export function mapActivity(activity, options = {}) {
     completionStatus: activity.completionStatus ?? undefined,
   };
 
-  if (viewerRole !== 'STUDENT') {
+  if (includeAnswer) {
     mapped.answer = config.answer ?? null;
   }
 

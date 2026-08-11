@@ -58,6 +58,11 @@ import {
   logAiGuidanceEvent,
 } from '../services/aiGuidance.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import {
+  authorizeLiveStudentEnrollment,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+} from '../services/enrollmentSync.js';
 import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
 import {
   isCoursePublishedLive,
@@ -99,17 +104,33 @@ async function getCourseCode(coreOfferingId) {
   return typeof course?.code === "string" ? course.code : "";
 }
 
-function getActivityAccess(course, authUser) {
-  const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
-  const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-  const isEnrolledStudent = enrollment?.role === 'STUDENT';
-  return { isInstructorForCourse, isEnrolledStudent, enrollment };
-}
+/**
+ * Live student-operation gate. Returns `null` after sending a stable 503 when
+ * Core cannot be consulted; callers must return immediately and skip their
+ * provider/local resource side effect. A non-student platform role is a normal
+ * authorization denial and never triggers a roster lookup.
+ */
+async function getLiveStudentEnrollment(res, course, authUser) {
+  if (authUser.role !== 'STUDENT') {
+    return { allowed: false, state: 'denied', role: null };
+  }
 
-function hasStudentEnrollment(course, authUser) {
-  return course.enrollments.some(
-    (enrollment) => enrollment.userId === authUser.id && enrollment.role === 'STUDENT',
-  );
+  let result;
+  try {
+    result = await authorizeLiveStudentEnrollment(course.id, authUser.id, { course });
+  } catch {
+    result = { allowed: false, state: 'unavailable', role: null };
+  }
+
+  if (result?.state === 'unavailable') {
+    res.status(503).json({
+      error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+    });
+    return null;
+  }
+
+  return result ?? { allowed: false, state: 'unavailable', role: null };
 }
 
 // The student may pick a secondary topic to focus on for an AI session;
@@ -234,7 +255,15 @@ async function loadActivityForChat(activityId) {
   });
 }
 
-async function handleAiInteraction({ req, res, activity, mode, payload, generateResponse }) {
+async function handleAiInteraction({
+  req,
+  res,
+  activity,
+  mode,
+  payload,
+  generateResponse,
+  liveEnrollment,
+}) {
   const authUser = req.user;
   const activityId = activity.id;
   const course = activity.lesson?.module?.courseOffering;
@@ -246,7 +275,9 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   if (authUser.role !== "STUDENT") {
     return res.status(403).json({ error: "Only students can use AI tutoring" });
   }
-  if (!hasStudentEnrollment(course, authUser)) {
+  const liveAccess = liveEnrollment ?? (await getLiveStudentEnrollment(res, course, authUser));
+  if (!liveAccess) return;
+  if (!liveAccess.allowed) {
     return res.status(403).json({ error: 'Not enrolled in this course' });
   }
   const lesson = activity.lesson;
@@ -484,17 +515,18 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
 
       const activitiesWithStatus = activities.map((activity) => {
         const status = statusMap.get(activity.id) || 'not_attempted';
-        return mapActivity(
-          { ...activity, completionStatus: status },
-          // Student DTOs intentionally omit config.answer. Authoring/staff
-          // responses below keep the answer key for instructor tooling.
-          { role: 'STUDENT' },
-        );
+        return mapActivity({ ...activity, completionStatus: status });
       });
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
     } else {
-      res.json(paginated(activities.map(mapActivity), total, pageParams));
+      res.json(
+        paginated(
+          activities.map((activity) => mapActivity(activity, { includeAnswer: true })),
+          total,
+          pageParams,
+        ),
+      );
     }
   } catch (e) {
     if (e instanceof PaginationError) {
@@ -640,7 +672,7 @@ router.post(
         },
       });
 
-      res.status(201).json(mapActivity(activity));
+      res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
@@ -924,7 +956,7 @@ router.patch(
         },
       });
 
-      res.json(mapActivity(updated));
+      res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
@@ -1039,7 +1071,7 @@ router.post(
         targetCourseOfferingId: course.id,
       });
 
-      res.status(201).json(mapActivity(clone));
+      res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
       console.error("Error duplicating activity:", e);
       res.status(500).json({ error: String(e) });
@@ -1126,7 +1158,7 @@ router.post(
         targetCourseOfferingId: targetCourse.id,
       });
 
-      res.status(201).json(mapActivity(clone));
+      res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
       console.error("Error importing activity:", e);
       res.status(500).json({ error: String(e) });
@@ -1315,7 +1347,9 @@ router.post("/questions/:id/answer", async (req, res) => {
     if (authUser.role !== "STUDENT") {
       return res.status(403).json({ error: "Only students can submit answers" });
     }
-    if (!hasStudentEnrollment(course, authUser)) {
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }
     const answerLesson = activity.lesson;
@@ -1411,7 +1445,9 @@ router.post("/activities/:activityId/teach", async (req, res) => {
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
     if (authUser.role !== 'STUDENT')
       return res.status(403).json({ error: 'Only students can use AI tutoring' });
-    if (!hasStudentEnrollment(course, authUser))
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
       return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
     if (
@@ -1441,6 +1477,7 @@ router.post("/activities/:activityId/teach", async (req, res) => {
       activity,
       mode: "teach",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateTeachResponse({
           activity,
@@ -1490,7 +1527,9 @@ router.post("/activities/:activityId/guide", async (req, res) => {
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
     if (authUser.role !== 'STUDENT')
       return res.status(403).json({ error: 'Only students can use AI tutoring' });
-    if (!hasStudentEnrollment(course, authUser))
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
       return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
     if (
@@ -1519,6 +1558,7 @@ router.post("/activities/:activityId/guide", async (req, res) => {
       activity,
       mode: "guide",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateGuideResponse({
           activity,
@@ -1568,7 +1608,9 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
     if (authUser.role !== 'STUDENT')
       return res.status(403).json({ error: 'Only students can use AI tutoring' });
-    if (!hasStudentEnrollment(course, authUser))
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
       return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
     if (
@@ -1603,6 +1645,7 @@ router.post("/activities/:activityId/custom", async (req, res) => {
       activity,
       mode: "custom",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateCustomResponse({
           activity,
@@ -1887,6 +1930,8 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
               include: {
                 courseOffering: {
                   select: {
+                    id: true,
+                    coreOfferingId: true,
                     enrollments: { select: { userId: true, role: true } },
                     instructors: { select: { userId: true } },
                   },
@@ -1907,9 +1952,13 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
       return res.status(500).json({ error: "Activity course context missing" });
     }
 
-    const { isEnrolledStudent } = getActivityAccess(course, authUser);
-    if (!isEnrolledStudent || authUser.role !== "STUDENT") {
-      return res.status(403).json({ error: "Only enrolled students can submit activity feedback" });
+    if (authUser.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only enrolled students can submit activity feedback' });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: 'Only enrolled students can submit activity feedback' });
     }
 
     const alreadySubmitted = await hasActivityFeedback({ userId: authUser.id, activityId });
@@ -2013,7 +2062,12 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    if (authUser.role !== 'STUDENT' || !hasStudentEnrollment(course, authUser)) {
+    if (authUser.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -2069,8 +2123,22 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
     const activity = await loadActivityForChat(activityId);
     const course = activity?.lesson?.module?.courseOffering;
     if (!course) return res.status(404).json({ error: 'Activity not found' });
-    if (authUser.role !== 'STUDENT' || !hasStudentEnrollment(course, authUser)) {
+    if (authUser.role !== 'STUDENT') {
       return res.status(403).json({ error: 'Forbidden' });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const lesson = activity.lesson;
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    ) {
+      return res.status(403).json({ error: 'Activity is not available' });
     }
 
     const cookie = getEduAiCookieForRequest(req);
@@ -2144,7 +2212,7 @@ router.patch(
           secondaryTopics: { include: { topic: true } },
         },
       });
-      res.json({ activity: mapActivity(updated), position, total });
+      res.json({ activity: mapActivity(updated, { includeAnswer: true }), position, total });
     } catch (e) {
       if (e instanceof ReorderError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
@@ -2230,7 +2298,7 @@ router.put(
           secondaryTopics: { include: { topic: true } },
         },
       });
-      res.json(activities.map(mapActivity));
+      res.json(activities.map((activity) => mapActivity(activity, { includeAnswer: true })));
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
