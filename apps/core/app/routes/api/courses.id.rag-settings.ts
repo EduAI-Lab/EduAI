@@ -14,7 +14,10 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import {
+  canManageCourseRagSettings,
+  resolveCourseAccessWithCourse,
+} from "~/lib/auth/course-access.server";
 import {
   getCourseRagSettings,
   invalidateCourseRagSettingsCache,
@@ -52,7 +55,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (!access || access.rank < 2) {
+  if (!canManageCourseRagSettings(access)) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
@@ -137,7 +140,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (!access || access.rank < 2) {
+  if (!canManageCourseRagSettings(access)) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
