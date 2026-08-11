@@ -4,7 +4,7 @@
 
 ### Changed
 
-- [question-maker] perf: Memoize known user ids in `findOrCreateUser` so `requireAuth` skips the deliberately no-op `user.upsert` on every authenticated request, with a TTL so a removed row self-heals. Closes #1388. (@abdullahmoh21, 2026-08-10)
+- [question-maker] perf: Memoize known user ids in `findOrCreateUser` so `requireAuth` skips the deliberately no-op `user.upsert` on every authenticated request, with a TTL so a removed row self-heals. Closes #1388. (@abdullahmoh21, 2026-08-11) — [#1467](https://github.com/EduAI-Lab/EduAI/pull/1467)
 
 ## [Week 14 - August 3-9, 2026]
 
