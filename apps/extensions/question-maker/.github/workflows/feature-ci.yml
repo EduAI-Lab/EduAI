@@ -77,6 +77,9 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
+    - name: Assert production Compose keeps PostgreSQL internal
+      run: node apps/extensions/question-maker/scripts/verify-production-compose-network.mjs
+
     - name: Create .env for Compose (CI only)
       run: |
         echo "POSTGRES_PASSWORD_PRODUCTION=${POSTGRES_PASSWORD_PRODUCTION:-dummy_password}" > .env

@@ -92,6 +92,23 @@ curl --fail --silent http://127.0.0.1:3005/healthz.html
 `/healthz` is process liveness. `/readyz` includes the database dependency and
 is the endpoint that should gate traffic.
 
+## Database access
+
+The production Compose file intentionally keeps PostgreSQL on the private
+`eduquery-network`; it has no host-published database port. Run administrative
+queries from the container network instead of opening PostgreSQL on the host:
+
+~~~sh
+docker compose -f apps/extensions/question-maker/docker-compose.yml \
+  exec postgres psql -U postgres -d eduquery
+~~~
+
+For local development, use `docker-compose.dev.yml` (which publishes its
+development-only database port) or the root monorepo development stack. If a
+temporary host client connection is unavoidable, use a separate, explicit
+override that binds only to `127.0.0.1`, and remove it immediately after the
+maintenance task; never add that mapping to the production Compose file.
+
 ## Reverse proxy
 
 Terminate TLS at the approved edge proxy. Route `/api/` to the backend on port

@@ -62,7 +62,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | QM Postgres (Docker port `55432` in monorepo dev) |
+| `DATABASE_URL` | Yes | QM Postgres (`postgres:5432` inside production Compose; host port `55432` is monorepo dev only) |
 | `CORE_URL` | Yes | Core base URL for session validation |
 | `EDUAI_API_KEY` | For Core S2S / AI | Must match Core |
 | `EDUAI_API_URL` | For AI proxy | Core API base |
