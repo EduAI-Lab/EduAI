@@ -86,7 +86,6 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
 | [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
-| [`end-to-end-user-workflows/README.md`](docs/end-to-end-user-workflows/README.md) | Epic #1429 pre-pilot testing — methodology and per-role/per-extension workflow tracking (Core, Question Maker, AI Tutor) |
 
 ## Changelog
 
