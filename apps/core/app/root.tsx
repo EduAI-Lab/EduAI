@@ -43,15 +43,12 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
-    const isDataDocumentNavigation =
-      url.pathname.endsWith(".data") &&
-      (request.headers.get("sec-fetch-dest") === "document" ||
-        request.headers.get("accept")?.includes("text/html"));
-
-    // React Router uses `.data` internally for client-side loader requests.
-    // Reject only address-bar/document navigation so those implementation
-    // payloads cannot be browsed directly without breaking app navigation.
-    if (isDataDocumentNavigation) {
+    // `.data` is React Router's internal single-fetch transport. This app does
+    // not enable single-fetch (`future.v8_singleFetch`), so no legitimate
+    // client request needs this public URL. Reject every variant rather than
+    // relying on browser navigation headers, which are absent or spoofable on
+    // direct/API-style requests and would otherwise expose loader payloads.
+    if (url.pathname.endsWith(".data")) {
       const blocked = new Response("Not Found", { status: 404 });
       applySecurityHeaders(blocked.headers, {
         isProd: process.env.NODE_ENV === "production",
@@ -84,11 +81,17 @@ export const middleware: Route.MiddlewareFunction[] = [
   // for server-to-server calls from AI Tutor / Question Maker.
   async ({ request }, next) => {
     const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
+    if (
+      url.pathname.startsWith("/api/") &&
+      !url.pathname.startsWith("/api/auth/")
+    ) {
       const session = await auth.api.getSession({ headers: request.headers });
       if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
         return new Response(
-          JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
+          JSON.stringify({
+            error: "PASSWORD_EXPIRED",
+            redirectTo: "/settings?expired=1",
+          }),
           { status: 403, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -136,8 +139,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // /auth/* so the user can actually reach the change-password form and log out.
   const url = new URL(request.url);
   const isExempt =
-    url.pathname.startsWith("/settings") ||
-    url.pathname.startsWith("/auth/");
+    url.pathname.startsWith("/settings") || url.pathname.startsWith("/auth/");
   if (!isExempt) {
     const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
     if (expiredRedirect) return expiredRedirect;
@@ -163,8 +165,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     assistive: row?.assistDefault ?? false,
     motionReduced: row?.motionReduced ?? false,
-    density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
-    theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
+    density: isUiDensity(row?.density)
+      ? row.density
+      : DEFAULT_ACCOUNT_PREFERENCES.density,
+    theme: isUiTheme(row?.theme)
+      ? row.theme
+      : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
     policies,
   };
@@ -209,7 +215,9 @@ export default function App({ loaderData }: Route.ComponentProps) {
   return (
     <UiPreferencesProvider
       initialMotionReduced={loaderData?.motionReduced ?? false}
-      initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
+      initialDensity={
+        loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density
+      }
     >
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
         <PolicyProvider policies={loaderData?.policies ?? {}}>
