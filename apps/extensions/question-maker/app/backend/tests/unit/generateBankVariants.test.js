@@ -19,15 +19,17 @@ const {
   mockTopicsFindAll,
   mockMetaFindMany,
   mockVariantCreate,
-  mockVariantUpdate,
+  mockVariantUpdateMany,
 } = vi.hoisted(() => ({
   mockIsConfigured: vi.fn().mockReturnValue(true),
   mockGenerateQuestions: vi.fn(),
   mockCourseFindOne: vi.fn(),
   mockTopicsFindAll: vi.fn().mockResolvedValue([]),
-  mockMetaFindMany: vi.fn(),
+  // Defaults to an empty batch so a test that forgets to prime it takes the
+  // question-not-found path instead of dying on `metas.map` of undefined.
+  mockMetaFindMany: vi.fn().mockResolvedValue([]),
   mockVariantCreate: vi.fn(),
-  mockVariantUpdate: vi.fn().mockResolvedValue(undefined),
+  mockVariantUpdateMany: vi.fn().mockResolvedValue({ count: 1 }),
 }));
 
 vi.mock('../../src/services/eduaiService.js', () => ({
@@ -68,7 +70,7 @@ vi.mock('../../src/config/database.js', () => ({
     // The service prefetches every requested question in one batched read, so the
     // mock resolves an array of the metadata rows visible for that course.
     questionMetadata: { findMany: mockMetaFindMany },
-    variants: { create: mockVariantCreate, update: mockVariantUpdate },
+    variants: { create: mockVariantCreate, updateMany: mockVariantUpdateMany },
   },
 }));
 
@@ -107,7 +109,9 @@ beforeEach(() => {
   mockIsConfigured.mockReturnValue(true);
   mockCourseFindOne.mockResolvedValue(COURSE);
   mockTopicsFindAll.mockResolvedValue([]);
+  mockMetaFindMany.mockResolvedValue([]);
   mockVariantCreate.mockResolvedValue({ id: 200 });
+  mockVariantUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 // ---------------------------------------------------------------------------
@@ -177,7 +181,21 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
-    expect(mockVariantUpdate).toHaveBeenCalledWith({ where: { id: 100 }, data: { isDraft: false } });
+    expect(mockVariantUpdateMany).toHaveBeenCalledWith({ where: { id: 100 }, data: { isDraft: false } });
+  });
+
+  it('records a per-question error when the primary variant was deleted mid-batch', async () => {
+    const primary = makePrimaryVariant();
+    mockMetaFindMany.mockResolvedValueOnce([makeMeta({ variants: [primary] })]);
+    // The prefetched snapshot went stale — the row is gone, so updateMany matches nothing.
+    mockVariantUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const { results, errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(mockGenerateQuestions).not.toHaveBeenCalled();
+    expect(results).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].questionId).toBe(10);
   });
 
   it('calls generateQuestions once per variantsToAdd iteration', async () => {

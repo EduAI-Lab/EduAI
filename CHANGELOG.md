@@ -1,6 +1,6 @@
 # Changelog
 
-## [Week 15 - August 10-16, 2026]
+## [Week 15 — August 10–16, 2026]
 
 ### Changed
 

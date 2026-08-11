@@ -24,7 +24,7 @@ export async function loadOrderedVariantsForAssessment(assessmentId) {
               isAiGenerated: true,
               isDraft: true,
               questionMetadata: {
-                select: { id: true, type: true, primaryTopicId: true, description: true }
+                select: { id: true, type: true, courseId: true, primaryTopicId: true, description: true }
               }
             }
           }

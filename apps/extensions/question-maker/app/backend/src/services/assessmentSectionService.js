@@ -119,6 +119,23 @@ export const updateAssessmentSection = async (sectionId, userId, updates, course
   return updated;
 };
 
+/**
+ * Clears `assessmentId` on every one of `variantIds` that no longer has a section link
+ * inside `assessmentId`. The link check and the write are one statement, so a variant
+ * placed into another section of the same assessment concurrently can't be unlinked. The
+ * `assessmentId` predicate carries the per-variant guard, so no read is needed first.
+ * `client` is `prisma` or a transaction client.
+ */
+const clearOrphanedAssessmentLinks = (client, variantIds, assessmentId) =>
+  client.variants.updateMany({
+    where: {
+      id: { in: variantIds },
+      assessmentId,
+      sectionLinks: { none: { section: { assessmentId } } }
+    },
+    data: { assessmentId: null }
+  });
+
 /** Deletes a section and clears variant assessment links if they are no longer referenced. */
 export const deleteAssessmentSection = async (sectionId, userId, courseId = null) => {
   sectionId = Number(sectionId);
@@ -133,30 +150,16 @@ export const deleteAssessmentSection = async (sectionId, userId, courseId = null
 
   const variantIds = sectionVariants.map(sv => sv.variantId);
 
-  // Delete the section (this will cascade delete SectionVariants)
-  await prisma.assessmentSections.delete({ where: { id: section.id } });
-
-  if (variantIds.length === 0) return true;
-
-  // Which of those variants are still placed in another section of the same assessment?
-  // This runs after the delete above, so the cascaded rows are already gone and the
-  // grouping only sees surviving links. groupBy omits empty groups, so a variant absent
-  // from the result is exactly one whose remaining link count is zero.
-  const stillLinked = await prisma.sectionVariants.groupBy({
-    by: ['variantId'],
-    where: { variantId: { in: variantIds }, section: { assessmentId } }
+  // Delete the section (this will cascade delete SectionVariants), then clear the
+  // assessment link on whatever that orphaned. Both statements run in one transaction so
+  // a failure after the delete can't leave variants pointing at an assessment that no
+  // longer places them, with no UI path left to clear the stale link.
+  await prisma.$transaction(async (tx) => {
+    await tx.assessmentSections.delete({ where: { id: section.id } });
+    if (variantIds.length > 0) {
+      await clearOrphanedAssessmentLinks(tx, variantIds, assessmentId);
+    }
   });
-  const linkedIds = new Set(stillLinked.map(row => row.variantId));
-  const orphanedIds = variantIds.filter(id => !linkedIds.has(id));
-
-  // Clear the assessment link on the orphans. The `assessmentId` predicate carries the
-  // per-variant guard the old read performed, so no lookup is needed.
-  if (orphanedIds.length > 0) {
-    await prisma.variants.updateMany({
-      where: { id: { in: orphanedIds }, assessmentId },
-      data: { assessmentId: null }
-    });
-  }
 
   return true;
 };
@@ -226,19 +229,9 @@ export const removeVariantFromSection = async (sectionId, userId, variantId, cou
     throw new Error('Variant not found in section');
   }
 
-  // Check if variant is in any other sections of the same assessment
-  const assessmentId = section.assessment.id;
-  const otherSectionsCount = await prisma.sectionVariants.count({
-    where: { variantId, section: { assessmentId } }
-  });
-
-  // If variant is not in any other sections of this assessment, clear the assessmentId
-  if (otherSectionsCount === 0) {
-    const variant = await prisma.variants.findUnique({ where: { id: variantId } });
-    if (variant && variant.assessmentId === assessmentId) {
-      await prisma.variants.update({ where: { id: variantId }, data: { assessmentId: null } });
-    }
-  }
+  // If the variant is no longer in any section of this assessment, clear its assessmentId.
+  // Shared with `deleteAssessmentSection` so both paths apply the same orphan rule.
+  await clearOrphanedAssessmentLinks(prisma, [variantId], section.assessment.id);
 
   return true;
 };

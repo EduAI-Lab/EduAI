@@ -298,7 +298,9 @@ describeDb('assessmentVariantService (integration)', () => {
       // Same owner, different course — the course scope is an authorization boundary,
       // so this question must not surface in the readiness response.
       const otherCourse = await prisma.course.create({ data: { userId: USER.id } });
-      const otherTopic = await prisma.topics.findFirst({ where: { courseId } });
+      const otherTopic = await prisma.topics.create({
+        data: { id: 'cuid-avs-other-topic', courseId: otherCourse.id, name: 'Other course topic' }
+      });
       const foreignMeta = await prisma.questionMetadata.create({
         data: { courseId: otherCourse.id, primaryTopicId: otherTopic.id, type: 'SA', questionOrder: {} }
       });
