@@ -207,7 +207,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("candidate_chunks AS");
     expect(sql).toContain("content_tsv @@");
     expect(sql).toContain("UNION");
-    expect(sql).toContain("AND 1 -");
+    expect(sql).toContain("WHERE 1 - distance >");
   });
 
   it("keeps visibility and deletion filters in both UNION arms", async () => {
