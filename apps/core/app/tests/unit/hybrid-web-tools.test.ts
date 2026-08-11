@@ -172,7 +172,7 @@ describe("buildHybridWebToolContext", () => {
 
     expect(result.mode).toBe("webSearch");
     expect(result.context).toBe("");
-    expect(result.error).toBe("Firecrawl unavailable");
+    expect(result.error).toBe("WEB_TOOL_FAILED");
   });
 
   it("uses the explicitly passed mode instead of inferring one", async () => {
@@ -182,6 +182,38 @@ describe("buildHybridWebToolContext", () => {
 
     expect(result.mode).toBe("webSearch");
     expect(runWebSearchMock).toHaveBeenCalled();
+  });
+
+  it("does not expose a rejected fetch provider body or URL in hybrid context", async () => {
+    runFetchPageMock.mockRejectedValue(
+      new Error(
+        "provider body hybrid-fetch-secret https://provider.test/v1?api_key=hybrid-fetch-url-secret",
+      ),
+    );
+
+    const result = await buildHybridWebToolContext(
+      "Fetch the page at https://example.com and list the main headings.",
+    );
+
+    expect(result).toEqual({ mode: "fetchPage", context: "", error: "WEB_TOOL_FAILED" });
+    expect(JSON.stringify(result)).not.toContain("hybrid-fetch-secret");
+    expect(JSON.stringify(result)).not.toContain("hybrid-fetch-url-secret");
+  });
+
+  it("does not expose rejected search provider details in hybrid context", async () => {
+    runWebSearchMock.mockRejectedValue(
+      new Error(
+        "provider body hybrid-search-secret https://provider.test/v1?api_key=hybrid-search-url-secret",
+      ),
+    );
+
+    const result = await buildHybridWebToolContext(
+      "Search the web for recent BC grid carbon intensity estimates.",
+    );
+
+    expect(result).toEqual({ mode: "webSearch", context: "", error: "WEB_TOOL_FAILED" });
+    expect(JSON.stringify(result)).not.toContain("hybrid-search-secret");
+    expect(JSON.stringify(result)).not.toContain("hybrid-search-url-secret");
   });
 });
 

@@ -28,8 +28,13 @@ export type FetchPageResult = {
   title: string;
   markdown: string;
   error?: string;
-  details?: string;
+  code?: FetchPageErrorCode;
 };
+
+export type FetchPageErrorCode =
+  | "UNSAFE_URL_TARGET"
+  | "REQUEST_ABORTED"
+  | "FETCH_FAILED";
 
 class UnsafeFetchPageUrlError extends Error {
   constructor() {
@@ -109,9 +114,11 @@ function failureResult(url: string, error: unknown): FetchPageResult {
       : isAbort
         ? "Fetch cancelled"
         : "Failed to fetch page content",
-    ...(isUnsafe || isAbort
-      ? {}
-      : { details: error instanceof Error ? error.message : "Unknown error" }),
+    code: isUnsafe
+      ? "UNSAFE_URL_TARGET"
+      : isAbort
+        ? "REQUEST_ABORTED"
+        : "FETCH_FAILED",
   };
 }
 
@@ -224,7 +231,13 @@ export async function runFetchPage({
       !resp ||
       (typeof resp === "object" && "success" in resp && !(resp as { success?: boolean }).success)
     ) {
-      return { url, title: url, markdown: "", error: "Failed to fetch page content" };
+      return {
+        url,
+        title: url,
+        markdown: "",
+        error: "Failed to fetch page content",
+        code: "FETCH_FAILED",
+      };
     }
 
     const dataArr = Array.isArray((resp as { data?: unknown[] }).data)
@@ -241,7 +254,13 @@ export async function runFetchPage({
       };
     }
 
-    return { url, title: url, markdown: "", error: "Failed to fetch page content" };
+    return {
+      url,
+      title: url,
+      markdown: "",
+      error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
+    };
   } catch (error) {
     return failureResult(url, error);
   }

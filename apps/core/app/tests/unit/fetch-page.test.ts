@@ -334,4 +334,29 @@ describe("runFetchPage - egress boundaries", () => {
     expect(Date.now() - startedAt).toBeLessThan(500);
     expect(scrapeMock).toHaveBeenCalledTimes(1);
   });
+
+  it("returns an allowlisted error without provider body or URL details", async () => {
+    scrapeMock.mockRejectedValue(
+      new Error(
+        "provider body direct-fetch-secret https://provider.test/v1?api_key=direct-fetch-url-secret",
+      ),
+    );
+    crawlMock.mockRejectedValue(
+      new Error(
+        "provider body direct-fetch-secret https://provider.test/v1?api_key=direct-fetch-url-secret",
+      ),
+    );
+
+    const result = await runFetchPage({ url: "https://example.com" });
+
+    expect(result).toEqual({
+      url: "https://example.com",
+      title: "https://example.com",
+      markdown: "",
+      error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
+    });
+    expect(JSON.stringify(result)).not.toContain("direct-fetch-secret");
+    expect(JSON.stringify(result)).not.toContain("direct-fetch-url-secret");
+  });
 });
