@@ -25,9 +25,10 @@
  *   services/enrollmentSync.js, services/eduaiAuth.js, middleware/auth.js
  */
 
-import express from "express";
-import { prisma } from "../config/database.js";
-import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import express from 'express';
+import { prisma } from '../config/database.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
 import {
   SYSTEM_SETTING_KEYS,
   clearSystemSetting,
@@ -55,6 +56,10 @@ import {
 } from "../services/eduaiClient.js";
 
 const router = express.Router();
+
+// Enrollment management is course-scoped even though it lives in the admin
+// router. Reuse the shared live principal result across every nested endpoint.
+router.use('/admin/courses/:courseId', gateCourseById());
 
 router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
   try {
@@ -208,10 +213,7 @@ router.get(
           });
         } catch (e) {
           const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-          logSafeError(
-            `[admin] Enrollment auto-sync (${phase}) failed; serving local mirror`,
-            e,
-          );
+          logSafeError(`[admin] Enrollment auto-sync (${phase}) failed; serving local mirror`, e);
         }
       }
 

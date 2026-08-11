@@ -36,6 +36,7 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
 import { mapTopic } from '../utils/mappers.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 import {
@@ -57,6 +58,10 @@ import {
 } from '../services/topicManagement.js';
 
 const router = express.Router();
+
+// Keep this router independently fenced. It is mounted separately from the
+// course router, so topic authorization must not depend on mount order.
+router.use('/courses/:courseId/topics', gateCourseById());
 
 /**
  * GET /courses/:courseId/topics — list topics for a course.

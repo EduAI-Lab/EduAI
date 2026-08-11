@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
+import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
 import {
   makeProfessor,
   makeAdmin,
@@ -36,6 +37,14 @@ vi.mock("../../src/services/eduaiClient.js", () => ({
   // these two, so UNIT_ADMIN-scoped tests below stub them per course.
   fetchCoreCourseSafe: vi.fn(),
 }));
+
+vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi.fn(),
+  };
+});
 
 import {
   deleteCoreEnrollment,
@@ -81,6 +90,11 @@ describe("Admin routes", () => {
     // tests override this per-course via mockResolvedValue/mockResolvedValueOnce.
     listEduAiCourseEnrollmentsServiceKey.mockReset();
     listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
+    vi.mocked(authorizeLiveStudentEnrollment).mockReset().mockResolvedValue({
+      allowed: true,
+      state: 'allowed',
+      role: 'INSTRUCTOR',
+    });
   });
 
   // ── GET /api/admin/users ──────────────────────────────────────────
@@ -415,6 +429,85 @@ describe("Admin routes", () => {
         where: { courseOfferingId: externalCourse.id },
       });
       expect(rows).toHaveLength(1);
+    });
+  });
+
+  describe('live instructor enrollment-management fence', () => {
+    let course;
+    let professor;
+    let professorApp;
+    let student;
+
+    beforeEach(async () => {
+      professor = makeProfessor();
+      const seed = await seedMinimalCourse(professor.id);
+      course = seed.course;
+      student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: course.id, userId: student.id, role: 'STUDENT' },
+      });
+      professorApp = await createApp({ mockUser: professor });
+    });
+
+    it.each(['GET', 'POST', 'DELETE', 'PATCH'])(
+      'denies a stale instructor demoted in Core from %s enrollment access',
+      async (method) => {
+        vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+          allowed: false,
+          state: 'denied',
+          role: 'TA',
+        });
+
+        let requestUnderTest;
+        if (method === 'GET') {
+          requestUnderTest = request(professorApp).get(
+            `/api/admin/courses/${course.id}/enrollments`,
+          );
+        } else if (method === 'POST') {
+          requestUnderTest = request(professorApp)
+            .post(`/api/admin/courses/${course.id}/enrollments`)
+            .send({ userId: 'must-not-enroll' });
+        } else if (method === 'DELETE') {
+          requestUnderTest = request(professorApp).delete(
+            `/api/admin/courses/${course.id}/enrollments/${student.id}`,
+          );
+        } else {
+          requestUnderTest = request(professorApp)
+            .patch(`/api/admin/courses/${course.id}/enrollments/${student.id}/role`)
+            .send({ role: 'TA' });
+        }
+
+        const res = await requestUnderTest;
+        expect(res.status).toBe(403);
+        expect(
+          await prisma.courseEnrollment.findUnique({
+            where: { courseOfferingId_userId: { courseOfferingId: course.id, userId: student.id } },
+          }),
+        ).toMatchObject({ role: 'STUDENT' });
+        expect(
+          await prisma.courseEnrollment.findUnique({
+            where: {
+              courseOfferingId_userId: {
+                courseOfferingId: course.id,
+                userId: 'must-not-enroll',
+              },
+            },
+          }),
+        ).toBeNull();
+      },
+    );
+
+    it('fails closed when live instructor authorization is unavailable', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'unavailable',
+        role: null,
+      });
+
+      const res = await request(professorApp).get(`/api/admin/courses/${course.id}/enrollments`);
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('COURSE_AUTH_UNAVAILABLE');
     });
   });
 

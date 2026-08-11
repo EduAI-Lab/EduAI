@@ -59,8 +59,34 @@ describe("Topics routes", () => {
 
   // ── GET /api/courses/:courseId/topics ──────────────────────────────
 
-  describe("GET /api/courses/:courseId/topics", () => {
-    it("returns topics for an authorized member", async () => {
+  describe('GET /api/courses/:courseId/topics', () => {
+    it('denies a stale local instructor demoted in Core', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'denied',
+        role: 'TA',
+      });
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.data).toBeUndefined();
+    });
+
+    it('fails closed when live instructor authorization is unavailable', async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'unavailable',
+        role: null,
+      });
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('COURSE_AUTH_UNAVAILABLE');
+    });
+
+    it('returns topics for an authorized member', async () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
