@@ -179,7 +179,7 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
       embeddingProvider: "ollama",
       embeddingModel: "mxbai-embed-large",
     } as never);
-    vi.mocked(startReEmbedJob).mockResolvedValue({ id: "job-1" } as never);
+    vi.mocked(startReEmbedJob).mockResolvedValue({ job: { id: "job-1" }, created: true } as never);
 
     const res = await action(
       makeActionArgs({ embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large", reEmbed: true }),
