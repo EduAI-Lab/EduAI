@@ -9,12 +9,14 @@
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
  *  - #312: TA may edit/delete only question_metadata they created.
  *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
- *    remain caller-scoped.
+ *    remain caller-scoped; AI generation additionally requires a course context
+ *    and uses a caller-keyed resource limiter.
  *  - POST /approve is the exception: no flat role gate — a course TA (platform
  *    STUDENT + TA enrollment) may create question_metadata shells, so the
  *    per-course gate alone authorizes that route (see its inline comment).
  */
-import express from "express";
+import express from 'express';
+import rateLimit from 'express-rate-limit';
 import {
   createQuestion,
   getQuestionsByUser,
@@ -45,6 +47,32 @@ import {
 import { resolveVisibleCourseWhereForUser } from '../services/courseListService.js';
 
 const router = express.Router();
+
+const positiveConfigInt = (value, fallback) =>
+  Number.isInteger(value) && value > 0 ? value : fallback;
+
+/**
+ * AI endpoints have a caller-scoped limiter in addition to the deployment's
+ * global IP limiter. A user can therefore not bypass the budget by rotating
+ * source IPs; the auth identity remains the admission key.
+ */
+const qmAiUserRateLimit = rateLimit({
+  windowMs: positiveConfigInt(config.qmAiRateLimitWindowMs, 15 * 60 * 1000),
+  max: positiveConfigInt(config.qmAiRateLimitMax, 60),
+  keyGenerator: (req) => `qm-ai:${req.user?.id ?? req.ip}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'AI request limit exceeded; try again later',
+  },
+});
+
+const qmGeneratePromptMaxChars = () =>
+  positiveConfigInt(config.qmGeneratePromptMaxChars, 12_000);
+const qmMaxExtractTextChars = () =>
+  positiveConfigInt(config.qmMaxExtractTextChars, 120_000);
+
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
 function denyTaNotOwner(req, res) {
@@ -506,57 +534,77 @@ router.delete(
 );
 
 /** POST /api/questions/generate – triggers legacy AI providers to generate draft questions. */
-router.post("/generate", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
-  try {
-    const {
-      prompt,
-      provider = AI_PROVIDERS.GROQ,
-      numQuestions = 15,
-      difficultyDistribution,
-    } = req.body;
+router.post(
+  '/generate',
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  // Legacy generation used to be course-free. Keep it available only when
+  // the caller supplies a course they can author in; otherwise deployment API
+  // keys could be used as an unscoped generation oracle.
+  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
+  qmAiUserRateLimit,
+  async (req, res, next) => {
+    try {
+      const { prompt, provider = AI_PROVIDERS.GROQ, numQuestions = 15, difficultyDistribution } = req.body;
 
-    if (!prompt || !prompt.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: "Prompt is required",
+      if (typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Prompt is required'
+        });
+      }
+
+      const maxPromptChars = qmGeneratePromptMaxChars();
+      if (prompt.length > maxPromptChars) {
+        return res.status(413).json({
+          success: false,
+          error: `Prompt cannot exceed ${maxPromptChars.toLocaleString()} characters`,
+        });
+      }
+
+      const resolvedNumQuestions = Number(numQuestions);
+      if (!Number.isInteger(resolvedNumQuestions) || resolvedNumQuestions < 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'numQuestions must be a positive integer',
+        });
+      }
+      if (resolvedNumQuestions > positiveConfigInt(config.maxQuestions, 50)) {
+        return res.status(400).json({
+          success: false,
+          error: `numQuestions cannot exceed ${positiveConfigInt(config.maxQuestions, 50)}`
+        });
+      }
+
+      const params = {
+        numQuestions: resolvedNumQuestions,
+        difficultyDistribution: difficultyDistribution || {
+          easy: 5,
+          medium: 5,
+          hard: 5
+        }
+      };
+
+      const questions = await generateQuestions(prompt.trim(), provider, params);
+
+      res.json({
+        success: true,
+        message: 'Questions generated successfully',
+        data: questions
       });
+    } catch (error) {
+      next(error);
     }
-
-    const resolvedNumQuestions = parseInt(numQuestions, 10) || 15;
-    if (resolvedNumQuestions > config.maxQuestions) {
-      return res.status(400).json({
-        success: false,
-        error: `numQuestions cannot exceed ${config.maxQuestions}`,
-      });
-    }
-
-    const params = {
-      numQuestions: resolvedNumQuestions,
-      difficultyDistribution: difficultyDistribution || {
-        easy: 5,
-        medium: 5,
-        hard: 5,
-      },
-    };
-
-    const questions = await generateQuestions(prompt.trim(), provider, params);
-
-    res.json({
-      success: true,
-      message: "Questions generated successfully",
-      data: questions,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/questions/extract – sends OCR text to the AI extraction service and returns proposed questions. */
 router.post(
   "/extract",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
+  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
+  qmAiUserRateLimit,
   async (req, res, next) => {
     try {
       const { text, model, apiKeys } = req.body;
@@ -568,9 +616,21 @@ router.post(
         });
       }
 
-      const questions = await extractQuestionsFromText(text, req.qmCourse.id, model, apiKeys, {
-        cookie: req.headers.cookie ?? "",
-      });
+      const maxTextChars = qmMaxExtractTextChars();
+      if (text.length > maxTextChars) {
+        return res.status(413).json({
+          success: false,
+          error: `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+        });
+      }
+
+      const questions = await extractQuestionsFromText(
+        text,
+        req.qmCourse.id,
+        model,
+        apiKeys,
+        { cookie: req.headers.cookie ?? '' },
+      );
 
       res.json({
         success: true,

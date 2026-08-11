@@ -71,7 +71,8 @@ describe("generateQuestions (provider routing)", () => {
     axios.post.mockResolvedValue(completion(validQ));
     const out = await generateQuestions("topic", AI_PROVIDERS.GROQ, genParams);
     expect(out).toHaveLength(2);
-    expect(axios.post.mock.calls[0][0]).toContain("groq.com");
+    expect(axios.post.mock.calls[0][0]).toContain('groq.com');
+    expect(axios.post.mock.calls[0][2].timeout).toBeGreaterThan(0);
   });
 
   it("routes to OpenAI", async () => {

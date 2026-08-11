@@ -317,6 +317,7 @@ class EduAIService {
       userPromptOverride,
       mcqRequiredChoiceCount,
       cookie,
+      timeoutMs,
     } = params;
 
     if (!prompt || (!courseCode && !courseId)) {
@@ -410,7 +411,12 @@ OUTPUT RULES (mandatory):
         courseId,
         courseCode,
         streaming: false,
-        timeoutMs: 180000, // 3 minutes for question generation/extraction
+        // Callers may pass a smaller extraction budget. Keep a finite default
+        // even for legacy callers so a provider cannot hang indefinitely.
+        timeoutMs:
+          Number.isInteger(timeoutMs) && timeoutMs > 0
+            ? timeoutMs
+            : (config.qmAiProviderTimeoutMs ?? 30_000),
         cookie,
       });
 
@@ -447,7 +453,10 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             courseId,
             courseCode,
             streaming: false,
-            timeoutMs: 180000,
+            timeoutMs:
+              Number.isInteger(timeoutMs) && timeoutMs > 0
+                ? timeoutMs
+                : (config.qmAiProviderTimeoutMs ?? 30_000),
             cookie,
           });
           const repairRaw = repairResponse?.content ?? repairResponse?.message ?? repairResponse;

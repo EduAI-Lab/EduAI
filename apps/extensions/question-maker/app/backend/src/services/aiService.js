@@ -23,6 +23,43 @@ const AI_PROVIDERS = {
   DEEPSEEK: "deepseek",
 };
 
+const configuredPositiveInt = (value, fallback) =>
+  Number.isInteger(value) && value > 0 ? value : fallback;
+
+const qmMaxExtractTextChars = () =>
+  configuredPositiveInt(config.qmMaxExtractTextChars, 120_000);
+const qmMaxExtractChunks = () => configuredPositiveInt(config.qmMaxExtractChunks, 24);
+const qmMaxExtractProviderCalls = () =>
+  configuredPositiveInt(config.qmMaxExtractProviderCalls, 36);
+const qmExtractDeadlineMs = () =>
+  configuredPositiveInt(config.qmExtractDeadlineMs, 120_000);
+const qmAiProviderTimeoutMs = () =>
+  configuredPositiveInt(config.qmAiProviderTimeoutMs, 30_000);
+
+const extractionBudgetError = (message, status = 413, code = 'QM_EXTRACT_LIMIT') => {
+  const error = new Error(message);
+  // errorHandler uses `status`; statusCode is retained for callers/services
+  // that already consume the upstream-style field.
+  error.status = status;
+  error.statusCode = status;
+  error.code = code;
+  return error;
+};
+
+const withTimeout = async (promise, timeoutMs, timeoutError) => {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(timeoutError), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 /** Calls the Groq chat API with a structured prompt and returns the raw content string. */
 const callGroqAPI = async (prompt, params) => {
   try {
@@ -66,7 +103,8 @@ const callGroqAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.groqApiKey}`,
           "Content-Type": "application/json",
         },
-      },
+        timeout: qmAiProviderTimeoutMs(),
+      }
     );
 
     return response.data.choices[0].message.content;
@@ -114,7 +152,8 @@ const callOpenAIAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.openaiApiKey}`,
           "Content-Type": "application/json",
         },
-      },
+        timeout: qmAiProviderTimeoutMs(),
+      }
     );
 
     return response.data.choices[0].message.content;
@@ -160,7 +199,8 @@ const callDeepSeekAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.deepseekApiKey}`,
           "Content-Type": "application/json",
         },
-      },
+        timeout: qmAiProviderTimeoutMs(),
+      }
     );
 
     return response.data.choices[0].message.content;
@@ -275,13 +315,16 @@ const sanitizeEduAIQuestion = (question) => {
 };
 
 /** Uses EduAI to extract questions from OCR’d text, chunking input and deduplicating outputs. */
-const extractQuestionsWithEduAI = async (
-  text,
-  course,
-  model = "google:gemini-2.5-flash",
-  apiKeys = {},
-  { cookie } = {},
-) => {
+const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.5-flash", apiKeys = {}, { cookie } = {}) => {
+  const maxTextChars = qmMaxExtractTextChars();
+  if (typeof text !== 'string' || text.length > maxTextChars) {
+    throw extractionBudgetError(
+      `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      413,
+      'QM_EXTRACT_TEXT_TOO_LARGE',
+    );
+  }
+
   if (!eduaiService.isConfigured()) {
     throw new Error("EduAI service is not configured. Please set EDUAI_API_KEY.");
   }
@@ -294,6 +337,20 @@ const extractQuestionsWithEduAI = async (
       ? course.coreCourseId.trim()
       : undefined;
   const { chunks, blockCountsPerChunk } = chunkByQuestionBlocks(text, 5000);
+  const maxChunks = qmMaxExtractChunks();
+  if (chunks.length > maxChunks) {
+    throw extractionBudgetError(
+      `OCR text produces ${chunks.length} chunks; the maximum is ${maxChunks}`,
+      413,
+      'QM_EXTRACT_CHUNK_LIMIT',
+    );
+  }
+
+  const extractionStartedAt = Date.now();
+  let providerCalls = 0;
+  const maxProviderCalls = qmMaxExtractProviderCalls();
+  const deadlineMs = qmExtractDeadlineMs();
+  const providerTimeoutMs = qmAiProviderTimeoutMs();
   const extracted = [];
 
   // Fetch topics for the course to include in the prompt
@@ -379,7 +436,26 @@ ${chunk}
     const extractionRetryUserPrompt = `Extract all questions from:\n"""${chunk}"""`;
 
     const runChunkExtraction = async (systemPrompt, userPrompt) => {
-      const questions = await eduaiService.generateQuestions({
+      const elapsedMs = Date.now() - extractionStartedAt;
+      const remainingMs = deadlineMs - elapsedMs;
+      if (remainingMs <= 0) {
+        throw extractionBudgetError(
+          'Question extraction exceeded its time limit; try a smaller upload',
+          504,
+          'QM_EXTRACT_DEADLINE',
+        );
+      }
+      if (providerCalls >= maxProviderCalls) {
+        throw extractionBudgetError(
+          'Question extraction reached its provider-call limit; try a smaller upload',
+          429,
+          'QM_EXTRACT_PROVIDER_CALL_LIMIT',
+        );
+      }
+
+      providerCalls += 1;
+      const callTimeoutMs = Math.min(providerTimeoutMs, remainingMs);
+      const questionsPromise = eduaiService.generateQuestions({
         prompt: chunk,
         courseCode,
         courseId: coreCourseId,
@@ -391,8 +467,20 @@ ${chunk}
         systemPromptOverride: systemPrompt,
         userPromptOverride: userPrompt,
         cookie,
+        timeoutMs: callTimeoutMs,
       });
-      return questions.map((question) => sanitizeEduAIQuestion(question)).filter(Boolean);
+      const questions = await withTimeout(
+        questionsPromise,
+        callTimeoutMs,
+        extractionBudgetError(
+          'Question extraction provider timed out; try a smaller upload',
+          504,
+          'QM_EXTRACT_DEADLINE',
+        ),
+      );
+      return questions
+        .map((question) => sanitizeEduAIQuestion(question))
+        .filter(Boolean);
     };
 
     try {
@@ -402,6 +490,9 @@ ${chunk}
       }
       extracted.push(...sanitized);
     } catch (error) {
+      if (typeof error?.code === 'string' && error.code.startsWith('QM_EXTRACT_')) {
+        throw error;
+      }
       console.warn("EduAI extraction chunk failed, retrying with simplified prompt", {
         chunkIndex: i,
         message: error.message,
@@ -682,16 +773,25 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
 };
 
 /** Public API to normalize raw upload text and run EduAI extraction for a course. */
-export const extractQuestionsFromText = async (
-  rawText,
-  courseId,
-  model,
-  apiKeys,
-  { cookie } = {},
-) => {
+export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys, { cookie } = {}) => {
+  const maxTextChars = qmMaxExtractTextChars();
+  if (typeof rawText === 'string' && rawText.length > maxTextChars) {
+    throw extractionBudgetError(
+      `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      413,
+      'QM_EXTRACT_TEXT_TOO_LARGE',
+    );
+  }
   const normalized = normalizeExtractText(rawText);
   if (!normalized) {
     return [];
+  }
+  if (normalized.length > maxTextChars) {
+    throw extractionBudgetError(
+      `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
+      413,
+      'QM_EXTRACT_TEXT_TOO_LARGE',
+    );
   }
 
   // `code`/`name` are Core-owned and no longer stored locally (#1072 §4 step

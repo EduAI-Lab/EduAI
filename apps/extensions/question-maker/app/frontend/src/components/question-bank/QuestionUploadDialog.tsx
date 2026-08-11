@@ -53,28 +53,22 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
 import { AIServiceIndicators } from "../eduai/AIServiceIndicators";
 
+import { ExtractedQuestion, MCQChoice, Question, QuestionDifficulty, QuestionType } from '../../types/question';
+import { MCQChoicesField } from '../questions/MCQChoicesField';
+import { Topic } from '../../types/topic';
+import { questionService } from '../../services/questionService';
+import { eduaiService, EduAIModelOption } from '../../services/eduaiService';
+import { apiKeyStorage } from '../../services/apiKeyStorage';
+import { useOCRHistory } from '../../hooks/use-ocr-history';
+import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
+import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
+import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel } from '../../utils/aiModels';
+import type { OCRJob, StoredQuestion } from '../../types/ocr';
+import { toast } from 'sonner';
 import {
-  ExtractedQuestion,
-  MCQChoice,
-  Question,
-  QuestionDifficulty,
-  QuestionType,
-} from "../../types/question";
-import { MCQChoicesField } from "../questions/MCQChoicesField";
-import { Topic } from "../../types/topic";
-import { questionService } from "../../services/questionService";
-import { eduaiService, EduAIModelOption } from "../../services/eduaiService";
-import { apiKeyStorage } from "../../services/apiKeyStorage";
-import { useOCRHistory } from "../../hooks/use-ocr-history";
-import { OCRHistoryPanel } from "../ocr/OCRHistoryPanel";
-import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
-import {
-  FALLBACK_GENERATION_MODEL,
-  isCampusModel,
-  pickPreferredGenerationModel,
-} from "../../utils/aiModels";
-import type { OCRJob, StoredQuestion } from "../../types/ocr";
-import { toast } from "sonner";
+    validateQuestionUploadFile,
+    validateQuestionUploadText,
+} from '../../utils/questionUploadLimits';
 
 // pdfjs-dist and tesseract.js are by far the heaviest dependencies in this app,
 // and only the OCR path below touches them. Imported statically they landed in
@@ -619,22 +613,130 @@ export const QuestionUploadDialog = ({
         }
     }, [aiModel, providerApiKey, toast]);
 
-      try {
-        updateJobStatus(jobId, "processing");
-        const text = await performOcr(file);
-        if (onExtractInBackground && courseId) {
-          const apiKeys = await apiKeyStorage.buildApiKeysForModel(aiModel);
-          onExtractInBackground({
+    const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+        const fileError = validateQuestionUploadFile(file);
+        if (fileError) throw new Error(fileError);
+        const { getDocument } = await loadPdfjs();
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await getDocument({ data: arrayBuffer }).promise;
+        const pageTexts: string[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+            const page = await pdf.getPage(pageNumber);
+            const content = await page.getTextContent();
+            const pageText = pdfItemsToTextWithLineBreaks(content.items as PdfTextItem[]);
+            pageTexts.push(pageText);
+            onProgress(Math.round((pageNumber / pdf.numPages) * 70));
+        }
+
+        return pageTexts.join('\n');
+    }, []);
+
+    const performImageOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+        const fileError = validateQuestionUploadFile(file);
+        if (fileError) throw new Error(fileError);
+        const { default: Tesseract } = await import('tesseract.js');
+        const result = await Tesseract.recognize(file, 'eng', {
+            logger: (message) => {
+                if (message.status === 'recognizing text') {
+                    onProgress(10 + Math.round(message.progress * 60));
+                }
+            }
+        });
+        return result.data.text;
+    }, []);
+
+    const performOcr = useCallback(async (file: File) => {
+        const fileError = validateQuestionUploadFile(file);
+        if (fileError) throw new Error(fileError);
+        setProcessingStage('ocr');
+        setProgress(5);
+
+        let text = '';
+        if (isTextFile(file)) {
+            text = await file.text();
+            setProgress(70);
+        } else if (isPdfFile(file)) {
+            text = await performPdfOcr(file, setProgress);
+        } else if (isImageFile(file)) {
+            text = await performImageOcr(file, setProgress);
+        } else {
+            throw new Error('Unsupported file type. Please upload a PDF, image, or TXT file.');
+        }
+
+        if (!text.trim()) {
+            throw new Error('No text detected in the uploaded file.');
+        }
+
+        const textError = validateQuestionUploadText(text);
+        if (textError) throw new Error(textError);
+
+        return text;
+    }, [performImageOcr, performPdfOcr]);
+
+    const handleExtractQuestions = useCallback(async (text: string) => {
+        if (!courseId) {
+            throw new Error('Select a course before extracting questions.');
+        }
+
+        const textError = validateQuestionUploadText(text);
+        if (textError) throw new Error(textError);
+
+        setProcessingStage('extracting');
+        setProgress(85);
+        console.log('QuestionUploadDialog: Extracting questions with model:', aiModel);
+
+        const apiKeys = await apiKeyStorage.buildApiKeysForModel(aiModel);
+        const response = await questionService.extractQuestionsFromText({
             text,
             courseId,
             model: aiModel,
-            apiKeys,
-            jobId,
-            onExtractionComplete: (status, extras) => {
-              updateJobStatus(jobId, status === "error" ? "error" : "success", {
-                error: extras?.error,
-                questionsCount: extras?.questionsCount,
-              });
+            apiKeys
+        });
+        const drafts = mapExtractedToDraftQuestions(response || []);
+
+        if (drafts.length === 0) {
+            throw new Error('No questions could be extracted from the provided text.');
+        }
+
+        setDraftQuestions(drafts);
+        setProcessingStage('review');
+        setProgress(100);
+
+        toast('Questions extracted', {
+            description: `Parsed ${drafts.length} question${drafts.length === 1 ? '' : 's'} from the upload.`,
+            duration: Infinity,
+        });
+    }, [courseId, toast, aiModel]);
+
+    const processFile = useCallback(async (file: File) => {
+        setError(null);
+        setDraftQuestions([]);
+
+        // Guard before creating a history entry, reading the file, allocating
+        // an ArrayBuffer, or starting OCR. The backend repeats this limit.
+        const fileError = validateQuestionUploadFile(file);
+        if (fileError) {
+            setError(fileError);
+            setProcessingStage('idle');
+            setProgress(0);
+            setLastFileName('');
+            toast.error('Upload rejected', { description: fileError, duration: Infinity });
+            return;
+        }
+
+        setLastFileName(file.name);
+
+        const jobId = addJob({
+            fileName: file.name,
+            fileSize: file.size,
+            courseId: courseId!,
+            courseName: courseName ?? 'Unknown Course',
+            model: aiModel,
+            status: 'pending',
+            assessmentDetails: {
+                type: assessmentType,
+                name: assessmentName,
             },
           });
           onClose();
@@ -1824,170 +1926,13 @@ export const QuestionUploadDialog = ({
                                     }
                                   />
                                 </div>
-                                <div className="space-y-2">
-                                  <Label>Question text</Label>
-                                  <Textarea
-                                    rows={3}
-                                    value={draft.question}
-                                    onChange={(event) =>
-                                      updateDraft(draft.id, { question: event.target.value })
-                                    }
-                                  />
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <div className="space-y-2">
-                                    <Label>Primary topic</Label>
-                                    <Select
-                                      value={
-                                        draft.primaryTopicId !== null
-                                          ? String(draft.primaryTopicId)
-                                          : "none"
-                                      }
-                                      onValueChange={(value) => {
-                                        if (value === "none") {
-                                          setPrimaryTopicForDraft(draft.id, null);
-                                          return;
-                                        }
-                                        setPrimaryTopicForDraft(draft.id, value);
-                                      }}
-                                      disabled={topics.length === 0}
-                                    >
-                                      <SelectTrigger>
-                                        <SelectValue
-                                          placeholder={
-                                            topics.length === 0
-                                              ? "No topics available"
-                                              : "Select topic"
-                                          }
-                                        />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="none">Unassigned</SelectItem>
-                                        {topics.map((topic) => (
-                                          <SelectItem key={topic.id} value={String(topic.id)}>
-                                            {topic.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Secondary topics</Label>
-                                    {topics.length === 0 ? (
-                                      <p className="text-xs text-muted-foreground">
-                                        No topics available. A new topic will be created
-                                        automatically.
-                                      </p>
-                                    ) : (
-                                      <div className="flex flex-wrap gap-2">
-                                        {topics.map((topic) => (
-                                          <label
-                                            key={topic.id}
-                                            className="flex items-center gap-1 text-xs"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              className="h-4 w-4"
-                                              checked={draft.secondaryTopicIds.includes(topic.id)}
-                                              onChange={() =>
-                                                toggleSecondaryTopicForDraft(draft.id, topic.id)
-                                              }
-                                              disabled={draft.primaryTopicId === topic.id}
-                                            />
-                                            <span>{topic.name}</span>
-                                          </label>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-3">
-                                  <div className="space-y-2">
-                                    <Label>Difficulty</Label>
-                                    <Select
-                                      value={draft.difficulty}
-                                      onValueChange={(value) =>
-                                        updateDraft(draft.id, {
-                                          difficulty: value as QuestionDifficulty,
-                                        })
-                                      }
-                                    >
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {difficultyOptions.map((difficulty) => (
-                                          <SelectItem key={difficulty} value={difficulty}>
-                                            {difficulty}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Type</Label>
-                                    <Select
-                                      value={draft.type}
-                                      onValueChange={(value) =>
-                                        updateDraft(draft.id, { type: value as QuestionType })
-                                      }
-                                    >
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {questionTypes.map((type) => (
-                                          <SelectItem key={type} value={type}>
-                                            {questionTypeLabels[type]}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-                                {draft.type === "MCQ" && (
-                                  <div className="space-y-2">
-                                    <MCQChoicesField
-                                      choices={
-                                        draft.choices ?? [
-                                          { letter: "A", text: "" },
-                                          { letter: "B", text: "" },
-                                          { letter: "C", text: "" },
-                                          { letter: "D", text: "" },
-                                        ]
-                                      }
-                                      onChoicesChange={(newChoices) =>
-                                        updateDraft(draft.id, { choices: newChoices })
-                                      }
-                                      answer={draft.answer ?? ""}
-                                      onAnswerChange={(letter) =>
-                                        updateDraft(draft.id, { answer: letter || null })
-                                      }
-                                      selectAllThatApply={Boolean(draft.selectAllThatApply)}
-                                      correctAnswers={
-                                        Array.isArray(draft.correctAnswers)
-                                          ? draft.correctAnswers
-                                          : []
-                                      }
-                                      onSelectAllThatApplyChange={(value) =>
-                                        updateDraft(draft.id, { selectAllThatApply: value })
-                                      }
-                                      onCorrectAnswersChange={(letters) =>
-                                        updateDraft(draft.id, { correctAnswers: letters })
-                                      }
-                                      idPrefix={`upload-draft-${draft.id}`}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                        <p className="pt-3 text-xs text-muted-foreground flex-shrink-0">
-                          The AI extraction is a starting point—adjust the question text,
-                          instructions, difficulty, or answers before saving.
-                        </p>
-                      </CardContent>
+                            )}
+                            {error && (
+                                <p className="text-sm text-red-600" role="alert" aria-live="assertive">
+                                    {error}
+                                </p>
+                            )}
+                        </CardContent>
                     </Card>
                   </>
                 ) : (

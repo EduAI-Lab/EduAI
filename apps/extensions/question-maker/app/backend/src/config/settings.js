@@ -6,6 +6,11 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 
+const positiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../../../../");
@@ -65,6 +70,18 @@ export const config = {
   defaultNumQuestions: parseInt(process.env.DEFAULT_NUM_QUESTIONS) || 15,
   maxQuestions: parseInt(process.env.MAX_QUESTIONS) || 50,
 
+  // Question-maker AI resource budgets. These are deliberately finite so a
+  // malformed upload or repeated legacy request cannot create unbounded OCR
+  // chunks/provider calls. Override per deployment with QM_* environment vars.
+  qmMaxExtractTextChars: positiveInt(process.env.QM_MAX_EXTRACT_TEXT_CHARS, 120_000),
+  qmMaxExtractChunks: positiveInt(process.env.QM_MAX_EXTRACT_CHUNKS, 24),
+  qmMaxExtractProviderCalls: positiveInt(process.env.QM_MAX_EXTRACT_PROVIDER_CALLS, 36),
+  qmExtractDeadlineMs: positiveInt(process.env.QM_EXTRACT_DEADLINE_MS, 120_000),
+  qmAiProviderTimeoutMs: positiveInt(process.env.QM_AI_PROVIDER_TIMEOUT_MS, 30_000),
+  qmGeneratePromptMaxChars: positiveInt(process.env.QM_GENERATE_PROMPT_MAX_CHARS, 12_000),
+  qmAiRateLimitWindowMs: positiveInt(process.env.QM_AI_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  qmAiRateLimitMax: positiveInt(process.env.QM_AI_RATE_LIMIT_MAX, 60),
+  
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX) || 1000,

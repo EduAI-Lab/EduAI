@@ -140,19 +140,21 @@ export interface QuestionCreate {
 }
 
 export interface QuestionGenerationParams {
-  prompt: string;
-  provider: "groq" | "openai" | "deepseek";
-  numQuestions: number;
-  difficultyDistribution: {
-    easy: number;
-    medium: number;
-    hard: number;
-  };
-  reasoningDistribution: {
-    factual: number;
-    analytical: number;
-    application: number;
-  };
+    /** Required course context for the legacy generation endpoint. */
+    courseId: number;
+    prompt: string;
+    provider: 'groq' | 'openai' | 'deepseek';
+    numQuestions: number;
+    difficultyDistribution: {
+        easy: number;
+        medium: number;
+        hard: number;
+    };
+    reasoningDistribution: {
+        factual: number;
+        analytical: number;
+        application: number;
+    };
 }
 
 export interface QuestionStats {

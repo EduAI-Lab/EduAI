@@ -327,7 +327,21 @@ describe("generateQuestions", () => {
     await expect(eduaiService.generateQuestions({ courseCode: 'BIO 101' })).rejects.toThrow(/required/i);
   });
 
-  it("accepts courseId without courseCode", async () => {
+  it('accepts courseId without courseCode', async () => {
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        content: [{ content: 'Q?', description: 'd', difficulty: 'easy', reasoning_level: 'factual', type: 'SA', answer: 'a' }],
+      },
+    });
+    const out = await eduaiService.generateQuestions({ prompt: 'cells', courseId: 'cuid-core' });
+    expect(out).toHaveLength(1);
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-core');
+    expect(axios.post.mock.calls[0][1]).not.toHaveProperty('courseCode');
+    expect(axios.post.mock.calls[0][2].timeout).toBeGreaterThan(0);
+  });
+
+  it('normalizes a plain array of SA questions', async () => {
     axios.post.mockResolvedValue({
       status: 200,
       data: {

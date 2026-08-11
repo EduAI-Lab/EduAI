@@ -401,22 +401,19 @@ describe("PUT /api/questions/:id", () => {
 // DELETE /api/questions/:id has no additional branches to cover beyond PUT's
 // dead-code denyTaNotOwner note above and the shared resourceAccess gate.
 
-describe("POST /api/questions/generate", () => {
-  it("requires a prompt", async () => {
-    authAs(INSTRUCTOR, "INSTRUCTOR");
-    const res = await request(app)
-      .post("/api/questions/generate")
-      .set("Cookie", "session=v")
-      .send({});
+describe('POST /api/questions/generate', () => {
+  it('requires a prompt', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    const res = await request(app).post('/api/questions/generate').set('Cookie', 'session=v').send({ courseId: 1 });
     expect(res.status).toBe(400);
   });
 
   it("rejects numQuestions above the configured max", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
     const res = await request(app)
-      .post("/api/questions/generate")
-      .set("Cookie", "session=v")
-      .send({ prompt: "x", numQuestions: 999 });
+      .post('/api/questions/generate')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, prompt: 'x', numQuestions: 999 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/cannot exceed/);
   });
@@ -426,9 +423,9 @@ describe("POST /api/questions/generate", () => {
     mockGenerateQuestions.mockResolvedValue([{ id: "q1" }]);
 
     const res = await request(app)
-      .post("/api/questions/generate")
-      .set("Cookie", "session=v")
-      .send({ prompt: "Generate some questions", numQuestions: 3 });
+      .post('/api/questions/generate')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, prompt: 'Generate some questions', numQuestions: 3 });
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([{ id: "q1" }]);

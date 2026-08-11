@@ -73,6 +73,13 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 | `OPENAI_API_KEY` | No | Same |
 | `DEEPSEEK_API_KEY` | No | Same |
 | `DEFAULT_NUM_QUESTIONS`, `MAX_QUESTIONS` | No | AI batch limits |
+| `QM_MAX_EXTRACT_TEXT_CHARS`, `QM_MAX_EXTRACT_CHUNKS`, `QM_MAX_EXTRACT_PROVIDER_CALLS` | No | OCR extraction caps (defaults: 120000 chars, 24 chunks, 36 EduAI calls) |
+| `QM_EXTRACT_DEADLINE_MS`, `QM_AI_PROVIDER_TIMEOUT_MS` | No | OCR total/provider deadlines (defaults: 120s / 30s) |
+| `QM_GENERATE_PROMPT_MAX_CHARS` | No | Legacy generation prompt cap (default: 12000 chars) |
+| `QM_AI_RATE_LIMIT_WINDOW_MS`, `QM_AI_RATE_LIMIT_MAX` | No | Caller-keyed AI request quota (defaults: 15 minutes / 60 requests) |
+
+The upload dialog mirrors the server's 120,000-character OCR cap and rejects
+PDF/image/TXT files larger than 20 MiB before reading or starting OCR.
 | `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
 | `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
