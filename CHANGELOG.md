@@ -14,7 +14,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [question-maker] feat: Allow reordering assessment sections after creation via up/down controls and `PUT /sections/reorder`. Closes #1364. (@GlowyBlack, 2026-08-11)
+- [question-maker] feat: Allow reordering assessment sections after creation via up/down controls and `PUT /sections/reorder`. Closes #1364. (@GlowyBlack, 2026-08-11) — [#1473](https://github.com/EduAI-Lab/EduAI/pull/1473)
 
 ## [Week 14 — August 3–9, 2026]
 
