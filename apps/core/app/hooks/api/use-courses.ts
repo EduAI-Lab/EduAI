@@ -11,22 +11,34 @@ import {
 const SEARCH_DEBOUNCE_MS = 300;
 
 export interface Course {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  term: string;
-  year: number;
-  isActive: boolean;
-  isPublished: boolean;
-  aiInstructions: string;
-  responseStyleTags?: string[];
-  instructorId: string | null;
-  department: string | null;
-  startDate: string;
-  endDate: string | null;
-  createdAt: string;
-  updatedAt: string;
+  id: string
+  code: string
+  name: string
+  description: string | null
+  section?: string
+  term: string
+  year: number
+  isActive: boolean
+  isPublished: boolean
+  /** Staff-only list field; absent from student responses. */
+  aiInstructions?: string
+  responseStyleTags?: string[]
+  /** Staff-only detail/list field; absent from student responses. */
+  instructorId?: string | null
+  department: string | null
+  startDate: string | null
+  endDate: string | null
+  /** Present only on a student detail response; never the raw prompt. */
+  hasAiConfig?: boolean
+  ragTopK?: number | null
+  ragSimilarityThreshold?: number | null
+  courseScopeGuardrailEnabled?: boolean
+  externalSource?: string | null
+  externalId?: string | null
+  callerEnrollmentRole?: string | null
+  /** Legacy fixture compatibility; course API DTOs no longer emit these. */
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface CreateCourseInput {

@@ -6,6 +6,7 @@ import {
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
+import { serializeCourseForApi } from "~/lib/courses/dto.server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -32,10 +33,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify(course), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify(
+        serializeCourseForApi(course, { audience: "service", detail: true }),
+      ),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   const session = await getRequestSession(request);
@@ -58,10 +64,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify(course), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify(
+        serializeCourseForApi(course, { audience: "staff", detail: true }),
+      ),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   // §5: viewing course details requires a course relationship; students
@@ -85,10 +96,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  return new Response(JSON.stringify(course), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  const audience = access.level === "student" ? "student" : "staff";
+  return new Response(
+    JSON.stringify(
+      serializeCourseForApi(course, {
+        audience,
+        detail: true,
+      }),
+    ),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
