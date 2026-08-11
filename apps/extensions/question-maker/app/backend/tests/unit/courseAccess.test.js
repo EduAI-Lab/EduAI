@@ -21,8 +21,9 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   getMyProfileFromCore: mockMe,
 }));
 
-const { resolveCourseAccess, requireCourseAccess, LEVELS } =
-  await import("../../src/middleware/courseAccess.js");
+const { resolveCourseAccess, requireCourseAccess, requireOptionalCourseAccess, LEVELS } = await import(
+  '../../src/middleware/courseAccess.js'
+);
 
 const LINKED = { id: 1, userId: "owner-1", coreCourseId: "core-c1" };
 
@@ -208,7 +209,35 @@ describe("resolveCourseAccess", () => {
   });
 });
 
-describe("requireCourseAccess", () => {
+describe('requireOptionalCourseAccess', () => {
+  it('returns a validation error before resolving malformed target ids', async () => {
+    const req = {
+      user: { id: 'u1', role: 'INSTRUCTOR' },
+      body: { courseId: 'not-a-number' },
+      headers: {},
+    };
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+    const next = vi.fn();
+
+    await requireOptionalCourseAccess({
+      min: 'instructor',
+      getCourseId: (request) => request.body.courseId,
+    })(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Valid courseId is required',
+    });
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('requireCourseAccess', () => {
   function makeRes() {
     const res = { status: vi.fn(), json: vi.fn() };
     res.status.mockReturnValue(res);

@@ -226,7 +226,15 @@ export function requireOptionalCourseAccess({ min, getCourseId, attachAs = 'targ
         return res.status(404).json({ success: false, error: 'Course not found' });
       }
 
-      const { course, access } = await resolveCourseAccessWithCourse(req.user, courseId, {
+      // Validate the target identifier before resolving access. Resource
+      // routes keep their source-resource authorization first, but malformed
+      // relocation input is a client error (400), not a target-course 404.
+      const parsedCourseId = Number(courseId);
+      if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
+        return res.status(400).json({ success: false, error: 'Valid courseId is required' });
+      }
+
+      const { course, access } = await resolveCourseAccessWithCourse(req.user, parsedCourseId, {
         cookie: req.headers.cookie,
       });
 
