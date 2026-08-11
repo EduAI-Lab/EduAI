@@ -42,6 +42,7 @@
     "@streamdown/math": "^1.0.2",
     "@tabler/icons-react": "^3.34.0",
     "ai": "^5.0.97",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "driver.js": "^1.4.0",
