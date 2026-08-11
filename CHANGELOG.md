@@ -9,6 +9,7 @@
 ### Tests
 
 - [core] test: Reproducible Playwright exploration suite for Core's Student and TA roles (`tests/e2e/tests/core/week15-student-ta-exploration.spec.ts`, 13 cases) covering course-chat access, cross-course IDOR probes on chat/enrollments/questions/materials, hidden-material RAG-visibility scoping, the AUTH-08 TA own-upload material RBAC rule, TA chat-oversight permanence, and a mixed-role (TA-in-one-course, Student-in-another) dashboard-framing check. (#1459, @Ayyhab, 2026-08-10)
+- [core] fix: The week15 exploration suite above signs in as `prisma/seed.ts`'s deterministic demo accounts, but the E2E CI docker stack only runs `prisma migrate deploy` on boot, never the seed script — so every sign-in 401'd in CI even though the suite passed locally against an already-seeded dev DB. Added `POST /api/e2e/seed` (`apps/core/app/routes/api/e2e.seed.ts`), a `NODE_ENV=test`-gated hook mirroring `/api/e2e/promote` that runs the real `seed.ts main()` (now exported), and a `beforeAll` in the spec that calls it once before any sign-in. `main()` is upsert-based end to end, so calling it against an already-seeded DB (local) or an empty one (CI) is safe either way. (#1459, @Ayyhab, 2026-08-11)
 
 ## [Week 14 - August 3-9, 2026]
 

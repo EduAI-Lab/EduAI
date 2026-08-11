@@ -51,6 +51,23 @@ async function newAuthedContext(playwright: any, email: string) {
   return ctx;
 }
 
+// This spec signs in as prisma/seed.ts's deterministic demo accounts (not
+// freshly-registered users like the rest of tests/e2e/) because the scenarios
+// need real, specific enrollment/TA state that only the seed graph sets up.
+// The E2E docker stack only runs `prisma migrate deploy` on boot, not the seed
+// script itself, so trigger it once here via the E2E-only /api/e2e/seed route
+// (guarded the same way as /api/e2e/promote — 404s outside NODE_ENV=test).
+test.beforeAll(async ({ playwright }) => {
+  const ctx = await playwright.request.newContext();
+  try {
+    const secret = process.env.E2E_SEED_SECRET ?? 'e2e-seed-secret';
+    const res = await ctx.post(`${CORE_URL}/api/e2e/seed`, { data: { secret } });
+    expect(res.ok(), `demo-data seed failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+  } finally {
+    await ctx.dispose();
+  }
+});
+
 // ===========================================================================
 // STUDENT — real UI walkthrough
 // ===========================================================================

@@ -1629,7 +1629,7 @@ async function seedMaterials() {
   }
 }
 
-async function main() {
+export async function main() {
   console.log('Seeding Core...');
 
   const disciplineCount = await seedDisciplines();
