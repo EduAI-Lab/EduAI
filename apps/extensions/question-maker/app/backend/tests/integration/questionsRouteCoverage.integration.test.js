@@ -710,6 +710,24 @@ describe("POST /api/questions/approve", () => {
       }),
     ]);
   });
+
+  it('rejects approval batches above config.maxQuestions before access or mutation', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    const questions = Array.from({ length: 6 }, (_, index) => ({
+      primaryTopicId: `topic-${index + 1}`,
+      description: `question ${index + 1}`,
+    }));
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: COURSE.id, questions });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cannot approve more than 5/i);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+    expect(mockEnrollments).not.toHaveBeenCalled();
+  });
 });
 
 describe("PUT /api/questions/:id/order", () => {
@@ -749,8 +767,29 @@ describe("PUT /api/questions/:id/order", () => {
     expect(res.status).toBe(404);
   });
 
-  it("updates the order on success", async () => {
-    authAs(INSTRUCTOR, "INSTRUCTOR");
+  it.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['infinite', 'Infinity'],
+    ['unsafe', Number.MAX_SAFE_INTEGER + 1],
+  ])('rejects %s orderNumber before the assessment lookup', async (_label, orderNumber) => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    loadQuestion(INSTRUCTOR.id);
+
+    const res = await request(app)
+      .put('/api/questions/7/order')
+      .set('Cookie', 'session=v')
+      .send({ assessmentId: 5, orderNumber });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/positive safe integer/i);
+    expect(mockAssessmentFindOne).not.toHaveBeenCalled();
+    expect(mockUpdateOrder).not.toHaveBeenCalled();
+  });
+
+  it('updates the order on success', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
     loadQuestion(INSTRUCTOR.id);
     mockAssessmentFindOne.mockResolvedValue({ id: 5, courseId: COURSE.id });
     mockUpdateOrder.mockResolvedValue({ id: 7, questionOrder: { 5: 1 } });

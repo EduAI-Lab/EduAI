@@ -205,5 +205,85 @@ describeDb(
         );
       });
     });
-  },
-);
+
+    it('throws when the assessment does not exist', async () => {
+      await expect(deleteAssessment(999999, USER.id)).rejects.toThrow(/assessment not found/i);
+    });
+  });
+
+  describe('getQuestionsInAssessment', () => {
+    it('returns questions in the order stored in questionOrder JSONB — not insertion order', async () => {
+      const assessment = await makeAssessment();
+
+      const qA = await makeQuestion({ [assessment.id]: 3 });
+      const qB = await makeQuestion({ [assessment.id]: 1 });
+      const qC = await makeQuestion({ [assessment.id]: 2 });
+
+      await makeVariant(qA.id, assessment.id);
+      await makeVariant(qB.id, assessment.id);
+      await makeVariant(qC.id, assessment.id);
+
+      const result = await getQuestionsInAssessment(assessment.id, USER.id);
+
+      const ids = result.map(q => q.id);
+      expect(ids).toEqual([qB.id, qC.id, qA.id]);
+    });
+
+    it('excludes questions that are not in this assessment\'s questionOrder', async () => {
+      const asmA = await makeAssessment('A');
+      const asmB = await makeAssessment('B');
+
+      const qInA = await makeQuestion({ [asmA.id]: 1 });
+      const qInB = await makeQuestion({ [asmB.id]: 1 });
+
+      await makeVariant(qInA.id, asmA.id);
+      await makeVariant(qInB.id, asmB.id);
+
+      const result = await getQuestionsInAssessment(asmA.id, USER.id);
+      const ids = result.map(q => q.id);
+
+      expect(ids).toContain(qInA.id);
+      expect(ids).not.toContain(qInB.id);
+    });
+
+    it('filters cross-course and nonnumeric legacy questionOrder entries without a cast error', async () => {
+      const assessmentA = await makeAssessment('Course A assessment');
+      const secondCourse = (await prisma.course.findMany({
+        where: { userId: USER.id, id: { not: courseId } },
+        orderBy: { id: 'asc' },
+      }))[0];
+      const secondTopic = await prisma.topics.findFirst({ where: { courseId: secondCourse.id } });
+
+      const good = await makeQuestion({ [assessmentA.id]: 1 });
+      const poisoned = await makeQuestion({ [assessmentA.id]: 'not-a-number' });
+      const crossCourse = await prisma.questionMetadata.create({
+        data: {
+          courseId: secondCourse.id,
+          primaryTopicId: secondTopic.id,
+          type: 'SA',
+          questionOrder: { [assessmentA.id]: 0 },
+        },
+      });
+
+      const result = await getQuestionsInAssessment(assessmentA.id, USER.id);
+      const ids = result.map((question) => question.id);
+
+      expect(ids).toEqual([good.id]);
+      expect(ids).not.toContain(poisoned.id);
+      expect(ids).not.toContain(crossCourse.id);
+    });
+
+    it('returns an empty array when the assessment has no questions', async () => {
+      const assessment = await makeAssessment();
+      const result = await getQuestionsInAssessment(assessment.id, USER.id);
+      expect(result).toEqual([]);
+    });
+
+    it('throws when the assessment does not belong to the requesting user', async () => {
+      const assessment = await makeAssessment();
+      await expect(
+        getQuestionsInAssessment(assessment.id, 'cuid-wrong-user')
+      ).rejects.toThrow(/assessment not found/i);
+    });
+  });
+});

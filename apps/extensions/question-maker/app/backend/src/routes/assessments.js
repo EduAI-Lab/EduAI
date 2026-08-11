@@ -41,6 +41,7 @@ import { requireCourseAccess, requireOptionalCourseAccess, resolveCourseAccessWi
 import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { parseLimitOffset } from '../utils/listPagination.js';
 import { parsePaginationParams, pageOf } from '../utils/pagination.js';
+import { parsePositiveSafeInteger } from '../utils/questionOrder.js';
 
 const router = express.Router();
 
@@ -242,8 +243,31 @@ router.post(
     } catch (error) {
       next(error);
     }
-  },
-);
+
+    const normalizedOrderNumber = parsePositiveSafeInteger(orderNumber);
+    if (normalizedOrderNumber === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'Order number must be a positive safe integer',
+      });
+    }
+
+    const question = await addQuestionToAssessment(
+      req.params.id,
+      questionId,
+      normalizedOrderNumber,
+      req.qmCourse.userId
+    );
+
+    res.json({
+      success: true,
+      message: 'Question added to assessment successfully',
+      data: question
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /** DELETE /api/assessments/:id/questions/:questionId – unlinks a question (instructor-only). */
 router.delete(

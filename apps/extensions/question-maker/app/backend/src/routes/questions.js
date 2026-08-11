@@ -47,6 +47,7 @@ import {
   prepareApprovalQuestions
 } from '../utils/questionApproval.js';
 import { resolveVisibleCourseWhereForUser } from '../services/courseListService.js';
+import { parsePositiveSafeInteger } from '../utils/questionOrder.js';
 import {
   qmAiUserRateLimit,
   validateGenerationBudget,
@@ -71,11 +72,21 @@ function denyTaNotOwner(req, res) {
 
 /** Validate and normalize the single target course for an approval batch. */
 function validateApprovalTarget(req, res, next) {
-  const { error, targetCourseId } = parseApprovalTarget(req.body);
+  const { error, questions, targetCourseId } = parseApprovalTarget(req.body);
   if (error) {
     return res.status(400).json({
       success: false,
       error,
+    });
+  }
+
+  const maxQuestions = Number.isInteger(config.maxQuestions) && config.maxQuestions > 0
+    ? config.maxQuestions
+    : 50;
+  if (questions.length > maxQuestions) {
+    return res.status(400).json({
+      success: false,
+      error: `Cannot approve more than ${maxQuestions} questions at once`,
     });
   }
 
@@ -90,8 +101,8 @@ function validateApprovalTarget(req, res, next) {
  * the id is non-integer, missing, or cross-course.
  */
 async function assessmentInCourse(assessmentId, courseId) {
-  const id = Number(assessmentId);
-  if (!Number.isInteger(id)) return null;
+  const id = parsePositiveSafeInteger(assessmentId);
+  if (id === null) return null;
   const assessment = await prisma.assessments.findUnique({ where: { id } });
   return assessment && assessment.courseId === courseId ? assessment : null;
 }
@@ -726,15 +737,27 @@ router.put(
         });
       }
 
-      if (!(await assessmentInCourse(assessmentId, req.qmCourse.id))) {
-        return res.status(404).json({ success: false, error: "Assessment not found" });
+      const normalizedAssessmentId = parsePositiveSafeInteger(assessmentId);
+      if (normalizedAssessmentId === null) {
+        return res.status(404).json({ success: false, error: 'Assessment not found' });
+      }
+      const normalizedOrderNumber = parsePositiveSafeInteger(orderNumber);
+      if (normalizedOrderNumber === null) {
+        return res.status(400).json({
+          success: false,
+          error: 'Order number must be a positive safe integer',
+        });
+      }
+
+      if (!(await assessmentInCourse(normalizedAssessmentId, req.qmCourse.id))) {
+        return res.status(404).json({ success: false, error: 'Assessment not found' });
       }
 
       const question = await updateQuestionOrder(
         req.params.id,
-        assessmentId,
-        orderNumber,
-        req.qmCourse.userId,
+        normalizedAssessmentId,
+        normalizedOrderNumber,
+        req.qmCourse.userId
       );
 
       res.json({

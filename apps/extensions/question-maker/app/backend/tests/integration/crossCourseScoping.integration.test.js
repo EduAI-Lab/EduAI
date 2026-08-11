@@ -22,7 +22,7 @@ const describeDb = hasTestDb ? describe : describe.skip;
 describeDb("cross-course write scoping (integration, #1)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
-  let createQuestion, updateQuestion, createAssessment, updateAssessment, addQuestionToAssessment, removeQuestionFromAssessment;
+  let createQuestion, updateQuestion, updateQuestionOrder, createAssessment, updateAssessment, addQuestionToAssessment, removeQuestionFromAssessment;
   let createVariant, updateVariant;
   let sectionSvc;
 
@@ -34,7 +34,7 @@ describeDb("cross-course write scoping (integration, #1)", () => {
     await connectTestDatabase();
 
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
-    ({ createQuestion, updateQuestion, createVariant, updateVariant } = await import('../../src/services/questionService.js'));
+    ({ createQuestion, updateQuestion, updateQuestionOrder, createVariant, updateVariant } = await import('../../src/services/questionService.js'));
     ({ createAssessment, addQuestionToAssessment, removeQuestionFromAssessment } = await import(
       '../../src/services/assessmentService.js'
     ));
@@ -193,6 +193,24 @@ describeDb("cross-course write scoping (integration, #1)", () => {
         removeQuestionFromAssessment(assessmentA.id, questionB.id, USER.id),
       ).rejects.toThrow(/Question not found/);
     });
+
+    it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+      'rejects an invalid orderNumber (%s) in the service',
+      async (orderNumber) => {
+        await expect(
+          addQuestionToAssessment(assessmentA.id, questionA.id, orderNumber, USER.id)
+        ).rejects.toThrow(/positive safe integer/i);
+      },
+    );
+
+    it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+      'rejects an invalid orderNumber (%s) in question-order updates',
+      async (orderNumber) => {
+        await expect(
+          updateQuestionOrder(questionA.id, assessmentA.id, orderNumber, USER.id)
+        ).rejects.toThrow(/positive safe integer/i);
+      },
+    );
   });
 
   describe('resource relocation and relation integrity', () => {
@@ -235,6 +253,22 @@ describeDb("cross-course write scoping (integration, #1)", () => {
           description: 'foreign topic',
         })
       ).rejects.toThrow(/Primary topic not found for this course/);
+    });
+
+    it('rejects creating or updating a question with a cross-course questionOrder assessment id', async () => {
+      await expect(
+        createQuestion(USER.id, {
+          courseId: courseA.id,
+          primaryTopicId: topicA.id,
+          type: 'SA',
+          description: 'foreign order assessment',
+          questionOrder: { [assessmentB.id]: 1 },
+        })
+      ).rejects.toThrow(/Assessment not found for this course/);
+
+      await expect(
+        updateQuestion(questionA.id, USER.id, { questionOrder: { [assessmentB.id]: 1 } })
+      ).rejects.toThrow(/Assessment not found for this course/);
     });
 
     it('rejects updating a question with a primary topic from another course', async () => {

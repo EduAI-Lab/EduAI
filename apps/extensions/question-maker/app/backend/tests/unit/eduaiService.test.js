@@ -404,7 +404,28 @@ describe("generateQuestions", () => {
     expect(out[0].choices).toBeNull();
   });
 
-  it("parses a JSON string response and defaults bad difficulty/reasoning", async () => {
+  it('caps normalized provider output at the requested question count', async () => {
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        content: Array.from({ length: 5 }, (_, index) => ({
+          content: `Question ${index + 1}`,
+          description: 'd',
+          difficulty: 'easy',
+          reasoning_level: 'factual',
+          type: 'SA',
+          answer: 'a',
+        })),
+      },
+    });
+
+    const out = await eduaiService.generateQuestions({ ...baseParams, numQuestions: 2 });
+
+    expect(out).toHaveLength(2);
+    expect(out.map((question) => question.content)).toEqual(['Question 1', 'Question 2']);
+  });
+
+  it('parses a JSON string response and defaults bad difficulty/reasoning', async () => {
     axios.post.mockResolvedValue({
       status: 200,
       data: {

@@ -108,12 +108,24 @@ describe("generateQuestions (provider routing)", () => {
     expect(out[0].content).toBe("good");
   });
 
-  it("falls back to a single raw question when the response is not JSON", async () => {
-    axios.post.mockResolvedValue(completion("not json at all"));
-    const out = await generateQuestions("t", AI_PROVIDERS.GROQ, genParams);
-    expect(out).toEqual([
-      { content: "not json at all", difficulty: "medium", bloom_level: "understand" },
-    ]);
+  it('caps normalized provider output at the requested question count', async () => {
+    const tooMany = Array.from({ length: 5 }, (_, index) => ({
+      content: `question ${index + 1}`,
+      difficulty: 'easy',
+      bloom_level: 'remember',
+    }));
+    axios.post.mockResolvedValue(completion(JSON.stringify(tooMany)));
+
+    const out = await generateQuestions('t', AI_PROVIDERS.GROQ, { ...genParams, numQuestions: 2 });
+
+    expect(out).toHaveLength(2);
+    expect(out.map((question) => question.content)).toEqual(['question 1', 'question 2']);
+  });
+
+  it('falls back to a single raw question when the response is not JSON', async () => {
+    axios.post.mockResolvedValue(completion('not json at all'));
+    const out = await generateQuestions('t', AI_PROVIDERS.GROQ, genParams);
+    expect(out).toEqual([{ content: 'not json at all', difficulty: 'medium', bloom_level: 'understand' }]);
   });
 
   it("falls back when JSON parses but has no valid questions", async () => {

@@ -204,6 +204,25 @@ describe("POST /api/assessments/:id/questions", () => {
     expect(res.status).toBe(200);
     expect(svc.addQuestionToAssessment).toHaveBeenCalledWith("5", 3, 1, COURSE.userId);
   });
+
+  it.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['infinite', 'Infinity'],
+    ['unsafe', Number.MAX_SAFE_INTEGER + 1],
+  ])('rejects %s orderNumber before calling the service', async (_label, orderNumber) => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+
+    const res = await request(app)
+      .post('/api/assessments/5/questions')
+      .set('Cookie', 'session=v')
+      .send({ questionId: 3, orderNumber });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/positive safe integer/i);
+    expect(svc.addQuestionToAssessment).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE /api/assessments/:id/questions/:questionId", () => {

@@ -569,7 +569,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         return { questionText, choices };
       };
 
-      const normalizedQuestions = validQuestions.map((question, index) => {
+      // Providers occasionally ignore the requested count. Keep the service
+      // boundary authoritative so one response cannot fan out into an
+      // unbounded approval/upload batch; `boundedNumQuestions` already applies
+      // the deployment-wide config.maxQuestions ceiling.
+      const normalizedQuestions = validQuestions.slice(0, boundedNumQuestions).map((question, index) => {
         console.log(`${DEBUG_PREFIX} normalizing question`, {
           questionIndex: index + 1,
           choiceCount: Array.isArray(question.choices) ? question.choices.length : 0,

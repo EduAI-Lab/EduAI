@@ -879,8 +879,40 @@ export const generateQuestions = async (prompt, provider, params = {}) => {
         ),
     );
 
-    if (validQuestions.length === 0) {
-      throw new Error("No valid questions found in response");
+      // Validate each question
+      const validQuestions = questions.filter(
+        (q) =>
+          q.content &&
+          q.difficulty &&
+          q.bloom_level &&
+          ["easy", "medium", "hard"].includes(q.difficulty) &&
+          [
+            "remember",
+            "understand",
+            "apply",
+            "analyze",
+            "evaluate",
+            "create",
+          ].includes(q.bloom_level)
+      );
+
+      if (validQuestions.length === 0) {
+        throw new Error("No valid questions found in response");
+      }
+
+      // Legacy providers may return more rows than requested despite the
+      // prompt. Enforce the validated request/config ceiling after filtering
+      // so downstream approval cannot exceed its batch budget.
+      return validQuestions.slice(0, budget.numQuestions);
+    } catch (parseError) {
+      // If parsing fails, return a single question with the response text
+      return [
+        {
+          content: response,
+          difficulty: "medium",
+          bloom_level: "understand",
+        },
+      ];
     }
 
     return validQuestions;

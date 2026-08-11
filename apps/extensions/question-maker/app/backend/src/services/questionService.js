@@ -9,11 +9,18 @@ import { normalizeMcqCorrectness } from "../lib/mcqCorrectness.js";
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
-  formatSemesterDisplay,
-} from "./courseListService.js";
-import { buildQuestionListQuery } from "../utils/questionListQuery.js";
-import { attachQuestionToBanks, listExternalQuestionIdsForBank } from "./questionBankService.js";
-import { logger } from "../utils/logger.js";
+  formatSemesterDisplay
+} from './courseListService.js';
+import { buildQuestionListQuery } from '../utils/questionListQuery.js';
+import {
+  attachQuestionToBanks,
+  listExternalQuestionIdsForBank,
+} from './questionBankService.js';
+import { logger } from '../utils/logger.js';
+import {
+  normalizeQuestionOrder,
+  requirePositiveSafeInteger,
+} from '../utils/questionOrder.js';
 
 /**
  * `saveExtractedQuestions` writes each question's metadata/variant/section-link
@@ -110,6 +117,23 @@ async function assertTopicsInCourse(topicIds, courseId, label = 'Topic') {
   if (missing) {
     throw relationNotFound(`${label} not found for this course`);
   }
+}
+
+/** Ensure every assessment key in a question-order map belongs to the question's course. */
+async function assertQuestionOrderAssessments(questionOrder, courseId) {
+  const normalized = normalizeQuestionOrder(questionOrder);
+  const assessmentIds = Object.keys(normalized).map(Number);
+  if (assessmentIds.length === 0) return normalized;
+
+  const assessments = await prisma.assessments.findMany({
+    where: { id: { in: assessmentIds }, courseId },
+    select: { id: true },
+  });
+  if (assessments.length !== assessmentIds.length) {
+    throw relationNotFound('Assessment not found for this course');
+  }
+
+  return normalized;
 }
 
 /** Validate optional variant relations against the owning question's course. */
@@ -268,6 +292,10 @@ export const createQuestion = async (userId, questionData) => {
     // Topic ids are globally addressable CUIDs, so an FK alone is not enough:
     // the selected topic must belong to this course as well.
     await assertTopicsInCourse([parsedPrimaryTopicId], parsedCourseId, 'Primary topic');
+    const normalizedQuestionOrder = await assertQuestionOrderAssessments(
+      questionOrder,
+      parsedCourseId,
+    );
 
     const allowedTypes = ['MCQ', 'SA', 'LA'];
     const normalizedType = allowedTypes.includes(type) ? type : 'MCQ';
@@ -278,7 +306,7 @@ export const createQuestion = async (userId, questionData) => {
         primaryTopicId: parsedPrimaryTopicId,
         type: normalizedType,
         description: normalizedDescription,
-        questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {},
+        questionOrder: normalizedQuestionOrder,
         createdBy: questionData.createdBy ?? null
       }
     });
@@ -571,8 +599,11 @@ export const updateQuestion = async (questionId, userId, updateData) => {
       }
     }
 
-    if (updates.questionOrder !== undefined && typeof updates.questionOrder !== 'object') {
-      throw new Error('questionOrder must be an object');
+    if (updates.questionOrder !== undefined) {
+      updates.questionOrder = await assertQuestionOrderAssessments(
+        updates.questionOrder,
+        effectiveCourseId,
+      );
     }
 
     // isAiGenerated and isDraft are variant-level fields and should not be updated via updateQuestion
@@ -682,15 +713,31 @@ export const deleteQuestion = async (questionId, userId) => {
 
 /** Bulk-creates multiple questions for approvals, short-circuiting on validation issues. */
 export const createMultipleQuestions = async (userId, questionsData) => {
-  const createdQuestions = [];
+  try {
+    const maxQuestions = Number.isInteger(config.maxQuestions) && config.maxQuestions > 0
+      ? config.maxQuestions
+      : 50;
+    if (!Array.isArray(questionsData) || questionsData.length === 0) {
+      throw new Error('Questions array is required');
+    }
+    if (questionsData.length > maxQuestions) {
+      const error = new Error(`Cannot approve more than ${maxQuestions} questions at once`);
+      error.status = 400;
+      error.statusCode = 400;
+      error.code = 'QM_QUESTION_BATCH_TOO_LARGE';
+      error.isPublic = true;
+      throw error;
+    }
 
-  for (const q of questionsData) {
-    const rawDesc = q.description ?? q.content;
-    const description = typeof rawDesc === "string" && rawDesc.trim() ? rawDesc.trim() : null;
-    const courseId = Number(q.courseId ?? q.classId);
-    const primaryTopicId = q.primaryTopicId;
-    const type = ["MCQ", "SA", "LA"].includes(q.type) ? q.type : "MCQ";
-    const questionOrder = q.questionOrder || {};
+    const createdQuestions = [];
+
+    for (const q of questionsData) {
+      const rawDesc = q.description ?? q.content;
+      const description = typeof rawDesc === 'string' && rawDesc.trim() ? rawDesc.trim() : null;
+      const courseId = Number(q.courseId ?? q.classId);
+      const primaryTopicId = q.primaryTopicId;
+      const type = ['MCQ', 'SA', 'LA'].includes(q.type) ? q.type : 'MCQ';
+      const questionOrder = q.questionOrder;
 
     const question = await createQuestion(userId, {
       description,
@@ -1065,12 +1112,45 @@ export const getQuestionStats = async (userId, options = {}) => {
 
 /** Updates the per-assessment ordering map stored on a question metadata row. */
 export const updateQuestionOrder = async (questionId, assessmentId, orderNumber, userId) => {
-  const question = await prisma.questionMetadata.findFirst({
-    where: { id: Number(questionId), course: { userId } },
-  });
+  try {
+    const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
+    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
+    const parsedOrderNumber = requirePositiveSafeInteger(orderNumber, 'Order number');
 
-  if (!question) {
-    throw new Error("Question not found");
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: parsedQuestionId, course: { userId } }
+    });
+
+    if (!question) {
+      throw new Error('Question not found');
+    }
+
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: parsedAssessmentId, courseId: question.courseId },
+      select: { id: true },
+    });
+    if (!assessment) {
+      throw relationNotFound('Assessment not found for this course');
+    }
+
+    // Get current questionOrder or initialize empty object.
+    const currentOrder = await assertQuestionOrderAssessments(
+      question.questionOrder || {},
+      question.courseId,
+    );
+
+    // Update the order for the specific assessment
+    currentOrder[String(parsedAssessmentId)] = parsedOrderNumber;
+
+    // Update the question with new order
+    const updated = await prisma.questionMetadata.update({
+      where: { id: question.id },
+      data: { questionOrder: currentOrder }
+    });
+
+    return updated;
+  } catch (error) {
+    throw error;
   }
 
   // Get current questionOrder or initialize empty object
@@ -1090,12 +1170,45 @@ export const updateQuestionOrder = async (questionId, assessmentId, orderNumber,
 
 /** Removes a question from a specific assessment’s order map and detaches variants if needed. */
 export const removeQuestionFromAssessment = async (questionId, assessmentId, userId) => {
-  const question = await prisma.questionMetadata.findFirst({
-    where: { id: Number(questionId), course: { userId } },
-  });
+  try {
+    const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
+    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
 
-  if (!question) {
-    throw new Error("Question not found");
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: parsedQuestionId, course: { userId } }
+    });
+
+    if (!question) {
+      throw new Error('Question not found');
+    }
+
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: parsedAssessmentId, courseId: question.courseId },
+      select: { id: true },
+    });
+    if (!assessment) {
+      throw relationNotFound('Assessment not found for this course');
+    }
+
+    // Get current questionOrder or initialize empty object
+    const currentOrder = {
+      ...(question.questionOrder && typeof question.questionOrder === 'object' && !Array.isArray(question.questionOrder)
+        ? question.questionOrder
+        : {}),
+    };
+
+    // Remove the assessment from the order
+    delete currentOrder[String(parsedAssessmentId)];
+
+    // Update the question with new order
+    const updated = await prisma.questionMetadata.update({
+      where: { id: question.id },
+      data: { questionOrder: currentOrder }
+    });
+
+    return updated;
+  } catch (error) {
+    throw error;
   }
 
   // Get current questionOrder or initialize empty object
