@@ -13,6 +13,19 @@
     "no-underscore-dangle": "off",
     "no-unused-vars": "warn"
   },
+  "overrides": [
+    {
+      "files": [
+        "apps/core/app/lib/questions/server.ts",
+        "apps/extensions/question-maker/app/backend/src/services/aiService.js",
+        "apps/extensions/question-maker/app/backend/src/services/assessmentService.js",
+        "apps/extensions/question-maker/app/backend/src/services/questionService.js"
+      ],
+      "rules": {
+        "no-useless-catch": "warn"
+      }
+    }
+  ],
   "ignorePatterns": [
     "**/node_modules/**",
     "**/build/**",

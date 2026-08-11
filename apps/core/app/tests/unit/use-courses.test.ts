@@ -159,8 +159,9 @@ describe("useCourses", () => {
 
     expect(created).toEqual(course);
     const post = mockFetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === "POST");
-    expect(post?.[0]).toBe("/api/courses");
-    expect((post?.[1] as RequestInit).body).toBeInstanceOf(FormData);
+    expect(post).toBeDefined();
+    expect(post![0]).toBe("/api/courses");
+    expect((post![1] as RequestInit).body).toBeInstanceOf(FormData);
     expect(listUrls(mockFetch).length).toBeGreaterThan(before);
   });
 

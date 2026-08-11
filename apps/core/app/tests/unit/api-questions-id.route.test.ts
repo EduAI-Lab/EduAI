@@ -42,7 +42,7 @@ function makeActionArgs(body: unknown, method = "PATCH", headers: Record<string,
     request: new Request("http://localhost/api/questions/q1", {
       method,
       headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: { id: "q1" },
     context: {} as never,

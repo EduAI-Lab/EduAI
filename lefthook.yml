@@ -14,4 +14,6 @@ pre-commit:
   jobs:
     - name: oxlint
       glob: "*.{js,jsx,mjs,cjs,ts,tsx}"
-      run: npx oxlint {staged_files}
+      # --quiet reports errors only. The repo still carries ~900 warnings, and
+      # printing them on every commit would bury the errors that actually block.
+      run: npx oxlint --quiet {staged_files}
