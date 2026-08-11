@@ -523,6 +523,12 @@ router.post(
       if (!externalCourse) {
         return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
       }
+      if (
+        instructor.role === 'INSTRUCTOR' &&
+        externalCourse.callerEnrollmentRole !== 'INSTRUCTOR'
+      ) {
+        return res.status(403).json({ error: 'CORE_COURSE_INSTRUCTOR_REQUIRED' });
+      }
 
       // coreOfferingId is @unique — one AI Tutor offering per Core course
       // regardless of instructor. Import is an idempotent ENSURE (unified

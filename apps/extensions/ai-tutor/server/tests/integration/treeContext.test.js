@@ -202,7 +202,23 @@ describe("Tree context endpoints (#1207)", () => {
       expect(res.body).toEqual({ moduleOrdinal: 2, moduleTotal: 2 });
     });
 
-    it("403s a student asking about an unpublished module", async () => {
+    it('fails closed when Core cannot authorize direct module context', async () => {
+      const student = await enrollStudent();
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: 'unavailable',
+        role: null,
+      });
+
+      const res = await request(await createApp({ mockUser: student })).get(
+        `/api/modules/${seed.module.id}/context`,
+      );
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+    });
+
+    it('403s a student asking about an unpublished module', async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       const hidden = await addModule(1, { isPublished: false });

@@ -87,6 +87,13 @@ export async function ensureOfferingAnchors(coreCourseIds) {
  * enrollments. Mirrors POST /api/courses/import-external without the HTTP layer.
  */
 export async function importExternalCourseForUser(instructor, externalCourse) {
+  if (instructor?.role === 'INSTRUCTOR' && externalCourse?.callerEnrollmentRole !== 'INSTRUCTOR') {
+    const error = new Error('CORE_COURSE_INSTRUCTOR_REQUIRED');
+    error.status = 403;
+    error.code = 'CORE_COURSE_INSTRUCTOR_REQUIRED';
+    throw error;
+  }
+
   const alreadyImported = await prisma.courseOffering.findFirst({
     where: { coreOfferingId: externalCourse.id },
   });

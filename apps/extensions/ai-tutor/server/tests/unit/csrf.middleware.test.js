@@ -44,10 +44,32 @@ describe('cookie-auth unsafe request CSRF gate', () => {
     const response = await request(app)
       .post('/api/csrf-probe')
       .set('Cookie', 'session=secret')
-      .set('Authorization', 'Bearer service-key')
+      .set('Authorization', `Bearer ${process.env.EDUAI_API_KEY}`)
       .set('Origin', 'https://service.example')
       .send({ value: 'safe' });
 
     expect(response.status).toBe(200);
+  });
+
+  it('rejects a forged Authorization header on a cross-site cookie mutation', async () => {
+    const app = await createApp({ mockUser: { id: 'student-1', role: 'STUDENT' } });
+    const response = await request(app)
+      .post('/api/csrf-probe')
+      .set('Cookie', 'session=secret')
+      .set('Authorization', 'Bearer forged-service-key')
+      .set('Origin', 'https://evil.example')
+      .send({ value: 'attack' });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects cookie mutations with no browser provenance headers', async () => {
+    const app = await createApp({ mockUser: { id: 'student-1', role: 'STUDENT' } });
+    const response = await request(app)
+      .post('/api/csrf-probe')
+      .set('Cookie', 'session=secret')
+      .send({ value: 'attack' });
+
+    expect(response.status).toBe(403);
   });
 });

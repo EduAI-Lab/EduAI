@@ -57,6 +57,7 @@ vi.mock('../../src/services/enrollmentSync.js', () => ({
 const { listEduAiCourses } = await import("../../src/services/eduaiClient.js");
 const {
   ensureOfferingAnchors,
+  importExternalCourseForUser,
   importEnrolledCoursesFromCore,
   importTaughtCoursesFromCore,
   userHasCoreTaEnrollment,
@@ -90,6 +91,18 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
       deleted: 0,
       errors: [],
     });
+  });
+
+  it('enforces exact Core INSTRUCTOR role inside the explicit import helper', async () => {
+    await expect(
+      importExternalCourseForUser(instructor, {
+        id: 'core-ta-only',
+        callerEnrollmentRole: 'TA',
+      }),
+    ).rejects.toMatchObject({ status: 403, code: 'CORE_COURSE_INSTRUCTOR_REQUIRED' });
+
+    expect(courseOfferingFindFirst).not.toHaveBeenCalled();
+    expect(courseInstructorCreate).not.toHaveBeenCalled();
   });
 
   afterEach(() => {

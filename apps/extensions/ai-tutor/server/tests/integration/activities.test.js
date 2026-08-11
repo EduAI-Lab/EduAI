@@ -1587,8 +1587,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
-      .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
 
     expect(res.status).toBe(200);
 
@@ -1642,8 +1643,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     const teachRes = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
-      .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
     expect(teachRes.status).toBe(200);
 
     const teachCompletionBodies = fetch.mock.calls
@@ -1675,8 +1677,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     const guideRes = await request(studentApp)
       .post(`/api/activities/${activity.id}/guide`)
-      .set("Cookie", "session=test-cookie")
-      .send({ message: "Need a hint", knowledgeLevel: "beginner", apiKey: "test-key" });
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ message: 'Need a hint', knowledgeLevel: 'beginner', apiKey: 'test-key' });
     expect(guideRes.status).toBe(200);
 
     const guideCompletionBodies = fetch.mock.calls
@@ -1711,8 +1714,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
-      .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
 
     expect(res.status).toBe(200);
   });
@@ -1754,8 +1758,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     const pendingRequest = request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
-      .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
     // Swallow the client-side rejection from aborting below — this test only
     // cares about server-side behavior after the abort.
     pendingRequest.catch(() => {});
@@ -2099,6 +2104,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
       const res = await request(studentApp)
         .post(`/api/activities/${activity.id}/custom`)
         .set('Cookie', 'session=test-cookie')
+        .set('Sec-Fetch-Site', 'same-origin')
         .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
 
       expect(res.status).toBe(502);
@@ -2254,8 +2260,9 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
       const res = await request(studentApp)
         .post(`/api/activities/${activity.id}/custom`)
-        .set("Cookie", "session=test-cookie")
-        .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+        .set('Cookie', 'session=test-cookie')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);

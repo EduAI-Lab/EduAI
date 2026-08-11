@@ -104,8 +104,9 @@ async function getCourseCode(coreOfferingId) {
  * provider/local resource side effect. A non-student platform role is a normal
  * authorization denial and never triggers a roster lookup.
  */
-async function getLiveStudentEnrollment(res, course, authUser) {
-  if (!['STUDENT', 'TA'].includes(authUser.role)) {
+async function getLiveStudentEnrollment(res, course, authUser, expectedRole) {
+  const enrollmentRole = expectedRole ?? authUser.role;
+  if (!['STUDENT', 'TA'].includes(enrollmentRole)) {
     return { allowed: false, state: 'denied', role: null };
   }
 
@@ -113,7 +114,7 @@ async function getLiveStudentEnrollment(res, course, authUser) {
   try {
     result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
       course,
-      allowedRoles: authUser.role === 'TA' ? ['TA'] : ['STUDENT'],
+      allowedRoles: [enrollmentRole],
     });
   } catch {
     result = { allowed: false, state: 'unavailable', role: null };
@@ -475,6 +476,19 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
+    }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (localRole) {
+      const liveEnrollment = await getLiveStudentEnrollment(
+        res,
+        lesson.module.courseOffering,
+        authUser,
+        localRole,
+      );
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== localRole) {
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      }
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: "Lesson is not published" });

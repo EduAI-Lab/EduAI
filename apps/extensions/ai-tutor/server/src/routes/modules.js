@@ -515,6 +515,11 @@ router.get("/modules/:moduleId/context", async (req, res) => {
     if (!hasElevatedAccess && !isStudent) {
       return res.status(403).json({ error: "Not authorized for this module" });
     }
+    const localRole = isTa ? 'TA' : isStudent ? 'STUDENT' : null;
+    if (localRole && !(await requireLiveLearnerAccess(res, courseOffering, authUser, localRole))) {
+      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this module' });
+      return;
+    }
     if (isStudent && !hasElevatedAccess && !module.isPublished) {
       return res.status(403).json({ error: "Module is not published" });
     }

@@ -461,7 +461,8 @@ describe("Courses routes", () => {
 
       const res = await request(profApp)
         .patch(`/api/courses/${seed.course.id}/publish`)
-        .set('Cookie', 'session=user-session');
+        .set('Cookie', 'session=user-session')
+        .set('Sec-Fetch-Site', 'same-origin');
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(true);
@@ -497,7 +498,8 @@ describe("Courses routes", () => {
 
       const res = await request(profApp)
         .patch(`/api/courses/${seed.course.id}/unpublish`)
-        .set('Cookie', 'session=user-session');
+        .set('Cookie', 'session=user-session')
+        .set('Sec-Fetch-Site', 'same-origin');
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(false);
@@ -518,20 +520,39 @@ describe("Courses routes", () => {
 
   // ── POST /api/courses/import-external (#578) ─────────────────────
 
-  describe("POST /api/courses/import-external", () => {
-    it("imports a Core course the instructor is enrolled in", async () => {
+  describe('POST /api/courses/import-external', () => {
+    it('rejects a platform instructor who is only a TA in the requested course', async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: "core-course-1",
-        code: "COSC 111",
-        name: "Computing I",
-        term: "Fall",
+        id: 'core-course-ta',
+        callerEnrollmentRole: 'TA',
+      });
+
+      const res = await request(profApp)
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ externalCourseId: 'core-course-ta' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('CORE_COURSE_INSTRUCTOR_REQUIRED');
+      expect(await prisma.courseInstructor.count({ where: { userId: prof.id } })).toBe(1);
+    });
+
+    it('imports a Core course the instructor is enrolled in', async () => {
+      vi.mocked(findEduAiCourseById).mockResolvedValue({
+        id: 'core-course-1',
+        callerEnrollmentRole: 'INSTRUCTOR',
+        code: 'COSC 111',
+        name: 'Computing I',
+        term: 'Fall',
         year: 2026,
       });
 
       const res = await request(profApp)
-        .post("/api/courses/import-external")
-        .set("Cookie", "session=valid")
-        .send({ externalCourseId: "core-course-1" });
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ externalCourseId: 'core-course-1' });
 
       expect(res.status).toBe(201);
       expect(res.body.coreOfferingId).toBe("core-course-1");
@@ -543,25 +564,28 @@ describe("Courses routes", () => {
 
     it("is an idempotent ensure: re-importing an already-anchored course returns 200 with the same offering", async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: "core-course-1",
-        code: "COSC 111",
-        name: "Computing I",
-        term: "W1",
+        id: 'core-course-1',
+        callerEnrollmentRole: 'INSTRUCTOR',
+        code: 'COSC 111',
+        name: 'Computing I',
+        term: 'W1',
         year: 2026,
       });
 
       const first = await request(profApp)
-        .post("/api/courses/import-external")
-        .set("Cookie", "session=valid")
-        .send({ externalCourseId: "core-course-1" });
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ externalCourseId: 'core-course-1' });
       expect(first.status).toBe(201);
 
       // Second import (e.g. the caller raced the background mirror, or simply
       // retried) succeeds with the existing row rather than conflicting.
       const second = await request(profApp)
-        .post("/api/courses/import-external")
-        .set("Cookie", "session=valid")
-        .send({ externalCourseId: "core-course-1" });
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ externalCourseId: 'core-course-1' });
       expect(second.status).toBe(200);
       expect(second.body.id).toBe(first.body.id);
       expect(second.body.coreOfferingId).toBe("core-course-1");
@@ -571,9 +595,10 @@ describe("Courses routes", () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue(null);
 
       const res = await request(profApp)
-        .post("/api/courses/import-external")
-        .set("Cookie", "session=valid")
-        .send({ externalCourseId: "core-course-not-mine" });
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ externalCourseId: 'core-course-not-mine' });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toBe("CORE_COURSE_NOT_AUTHORIZED");
@@ -595,7 +620,8 @@ describe("Courses routes", () => {
 
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/sync-enrollments`)
-        .set("Cookie", "session=valid");
+        .set('Cookie', 'session=valid')
+        .set('Sec-Fetch-Site', 'same-origin');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ synced: 2, created: 1, deleted: 0, errors: [] });
@@ -1074,7 +1100,8 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/publish`)
-      .set('Cookie', 'session=user-session');
+      .set('Cookie', 'session=user-session')
+      .set('Sec-Fetch-Site', 'same-origin');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
@@ -1105,7 +1132,8 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/unpublish`)
-      .set('Cookie', 'session=user-session');
+      .set('Cookie', 'session=user-session')
+      .set('Sec-Fetch-Site', 'same-origin');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
@@ -1134,7 +1162,8 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/publish`)
-      .set('Cookie', 'session=user-session');
+      .set('Cookie', 'session=user-session')
+      .set('Sec-Fetch-Site', 'same-origin');
 
     expect(res.status).toBe(500);
     // No local `isPublished` column exists anymore (#1072 step 4) — there is
@@ -1160,7 +1189,8 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/publish`)
-      .set('Cookie', 'session=user-session');
+      .set('Cookie', 'session=user-session')
+      .set('Sec-Fetch-Site', 'same-origin');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
@@ -1182,7 +1212,8 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/unpublish`)
-      .set('Cookie', 'session=user-session');
+      .set('Cookie', 'session=user-session')
+      .set('Sec-Fetch-Site', 'same-origin');
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
@@ -1207,13 +1238,15 @@ describe("Course publish state — Core write-through (#477)", () => {
       code: "COSC 999",
       name: "Published Course",
       isPublished: true,
+      callerEnrollmentRole: 'INSTRUCTOR',
     };
 
     vi.mocked(findEduAiCourseById).mockResolvedValue(coreCourse);
 
     const res = await request(profApp)
-      .post("/api/courses/import-external")
-      .set("Cookie", "session=valid")
+      .post('/api/courses/import-external')
+      .set('Cookie', 'session=valid')
+      .set('Sec-Fetch-Site', 'same-origin')
       .send({ externalCourseId: EXTERNAL_COURSE_ID });
 
     expect(res.status).toBe(201);

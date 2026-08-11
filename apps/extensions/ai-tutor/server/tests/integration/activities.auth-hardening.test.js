@@ -102,6 +102,24 @@ describe('activity auth hardening', () => {
     expect(res.body.data[0]).not.toHaveProperty('answer');
   });
 
+  it('fails closed before a revoked student can read the direct activity list', async () => {
+    const student = makeStudent();
+    await enroll(student, 'STUDENT');
+    await createActivity();
+    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+      allowed: false,
+      state: 'unavailable',
+      role: null,
+    });
+
+    const response = await request(await createApp({ mockUser: student })).get(
+      `/api/lessons/${seed.lesson.id}/activities`,
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+  });
+
   it('retains the answer key for an instructor activity list', async () => {
     await createActivity();
     const professor = makeProfessor();
