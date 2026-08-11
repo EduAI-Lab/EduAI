@@ -34,8 +34,14 @@ export function collectAssessmentExportBlocks(
     const aid = assessment.id;
     const blocks: AssessmentExportBlock[] = [];
 
-    (assessment.sections ?? []).forEach((section) => {
-        (section.sectionVariants ?? []).forEach((link) => {
+    const sections = [...(assessment.sections ?? [])].sort(
+        (a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id,
+    );
+    sections.forEach((section) => {
+        const links = [...(section.sectionVariants ?? [])].sort(
+            (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.id - b.id,
+        );
+        links.forEach((link) => {
             const variant = link.variant ?? resolveVariant?.(link.variantId);
             if (!variant) return;
 
