@@ -8,10 +8,11 @@ import {
   parseSearchParam,
   searchWhere,
   PaginationError,
-} from "../utils/pagination.js";
-import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
-import { calculateLessonProgress } from "../services/progressCalculation.js";
-import { isCoursePublishedLive } from "../services/courseResolver.js";
+} from '../utils/pagination.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
+import { calculateLessonProgress } from '../services/progressCalculation.js';
+import { isCoursePublishedLive } from '../services/courseResolver.js';
+import { sendSafeError } from '../utils/safeErrors.js';
 
 const router = express.Router();
 
@@ -96,7 +97,7 @@ router.get("/modules/:moduleId/lessons", async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -151,7 +152,7 @@ router.post(
       });
       res.status(201).json(mapLesson(lesson));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -207,7 +208,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
 
     res.json(mapLesson(lesson));
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -320,7 +321,7 @@ router.get("/lessons/:lessonId/context", async (req, res) => {
       nextLessonId: next?.id ?? null,
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -375,7 +376,7 @@ router.patch(
       if (e instanceof ReorderError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -439,7 +440,7 @@ router.patch(
 
       res.json(mapLesson(updated));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -488,7 +489,7 @@ router.patch(
 
       res.json(mapLesson(updated));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -533,7 +534,7 @@ router.delete(
       await prisma.lesson.delete({ where: { id: lessonId } });
       res.status(204).end();
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -598,7 +599,7 @@ router.patch(
 
       res.json(mapLesson(updated));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -668,7 +669,7 @@ router.put(
       });
       res.json(lessons.map(mapLesson));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );

@@ -140,7 +140,7 @@ describe("Topics routes", () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/db down/i);
+      expect(res.body.error).toBe('Internal server error');
       tx.mockRestore();
     });
   });
@@ -454,7 +454,7 @@ describe("Topics routes", () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/fromTopicId does not belong/i);
+      expect(res.body.error).toBe('Internal server error');
 
       // Whole batch rolls back, so the first pair's work is undone too.
       const stillThere = await prisma.topic.findUnique({ where: { id: topicA.id } });
@@ -478,7 +478,7 @@ describe("Topics routes", () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/toTopicId does not belong/i);
+      expect(res.body.error).toBe('Internal server error');
     });
 
     it("follows a chain of pairs so activities land on the final topic", async () => {
@@ -583,7 +583,7 @@ describe("Topics routes", () => {
         .send({ mappings: [{ fromTopicId: otherCourse.topic.id, toTopicId: topicB.id }] });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/fromTopicId does not belong/i);
+      expect(res.body.error).toBe('Internal server error');
     });
 
     it("returns 500 when toTopicId does not belong to this course", async () => {
@@ -594,7 +594,7 @@ describe("Topics routes", () => {
         .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: otherCourse.topic.id }] });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/toTopicId does not belong/i);
+      expect(res.body.error).toBe('Internal server error');
     });
   });
 
@@ -644,7 +644,7 @@ describe("Topics routes", () => {
       const res = await request(app).post(`/api/courses/${seed.course.id}/topics/sync`).send({});
 
       expect(res.status).toBe(503);
-      expect(res.body.error).toMatch(/core down/i);
+      expect(res.body.error).toBe('Failed to sync topics from EduAI');
     });
 
     it("falls back to a generic message when the sync failure carries none", async () => {

@@ -101,8 +101,9 @@ import {
   ensureOfferingAnchors,
   importExternalCourseForUser,
   runCoreMirror,
-} from "../services/importTaughtCoursesService.js";
-import { listAdminBugReports } from "../services/bugReports.js";
+} from '../services/importTaughtCoursesService.js';
+import { listAdminBugReports } from '../services/bugReports.js';
+import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 
 const router = express.Router();
 
@@ -143,8 +144,9 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
   if (mapped) {
     return res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
   }
+  logSafeError('[courses] EduAI upstream request failed', error);
   const status = Number.isInteger(error?.status) ? error.status : 502;
-  return res.status(status).json({ error: error.message || fallbackMessage });
+  return sendSafeError(res, error, fallbackMessage, { status });
 }
 
 /**
@@ -182,7 +184,7 @@ router.get(
 
       res.json(filtered);
     } catch (error) {
-      console.error('[eduai] Failed to list courses', error);
+      logSafeError('[eduai] Failed to list courses', error);
       return respondEduAiUpstreamError(res, error, 'Unable to fetch EduAI courses');
     }
   },
@@ -372,7 +374,7 @@ router.get("/courses", async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -477,7 +479,7 @@ router.get("/courses/facets", async (req, res) => {
       coreUnavailable,
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -527,7 +529,7 @@ router.post(
       // second Core call.
       res.status(created ? 201 : 200).json(mapCourseOffering(offering, externalCourse));
     } catch (error) {
-      console.error('[eduai] Failed to import course', error);
+      logSafeError('[eduai] Failed to import course', error);
       return respondEduAiUpstreamError(res, error, 'Unable to import course');
     }
   },
@@ -572,7 +574,7 @@ router.post(
       const result = await syncCourseEnrollments(courseId, { course });
       res.json(result);
     } catch (error) {
-      console.error('[eduai] Failed to sync enrollments', error);
+      logSafeError('[eduai] Failed to sync enrollments', error);
       return respondEduAiUpstreamError(res, error, 'Unable to sync enrollments');
     }
   },
@@ -626,8 +628,9 @@ router.get("/courses/:courseId", async (req, res) => {
         });
       } catch (e) {
         const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        console.warn(
-          `[courses] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`,
+        logSafeError(
+          `[courses] Enrollment auto-sync (${phase}) failed; serving local mirror`,
+          e,
         );
       }
     }
@@ -667,7 +670,7 @@ router.get("/courses/:courseId", async (req, res) => {
 
     res.json(mapCourseOffering(course, coreCourse));
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -852,7 +855,7 @@ router.post(
 
       res.json(updated);
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -903,7 +906,7 @@ router.patch(
       }
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -979,7 +982,7 @@ router.patch(
       }
       res.json(mapCourseOfferingAfterPublishWrite(courseForAuth, resolved, false));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -1045,7 +1048,7 @@ router.get("/courses/:courseId/feedback", async (req, res) => {
 
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1158,7 +1161,7 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
 
     res.json(enriched);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1213,7 +1216,7 @@ router.get("/courses/:courseId/student-metrics", async (req, res) => {
 
     res.json(Object.values(byStudent));
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1253,7 +1256,7 @@ router.get("/courses/:courseId/analytics", async (req, res) => {
 
     res.json(analytics);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1312,7 +1315,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
         const users = await listCoreAdminUsers(req.headers.cookie ?? "", { pageSize: 1 });
         if (typeof users?.total === "number") stats.totalUsers = users.total;
       } catch (err) {
-        console.warn("[me/dashboard-stats] Could not fetch Core users", err.message);
+        logSafeError('[me/dashboard-stats] Could not fetch Core users', err);
       }
 
       try {
@@ -1321,7 +1324,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
           stats.openBugReports = reports.filter((r) => r.status === "unhandled").length;
         }
       } catch (err) {
-        console.warn("[me/dashboard-stats] Could not fetch bug reports", err.message);
+        logSafeError('[me/dashboard-stats] Could not fetch bug reports', err);
       }
 
       return res.json(stats);
@@ -1471,7 +1474,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
       correctAnswerPercentage,
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 

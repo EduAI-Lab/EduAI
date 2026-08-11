@@ -386,7 +386,7 @@ describe("Admin routes", () => {
       );
 
       expect(res.status).toBe(502);
-      expect(res.body.error).toMatch(/Upstream failed/);
+      expect(res.body.error).toBe('Enrollment sync failed');
     });
 
     it("returns 500 when the Core client throws without a status", async () => {
@@ -397,7 +397,7 @@ describe("Admin routes", () => {
       );
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/unexpected/);
+      expect(res.body.error).toBe('Enrollment sync failed');
     });
 
     it("is idempotent — running sync twice does not create duplicate rows", async () => {

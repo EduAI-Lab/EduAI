@@ -33,10 +33,11 @@
  * Related: services/topicSync.js, services/eduaiAuth.js
  */
 
-import express from "express";
-import { prisma } from "../config/database.js";
-import { requireRole, isCourseAdmin } from "../middleware/auth.js";
-import { mapTopic } from "../utils/mappers.js";
+import express from 'express';
+import { prisma } from '../config/database.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import { mapTopic } from '../utils/mappers.js';
+import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 import {
   parsePaginationParams,
   paginated,
@@ -208,9 +209,7 @@ router.get("/courses/:courseId/topics", async (req, res) => {
         });
       } catch (e) {
         const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        console.warn(
-          `[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`,
-        );
+        logSafeError(`[topics] Auto-sync (${phase}) failed; serving local mirror`, e);
       }
     }
 
@@ -228,7 +227,7 @@ router.get("/courses/:courseId/topics", async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -284,7 +283,7 @@ router.post(
       if (e?.code === 'P2002') {
         return res.status(409).json({ error: 'Topic name already exists for this course' });
       }
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -341,7 +340,8 @@ router.post(
         upstreamNames = upstream || [];
       } catch (e) {
         const status = Number.isInteger(e?.status) ? e.status : 502;
-        return res.status(status).json({ error: e?.message || 'Failed to sync topics from EduAI' });
+        logSafeError('[topics] Explicit sync failed', e);
+        return sendSafeError(res, e, 'Failed to sync topics from EduAI', { status });
       }
 
       const topics = await prisma.topic.findMany({
@@ -352,7 +352,7 @@ router.post(
       const missingTopics = topics.filter((t) => !upstreamSet.has(t.name));
       res.json({ ok: true, topics, missingTopics });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -595,7 +595,7 @@ router.post(
 
       res.json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );

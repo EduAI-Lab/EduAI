@@ -74,9 +74,10 @@ import {
   CustomRequestSchema,
   GuideRequestSchema,
   TeachRequestSchema,
-} from "../../../shared/schemas/aiGuidance.js";
-import { CreateActivitySchema, UpdateActivitySchema } from "../../../shared/schemas/activity.js";
-import { getCoreCourseId } from "../utils/coreCourseId.js";
+} from '../../../shared/schemas/aiGuidance.js';
+import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/schemas/activity.js';
+import { getCoreCourseId } from '../utils/coreCourseId.js';
+import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 
 const router = express.Router();
 
@@ -210,7 +211,7 @@ async function persistAiTrace({
       },
     });
   } catch (error) {
-    console.error("Failed to persist AI interaction trace:", error);
+    logSafeError('Failed to persist AI interaction trace', error);
   }
 }
 
@@ -218,7 +219,7 @@ async function trackAiHelpRequest(userId, activityId) {
   try {
     await recordAiHelpRequest({ userId, activityId });
   } catch (error) {
-    console.error("Failed to update AI help metrics:", error);
+    logSafeError('Failed to update AI help metrics', error);
   }
 }
 
@@ -226,7 +227,7 @@ async function trackSubmissionMetrics(userId, activityId, isCorrect) {
   try {
     await recordSubmissionMetrics({ userId, activityId, isCorrect });
   } catch (error) {
-    console.error("Failed to update submission metrics:", error);
+    logSafeError('Failed to update submission metrics', error);
   }
 }
 
@@ -532,7 +533,7 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -561,8 +562,8 @@ router.post(
     let payload;
     try {
       payload = CreateActivitySchema.parse(raw);
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid payload', details: e?.errors || String(e) });
+    } catch {
+      return res.status(400).json({ error: 'Invalid payload' });
     }
 
     // Validate at least one AI mode is enabled
@@ -674,7 +675,7 @@ router.post(
 
       res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -703,8 +704,8 @@ router.patch(
     let payload;
     try {
       payload = UpdateActivitySchema.parse(req.body || {});
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid payload', details: e?.errors || String(e) });
+    } catch {
+      return res.status(400).json({ error: 'Invalid payload' });
     }
     const noUpdatableFields =
       typeof payload.promptTemplateId === 'undefined' &&
@@ -958,7 +959,7 @@ router.patch(
 
       res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -1011,7 +1012,7 @@ router.delete(
 
       res.json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -1073,8 +1074,8 @@ router.post(
 
       res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
-      console.error("Error duplicating activity:", e);
-      res.status(500).json({ error: String(e) });
+      logSafeError('Error duplicating activity', e);
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -1160,8 +1161,8 @@ router.post(
 
       res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
-      console.error("Error importing activity:", e);
-      res.status(500).json({ error: String(e) });
+      logSafeError('Error importing activity', e);
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -1286,8 +1287,8 @@ router.get(
       if (e instanceof PaginationError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      console.error("Error listing importable activities:", e);
-      res.status(500).json({ error: String(e) });
+      logSafeError('Error listing importable activities', e);
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -1408,7 +1409,7 @@ router.post("/questions/:id/answer", async (req, res) => {
       feedbackAlreadySubmitted,
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1464,10 +1465,10 @@ router.post("/activities/:activityId/teach", async (req, res) => {
     let payload;
     try {
       payload = TeachRequestSchema.parse(req.body || {});
-    } catch (error) {
+    } catch {
       return res
         .status(400)
-        .json({ error: "Invalid payload", details: error?.errors || String(error) });
+        .json({ error: 'Invalid payload' });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1489,8 +1490,8 @@ router.post("/activities/:activityId/teach", async (req, res) => {
         }),
     });
   } catch (e) {
-    console.error("Error generating guidance:", e);
-    res.status(500).json({ error: String(e) });
+    logSafeError('Error generating guidance', e);
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1546,10 +1547,10 @@ router.post("/activities/:activityId/guide", async (req, res) => {
     let payload;
     try {
       payload = GuideRequestSchema.parse(req.body || {});
-    } catch (error) {
+    } catch {
       return res
         .status(400)
-        .json({ error: "Invalid payload", details: error?.errors || String(error) });
+        .json({ error: 'Invalid payload' });
     }
 
     return handleAiInteraction({
@@ -1570,8 +1571,8 @@ router.post("/activities/:activityId/guide", async (req, res) => {
         }),
     });
   } catch (e) {
-    console.error("Error generating guidance:", e);
-    res.status(500).json({ error: String(e) });
+    logSafeError('Error generating guidance', e);
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1632,10 +1633,10 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     let payload;
     try {
       payload = CustomRequestSchema.parse(req.body || {});
-    } catch (error) {
+    } catch {
       return res
         .status(400)
-        .json({ error: "Invalid payload", details: error?.errors || String(error) });
+        .json({ error: 'Invalid payload' });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1732,7 +1733,7 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
 
     res.json(submissions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1822,7 +1823,7 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
 
     res.json(updated);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1886,7 +1887,7 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
 
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -1914,10 +1915,10 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
   let payload;
   try {
     payload = ActivityFeedbackRequestSchema.parse(req.body || {});
-  } catch (error) {
+  } catch {
     return res
       .status(400)
-      .json({ error: "Invalid payload", details: error?.errors || String(error) });
+      .json({ error: 'Invalid payload' });
   }
 
   try {
@@ -1997,8 +1998,8 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
     if (error?.code === "P2002") {
       return res.status(409).json({ error: "Feedback already submitted for this activity" });
     }
-    console.error("Error recording activity feedback:", error);
-    res.status(500).json({ error: String(error) });
+    logSafeError('Error recording activity feedback', error);
+    sendSafeError(res, error, 'Internal server error');
   }
 });
 
@@ -2018,7 +2019,7 @@ router.get("/me/submissions", async (req, res) => {
     });
     res.json(submissions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -2038,7 +2039,7 @@ router.get("/me/feedback", async (req, res) => {
     });
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -2095,7 +2096,7 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
 
     return res.json(sessions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -2152,7 +2153,7 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
     const data = await upstream.json();
     return res.json(data);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -2217,7 +2218,7 @@ router.patch(
       if (e instanceof ReorderError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );
@@ -2300,7 +2301,7 @@ router.put(
       });
       res.json(activities.map((activity) => mapActivity(activity, { includeAnswer: true })));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, 'Internal server error');
     }
   },
 );

@@ -1,6 +1,7 @@
-import express from "express";
-import { prisma } from "../config/database.js";
-import { requireRole } from "../middleware/auth.js";
+import express from 'express';
+import { prisma } from '../config/database.js';
+import { requireRole } from '../middleware/auth.js';
+import { sendSafeError } from '../utils/safeErrors.js';
 
 const router = express.Router();
 
@@ -46,7 +47,7 @@ router.get("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
     });
     res.json(prompts);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 
@@ -70,7 +71,7 @@ router.post("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
     });
     res.status(201).json(prompt);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, 'Internal server error');
   }
 });
 

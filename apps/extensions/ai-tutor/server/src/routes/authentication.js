@@ -2,6 +2,7 @@ import express from 'express';
 import { fetchCoreAuth, isCoreAuthTimeoutError } from '../middleware/auth.js';
 import { toPublicUser } from '../utils/mappers.js';
 import { listEduAiCourses } from '../services/eduaiClient.js';
+import { logSafeError } from '../utils/safeErrors.js';
 import {
   runCoreMirror,
   resetCoreMirrorThrottleForTests,
@@ -28,7 +29,7 @@ router.get("/me", async (req, res) => {
     // #1041: paged upstream; this flow reconciles against the caller's full set.
     coreCourses = await listEduAiCourses({ cookie, all: true });
   } catch (err) {
-    console.error("[eduai] Core course list failed on /me", err);
+    logSafeError('[eduai] Core course list failed on /me', err);
     coreCourses = null;
   }
 
@@ -46,7 +47,7 @@ router.get("/me", async (req, res) => {
         effectiveUser = { ...publicUser, role: "TA" };
       }
     } catch (err) {
-      console.error("[eduai] Effective TA role resolution failed on /me", err);
+      logSafeError('[eduai] Effective TA role resolution failed on /me', err);
     }
   }
 
@@ -87,7 +88,7 @@ router.post('/logout', async (req, res) => {
     }
     return res.json({ ok: true });
   } catch (err) {
-    console.error('[ai-tutor] Core sign-out request failed', err);
+    logSafeError('[ai-tutor] Core sign-out request failed', err);
     if (isCoreAuthTimeoutError(err)) {
       return res.status(504).json({ ok: false, error: 'Logout service timed out' });
     }

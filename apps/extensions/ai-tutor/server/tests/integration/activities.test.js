@@ -805,7 +805,29 @@ describe("Activities routes", () => {
       expect(res.body[0].activityId).toBe(activity.id);
     });
 
-    it("TA enrolled in the course gets all submissions", async () => {
+    it('does not expose internal submission lookup errors to the client or logs', async () => {
+      const canary = 'ACTIVITY_DB_SECRET_CANARY /srv/private/query-engine stack';
+      const internalError = Object.assign(new Error(canary), {
+        status: 500,
+        stack: `${canary}\n at privateQuery (db.js:1:1)`,
+      });
+      const findUnique = vi.spyOn(prisma.activity, 'findUnique').mockRejectedValueOnce(internalError);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        const res = await request(profApp).get(`/api/activities/${activity.id}/submissions`);
+
+        expect(res.status).toBe(500);
+        expect(res.body).toEqual({ error: 'Internal server error' });
+        expect(JSON.stringify(res.body)).not.toContain(canary);
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(canary);
+      } finally {
+        findUnique.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('TA enrolled in the course gets all submissions', async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       await request(studentApp)
