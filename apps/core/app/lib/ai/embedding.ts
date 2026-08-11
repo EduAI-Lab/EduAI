@@ -1287,27 +1287,99 @@ export async function findRelevantContent(
   }));
 }
 
+/** Immutable job/owner token used to fence every durable re-embed write. */
+export type ReEmbedLeaseFence = {
+  jobId: string;
+  leaseOwner: string;
+};
+
+export class ReEmbedInterruptedError extends Error {
+  constructor() {
+    super("Re-embed job lease is no longer owned by this worker");
+    this.name = "ReEmbedInterruptedError";
+  }
+}
+
 /**
- * Delete all chunks (and embeddings) for a material so it can be re-indexed.
+ * Verify a durable lease on the transaction's own connection. The no-op
+ * UPDATE obtains a row lock, preventing a successor claim from interleaving
+ * with the destructive write. The final invocation catches expiry during a
+ * long transaction and rolls back its vector/material changes.
  */
-export async function clearMaterialEmbeddings(materialId: string): Promise<void> {
-  await prisma.materialChunk.deleteMany({ where: { materialId } });
+async function assertReEmbedLeaseInTransaction(
+  tx: Prisma.TransactionClient,
+  fence: ReEmbedLeaseFence,
+): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    UPDATE "course_re_embed_jobs"
+    SET "updatedAt" = "updatedAt"
+    WHERE id = ${fence.jobId}
+      AND status = 'RUNNING'
+      AND "leaseOwner" = ${fence.leaseOwner}
+      AND "leaseExpiresAt" > clock_timestamp()
+    RETURNING id
+  `;
+  if (rows.length !== 1) throw new ReEmbedInterruptedError();
+}
+
+async function runFencedReEmbedTransaction<T>(
+  fence: ReEmbedLeaseFence,
+  callback: (tx: Prisma.TransactionClient) => Promise<T>,
+  transactionOptions?: { maxWait: number; timeout: number },
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await assertReEmbedLeaseInTransaction(tx, fence);
+    const result = await callback(tx);
+    await assertReEmbedLeaseInTransaction(tx, fence);
+    return result;
+  }, transactionOptions);
+}
+
+type ReEmbedMaterialStatusUpdate = {
+  status: "PROCESSING" | "READY" | "FAILED";
+  processedAt?: Date;
+};
+
+async function updateMaterialStatus(
+  materialId: string,
+  data: ReEmbedMaterialStatusUpdate,
+  options?: {
+    leaseFence?: ReEmbedLeaseFence;
+    transactionOptions?: { maxWait: number; timeout: number };
+  },
+): Promise<void> {
+  if (!options?.leaseFence) {
+    await prisma.courseMaterial.update({ where: { id: materialId }, data });
+    return;
+  }
+
+  await runFencedReEmbedTransaction(
+    options.leaseFence,
+    (tx) => tx.courseMaterial.update({ where: { id: materialId }, data }).then(() => undefined),
+    options.transactionOptions,
+  );
 }
 
 async function markCourseEmbedded(
   courseId: string,
   settingsSnapshot?: EffectiveEmbeddingSettings,
+  leaseFence?: ReEmbedLeaseFence,
 ): Promise<void> {
   if (!settingsSnapshot) clearCourseEmbeddingSettingsCache(courseId);
   const settings = settingsSnapshot ?? (await loadEffectiveEmbeddingSettings(courseId));
-  await prisma.course.update({
-    where: { id: courseId },
-    data: {
-      embeddedWithProvider: settings.provider,
-      embeddedWithModel: settings.model,
-      lastEmbeddedAt: new Date(),
-    },
-  });
+  const data = {
+    embeddedWithProvider: settings.provider,
+    embeddedWithModel: settings.model,
+    lastEmbeddedAt: new Date(),
+  };
+  if (leaseFence) {
+    await runFencedReEmbedTransaction(
+      leaseFence,
+      (tx) => tx.course.update({ where: { id: courseId }, data }).then(() => undefined),
+    );
+  } else {
+    await prisma.course.update({ where: { id: courseId }, data });
+  }
 }
 
 export type ReEmbedProgress = {
@@ -1321,18 +1393,13 @@ export type ReEmbedCourseMaterialsOptions = {
   onProgress?: (progress: ReEmbedProgress) => void | Promise<void>;
   /** Immutable effective settings captured when the durable job was created. */
   embeddingSettings?: EffectiveEmbeddingSettings;
+  /** DB-atomic durable job/owner fence for all material and course writes. */
+  leaseFence?: ReEmbedLeaseFence;
   /** Lease fence checked before starting or committing each material. */
   shouldContinue?: () => boolean | Promise<boolean>;
   /** Cancels in-flight provider requests when the job/request is abandoned. */
   signal?: AbortSignal;
 };
-
-export class ReEmbedInterruptedError extends Error {
-  constructor() {
-    super("Re-embed job lease is no longer owned by this worker");
-    this.name = "ReEmbedInterruptedError";
-  }
-}
 
 async function assertReEmbedCanContinue(
   shouldContinue: ReEmbedCourseMaterialsOptions["shouldContinue"],
@@ -1399,9 +1466,12 @@ export async function reEmbedCourseMaterials(
         const content = material.rawText!.trim();
 
         try {
-          await prisma.courseMaterial.update({
-            where: { id: material.id },
-            data: { status: "PROCESSING" },
+          await updateMaterialStatus(material.id, { status: "PROCESSING" }, {
+            leaseFence: options?.leaseFence,
+            transactionOptions: {
+              maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+              timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+            },
           });
           await processMaterialEmbeddings(material.id, content, {
             replace: true,
@@ -1410,13 +1480,17 @@ export async function reEmbedCourseMaterials(
               timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
             },
             embeddingSettings: options?.embeddingSettings,
+            leaseFence: options?.leaseFence,
             shouldContinue: options?.shouldContinue,
             signal: options?.signal,
           });
           await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
-          await prisma.courseMaterial.update({
-            where: { id: material.id },
-            data: { status: "READY", processedAt: new Date() },
+          await updateMaterialStatus(material.id, { status: "READY", processedAt: new Date() }, {
+            leaseFence: options?.leaseFence,
+            transactionOptions: {
+              maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+              timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+            },
           });
           processed += 1;
         } catch (err) {
@@ -1427,11 +1501,15 @@ export async function reEmbedCourseMaterials(
           await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
           failed.push(material.id);
           try {
-            await prisma.courseMaterial.update({
-              where: { id: material.id },
-              data: { status: "FAILED" },
+            await updateMaterialStatus(material.id, { status: "FAILED" }, {
+              leaseFence: options?.leaseFence,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
             });
           } catch (statusError) {
+            if (statusError instanceof ReEmbedInterruptedError) throw statusError;
             console.error("[re-embed] failed to persist material failure", {
               courseId,
               materialId: material.id,
@@ -1458,7 +1536,7 @@ export async function reEmbedCourseMaterials(
 
   if (processed > 0 && failed.length === 0 && processed === eligible.length) {
     await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
-    await markCourseEmbedded(courseId, options?.embeddingSettings);
+    await markCourseEmbedded(courseId, options?.embeddingSettings, options?.leaseFence);
   }
 
   return { processed, failed, total: eligible.length };
@@ -1471,6 +1549,8 @@ export type ProcessMaterialEmbeddingsOptions = {
   transactionOptions?: { maxWait: number; timeout: number };
   /** Immutable settings used by a durable re-embed job. */
   embeddingSettings?: EffectiveEmbeddingSettings;
+  /** DB-atomic durable job/owner fence for vector replacement writes. */
+  leaseFence?: ReEmbedLeaseFence;
   /** Lease fence checked immediately before replacing stored vectors. */
   shouldContinue?: () => boolean | Promise<boolean>;
   /** Cancels the embedding provider request before the storage transaction. */
@@ -1561,7 +1641,7 @@ export async function processMaterialEmbeddings(
 
   await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
 
-  await prisma.$transaction(async (tx) => {
+  const writeChunks = async (tx: Prisma.TransactionClient) => {
     if (options?.replace) {
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
@@ -1589,5 +1669,15 @@ export async function processMaterialEmbeddings(
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
 
     await insertMaterialEmbeddingsBatched(tx, chunksByIndex, embeddings);
-  }, options?.transactionOptions);
+  };
+
+  if (options?.leaseFence) {
+    await runFencedReEmbedTransaction(
+      options.leaseFence,
+      writeChunks,
+      options.transactionOptions,
+    );
+  } else {
+    await prisma.$transaction(writeChunks, options?.transactionOptions);
+  }
 }
