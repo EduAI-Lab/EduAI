@@ -1,5 +1,11 @@
 {
   "name": "question-maker",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "scripts": {
+    "lint": "oxlint . --ignore-pattern app",
+    "lint:fix": "oxlint --fix . --ignore-pattern app",
+    "format": "oxfmt . --ignore-pattern app",
+    "format:check": "oxfmt --check . --ignore-pattern app"
+  }
 }
