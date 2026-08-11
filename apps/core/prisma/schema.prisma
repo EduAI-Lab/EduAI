@@ -169,6 +169,8 @@ model Course {
 model CourseReEmbedJob {
   id                   String           @id @default(cuid())
   courseId             String
+  /// Optional client key for retry-safe starts (#1112). Unique per course when set.
+  idempotencyKey       String?
   status               ReEmbedJobStatus @default(PENDING)
   totalMaterials       Int              @default(0)
   processedCount       Int              @default(0)
@@ -181,6 +183,7 @@ model CourseReEmbedJob {
   updatedAt            DateTime         @updatedAt
   course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
+  @@unique([courseId, idempotencyKey])
   @@index([courseId, status])
   @@map("course_re_embed_jobs")
 }
