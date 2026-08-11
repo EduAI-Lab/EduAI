@@ -99,6 +99,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
+| `CHAT_MAX_BODY_BYTES`, `CHAT_MAX_MESSAGES`, `CHAT_MAX_MESSAGE_CHARS`, `CHAT_MAX_TOTAL_MESSAGE_CHARS` | optional (defaults 2 MiB, 100, 32768, 131072) | dev/prod | Bounded `/api/chat` ingress; rejects oversized request bodies with 413 and message count/content overages with 422 before persistence or provider admission |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit. When enabled (default), Dean reject→retry→forced wrap ships structure-compliant text (policy v2.1+: Teacher requires literal `**Top summary**` / `**Next?**`; UI TLDR/Continue remapping is client-only). |
 | `EDUAI_API_KEY` | required for cross-service calls | dev/prod | Shared service key — **must match** AI Tutor server's and QM's `EDUAI_API_KEY` exactly |

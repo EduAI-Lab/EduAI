@@ -456,6 +456,28 @@ describe("Smart course RAG gate (#484)", () => {
       expect(ids).not.toContain("stored-0");
       expect(ids[19]).toBe("incoming-20");
     });
+
+    it("does not persist incoming turns that were trimmed from the model context", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const incoming = Array.from({ length: 21 }, (_, index) => ({
+        id: `incoming-${index}`,
+        role: "user",
+        content: `turn-${index}`,
+      }));
+
+      const res = await action(makeRequest(baseBody({ messages: incoming })));
+
+      expect(res.status).toBe(200);
+      const firstPersistCall = vi.mocked(prisma.chatMessage.createMany).mock
+        .calls[0]?.[0];
+      const persisted = Array.isArray(firstPersistCall?.data)
+        ? firstPersistCall.data
+        : [];
+      expect(persisted).toHaveLength(20);
+      expect(persisted.map((row) => row.messageId)).not.toContain("incoming-0");
+      expect(persisted.map((row) => row.messageId)).toContain("incoming-20");
+    });
   });
 
   describe("tool path (supportsTools = true)", () => {

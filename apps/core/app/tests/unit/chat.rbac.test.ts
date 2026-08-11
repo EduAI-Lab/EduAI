@@ -531,3 +531,57 @@ describe("POST /api/chat — proxyUser delegation", () => {
     );
   });
 });
+
+describe("POST /api/chat — bounded ingress", () => {
+  it("rejects a body that exceeds the byte budget before routing or persistence", async () => {
+    const body = JSON.stringify({
+      model: "auto-hybrid",
+      messages: [],
+      oversized: "x".repeat(2 * 1024 * 1024 + 1),
+    });
+    const args = {
+      request: new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Deliberately omit Content-Length so the stream byte cap is exercised.
+        },
+        body,
+      }),
+      params: {},
+      context: {} as never,
+    } as any;
+
+    const res = await action(args);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Chat request body exceeds size limit",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized message list before routing or persistence", async () => {
+    const body = {
+      model: "auto-hybrid",
+      messages: Array.from({ length: 101 }, (_, index) => ({
+        id: `message-${index}`,
+        role: "user",
+        content: "hi",
+      })),
+    };
+    const args = makeArgs(body);
+
+    const res = await action(args);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "messages exceeds maximum count",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
