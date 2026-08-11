@@ -73,6 +73,18 @@ export const saveCanvasIntegration = async (userId, { canvasUrl, apiKey, isTestM
   }
 };
 
+/** Encodes one opaque Canvas identifier without allowing it to change URL structure. */
+const canvasPathSegment = (value, label) => {
+  if (
+    (typeof value !== 'string' && typeof value !== 'number') ||
+    (typeof value === 'number' && !Number.isFinite(value)) ||
+    String(value).length === 0
+  ) {
+    throw new Error(`${label} must be a non-empty string or finite number`);
+  }
+  return encodeURIComponent(String(value));
+};
+
 /** Executes a Canvas API request, returning mock data when test mode is enabled. */
 const makeCanvasRequest = async (integration, method, endpoint, data = null) => {
   if (integration.isTestMode) {
@@ -268,6 +280,8 @@ export const exportAssessmentToCanvas = async (
       throw new Error("Assessment has no questions to export");
     }
 
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+
     // Create quiz in Canvas
     const quizData = {
       quiz: {
@@ -282,12 +296,13 @@ export const exportAssessmentToCanvas = async (
 
     const quizResponse = await makeCanvasRequest(
       integration,
-      "POST",
-      `/courses/${canvasCourseId}/quizzes`,
-      quizData,
+      'POST',
+      `/courses/${canvasCoursePathSegment}/quizzes`,
+      quizData
     );
 
     const quizId = quizResponse.data.id;
+    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
 
     // Create questions in Canvas
     const createdQuestions = [];
@@ -306,9 +321,9 @@ export const exportAssessmentToCanvas = async (
 
       const questionResponse = await makeCanvasRequest(
         integration,
-        "POST",
-        `/courses/${canvasCourseId}/quizzes/${quizId}/questions`,
-        { question: canvasQuestion },
+        'POST',
+        `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}/questions`,
+        { question: canvasQuestion }
       );
 
       createdQuestions.push(questionResponse.data);
@@ -336,9 +351,9 @@ export const exportAssessmentToCanvas = async (
       quizId,
       quizTitle: quizResponse.data.title,
       questionsCreated: createdQuestions.length,
-      canvasUrl: integration.isTestMode
-        ? `[TEST MODE] Quiz would be created at: ${integration.canvasUrl}/courses/${canvasCourseId}/quizzes/${quizId}`
-        : `${integration.canvasUrl}/courses/${canvasCourseId}/quizzes/${quizId}`,
+      canvasUrl: integration.isTestMode 
+        ? `[TEST MODE] Quiz would be created at: ${integration.canvasUrl}/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`
+        : `${integration.canvasUrl}/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`
     };
   } catch (error) {
     throw new Error(`Failed to export assessment to Canvas: ${error.message}`);
@@ -475,10 +490,12 @@ export const getCanvasQuizzes = async (userId, canvasCourseId) => {
       );
     }
 
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+
     const response = await makeCanvasRequest(
       integration,
-      "GET",
-      `/courses/${canvasCourseId}/quizzes`,
+      'GET',
+      `/courses/${canvasCoursePathSegment}/quizzes`
     );
 
     // Filter to only return assignment-type quizzes (what we export)
@@ -505,10 +522,13 @@ export const getCanvasQuizQuestions = async (userId, canvasCourseId, quizId) => 
       );
     }
 
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
+
     const response = await makeCanvasRequest(
       integration,
-      "GET",
-      `/courses/${canvasCourseId}/quizzes/${quizId}/questions`,
+      'GET',
+      `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}/questions`
     );
 
     const list = Array.isArray(response.data) ? response.data : [response.data];
@@ -534,10 +554,14 @@ export const getCanvasQuizQuestionById = async (userId, canvasCourseId, quizId, 
       );
     }
 
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
+    const questionPathSegment = canvasPathSegment(questionId, 'Canvas question ID');
+
     const response = await makeCanvasRequest(
       integration,
-      "GET",
-      `/courses/${canvasCourseId}/quizzes/${quizId}/questions/${questionId}`,
+      'GET',
+      `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}/questions/${questionPathSegment}`
     );
 
     const data = response.data;
@@ -819,11 +843,14 @@ export const importQuizFromCanvas = async (
       throw new Error("Local course not found");
     }
 
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
+
     // Get quiz details
     const quizResponse = await makeCanvasRequest(
       integration,
-      "GET",
-      `/courses/${canvasCourseId}/quizzes/${quizId}`,
+      'GET',
+      `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`
     );
     const quiz = quizResponse.data;
 

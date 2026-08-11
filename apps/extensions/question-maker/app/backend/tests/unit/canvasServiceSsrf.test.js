@@ -34,7 +34,12 @@ vi.mock("../../src/config/database.js", () => ({
   },
 }));
 
-const { getCanvasCourses } = await import("../../src/services/canvasService.js");
+const {
+  getCanvasCourses,
+  getCanvasQuizzes,
+  getCanvasQuizQuestions,
+  getCanvasQuizQuestionById,
+} = await import('../../src/services/canvasService.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,6 +86,67 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     await expect(getCanvasCourses(42)).rejects.toThrow();
     expect(axiosRequest).not.toHaveBeenCalled();
   });
+
+  const unsafeSegmentCases = [
+    ['parent traversal', '../admin'],
+    ['encoded slash', 'course%2Fadmin'],
+    ['query delimiter', 'course?admin=true'],
+    ['fragment delimiter', 'course#admin'],
+  ];
+
+  it.each(unsafeSegmentCases)(
+    'encodes a canvasCourseId containing %s as one URL path segment',
+    async (_label, canvasCourseId) => {
+      integrationFindOne.mockResolvedValue({
+        isTestMode: false,
+        canvasUrl: 'https://canvas.example.edu',
+        apiKey: 'secret-token',
+      });
+      axiosRequest.mockResolvedValue({ data: [] });
+
+      await getCanvasQuizzes(42, canvasCourseId);
+
+      expect(axiosRequest.mock.calls[0][0].url).toBe(
+        `https://canvas.example.edu/api/v1/courses/${encodeURIComponent(canvasCourseId)}/quizzes`,
+      );
+    },
+  );
+
+  it.each(unsafeSegmentCases)(
+    'encodes a quizId containing %s as one URL path segment',
+    async (_label, quizId) => {
+      integrationFindOne.mockResolvedValue({
+        isTestMode: false,
+        canvasUrl: 'https://canvas.example.edu',
+        apiKey: 'secret-token',
+      });
+      axiosRequest.mockResolvedValue({ data: [] });
+
+      await getCanvasQuizQuestions(42, 'course-1', quizId);
+
+      expect(axiosRequest.mock.calls[0][0].url).toBe(
+        `https://canvas.example.edu/api/v1/courses/course-1/quizzes/${encodeURIComponent(quizId)}/questions`,
+      );
+    },
+  );
+
+  it.each(unsafeSegmentCases)(
+    'encodes a questionId containing %s as one URL path segment',
+    async (_label, questionId) => {
+      integrationFindOne.mockResolvedValue({
+        isTestMode: false,
+        canvasUrl: 'https://canvas.example.edu',
+        apiKey: 'secret-token',
+      });
+      axiosRequest.mockResolvedValue({ data: {} });
+
+      await getCanvasQuizQuestionById(42, 'course-1', 'quiz-1', questionId);
+
+      expect(axiosRequest.mock.calls[0][0].url).toBe(
+        `https://canvas.example.edu/api/v1/courses/course-1/quizzes/quiz-1/questions/${encodeURIComponent(questionId)}`,
+      );
+    },
+  );
 
   it('does not expose a Canvas response body through the stable service error', async () => {
     const bodyCanary = 'AUDIT_CANVAS_ERROR_BODY_CANARY_e4f601';
