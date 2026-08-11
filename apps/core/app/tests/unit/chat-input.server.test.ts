@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { createReadableStreamFromReadable } from "@react-router/node";
 
 import { readBoundedChatJson, validateChatBody } from "~/lib/chat-input.server";
 
@@ -24,6 +26,107 @@ function streamRequest(chunks: string[], headers: Record<string, string> = {}, c
 }
 
 describe("readBoundedChatJson", () => {
+  it("returns a readable 413 through a real HTTP request boundary", async () => {
+    const server = createServer(async (incoming, outgoing) => {
+      const request = new Request("http://localhost/api/chat", {
+        method: incoming.method,
+        headers: incoming.headers as Record<string, string>,
+        body: createReadableStreamFromReadable(incoming),
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+      const result = await readBoundedChatJson(request, 96);
+      outgoing.statusCode = result.ok ? 200 : result.status;
+      outgoing.setHeader("Content-Type", "application/json");
+      outgoing.end(JSON.stringify(result.ok ? result.body : { error: result.error }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("test server did not bind to a TCP port");
+    }
+
+    try {
+      const body = JSON.stringify({ messages: [], oversized: "x".repeat(128) });
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": String(Buffer.byteLength(body)),
+        },
+        body,
+      });
+
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({
+        error: "Chat request body exceeds size limit",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("returns 413 to a fetch that is still uploading a declared oversized body", async () => {
+    const server = createServer(async (incoming, outgoing) => {
+      const request = new Request("http://localhost/api/chat", {
+        method: incoming.method,
+        headers: incoming.headers as Record<string, string>,
+        body: createReadableStreamFromReadable(incoming),
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+      const result = await readBoundedChatJson(request, 96);
+      outgoing.statusCode = result.ok ? 200 : result.status;
+      outgoing.setHeader("Content-Type", "application/json");
+      outgoing.end(JSON.stringify(result.ok ? result.body : { error: result.error }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("test server did not bind to a TCP port");
+    }
+
+    let cancelled = false;
+    const upload = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"messages":['));
+        setTimeout(() => {
+          if (cancelled) return;
+          controller.enqueue(new TextEncoder().encode('],"oversized":"'));
+          controller.enqueue(new TextEncoder().encode("x".repeat(1024)));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        }, 100);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": "2048",
+        },
+        body: upload,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({
+        error: "Chat request body exceeds size limit",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
   it("rejects an over-limit declared Content-Length before reading the body", async () => {
     const { request, cancel } = streamRequest(
       [],
@@ -39,12 +142,12 @@ describe("readBoundedChatJson", () => {
       status: 413,
       error: "Chat request body exceeds size limit",
     });
-    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("rejects a streamed body that exceeds the cap even with a lying header", async () => {
     const body = JSON.stringify({ messages: [], oversized: "x".repeat(128) });
-    const { request } = streamRequest(
+    const { request, cancel } = streamRequest(
       [body],
       {
         "Content-Type": "application/json",
@@ -58,6 +161,7 @@ describe("readBoundedChatJson", () => {
       status: 413,
       error: "Chat request body exceeds size limit",
     });
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("parses a valid body after bounded streaming", async () => {

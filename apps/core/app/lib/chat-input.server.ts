@@ -96,19 +96,15 @@ export async function readBoundedChatJson(
     const normalized = contentLength.trim();
     const declaredLength = Number(normalized);
     if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(declaredLength) || declaredLength < 0) {
-      try {
-        await request.body?.cancel();
-      } catch {
-        // Preserve the stable header-validation response.
-      }
       return invalidBody("Invalid Content-Length");
     }
     if (declaredLength > maxBytes) {
-      try {
-        await request.body?.cancel();
-      } catch {
-        // The size rejection is stable even if the runtime already owns the stream.
-      }
+      // Do not cancel an HTTP server's incoming request stream here. On browser
+      // uploads that are still in flight, canceling this wrapper can tear down
+      // the connection before the client receives the 413 response. The
+      // declared length is already sufficient for an early rejection; the
+      // streaming path below still cancels when a chunk actually crosses the
+      // cap.
       return sizeExceeded();
     }
   }
