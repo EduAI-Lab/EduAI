@@ -23,6 +23,9 @@ vi.mock("~/lib/prisma.server", () => ({
     canvasMaterialExclusion: {
       findMany: vi.fn(),
     },
+    course: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -1053,6 +1056,99 @@ describe("GET materials — student visibility gate (#839)", () => {
     await loader(makePreviewArgs("mat-1"));
     const where = (vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as any).where;
     expect(where).toEqual(expect.objectContaining({ visibleToStudents: true }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loader — list payload excludes rawText (#948)
+// ---------------------------------------------------------------------------
+
+describe("GET materials — list payload excludes rawText (#948)", () => {
+  /** Every column list responses are contracted to carry. */
+  const EXPECTED_LIST_COLUMNS = [
+    "id",
+    "courseId",
+    "title",
+    "mimeType",
+    "fileSize",
+    "checksum",
+    "status",
+    "externalId",
+    "externalSource",
+    "canvasUpdatedAt",
+    "uploadedBy",
+    "visibleToStudents",
+    "availableAt",
+    "deletedAt",
+    "deletedBy",
+    "unpublishedAt",
+    "createdAt",
+    "updatedAt",
+    "processedAt",
+  ];
+
+  function listSelect() {
+    return (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any).select;
+  }
+
+  it("selects an explicit column set with rawText omitted (student/staff loader path)", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    await loader(makeArgs("GET"));
+
+    const args = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any;
+    // `include` and `select` cannot coexist at the same level in Prisma.
+    expect(args.include).toBeUndefined();
+    expect(listSelect()).toBeDefined();
+    expect(listSelect().rawText).toBeUndefined();
+    for (const col of EXPECTED_LIST_COLUMNS) {
+      expect(listSelect()[col]).toBe(true);
+    }
+    expect(listSelect()._count).toEqual({ select: { chunks: true } });
+  });
+
+  it("keeps visibleToStudents/availableAt selected so the staff branch does not emit undefined", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    await loader(makeArgs("GET"));
+    expect(listSelect().visibleToStudents).toBe(true);
+    expect(listSelect().availableAt).toBe(true);
+  });
+
+  it("uses the same select on the ADMIN includeDeleted list path (no drift)", async () => {
+    mockSession("ADMIN");
+    vi.mocked(prisma.course.findUnique).mockResolvedValue({ id: COURSE_ID } as never);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    await loader({
+      request: new Request(
+        `http://localhost/api/courses/${COURSE_ID}/materials?includeDeleted=true`,
+        { method: "GET" },
+      ),
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any);
+
+    const args = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any;
+    expect(args.include).toBeUndefined();
+    expect(args.select.rawText).toBeUndefined();
+    for (const col of EXPECTED_LIST_COLUMNS) {
+      expect(args.select[col]).toBe(true);
+    }
+  });
+
+  it("never serializes rawText into the list response body", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    // Simulate a driver that ignored the select and handed back rawText anyway:
+    // the response must still not carry it for a staff caller.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-1", title: "Slides", _count: { chunks: 2 } },
+    ] as never);
+    const body = await (await loader(makeArgs("GET"))).json();
+    expect(body.materials[0]).not.toHaveProperty("rawText");
+    expect(body.materials[0].chunkCount).toBe(2);
   });
 });
 

@@ -604,6 +604,46 @@ async function uploadMaterial(
 
 const PREVIEW_EXCERPT_MAX = 4000;
 
+/**
+ * Column set for every materials LIST response (#948). Deliberately an explicit
+ * `select` rather than `include`, so `rawText` — the full extracted document
+ * text, which can be megabytes per row — never reaches the JSON payload. The
+ * single-material preview path selects `rawText` on its own and truncates it to
+ * `PREVIEW_EXCERPT_MAX`; lists have no use for it at all.
+ *
+ * MAINTENANCE: this is an allow-list. A new column on `CourseMaterial` will NOT
+ * appear in list responses until it is added here explicitly — add it (unless
+ * it is another large text blob, in which case leave it out on purpose).
+ *
+ * `_count` is nested inside the select because Prisma rejects `include` and
+ * `select` at the same level. Both list paths (the includeDeleted/admin path and
+ * the student/staff loader path) share this const so they cannot drift; note
+ * that `visibleToStudents`/`availableAt` MUST stay selected — the staff branch
+ * destructures them off the row and would emit `undefined` without them.
+ */
+const MATERIAL_LIST_SELECT = {
+  id: true,
+  courseId: true,
+  title: true,
+  mimeType: true,
+  fileSize: true,
+  checksum: true,
+  status: true,
+  externalId: true,
+  externalSource: true,
+  canvasUpdatedAt: true,
+  uploadedBy: true,
+  visibleToStudents: true,
+  availableAt: true,
+  deletedAt: true,
+  deletedBy: true,
+  unpublishedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  processedAt: true,
+  _count: { select: { chunks: true } },
+} as const;
+
 async function materialsListResponse(
   courseId: string,
   includeDeleted: boolean,
@@ -612,10 +652,8 @@ async function materialsListResponse(
   const { cursor, limit } = cursorParams;
   const rows = await prisma.courseMaterial.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
-    include: {
-      _count: { select: { chunks: true } },
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: MATERIAL_LIST_SELECT,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
@@ -744,10 +782,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { cursor, limit } = cursorParams;
   const rows = await prisma.courseMaterial.findMany({
     where: { courseId, deletedAt: null, ...studentGate },
-    include: {
-      _count: { select: { chunks: true } },
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: MATERIAL_LIST_SELECT,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
