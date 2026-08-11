@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/generated/**",
+    "**/.react-router/**",
+    "**/playwright-report/**",
+    "**/test-results/**",
+    "**/prisma/migrations/**",
+    "eduai-design-system/**"
+  ]
+}
