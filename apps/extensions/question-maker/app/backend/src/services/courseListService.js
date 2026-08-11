@@ -419,7 +419,8 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
     try {
       accessMirrorHealthy = await syncCourseAccessMirror(reqUser, cookie);
     } catch {
-      // Do not use stale grants after a failed refresh; fail closed.
+      // Do not use stale grants after a failed refresh. Linked-course owners
+      // retain the documented fallback, while non-owners fail closed.
       accessMirrorHealthy = false;
       accessSyncedAtByUser.set(reqUser.id, { refreshedAt: Date.now(), healthy: false });
     }
@@ -434,16 +435,22 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
         OR: [
           {
             userId: reqUser.id,
-            // Owner fallback only ever covers QM-native/unlinked owned courses
-            // (`coreCourseId: null`) — mirrors `resolveAccessForCourse` and
-            // `deriveListAccess` (#1114): once a course is linked, ownership is
-            // an FK, not a grant, whether or not the mirror is healthy. A caller
-            // who owns a linked course but has no synced grant for it (never
-            // enrolled, or since unenrolled in Core) gets no fallback here; a
-            // freshly-created/linked course may lag up to `ACCESS_SYNC_TTL_MS`
-            // before it appears in this list, same tradeoff `runCoreImportMirror`
-            // already accepts for the auto-import path (routes/course.js).
-            coreCourseId: null,
+            // Owner fallback must fail CLOSED for linked courses when the
+            // Core access refresh failed: a linked course's real access can't
+            // be verified locally, so only QM-native/unlinked owned courses
+            // (`coreCourseId: null`) get automatic visibility here. When the
+            // mirror is healthy the fallback still applies to a linked course
+            // that has no synced grant at all (never enrolled in Core, e.g. a
+            // freshly-linked course pending Core sync) — `importTaughtCoursesFromCore`
+            // creates the anchor and `syncCourseAccessMirror` writes the grant
+            // on separate throttles (routes/course.js), so a just-imported
+            // course would otherwise stay invisible until the next sync
+            // window. See #1270 review: narrowing this to unconditionally
+            // `coreCourseId: null` broke that auto-import path (cascade-delete
+            // E2E) and needs the import/grant timing gap closed first.
+            ...(accessMirrorHealthy
+              ? { OR: [{ coreCourseId: null }, { accessGrants: { none: { userId: reqUser.id } } }] }
+              : { coreCourseId: null }),
           },
           ...(accessMirrorHealthy
             ? [{ accessGrants: { some: { userId: reqUser.id, role: 'INSTRUCTOR' } } }]
