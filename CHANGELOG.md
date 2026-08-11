@@ -1,5 +1,15 @@
 # Changelog
 
+## [Week 15 — August 10–16, 2026]
+
+### Fixed
+
+- [core] fix: Three bugs found during Epic #1429 end-to-end Student/TA testing (#1459). Course detail pages showed "No professor assigned" for every course despite an active instructor enrollment, because `prisma/seed.ts` never wrote `Course.instructorId` on the course upsert (only the RBAC-facing `Enrollment(role=INSTRUCTOR)` row) — closes #1463. TA onboarding ("link your UBC student number") had no way to skip despite the server already supporting `intent=skip`, trapping TAs with no student number on their default post-login path — added a "skip for now" button — closes #1464. A student enrolled in a course that's unpublished got silently redirected to `/courses` with no explanation on direct navigation, unlike the clear banner shown for a genuinely unrelated course — the redirect now carries `?access=unpublished` with a matching banner — closes #1465. (@Ayyhab, 2026-08-10)
+
+### Tests
+
+- [core] test: Reproducible Playwright exploration suite for Core's Student and TA roles (`tests/e2e/tests/core/week15-student-ta-exploration.spec.ts`, 13 cases) covering course-chat access, cross-course IDOR probes on chat/enrollments/questions/materials, hidden-material RAG-visibility scoping, the AUTH-08 TA own-upload material RBAC rule, TA chat-oversight permanence, and a mixed-role (TA-in-one-course, Student-in-another) dashboard-framing check. (#1459, @Ayyhab, 2026-08-10)
+
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
