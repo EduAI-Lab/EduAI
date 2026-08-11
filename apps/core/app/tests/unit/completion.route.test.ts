@@ -1,6 +1,6 @@
 // @vitest-environment node
 // /api/completion abortSignal + provider-setup error coverage (#858 review).
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -28,6 +28,22 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/providers.server", () => ({
+  resolveActiveChatModel: vi.fn(),
+}));
+
+vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("~/lib/ai/admission.server")>();
+  return {
+    ...actual,
+    acquireAiAdmission: vi
+      .fn()
+      .mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
+    withAdmissionRelease: vi.fn((response: Response) => response),
+  };
+});
+
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return {
@@ -49,7 +65,12 @@ import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { resolveActiveChatModel } from "~/lib/ai/providers.server";
+import { acquireAiAdmission } from "~/lib/ai/admission.server";
 
 function makeRequest(body: object, signal?: AbortSignal): Parameters<typeof action>[0] {
   return {
@@ -90,6 +111,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
+  vi.mocked(resolveActiveChatModel).mockResolvedValue({
+    name: "Test model",
+    supportsTools: false,
+    supportsImages: false,
+    maxTokens: 16_384,
+  });
+  vi.mocked(acquireAiAdmission).mockResolvedValue({ release: vi.fn(), waitedMs: 0 });
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -98,6 +126,10 @@ beforeEach(() => {
   vi.mocked(createAIProviderRegistry).mockReturnValue({
     languageModel: vi.fn().mockReturnValue({ provider: "vllm", modelId: "test-model" }),
   } as never);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("POST /api/completion review regressions", () => {
@@ -241,7 +273,165 @@ describe("POST /api/completion review regressions", () => {
     const res = await action(makeRequest(baseBody({ maxTokens: 1_000_000 })));
 
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "maxTokens must be between 1 and 16384" });
+    expect(await res.json()).toEqual({
+      error: "maxTokens must be between 1 and 16384",
+    });
     expect(streamText).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-range temperature before admission or provider work", async () => {
+    mockStream();
+
+    const res = await action(makeRequest(baseBody({ temperature: 2.01 })));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "temperature must be between 0 and 2",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized JSON streamed without Content-Length before provider work", async () => {
+    vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
+    const chunks = [
+      '{"model":"vllm:test-model","systemPrompt":"',
+      "x".repeat(128),
+      '","messages":[{"role":"user","content":"Hello"}]}',
+    ];
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    });
+    const request = new Request("http://localhost/api/completion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const res = await action({
+      request,
+      url: new URL(request.url),
+      pattern: "/api/completion",
+      params: {},
+      context: {} as never,
+    } as Parameters<typeof action>[0]);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Completion request body exceeds size limit",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects a body that exceeds the cap despite a lying Content-Length", async () => {
+    vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
+    const bodyText = JSON.stringify(
+      baseBody({ systemPrompt: "x".repeat(128) }),
+    );
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(bodyText));
+        controller.close();
+      },
+    });
+    const request = new Request("http://localhost/api/completion", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": "10",
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const res = await action({
+      request,
+      url: new URL(request.url),
+      pattern: "/api/completion",
+      params: {},
+      context: {} as never,
+    } as Parameters<typeof action>[0]);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Completion request body exceeds size limit",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an over-limit declared Content-Length before reading the body", async () => {
+    vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({ cancel });
+    const request = new Request("http://localhost/api/completion", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": "97",
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const res = await action({
+      request,
+      url: new URL(request.url),
+      pattern: "/api/completion",
+      params: {},
+      context: {} as never,
+    } as Parameters<typeof action>[0]);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Completion request body exceeds size limit",
+    });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized system prompt with deterministic field limits", async () => {
+    vi.stubEnv("COMPLETION_MAX_SYSTEM_PROMPT_CHARS", "8");
+
+    const res = await action(
+      makeRequest(baseBody({ systemPrompt: "too long!" })),
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "systemPrompt exceeds maximum length",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
+  });
+
+  it("denies an inactive model before local admission or provider work", async () => {
+    vi.mocked(resolveActiveChatModel).mockResolvedValue(null);
+    mockStream();
+
+    const res = await action(
+      makeRequest(baseBody({ model: "vllm:inactive-model" })),
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error:
+        'Model "vllm:inactive-model" is not active in the Core model catalog',
+    });
+    expect(streamText).not.toHaveBeenCalled();
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+    expect(acquireAiAdmission).not.toHaveBeenCalled();
   });
 });
