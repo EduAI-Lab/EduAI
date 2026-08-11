@@ -7,6 +7,7 @@ const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
 const CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS = 10;
 const CANVAS_PAGE_SIZE = 100;
 const LOCAL_CANVAS_DOCKER_HOST = "canvas.docker";
+const CANVAS_FILE_CDN_SUFFIXES = [".canvas-user-content.com", ".inscloudgate.net"] as const;
 
 export const CANVAS_EXTERNAL_SOURCE = "canvas";
 
@@ -584,10 +585,22 @@ export async function listCanvasCourseModules(
   );
 }
 
-/** Rewrites Canvas file URLs to the configured canvasUrl origin (local Docker DOMAIN mismatch). */
+/**
+ * Rewrites local Docker Canvas file URLs to the configured Canvas origin.
+ *
+ * Live Canvas file URLs can redirect to a separate signed CDN host. Preserve
+ * those absolute URLs: rewriting them back to canvasUrl invalidates the
+ * signed download URL. Only the local Docker aliases need normalization.
+ */
 export function resolveCanvasFileDownloadUrl(fileUrl: string, canvasUrl: string): string {
   const fileParsed = new URL(fileUrl);
   const canvasParsed = parseAndValidateCanvasUrl(canvasUrl);
+  if (
+    !isLocalCanvasDev(canvasUrl) ||
+    !HTTP_ALLOWED_HOSTNAMES.has(fileParsed.hostname.toLowerCase())
+  ) {
+    return fileUrl;
+  }
   return `${canvasParsed.origin}${fileParsed.pathname}${fileParsed.search}`;
 }
 
@@ -602,6 +615,33 @@ function shouldUseLocalCanvasDockerTransport(canvasUrl: string, fileUrl: string)
   }
   const host = new URL(fileUrl).hostname.toLowerCase();
   return host === LOCAL_CANVAS_DOCKER_HOST || HTTP_ALLOWED_HOSTNAMES.has(host);
+}
+
+function isAllowedCanvasFileDownloadHost(url: string, canvasUrl: string): boolean {
+  const fileParsed = new URL(url);
+  const canvasParsed = parseAndValidateCanvasUrl(canvasUrl);
+
+  if (fileParsed.origin === canvasParsed.origin) return true;
+  if (isLocalCanvasDevRequest(url, canvasUrl)) return true;
+
+  return (
+    fileParsed.protocol === "https:" &&
+    CANVAS_FILE_CDN_SUFFIXES.some(
+      (suffix) =>
+        fileParsed.hostname.endsWith(suffix) && fileParsed.hostname !== suffix.slice(1),
+    )
+  );
+}
+
+function assertAllowedCanvasFileDownloadHost(url: string, canvasUrl: string): void {
+  if (!isAllowedCanvasFileDownloadHost(url, canvasUrl)) {
+    throw new CanvasApiError("Canvas redirected to an unapproved file host", 400);
+  }
+}
+
+function shouldSendCanvasFileBearer(url: string, canvasUrl: string): boolean {
+  if (new URL(url).origin !== parseAndValidateCanvasUrl(canvasUrl).origin) return false;
+  return !url.includes("sf_verifier");
 }
 
 type CanvasFileDownloadResponse = {
@@ -661,8 +701,9 @@ async function fetchCanvasFileBytes(
   let url = resolveCanvasFileDownloadUrl(initialUrl, credentials.canvasUrl);
 
   for (let redirectCount = 0; redirectCount <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS; redirectCount++) {
+    assertAllowedCanvasFileDownloadHost(url, credentials.canvasUrl);
     const headers: Record<string, string> = {};
-    if (!url.includes("sf_verifier")) {
+    if (shouldSendCanvasFileBearer(url, credentials.canvasUrl)) {
       headers.Authorization = `Bearer ${credentials.apiKey}`;
     }
 

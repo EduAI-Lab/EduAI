@@ -45,6 +45,7 @@
     "test:eduai": "npm run test:eduai:unit && npm run test:eduai:integration",
     "test:eduai:unit": "docker compose -f docker-compose.test.yml run --build --rm eduai-unit-tests",
     "test:eduai:integration": "docker compose -f docker-compose.test.yml run --build --rm eduai-integration-tests",
+    "test:canvas-live": "npm run test:canvas-live -w edu-ai",
     "test:ai-tutor": "npm run test:ai-tutor:app && npm run test:ai-tutor:server",
     "test:ai-tutor:app": "npm run test:ai-tutor:app:unit && npm run test:ai-tutor:app:integration",
     "test:ai-tutor:app:unit": "docker compose -f docker-compose.test.yml run --build --rm ai-tutor-app-unit-tests",
