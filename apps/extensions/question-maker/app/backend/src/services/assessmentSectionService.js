@@ -119,6 +119,58 @@ export const updateAssessmentSection = async (sectionId, userId, updates, course
   return updated;
 };
 
+/**
+ * Rewrite section positions to 1..n for the given ordered id list.
+ * `sectionIds` must be exactly the set of sections on the assessment (no missing/extra/dupes).
+ */
+export const reorderAssessmentSections = async (assessmentId, userId, sectionIds, courseId = null) => {
+  assessmentId = Number(assessmentId);
+  await findAssessmentForUser(assessmentId, userId);
+
+  if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
+    throw new Error('sectionIds must be a non-empty array');
+  }
+
+  const normalizedIds = sectionIds.map((id) => Number(id));
+  if (normalizedIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new Error('sectionIds must be positive integers');
+  }
+  if (new Set(normalizedIds).size !== normalizedIds.length) {
+    throw new Error('sectionIds must not contain duplicates');
+  }
+
+  const existing = await prisma.assessmentSections.findMany({
+    where: { assessmentId },
+    select: { id: true, assessment: { select: { courseId: true } } },
+  });
+
+  if (courseId != null) {
+    const foreign = existing.find((s) => s.assessment?.courseId !== courseId);
+    if (foreign) {
+      throw new Error('Section not found');
+    }
+  }
+
+  const existingIds = new Set(existing.map((s) => s.id));
+  if (
+    normalizedIds.length !== existingIds.size ||
+    normalizedIds.some((id) => !existingIds.has(id))
+  ) {
+    throw new Error('sectionIds must list every section on the assessment exactly once');
+  }
+
+  await prisma.$transaction(
+    normalizedIds.map((id, index) =>
+      prisma.assessmentSections.update({
+        where: { id },
+        data: { position: index + 1 },
+      }),
+    ),
+  );
+
+  return getSectionsForAssessment(assessmentId, userId);
+};
+
 /** Deletes a section and clears variant assessment links if they are no longer referenced. */
 export const deleteAssessmentSection = async (sectionId, userId, courseId = null) => {
   sectionId = Number(sectionId);
