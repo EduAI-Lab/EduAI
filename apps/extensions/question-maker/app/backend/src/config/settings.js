@@ -81,6 +81,39 @@ export const config = {
   qmGeneratePromptMaxChars: positiveInt(process.env.QM_GENERATE_PROMPT_MAX_CHARS, 12_000),
   qmAiRateLimitWindowMs: positiveInt(process.env.QM_AI_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
   qmAiRateLimitMax: positiveInt(process.env.QM_AI_RATE_LIMIT_MAX, 60),
+
+  // Canvas outbound request budgets. Every request has a socket/response
+  // deadline and every multi-page operation has a shared wall-clock deadline.
+  // Response limits are enforced both before reading a declared wire length
+  // and while consuming the decompressed body.
+  canvasRequestTimeoutMs: positiveInt(
+    process.env.CANVAS_REQUEST_TIMEOUT_MS,
+    positiveInt(process.env.CANVAS_PER_REQUEST_TIMEOUT_MS, 15_000),
+  ),
+  canvasOperationTimeoutMs: positiveInt(
+    process.env.CANVAS_OPERATION_TIMEOUT_MS,
+    positiveInt(process.env.CANVAS_PAGINATION_DEADLINE_MS, 60_000),
+  ),
+  canvasMaxCompressedResponseBytes: positiveInt(
+    process.env.CANVAS_MAX_COMPRESSED_RESPONSE_BYTES,
+    positiveInt(process.env.CANVAS_MAX_WIRE_BYTES, 10 * 1024 * 1024),
+  ),
+  canvasMaxResponseBytes: positiveInt(
+    process.env.CANVAS_MAX_RESPONSE_BYTES,
+    positiveInt(process.env.CANVAS_MAX_DECOMPRESSED_RESPONSE_BYTES, 10 * 1024 * 1024),
+  ),
+  canvasMaxRequestBodyBytes: positiveInt(
+    process.env.CANVAS_MAX_REQUEST_BODY_BYTES,
+    2 * 1024 * 1024,
+  ),
+  canvasMaxPages: positiveInt(
+    process.env.CANVAS_MAX_PAGES,
+    positiveInt(process.env.CANVAS_PAGINATION_MAX_PAGES, 100),
+  ),
+  canvasMaxItems: positiveInt(
+    process.env.CANVAS_MAX_ITEMS,
+    positiveInt(process.env.CANVAS_PAGINATION_MAX_ITEMS, 10_000),
+  ),
   
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes

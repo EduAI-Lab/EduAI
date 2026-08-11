@@ -24,15 +24,20 @@ import {
   getCanvasQuestionBankQuestions,
   importQuestionBankFromCanvas,
   parseCanvasNumericId,
-} from "../services/canvasService.js";
-import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { CANVAS_ROLES } from "../middleware/roles.js";
-import { requireCourseAccess } from "../middleware/courseAccess.js";
-import { requireAssessmentAccess } from "../middleware/resourceAccess.js";
-import { prisma } from "../config/database.js";
-import { validateCanvasUrl, CanvasUrlValidationError } from "../utils/canvasUrlGuard.js";
+} from '../services/canvasService.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { CANVAS_ROLES } from '../middleware/roles.js';
+import { requireCourseAccess } from '../middleware/courseAccess.js';
+import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
+import { prisma } from '../config/database.js';
+import { validateCanvasUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
+import { canvasRequestContext } from '../middleware/canvasRequestContext.js';
 
 const router = express.Router();
+
+// Service calls inherit this signal so a browser disconnect cancels in-flight
+// Canvas requests while preserving the route's existing argument contract.
+router.use(canvasRequestContext);
 
 /** GET /api/canvas/integration – returns whether the caller has Canvas configured (own, no key exposed). */
 router.get("/integration", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
