@@ -11,6 +11,14 @@ vi.mock("~/lib/auth/rate-limit.server", () => ({
   isRateLimited: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock("~/lib/auth/guards.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/guards.server")>();
+  return {
+    ...actual,
+    requireServiceKey: vi.fn((request: Request) => actual.requireServiceKey(request)),
+  };
+});
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     user: { findUnique: vi.fn() },
@@ -25,6 +33,7 @@ vi.mock("~/lib/logging.server", () => ({
 import { action } from "~/routes/api/sessions.validate";
 import { auth } from "~/lib/auth/server";
 import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 
@@ -132,8 +141,78 @@ describe("POST /api/sessions/validate", () => {
       expect([401, 403]).toContain(res.status);
     }
 
-    expect(isRateLimited).not.toHaveBeenCalled();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:invalid-service-auth:unknown",
+      "session-validate:invalid-service-auth:unknown",
+    ]);
+    expect(requireServiceKey).toHaveBeenCalledTimes(2);
     expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("bounds invalid-service audit writes per trusted direct client before the persistent guard", async () => {
+    const exhausted = new Set(["198.51.100.60"]);
+    vi.mocked(isRateLimited).mockImplementation((key) => {
+      if (!key.startsWith("session-validate:invalid-service-auth:")) return false;
+      const ip = key.slice(key.lastIndexOf(":") + 1);
+      if (exhausted.has(ip)) return true;
+      exhausted.add(ip);
+      return false;
+    });
+
+    const first = await action(makeArgs("POST", {
+      Authorization: "Bearer fake-key",
+      "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
+      "X-EduAI-Client-IP": "192.0.2.250",
+    }));
+    const exhaustedSameIp = await action(makeArgs("POST", {
+      Authorization: "Bearer fake-key",
+      "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
+      "X-EduAI-Client-IP": "192.0.2.251",
+    }));
+    const alreadyExhaustedOtherIp = await action(makeArgs("POST", {
+      Authorization: "Bearer fake-key",
+      "X-Forwarded-For": "198.51.100.60",
+    }));
+    const freshOtherIp = await action(makeArgs("POST", {
+      Authorization: "Bearer fake-key",
+      "X-Forwarded-For": "198.51.100.62",
+    }));
+
+    expect(first.status).toBe(403);
+    expect(exhaustedSameIp.status).toBe(429);
+    expect(alreadyExhaustedOtherIp.status).toBe(429);
+    expect(freshOtherIp.status).toBe(403);
+    expect(requireServiceKey).toHaveBeenCalledTimes(2);
+    expect(logSecurityEvent).toHaveBeenCalledTimes(2);
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:invalid-service-auth:198.51.100.61",
+      "session-validate:invalid-service-auth:198.51.100.61",
+      "session-validate:invalid-service-auth:198.51.100.60",
+      "session-validate:invalid-service-auth:198.51.100.62",
+    ]);
+  });
+
+  it("does not charge a valid extension to an exhausted invalid-auth bucket", async () => {
+    vi.mocked(isRateLimited).mockImplementation((key) =>
+      key.startsWith("session-validate:invalid-service-auth:"),
+    );
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u3", email: "u3@ubc.ca", name: "U3", image: null, role: "STUDENT" },
+    } as never);
+
+    const res = await action(makeArgs("POST", {
+      "X-Forwarded-For": "198.51.100.70",
+      "X-EduAI-Client-IP": "192.0.2.70",
+    }));
+
+    expect(res.status).toBe(200);
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(auth.api.getSession).toHaveBeenCalledOnce();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:192.0.2.70",
+      "session-validate:user:u3",
+    ]);
   });
 
   it("an exhausted attacker client does not consume another extension client's bucket", async () => {

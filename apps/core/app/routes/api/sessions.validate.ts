@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 import type { ActionFunctionArgs } from "react-router";
 
 import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
-import { requireServiceKey } from "~/lib/auth/guards.server";
+import { hasValidServiceKey, requireServiceKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -13,6 +13,8 @@ const PREAUTH_RATE_LIMIT = parseEnvInt(
   1_200,
 );
 
+const INVALID_SERVICE_AUTH_AUDIT_LIMIT = 1;
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -21,14 +23,32 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  // This endpoint is extension-only. Authenticate the proxy before trusting
-  // any forwarded original-client identity or touching the session store.
-  const serviceKeyError = await requireServiceKey(request);
-  if (serviceKeyError) return serviceKeyError;
+  const requestContext = getRequestContext(request);
+
+  // Verify cheaply before invoking the persistent guard. Invalid callers get
+  // one audited denial per trusted direct-client IP per window; once exhausted,
+  // return 429 without another audit write or session-store lookup. Valid
+  // extensions never enter or consume this invalid-auth bucket.
+  if (!hasValidServiceKey(request)) {
+    const directIp = requestContext.ipAddress ?? "unknown";
+    if (isRateLimited(
+      `session-validate:invalid-service-auth:${directIp}`,
+      INVALID_SERVICE_AUTH_AUDIT_LIMIT,
+    )) {
+      return new Response(JSON.stringify({ error: "Too Many Requests" }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const denial = await requireServiceKey(request);
+    return denial ?? new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   // The verified extension identity wins; direct service-authenticated Core
   // callers fall back to the trusted proxy-appended rightmost XFF entry.
-  const requestContext = getRequestContext(request);
   const forwardedClientIp = request.headers.get("x-eduai-client-ip")?.trim() ?? "";
   const ip = (isIP(forwardedClientIp) ? forwardedClientIp : null)
     ?? requestContext.ipAddress

@@ -178,7 +178,7 @@ script rejects missing/default passwords and verifies the rendered Compose bindi
 | `PORT`           | `4000`                      | API listen port.                                                                                                                                 |
 | `CORE_URL`       | (none)                      | Core base URL. Session validation is proxied to Core (`POST /api/sessions/validate`), not handled locally — see `server/src/middleware/auth.js`. |
 | `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`).                                                                                   |
-| `EDUAI_API_KEY`  | (none)                      | Optional server-wide fallback API key. Overridden at runtime by the `EDUAI_API_KEY` row in `SystemSetting` if set via the admin UI.              |
+| `EDUAI_API_KEY`  | (none)                      | **Required.** Must match Core for `POST /api/sessions/validate`. Admin-UI overrides apply to AI API calls only and do not replace this environment trust anchor. |
 | `EDUAI_MODEL`    | `google:gemini-2.5-flash`   | Default model id passed to EduAI when the request body omits one.                                                                                |
 
 > `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, `AI_SUPERVISOR_ENABLED`, and the

@@ -154,7 +154,7 @@ Full reference with comments: `apps/extensions/question-maker/.env.example`. Key
 | `EXTENSION_URL` | This service's public URL (post-Core-login redirect target) | Yes |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins | Yes |
 | `ENCRYPTION_KEY` | 32-byte hex key for encrypting stored Canvas API keys | Yes in production |
-| `EDUAI_API_URL` / `EDUAI_API_KEY` | EduAI hosted AI service (course/topic sync, question generation) | Yes for AI features |
+| `EDUAI_API_URL` / `EDUAI_API_KEY` | Core/EduAI service integration; `EDUAI_API_KEY` must match Core for session validation | `EDUAI_API_KEY`: Yes; URL: Yes for AI features |
 | `GROQ_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | Direct provider fallbacks for question generation | No |
 | `TEST_DATABASE_URL` | Postgres URL for the integration test suite | Only for `npm run test:integration` |
 
