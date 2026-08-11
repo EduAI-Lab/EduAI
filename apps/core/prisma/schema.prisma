@@ -617,29 +617,32 @@ model MaterialEmbedding {
 
 model apikey {
   id                  String    @id @default(cuid())
+  configId            String    @default("default")
   name                String?
   start               String?
   prefix              String?
   key                 String
-  userId              String
+  referenceId         String
   refillInterval      Int?
   refillAmount        Int?
   lastRefillAt        DateTime?
   enabled             Boolean   @default(true)
-  rateLimitEnabled    Boolean   @default(false)
-  rateLimitTimeWindow Int?
-  rateLimitMax        Int?
+  rateLimitEnabled    Boolean   @default(true)
+  rateLimitTimeWindow Int?      @default(86400000)
+  rateLimitMax        Int?      @default(10)
   requestCount        Int       @default(0)
   remaining           Int?
   lastRequest         DateTime?
   expiresAt           DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  permissions         Json?
-  metadata            Json?
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissions         String?
+  metadata            String?
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
   @@map("apiKey")
 }
 
