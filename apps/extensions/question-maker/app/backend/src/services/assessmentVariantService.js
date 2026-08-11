@@ -1,6 +1,7 @@
 /**
  * Assessment variant workflow: mark reference exams, snapshot blueprints, and assemble equivalent variant exams.
  */
+import { Prisma } from '@eduai/question-maker-prisma-client';
 import { prisma } from '../config/database.js';
 import eduaiService from './eduaiService.js';
 import { loadOrderedVariantsForAssessment, aggregateStructure } from './assessmentVariantUtils.js';
@@ -14,14 +15,11 @@ import {
 const VALID_STUDY_ROLES = ['reference_baseline', 'generated_variant'];
 
 /**
- * Prisma's interactive-transaction default timeout is 5s. Assembly runs several
- * sequential round-trips per slot (candidate lookup, cursor SELECT ... FOR UPDATE
- * with a possible savepoint retry, section-variant insert, variant update) across
- * every slot of every requested exam, so a modest multi-exam batch can comfortably
- * exceed 5s even on a healthy connection — and a timeout here aborts and rolls back
- * all work done so far in the batch. Sized generously above a realistic worst case
- * (see the "large exam" cases in assessmentVariantService.integration.test.js)
- * rather than tuned to the common case.
+ * Prisma's interactive-transaction default timeout is 5s. Assembly is batched now (#1370) —
+ * a fixed prefetch plus ~4 statements per exam, independent of slot count — but the whole
+ * batch still runs in one transaction and a timeout here rolls all of it back. Left sized
+ * generously above a realistic worst case (see the "large exam" cases in
+ * assessmentVariantService.integration.test.js) rather than tuned to the common case.
  */
 const ASSEMBLY_TRANSACTION_TIMEOUT_MS = 60000;
 
@@ -163,87 +161,183 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
 }
 
 /**
- * Picks a variant id for `questionMetadataId`, avoiding ids in `excludeIds`, preferring not `avoidVariantId`.
+ * Loads every eligible variant for `questionMetadataIds` in one query, grouped by base question.
+ * Exclusion and cursor rotation are applied in memory afterwards (`pickFromPool`) rather than in
+ * the `where` clause, because the exclusion set grows as slots are filled — a single prefetch with
+ * a fixed `notIn` would be wrong.
  */
-async function getSelectionCursorForUpdate({ questionMetadataId, courseId, tx }) {
-  if (!Number.isInteger(questionMetadataId) || !Number.isInteger(courseId)) {
-    // Both values are interpolated into a SAVEPOINT identifier below, which
-    // Postgres has no parameter-binding syntax for — guard against anything
-    // that isn't a plain integer before it ever reaches that string.
-    throw new Error('questionMetadataId and courseId must be integers');
+async function loadCandidatesByMetadataId({ questionMetadataIds, courseId, includeDrafts, tx }) {
+  const ids = [...new Set(questionMetadataIds)];
+  const byMetadataId = new Map(ids.map((id) => [id, []]));
+  if (ids.length === 0) {
+    return byMetadataId;
   }
 
-  const locked = await tx.$queryRaw`
-    SELECT id FROM variant_selection_cursors
-    WHERE question_metadata_id = ${questionMetadataId} AND course_id = ${courseId}
-    FOR UPDATE
-  `;
-  if (locked.length > 0) {
-    return tx.variantSelectionCursor.findUniqueOrThrow({ where: { id: locked[0].id } });
-  }
-
-  // Use a savepoint so that a unique-key race with a concurrent transaction does not abort the
-  // parent transaction. Without this, the failed INSERT leaves the transaction in PostgreSQL's
-  // aborted state and every subsequent query in the same transaction fails.
-  const sp = `sp_vsc_${questionMetadataId}_${courseId}`;
-  await tx.$executeRawUnsafe(`SAVEPOINT "${sp}"`);
-  try {
-    const cursor = await tx.variantSelectionCursor.create({
-      data: { questionMetadataId, courseId, nextOffset: 0, lastVariantId: null }
-    });
-    return cursor;
-  } catch (error) {
-    await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT "${sp}"`);
-    const lockedAfterRace = await tx.$queryRaw`
-      SELECT id FROM variant_selection_cursors
-      WHERE question_metadata_id = ${questionMetadataId} AND course_id = ${courseId}
-      FOR UPDATE
-    `;
-    if (lockedAfterRace.length > 0) {
-      return tx.variantSelectionCursor.findUniqueOrThrow({ where: { id: lockedAfterRace[0].id } });
-    }
-    throw error;
-  }
-}
-
-async function pickVariantForSlot({
-  questionMetadataId,
-  courseId,
-  excludeIds,
-  avoidVariantId,
-  includeDrafts,
-  tx
-}) {
-  const candidates = await tx.variants.findMany({
+  const rows = await tx.variants.findMany({
     where: {
-      questionMetadataId,
+      questionMetadataId: { in: ids },
       ...(includeDrafts ? {} : { isDraft: false }),
-      ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
       questionMetadata: { courseId }
     },
+    select: { id: true, questionMetadataId: true },
     orderBy: { id: 'asc' }
   });
 
-  if (candidates.length === 0) {
+  for (const row of rows) {
+    byMetadataId.get(row.questionMetadataId)?.push(row);
+  }
+
+  return byMetadataId;
+}
+
+/**
+ * Picks a variant id out of `candidates`, skipping ids in `excludeIds` and rotating by `offset`.
+ * `avoidVariantId` only demotes — if every remaining candidate is the avoided one, it is picked
+ * anyway (and the caller emits a "reused" warning).
+ */
+function pickFromPool({ candidates, excludeIds, avoidVariantId, offset }) {
+  const eligible =
+    excludeIds.size > 0 ? candidates.filter((c) => !excludeIds.has(c.id)) : candidates;
+
+  if (eligible.length === 0) {
     return null;
   }
 
-  const preferred = candidates.filter((c) => c.id !== avoidVariantId);
-  const pool = preferred.length > 0 ? preferred : candidates;
-  const cursor = await getSelectionCursorForUpdate({ questionMetadataId, courseId, tx });
-  const offset = Number.isInteger(cursor.nextOffset) ? cursor.nextOffset : 0;
-  const pickIndex = ((offset % pool.length) + pool.length) % pool.length;
-  const picked = pool[pickIndex].id;
+  const preferred = eligible.filter((c) => c.id !== avoidVariantId);
+  const pool = preferred.length > 0 ? preferred : eligible;
+  const safeOffset = Number.isInteger(offset) ? offset : 0;
+  const pickIndex = ((safeOffset % pool.length) + pool.length) % pool.length;
+  return pool[pickIndex].id;
+}
 
-  await tx.variantSelectionCursor.update({
-    where: { id: cursor.id },
+/**
+ * Locks every selection cursor the batch will touch in one statement, creating the missing rows
+ * first. Ordering by `question_metadata_id` means two concurrent assemblies on the same course
+ * queue for the rows in the same order instead of deadlocking on an interleaved slot order.
+ */
+async function lockCursorsForMetadataIds({ questionMetadataIds, courseId, tx }) {
+  const ids = [...new Set(questionMetadataIds)].sort((a, b) => a - b);
+  if (!Number.isInteger(courseId) || ids.some((id) => !Number.isInteger(id))) {
+    throw new Error('questionMetadataId and courseId must be integers');
+  }
+
+  const cursorState = new Map();
+  if (ids.length === 0) {
+    return cursorState;
+  }
+
+  const lockRows = () => tx.$queryRaw`
+    SELECT id, question_metadata_id, next_offset, last_variant_id
+      FROM variant_selection_cursors
+     WHERE course_id = ${courseId}
+       AND question_metadata_id IN (${Prisma.join(ids)})
+     ORDER BY question_metadata_id
+       FOR UPDATE
+  `;
+
+  let rows = await lockRows();
+
+  if (rows.length < ids.length) {
+    const found = new Set(rows.map((row) => Number(row.question_metadata_id)));
+    // `skipDuplicates` compiles to ON CONFLICT DO NOTHING, which never aborts the surrounding
+    // transaction — that is what the old per-cursor SAVEPOINT dance existed to survive.
+    await tx.variantSelectionCursor.createMany({
+      data: ids
+        .filter((id) => !found.has(id))
+        .map((questionMetadataId) => ({
+          courseId,
+          questionMetadataId,
+          nextOffset: 0,
+          lastVariantId: null
+        })),
+      skipDuplicates: true
+    });
+    rows = await lockRows();
+  }
+
+  for (const row of rows) {
+    cursorState.set(Number(row.question_metadata_id), {
+      cursorId: Number(row.id),
+      nextOffset: Number(row.next_offset ?? 0),
+      lastVariantId: row.last_variant_id == null ? null : Number(row.last_variant_id),
+      dirty: false
+    });
+  }
+
+  return cursorState;
+}
+
+function advanceCursor(cursor, pickedVariantId) {
+  cursor.nextOffset += 1;
+  cursor.lastVariantId = pickedVariantId;
+  cursor.dirty = true;
+}
+
+/** One UPDATE for every cursor the batch touched, instead of one per slot. */
+async function flushCursors({ cursorState, tx }) {
+  const touched = [...cursorState.values()].filter((cursor) => cursor.dirty);
+  if (touched.length === 0) {
+    return;
+  }
+
+  const values = touched.map(
+    (cursor) =>
+      Prisma.sql`(${cursor.cursorId}::int, ${cursor.nextOffset}::int, ${cursor.lastVariantId}::int)`
+  );
+
+  // Raw update, so `updated_at` has to be set by hand — Prisma's @updatedAt only fires on
+  // the client-side update path.
+  await tx.$executeRaw`
+    UPDATE variant_selection_cursors AS c
+       SET next_offset = v.next_offset,
+           last_variant_id = v.last_variant_id,
+           updated_at = NOW()
+      FROM (VALUES ${Prisma.join(values)}) AS v(id, next_offset, last_variant_id)
+     WHERE c.id = v.id
+  `;
+}
+
+/**
+ * Writes one assembled exam: the assessment, its single section, and all of its slots in two
+ * batched statements rather than an insert plus an update per slot.
+ */
+async function createExamFromPicks({
+  tx,
+  courseId,
+  type,
+  name,
+  description,
+  blueprintConfig,
+  picks
+}) {
+  const assessment = await tx.assessments.create({
+    data: { courseId, type, name, description, blueprintConfig }
+  });
+
+  const section = await tx.assessmentSections.create({
     data: {
-      nextOffset: offset + 1,
-      lastVariantId: picked
+      assessmentId: assessment.id,
+      name: 'Exam',
+      description: null,
+      position: 0
     }
   });
 
-  return picked;
+  await tx.sectionVariants.createMany({
+    data: picks.map((pick) => ({
+      sectionId: section.id,
+      variantId: pick.variantId,
+      displayOrder: pick.displayOrder
+    }))
+  });
+
+  // Every slot in an exam gets the same assessmentId, so the per-slot update collapses into one.
+  await tx.variants.updateMany({
+    where: { id: { in: picks.map((pick) => pick.variantId) } },
+    data: { assessmentId: assessment.id }
+  });
+
+  return assessment;
 }
 
 /**
@@ -300,47 +394,36 @@ export async function assembleEquivalentExamVariants(userId, params) {
   const globalUsedVariantIds = new Set();
 
   await prisma.$transaction(async (tx) => {
+    const metadataIds = slots.map((s) => s.questionMetadataId);
+    const candidatesByMetadataId = await loadCandidatesByMetadataId({
+      questionMetadataIds: metadataIds,
+      courseId,
+      includeDrafts,
+      tx
+    });
+    const cursorState = await lockCursorsForMetadataIds({
+      questionMetadataIds: metadataIds,
+      courseId,
+      tx
+    });
+
+    // Resolve every exam's slots in memory first. The exclusion set and the cursor offsets both
+    // evolve slot by slot, so the walk still has to happen in the original order — it just no
+    // longer costs a round trip per step.
+    const plan = [];
+
     for (let examIndex = 0; examIndex < examLabels.length; examIndex++) {
-      const label = examLabels[examIndex];
-      const baseName = namePrefix?.trim() || ref.name;
-      const assessmentName = `${baseName} — ${label}`;
-
-      const assessment = await tx.assessments.create({
-        data: {
-          courseId,
-          type: assessmentTypeOverride || ref.type,
-          name: assessmentName,
-          description: `Assessment variant workflow exam (${label}) from reference assessment #${referenceAssessmentId}`,
-          blueprintConfig: {
-            studyRole: 'generated_variant',
-            referenceAssessmentId: referenceAssessmentId,
-            variantLabel: label,
-            assembledAt: new Date().toISOString()
-          }
-        }
-      });
-
-      const section = await tx.assessmentSections.create({
-        data: {
-          assessmentId: assessment.id,
-          name: 'Exam',
-          description: null,
-          position: 0
-        }
-      });
-
       const excludeForThisExam = new Set(globalUsedVariantIds);
+      const picks = [];
 
       for (let i = 0; i < slots.length; i++) {
         const { questionMetadataId, referenceVariantId } = slots[i];
-        const excludeIds = new Set(excludeForThisExam);
-        const picked = await pickVariantForSlot({
-          questionMetadataId,
-          courseId,
-          excludeIds: [...excludeIds],
+        const cursor = cursorState.get(questionMetadataId);
+        const picked = pickFromPool({
+          candidates: candidatesByMetadataId.get(questionMetadataId) ?? [],
+          excludeIds: excludeForThisExam,
           avoidVariantId: referenceVariantId,
-          includeDrafts,
-          tx
+          offset: cursor.nextOffset
         });
 
         if (picked == null) {
@@ -348,6 +431,8 @@ export async function assembleEquivalentExamVariants(userId, params) {
             `No variant available for question metadata ${questionMetadataId} at slot ${i + 1} (need more variants or allow drafts)`
           );
         }
+
+        advanceCursor(cursor, picked);
 
         if (picked === referenceVariantId) {
           warnings.push({
@@ -357,25 +442,36 @@ export async function assembleEquivalentExamVariants(userId, params) {
           });
         }
 
-        await tx.sectionVariants.create({
-          data: {
-            sectionId: section.id,
-            variantId: picked,
-            displayOrder: i
-          }
-        });
-
-        await tx.variants.update({
-          where: { id: picked },
-          data: { assessmentId: assessment.id }
-        });
-
+        picks.push({ variantId: picked, displayOrder: i });
         excludeForThisExam.add(picked);
         globalUsedVariantIds.add(picked);
       }
 
+      plan.push({ label: examLabels[examIndex], picks });
+    }
+
+    for (const { label, picks } of plan) {
+      const baseName = namePrefix?.trim() || ref.name;
+
+      const assessment = await createExamFromPicks({
+        tx,
+        courseId,
+        type: assessmentTypeOverride || ref.type,
+        name: `${baseName} — ${label}`,
+        description: `Assessment variant workflow exam (${label}) from reference assessment #${referenceAssessmentId}`,
+        blueprintConfig: {
+          studyRole: 'generated_variant',
+          referenceAssessmentId: referenceAssessmentId,
+          variantLabel: label,
+          assembledAt: new Date().toISOString()
+        },
+        picks
+      });
+
       createdAssessments.push(assessment);
     }
+
+    await flushCursors({ cursorState, tx });
   }, { timeout: ASSEMBLY_TRANSACTION_TIMEOUT_MS });
 
   const assemblyTimeMs = Date.now() - started;
@@ -401,14 +497,24 @@ const MIN_METADATA_SCORE = 75;
 /**
  * Picks the best bank `question_metadata` row for a baseline slot (excluding already-used base ids).
  */
-export async function findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds, client = prisma) {
+function loadBankMetadataWithVariants({ courseId, client }) {
+  return client.questionMetadata.findMany({
+    where: { courseId, variants: { some: {} } },
+    include: { variants: { orderBy: { id: 'asc' } } },
+    // Equal-scoring bank questions are resolved by "first one seen wins" in the scoring loop,
+    // so the row order is load-bearing. It used to be whatever Postgres happened to return —
+    // unspecified, and it did vary between the per-slot re-fetches this replaced.
+    orderBy: { id: 'asc' }
+  });
+}
+
+/**
+ * Pure scoring pass over an already-loaded bank. Split out of `findBestBankMetadataForSlot` so a
+ * multi-slot assembly can fetch the bank once instead of once per slot per exam.
+ */
+function selectBestBankMetadata(slotVariant, bankRows, usedBankMetadataIds) {
   const slotMeta = slotVariant.questionMetadata;
   if (!slotMeta) return null;
-
-  const bankRows = await client.questionMetadata.findMany({
-    where: { courseId, variants: { some: {} } },
-    include: { variants: { orderBy: { id: 'asc' } } }
-  });
 
   let best = null;
   let bestScore = -1;
@@ -429,6 +535,18 @@ export async function findBestBankMetadataForSlot(slotVariant, courseId, usedBan
     return null;
   }
   return { questionMetadataId: best.bankMeta.id, score: best.score };
+}
+
+export async function findBestBankMetadataForSlot(
+  slotVariant,
+  courseId,
+  usedBankMetadataIds,
+  client = prisma
+) {
+  if (!slotVariant.questionMetadata) return null;
+
+  const bankRows = await loadBankMetadataWithVariants({ courseId, client });
+  return selectBestBankMetadata(slotVariant, bankRows, usedBankMetadataIds);
 }
 
 /**
@@ -470,45 +588,58 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
   const warnings = [];
   const createdAssessments = [];
   const globalUsedVariantIds = new Set();
-  const usedBankMetadataIds = new Set();
 
   await prisma.$transaction(async (tx) => {
+    // Scored in memory, so one fetch covers every slot of every exam. Safe to hoist: the only
+    // thing this transaction writes that touches these rows is `variants.assessmentId`, which
+    // feeds neither the similarity score nor candidate eligibility.
+    const bankRows = await loadBankMetadataWithVariants({ courseId, client: tx });
+
+    // Pass 1 — match each slot to a bank question. `usedBankMetadataIds` is per exam and depends
+    // on earlier slots, but not on which variant was picked, so all the matching can run up front.
+    // A miss is recorded rather than thrown so pass 2 can still surface the *first* failure in the
+    // original slot order.
+    const matchPlan = [];
     for (let examIndex = 0; examIndex < examLabels.length; examIndex++) {
-      const label = examLabels[examIndex];
-      const baseName = namePrefix?.trim() || ref.name;
-      const assessmentName = `${baseName} — ${label}`;
-
-      const assessment = await tx.assessments.create({
-        data: {
-          courseId,
-          type: assessmentTypeOverride || ref.type,
-          name: assessmentName,
-          description: `Assessment variant workflow exam (${label}) assembled by metadata similarity from reference #${referenceAssessmentId}`,
-          blueprintConfig: {
-            studyRole: 'generated_variant',
-            referenceAssessmentId: referenceAssessmentId,
-            variantLabel: label,
-            assemblyMode: 'metadata_similarity',
-            assembledAt: new Date().toISOString()
+      const usedBankMetadataIds = new Set();
+      matchPlan.push(
+        refVariants.map((slotVariant) => {
+          const match = selectBestBankMetadata(slotVariant, bankRows, usedBankMetadataIds);
+          if (match) {
+            usedBankMetadataIds.add(match.questionMetadataId);
           }
-        }
-      });
+          return match;
+        })
+      );
+    }
 
-      const section = await tx.assessmentSections.create({
-        data: {
-          assessmentId: assessment.id,
-          name: 'Exam',
-          description: null,
-          position: 0
-        }
-      });
+    const matchedMetadataIds = matchPlan
+      .flat()
+      .filter(Boolean)
+      .map((match) => match.questionMetadataId);
 
+    const candidatesByMetadataId = await loadCandidatesByMetadataId({
+      questionMetadataIds: matchedMetadataIds,
+      courseId,
+      includeDrafts,
+      tx
+    });
+    const cursorState = await lockCursorsForMetadataIds({
+      questionMetadataIds: matchedMetadataIds,
+      courseId,
+      tx
+    });
+
+    // Pass 2 — resolve the actual variant per slot, in the original order.
+    const plan = [];
+
+    for (let examIndex = 0; examIndex < examLabels.length; examIndex++) {
       const excludeForThisExam = new Set(globalUsedVariantIds);
-      usedBankMetadataIds.clear();
+      const picks = [];
 
       for (let i = 0; i < refVariants.length; i++) {
         const slotVariant = refVariants[i];
-        const match = await findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds, tx);
+        const match = matchPlan[examIndex][i];
 
         if (!match) {
           throw new Error(
@@ -516,16 +647,12 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           );
         }
 
-        usedBankMetadataIds.add(match.questionMetadataId);
-
-        const excludeIds = new Set(excludeForThisExam);
-        const picked = await pickVariantForSlot({
-          questionMetadataId: match.questionMetadataId,
-          courseId,
-          excludeIds: [...excludeIds],
+        const cursor = cursorState.get(match.questionMetadataId);
+        const picked = pickFromPool({
+          candidates: candidatesByMetadataId.get(match.questionMetadataId) ?? [],
+          excludeIds: excludeForThisExam,
           avoidVariantId: slotVariant.id,
-          includeDrafts,
-          tx
+          offset: cursor.nextOffset
         });
 
         if (picked == null) {
@@ -533,6 +660,8 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
             `No variant available for matched bank question ${match.questionMetadataId} at slot ${i + 1} (add more non-draft variants in the bank for that question, or enable drafts).`
           );
         }
+
+        advanceCursor(cursor, picked);
 
         if (picked === slotVariant.id) {
           warnings.push({
@@ -542,25 +671,37 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           });
         }
 
-        await tx.sectionVariants.create({
-          data: {
-            sectionId: section.id,
-            variantId: picked,
-            displayOrder: i
-          }
-        });
-
-        await tx.variants.update({
-          where: { id: picked },
-          data: { assessmentId: assessment.id }
-        });
-
+        picks.push({ variantId: picked, displayOrder: i });
         excludeForThisExam.add(picked);
         globalUsedVariantIds.add(picked);
       }
 
+      plan.push({ label: examLabels[examIndex], picks });
+    }
+
+    for (const { label, picks } of plan) {
+      const baseName = namePrefix?.trim() || ref.name;
+
+      const assessment = await createExamFromPicks({
+        tx,
+        courseId,
+        type: assessmentTypeOverride || ref.type,
+        name: `${baseName} — ${label}`,
+        description: `Assessment variant workflow exam (${label}) assembled by metadata similarity from reference #${referenceAssessmentId}`,
+        blueprintConfig: {
+          studyRole: 'generated_variant',
+          referenceAssessmentId: referenceAssessmentId,
+          variantLabel: label,
+          assemblyMode: 'metadata_similarity',
+          assembledAt: new Date().toISOString()
+        },
+        picks
+      });
+
       createdAssessments.push(assessment);
     }
+
+    await flushCursors({ cursorState, tx });
   }, { timeout: ASSEMBLY_TRANSACTION_TIMEOUT_MS });
 
   const assemblyTimeMs = Date.now() - started;
