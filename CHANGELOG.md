@@ -1,5 +1,11 @@
 # Changelog
 
+## [Week 15 — August 10–16, 2026]
+
+### Added
+
+- [docs] docs: Add `docs/end-to-end-user-workflows/` — README plus per-extension (Core, Question Maker, AI Tutor) workflow tracking templates for Epic #1429's pre-pilot end-to-end testing pass, with a role-based (Admin/Unit Admin/Instructor/TA/Student) findings table and the Claude-find/simulate/review/sweep-then-human testing methodology. Closes #1457. (@ariqmuldi, 2026-08-10) — #1458
+
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
