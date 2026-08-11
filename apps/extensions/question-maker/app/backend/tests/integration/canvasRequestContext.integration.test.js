@@ -47,6 +47,7 @@ describe('canvasRequestContext', () => {
     client.end();
 
     const signal = await signalPromise;
+    expect(signal.aborted).toBe(false);
     const aborted = new Promise((resolve) => {
       if (signal.aborted) resolve(signal.reason);
       else signal.addEventListener('abort', () => resolve(signal.reason), { once: true });
@@ -57,5 +58,34 @@ describe('canvasRequestContext', () => {
 
     await expect(aborted).resolves.toMatchObject({ name: 'AbortError' });
   });
-});
 
+  it('keeps the signal live during a normal delayed response and finish', async () => {
+    const app = express();
+    app.use(canvasRequestContext);
+    let handlerSignal;
+    app.get('/delayed', async (_req, res) => {
+      handlerSignal = currentCanvasRequestSignal();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(handlerSignal.aborted).toBe(false);
+      res.end('ok');
+    });
+
+    const server = http.createServer(app);
+    servers.add(server);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+    const responseBody = await new Promise((resolve, reject) => {
+      const client = http.request({ port, host: '127.0.0.1', path: '/delayed' }, (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => resolve(body));
+      });
+      client.on('error', reject);
+      client.end();
+    });
+
+    expect(responseBody).toBe('ok');
+    expect(handlerSignal.aborted).toBe(false);
+  });
+});
