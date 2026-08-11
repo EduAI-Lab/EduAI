@@ -254,6 +254,51 @@ describe("ChatMessage — streaming", () => {
     render(<ChatMessage message={streamingMessage} isStreaming={true} />);
     expect(screen.getByText("Partial response...")).toBeInTheDocument();
   });
+
+  it("progressively relabels Assist headings mid-stream without waiting for Next? (#1171)", () => {
+    const partialAssist: Message = {
+      ...aiMessage,
+      content: "**Top summary**\n- Only half so far",
+    };
+    render(
+      <ChatMessage
+        message={partialAssist}
+        isStreaming
+        assistiveDisplay
+      />,
+    );
+    // Progressive relabel — no final-frame snap waiting for Next?.
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Top summary/i)).not.toBeInTheDocument();
+  });
+
+  it("relabels Next?-only redirect turns mid-stream (#1171)", () => {
+    const redirect: Message = {
+      ...aiMessage,
+      content: "**Next?** Want to try a different angle?",
+    };
+    render(
+      <ChatMessage message={redirect} isStreaming assistiveDisplay />,
+    );
+    expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*Next\?/i)).not.toBeInTheDocument();
+  });
+
+  it("applies full Assist reorder when a complete dump arrives while streaming", () => {
+    const completeAssist: Message = {
+      ...aiMessage,
+      content: "**Top summary**\n- Point\n\n**Next?** Want to continue?",
+    };
+    render(
+      <ChatMessage
+        message={completeAssist}
+        isStreaming
+        assistiveDisplay
+      />,
+    );
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+    expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

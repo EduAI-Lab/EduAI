@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 import {
@@ -220,7 +220,7 @@ export function CanvasMaterialSyncDialog({
 
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <IconLoader2 className="h-4 w-4 animate-spin" />
             Loading Canvas files…
           </div>
         ) : files.length === 0 ? (
@@ -231,7 +231,7 @@ export function CanvasMaterialSyncDialog({
           <div className="relative max-h-72 overflow-y-auto rounded-md border divide-y">
             {refreshing && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <IconLoader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             )}
             {files.map((file) => {
@@ -337,7 +337,7 @@ export function CanvasMaterialSyncDialog({
           >
             {syncing ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                 Syncing…
               </>
             ) : (

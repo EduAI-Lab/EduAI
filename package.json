@@ -59,15 +59,16 @@
     "test:qm:server": "npm run test:qm:server:unit && npm run test:qm:server:integration",
     "test:qm:server:unit": "docker compose -f docker-compose.test.yml run --build --rm qm-server-unit-tests",
     "test:qm:server:integration": "docker compose -f docker-compose.test.yml run --build --rm qm-server-integration-tests",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "syncpack:check": "syncpack lint",
+    "syncpack:fix": "syncpack fix"
   },
   "devDependencies": {
     "@better-auth/core": "1.6.22",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "1.60.0",
     "@types/node": "^22",
     "drizzle-orm": "^0.45.2",
     "jscpd": "^5.0.12",
-    "lucide-react": "^0.554.0",
     "madge": "^8.0.0",
     "nodemon": "^3.1.10",
     "syncpack": "^15",

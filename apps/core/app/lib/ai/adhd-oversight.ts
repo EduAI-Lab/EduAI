@@ -9,7 +9,9 @@ import {
   ADHD_TUTORING_WORD_CAP,
   ADHD_URGENCY_TERMS,
   computeAdhdResponseMetrics,
+  extractStepLadderSection,
   hasSourcesFooter,
+  hasStepLadderSection,
   isProfileStructuralPass,
   isRedirectTemplatePass,
   isStructuralCompliancePass,
@@ -23,7 +25,7 @@ import {
   hasEduaiDiagramFence,
   resolveAdhdAssistPolicyBlock,
 } from "~/lib/ai/adhd-assist";
-import { userRequestedDiagram } from "~/lib/ai/adhd-turn-profile";
+import { userRequestedDiagram, userRequestedStepRecall } from "~/lib/ai/adhd-turn-profile";
 
 export const ADHD_OVERSIGHT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode chat responses.
 Rewrite the draft to satisfy ALL structural rules without changing facts, numbers, or meaning.
@@ -53,12 +55,27 @@ DIAGRAM REQUIRED (learner asked for a visual):
 - Do NOT describe the diagram in prose instead of emitting the fence.
 - Do NOT use a plain text/ASCII fence when eduai-diagram fits.`;
 
+/** #1245: learner asked to revisit a specific numbered step from an earlier Step ladder. */
+const ADHD_OVERSIGHT_STEP_LADDER_REQUIRED_ADDENDUM = `
+
+STEP RECALL (learner asked to revisit/expand a specific step):
+- You MUST include a "### Step ladder" section with at least one numbered
+  step that re-explains the requested step in full — restate the action and
+  its "why it matters" reason in fresh wording.
+- Do NOT just repeat the earlier answer's wording for that step verbatim; a
+  one-line copy is not an acceptable rewrite here.
+- Keep the reply scoped to the requested step only.`;
+
 const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode redirect responses.
 The learner asked about a second topic while another is in progress.
 
 RULES:
 - Do NOT add a "Top summary" block.
 - Keep a single-topic boundary: acknowledge the new topic and offer to return or switch.
+- Do NOT explain, define, or state any fact about the second topic (#1313)
+  — name it only, do not answer it. Remove any such content from the draft.
+- Max 3 sentences total: acknowledge + (optional) restate the boundary +
+  one forward offer.
 - End with one clear forward continuation question if missing.
 - Hard cap ${ADHD_CLARIFICATION_WORD_CAP} words.
 - Remove any urgency or time-pressure wording ("quickly", "fast", "hurry"); never rush the learner.
@@ -75,7 +92,7 @@ export const ADHD_OVERSIGHT_GENERIC_SOURCES =
 export function buildOversightRewriteSystem(
   profile: AdhdTurnProfile,
   wordCap: number,
-  options?: { requireDiagram?: boolean },
+  options?: { requireDiagram?: boolean; requireStepLadder?: boolean },
 ): string {
   if (profile === "redirect") {
     return ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
@@ -94,6 +111,9 @@ export function buildOversightRewriteSystem(
   }
   if (options?.requireDiagram) {
     system += ADHD_OVERSIGHT_DIAGRAM_REQUIRED_ADDENDUM;
+  }
+  if (options?.requireStepLadder) {
+    system += ADHD_OVERSIGHT_STEP_LADDER_REQUIRED_ADDENDUM;
   }
   return system;
 }
@@ -584,16 +604,104 @@ function passesProfileStructure(
   return isProfileStructuralPass(metrics, profile, text);
 }
 
+function normalizeForCopyCheck(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** The step number the learner asked to revisit (e.g. "what was step 2 again?"). */
+function extractRequestedStepNumber(userText?: string): string | null {
+  const stepMatch = /\bstep\s+(\d+)\b/i.exec((userText ?? "").trim());
+  return stepMatch ? stepMatch[1] : null;
+}
+
+/** The text of one numbered step line within an already-extracted Step ladder section. */
+function extractStepLine(section: string, stepNumber: string): string | null {
+  const lineRe = new RegExp(`^\\s*${stepNumber}\\.\\s+(.+)$`, "m");
+  const lineMatch = lineRe.exec(section);
+  return lineMatch ? lineMatch[1].trim() : null;
+}
+
+/** Every numbered step line's text within an already-extracted Step ladder section. */
+function extractStepLadderLines(section: string): string[] {
+  return [...section.matchAll(/^\s*\d+\.\s+(.+)$/gm)].map((m) => m[1].trim());
+}
+
+/**
+ * True when the draft's Step ladder section is a copy-paste of the prior
+ * assistant turn's rather than a fresh re-explanation of the recalled step
+ * (#1245). Checks the full section first (catches the common single-step
+ * case), then falls back to matching the requested step's prior-turn line
+ * against any line in the draft by content — a multi-step prior ladder
+ * won't match the full-section check when only one step gets copied, and a
+ * copied step is often renumbered (e.g. down to "1.") in a single-step
+ * reply, so position can't be assumed either (#1245 review).
+ */
+function isStepLadderCopiedFromPrior(
+  draft: string,
+  priorAssistantText?: string,
+  userText?: string,
+): boolean {
+  const priorSection = extractStepLadderSection(priorAssistantText ?? "");
+  if (!priorSection) return false;
+  const draftSection = extractStepLadderSection(draft);
+  if (!draftSection) return false;
+  if (normalizeForCopyCheck(draftSection) === normalizeForCopyCheck(priorSection)) {
+    return true;
+  }
+  const stepNumber = extractRequestedStepNumber(userText);
+  if (!stepNumber) return false;
+  const priorLine = extractStepLine(priorSection, stepNumber);
+  if (!priorLine) return false;
+  const priorLineNormalized = normalizeForCopyCheck(priorLine);
+  return extractStepLadderLines(draftSection).some(
+    (line) => normalizeForCopyCheck(line) === priorLineNormalized,
+  );
+}
+
+/**
+ * Pull the specific numbered step's line the learner asked to revisit out of
+ * the prior assistant turn's Step ladder, so the last-resort fallback
+ * skeleton can preserve the actual recalled action instead of a generic
+ * "Revisit that step" placeholder (#1245).
+ */
+function extractRecalledStepText(
+  userText: string | undefined,
+  priorAssistantText: string | undefined,
+): string | null {
+  const stepNumber = extractRequestedStepNumber(userText);
+  if (!stepNumber) return null;
+  const priorSection = extractStepLadderSection(priorAssistantText ?? "");
+  if (!priorSection) return null;
+  return extractStepLine(priorSection, stepNumber);
+}
+
+type StepLadderGateOpts = {
+  requireDiagram?: boolean;
+  expectSources?: boolean;
+  requireStepLadder?: boolean;
+  priorAssistantText?: string;
+  userText?: string;
+};
+
 function contentOk(
   metrics: AdhdStructuralCompliance,
   profile: AdhdTurnProfile,
   text: string,
-  options?: { requireDiagram?: boolean; expectSources?: boolean },
+  options?: StepLadderGateOpts,
 ): boolean {
   if (!passesProfileStructure(metrics, profile, text)) return false;
   if (!metrics.noUrgency) return false;
   if (options?.requireDiagram && !hasEduaiDiagramFence(text)) return false;
   if (options?.expectSources && !metrics.hasSources) return false;
+  if (options?.requireStepLadder && !metrics.stepLadder) return false;
+  // A structurally valid Step ladder section that is just a copy-paste of
+  // the prior turn's isn't a real re-explanation of the recalled step (#1245).
+  if (
+    options?.requireStepLadder &&
+    isStepLadderCopiedFromPrior(text, options.priorAssistantText, options.userText)
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -602,7 +710,7 @@ export function describeOversightRejectReasons(
   metrics: AdhdStructuralCompliance & { profileStructuralPass: boolean },
   profile: AdhdTurnProfile,
   text: string,
-  options?: { requireDiagram?: boolean; expectSources?: boolean },
+  options?: StepLadderGateOpts,
 ): string[] {
   const reasons: string[] = [];
   const req = getProfileRequirements(profile);
@@ -627,6 +735,22 @@ export function describeOversightRejectReasons(
   if (options?.expectSources && !metrics.hasSources) {
     reasons.push("missing Sources footer after tools/RAG ran");
   }
+  if (options?.requireStepLadder && !metrics.stepLadder) {
+    reasons.push(
+      "learner asked to revisit a specific step — reply must include a real ### Step ladder " +
+        "re-explanation of that step (with a why-it-matters clause), not a one-line copy of the earlier wording",
+    );
+  }
+  if (
+    options?.requireStepLadder &&
+    metrics.stepLadder &&
+    isStepLadderCopiedFromPrior(text, options.priorAssistantText, options.userText)
+  ) {
+    reasons.push(
+      "the Step ladder section is a verbatim copy of the prior turn's — write a fresh " +
+        "re-explanation of the recalled step, not the same wording again",
+    );
+  }
   if (reasons.length === 0 && !metrics.profileStructuralPass) {
     reasons.push("profile structural pass failed");
   }
@@ -639,6 +763,7 @@ function buildOversightUserPrompt(args: {
   profile: AdhdTurnProfile;
   requireDiagram: boolean;
   expectSources: boolean;
+  requireStepLadder?: boolean;
   rejectReasons?: string[];
 }): string {
   const learner = (args.userText ?? "").trim() || "(unknown)";
@@ -661,6 +786,11 @@ function buildOversightUserPrompt(args: {
   if (args.requireDiagram) {
     parts.push(
       `\nThe learner asked for a diagram. Rewrite so the reply includes one eduai-diagram fence with topic-specific stage labels (type: process-flow, gradient-descent, hierarchy, or compare — default process-flow). Stages must match Top summary / Step ladder names.`,
+    );
+  }
+  if (args.requireStepLadder) {
+    parts.push(
+      `\nThe learner asked to revisit a specific numbered step from an earlier plan. Rewrite so the reply includes a "### Step ladder" section that re-explains that step in full (fresh wording, plus a why-it-matters clause) — do not just repeat the earlier answer's line for that step verbatim.`,
     );
   }
   parts.push(`\nDRAFT TO REWRITE:\n\n${args.draft}`);
@@ -686,12 +816,22 @@ export function tryDeterministicStructuralFix(
     wordCap?: number;
     profile?: AdhdTurnProfile;
     expectSources?: boolean;
+    requireStepLadder?: boolean;
   },
 ): string | null {
   const wordCap = options?.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const profile = options?.profile;
   const trimmed = normalizeAdhdStructuralAnchors(draft);
   if (!trimmed) return null;
+
+  // A missing Step ladder can't be fixed deterministically (there is no real
+  // step content to insert) — only an LLM rewrite can regenerate it, so bail
+  // out here rather than ship a draft that passes every other check while
+  // still being the thin, copy-pasted fragment #1245 is about.
+  if (options?.requireStepLadder) {
+    const metrics = computeAdhdResponseMetrics(trimmed, { wordCap });
+    if (!metrics.stepLadder) return null;
+  }
 
   if (profile) {
     const before = withProfileStructuralPass(
@@ -761,6 +901,7 @@ export async function auditAndMaybeRewrite(args: {
   wordCap?: number;
   profile?: AdhdTurnProfile;
   userText?: string;
+  priorAssistantText?: string;
   /** When true, require a Sources footer (tools/RAG ran). Never invent page numbers. */
   toolsUsed?: boolean;
 }): Promise<AuditAndMaybeRewriteResult> {
@@ -772,8 +913,25 @@ export async function auditAndMaybeRewrite(args: {
   const requireDiagram =
     userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
   const expectSources = Boolean(args.toolsUsed);
+  // #1245: a step-recall request must get a real Step ladder re-explanation,
+  // not just a bare Top summary / Next? shell around a copy-pasted fragment.
+  // Only full_tutoring's policy block describes Step ladder rules at all.
+  const requireStepLadder =
+    profile === "full_tutoring" &&
+    userRequestedStepRecall({
+      userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
+    }) &&
+    (!hasStepLadderSection(trimmed) ||
+      isStepLadderCopiedFromPrior(trimmed, args.priorAssistantText, args.userText));
   const diagramOpts = { userText: args.userText };
-  const gateOpts = { requireDiagram, expectSources };
+  const gateOpts: StepLadderGateOpts = {
+    requireDiagram,
+    expectSources,
+    requireStepLadder,
+    priorAssistantText: args.priorAssistantText,
+    userText: args.userText,
+  };
 
   const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap }),
@@ -845,6 +1003,7 @@ export async function auditAndMaybeRewrite(args: {
     wordCap,
     profile,
     expectSources,
+    requireStepLadder,
   });
   if (deterministic && !requireDiagram) {
     const afterMetrics = withProfileStructuralPass(
@@ -885,13 +1044,17 @@ export async function auditAndMaybeRewrite(args: {
       model: args.model,
       temperature: 0.2,
       maxTokens: resolveOversightRewriteMaxTokens(wordCap),
-      system: buildOversightRewriteSystem(profile, wordCap, { requireDiagram }),
+      system: buildOversightRewriteSystem(profile, wordCap, {
+        requireDiagram,
+        requireStepLadder,
+      }),
       prompt: buildOversightUserPrompt({
         draft: trimmed,
         userText: args.userText,
         profile,
         requireDiagram,
         expectSources,
+        requireStepLadder,
         rejectReasons,
       }),
     });
@@ -951,7 +1114,9 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       requireDiagram,
       expectSources,
+      requireStepLadder,
       userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
       beforeMetrics,
       oversightStartedAt,
       oversightUsage: usageAcc,
@@ -967,7 +1132,9 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       requireDiagram,
       expectSources,
+      requireStepLadder,
       userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
       beforeMetrics,
       oversightStartedAt,
       oversightUsage: usageAcc,
@@ -988,11 +1155,13 @@ function finalizeForcedDeterministic(args: {
   profile: AdhdTurnProfile;
   requireDiagram?: boolean;
   expectSources?: boolean;
+  requireStepLadder?: boolean;
   userText?: string;
+  priorAssistantText?: string;
   beforeMetrics: AdhdStructuralCompliance & { profileStructuralPass?: boolean };
   oversightStartedAt: number;
   oversightUsage: OversightUsage | null;
-  gateOpts: { requireDiagram?: boolean; expectSources?: boolean };
+  gateOpts: StepLadderGateOpts;
 }): AuditAndMaybeRewriteResult {
   const wrapOpts = {
     wordCap: args.wordCap,
@@ -1021,6 +1190,21 @@ function finalizeForcedDeterministic(args: {
       parts.push("**Top summary**", "- See the question above.");
     } else {
       parts.push("One topic at a time — happy to switch or return.");
+    }
+    if (args.requireStepLadder) {
+      // Preserve the actual recalled action from the prior turn's Step
+      // ladder when we can find it; only fall back to the generic
+      // placeholder when the source step can't be located (#1245).
+      const recalledStep = extractRecalledStepText(
+        args.userText,
+        args.priorAssistantText,
+      );
+      parts.push(
+        "### Step ladder",
+        recalledStep
+          ? `1. ${recalledStep}`
+          : "1. Revisit that step — why it matters: keeps the plan in order so you don't lose your place.",
+      );
     }
     if (args.requireDiagram) {
       parts.push(
