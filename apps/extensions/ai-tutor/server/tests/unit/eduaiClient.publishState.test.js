@@ -13,10 +13,12 @@ import { setCoreCoursePublishState } from "../../src/services/eduaiClient.js";
 const OFFERING_ID = 'core-cuid-1';
 beforeEach(() => {
   process.env.EDUAI_BASE_URL = 'http://core.test/api';
+  process.env.EDUAI_API_KEY = 'service-provenance-key';
 });
 
 afterEach(() => {
   delete process.env.EDUAI_BASE_URL;
+  delete process.env.EDUAI_API_KEY;
   vi.restoreAllMocks();
 });
 
@@ -27,7 +29,7 @@ describe('setCoreCoursePublishState', () => {
     );
   });
 
-  it('calls PATCH /courses/:id/publish with the end-user session cookie', async () => {
+  it('calls PATCH /courses/:id/publish with the user cookie and service provenance', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -43,7 +45,17 @@ describe('setCoreCoursePublishState', () => {
     expect(url).toBe(`http://core.test/api/courses/${OFFERING_ID}/publish`);
     expect(opts.method).toBe('PATCH');
     expect(opts.headers.cookie).toBe('session=user-session');
-    expect(opts.headers.Authorization).toBeUndefined();
+    expect(opts.headers.Authorization).toBe('Bearer service-provenance-key');
+  });
+
+  it('fails closed when service provenance is not configured', async () => {
+    delete process.env.EDUAI_API_KEY;
+    vi.stubGlobal('fetch', vi.fn());
+
+    await expect(
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: 'session=user-session' }),
+    ).rejects.toThrow('EDUAI_API_KEY not configured');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("calls PATCH /courses/:id/unpublish when publish is false", async () => {

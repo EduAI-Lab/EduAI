@@ -683,9 +683,22 @@ export async function deleteCourse(request: Request, courseId: string) {
  * Accepts service key (extensions) or user session (ADMIN / UNIT_ADMIN(D) /
  * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
  */
-export async function setPublishState(request: Request, courseId: string, publish: boolean) {
-  // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+export async function setPublishState(
+  request: Request,
+  courseId: string,
+  publish: boolean,
+) {
+  // A forwarded user session remains the actor even when a trusted extension
+  // also supplies its service key as server provenance. Resolve the session
+  // once so bearer presence cannot bypass user access or publish policy.
+  const session = await getRequestSession(request);
+
+  // Service-only requests retain trusted extension access. Invalid bearer
+  // credentials still fail the guard.
+  if (
+    !session?.user &&
+    request.headers.get("Authorization")?.startsWith("Bearer ")
+  ) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
 
@@ -716,7 +729,6 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

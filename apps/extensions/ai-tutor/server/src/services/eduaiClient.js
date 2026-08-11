@@ -389,10 +389,17 @@ export async function setCoreCoursePublishState(coreOfferingId, publish, options
     error.status = 401;
     throw error;
   }
-  const action = publish ? "publish" : "unpublish";
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error('EDUAI_API_KEY not configured');
+    error.status = 500;
+    throw error;
+  }
+  const action = publish ? 'publish' : 'unpublish';
   return requestEduAi(`/courses/${coreOfferingId}/${action}`, {
     method: 'PATCH',
     cookie,
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
 }
 

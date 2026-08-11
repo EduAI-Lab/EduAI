@@ -1012,9 +1012,10 @@ describe("deleteCourse", () => {
 
 const VALID_KEY = "test-service-key";
 
-function makePublishRequest(bearer?: string) {
+function makePublishRequest(bearer?: string, cookie?: string) {
   const headers: Record<string, string> = {};
   if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
+  if (cookie) headers.Cookie = cookie;
   return new Request("http://localhost/api/courses/c1/publish", { method: "PATCH", headers });
 }
 
@@ -1022,6 +1023,7 @@ describe("setPublishState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
     vi.mocked(requireServiceKey).mockResolvedValue(null);
   });
 
@@ -1065,6 +1067,68 @@ describe("setPublishState", () => {
     );
     const res = await setPublishState(makePublishRequest("wrong-key"), "c1", true);
     expect(res.status).toBe(403);
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  it("session plus valid service key — denies an instructor when publish policy is off", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+
+    const res = await setPublishState(
+      makePublishRequest(VALID_KEY, "better-auth.session_token=user-session"),
+      "c1",
+      true,
+    );
+
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("instructors.canPublishCourses");
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  it("session plus valid service key — publishes when user policy allows", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
+    prismaMock.course.update.mockResolvedValue({ id: "c1", isPublished: true });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+
+    const res = await setPublishState(
+      makePublishRequest(VALID_KEY, "better-auth.session_token=user-session"),
+      "c1",
+      true,
+    );
+
+    expect(res.status).toBe(200);
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { isPublished: true },
+    });
+  });
+
+  it("session plus invalid bearer — cannot bypass instructor policy", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+
+    const res = await setPublishState(
+      makePublishRequest("wrong-key", "better-auth.session_token=user-session"),
+      "c1",
+      true,
+    );
+
+    expect(res.status).toBe(403);
+    expect(requireServiceKey).not.toHaveBeenCalled();
     expect(prismaMock.course.update).not.toHaveBeenCalled();
   });
 
