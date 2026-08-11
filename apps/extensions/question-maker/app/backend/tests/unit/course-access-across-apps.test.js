@@ -5,7 +5,7 @@
  *
  * App is an adapter parameter — every generated row is replayed here (and in
  * Core / AI Tutor) so shared inputs are identical across apps. QM_AUTHORIZED
- * floor denials (Role=TA|STUDENT) are asserted via the oracle app-floor branch.
+ * floor denials (Role=TA|STUDENT) go through production `requireRole(QM_AUTHORIZED)`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -29,7 +29,10 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   getMyProfileFromCore: mockMe,
 }));
 
-const { resolveAccessForCourse } = await import('../../src/middleware/courseAccess.js');
+const { resolveAccessForCourse, resolveCourseAccessWithCourse } = await import(
+  '../../src/middleware/courseAccess.js'
+);
+const { requireRole } = await import('../../src/middleware/auth.js');
 const { QM_AUTHORIZED } = await import('../../src/middleware/roles.js');
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../..');
@@ -51,6 +54,16 @@ const DEPARTMENT = 'COSC';
 const OTHER_DEPARTMENT = 'MATH';
 const CORE_ID = 'core-c1';
 const QM_COURSE = { id: 1, userId: 'owner-other', coreCourseId: CORE_ID };
+
+function makeRes() {
+  const res = {
+    status: vi.fn(),
+    json: vi.fn(),
+  };
+  res.status.mockReturnValue(res);
+  res.json.mockReturnValue(res);
+  return res;
+}
 
 function actualFromQm(opts) {
   if (opts.floorDenied) return { outcome: 'denied', reason: 'app-floor' };
@@ -78,8 +91,12 @@ describe.each(rows.map((row, index) => [index, row]))(
         authorizedUnits: row.Role === 'UNIT_ADMIN' ? [DEPARTMENT] : undefined,
       };
 
-      // App floor runs before per-course resolve (production requireRole(QM_AUTHORIZED)).
-      if (!QM_AUTHORIZED.includes(platformRole)) {
+      // Production app floor: requireRole(QM_AUTHORIZED) before per-course resolve.
+      const res = makeRes();
+      const next = vi.fn();
+      requireRole(QM_AUTHORIZED)({ user }, res, next);
+      if (!next.mock.calls.length) {
+        expect(res.status).toHaveBeenCalledWith(403);
         const actual = actualFromQm({ floorDenied: true });
         expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
         return;
@@ -87,7 +104,10 @@ describe.each(rows.map((row, index) => [index, row]))(
 
       if (row.CourseState === 'deleted') {
         mockCourseFindOne.mockResolvedValue(null);
-        const actual = actualFromQm({ courseMissing: true });
+        const { course, access } = await resolveCourseAccessWithCourse(user, QM_COURSE.id, {
+          cookie: 'c',
+        });
+        const actual = actualFromQm({ courseMissing: !course, access });
         expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
         return;
       }
