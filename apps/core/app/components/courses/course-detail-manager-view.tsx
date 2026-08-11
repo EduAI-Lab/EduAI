@@ -513,9 +513,7 @@ export function CourseDetailManagerView({
   };
 
   // B2: top-right hero badges
-  const topRightBadges: string[] = [
-    ...(course.isActive ? ["Active"] : [])
-  ];
+  const topRightBadges: string[] = (course.isActive ? ["Active"] : []);
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
   // `enrollmentsTotal` is the server-side active-STUDENT count across all
   // pages; only the loaded pages are actually in `studentEnrollments`
