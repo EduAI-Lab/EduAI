@@ -1,5 +1,11 @@
 # Changelog
 
+## [Week 15 — August 10–16, 2026]
+
+### Fixed
+
+- [question-maker] fix: Stop `useBugReportCapture`'s `html2canvas` screenshot loop from running on a 10s `setInterval` for every authenticated user on every page — capture is now on-demand only, triggered when the bug-report dialog opens and again just before submit, with concurrent calls deduped into one in-flight `html2canvas` run via a promise ref. Closes #1333. (@saadtab01, 2026-08-11) — [#1472](https://github.com/EduAI-Lab/EduAI/pull/1472)
+
 ## [Week 14 - August 3-9, 2026]
 
 ### Fixed
