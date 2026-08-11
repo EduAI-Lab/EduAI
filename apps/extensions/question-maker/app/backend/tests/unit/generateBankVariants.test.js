@@ -260,6 +260,35 @@ describe("generateBankVariantsForQuestions — per-question orchestration", () =
     expect(results).toHaveLength(1);
     expect(results[0].questionId).toBe(20);
   });
+
+  it.each([
+    ['provider', () => mockGenerateQuestions.mockRejectedValueOnce(
+      new Error('SECRET_PROVIDER_BODY?api_key=canary'),
+    )],
+    ['database', () => {
+      mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
+      mockVariantCreate.mockRejectedValueOnce(new Error('SECRET_DB_URL'));
+    }],
+  ])('redacts unexpected %s failures from results and logs', async (_source, arrangeFailure) => {
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [makePrimaryVariant()] }));
+    arrangeFailure();
+
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(errors).toEqual([
+      expect.objectContaining({
+        questionId: 10,
+        iteration: 1,
+        error: 'Variant generation failed',
+      }),
+    ]);
+    const logged = JSON.stringify(logSpy.mock.calls);
+    expect(logged).not.toContain('SECRET_PROVIDER_BODY');
+    expect(logged).not.toContain('api_key');
+    expect(logged).not.toContain('SECRET_DB_URL');
+    logSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------

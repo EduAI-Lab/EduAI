@@ -9,10 +9,17 @@ import { scoreMetadataMatch } from "./assessmentVariantMetadataScoring.js";
 import {
   enrichCourseDetail,
   formatSemesterDisplay,
-  deriveSemesterDisplayForCourseId,
-} from "./courseListService.js";
+  deriveSemesterDisplayForCourseId
+} from './courseListService.js';
+import { safeRequestLogFields } from '../utils/safeLogging.js';
 
 const VALID_STUDY_ROLES = ["reference_baseline", "generated_variant"];
+
+function publicVariantGenerationError(message) {
+  const error = new Error(message);
+  error.isPublic = true;
+  return error;
+}
 
 /**
  * Prisma's interactive-transaction default timeout is 5s. Assembly is batched now (#1370) —
@@ -909,7 +916,7 @@ Return exactly one question in the required JSON format.`;
 
         let q = Array.isArray(generated) ? generated[0] : null;
         if (!q || !q.content) {
-          throw new Error("EduAI returned no question content");
+          throw publicVariantGenerationError('EduAI returned no question content');
         }
 
         let answer = q.answer ?? null;
@@ -922,23 +929,21 @@ Return exactly one question in the required JSON format.`;
             generated = await callGenerate(baseVariantPrompt + repair);
             q = Array.isArray(generated) ? generated[0] : null;
             if (!q || !q.content) {
-              throw new Error("EduAI returned no question content on MCQ count retry");
+              throw publicVariantGenerationError(
+                'EduAI returned no question content on MCQ count retry',
+              );
             }
             answer = q.answer ?? null;
             choices = q.choices ?? null;
           }
         }
 
-        if (meta.type === "MCQ" && (!choices || choices.length < 2)) {
-          throw new Error("MCQ variant missing choices");
+        if (meta.type === 'MCQ' && (!choices || choices.length < 2)) {
+          throw publicVariantGenerationError('MCQ variant missing choices');
         }
-        if (
-          meta.type === "MCQ" &&
-          expectedMcqChoiceCount != null &&
-          choices.length !== expectedMcqChoiceCount
-        ) {
-          throw new Error(
-            `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`,
+        if (meta.type === 'MCQ' && expectedMcqChoiceCount != null && choices.length !== expectedMcqChoiceCount) {
+          throw publicVariantGenerationError(
+            `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`
           );
         }
 
@@ -980,7 +985,12 @@ Return exactly one question in the required JSON format.`;
           isDraft: true,
         });
       } catch (err) {
-        errors.push({ questionId: qid, iteration: n + 1, error: err.message || String(err) });
+        console.error('Variant generation failed', safeRequestLogFields(err));
+        errors.push({
+          questionId: qid,
+          iteration: n + 1,
+          error: err?.isPublic === true ? err.message : 'Variant generation failed',
+        });
         break;
       }
     }
