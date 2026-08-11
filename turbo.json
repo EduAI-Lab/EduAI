@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".oxlintrc.json", ".oxfmtrc.json"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -101,6 +102,64 @@
       "outputs": ["coverage/**"]
     },
     "lint": {
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "scripts/**",
+        "test/**",
+        "tests/**",
+        "prisma/**",
+        "*.ts",
+        "*.tsx",
+        "*.js",
+        "*.mjs",
+        "*.cjs",
+        "package.json"
+      ],
+      "outputs": []
+    },
+    "lint:fix": {
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "format:check": {
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "scripts/**",
+        "test/**",
+        "tests/**",
+        "prisma/**",
+        "*.ts",
+        "*.tsx",
+        "*.js",
+        "*.mjs",
+        "*.cjs",
+        "package.json"
+      ],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "prisma/**",
+        "*.ts",
+        "*.tsx",
+        "tsconfig*.json",
+        "package.json"
+      ],
       "outputs": []
     },
     "dev": {
