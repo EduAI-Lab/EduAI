@@ -1,5 +1,4 @@
 import type { ActionFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
@@ -12,6 +11,7 @@ import {
 } from "~/lib/canvas/materials.server";
 import { ExcludeCanvasMaterialSchema } from "~/lib/canvas/schemas";
 import type { Session } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -27,7 +27,7 @@ async function resolveInstructorAccess(
   | { response: Response; user?: never }
   | { response?: never; user: Session["user"]; access: AccessLevel }
 > {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return { response: json(401, { success: false, error: "Unauthorized" }) };
   }

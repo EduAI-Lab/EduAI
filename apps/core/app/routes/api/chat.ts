@@ -113,7 +113,6 @@ import {
 } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
-import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import {
   getActorContext,
@@ -164,6 +163,7 @@ import {
   withResolvedModelMetadata,
   withCourseScopeRedirectMetadata,
 } from "~/lib/chat/chat-message-metadata";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -554,7 +554,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let session =
       apiKeySession ??
-      (await auth.api.getSession({ headers: request.headers }));
+      (await getRequestSession(request));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);

@@ -18,7 +18,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { auth } from "~/lib/auth/server";
 import {
   listAuditLogs,
   listSecurityLogs,
@@ -31,6 +30,7 @@ import {
   updateLogRetentionPolicy,
 } from "~/lib/db.log-retention-policy.server";
 import type { Route } from "./+types/admin.logs";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 25;
@@ -55,7 +55,7 @@ const SYSTEM_SOURCE_VALUES = new Set(["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "
 
 /** Reject non-admins for both loader and action; returns the session user on success. */
 async function requireAdminUser(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     throw redirect("/auth/login");
   }
