@@ -127,8 +127,9 @@ export function serializeCourseForApi(
   }
 
   if (options.audience === "student") {
-    // A boolean preserves the public hasAiConfig contract without revealing
-    // which prompt/style settings caused it to be enabled.
+    // The raw instructor prompt and internal RAG/provider settings remain
+    // private. Response-style labels and the teaching-team contact are public
+    // course-detail metadata already rendered by the enrolled-student UI.
     if (
       options.detail &&
       (hasOwn(row, "aiInstructions") || hasOwn(row, "responseStyleTags"))
@@ -137,6 +138,21 @@ export function serializeCourseForApi(
         Array.isArray(row.responseStyleTags) ? row.responseStyleTags : [],
         typeof row.aiInstructions === "string" ? row.aiInstructions : null,
       );
+    }
+    if (options.detail && hasOwn(row, "responseStyleTags")) {
+      dto.responseStyleTags = Array.isArray(row.responseStyleTags)
+        ? row.responseStyleTags.filter((tag: unknown): tag is string => typeof tag === "string")
+        : [];
+    }
+    if (options.detail) {
+      if (row.instructor && typeof row.instructor === "object") {
+        dto.instructor = {
+          name: row.instructor.name ?? null,
+          email: row.instructor.email ?? null,
+        };
+      } else if (hasOwn(row, "instructor")) {
+        dto.instructor = null;
+      }
     }
     return dto;
   }

@@ -121,7 +121,7 @@ describe("GET /api/courses/:id", () => {
     expect(res.status).toBe(200);
   });
 
-  it("projects a student detail response without course AI or internal fields", async () => {
+  it("projects a student detail response with public teaching metadata but no private AI fields", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "student-1", role: "STUDENT" },
     } as never);
@@ -157,10 +157,15 @@ describe("GET /api/courses/:id", () => {
     } as never);
 
     const body = await (await loader(makeLoaderArgs())).json();
-    expect(body).toMatchObject({ id: "course-1", code: "COSC 101", hasAiConfig: true });
+    expect(body).toMatchObject({
+      id: "course-1",
+      code: "COSC 101",
+      hasAiConfig: true,
+      responseStyleTags: ["socratic"],
+      instructor: { name: "Prof", email: "prof@example.edu" },
+    });
     for (const key of [
       "aiInstructions",
-      "responseStyleTags",
       "courseScopeGuardrailEnabled",
       "ragTopK",
       "ragSimilarityThreshold",
@@ -169,12 +174,12 @@ describe("GET /api/courses/:id", () => {
       "createdAt",
       "updatedAt",
       "instructorId",
-      "instructor",
       "externalId",
       "externalSource",
     ]) {
       expect(body).not.toHaveProperty(key);
     }
+    expect(body.instructor).not.toHaveProperty("id");
   });
 
   it("keeps intentional staff configuration while still omitting embedding and timestamps", async () => {

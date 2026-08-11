@@ -66,11 +66,12 @@ describe("course API DTO projections", () => {
       name: "Algorithms",
       description: "Public description",
       hasAiConfig: true,
+      responseStyleTags: ["socratic"],
+      instructor: { name: "Prof. Example", email: "prof@example.edu" },
       startDate: "2026-01-01T00:00:00.000Z",
     });
     for (const key of [
       "aiInstructions",
-      "responseStyleTags",
       "courseScopeGuardrailEnabled",
       "ragTopK",
       "ragSimilarityThreshold",
@@ -81,12 +82,12 @@ describe("course API DTO projections", () => {
       "updatedAt",
       "deletedAt",
       "instructorId",
-      "instructor",
       "externalId",
       "externalSource",
     ]) {
       expect(dto).not.toHaveProperty(key);
     }
+    expect(dto.instructor).not.toHaveProperty("id");
   });
 
   it("keeps intentionally required staff detail fields without raw row leakage", () => {

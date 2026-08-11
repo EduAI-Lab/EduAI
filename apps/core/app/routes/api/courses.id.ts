@@ -9,7 +9,11 @@ import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
 import { serializeCourseForApi } from "~/lib/courses/dto.server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
-import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import prisma from "~/lib/prisma.server";
+import {
+  getActorContext,
+  getRequestContext,
+} from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -97,9 +101,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const audience = access.level === "student" ? "student" : "staff";
+  let responseCourse: Record<string, unknown> = course as unknown as Record<string, unknown>;
+  if (
+    access.level === "student" &&
+    course.instructorId &&
+    !("instructor" in responseCourse)
+  ) {
+    const instructor = await prisma.user.findUnique({
+      where: { id: course.instructorId },
+      select: { name: true, email: true },
+    });
+    responseCourse = { ...responseCourse, instructor };
+  }
   return new Response(
     JSON.stringify(
-      serializeCourseForApi(course, {
+      serializeCourseForApi(responseCourse, {
         audience,
         detail: true,
       }),

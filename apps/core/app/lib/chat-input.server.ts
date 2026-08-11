@@ -20,9 +20,11 @@ export type ChatInputLimits = {
 
 export type ChatInputLimitOverrides = Partial<ChatInputLimits>;
 
-export type ChatBodyReadResult =
+export type BoundedJsonReadResult =
   | { ok: true; body: unknown }
   | { ok: false; status: 400 | 413 | 499; error: string };
+
+export type ChatBodyReadResult = BoundedJsonReadResult;
 
 export type ChatBodyValidationResult =
   | {
@@ -74,11 +76,11 @@ function invalidBody(error = "Invalid JSON body"): {
   return { ok: false, status: 400, error };
 }
 
-function sizeExceeded(): { ok: false; status: 413; error: string } {
+function sizeExceeded(error: string): { ok: false; status: 413; error: string } {
   return {
     ok: false,
     status: 413,
-    error: "Chat request body exceeds size limit",
+    error,
   };
 }
 
@@ -87,10 +89,11 @@ function sizeExceeded(): { ok: false; status: 413; error: string } {
  * Content-Length is an early rejection hint only; streamed/chunked bodies are
  * counted as they arrive so a missing or dishonest header cannot bypass it.
  */
-export async function readBoundedChatJson(
+export async function readBoundedJson(
   request: Request,
   maxBytes: number,
-): Promise<ChatBodyReadResult> {
+  sizeError: string,
+): Promise<BoundedJsonReadResult> {
   const contentLength = request.headers.get("content-length");
   if (contentLength !== null) {
     const normalized = contentLength.trim();
@@ -105,7 +108,7 @@ export async function readBoundedChatJson(
       // declared length is already sufficient for an early rejection; the
       // streaming path below still cancels when a chunk actually crosses the
       // cap.
-      return sizeExceeded();
+      return sizeExceeded(sizeError);
     }
   }
 
@@ -160,7 +163,7 @@ export async function readBoundedChatJson(
       totalBytes += chunk.byteLength;
       if (totalBytes > maxBytes) {
         void reader.cancel().catch(() => undefined);
-        return sizeExceeded();
+        return sizeExceeded(sizeError);
       }
       chunks.push(chunk);
     }
@@ -188,6 +191,13 @@ export async function readBoundedChatJson(
   } catch {
     return invalidBody();
   }
+}
+
+export async function readBoundedChatJson(
+  request: Request,
+  maxBytes: number,
+): Promise<ChatBodyReadResult> {
+  return readBoundedJson(request, maxBytes, "Chat request body exceeds size limit");
 }
 
 function serializedContentChars(content: unknown): number | null {
