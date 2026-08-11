@@ -102,3 +102,7 @@ apps/**/src/generated/
 
 # #1272 token-parity working snapshots (regenerable from git)
 .token-parity/
+
+# Python venvs (research/analysis scripts under eduai-summer-2026/reports/)
+.venv/
+__pycache__/

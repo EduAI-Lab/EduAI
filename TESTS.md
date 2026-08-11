@@ -308,6 +308,18 @@ Assert-only: [`ext-ext-isolation.test.ts`](apps/core/app/tests/unit/ext-ext-isol
 
 ---
 
+## ADHD Pilot Analysis Tests
+
+**Path:** `eduai-summer-2026/reports/week13-adhd-analysis/`
+
+Uses only synthetic, fabricated participant data — never the real Qualtrics export, which is PII and lives in restricted storage, not this repo. Run: `python3 -m unittest test_adhd_analysis.py -v` (from that directory, with `requirements.txt` installed). The two data-quality exclusion IDs are not hardcoded in `adhd_analysis.py` — set them locally via `ADHD_EXCLUDE_RESPONSE_IDS="R_...,R_..."` (comma-separated) when running against the restricted-storage export; the test suite uses its own synthetic IDs and does not need this variable set.
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`test_adhd_analysis.py`](eduai-summer-2026/reports/week13-adhd-analysis/test_adhd_analysis.py) | `run_leave_one_out` (#1308): 55-row output (11 participants × 5 metrics), exactly one removal per participant, all five metrics present per removal, and that `participant_removed` is always an anonymized `P`-label, never a raw ResponseId. Covers the TLX Load direction rule specifically — a negative raw `effect_r` (Assistive scored lower load, i.e. better) must map to `direction: "favors Assistive"`, not a literal-sign "favors Baseline" — against a non-inverted metric (SUS) where a positive raw `effect_r` maps directly with no flip. An end-to-end subprocess check confirms `loo_sensitivity.csv` is byte-identical whether or not `--include-excluded` is passed (LOO always runs on the full sample regardless of that flag), while `analysis_summary.csv` differs between the two (sanity check that the flag does something, so the identical-output assertion isn't vacuous). `load_and_filter`'s `exclude_ids` is checked to drop exactly the named participants (n=11 → n=9). |
+
+---
+
 ## EduAI Unit Tests
 
 **Path:** `apps/core/app/tests/unit/`
