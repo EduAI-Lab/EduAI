@@ -280,6 +280,27 @@ describe("root middleware", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
+  it("lets authenticated extension session validation reach the action without browser Origin", async () => {
+    vi.stubEnv("EDUAI_API_KEY", "verified-service-key");
+    const next = vi.fn(async () => new Response(JSON.stringify({ user: { id: "u1" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const request = new Request("https://eduai.example/api/sessions/validate", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Authorization: "Bearer verified-service-key",
+        "X-EduAI-Client-IP": "198.51.100.50",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(200);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it("preserves same-origin cookie mutations and non-cookie service calls", async () => {
     const next = vi.fn(async () => new Response(null, { status: 204 }));
     const sameOrigin = new Request("https://eduai.example/admin/logs", {

@@ -5,9 +5,10 @@
  * ensures a local user row exists for FK integrity (creating it on first login),
  * and populates `req.user` with the Core user shape.
  */
-import { findOrCreateUser } from "../services/authService.js";
-import { VALID_ROLES } from "./roles.js";
-import { config } from "../config/settings.js";
+import { findOrCreateUser } from '../services/authService.js';
+import { VALID_ROLES } from './roles.js';
+import { config } from '../config/settings.js';
+import { isIP } from 'node:net';
 
 const DEFAULT_CORE_AUTH_TIMEOUT_MS = 5_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -87,6 +88,29 @@ function normalizeRole(role) {
 }
 
 /**
+ * Apache appends the real socket peer as the rightmost XFF entry. Ignore all
+ * client-supplied prefix entries; fall back to Express' socket peer when the
+ * proxy header is missing or malformed.
+ */
+export function deriveOriginalClientIp(req) {
+  const forwarded = typeof req?.headers?.['x-forwarded-for'] === 'string'
+    ? req.headers['x-forwarded-for'].split(',').map((value) => value.trim()).filter(Boolean).at(-1)
+    : null;
+  if (forwarded && isIP(forwarded)) return forwarded;
+
+  const socketIp = req?.socket?.remoteAddress?.trim();
+  return socketIp && isIP(socketIp) ? socketIp : null;
+}
+
+function coreSessionHeaders(req, cookie) {
+  const headers = { cookie };
+  if (config.eduaiApiKey) headers.authorization = `Bearer ${config.eduaiApiKey}`;
+  const clientIp = deriveOriginalClientIp(req);
+  if (clientIp) headers['x-eduai-client-ip'] = clientIp;
+  return headers;
+}
+
+/**
  * Validate the request's session cookie against Core and populate `req.user`.
  * API routes (path starts with /api/) return 401 on failure; other routes
  * redirect to Core login with a ?redirect= param so the user lands back here.
@@ -102,7 +126,7 @@ export async function requireAuth(req, res, next) {
       `${config.coreUrl}/api/sessions/validate`,
       {
         method: 'POST',
-        headers: { cookie: req.headers.cookie ?? '' },
+        headers: coreSessionHeaders(req, req.headers.cookie ?? ''),
       },
     );
 

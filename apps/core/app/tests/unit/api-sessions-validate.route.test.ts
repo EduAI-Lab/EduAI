@@ -1,7 +1,7 @@
 // @vitest-environment node
 // #1213 — POST /api/sessions/validate (extension auth Phase 1): method gate,
 // rate limiting, auth gate, and the UNIT_ADMIN authorizedUnits DB hydration.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
@@ -9,7 +9,6 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/rate-limit.server", () => ({
   isRateLimited: vi.fn().mockReturnValue(false),
-  parseEnvInt: vi.fn((_value: string | undefined, fallback: number) => fallback),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -30,16 +29,23 @@ import prisma from "~/lib/prisma.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 
 function makeArgs(method = "POST", headers: HeadersInit = {}) {
+  const requestHeaders = new Headers({ Authorization: "Bearer test-service-key" });
+  new Headers(headers).forEach((value, key) => requestHeaders.set(key, value));
   return {
-    request: new Request("http://localhost/api/sessions/validate", { method, headers }),
+    request: new Request("http://localhost/api/sessions/validate", { method, headers: requestHeaders }),
     params: {},
     context: {} as never,
   } as never;
 }
 
 beforeEach(() => {
+  vi.stubEnv("EDUAI_API_KEY", "test-service-key");
   vi.clearAllMocks();
   vi.mocked(isRateLimited).mockReturnValue(false);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("POST /api/sessions/validate", () => {
@@ -52,7 +58,7 @@ describe("POST /api/sessions/validate", () => {
     vi.mocked(isRateLimited).mockReturnValue(true);
     const res = await action(makeArgs());
     expect(res.status).toBe(429);
-    expect(isRateLimited).toHaveBeenCalledWith("session-validate:preauth:unknown", 1_200);
+    expect(isRateLimited).toHaveBeenCalledWith("session-validate:preauth:unknown");
     expect(auth.api.getSession).not.toHaveBeenCalled();
     expect(logSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "RATE_LIMIT_EXCEEDED", outcome: "DENIED" }),
@@ -93,8 +99,63 @@ describe("POST /api/sessions/validate", () => {
   it("uses the trusted proxy-appended XFF entry, not a spoofed first entry", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     await action(makeArgs("POST", { "X-Forwarded-For": "203.0.113.99, 198.51.100.20" }));
-    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:198.51.100.20", 1_200);
+    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:198.51.100.20");
     expect(isRateLimited).toHaveBeenNthCalledWith(2, "session-validate:anonymous:198.51.100.20");
+  });
+
+  it("uses a verified extension's forwarded client identity for isolated pre-auth buckets", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    await action(makeArgs("POST", {
+      "X-Forwarded-For": "127.0.0.1",
+      "X-EduAI-Client-IP": "198.51.100.30",
+    }));
+    await action(makeArgs("POST", {
+      "X-Forwarded-For": "127.0.0.1",
+      "X-EduAI-Client-IP": "198.51.100.31",
+    }));
+
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:198.51.100.30",
+      "session-validate:anonymous:198.51.100.30",
+      "session-validate:preauth:198.51.100.31",
+      "session-validate:anonymous:198.51.100.31",
+    ]);
+  });
+
+  it("rejects missing or fake service auth before trusting identity or looking up a session", async () => {
+    for (const authorization of ["", "Bearer fake-key"]) {
+      const res = await action(makeArgs("POST", {
+        Authorization: authorization,
+        "X-EduAI-Client-IP": "203.0.113.250",
+      }));
+      expect([401, 403]).toContain(res.status);
+    }
+
+    expect(isRateLimited).not.toHaveBeenCalled();
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("an exhausted attacker client does not consume another extension client's bucket", async () => {
+    vi.mocked(isRateLimited)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", email: "u2@ubc.ca", name: "U2", image: null, role: "STUDENT" },
+    } as never);
+
+    const attacker = await action(makeArgs("POST", { "X-EduAI-Client-IP": "198.51.100.40" }));
+    const legitimate = await action(makeArgs("POST", { "X-EduAI-Client-IP": "198.51.100.41" }));
+
+    expect(attacker.status).toBe(429);
+    expect(legitimate.status).toBe(200);
+    expect(auth.api.getSession).toHaveBeenCalledOnce();
+    expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
+      "session-validate:preauth:198.51.100.40",
+      "session-validate:preauth:198.51.100.41",
+      "session-validate:user:u2",
+    ]);
   });
 
   it("returns 401 for anonymous callers", async () => {

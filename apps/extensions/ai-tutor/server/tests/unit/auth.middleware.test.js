@@ -22,6 +22,7 @@ import { getPolicy } from "../../src/services/policyService.js";
 import { resolveCoreCourseById } from "../../src/services/courseResolver.js";
 
 process.env.CORE_URL = 'http://core.test';
+process.env.EDUAI_API_KEY = 'test-service-key';
 const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 function makeRes() {
@@ -291,10 +292,64 @@ describe("requireAuth", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://core.test/api/sessions/validate",
       expect.objectContaining({
-        method: "POST",
-        headers: { cookie: "session=abc123; other=x" },
+        method: 'POST',
+        headers: expect.objectContaining({ cookie: 'session=abc123; other=x' }),
       }),
     );
+  });
+
+  it('forwards verified service auth and isolates clients by trusted rightmost XFF', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await requireAuth(
+      makeReq({
+        headers: { cookie: 'session=a', 'x-forwarded-for': '203.0.113.99, 198.51.100.10' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+      makeRes(),
+      next,
+    );
+    await requireAuth(
+      makeReq({
+        headers: { cookie: 'session=b', 'x-forwarded-for': '203.0.113.99, 198.51.100.11' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+      makeRes(),
+      next,
+    );
+
+    expect(mockFetch.mock.calls.map(([, init]) => init.headers)).toEqual([
+      expect.objectContaining({
+        authorization: 'Bearer test-service-key',
+        'x-eduai-client-ip': '198.51.100.10',
+      }),
+      expect.objectContaining({
+        authorization: 'Bearer test-service-key',
+        'x-eduai-client-ip': '198.51.100.11',
+      }),
+    ]);
+  });
+
+  it('falls back to the socket peer when trusted XFF is missing', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    const req = makeReq({ socket: { remoteAddress: '192.0.2.44' } });
+
+    await requireAuth(req, makeRes(), next);
+
+    expect(mockFetch.mock.calls[0][1].headers).toMatchObject({
+      authorization: 'Bearer test-service-key',
+      'x-eduai-client-ip': '192.0.2.44',
+    });
   });
 
   it('returns 401 without calling Core when the request has no cookie header', async () => {

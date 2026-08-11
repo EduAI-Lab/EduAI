@@ -9,6 +9,7 @@ import { EventEmitter } from 'node:events';
 
 process.env.CORE_URL = 'http://core.test';
 process.env.EXTENSION_URL = 'http://qm.test';
+process.env.EDUAI_API_KEY = 'test-service-key';
 const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 const findOrCreateUser = vi.fn();
@@ -321,10 +322,67 @@ describe("requireAuth", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       `${config.coreUrl}/api/sessions/validate`,
       expect.objectContaining({
-        method: "POST",
-        headers: { cookie: "session=tok123" },
+        method: 'POST',
+        headers: expect.objectContaining({ cookie: 'session=tok123' }),
       }),
     );
+  });
+
+  it('forwards verified service auth and isolates clients by trusted rightmost XFF', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await requireAuth(
+      makeApiReq({
+        headers: { cookie: 'session=a', 'x-forwarded-for': '203.0.113.99, 198.51.100.20' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+      makeRes(),
+      next,
+    );
+    await requireAuth(
+      makeApiReq({
+        headers: { cookie: 'session=b', 'x-forwarded-for': '203.0.113.99, 198.51.100.21' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+      makeRes(),
+      next,
+    );
+
+    expect(mockFetch.mock.calls.map(([, init]) => init.headers)).toEqual([
+      expect.objectContaining({
+        authorization: 'Bearer test-service-key',
+        'x-eduai-client-ip': '198.51.100.20',
+      }),
+      expect.objectContaining({
+        authorization: 'Bearer test-service-key',
+        'x-eduai-client-ip': '198.51.100.21',
+      }),
+    ]);
+  });
+
+  it('falls back to the socket peer when trusted XFF is missing', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await requireAuth(
+      makeApiReq({ socket: { remoteAddress: '192.0.2.54' } }),
+      makeRes(),
+      next,
+    );
+
+    expect(mockFetch.mock.calls[0][1].headers).toMatchObject({
+      authorization: 'Bearer test-service-key',
+      'x-eduai-client-ip': '192.0.2.54',
+    });
   });
 
   it('normalizes an unrecognized role to STUDENT', async () => {

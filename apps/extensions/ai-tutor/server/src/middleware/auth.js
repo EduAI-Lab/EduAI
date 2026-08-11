@@ -5,8 +5,9 @@
  * `POST /api/sessions/validate` endpoint and populates `req.user`.
  */
 
-import { getPolicy } from "../services/policyService.js";
-import { resolveCoreCourseById } from "../services/courseResolver.js";
+import { getPolicy } from '../services/policyService.js';
+import { resolveCoreCourseById } from '../services/courseResolver.js';
+import { isIP } from 'node:net';
 
 const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
 const DEFAULT_CORE_AUTH_TIMEOUT_MS = 5_000;
@@ -87,6 +88,35 @@ function normalizeRole(role) {
 }
 
 /**
+ * Apache appends the real socket peer as the rightmost XFF entry. Ignore all
+ * client-supplied prefix entries; fall back to Express' socket peer when the
+ * proxy header is missing or malformed.
+ */
+export function deriveOriginalClientIp(req) {
+  const forwarded =
+    typeof req?.headers?.['x-forwarded-for'] === 'string'
+      ? req.headers['x-forwarded-for']
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .at(-1)
+      : null;
+  if (forwarded && isIP(forwarded)) return forwarded;
+
+  const socketIp = req?.socket?.remoteAddress?.trim();
+  return socketIp && isIP(socketIp) ? socketIp : null;
+}
+
+function coreSessionHeaders(req, cookie) {
+  const headers = { cookie };
+  const serviceKey = process.env.EDUAI_API_KEY?.trim();
+  if (serviceKey) headers.authorization = `Bearer ${serviceKey}`;
+  const clientIp = deriveOriginalClientIp(req);
+  if (clientIp) headers['x-eduai-client-ip'] = clientIp;
+  return headers;
+}
+
+/**
  * Validate the request's session cookie against Core and populate `req.user`.
  * Returns 401 if the cookie is absent, expired, or invalid. A Core 429 (IP
  * rate limit) is passed through as 429 with `Retry-After` forwarded when
@@ -107,7 +137,7 @@ export async function requireAuth(req, res, next) {
       `${process.env.CORE_URL || 'http://localhost:3000'}/api/sessions/validate`,
       {
         method: 'POST',
-        headers: { cookie },
+        headers: coreSessionHeaders(req, cookie),
       },
     );
 
