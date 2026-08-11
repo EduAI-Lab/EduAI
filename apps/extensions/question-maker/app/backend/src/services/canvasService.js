@@ -109,6 +109,7 @@ const CANVAS_SETTING_ALIASES = {
   canvasOperationTimeoutMs: ['canvasPaginationDeadlineMs'],
   canvasMaxCompressedResponseBytes: ['canvasMaxWireBytes'],
   canvasMaxResponseBytes: ['canvasMaxDecompressedResponseBytes'],
+  canvasMaxRequestBodyBytes: ['canvasMaxBodyBytes'],
   canvasMaxPages: ['canvasPaginationMaxPages'],
   canvasMaxItems: ['canvasPaginationMaxItems'],
 };
@@ -178,7 +179,11 @@ function combineAbortSignals(signals) {
 }
 
 function createOperationContext(requestOptions = {}) {
-  const timeoutMs = canvasLimit('canvasOperationTimeoutMs', CANVAS_DEFAULT_OPERATION_TIMEOUT_MS);
+  const configuredTimeoutMs = canvasLimit('canvasOperationTimeoutMs', CANVAS_DEFAULT_OPERATION_TIMEOUT_MS);
+  const timeoutMs = Math.min(
+    configuredTimeoutMs,
+    configuredPositiveInt(requestOptions.deadlineMs, configuredTimeoutMs),
+  );
   const deadlineController = new AbortController();
   const timer = setTimeout(() => deadlineController.abort(new CanvasDeadlineError()), timeoutMs);
   const combined = combineAbortSignals([requestOptions.signal, deadlineController.signal]);
@@ -486,7 +491,10 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null, req
       // Count raw wire bytes ourselves before decoding, then enforce the
       // decompressed cap while consuming the bounded stream.
       decompress: false,
-      maxContentLength: canvasLimit('canvasMaxResponseBytes', CANVAS_DEFAULT_RESPONSE_BYTES),
+      maxContentLength: canvasLimit(
+        'canvasMaxCompressedResponseBytes',
+        CANVAS_DEFAULT_COMPRESSED_RESPONSE_BYTES,
+      ),
       maxBodyLength: canvasLimit('canvasMaxRequestBodyBytes', CANVAS_DEFAULT_REQUEST_BODY_BYTES),
       lookup: createPinnedLookup(),
       maxRedirects: 5,
@@ -596,8 +604,10 @@ function validateNextCanvasUrl(integration, next, previousUrl) {
 
 async function fetchCanvasCollection(integration, endpoint, requestOptions = {}) {
   const { context, ownsContext } = operationContextFrom(requestOptions);
-  const maxPages = canvasLimit('canvasMaxPages', CANVAS_DEFAULT_MAX_PAGES);
-  const maxItems = canvasLimit('canvasMaxItems', CANVAS_DEFAULT_MAX_ITEMS);
+  const configuredMaxPages = canvasLimit('canvasMaxPages', CANVAS_DEFAULT_MAX_PAGES);
+  const configuredMaxItems = canvasLimit('canvasMaxItems', CANVAS_DEFAULT_MAX_ITEMS);
+  const maxPages = Math.min(configuredMaxPages, configuredPositiveInt(requestOptions.maxPages, configuredMaxPages));
+  const maxItems = Math.min(configuredMaxItems, configuredPositiveInt(requestOptions.maxItems, configuredMaxItems));
   const aggregate = [];
   const seen = new Set();
   let current = endpoint;
@@ -1435,6 +1445,16 @@ export const importQuizFromCanvas = async (
           variantId: variant.id,
         });
       } catch (error) {
+        // Transport/deadline/limit failures invalidate the whole import. Do
+        // not turn an aborted or bounded pagination operation into a seemingly
+        // successful partial assessment by recording it as a skipped item.
+        if (
+          isCancellationError(error) ||
+          error?.name === 'CanvasPaginationError' ||
+          error?.name === 'CanvasResponseLimitError'
+        ) {
+          throw error;
+        }
         // If conversion or creation fails, skip this question but continue
         const questionName = canvasQuestion.question_name || `Question ${i + 1}`;
         const questionType = canvasQuestion.question_type || "unknown";

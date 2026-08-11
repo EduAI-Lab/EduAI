@@ -36,11 +36,19 @@ vi.mock('../../src/config/settings.js', () => ({
   default: {},
 }));
 
-const { getCanvasCourses, getCanvasQuizzes } = await import('../../src/services/canvasService.js');
+const {
+  getCanvasCourses,
+  getCanvasQuizzes,
+  getCanvasQuizQuestions,
+} = await import('../../src/services/canvasService.js');
 const { config } = await import('../../src/config/settings.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  axiosRequest.mockReset();
+  config.canvasOperationTimeoutMs = 1_000;
+  config.canvasMaxPages = 4;
+  config.canvasMaxItems = 8;
   integrationFindOne.mockResolvedValue({
     isTestMode: false,
     canvasUrl: 'https://canvas.example.edu',
@@ -97,6 +105,32 @@ describe('Canvas request limits and cancellation', () => {
 });
 
 describe('Canvas Link pagination', () => {
+  it('aggregates every course page', async () => {
+    axiosRequest
+      .mockResolvedValueOnce({
+        data: [{ id: 1 }],
+        headers: { link: '<https://canvas.example.edu/api/v1/courses?page=2>; rel="next"' },
+      })
+      .mockResolvedValueOnce({ data: [{ id: 2 }], headers: {} });
+
+    await expect(getCanvasCourses(42)).resolves.toEqual([{ id: 1 }, { id: 2 }]);
+    expect(axiosRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('aggregates every quiz question page', async () => {
+    axiosRequest
+      .mockResolvedValueOnce({
+        data: [{ id: 1 },],
+        headers: {
+          link: '<https://canvas.example.edu/api/v1/courses/9/quizzes/3/questions?page=2>; rel="next"',
+        },
+      })
+      .mockResolvedValueOnce({ data: [{ id: 2 }], headers: {} });
+
+    await expect(getCanvasQuizQuestions(42, 9, 3)).resolves.toEqual([{ id: 1 }, { id: 2 }]);
+    expect(axiosRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('aggregates every assignment quiz page', async () => {
     axiosRequest
       .mockResolvedValueOnce({
@@ -147,5 +181,30 @@ describe('Canvas Link pagination', () => {
     await expect(getCanvasQuizzes(42, 9)).rejects.toThrow(/page|pagination/i);
     expect(axiosRequest).toHaveBeenCalledTimes(1);
     config.canvasMaxPages = 4;
+  });
+
+  it('fails when aggregate item count exceeds the configured bound', async () => {
+    config.canvasMaxItems = 1;
+    axiosRequest
+      .mockResolvedValueOnce({
+        data: [{ id: 1, quiz_type: 'assignment' }],
+        headers: { link: '<https://canvas.example.edu/api/v1/courses/9/quizzes?page=2>; rel="next"' },
+      })
+      .mockResolvedValueOnce({ data: [{ id: 2, quiz_type: 'assignment' }], headers: {} });
+
+    await expect(getCanvasQuizzes(42, 9)).rejects.toThrow(/item|pagination/i);
+    expect(axiosRequest).toHaveBeenCalledTimes(2);
+    config.canvasMaxItems = 8;
+  });
+
+  it('fails when the shared pagination deadline expires', async () => {
+    config.canvasOperationTimeoutMs = 5;
+    axiosRequest.mockImplementation(() => new Promise(() => {}));
+
+    await expect(getCanvasQuizzes(42, 9)).rejects.toMatchObject({
+      name: 'CanvasDeadlineError',
+      code: 'CANVAS_DEADLINE_EXCEEDED',
+    });
+    config.canvasOperationTimeoutMs = 1_000;
   });
 });

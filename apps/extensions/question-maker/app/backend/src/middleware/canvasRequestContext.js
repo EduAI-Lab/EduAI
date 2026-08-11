@@ -8,21 +8,42 @@ const canvasRequestStorage = new AsyncLocalStorage();
 
 export function canvasRequestContext(req, res, next) {
   const controller = new AbortController();
+  let finished = false;
+  let cleaned = false;
   const abortForDisconnect = () => {
     if (!controller.signal.aborted) {
       controller.abort(new DOMException('Client disconnected', 'AbortError'));
     }
   };
   const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     req.off?.('aborted', abortForDisconnect);
-    res.off?.('finish', cleanup);
-    res.off?.('close', cleanup);
+    req.off?.('close', onRequestClose);
+    res.off?.('finish', onFinish);
+    res.off?.('close', onResponseClose);
+  };
+  const onFinish = () => {
+    finished = true;
+    cleanup();
+  };
+  const onRequestClose = () => {
+    if (!finished && !res.writableEnded) abortForDisconnect();
+    cleanup();
+  };
+  const onResponseClose = () => {
+    // `close` follows `finish` for a normal response. A close before the
+    // response is writable-ended is a caller/socket disconnect and must abort
+    // an in-flight upstream request.
+    if (!finished && !res.writableEnded) abortForDisconnect();
+    cleanup();
   };
 
   if (req.aborted) abortForDisconnect();
   else req.once?.('aborted', abortForDisconnect);
-  res.once?.('finish', cleanup);
-  res.once?.('close', cleanup);
+  req.once?.('close', onRequestClose);
+  res.once?.('finish', onFinish);
+  res.once?.('close', onResponseClose);
 
   canvasRequestStorage.run({ signal: controller.signal }, next);
 }
@@ -30,4 +51,3 @@ export function canvasRequestContext(req, res, next) {
 export function currentCanvasRequestSignal() {
   return canvasRequestStorage.getStore()?.signal;
 }
-
