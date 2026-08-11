@@ -7,6 +7,7 @@
 
 import { getPolicy } from '../services/policyService.js';
 import { resolveCoreCourseById } from '../services/courseResolver.js';
+import { authorizeLiveCoursePrincipal } from '../services/liveCoursePrincipal.js';
 import { isIP } from 'node:net';
 
 const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
@@ -255,12 +256,21 @@ export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
  * the `resolvedCoreCourse` fast path.
  */
 export async function isCourseAdmin(user, course, resolvedCoreCourse) {
-  if (user?.role === "ADMIN") return true;
+  if (user?.role === 'ADMIN') return true;
+  if (!['INSTRUCTOR', 'UNIT_ADMIN'].includes(user?.role)) return false;
+
+  // CourseInstructor is a synchronization mirror, not authority. Resolve the
+  // effective principal against Core before allowing any staff-only read or
+  // write. The optional Core course is still used for the fast UNIT_ADMIN
+  // department path; the principal helper performs the exact live instructor
+  // fallback when that path does not match.
   if (await isUnitAdminForCourse(user, course, resolvedCoreCourse)) return true;
-  if (
-    (user?.role === "INSTRUCTOR" || user?.role === "UNIT_ADMIN") &&
-    course?.instructors?.some((i) => i.userId === user.id)
-  )
-    return true;
-  return false;
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  return (
+    principal.state === 'allowed' &&
+    (principal.kind === 'ADMIN' ||
+      principal.kind === 'UNIT_ADMIN' ||
+      (principal.kind === 'INSTRUCTOR' &&
+        course?.instructors?.some((entry) => entry.userId === user.id)))
+  );
 }

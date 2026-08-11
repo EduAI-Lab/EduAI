@@ -15,10 +15,10 @@ import { isCoursePublishedLive } from '../services/courseResolver.js';
 import { sendSafeError } from '../utils/safeErrors.js';
 import { gateCourseThrough } from '../middleware/liveCoursePrincipal.js';
 import {
-  authorizeLiveStudentEnrollment,
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/enrollmentSync.js';
+import { authorizeLiveCoursePrincipal } from '../services/liveCoursePrincipal.js';
 
 const router = express.Router();
 
@@ -33,20 +33,25 @@ router.use(
   }),
 );
 
-async function requireLiveLearnerAccess(res, course, authUser, localRole) {
-  if (!['STUDENT', 'TA'].includes(localRole)) return true;
-  const result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
-    course,
-    allowedRoles: [localRole],
-  });
-  if (result.state === 'unavailable') {
-    res.status(503).json({
-      error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
-      code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
-    });
-    return false;
-  }
-  return result.allowed && result.role === localRole;
+async function getExactCourseMembership(course, authUser) {
+  const principal = await authorizeLiveCoursePrincipal(course, authUser);
+  const liveTa =
+    principal.state === 'allowed' &&
+    (principal.role === 'TA' ||
+      (authUser.role === 'TA' &&
+        principal.role !== null &&
+        course.enrollments?.some((entry) => entry.userId === authUser.id && entry.role === 'TA')));
+  return {
+    principal,
+    isInstructor:
+      principal.state === 'allowed' &&
+      principal.kind === 'INSTRUCTOR' &&
+      course.instructors?.some((entry) => entry.userId === authUser.id),
+    isTa: liveTa,
+    isStudent: principal.state === 'allowed' && principal.role === 'STUDENT',
+    isUnitAdmin: principal.state === 'allowed' && principal.kind === 'UNIT_ADMIN',
+    isAdmin: principal.state === 'allowed' && principal.kind === 'ADMIN',
+  };
 }
 
 router.get('/modules/:moduleId/lessons', async (req, res) => {
@@ -77,33 +82,30 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
       return res.status(404).json({ error: "Module not found" });
     }
 
-    const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = module.courseOffering.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    const isStudent = enrollment?.role === "STUDENT";
-    const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(module.courseOffering, authUser);
+    const {
+      principal,
+      isInstructor,
+      isTa,
+      isStudent,
+      isUnitAdmin: unitAdmin,
+      isAdmin,
+    } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : 'Course authorization unavailable',
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this module" });
     }
-    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
-      ? isTa
-        ? 'TA'
-        : isStudent
-          ? 'STUDENT'
-          : null
-      : null;
-    if (
-      localRole &&
-      !(await requireLiveLearnerAccess(res, module.courseOffering, authUser, localRole))
-    ) {
-      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this module' });
-      return;
-    }
-
     const scope = hasElevatedAccess ? { moduleId } : { moduleId, isPublished: true };
 
     // #1207: `search` narrows in SQL and is ANDed onto the visibility scope, so
@@ -233,35 +235,29 @@ router.get('/lessons/:lessonId', async (req, res) => {
     });
     if (!lesson) return res.status(404).json({ error: "Lesson not found" });
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const enrollment = lesson.module.courseOffering.enrollments.find(
-      (e) => e.userId === authUser.id,
-    );
-    const isTa = enrollment?.role === "TA";
-    const isStudent = enrollment?.role === "STUDENT";
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(lesson.module.courseOffering, authUser);
+    const {
+      principal,
+      isInstructor,
+      isTa,
+      isStudent,
+      isUnitAdmin: unitAdmin,
+      isAdmin,
+    } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : 'Course authorization unavailable',
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
-    }
-    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
-      ? isTa
-        ? 'TA'
-        : isStudent
-          ? 'STUDENT'
-          : null
-      : null;
-    if (
-      localRole &&
-      !(await requireLiveLearnerAccess(res, lesson.module.courseOffering, authUser, localRole))
-    ) {
-      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this lesson' });
-      return;
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: "Lesson is not published" });
@@ -321,27 +317,28 @@ router.get("/lessons/:lessonId/context", async (req, res) => {
 
     const { module } = lesson;
     const { courseOffering } = module;
-    const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = courseOffering.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    const isStudent = enrollment?.role === "STUDENT";
-    const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(courseOffering, authUser);
+    const {
+      principal,
+      isInstructor,
+      isTa,
+      isStudent,
+      isUnitAdmin: unitAdmin,
+      isAdmin,
+    } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : 'Course authorization unavailable',
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
 
     if (!hasElevatedAccess && !isStudent) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
-    }
-    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
-      ? isTa
-        ? 'TA'
-        : isStudent
-          ? 'STUDENT'
-          : null
-      : null;
-    if (localRole && !(await requireLiveLearnerAccess(res, courseOffering, authUser, localRole))) {
-      if (!res.headersSent) res.status(403).json({ error: 'Not authorized for this lesson' });
-      return;
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: "Lesson is not published" });

@@ -84,6 +84,11 @@ import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/sche
 import { getCoreCourseId } from '../utils/coreCourseId.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 import { gateCourseThrough } from '../middleware/liveCoursePrincipal.js';
+import {
+  authorizeLiveCoursePrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from '../services/liveCoursePrincipal.js';
 
 const router = express.Router();
 
@@ -145,6 +150,27 @@ async function getLiveStudentEnrollment(res, course, authUser, expectedRole) {
   }
 
   return result ?? { allowed: false, state: 'unavailable', role: null };
+}
+
+async function getExactCourseMembership(course, authUser) {
+  const principal = await authorizeLiveCoursePrincipal(course, authUser);
+  const liveTa =
+    principal.state === 'allowed' &&
+    (principal.role === 'TA' ||
+      (authUser.role === 'TA' &&
+        principal.role !== null &&
+        course.enrollments?.some((entry) => entry.userId === authUser.id && entry.role === 'TA')));
+  return {
+    principal,
+    isInstructor:
+      principal.state === 'allowed' &&
+      principal.kind === 'INSTRUCTOR' &&
+      course.instructors?.some((entry) => entry.userId === authUser.id),
+    isTa: liveTa,
+    isStudent: principal.state === 'allowed' && principal.role === 'STUDENT',
+    isUnitAdmin: principal.state === 'allowed' && principal.kind === 'UNIT_ADMIN',
+    isAdmin: principal.state === 'allowed' && principal.kind === 'ADMIN',
+  };
 }
 
 // The student may pick a secondary topic to focus on for an AI session;
@@ -477,40 +503,29 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
       return res.status(404).json({ error: "Lesson not found" });
     }
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const enrollment = lesson.module.courseOffering.enrollments.find(
-      (e) => e.userId === authUser.id,
-    );
-    const isTa = enrollment?.role === "TA";
-    const isStudent = enrollment?.role === "STUDENT";
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(lesson.module.courseOffering, authUser);
+    const {
+      principal,
+      isInstructor,
+      isTa,
+      isStudent,
+      isUnitAdmin: unitAdmin,
+      isAdmin,
+    } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : 'Course authorization unavailable',
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this lesson" });
-    }
-    const localRole = ['STUDENT', 'TA'].includes(authUser.role)
-      ? isTa
-        ? 'TA'
-        : isStudent
-          ? 'STUDENT'
-          : null
-      : null;
-    if (localRole) {
-      const liveEnrollment = await getLiveStudentEnrollment(
-        res,
-        lesson.module.courseOffering,
-        authUser,
-        localRole,
-      );
-      if (!liveEnrollment) return;
-      if (!liveEnrollment.allowed || liveEnrollment.role !== localRole) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
-      }
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: "Lesson is not published" });
@@ -818,10 +833,66 @@ router.post(
       }
 
       const targetCourse = targetLesson.module.courseOffering;
-      if (!(await isCourseAdmin(authUser, targetCourse))) {
+      const targetPrincipal = await authorizeLiveCoursePrincipal(targetCourse, authUser);
+      if (targetPrincipal.state === 'unavailable') {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (
+        targetPrincipal.state !== 'allowed' ||
+        (!['ADMIN', 'UNIT_ADMIN'].includes(targetPrincipal.kind) &&
+          !(
+            targetPrincipal.kind === 'INSTRUCTOR' &&
+            targetCourse.instructors?.some((entry) => entry.userId === authUser.id)
+          ))
+      ) {
         return res.status(403).json({ error: 'Not authorized for this lesson' });
       }
 
+      // Resolve only the source activity's parent course before loading any
+      // authored fields (answer/config/custom prompt). This metadata lookup is
+      // the boundary needed to perform exact live Core authorization first.
+      const sourceActivityMeta = await prisma.activity.findUnique({
+        where: { id: sourceActivityId },
+        select: {
+          id: true,
+          lesson: { select: { module: { select: { courseOfferingId: true } } } },
+        },
+      });
+      if (!sourceActivityMeta) {
+        return res.status(404).json({ error: 'Source activity not found' });
+      }
+
+      const sourceCourse = await prisma.courseOffering.findUnique({
+        where: { id: sourceActivityMeta.lesson.module.courseOfferingId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!sourceCourse) {
+        return res.status(404).json({ error: 'Source activity not found' });
+      }
+
+      const sourcePrincipal = await authorizeLiveCoursePrincipal(sourceCourse, authUser);
+      if (sourcePrincipal.state === 'unavailable') {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (
+        sourcePrincipal.state !== 'allowed' ||
+        (!['ADMIN', 'UNIT_ADMIN'].includes(sourcePrincipal.kind) &&
+          !(
+            sourcePrincipal.kind === 'INSTRUCTOR' &&
+            sourceCourse.instructors?.some((entry) => entry.userId === authUser.id)
+          ))
+      ) {
+        return res.status(403).json({ error: 'Not authorized for the source activity' });
+      }
+
+      // Source authorization has completed; only now read the full authored
+      // activity tree that includes answer/config/custom-prompt material.
       const sourceActivity = await prisma.activity.findUnique({
         where: { id: sourceActivityId },
         include: {
@@ -840,11 +911,6 @@ router.post(
       });
       if (!sourceActivity) {
         return res.status(404).json({ error: "Source activity not found" });
-      }
-
-      const sourceCourse = sourceActivity.lesson.module.courseOffering;
-      if (!(await isCourseAdmin(authUser, sourceCourse))) {
-        return res.status(403).json({ error: 'Not authorized for the source activity' });
       }
 
       const clone = await cloneActivityIntoLesson({
@@ -902,7 +968,21 @@ router.get(
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
-      if (!(await isCourseAdmin(authUser, course))) {
+      const destinationPrincipal = await authorizeLiveCoursePrincipal(course, authUser);
+      if (destinationPrincipal.state === 'unavailable') {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (
+        destinationPrincipal.state !== 'allowed' ||
+        (!['ADMIN', 'UNIT_ADMIN'].includes(destinationPrincipal.kind) &&
+          !(
+            destinationPrincipal.kind === 'INSTRUCTOR' &&
+            course.instructors?.some((entry) => entry.userId === authUser.id)
+          ))
+      ) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -942,6 +1022,37 @@ router.get(
         });
         manageableCourseIds = owned.map((c) => c.id);
       }
+
+      // Local CourseInstructor rows only identify candidate mirrors; they are
+      // never authority. Resolve every candidate source course against the
+      // live Core principal before querying any activity content.
+      const manageableCourses = await prisma.courseOffering.findMany({
+        where: { id: { in: manageableCourseIds } },
+        select: {
+          id: true,
+          coreOfferingId: true,
+          instructors: { select: { userId: true } },
+        },
+      });
+      const authorizedManageableCourses = [];
+      for (const candidate of manageableCourses) {
+        const principal = await authorizeLiveCoursePrincipal(candidate, authUser);
+        if (principal.state === 'unavailable') {
+          return res.status(503).json({
+            error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+            code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+          });
+        }
+        if (
+          principal.state === 'allowed' &&
+          (['ADMIN', 'UNIT_ADMIN'].includes(principal.kind) ||
+            (principal.kind === 'INSTRUCTOR' &&
+              candidate.instructors?.some((entry) => entry.userId === authUser.id)))
+        ) {
+          authorizedManageableCourses.push(candidate.id);
+        }
+      }
+      manageableCourseIds = authorizedManageableCourses;
 
       const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
@@ -1178,6 +1289,8 @@ router.post("/activities/:activityId/teach", async (req, res) => {
           knowledgeLevel: payload.knowledgeLevel,
           message: payload.message,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
@@ -1257,6 +1370,8 @@ router.post("/activities/:activityId/guide", async (req, res) => {
           message: payload.message,
           studentAnswer: payload.studentAnswer,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
@@ -1343,6 +1458,8 @@ router.post("/activities/:activityId/custom", async (req, res) => {
           message: payload.message,
           studentAnswer: payload.studentAnswer,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
@@ -1404,11 +1521,17 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    const unitAdmin = await isUnitAdminForCourse(authUser, course);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: "Not authorized for this activity" });
@@ -1505,9 +1628,18 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
     const course = submission.activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === 'TA';
-    if (!(await isCourseAdmin(authUser, course)) && !isTa) {
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
+    if (!isAdmin && !isInstructor && !unitAdmin && !isTa) {
       return res.status(403).json({ error: 'Not authorized for this submission' });
     }
     if (isTa) {
@@ -1572,11 +1704,17 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    const unitAdmin = await isUnitAdminForCourse(authUser, course);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === 'unavailable') {
+      const learner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: "Not authorized for this activity" });

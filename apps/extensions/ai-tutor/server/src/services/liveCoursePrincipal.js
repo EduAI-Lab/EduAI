@@ -20,11 +20,21 @@ export async function authorizeLiveCoursePrincipal(course, user) {
     const authorizedUnits = Array.isArray(user.authorizedUnits) ? user.authorizedUnits : [];
     const allowed =
       typeof coreCourse?.department === 'string' && authorizedUnits.includes(coreCourse.department);
-    return {
-      state: allowed ? 'allowed' : 'denied',
-      kind: allowed ? 'UNIT_ADMIN' : null,
-      role: null,
-    };
+    if (allowed) return { state: 'allowed', kind: 'UNIT_ADMIN', role: null };
+
+    // A UNIT_ADMIN may also be the live instructor of a course outside their
+    // configured unit.  Resolve that relationship through Core before
+    // consulting the local CourseInstructor mirror; a stale local assignment
+    // must not grant authoring access after a demotion.
+    const live = await authorizeLiveStudentEnrollment(course.id, user.id, {
+      course,
+      allowedRoles: ['INSTRUCTOR'],
+    });
+    const liveState = live.state ?? (live.allowed ? 'allowed' : 'denied');
+    if (liveState !== 'allowed' || live.role !== 'INSTRUCTOR') {
+      return { state: liveState, kind: null, role: live.role };
+    }
+    return { state: 'allowed', kind: 'INSTRUCTOR', role: 'INSTRUCTOR' };
   }
 
   const allowedRoles = user.role === 'INSTRUCTOR' ? ['INSTRUCTOR'] : ['STUDENT', 'TA'];
@@ -32,7 +42,8 @@ export async function authorizeLiveCoursePrincipal(course, user) {
     course,
     allowedRoles,
   });
-  if (live.state !== 'allowed') return { state: live.state, kind: null, role: live.role };
+  const liveState = live.state ?? (live.allowed ? 'allowed' : 'denied');
+  if (liveState !== 'allowed') return { state: liveState, kind: null, role: live.role };
 
   if (user.role === 'INSTRUCTOR' && live.role !== 'INSTRUCTOR') {
     return { state: 'denied', kind: null, role: live.role };

@@ -161,8 +161,13 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
               position: activity.position,
               lessonId: createdLesson.id,
               promptTemplateId: activity.promptTemplateId,
+              customPrompt: activity.customPrompt,
+              customPromptTitle: activity.customPromptTitle,
               config: activity.config,
               mainTopicId: targetMainTopicId,
+              enableTeachMode: activity.enableTeachMode,
+              enableGuideMode: activity.enableGuideMode,
+              enableCustomMode: activity.enableCustomMode,
               secondaryTopics:
                 mappedSecondaryIds.length > 0
                   ? {
@@ -281,8 +286,13 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
             position: activity.position,
             lessonId: createdLesson.id,
             promptTemplateId: activity.promptTemplateId,
+            customPrompt: activity.customPrompt,
+            customPromptTitle: activity.customPromptTitle,
             config: activity.config,
             mainTopicId: targetMainTopicId,
+            enableTeachMode: activity.enableTeachMode,
+            enableGuideMode: activity.enableGuideMode,
+            enableCustomMode: activity.enableCustomMode,
             secondaryTopics:
               mappedSecondaryIds.length > 0
                 ? {

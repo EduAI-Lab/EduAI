@@ -166,6 +166,51 @@ describe('activity auth hardening', () => {
     expect(res.body.data[0].answer).toBe(1);
   });
 
+  it('does not let a platform STUDENT use a stale CourseInstructor mirror for answers', async () => {
+    await createActivity();
+    const student = makeStudent();
+    await enroll(student, 'STUDENT');
+    await prisma.courseInstructor.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'LEAD' },
+    });
+
+    const res = await request(await createApp({ mockUser: student })).get(
+      `/api/lessons/${seed.lesson.id}/activities`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data[0]).not.toHaveProperty('answer');
+  });
+
+  it('does not let a platform STUDENT use a stale CourseInstructor mirror for staff reads', async () => {
+    const activity = await createActivity();
+    const student = makeStudent();
+    await enroll(student, 'STUDENT');
+    await prisma.courseInstructor.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'LEAD' },
+    });
+    const submission = await prisma.submission.create({
+      data: {
+        activityId: activity.id,
+        userId: student.id,
+        attemptNumber: 1,
+        response: { answerOption: 0 },
+        aiFeedback: { message: 'Try again.' },
+        isCorrect: false,
+      },
+    });
+    await prisma.activityFeedback.create({
+      data: { activityId: activity.id, userId: student.id, submissionId: submission.id, rating: 2 },
+    });
+
+    const app = await createApp({ mockUser: student });
+    const submissions = await request(app).get(`/api/activities/${activity.id}/submissions`);
+    const feedback = await request(app).get(`/api/activities/${activity.id}/feedback`);
+
+    expect(submissions.status).toBe(403);
+    expect(feedback.status).toBe(403);
+  });
+
   it.each(['teach', 'guide', 'custom'])(
     'rejects a platform STUDENT with a TA enrollment from /%s',
     async (mode) => {

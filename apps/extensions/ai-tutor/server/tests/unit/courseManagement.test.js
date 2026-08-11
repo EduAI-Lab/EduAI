@@ -11,6 +11,7 @@ const cloneLessonsFromOffering = vi.fn();
 const resolveCoreCourseCatalog = vi.fn();
 const resolveCoreCourseById = vi.fn();
 const setCoreCoursePublishState = vi.fn();
+const authorizeLiveCoursePrincipal = vi.fn();
 
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
@@ -19,10 +20,6 @@ vi.mock('../../src/config/database.js', () => ({
     lesson: { findMany: lessonFindMany },
     $transaction: transaction,
   },
-}));
-
-vi.mock('../../src/middleware/auth.js', () => ({
-  isCourseAdmin: (...args) => isCourseAdmin(...args),
 }));
 
 vi.mock('../../src/services/courseCloning.js', () => ({
@@ -39,6 +36,12 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   setCoreCoursePublishState: (...args) => setCoreCoursePublishState(...args),
 }));
 
+vi.mock('../../src/services/liveCoursePrincipal.js', () => ({
+  authorizeLiveCoursePrincipal: (...args) => authorizeLiveCoursePrincipal(...args),
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE: 'COURSE_AUTH_UNAVAILABLE',
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE: 'Course authorization unavailable',
+}));
+
 const {
   CourseMutationError,
   importCourseContentForUser,
@@ -52,6 +55,11 @@ const destination = { id: 20, coreOfferingId: 'core-20', instructors: [{ userId:
 beforeEach(() => {
   vi.clearAllMocks();
   isCourseAdmin.mockResolvedValue(true);
+  authorizeLiveCoursePrincipal.mockResolvedValue({
+    state: 'allowed',
+    kind: 'INSTRUCTOR',
+    role: 'INSTRUCTOR',
+  });
   courseFindUnique.mockResolvedValue(destination);
   moduleCount.mockResolvedValue(1);
   moduleFindUnique.mockResolvedValue({ courseOfferingId: 20 });
@@ -86,11 +94,72 @@ describe('course authoring service boundaries', () => {
       user,
     });
 
-    expect(isCourseAdmin).toHaveBeenCalled();
+    expect(authorizeLiveCoursePrincipal).toHaveBeenCalled();
     expect(moduleCount).toHaveBeenCalledWith({
       where: { id: { in: [3] }, courseOfferingId: 10 },
     });
     expect(cloneCourseContent).toHaveBeenCalledWith(10, 20, { moduleIds: [3] });
+  });
+
+  it('maps a live Core outage to 503 before reading source content or writing', async () => {
+    authorizeLiveCoursePrincipal.mockResolvedValueOnce({
+      state: 'unavailable',
+      kind: null,
+      role: null,
+    });
+
+    await expect(
+      importCourseContentForUser({
+        courseId: 20,
+        body: { sourceCourseId: 10, moduleIds: [3] },
+        user,
+      }),
+    ).rejects.toMatchObject({ status: 503, code: 'COURSE_AUTH_UNAVAILABLE' });
+
+    expect(moduleCount).not.toHaveBeenCalled();
+    expect(cloneCourseContent).not.toHaveBeenCalled();
+    expect(cloneLessonsFromOffering).not.toHaveBeenCalled();
+  });
+
+  it('authorizes every source before cloning any selected content', async () => {
+    const sourceModuleCourse = {
+      id: 10,
+      coreOfferingId: 'core-10',
+      instructors: [{ userId: user.id }],
+    };
+    const sourceLessonCourse = {
+      id: 11,
+      coreOfferingId: 'core-11',
+      instructors: [{ userId: user.id }],
+    };
+    courseFindUnique
+      .mockResolvedValueOnce(destination)
+      .mockResolvedValueOnce(sourceModuleCourse)
+      .mockResolvedValueOnce(sourceLessonCourse);
+    authorizeLiveCoursePrincipal
+      .mockResolvedValueOnce({ state: 'allowed', kind: 'INSTRUCTOR', role: 'INSTRUCTOR' })
+      .mockResolvedValueOnce({ state: 'allowed', kind: 'INSTRUCTOR', role: 'INSTRUCTOR' })
+      .mockResolvedValueOnce({ state: 'denied', kind: null, role: 'STUDENT' });
+    lessonFindMany.mockResolvedValue([
+      { id: 4, module: { courseOfferingId: sourceLessonCourse.id } },
+    ]);
+
+    await expect(
+      importCourseContentForUser({
+        courseId: destination.id,
+        body: {
+          sourceCourseId: sourceModuleCourse.id,
+          moduleIds: [3],
+          lessonIds: [4],
+          targetModuleId: 30,
+        },
+        user,
+      }),
+    ).rejects.toMatchObject({ status: 403, message: 'Not authorized for lesson source course' });
+
+    expect(cloneCourseContent).not.toHaveBeenCalled();
+    expect(cloneLessonsFromOffering).not.toHaveBeenCalled();
+    expect(moduleCount).not.toHaveBeenCalled();
   });
 
   it('writes Core publish state and atomically cascades unpublish', async () => {
@@ -127,7 +196,7 @@ describe('course authoring service boundaries', () => {
   });
 
   it('preserves a stable authorization error for publish', async () => {
-    isCourseAdmin.mockResolvedValue(false);
+    authorizeLiveCoursePrincipal.mockResolvedValue({ state: 'denied', kind: null, role: null });
 
     await expect(publishCourseForUser({ courseId: 20, user })).rejects.toBeInstanceOf(
       CourseMutationError,

@@ -8,10 +8,14 @@
  */
 
 import { prisma } from '../config/database.js';
-import { isCourseAdmin } from '../middleware/auth.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from './courseCloning.js';
-import { resolveCoreCourseById, resolveCoreCourseCatalog } from './courseResolver.js';
+import { resolveCoreCourseById } from './courseResolver.js';
 import { setCoreCoursePublishState } from './eduaiClient.js';
+import {
+  authorizeLiveCoursePrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from './liveCoursePrincipal.js';
 
 export class CourseMutationError extends Error {
   constructor(message, status = 400, code) {
@@ -68,52 +72,43 @@ async function loadCourseForAdmin(
   return course;
 }
 
+async function requireLiveCourseAdmin(course, user, message = 'Not authorized for this course') {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === 'unavailable') {
+    throw new CourseMutationError(
+      LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      503,
+      LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    );
+  }
+  if (
+    principal.state !== 'allowed' ||
+    (!['ADMIN', 'UNIT_ADMIN'].includes(principal.kind) &&
+      !(
+        principal.kind === 'INSTRUCTOR' &&
+        course.instructors?.some((entry) => entry.userId === user.id)
+      ))
+  ) {
+    throw new CourseMutationError(message, 403);
+  }
+  return principal;
+}
+
 /** Clone selected modules/lessons after validating every course boundary. */
 export async function importCourseContentForUser({ courseId, body, user }) {
   const { normalizedModuleIds, normalizedLessonIds, numericTargetModuleId, numericSourceCourseId } =
     normalizeImportRequest(body);
 
-  // UNIT_ADMIN department checks resolve from one Core catalog reused for every
-  // source/destination course. Other roles retain the existing lazy path.
-  let catalogById = null;
-  if (user.role === 'UNIT_ADMIN') {
-    const { courses: catalogCourses } = await resolveCoreCourseCatalog();
-    catalogById = new Map(catalogCourses.map((course) => [course.id, course]));
-  }
-  const resolveFromCatalog = (row) =>
-    catalogById ? (catalogById.get(row?.coreOfferingId) ?? null) : undefined;
-
   const destination = await loadCourseForAdmin(courseId);
-  if (!(await isCourseAdmin(user, destination, resolveFromCatalog(destination)))) {
-    throw new CourseMutationError('Not authorized for this course', 403);
-  }
+  await requireLiveCourseAdmin(destination, user);
 
-  if (normalizedModuleIds.length > 0) {
-    if (numericSourceCourseId === null) {
-      throw new CourseMutationError('sourceCourseId required when importing modules');
-    }
-    const sourceCourse = await loadCourseForAdmin(
-      numericSourceCourseId,
-      'Not authorized for source course',
-      403,
-    );
-    if (!(await isCourseAdmin(user, sourceCourse, resolveFromCatalog(sourceCourse)))) {
-      throw new CourseMutationError('Not authorized for source course', 403);
-    }
-    const moduleCount = await prisma.module.count({
-      where: {
-        id: { in: normalizedModuleIds },
-        courseOfferingId: numericSourceCourseId,
-      },
-    });
-    if (moduleCount !== normalizedModuleIds.length) {
-      throw new CourseMutationError('One or more modules do not belong to source course');
-    }
-    await cloneCourseContent(numericSourceCourseId, courseId, {
-      moduleIds: normalizedModuleIds,
-    });
+  // Validate request shape and resolve only relationship metadata first. No
+  // source authored content is read until every distinct source course has
+  // passed the live Core principal check below.
+  if (normalizedModuleIds.length > 0 && numericSourceCourseId === null) {
+    throw new CourseMutationError('sourceCourseId required when importing modules');
   }
-
+  let lessonSources = null;
   if (normalizedLessonIds.length > 0) {
     if (numericTargetModuleId === null || !Number.isFinite(numericTargetModuleId)) {
       throw new CourseMutationError('targetModuleId required when importing lessons');
@@ -126,6 +121,58 @@ export async function importCourseContentForUser({ courseId, body, user }) {
       throw new CourseMutationError('targetModuleId does not belong to destination course');
     }
 
+    // First resolve only the parent course ids. This metadata lookup lets us
+    // authorize every exact source course before loading lesson content.
+    lessonSources = await prisma.lesson.findMany({
+      where: { id: { in: normalizedLessonIds } },
+      select: { id: true, module: { select: { courseOfferingId: true } } },
+    });
+    if (lessonSources.length !== normalizedLessonIds.length) {
+      throw new CourseMutationError('One or more lessons were not found');
+    }
+  }
+
+  const sourceCourseIds = new Set(
+    [
+      normalizedModuleIds.length > 0 ? numericSourceCourseId : null,
+      ...(lessonSources ?? []).map((lesson) => lesson.module.courseOfferingId),
+    ].filter((id) => id !== null),
+  );
+  for (const sourceCourseId of sourceCourseIds) {
+    const sourceCourse = await loadCourseForAdmin(
+      sourceCourseId,
+      normalizedModuleIds.length > 0 && sourceCourseId === numericSourceCourseId
+        ? 'Not authorized for source course'
+        : 'Not authorized for lesson source course',
+      403,
+    );
+    await requireLiveCourseAdmin(
+      sourceCourse,
+      user,
+      normalizedModuleIds.length > 0 && sourceCourseId === numericSourceCourseId
+        ? 'Not authorized for source course'
+        : 'Not authorized for lesson source course',
+    );
+  }
+
+  let moduleImport = null;
+  let lessonImport = null;
+  if (normalizedModuleIds.length > 0) {
+    const moduleCount = await prisma.module.count({
+      where: {
+        id: { in: normalizedModuleIds },
+        courseOfferingId: numericSourceCourseId,
+      },
+    });
+    if (moduleCount !== normalizedModuleIds.length) {
+      throw new CourseMutationError('One or more modules do not belong to source course');
+    }
+    moduleImport = { sourceCourseId: numericSourceCourseId, moduleIds: normalizedModuleIds };
+  }
+  if (normalizedLessonIds.length > 0) {
+    // Only after every source course passes live authorization do we load the
+    // authored lesson tree. All request validation is complete before either
+    // clone transaction starts, so a denied source cannot leave partial writes.
     const lessons = await prisma.lesson.findMany({
       where: { id: { in: normalizedLessonIds } },
       include: { module: { select: { courseOfferingId: true } } },
@@ -133,19 +180,16 @@ export async function importCourseContentForUser({ courseId, body, user }) {
     if (lessons.length !== normalizedLessonIds.length) {
       throw new CourseMutationError('One or more lessons were not found');
     }
+    lessonImport = { lessonIds: normalizedLessonIds, targetModuleId: numericTargetModuleId };
+  }
 
-    const sourceCourseIds = new Set(lessons.map((lesson) => lesson.module.courseOfferingId));
-    for (const sourceCourseId of sourceCourseIds) {
-      const sourceCourse = await loadCourseForAdmin(
-        sourceCourseId,
-        'Not authorized for lesson source course',
-        403,
-      );
-      if (!(await isCourseAdmin(user, sourceCourse, resolveFromCatalog(sourceCourse)))) {
-        throw new CourseMutationError('Not authorized for lesson source course', 403);
-      }
-    }
-    await cloneLessonsFromOffering(normalizedLessonIds, numericTargetModuleId);
+  if (moduleImport) {
+    await cloneCourseContent(moduleImport.sourceCourseId, courseId, {
+      moduleIds: moduleImport.moduleIds,
+    });
+  }
+  if (lessonImport) {
+    await cloneLessonsFromOffering(lessonImport.lessonIds, lessonImport.targetModuleId);
   }
 
   return prisma.courseOffering.findUnique({
@@ -166,9 +210,7 @@ export async function importCourseContentForUser({ courseId, body, user }) {
 
 async function resolvePublishWrite(courseId, user, published, cookie) {
   const course = await loadCourseForAdmin(courseId);
-  if (!(await isCourseAdmin(user, course))) {
-    throw new CourseMutationError('Not authorized for this course', 403);
-  }
+  await requireLiveCourseAdmin(course, user);
 
   if (course.coreOfferingId) {
     await setCoreCoursePublishState(course.coreOfferingId, published, { cookie });

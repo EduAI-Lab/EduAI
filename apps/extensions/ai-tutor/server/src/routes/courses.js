@@ -109,6 +109,7 @@ import {
 import { listAdminBugReports } from '../services/bugReports.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
+import { authorizeLiveCoursePrincipal } from '../services/liveCoursePrincipal.js';
 
 const router = express.Router();
 
@@ -116,6 +117,26 @@ router.use('/courses/:courseId', gateCourseById());
 
 const COURSE_COLLECTION_AUTH_UNAVAILABLE_CODE = 'COURSE_COLLECTION_AUTH_UNAVAILABLE';
 const COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE = 'Course collection authorization unavailable';
+
+async function resolveCourseStaffMembership(course, authUser) {
+  const principal = await authorizeLiveCoursePrincipal(course, authUser);
+  const liveTa =
+    principal.state === 'allowed' &&
+    (principal.role === 'TA' ||
+      (authUser.role === 'TA' &&
+        principal.role !== null &&
+        course.enrollments?.some((entry) => entry.userId === authUser.id && entry.role === 'TA')));
+  return {
+    principal,
+    hasAdminAccess:
+      principal.state === 'allowed' &&
+      (principal.kind === 'ADMIN' ||
+        principal.kind === 'UNIT_ADMIN' ||
+        (principal.kind === 'INSTRUCTOR' &&
+          course.instructors?.some((entry) => entry.userId === authUser.id))),
+    isTa: liveTa,
+  };
+}
 
 async function resolveCourseCollectionContext(req, res) {
   const authUser = req.user;
@@ -915,9 +936,14 @@ router.get("/courses/:courseId/feedback", async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: "Course not found" });
 
-    const hasAdminAccess = await isCourseAdmin(authUser, course);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
+    const membership = await resolveCourseStaffMembership(course, authUser);
+    if (membership.principal.state === 'unavailable') {
+      return res.status(503).json({
+        error: 'Course authorization unavailable',
+        code: 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
+    const { hasAdminAccess, isTa } = membership;
     if (!hasAdminAccess && !isTa) {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
@@ -978,9 +1004,14 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: "Course not found" });
 
-    const hasAdminAccess = await isCourseAdmin(authUser, course);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
+    const membership = await resolveCourseStaffMembership(course, authUser);
+    if (membership.principal.state === 'unavailable') {
+      return res.status(503).json({
+        error: 'Course authorization unavailable',
+        code: 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
+    const { hasAdminAccess, isTa } = membership;
     if (!hasAdminAccess && !isTa) {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
@@ -1090,9 +1121,14 @@ router.get("/courses/:courseId/student-metrics", async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: "Course not found" });
 
-    const hasAdminAccess = await isCourseAdmin(authUser, course);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
+    const membership = await resolveCourseStaffMembership(course, authUser);
+    if (membership.principal.state === 'unavailable') {
+      return res.status(503).json({
+        error: 'Course authorization unavailable',
+        code: 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
+    const { hasAdminAccess, isTa } = membership;
     if (!hasAdminAccess && !isTa) {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
@@ -1145,9 +1181,14 @@ router.get("/courses/:courseId/analytics", async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: "Course not found" });
 
-    const hasAdminAccess = await isCourseAdmin(authUser, course);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
+    const membership = await resolveCourseStaffMembership(course, authUser);
+    if (membership.principal.state === 'unavailable') {
+      return res.status(503).json({
+        error: 'Course authorization unavailable',
+        code: 'COURSE_AUTH_UNAVAILABLE',
+      });
+    }
+    const { hasAdminAccess, isTa } = membership;
     if (!hasAdminAccess && !isTa) {
       return res.status(403).json({ error: "Not authorized for this course" });
     }
