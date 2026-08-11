@@ -24,16 +24,18 @@ import internalRoutes from './routes/internal.js';
 import { config } from './config/settings.js';
 import { checkDatabaseReadiness } from './config/database.js';
 import { logger } from './utils/logger.js';
+import { csrfOriginGuard } from './middleware/csrfOrigin.js';
 
 const app = express();
 
 app.use(helmet());
-app.use(
-  cors({
-    origin: config.corsOrigins,
-    credentials: true,
-  }),
-);
+// Must run before body parsing and route handlers so a cross-site simple form
+// cannot reach a mutating cookie-authenticated endpoint.
+app.use(csrfOriginGuard);
+app.use(cors({
+  origin: config.corsOrigins,
+  credentials: true
+}));
 
 if (config.nodeEnv === "production") {
   const limiter = rateLimit({
@@ -63,7 +65,7 @@ const pinoHttpConfig = {
       statusCode: res.statusCode,
     }),
   },
-  customLogLevel: (req, res, err) => {
+  customLogLevel: (req, res) => {
     if (res.statusCode >= 500) {
       return "error";
     } else if (res.statusCode >= 400) {
@@ -76,8 +78,10 @@ const pinoHttpConfig = {
   customSuccessMessage: (req, res) => {
     return `${req.method} ${req.url} ${res.statusCode}`;
   },
-  customErrorMessage: (req, res, err) => {
-    return `${req.method} ${req.url} ${res.statusCode} - ${err.message}`;
+  customErrorMessage: (req, res) => {
+    // Keep request logs free of upstream/internal error messages; route-level
+    // handlers already record only stable error metadata.
+    return `${req.method} ${req.url} ${res.statusCode}`;
   },
   autoLogging: {
     ignore: (req) => {

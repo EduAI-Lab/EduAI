@@ -267,7 +267,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
           );
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
-    // Core unreachable — list still works without department enrichment.
+    // Core unreachable — linked-course access must fail closed below.
   }
 
   if (reqUser.role === "ADMIN") {
@@ -425,7 +425,8 @@ async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
       accessMirrorHealthy = await syncCourseAccessMirror(reqUser, cookie);
     } catch {
       // Do not use stale grants after a failed refresh. Linked-course owners
-      // retain the documented fallback, while non-owners fail closed.
+      // and non-owners both fail closed; only explicitly unlinked QM-native
+      // courses use the local-owner branch below.
       accessMirrorHealthy = false;
       accessSyncedAtByUser.set(reqUser.id, { refreshedAt: Date.now(), healthy: false });
     }
@@ -515,15 +516,15 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
 
   const courses = rows.map((course) => {
     const grant = course.accessGrants?.[0];
-    const accessLevel =
-      reqUser.role === "ADMIN"
-        ? "admin"
-        : grant?.department && authorizedUnits.includes(grant.department)
-          ? "unit"
-          : grant?.role === "INSTRUCTOR" || reqUser.id === course.userId
-            ? "instructor"
-            : null;
-    const { accessGrants, ...plainCourse } = course;
+    const accessLevel = reqUser.role === 'ADMIN'
+      ? 'admin'
+      : grant?.department && authorizedUnits.includes(grant.department)
+        ? 'unit'
+        : grant?.role === 'INSTRUCTOR' || reqUser.id === course.userId
+          ? 'instructor'
+          : null;
+    const plainCourse = { ...course };
+    delete plainCourse.accessGrants;
     return { ...plainCourse, accessLevel };
   });
 

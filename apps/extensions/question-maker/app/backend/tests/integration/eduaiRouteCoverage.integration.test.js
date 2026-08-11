@@ -11,8 +11,16 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
-const { mockFindCoursesByProjectedCode, mockEnrollments, eduaiService } = vi.hoisted(() => ({
+const {
+  mockFindCoursesByProjectedCode,
+  mockListCoursesForUser,
+  mockCourseFindMany,
+  mockEnrollments,
+  eduaiService,
+} = vi.hoisted(() => ({
   mockFindCoursesByProjectedCode: vi.fn(),
+  mockListCoursesForUser: vi.fn(),
+  mockCourseFindMany: vi.fn(),
   mockEnrollments: vi.fn(),
   eduaiService: {
     chat: vi.fn(),
@@ -42,6 +50,13 @@ vi.mock("../../src/config/settings.js", () => {
 
 vi.mock("../../src/services/courseListService.js", () => ({
   findCoursesByProjectedCode: mockFindCoursesByProjectedCode,
+  listCoursesForUser: mockListCoursesForUser,
+}));
+
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findMany: mockCourseFindMany },
+  },
 }));
 
 vi.mock("../../src/services/coreApiService.js", () => ({
@@ -82,7 +97,11 @@ function accessibleCourse(overrides = {}) {
   return course;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockListCoursesForUser.mockResolvedValue([]);
+  mockCourseFindMany.mockResolvedValue([]);
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe("POST /api/eduai/chat", () => {
@@ -135,7 +154,7 @@ describe("POST /api/eduai/chat", () => {
     );
   });
 
-  it("returns 500 with error details when eduaiService.chat throws", async () => {
+  it('returns a stable error without upstream details when eduaiService.chat throws', async () => {
     authAs(INSTRUCTOR);
     accessibleCourse();
     eduaiService.chat.mockRejectedValue(new Error("provider down"));
@@ -146,7 +165,10 @@ describe("POST /api/eduai/chat", () => {
       .send({ messages: [{ role: "user", content: "hi" }], courseCode: "COSC 101" });
 
     expect(res.status).toBe(500);
-    expect(res.body.details).toBe("provider down");
+    expect(res.body.error).toBe('Failed to process chat request');
+    expect(res.body.code).toBe('EDUAI_CHAT_FAILED');
+    expect(res.body.details).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('provider down');
   });
 });
 
@@ -194,7 +216,24 @@ describe("POST /api/eduai/generate-questions", () => {
     expect(call).not.toHaveProperty("mcqRequiredChoiceCount");
   });
 
-  it("surfaces a detailed AI error message as the main error", async () => {
+  it('returns a stable error without upstream details when generation fails', async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    eduaiService.generateQuestions.mockRejectedValue(new Error('The model refused: unsafe content'));
+
+    const res = await request(app)
+      .post('/api/eduai/generate-questions')
+      .set('Cookie', 'session=v')
+      .send({ prompt: 'x', courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('Failed to generate questions');
+    expect(res.body.code).toBe('EDUAI_GENERATION_FAILED');
+    expect(res.body.aiErrorReason).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('unsafe content');
+  });
+
+  it('returns the same stable error for internal wrapper failures', async () => {
     authAs(INSTRUCTOR);
     accessibleCourse();
     eduaiService.generateQuestions.mockRejectedValue(
@@ -207,53 +246,61 @@ describe("POST /api/eduai/generate-questions", () => {
       .send({ prompt: "x", courseCode: "COSC 101" });
 
     expect(res.status).toBe(500);
-    expect(res.body.error).toBe("The model refused: unsafe content");
-    expect(res.body.aiErrorReason).toBe("The model refused: unsafe content");
-  });
-
-  it("falls back to a generic error for the internal wrapper message", async () => {
-    authAs(INSTRUCTOR);
-    accessibleCourse();
-    eduaiService.generateQuestions.mockRejectedValue(
-      new Error("EduAI question generation failed: 503"),
-    );
-
-    const res = await request(app)
-      .post("/api/eduai/generate-questions")
-      .set("Cookie", "session=v")
-      .send({ prompt: "x", courseCode: "COSC 101" });
-
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("Failed to generate questions");
+    expect(res.body.error).toBe('Failed to generate questions');
+    expect(res.body.code).toBe('EDUAI_GENERATION_FAILED');
     expect(res.body.aiErrorReason).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('503');
   });
 });
 
-describe("GET /api/eduai/courses", () => {
-  it("returns the EduAI course catalog", async () => {
+describe('GET /api/eduai/courses', () => {
+  it('returns only the caller-scoped QM/Core course catalog', async () => {
     authAs(INSTRUCTOR);
-    eduaiService.listCourses.mockResolvedValue([{ id: "c1" }]);
+    mockListCoursesForUser.mockResolvedValue([
+      { id: 1, coreCourseId: 'c1', name: 'Visible', code: 'COSC 101', department: 'COSC' },
+      { id: 3, coreCourseId: null, name: 'Unlinked' },
+    ]);
 
     const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual([{ id: "c1" }]);
+    expect(res.body.data).toEqual([{
+      id: 'c1',
+      name: 'Visible',
+      code: 'COSC 101',
+      department: 'COSC',
+      term: null,
+      year: null,
+      description: null,
+      isPublished: null,
+    }]);
+    expect(mockListCoursesForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ id: INSTRUCTOR.id, role: INSTRUCTOR.role }),
+      { cookie: 'session=v' },
+    );
+    expect(eduaiService.listCourses).not.toHaveBeenCalled();
   });
 
   it("returns 500 when the catalog fetch fails", async () => {
     authAs(INSTRUCTOR);
-    eduaiService.listCourses.mockRejectedValue(new Error("unreachable"));
+    mockListCoursesForUser.mockRejectedValue(new Error('unreachable'));
 
     const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
 
     expect(res.status).toBe(500);
+    expect(res.body.details).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('unreachable');
   });
 });
 
 describe("GET /api/eduai/courses/:courseId/topics", () => {
   it("returns topics for the course", async () => {
     authAs(INSTRUCTOR);
-    eduaiService.getCourseTopics.mockResolvedValue([{ id: "t1" }]);
+    mockCourseFindMany.mockResolvedValue([{ id: 1, userId: INSTRUCTOR.id, coreCourseId: 'c1' }]);
+    mockEnrollments.mockResolvedValue({
+      enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }],
+    });
+    eduaiService.getCourseTopics.mockResolvedValue([{ id: 't1' }]);
 
     const res = await request(app).get("/api/eduai/courses/c1/topics").set("Cookie", "session=v");
 
@@ -261,13 +308,42 @@ describe("GET /api/eduai/courses/:courseId/topics", () => {
     expect(res.body.data).toEqual([{ id: "t1" }]);
   });
 
-  it("returns 500 when the topics fetch fails", async () => {
+  it('does not probe topics for a course the caller cannot access', async () => {
     authAs(INSTRUCTOR);
-    eduaiService.getCourseTopics.mockRejectedValue(new Error("unreachable"));
+    mockCourseFindMany.mockResolvedValue([{ id: 1, userId: 'other-owner', coreCourseId: 'c1' }]);
+    mockEnrollments.mockResolvedValue({ enrollments: [] });
+
+    const res = await request(app).get('/api/eduai/courses/c1/topics').set('Cookie', 'session=v');
+
+    expect(res.status).toBe(404);
+    expect(eduaiService.getCourseTopics).not.toHaveBeenCalled();
+  });
+
+  it('denies the linked local owner when Core returns an empty roster', async () => {
+    authAs(INSTRUCTOR);
+    mockCourseFindMany.mockResolvedValue([{ id: 1, userId: INSTRUCTOR.id, coreCourseId: 'c1' }]);
+    mockEnrollments.mockResolvedValue({ enrollments: [] });
+
+    const res = await request(app).get('/api/eduai/courses/c1/topics').set('Cookie', 'session=v');
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('COURSE_NOT_FOUND');
+    expect(eduaiService.getCourseTopics).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when the topics fetch fails', async () => {
+    authAs(INSTRUCTOR);
+    mockCourseFindMany.mockResolvedValue([{ id: 1, userId: INSTRUCTOR.id, coreCourseId: 'c1' }]);
+    mockEnrollments.mockResolvedValue({
+      enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }],
+    });
+    eduaiService.getCourseTopics.mockRejectedValue(new Error('unreachable'));
 
     const res = await request(app).get("/api/eduai/courses/c1/topics").set("Cookie", "session=v");
 
     expect(res.status).toBe(500);
+    expect(res.body.details).toBeUndefined();
+    expect(res.body.code).toBe('EDUAI_COURSE_TOPICS_FAILED');
   });
 });
 
@@ -290,7 +366,7 @@ describe("POST /api/eduai/test-api-key", () => {
     expect(res.body).toMatchObject({ success: true, provider: "google", data: { ping: "pong" } });
   });
 
-  it("returns 400 with the provider error on failure", async () => {
+  it('returns 400 with a stable error when the provider probe fails', async () => {
     authAs(INSTRUCTOR);
     eduaiService.testApiKey.mockResolvedValue({
       success: false,
@@ -305,7 +381,14 @@ describe("POST /api/eduai/test-api-key", () => {
       .send({});
 
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ success: false, provider: "vllm", error: "unauthorized" });
+    expect(res.body).toMatchObject({
+      success: false,
+      provider: 'vllm',
+      error: 'EduAI API key test failed',
+      code: 'EDUAI_API_KEY_TEST_REJECTED',
+      statusCode: 401,
+    });
+    expect(JSON.stringify(res.body)).not.toContain('unauthorized');
   });
 
   it("returns 500 when the probe throws", async () => {
@@ -318,6 +401,9 @@ describe("POST /api/eduai/test-api-key", () => {
       .send({});
 
     expect(res.status).toBe(500);
+    expect(res.body.details).toBeUndefined();
+    expect(res.body.code).toBe('EDUAI_API_KEY_TEST_FAILED');
+    expect(JSON.stringify(res.body)).not.toContain('network error');
   });
 });
 
@@ -362,5 +448,6 @@ describe("GET /api/eduai/ai-models", () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error).toMatch(/Failed to retrieve AI models/);
+    expect(res.body.details).toBeUndefined();
   });
 });

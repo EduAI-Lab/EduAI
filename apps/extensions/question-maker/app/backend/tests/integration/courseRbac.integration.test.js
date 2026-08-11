@@ -97,8 +97,16 @@ describeDb("course RBAC (integration)", () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  describe("GET /api/course/:id/access", () => {
-    it("returns instructor level for the owner", async () => {
+  describe('GET /api/course/:id/access', () => {
+    it('denies a linked owner when Core returns no active enrollment', async () => {
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
+      expect(res.status).toBe(200);
+      expect(res.body.data).toBeNull();
+    });
+
+    it('returns instructor level for the owner of an unlinked QM-native course', async () => {
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
+
       const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toMatchObject({ level: "instructor", rank: 2 });

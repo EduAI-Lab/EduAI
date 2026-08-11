@@ -99,7 +99,9 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   let enrollments = [];
   try {
     const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie });
-    enrollments = data?.enrollments ?? [];
+    // Treat an absent/malformed roster as an authoritative empty response;
+    // never let a provider shape error turn into an accidental owner grant.
+    enrollments = Array.isArray(data?.enrollments) ? data.enrollments : [];
   } catch {
     // #225 SEAM-02 / #1197 product decision: fail-CLOSED here, including for
     // the QM course owner. Once a course is linked (`coreCourseId` set),
@@ -109,15 +111,14 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
     // relinked/deleted in Core). If Core is unreachable we cannot verify
     // anyone's access, so nobody gets it. This is intentionally asymmetric
     // with the unlinked-course branch above, where QM ownership IS the
-    // source of truth and instructor access stays fail-open by design; it's
-    // also asymmetric with the "fetched but not yet on the roster" fallback
-    // below, which is a real, distinguishable state (Core answered; the
-    // linker just isn't synced yet) rather than an unreachable Core.
+    // source of truth and instructor access stays fail-open by design.
     return null;
   }
 
   const mine = enrollments.find((e) => e.studentId === reqUser.id && e.isActive);
   if (!mine) {
+    // A successful Core response with no active enrollment is authoritative.
+    // Do not let local QM ownership become a stale authorization grant.
     return null;
   }
 

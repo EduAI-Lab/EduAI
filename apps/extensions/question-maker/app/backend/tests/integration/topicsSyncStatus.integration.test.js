@@ -69,6 +69,12 @@ function sessionOk(user) {
   return { ok: true, json: () => Promise.resolve({ user }) };
 }
 
+function activeInstructorEnrollment() {
+  getCourseEnrollmentsFromCore.mockResolvedValue({
+    enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }],
+  });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
@@ -116,6 +122,7 @@ describe('GET /api/topics/sync-status/:courseId', () => {
       userId: INSTRUCTOR.id,
       coreCourseId: "core-c-1",
     });
+    activeInstructorEnrollment();
     prisma.topics.findMany.mockResolvedValue([
       { id: "t1", courseId: 1, coreTopicId: "core-t-1", updatedAt: "2026-01-01T00:00:00.000Z" },
       { id: "t2", courseId: 1, coreTopicId: "core-t-2", updatedAt: "2026-01-02T00:00:00.000Z" },
@@ -148,6 +155,7 @@ describe('GET /api/topics/sync-status/:courseId', () => {
       userId: INSTRUCTOR.id,
       coreCourseId: "core-c-1",
     });
+    activeInstructorEnrollment();
     prisma.topics.findMany.mockResolvedValue([
       { id: "t1", courseId: 1, coreTopicId: "core-t-1", updatedAt: "2026-01-01T00:00:00.000Z" },
       { id: "t2", courseId: 1, coreTopicId: null, updatedAt: "2026-01-02T00:00:00.000Z" },
@@ -196,6 +204,7 @@ describe('GET /api/topics/sync-status/:courseId', () => {
       userId: INSTRUCTOR.id,
       coreCourseId: "core-c-1",
     });
+    activeInstructorEnrollment();
     prisma.topics.findMany.mockResolvedValue([
       { id: "t1", courseId: 1, coreTopicId: "core-t-1", updatedAt: "2026-01-01T00:00:00.000Z" },
     ]);

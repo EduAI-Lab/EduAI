@@ -17,7 +17,10 @@
  */
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "../../src/config/database.js";
-import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from "../../scripts/seedData.js";
+import {
+  TOPIC_NAMES_BY_TEMPLATE,
+  SEED_QUESTIONS_BY_TEMPLATE,
+} from "../../scripts/seedData.js";
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
@@ -103,12 +106,16 @@ export async function seedCoursesForNewUser(userId) {
         reasoningLevel: reasoningLevels[i % 3],
         questionMetadataId: meta.id,
         assessmentId: assessment.id,
-        answer: q.type === "MCQ" && q.correctAnswer ? q.correctAnswer : q.answer,
+        answer:
+          q.type === "MCQ" && q.correctAnswer ? q.correctAnswer : q.answer,
         isDraft: false,
         isAiGenerated: false,
       };
       if (q.type === "MCQ" && Array.isArray(q.choices) && q.correctAnswer) {
-        variantPayload.choices = q.choices.map((c) => ({ letter: c.letter, text: c.text }));
+        variantPayload.choices = q.choices.map((c) => ({
+          letter: c.letter,
+          text: c.text,
+        }));
       }
       const variant = await prisma.variants.create({ data: variantPayload });
       variantsCreated++;

@@ -116,9 +116,9 @@ const { default: app } = await import("../../src/app.js");
 const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
 const ADMIN = { id: 'admin-1', role: 'ADMIN', email: 'admin@t.co', name: 'Admin' };
 // Not the course owner and not enrolled — used to exercise the "insufficient
-// course access" branch (the owner-fallback in resolveAccessForCourse only
-// applies to the course's own userId).
-const OUTSIDER_INSTRUCTOR = { id: "inst-2", role: "INSTRUCTOR", email: "i2@t.co", name: "I2" };
+// course access" branch (the local-owner fallback only applies to explicitly
+// unlinked QM-native courses).
+const OUTSIDER_INSTRUCTOR = { id: 'inst-2', role: 'INSTRUCTOR', email: 'i2@t.co', name: 'I2' };
 // Real course TA: platform role STUDENT + course enrollment TA (#225 AUTH-12).
 const TA = { id: "ta-1", role: "STUDENT", email: "t@t.co", name: "TA" };
 const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };

@@ -120,6 +120,12 @@ describe("resolveCourseAccess", () => {
       const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
+
+    it('fails closed when Core returns a malformed enrollment payload', async () => {
+      mockEnrollments.mockResolvedValueOnce({ enrollments: { studentId: 'u1', role: 'INSTRUCTOR' } });
+      const access = await resolveCourseAccess({ id: 'u1', role: 'INSTRUCTOR' }, 1);
+      expect(access).toBeNull();
+    });
   });
 
   // Edge-case audit #225 (SEAM-02) / #1197 product decision: fail-CLOSED for
