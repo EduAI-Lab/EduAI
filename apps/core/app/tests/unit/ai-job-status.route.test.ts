@@ -120,4 +120,24 @@ describe("GET /api/ai-jobs/:jobId", () => {
     expect(response).toBe(guardResponse);
     expect(findFirst).not.toHaveBeenCalled();
   });
+
+  it("does not expose internal errors from the status lookup", async () => {
+    const internalMessage = "Prisma connection string leaked";
+    findFirst.mockRejectedValue(new Error(internalMessage));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await loader({
+        request: request(),
+        params: { jobId: "job-1" },
+      } as never);
+
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body).toEqual({ error: "Unexpected server error" });
+      expect(JSON.stringify(body)).not.toContain(internalMessage);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });

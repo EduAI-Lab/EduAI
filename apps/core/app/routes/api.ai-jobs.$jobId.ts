@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
-import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
+import { jsonResponse } from "~/lib/api/json-response.server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { getQueuePosition } from "~/lib/queue/queue-stats.server";
@@ -41,6 +41,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return jsonResponse({ job: serializeAiJob(job, { queuePosition }) });
   } catch (error) {
     console.error("[ai-job] GET failed:", error);
-    return jsonResponse(formatApiError(error), 500);
+    return jsonResponse({ error: "Unexpected server error" }, 500);
   }
 }
