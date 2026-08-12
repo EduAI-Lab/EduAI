@@ -62,6 +62,9 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // #1369: unindexed FK. Every authenticated request resolves a session, and the
+  // `onDelete: Cascade` from User seq-scans this table on account deletion.
+  @@index([userId])
   @@map("session")
 }
 
@@ -83,6 +86,11 @@ model Account {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  // #1369: `getPasswordChangedAt` filters { userId, providerId: "credential" } from
+  // the root loader on every authenticated render, and the unique above leads with
+  // `providerId` so it cannot serve that lookup. Composite rather than `userId`
+  // alone: same write cost, and it still covers any `userId`-prefix query.
+  @@index([userId, providerId])
   @@map("account")
 }
 
@@ -163,6 +171,11 @@ model Course {
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
+  // #1369: FK -> Discipline.code (onDelete: Restrict, onUpdate: Cascade). Without an
+  // index every discipline rename or delete seq-scans courses to enforce the action.
+  @@index([department])
+  // #1369 deferred: `instructorId` returned 223/238 rows on the perf seed, so the
+  // planner would ignore an index there. Re-evaluate against production selectivity.
   @@map("courses")
 }
 
@@ -264,10 +277,20 @@ model AIInteraction {
   energySource     EnergyMeasurementSource?
   carbonGramsCO2   Float?
   finishReason     String?
+  /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed or pre-tracking. */
+  serverId         String?
+  /**
+   * Durable correlation id for metrics. Null for async Question Maker /
+   * background completions and pre-tracking rows. This is intentionally not a
+   * relation to Chat, so deleting a chat cannot rewrite historical metrics.
+   */
+  chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
 
+  @@index([serverId])
+  @@index([chatId])
   @@map("ai_interactions")
 }
 
@@ -339,6 +362,9 @@ model UserProviderSettings {
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
+  // #1369 deferred: the unique above leads with `userId`, so the `onDelete: Cascade`
+  // from AIProvider seq-scans this table. One row per user per provider keeps it tiny;
+  // revisit if provider deletes ever become routine.
   @@map("user_provider_settings")
 }
 
@@ -460,6 +486,12 @@ model Question {
 
   @@index([courseId, topicId, testable])
   @@index([createdBy])
+  // #1369 deferred: a bare `@@index([topicId])` measured 1.105 ms -> 0.095 ms on the perf
+  // seed (10,046 rows), but Core never issues a topic-only filter — `listQuestions` types
+  // `courseId` as required, so `topicId` is only ever an extra narrowing on top of the
+  // composite above, which already seeks. The `Restrict` FK check doesn't need it either:
+  // topics are soft-deleted via `courseTopic.update({ deletedAt })`, never hard-deleted.
+  // Add it if a cross-course topic view ever ships.
   @@map("questions")
 }
 
@@ -503,11 +535,20 @@ model MaterialChunk {
   materialId String
   index      Int
   content    String
+  content_tsv Unsupported("tsvector")
   createdAt  DateTime           @default(now())
   material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
   embedding  MaterialEmbedding?
 
+  // #941: `content_tsv` (GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+  // GIN-indexed) also lives on this table. Prisma has no first-class `tsvector` type
+  // and can't model a generated/STORED column, so it's intentionally left off this
+  // model (same reasoning as the `Unsupported("vector(1024)")` column on
+  // MaterialEmbedding below — raw SQL only). See
+  // prisma/migrations/20260804180000_material_chunks_content_tsv_gin and the hybrid
+  // query in app/lib/ai/embedding.ts (findRelevantContent).
   @@unique([materialId, index])
+  @@index([content_tsv], type: Gin, map: "material_chunks_content_tsv_idx")
   @@map("material_chunks")
 }
 
@@ -647,6 +688,9 @@ model CanvasRosterMember {
   @@index([email])
   @@index([sisUserIdLookup])
   @@index([canvasUserId])
+  // #1369 deferred: `syncedByUserId` has the default `Restrict`, so a user delete
+  // seq-scans here. This table grows with every roster sync, making it the likeliest
+  // of the deferred candidates to need an index later.
   @@map("canvas_roster_members")
 }
 
@@ -710,6 +754,8 @@ model Invitation {
 
   @@index([email])
   @@index([status])
+  // #1369 deferred: `invitedById` / `acceptedUserId` are both `onDelete: SetNull` from
+  // User, so a user delete seq-scans here. Table is small; revisit past ~10k rows.
   @@map("invitations")
 }
 

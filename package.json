@@ -92,6 +92,6 @@
     "class-variance-authority": "^0.7.1"
   },
   "dependencies": {
-    "@prisma/client": "6.19.3"
+    "@prisma/client": "^6.19.3"
   }
 }

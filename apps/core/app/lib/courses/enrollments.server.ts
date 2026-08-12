@@ -9,7 +9,21 @@ export function isEnrollmentRole(value: unknown): value is EnrollmentRole {
   return typeof value === "string" && (ENROLLMENT_ROLES as readonly string[]).includes(value);
 }
 
-const ENROLLMENT_INCLUDE = {
+/**
+ * Exactly the columns `mapEnrollment` (app/routes/api/courses.enrollments.ts) reads —
+ * nothing more. #1369: this used to be an `include`, which pulled every enrollment column
+ * (`courseId`, `updatedAt`, `externalId`, `externalSource` all went unread). Narrowing it
+ * matters most for {@link getCourseEnrollments}, which is unbounded by design.
+ *
+ * The serialized response shape is unchanged: the mapper is the only consumer, so no field
+ * that reached a client was dropped. Keep this in sync with `mapEnrollment` if it grows.
+ */
+const ENROLLMENT_SELECT = {
+  id: true,
+  userId: true,
+  role: true,
+  enrolledAt: true,
+  isActive: true,
   user: {
     select: {
       email: true,
@@ -17,7 +31,7 @@ const ENROLLMENT_INCLUDE = {
       studentId: true,
     },
   },
-} satisfies Prisma.EnrollmentInclude;
+} satisfies Prisma.EnrollmentSelect;
 
 /**
  * Returns all enrollments (active and inactive) for a course,
@@ -34,7 +48,7 @@ const ENROLLMENT_INCLUDE = {
 export async function getCourseEnrollments(courseId: string) {
   return prisma.enrollment.findMany({
     where: { courseId },
-    include: ENROLLMENT_INCLUDE,
+    select: ENROLLMENT_SELECT,
     orderBy: { enrolledAt: "asc" },
   });
 }
@@ -52,7 +66,7 @@ export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit
   const [rows, total] = await prisma.$transaction([
     prisma.enrollment.findMany({
       where,
-      include: ENROLLMENT_INCLUDE,
+      select: ENROLLMENT_SELECT,
       orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

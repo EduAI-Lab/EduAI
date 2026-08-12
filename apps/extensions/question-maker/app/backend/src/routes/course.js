@@ -6,9 +6,9 @@
  */
 import express from 'express';
 import { createId } from '@paralleldrive/cuid2';
-import { Prisma } from '@eduai/question-maker-prisma-client';
 import { prisma } from '../config/database.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { INSTRUCTORS } from '../middleware/roles.js';
 import {
   requireCourseAccess,
   resolveCourseAccessWithCourse,
@@ -21,6 +21,7 @@ import {
 import { listCoursesPageForUser, enrichCourseDetail } from '../services/courseListService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
+import { ensureCourseAnchor } from '../services/ensureCourseAnchor.js';
 import { logger } from '../utils/logger.js';
 import { parsePaginationParams, paginated } from '../utils/pagination.js';
 
@@ -28,6 +29,9 @@ const router = express.Router();
 
 /** Resolves the QM course id from the URL param for per-course access gates. */
 const courseIdFromParam = (req) => req.params.id;
+
+/** Active Core enrollment roles that may materialize a QM course anchor (#1114). */
+const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
 
 // The Core course mirror (`importTaughtCoursesFromCore`) is a background side
 // effect, not a dependency of the list response: it fetches Core's cookie-
@@ -65,8 +69,14 @@ export function resetCoreImportThrottleForTests() {
  * "sandbox" creation has been retired: Core is the source of truth for course
  * data (name/code included, #1072 §4 step 10), so every row is just a
  * caller-scoped `coreCourseId` anchor.
+ *
+ * #1114: only ADMIN / UNIT_ADMIN / INSTRUCTOR may create anchors, and an
+ * INSTRUCTOR must hold an active teaching enrollment (INSTRUCTOR or TA) on
+ * that Core course — scoped-list membership alone (e.g. STUDENT) is not
+ * enough. Creation is serialized per coreCourseId via advisory lock so
+ * concurrent ensures return the same persisted owner.
  */
-router.post('/', authenticateToken, async (req, res, next) => {
+router.post('/', authenticateToken, requireRole(INSTRUCTORS), async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
@@ -90,27 +100,37 @@ router.post('/', authenticateToken, async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    // Idempotent ENSURE (unified contract): coreCourseId is globally unique —
-    // the throttled background import mirror (or another caller) may have
-    // anchored this course between the caller's list and this request, so an
-    // existing anchor is a success (200 with the row), not an error. The
-    // create path race (mirror wins between our miss and the insert) is
-    // absorbed by re-reading on a unique-constraint violation.
-    let courseData = await prisma.course.findUnique({ where: { coreCourseId } });
-    let created = false;
-    if (!courseData) {
+    // Platform ADMIN/UNIT_ADMIN may materialize any scoped course; INSTRUCTOR
+    // must also hold a teaching enrollment on that Core course (#1114).
+    if (req.user.role === 'INSTRUCTOR') {
+      let enrollments = [];
       try {
-        courseData = await prisma.course.create({
-          data: { userId: req.user.id, coreCourseId },
+        const data = await getCourseEnrollmentsFromCore(coreCourseId, { cookie });
+        enrollments = data?.enrollments ?? [];
+      } catch (err) {
+        const status = Number.isInteger(err?.status) ? err.status : 502;
+        return res.status(status).json({
+          success: false,
+          error: err.message || 'Failed to verify Core teaching enrollment',
         });
-        created = true;
-      } catch (error) {
-        const isUniqueViolation = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
-        if (!isUniqueViolation) throw error;
-        courseData = await prisma.course.findUnique({ where: { coreCourseId } });
-        if (!courseData) throw error;
+      }
+      const teaches = enrollments.some(
+        (e) =>
+          e.studentId === req.user.id &&
+          e.isActive &&
+          TEACHING_ENROLLMENT_ROLES.has(e.role),
+      );
+      if (!teaches) {
+        return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
       }
     }
+
+    // Shared locked ensure — same path as auto-import + ADMIN materialization
+    // so races with those writers recover cleanly (#1114 / #1270).
+    const { course: courseData, created } = await ensureCourseAnchor(
+      req.user.id,
+      coreCourseId,
+    );
 
     res.status(created ? 201 : 200).json({
       success: true,
