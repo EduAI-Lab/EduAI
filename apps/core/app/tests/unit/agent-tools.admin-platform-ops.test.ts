@@ -519,12 +519,12 @@ describe("triggerAdminCronJob", () => {
     expect(startCronRun).not.toHaveBeenCalled();
   });
 
-  it("starts a new run and triggers the cron script async", async () => {
+  it("starts a new run for the dedicated cron worker", async () => {
     vi.mocked(findRunningCronRun).mockResolvedValue(null);
     vi.mocked(startCronRun).mockResolvedValue({ runId: "run2", created: true });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run2", jobName: "backup-nightly", reused: false });
-    expect(triggerCronJobAsync).toHaveBeenCalledWith("backup-nightly", "backup-nightly.sh", "run2");
+    expect(triggerCronJobAsync).not.toHaveBeenCalled();
   });
 
   it("does not trigger the script when the run was reclaimed, not created", async () => {
