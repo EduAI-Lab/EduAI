@@ -2,6 +2,13 @@
 
 ## [Week 15 — August 10–16, 2026]
 
+### Added
+
+- [core] feat: Add `GET /api/ai-jobs/:jobId`, a producer-side status endpoint exposing a live, caller-owned `AiJob` snapshot plus its current queue position — recomputed from Postgres on every read (not a stale enqueue-time value) so it reflects jobs that have drained since enqueue and stays correct across a Redis restart. Scoped to the requesting user (404, not 403, on another user's job id, so the response can't confirm the id exists), with a service-key path so Question Maker can poll the synthetic-`service`-owned jobs it creates server-to-server. Closes #917. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
+
+### Fixed
+
+- [core] fix: The root middleware's `.data` block only rejected requests that looked like a document navigation (`sec-fetch-dest: document` or an HTML `Accept` header), so a direct or API-style request without those headers could still read React Router loader payloads through the internal `.data` transport. This app doesn't enable single-fetch, so no legitimate client request needs that path — now every `.data` URL is rejected outright instead of trying to distinguish navigations from spoofable non-browser headers. Closes #1430. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
 ### Fixed
 
 - [ai-tutor] fix: `/teach` and `/guide` never checked `activity.enableTeachMode`/`enableGuideMode`, so disabling a mode for an activity only hid it client-side — an enrolled student calling the endpoint directly still got a working AI tutoring response. Both routes now 400 when their mode is disabled, mirroring `/custom`'s existing `enableCustomMode` check. Closes #1411. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
