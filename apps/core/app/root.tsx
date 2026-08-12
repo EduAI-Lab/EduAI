@@ -81,17 +81,11 @@ export const middleware: Route.MiddlewareFunction[] = [
   // for server-to-server calls from AI Tutor / Question Maker.
   async ({ request }, next) => {
     const url = new URL(request.url);
-    if (
-      url.pathname.startsWith("/api/") &&
-      !url.pathname.startsWith("/api/auth/")
-    ) {
+    if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
       const session = await auth.api.getSession({ headers: request.headers });
       if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
         return new Response(
-          JSON.stringify({
-            error: "PASSWORD_EXPIRED",
-            redirectTo: "/settings?expired=1",
-          }),
+          JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
           { status: 403, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -139,7 +133,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // /auth/* so the user can actually reach the change-password form and log out.
   const url = new URL(request.url);
   const isExempt =
-    url.pathname.startsWith("/settings") || url.pathname.startsWith("/auth/");
+    url.pathname.startsWith("/settings") ||
+    url.pathname.startsWith("/auth/");
   // #1369: the preference lookup and the expiry check depend only on `session.user.id`,
   // so fire the preference read first and await it last instead of serializing it behind
   // the expiry check on every authenticated render. `isPasswordExpiredForUser` is memoized
@@ -182,12 +177,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     assistive: row?.assistDefault ?? false,
     motionReduced: row?.motionReduced ?? false,
-    density: isUiDensity(row?.density)
-      ? row.density
-      : DEFAULT_ACCOUNT_PREFERENCES.density,
-    theme: isUiTheme(row?.theme)
-      ? row.theme
-      : DEFAULT_ACCOUNT_PREFERENCES.theme,
+    density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
+    theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
     policies,
   };
@@ -232,9 +223,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
   return (
     <UiPreferencesProvider
       initialMotionReduced={loaderData?.motionReduced ?? false}
-      initialDensity={
-        loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density
-      }
+      initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
     >
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
         <PolicyProvider policies={loaderData?.policies ?? {}}>
