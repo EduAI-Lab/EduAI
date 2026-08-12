@@ -16,7 +16,10 @@ import {
   type QueuedJobPayload,
 } from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
-import { QUEUE_CHAT, type QueueName } from "./resolve-pool.server";
+import { type QueueName } from "./resolve-pool.server";
+import { workerConcurrency } from "./concurrency.server";
+
+export { workerConcurrency } from "./concurrency.server";
 
 const DEFAULT_WORKER_MODEL = "vllm:qwen2.5-32b-instruct";
 const DEFAULT_AI_JOB_TIMEOUT_MS = 120_000;
@@ -322,17 +325,6 @@ export async function processAiJob(
     );
     throw error;
   }
-}
-
-function parseConcurrency(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-export function workerConcurrency(queueName: QueueName): number {
-  return queueName === QUEUE_CHAT
-    ? parseConcurrency(process.env.AI_JOB_CHAT_CONCURRENCY, 8)
-    : parseConcurrency(process.env.AI_JOB_HEAVY_CONCURRENCY, 1);
 }
 
 export function createAiJobWorker(

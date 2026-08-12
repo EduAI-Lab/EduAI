@@ -5,10 +5,12 @@ const getSession = vi.hoisted(() => vi.fn());
 const requireServiceKey = vi.hoisted(() => vi.fn());
 const findFirst = vi.hoisted(() => vi.fn());
 const getQueuePosition = vi.hoisted(() => vi.fn());
+const getQueueEtaSeconds = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession } } }));
 vi.mock("~/lib/auth/guards.server", () => ({ requireServiceKey }));
 vi.mock("~/lib/prisma.server", () => ({ default: { aiJob: { findFirst } } }));
+vi.mock("~/lib/queue/queue-eta.server", () => ({ getQueueEtaSeconds }));
 vi.mock("~/lib/queue/queue-stats.server", () => ({ getQueuePosition }));
 
 import { loader } from "~/routes/api.ai-jobs.$jobId";
@@ -40,6 +42,7 @@ beforeEach(() => {
   requireServiceKey.mockResolvedValue(new Response(null, { status: 401 }));
   findFirst.mockResolvedValue(job);
   getQueuePosition.mockResolvedValue(3);
+  getQueueEtaSeconds.mockResolvedValue(90);
 });
 
 describe("GET /api/ai-jobs/:jobId", () => {
@@ -51,12 +54,13 @@ describe("GET /api/ai-jobs/:jobId", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      job: { id: "job-1", status: "PENDING", queuePosition: 3 },
+      job: { id: "job-1", status: "PENDING", queuePosition: 3, etaSeconds: 90 },
     });
     expect(findFirst).toHaveBeenCalledWith({
       where: { id: "job-1", userId: "user-1" },
     });
     expect(getQueuePosition).toHaveBeenCalledWith(job);
+    expect(getQueueEtaSeconds).toHaveBeenCalledWith(job, 3);
   });
 
   it("does not reveal another user's job", async () => {
@@ -70,6 +74,7 @@ describe("GET /api/ai-jobs/:jobId", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "AI job not found" });
     expect(getQueuePosition).not.toHaveBeenCalled();
+    expect(getQueueEtaSeconds).not.toHaveBeenCalled();
   });
 
   it("requires authentication", async () => {
@@ -124,7 +129,9 @@ describe("GET /api/ai-jobs/:jobId", () => {
   it("does not expose internal errors from the status lookup", async () => {
     const internalMessage = "Prisma connection string leaked";
     findFirst.mockRejectedValue(new Error(internalMessage));
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
     try {
       const response = await loader({

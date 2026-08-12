@@ -3,6 +3,7 @@ import { auth } from "~/lib/auth/server";
 import { jsonResponse } from "~/lib/api/json-response.server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
+import { getQueueEtaSeconds } from "~/lib/queue/queue-eta.server";
 import { getQueuePosition } from "~/lib/queue/queue-stats.server";
 import { serializeAiJob } from "~/lib/queue/serialize.server";
 
@@ -38,7 +39,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
 
     const queuePosition = await getQueuePosition(job);
-    return jsonResponse({ job: serializeAiJob(job, { queuePosition }) });
+    const etaSeconds = await getQueueEtaSeconds(job, queuePosition);
+    return jsonResponse({
+      job: serializeAiJob(job, { queuePosition, etaSeconds }),
+    });
   } catch (error) {
     console.error("[ai-job] GET failed:", error);
     return jsonResponse({ error: "Unexpected server error" }, 500);
