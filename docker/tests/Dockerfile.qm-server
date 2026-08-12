@@ -42,6 +42,8 @@ COPY apps/extensions/question-maker/app/backend/src   ./apps/extensions/question
 COPY apps/extensions/question-maker/app/backend/scripts ./apps/extensions/question-maker/app/backend/scripts
 COPY apps/extensions/question-maker/app/backend/tests ./apps/extensions/question-maker/app/backend/tests
 COPY apps/extensions/question-maker/app/backend/prisma ./apps/extensions/question-maker/app/backend/prisma
+# tests/models/*.cases.json + *.oracle.ts, imported by PICT model test files.
+COPY tests                                                                    ./tests
 COPY apps/extensions/question-maker/app/backend/vitest.config.js             ./apps/extensions/question-maker/app/backend/
 COPY apps/extensions/question-maker/app/backend/vitest.integration.config.js ./apps/extensions/question-maker/app/backend/
 COPY apps/extensions/question-maker/app/backend/package.json                 ./apps/extensions/question-maker/app/backend/

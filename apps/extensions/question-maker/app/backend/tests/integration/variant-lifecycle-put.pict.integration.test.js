@@ -18,7 +18,7 @@
  * request + status assertion) comes from tests/helpers/pictRouteRunner.js
  * (#1188).
  */
-import { vi, beforeEach } from 'vitest';
+import { vi, beforeEach, expect } from 'vitest';
 import { loadPictModel } from '../helpers/pictModel.js';
 import { stubSessionUser, stubEnrollment } from '../helpers/pictRouteMocks.js';
 import { describePictRoute } from '../helpers/pictRouteRunner.js';
@@ -100,10 +100,12 @@ function loadVariant({ isDraft, createdBy }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // coreQuestionId is already set so an isDraft:false approval never trips
-  // the Core-push branch — out of scope for this route-gate model.
-  mockUpdateVariant.mockResolvedValue({ id: 42, isDraft: false, coreQuestionId: 'already-linked', questionMetadata: { course: COURSE } });
 });
+
+/** approved (isDraft:false) → draft (isDraft:true): the un-review transition. */
+function isUnreviewing(row) {
+  return row.CurrentIsDraft === 'approved' && row.RequestedIsDraft === 'true';
+}
 
 /** Body per FieldChangeKind + RequestedIsDraft — mirrors the nine-field aiTagOnly allowlist. */
 function buildBody(row) {
@@ -136,6 +138,18 @@ function setupRow(row) {
   const createdBy = row.AccessLevel === 'ta' ? (row.Ownership === 'own' ? TA_USER.id : 'someone-else') : 'anyone';
   loadVariant({ isDraft, createdBy });
 
+  // #1080: un-reviewing (approved -> draft) clears coreQuestionId in the real
+  // updateVariant so the next approval re-pushes to Core. Everywhere else,
+  // coreQuestionId is already linked so an isDraft:false approval never trips
+  // the route's Core-push branch — out of scope for this route-gate model.
+  const unreviewing = isUnreviewing(row);
+  mockUpdateVariant.mockResolvedValue({
+    id: 42,
+    isDraft: unreviewing ? true : false,
+    coreQuestionId: unreviewing ? null : 'already-linked',
+    questionMetadata: { course: COURSE },
+  });
+
   if (row.AccessLevel === 'ta') {
     authAs(TA_USER, 'TA');
   } else {
@@ -143,6 +157,12 @@ function setupRow(row) {
   }
 
   return buildBody(row);
+}
+
+/** Confirms the un-review transition actually clears coreQuestionId in the response. */
+async function verify({ row, res, expected }) {
+  if (expected.status !== 200 || !isUnreviewing(row)) return;
+  expect(res.body.data.coreQuestionId).toBeNull();
 }
 
 describePictRoute('variant-lifecycle-put', {
@@ -153,5 +173,6 @@ describePictRoute('variant-lifecycle-put', {
   setupRow,
   oracle: variantLifecyclePutOracle,
   isKnownDrift,
+  verify,
   label: (row) => `${row.AccessLevel}/${row.CurrentIsDraft}/${row.Ownership}/${row.RequestedIsDraft}/${row.FieldChangeKind}`,
 });
