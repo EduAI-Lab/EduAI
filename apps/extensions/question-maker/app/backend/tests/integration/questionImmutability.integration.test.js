@@ -47,6 +47,15 @@ function coreFetchStub() {
     if (target.endsWith('/api/sessions/validate')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
     }
+    if (/\/enrollments$/.test(target.split('?')[0])) {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }],
+          }),
+      });
+    }
     if (target.endsWith('/api/questions') && (opts.method ?? 'GET') === 'POST') {
       pushCalls += 1;
       if (typeof opts.body === 'string') {

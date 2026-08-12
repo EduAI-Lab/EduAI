@@ -4,10 +4,12 @@
  *
  * Covers:
  *  - isHybridBm25Enabled() reads RAG_HYBRID_BM25 correctly
- *  - RAG_HYBRID_BM25=1 → ANN vector candidates followed by hybrid reranking
+ *  - RAG_HYBRID_BM25=1 → GIN lexical candidates unioned with bounded ANN candidates
  *  - RAG_HYBRID_BM25 unset → ANN vector candidates followed by thresholding
  *  - RAG_HYBRID_BM25_ALPHA env var adjusts the vector/BM25 weights
  *  - Return shape is identical ({content, similarity, materialTitle}) regardless of path
+ *  - #941: the hybrid path reads the stored/GIN-indexed `content_tsv` column
+ *    instead of recomputing `to_tsvector(content)` inline on every query
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -87,9 +89,35 @@ const {
  */
 const RETRIEVAL_QUERY_CALL_INDEX = 1;
 
+/**
+ * Renders an interpolated value for SQL-text assertions: nested `Prisma.sql`
+ * fragments (e.g. canvasPublishFilter/visibilityFilter, spliced in as values
+ * rather than template-string literals) are inlined recursively so their SQL
+ * text is visible; every other value collapses to a placeholder.
+ */
+function renderSqlValue(value: unknown): string {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    "strings" in value &&
+    "values" in value
+  ) {
+    const frag = value as { strings: readonly string[]; values: unknown[] };
+    return frag.strings
+      .map((s, i) => s + (i < frag.values.length ? renderSqlValue(frag.values[i]) : ""))
+      .join("");
+  }
+  return "__param__";
+}
+
 function capturedSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
-  const [templateStrings] = queryRawMock.mock.calls[callIndex] as [string[]];
-  return templateStrings.join("__param__");
+  const [templateStrings, ...values] = queryRawMock.mock.calls[callIndex] as [
+    string[],
+    ...unknown[],
+  ];
+  return templateStrings
+    .map((s, i) => s + (i < values.length ? renderSqlValue(values[i]) : ""))
+    .join("");
 }
 
 /** Interpolated values passed to $queryRaw (everything after the template strings). */
@@ -164,15 +192,46 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     ]);
   });
 
-  it("uses ts_rank and plainto_tsquery in the SQL", async () => {
+  it("uses ts_rank and plainto_tsquery against the stored content_tsv column", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("ts_rank");
     expect(sql).toContain("plainto_tsquery");
-    expect(sql).toContain("to_tsvector");
+    expect(sql).toContain("content_tsv");
+    expect(sql).toContain("content_tsv @@");
   });
 
-  it("uses an ANN-compatible vector candidate query before hybrid reranking", async () => {
+  it("unions GIN-eligible lexical candidates with semantic-threshold candidates", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain("candidate_chunks AS");
+    expect(sql).toContain("content_tsv @@");
+    expect(sql).toContain("UNION");
+    expect(sql).toContain("WHERE 1 - distance >");
+  });
+
+  it("keeps visibility and deletion filters in both UNION arms", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const sql = capturedSql();
+    // Both filters belong to the vector_candidates and lexical_candidates CTEs,
+    // which appear before the UNION that combines them into candidate_chunks.
+    // Count occurrences in the complete query rather than splitting at UNION;
+    // the post-UNION projection intentionally references candidate_chunks only.
+    expect(sql.match(/cm\."deletedAt" IS NULL/g)).toHaveLength(2);
+    expect(sql.match(/cm\."visibleToStudents" = true/g)).toHaveLength(2);
+  });
+
+  // #941: content_tsv is a GENERATED ALWAYS ... STORED column (GIN-indexed) derived
+  // from content via to_tsvector('english', ...); the hybrid query must read that
+  // stored column instead of recomputing to_tsvector(content) inline on every query.
+  it("does not recompute to_tsvector(content) inline — reads the stored content_tsv column", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).not.toContain("to_tsvector");
+    expect(sql).toContain("mc.content_tsv");
+  });
+
+  it("unions GIN lexical candidates with ANN semantic candidates before hybrid reranking", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
@@ -232,7 +291,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
   it("defaults to alpha=0.7 (vector) and bm25Weight=0.3", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const params = capturedParams();
-    const queryParamIndex = params.indexOf(QUERY);
+    const queryParamIndex = params.lastIndexOf(QUERY);
     expect(params[queryParamIndex - 1]).toBeCloseTo(0.7);
     expect(params[queryParamIndex + 1]).toBeCloseTo(0.3);
   });
@@ -241,7 +300,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     process.env.RAG_HYBRID_BM25_ALPHA = "0.5";
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const params = capturedParams();
-    const queryParamIndex = params.indexOf(QUERY);
+    const queryParamIndex = params.lastIndexOf(QUERY);
     expect(params[queryParamIndex - 1]).toBeCloseTo(0.5);
     expect(params[queryParamIndex + 1]).toBeCloseTo(0.5);
   });

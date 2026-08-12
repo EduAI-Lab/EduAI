@@ -31,13 +31,14 @@ import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/serve
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
-import { getUserPreference } from "~/lib/user-preferences.server";
+import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import {
   loadChatBaseData,
   loadChatBaseDataForUser,
   loadChatTranscript,
   requireChatSessionUser,
+  chatPreferencesAction,
 } from "~/lib/chat/chat-route.server";
 
 const CHAT_ACCESS = {
@@ -354,5 +355,106 @@ describe("loadChatTranscript", () => {
     );
 
     expect(result!.canEdit).toBe(false);
+  });
+
+  it("stringifies a non-Date updatedAt value coming back from the DB", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue({
+      ...CHAT_ACCESS,
+      chat: { ...CHAT_ACCESS.chat, updatedAt: "2026-01-02T00:00:00.000Z" as never },
+    });
+    vi.mocked(getChatMessages).mockResolvedValue([]);
+
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
+
+    expect(result!.chat.updatedAt).toBe("2026-01-02T00:00:00.000Z");
+  });
+
+  it("falls back to null course fields when the chat has no course", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue({
+      ...CHAT_ACCESS,
+      chat: { ...CHAT_ACCESS.chat, courseId: null, course: null },
+    });
+    vi.mocked(getChatMessages).mockResolvedValue([]);
+
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
+
+    expect(result!.chat.courseCode).toBeNull();
+    expect(result!.chat.courseName).toBeNull();
+  });
+});
+
+describe("chatPreferencesAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns 401 for anonymous callers", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+
+    const res = (await chatPreferencesAction({
+      request: new Request("http://localhost/chat", {
+        method: "POST",
+        body: JSON.stringify({ assistDefault: true }),
+      }),
+    } as never)) as Response;
+
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({ error: "Unauthorized" });
+    expect(saveUserPreference).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the body has no valid preference fields", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
+
+    const res = (await chatPreferencesAction({
+      request: new Request("http://localhost/chat", {
+        method: "POST",
+        body: JSON.stringify({ unknownField: "x" }),
+      }),
+    } as never)) as Response;
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "No valid preference fields provided" });
+    expect(saveUserPreference).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the request body is not valid JSON", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
+
+    const res = (await chatPreferencesAction({
+      request: new Request("http://localhost/chat", {
+        method: "POST",
+        body: "not json",
+        headers: { "Content-Type": "application/json" },
+      }),
+    } as never)) as Response;
+
+    expect(res.status).toBe(400);
+    expect(saveUserPreference).not.toHaveBeenCalled();
+  });
+
+  it("saves valid preference updates for a signed-in user", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
+    const savedResponse = new Response(JSON.stringify(PREFERENCES), { status: 200 });
+    vi.mocked(saveUserPreference).mockResolvedValue(savedResponse as never);
+
+    const res = await chatPreferencesAction({
+      request: new Request("http://localhost/chat", {
+        method: "POST",
+        body: JSON.stringify({ assistDefault: true, lastCourseCode: "COSC 101" }),
+      }),
+    } as never);
+
+    expect(res).toBe(savedResponse);
+    expect(saveUserPreference).toHaveBeenCalledWith("u1", {
+      assistDefault: true,
+      lastCourseCode: "COSC 101",
+    });
   });
 });

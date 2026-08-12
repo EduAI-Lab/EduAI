@@ -45,6 +45,7 @@ vi.mock("@ai-sdk/openai", () => ({
 vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
+import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { formatPgVectorLiteral } from "~/lib/ai/pgvector";
@@ -66,17 +67,18 @@ let noiseCourseId: string;
 let targetCourseId: string;
 
 async function seedChunk(materialId: string, index: number, vector: number[]) {
-  const chunk = await prisma.materialChunk.create({
-    data: {
-      materialId,
-      index,
-      content: `chunk ${index} for material ${materialId}`,
-    },
-  });
+  // #941: content_tsv is an Unsupported("tsvector") generated column on
+  // MaterialChunk, so Prisma's client omits create() for this model — insert
+  // via raw SQL instead (mirrors app/lib/ai/embedding.ts).
+  const chunkId = randomUUID();
+  await prisma.$executeRaw`
+    INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
+    VALUES (${chunkId}, ${materialId}, ${index}, ${`chunk ${index} for material ${materialId}`}, NOW())
+  `;
   const literal = formatPgVectorLiteral(vector);
   await prisma.$executeRaw`
     INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-    VALUES (${randomUUID()}, ${chunk.id}, ${literal}::vector, NOW())
+    VALUES (${randomUUID()}, ${chunkId}, ${literal}::vector, NOW())
   `;
 }
 
@@ -108,25 +110,31 @@ beforeAll(async () => {
 
   // Bulk-insert the noise course's chunks/embeddings directly via SQL for
   // speed — this test is about retrieval, not the chunking/upload pipeline.
+  // #941: content_tsv is an Unsupported("tsvector") generated column on
+  // MaterialChunk, so Prisma's client omits createManyAndReturn() for this
+  // model — generate ids client-side and insert both tables via raw SQL.
   const noiseMaterialId = await seedMaterial(noiseCourseId, "Noise material");
-  const noiseChunks = await prisma.materialChunk.createManyAndReturn({
-    data: Array.from({ length: NOISE_ROW_COUNT }, (_, i) => ({
-      materialId: noiseMaterialId,
-      index: i,
-      content: `noise chunk ${i}`,
-    })),
-  });
+  const noiseChunkIds = Array.from({ length: NOISE_ROW_COUNT }, () => randomUUID());
   const BATCH = 500;
-  for (let i = 0; i < noiseChunks.length; i += BATCH) {
-    const batch = noiseChunks.slice(i, i + BATCH);
-    const values = batch
-      .map((c) => {
-        const vec = formatPgVectorLiteral(makeVector(NOISE_DIRECTION, i));
-        return `('${randomUUID()}', '${c.id}', '${vec}'::vector, NOW())`;
+  for (let i = 0; i < noiseChunkIds.length; i += BATCH) {
+    const batchIds = noiseChunkIds.slice(i, i + BATCH);
+    const chunkValues = batchIds
+      .map((id, j) => {
+        const index = i + j;
+        return `('${id}', '${noiseMaterialId}', ${index}, 'noise chunk ${index}', NOW())`;
       })
       .join(",\n");
     await prisma.$executeRawUnsafe(
-      `INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt") VALUES ${values}`,
+      `INSERT INTO material_chunks (id, "materialId", index, content, "createdAt") VALUES ${chunkValues}`,
+    );
+    const embeddingValues = batchIds
+      .map((id, j) => {
+        const vec = formatPgVectorLiteral(makeVector(NOISE_DIRECTION, i + j));
+        return `('${randomUUID()}', '${id}', '${vec}'::vector, NOW())`;
+      })
+      .join(",\n");
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt") VALUES ${embeddingValues}`,
     );
   }
 

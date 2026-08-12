@@ -7,9 +7,13 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
-}));
+vi.mock("~/lib/auth/course-access.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/course-access.server")>();
+  return {
+    ...actual,
+    resolveCourseAccessWithCourse: vi.fn(),
+  };
+});
 
 vi.mock("~/lib/courses/server", () => ({
   getCourseRagSettings: vi.fn(),

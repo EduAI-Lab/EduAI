@@ -96,6 +96,7 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
@@ -142,6 +143,7 @@ import {
   enqueueQuestionGeneration,
   isEnqueueRequested,
 } from "~/lib/queue/chat-producer.server";
+import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import {
@@ -656,13 +658,29 @@ export async function action({ request }: ActionFunctionArgs) {
       typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode =
       typeof body.courseCode === "string" ? body.courseCode : undefined;
-    const streaming =
-      body.streaming === undefined ? true : Boolean(body.streaming);
+    // #1246: re-generate the last turn's response under a different ADHD Assist
+    // policy for in-place preview (toggling Assist swaps content, not just
+    // styling). Always non-streaming and never persists anything — it requires
+    // an existing owned chatId (validated below) and reuses that chat's normal
+    // course/RAG/model context, just with `adhdAssist` overridden for this call.
+    const regenerateOnly = body.regenerateOnly === true;
+    const streaming = regenerateOnly
+      ? false
+      : body.streaming === undefined
+        ? true
+        : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
+
+    if (regenerateOnly && !chatId) {
+      return new Response(
+        JSON.stringify({ error: "regenerateOnly requires an existing chatId" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     chatApiTrace("request received", {
       chatMode,
@@ -980,15 +998,18 @@ export async function action({ request }: ActionFunctionArgs) {
             { "Retry-After": String(error.retryAfterSeconds) },
           );
         }
-        // Invalid payload is the caller's fault (400); a queue/Redis failure is
-        // ours (502) — never mask an infra outage as a client error.
+        // Invalid payload is the caller's fault (400); Redis/DB outages are 503
+        // (#1112) — never mask an infra outage as a client error.
+        const status = httpStatusForEnqueueError(error);
         const isValidationError = error instanceof ZodError;
         return chatApiReject(
-          isValidationError ? 400 : 502,
+          status,
           {
             error: isValidationError
               ? "Invalid AI job payload"
-              : "Failed to enqueue AI job",
+              : status === 503
+                ? "Queue unavailable"
+                : "Failed to enqueue AI job",
             details: error instanceof Error ? error.message : "Unknown error",
           },
           { chatMode, userId: actingUser.id },
@@ -1008,7 +1029,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const ephemeral = isServiceKeyCaller;
 
     // Persist any system-prompt change onto the chat loaded above.
-    if (hasSystemPromptField && !ephemeral) {
+    // regenerateOnly is a read-only content preview (#1246) — must never write
+    // any field onto the chat, not just adhdAssist (review on #1365).
+    if (hasSystemPromptField && !ephemeral && !regenerateOnly) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
           chat = await prisma.chat.update({
@@ -1033,6 +1056,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // course was selected (e.g. user picked the course mid-conversation).
     if (
       !ephemeral &&
+      !regenerateOnly &&
       chat &&
       effectiveCourseId &&
       chat.courseId !== effectiveCourseId &&
@@ -1044,8 +1068,11 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    // regenerateOnly always sets adhdAssist to request a one-off override — must
+    // never persist it as the chat's new stored default (#1246).
     if (
       !ephemeral &&
+      !regenerateOnly &&
       hasAdhdAssistField &&
       chat &&
       chat.adhdAssist !== adhdAssist
@@ -1531,7 +1558,8 @@ export async function action({ request }: ActionFunctionArgs) {
     );
     const appendMessages = async (messages: GenericMessage[]) => {
       // Stateless callers never persist messages (no chat row / no real user).
-      if (ephemeral || !chat?.id) return;
+      // regenerateOnly is a read-only content preview (#1246) — never persists.
+      if (ephemeral || regenerateOnly || !chat?.id) return;
       if (!messages.length) return;
 
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
@@ -2217,6 +2245,9 @@ ${buildEmptyCourseRagBlock()}`;
         profileStructuralPass?: boolean;
       },
     ) => {
+      // regenerateOnly is a read-only content preview (#1246) — never logs
+      // compliance telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
       const metrics = computeAdhdResponseMetrics(trimmed, {
@@ -2330,6 +2361,9 @@ ${buildEmptyCourseRagBlock()}`;
         | undefined;
       finishReason: string;
     }) => {
+      // regenerateOnly is a read-only content preview (#1246) — never
+      // persists routing/sustainability telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       await persistAiInteractionTelemetry({
         userId: actingUser.id,
         courseId: effectiveCourseId,
@@ -2343,6 +2377,8 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
+        serverId: fleetPick?.serverId ?? null,
+        chatId: chat?.id ?? null,
       });
     };
 
@@ -2618,6 +2654,7 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
               priorAssistantText,
               toolsUsed: adhdToolsUsed,
+              onlyDeterministic: isAdhdOversightDeterministicOnly(),
             })
           : emptyOversightAuditResult();
 
@@ -2625,6 +2662,8 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedOversightUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
           responseText: finalText,
           usage: {
@@ -2853,6 +2892,8 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
           responseText: text ?? "",
           usage: {
