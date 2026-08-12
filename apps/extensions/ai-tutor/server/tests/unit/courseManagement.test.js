@@ -54,6 +54,7 @@ const {
 
 const user = { id: 'instructor-1', role: 'INSTRUCTOR' };
 const destination = { id: 20, coreOfferingId: 'core-20', instructors: [{ userId: user.id }] };
+const importTx = { marker: 'import-transaction' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,6 +68,7 @@ beforeEach(() => {
   moduleCount.mockResolvedValue(1);
   moduleFindUnique.mockResolvedValue({ courseOfferingId: 20 });
   lessonFindMany.mockResolvedValue([]);
+  transaction.mockImplementation(async (callback) => callback(importTx));
   cloneCourseContent.mockResolvedValue(undefined);
   cloneLessonsFromOffering.mockResolvedValue(undefined);
   resolveCoreCourseCatalog.mockResolvedValue({ courses: [] });
@@ -101,7 +103,7 @@ describe('course authoring service boundaries', () => {
     expect(moduleCount).toHaveBeenCalledWith({
       where: { id: { in: [3] }, courseOfferingId: 10 },
     });
-    expect(cloneCourseContent).toHaveBeenCalledWith(10, 20, { moduleIds: [3] });
+    expect(cloneCourseContent).toHaveBeenCalledWith(10, 20, { moduleIds: [3] }, importTx);
   });
 
   it('maps a live Core outage to 503 before reading source content or writing', async () => {
@@ -163,6 +165,41 @@ describe('course authoring service boundaries', () => {
     expect(cloneCourseContent).not.toHaveBeenCalled();
     expect(cloneLessonsFromOffering).not.toHaveBeenCalled();
     expect(moduleCount).not.toHaveBeenCalled();
+  });
+
+  it('runs mixed module and lesson imports in one transaction', async () => {
+    const sourceCourse = {
+      id: 10,
+      coreOfferingId: 'core-10',
+      instructors: [{ userId: user.id }],
+    };
+    const tx = { marker: 'shared-import-transaction' };
+    courseFindUnique.mockResolvedValueOnce(destination).mockResolvedValueOnce(sourceCourse);
+    lessonFindMany.mockResolvedValue([{ id: 4, module: { courseOfferingId: sourceCourse.id } }]);
+    transaction.mockImplementation(async (callback) => callback(tx));
+    cloneLessonsFromOffering.mockRejectedValueOnce(new Error('lesson clone failed'));
+
+    await expect(
+      importCourseContentForUser({
+        courseId: destination.id,
+        body: {
+          sourceCourseId: sourceCourse.id,
+          moduleIds: [3],
+          lessonIds: [4],
+          targetModuleId: 30,
+        },
+        user,
+      }),
+    ).rejects.toThrow('lesson clone failed');
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(cloneCourseContent).toHaveBeenCalledWith(
+      sourceCourse.id,
+      destination.id,
+      { moduleIds: [3] },
+      tx,
+    );
+    expect(cloneLessonsFromOffering).toHaveBeenCalledWith([4], 30, tx);
   });
 
   it('writes Core publish state and atomically cascades unpublish', async () => {

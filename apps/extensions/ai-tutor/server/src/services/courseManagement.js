@@ -165,7 +165,7 @@ export async function importCourseContentForUser({ courseId, body, user }) {
   }
   if (normalizedLessonIds.length > 0) {
     // Only after every source course passes live authorization do we load the
-    // authored lesson tree. All request validation is complete before either
+    // authored lesson tree. All request validation is complete before the
     // clone transaction starts, so a denied source cannot leave partial writes.
     const lessons = await prisma.lesson.findMany({
       where: { id: { in: normalizedLessonIds } },
@@ -177,14 +177,19 @@ export async function importCourseContentForUser({ courseId, body, user }) {
     lessonImport = { lessonIds: normalizedLessonIds, targetModuleId: numericTargetModuleId };
   }
 
-  if (moduleImport) {
-    await cloneCourseContent(moduleImport.sourceCourseId, courseId, {
-      moduleIds: moduleImport.moduleIds,
-    });
-  }
-  if (lessonImport) {
-    await cloneLessonsFromOffering(lessonImport.lessonIds, lessonImport.targetModuleId);
-  }
+  await prisma.$transaction(async (tx) => {
+    if (moduleImport) {
+      await cloneCourseContent(
+        moduleImport.sourceCourseId,
+        courseId,
+        { moduleIds: moduleImport.moduleIds },
+        tx,
+      );
+    }
+    if (lessonImport) {
+      await cloneLessonsFromOffering(lessonImport.lessonIds, lessonImport.targetModuleId, tx);
+    }
+  });
 
   return prisma.courseOffering.findUnique({
     where: { id: courseId },
