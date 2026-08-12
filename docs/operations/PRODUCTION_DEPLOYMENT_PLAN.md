@@ -83,3 +83,4 @@ The candidate variables should be removed from local files only after confirming
 - Removed five obsolete root `.env` port overrides (`CORE_PORT`, `TUTOR_FE_PORT`, `TUTOR_BE_PORT`, `QM_FE_PORT`, `QM_BE_PORT`) from the local ignored environment; the current compose stack reads only database and Redis port overrides.
 - Added secret-free production Core templates under `infra/production/`: bootstrap runbook, environment template, systemd unit, and Apache reverse-proxy configuration.
 - Chose a new `/srv/www/eduai-production` release layout so the stale production checkout remains available during migration.
+- Added a read-only `infra/production/preflight.sh` for repeatable host, dependency, service, and inference reachability checks.
