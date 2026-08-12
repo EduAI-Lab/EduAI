@@ -52,3 +52,4 @@ IT has been asked to provide production aliases under `eduai.ok.ubc.ca` for the 
 - Created planning branch `codex/production-deployment` from `origin/development` at `b5a6746f6`.
 - Preserved the existing feature branch and linked worktrees; no worktrees were deleted.
 - Identified the cross-domain authentication dependency for the existing extension domains.
+- Removed five obsolete root `.env` port overrides (`CORE_PORT`, `TUTOR_FE_PORT`, `TUTOR_BE_PORT`, `QM_FE_PORT`, `QM_BE_PORT`) from the local ignored environment; the current compose stack reads only database and Redis port overrides.
