@@ -62,7 +62,7 @@ The remaining application-local variables were classified by searching runtime c
 
 | File | Classification | Variables |
 |---|---|---|
-| `apps/core/.env` | Active | `FIRECRAWL_API_KEY`, `OPENROUTER_API_KEY`, `LOG_LEVEL`, and other configured Core runtime values |
+| `apps/core/.env` | Active | `FIRECRAWL_API_KEY`, `LOG_LEVEL`, and other configured Core runtime values |
 | `apps/core/.env` | Removal candidates | `LOCAL_EMBEDDING_RUNTIME`, `ROUTER_AUTO_DEFAULT`, `UBC_TIMEZONE` have no current runtime/config references |
 | `apps/extensions/question-maker/.env` | Active/test-only | `LOG_LEVEL` is active; `TEST_DATABASE_URL` is test-only |
 | `apps/extensions/question-maker/.env` | Removal candidates | `JWT_SECRET`, `JWT_EXPIRES_IN`, `BCRYPT_ROUNDS`, `OPENROUTER_API_KEY`, and `OPENROUTER_EMBEDDING_MODEL` have no current references in the repository |
@@ -93,5 +93,6 @@ The candidate variables should be removed from local files only after confirming
 - Created a separate operations worktree at `.worktrees/production-ops` on branch `codex/production-ops` so deployment work does not interfere with another agent's branch.
 - Added a root-owned, fixed-action production helper and narrow sudoers procedure for local Redis and Core/Apache service bootstrap.
 - Created the new empty `eduai_prod` database with owner group `eduai_prod_admins`, application login `eduai_prod_app`, and pgvector `0.8.1`; the existing `eduai` database remains untouched.
-- Removed `OPENROUTER_API_KEY` from the staged production environment and production template after confirming it is not part of the intended provider configuration. A supported embedding provider key still needs to be selected if production will embed new materials.
+- Removed `OPENROUTER_API_KEY` from the staged production environment and production template. Production embeddings will use the local CMPS Ollama edge (`mxbai-embed-large`); OpenRouter, OpenAI, and Google embedding keys are not required.
+- The production inference configuration should use the same CMPS01 internal key for `VLLM_API_KEY` and `CMPS01_INTERNAL_KEY`. The key must be entered directly on s348 and must not be committed or pasted into chat.
 - Attempted read-only SSH inspection of s378 using the production key; both `s378.ok.ubc.ca` and `dev.eduai.ok.ubc.ca` rejected that key, so the dev `.env` could not be inspected remotely.
