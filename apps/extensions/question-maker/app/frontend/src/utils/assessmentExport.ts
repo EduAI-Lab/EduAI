@@ -48,7 +48,13 @@ export function collectAssessmentExportBlocks(
             const choices = variant.choices && Array.isArray(variant.choices) ? variant.choices : [];
             const choiceLines = choices.map((c) => `${c.letter}. ${(c.text || '').trim()}`);
             const rawAnswer = variant.answer?.trim();
-            const answerLine = rawAnswer ? `Correct answer: ${rawAnswer}` : null;
+            const { selectAllThatApply, correctAnswers } = variant;
+            const answerLine =
+                selectAllThatApply && Array.isArray(correctAnswers) && correctAnswers.length > 0
+                    ? `Correct answers: ${correctAnswers.join(', ')}`
+                    : rawAnswer
+                      ? `Correct answer: ${rawAnswer}`
+                      : null;
 
             const orderValue =
                 link.displayOrder ?? variant.questionMetadata?.questionOrder?.[aid];

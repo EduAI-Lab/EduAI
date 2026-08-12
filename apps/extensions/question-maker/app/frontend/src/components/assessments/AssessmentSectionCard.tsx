@@ -30,6 +30,7 @@ import {
 } from '@tabler/icons-react';
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
 import { reviewStatusConfirm } from '../../lib/review-status';
+import { markCorrectChoices } from '@/lib/mcq';
 
 interface AssessmentSectionCardProps {
   section: AssessmentSection;
@@ -163,14 +164,22 @@ export function AssessmentSectionCard({
 
                 const choices: QuestionCardChoice[] | undefined =
                   (entry.variant.choices?.length ?? 0) > 0
-                    ? entry.variant.choices!.map((c) => ({
-                        letter: c.letter,
-                        text: c.text,
-                        correct:
-                          entry.variant.answer != null
-                            ? c.letter === String(entry.variant.answer).trim()
-                            : false,
-                      }))
+                    ? (() => {
+                        const variantChoices = entry.variant.choices!;
+                        const correctFlags = markCorrectChoices(
+                          entry.variant.answer,
+                          variantChoices,
+                          {
+                            selectAllThatApply: entry.variant.selectAllThatApply,
+                            correctAnswers: entry.variant.correctAnswers,
+                          }
+                        );
+                        return variantChoices.map((c, i) => ({
+                          letter: c.letter,
+                          text: c.text,
+                          correct: correctFlags[i],
+                        }));
+                      })()
                     : undefined;
 
                 const topics: string[] = [

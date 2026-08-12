@@ -38,6 +38,7 @@ import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { IconHelpCircle, IconRobot, IconTrash, IconSparkles, IconFilePencil, IconPencil, IconExternalLink, IconListDetails, IconCircleCheckFilled, IconGitBranch, IconStar } from '@tabler/icons-react';
 import { normalizeCourseCode } from '../../utils/courseDisplay';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
+import { markCorrectChoices } from '@/lib/mcq';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
 import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
@@ -1167,31 +1168,41 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                             )}
                                         </div>
                                         <div className="grid gap-3 sm:grid-cols-2">
-                                            {viewVariant.choices.map((choice, index) => {
-                                                const isCorrect = Boolean(viewVariant.answer && choice.letter === viewVariant.answer.trim().toUpperCase());
-                                                return (
-                                                    <div
-                                                        key={index}
-                                                        className={cn(
-                                                            'flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 transition-colors',
-                                                            isCorrect
-                                                                ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]'
-                                                                : 'border-border bg-muted/40',
-                                                        )}
-                                                    >
-                                                        <span
+                                            {(() => {
+                                                const correctFlags = markCorrectChoices(
+                                                    viewVariant.answer,
+                                                    viewVariant.choices ?? [],
+                                                    {
+                                                        selectAllThatApply: viewVariant.selectAllThatApply,
+                                                        correctAnswers: viewVariant.correctAnswers,
+                                                    }
+                                                );
+                                                return viewVariant.choices!.map((choice, index) => {
+                                                    const isCorrect = Boolean(correctFlags[index]);
+                                                    return (
+                                                        <div
+                                                            key={index}
                                                             className={cn(
-                                                                'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                                                                isCorrect ? 'bg-[var(--color-success-500)] text-white' : 'bg-muted text-muted-foreground',
+                                                                'flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 transition-colors',
+                                                                isCorrect
+                                                                    ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]'
+                                                                    : 'border-border bg-muted/40',
                                                             )}
                                                         >
-                                                            {choice.letter}
-                                                        </span>
-                                                        <span className="flex-1 text-sm text-foreground">{choice.text}</span>
-                                                        {isCorrect && <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />}
-                                                    </div>
-                                                );
-                                            })}
+                                                            <span
+                                                                className={cn(
+                                                                    'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                                                                    isCorrect ? 'bg-[var(--color-success-500)] text-white' : 'bg-muted text-muted-foreground',
+                                                                )}
+                                                            >
+                                                                {choice.letter}
+                                                            </span>
+                                                            <span className="flex-1 text-sm text-foreground">{choice.text}</span>
+                                                            {isCorrect && <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />}
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                         </div>
                                     </section>
                                 ) : (
@@ -1210,13 +1221,49 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                 ))}
 
                                 {/* Answer — green-rail summary for SA/LA and the resolved MCQ key */}
-                                {viewVariant.answer && !(viewEntry.questionType === 'MCQ' && editingChoices) && (
+                                {(viewVariant.answer ||
+                                    (viewEntry.questionType === 'MCQ' &&
+                                        viewVariant.selectAllThatApply &&
+                                        Array.isArray(viewVariant.correctAnswers) &&
+                                        viewVariant.correctAnswers.length > 0)) &&
+                                    !(viewEntry.questionType === 'MCQ' && editingChoices) && (
                                     <section>
-                                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{viewEntry.questionType === 'MCQ' ? 'Correct answer' : 'Answer'}</p>
+                                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                            {viewEntry.questionType === 'MCQ'
+                                                ? viewVariant.selectAllThatApply &&
+                                                  Array.isArray(viewVariant.correctAnswers) &&
+                                                  viewVariant.correctAnswers.length > 0
+                                                    ? 'Correct answers'
+                                                    : 'Correct answer'
+                                                : 'Answer'}
+                                        </p>
                                         <div className="rounded-[var(--radius-lg)] border border-l-4 border-[var(--color-success-500)] border-l-[var(--color-success-500)] bg-[var(--color-success-100)] px-4 py-3">
                                             <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-line">
                                                 {viewEntry.questionType === 'MCQ' && viewVariant.choices && viewVariant.choices.length > 0
-                                                    ? (() => { const letter = viewVariant.answer.trim().toUpperCase().charAt(0); const choice = viewVariant.choices.find((c) => c.letter === letter); return choice ? `${choice.letter}) ${choice.text}` : `Option ${viewVariant.answer.toUpperCase()}`; })()
+                                                    ? (() => {
+                                                        if (
+                                                            viewVariant.selectAllThatApply &&
+                                                            Array.isArray(viewVariant.correctAnswers) &&
+                                                            viewVariant.correctAnswers.length > 0
+                                                        ) {
+                                                            return viewVariant.correctAnswers
+                                                                .map((letter) => {
+                                                                    const l = String(letter).trim().toUpperCase();
+                                                                    const choice = viewVariant.choices!.find(
+                                                                        (c) => c.letter === l
+                                                                    );
+                                                                    return choice
+                                                                        ? `${choice.letter}) ${choice.text}`
+                                                                        : `Option ${l}`;
+                                                                })
+                                                                .join('\n');
+                                                        }
+                                                        const letter = (viewVariant.answer ?? '').trim().toUpperCase().charAt(0);
+                                                        const choice = viewVariant.choices.find((c) => c.letter === letter);
+                                                        return choice
+                                                            ? `${choice.letter}) ${choice.text}`
+                                                            : `Option ${(viewVariant.answer ?? '').toUpperCase()}`;
+                                                    })()
                                                     : viewVariant.answer}
                                             </p>
                                         </div>

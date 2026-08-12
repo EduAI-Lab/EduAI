@@ -81,7 +81,10 @@ export const QuestionCard = ({
   const choices: QuestionCardChoice[] | undefined =
     entry.questionType === 'MCQ' && variant.choices
       ? (() => {
-          const correctFlags = markCorrectChoices(variant.answer, variant.choices);
+          const correctFlags = markCorrectChoices(variant.answer, variant.choices ?? [], {
+            selectAllThatApply: variant.selectAllThatApply,
+            correctAnswers: variant.correctAnswers,
+          });
           return variant.choices.map((choice, i) => ({
             letter: choice.letter,
             text: choice.text,
