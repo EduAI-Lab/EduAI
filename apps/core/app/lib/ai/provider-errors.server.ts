@@ -20,6 +20,11 @@ export type ProviderFailure = {
   retryAfter?: number;
 };
 
+export type ProviderFailureBody = Pick<
+  ProviderFailure,
+  "error" | "code" | "retryable" | "provider"
+>;
+
 const PUBLIC_MESSAGES: Record<ProviderErrorCode, string> = {
   INVALID_PROVIDER_CONFIG: "Provider configuration is invalid",
   PROVIDER_UNAVAILABLE: "Provider is temporarily unavailable",
@@ -99,6 +104,25 @@ export function classifyProviderError(
   }
 
   return createProviderFailure(provider, "PROVIDER_REQUEST_FAILED");
+}
+
+export function providerFailureBody(
+  failure: ProviderFailure,
+): ProviderFailureBody {
+  return {
+    error: failure.error,
+    code: failure.code,
+    retryable: failure.retryable,
+    provider: failure.provider,
+  };
+}
+
+export function providerFailureHeaders(
+  failure: ProviderFailure,
+): Record<string, string> {
+  return failure.retryAfter == null
+    ? {}
+    : { "Retry-After": String(failure.retryAfter) };
 }
 
 export function normalizeRetryAfter(value: unknown): number | undefined {

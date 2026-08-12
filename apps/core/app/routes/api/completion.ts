@@ -1,5 +1,9 @@
 import type { ActionFunctionArgs } from "react-router";
 import { runCompletion, type CompletionRequest } from "~/lib/ai/completion.server";
+import {
+  providerFailureBody,
+  providerFailureHeaders,
+} from "~/lib/ai/provider-errors.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
@@ -77,20 +81,13 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!outcome.ok) {
     const isProviderFailure = "code" in outcome;
     const responseBody = isProviderFailure
-      ? {
-          error: outcome.error,
-          code: outcome.code,
-          retryable: outcome.retryable,
-          provider: outcome.provider,
-        }
+      ? providerFailureBody(outcome)
       : { error: outcome.error };
     return new Response(JSON.stringify(responseBody), {
       status: outcome.status,
       headers: {
         "Content-Type": "application/json",
-        ...(isProviderFailure && outcome.retryAfter
-          ? { "Retry-After": String(outcome.retryAfter) }
-          : {}),
+        ...(isProviderFailure ? providerFailureHeaders(outcome) : {}),
       },
     });
   }

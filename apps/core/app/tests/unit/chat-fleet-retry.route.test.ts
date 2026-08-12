@@ -111,6 +111,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
+  FleetUnavailableError,
   resolveFleetHost,
   resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
@@ -243,8 +244,12 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(res.status).toBe(502);
 
     const body = await res.json();
-    expect(body.code).toBe("LLM_STREAM_FAILED");
-    expect(body.fleetRetry).toBe(false);
+    expect(body).toEqual({
+      error: "Provider request failed",
+      code: "PROVIDER_REQUEST_FAILED",
+      retryable: false,
+      provider: "vllm",
+    });
 
     const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
     expect(logMessages.some((m) => m.includes("retry attempt"))).toBe(true);
@@ -253,6 +258,26 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(streamText).toHaveBeenCalledTimes(2);
     expect(resolveFleetHostAfterFailure).toHaveBeenCalledTimes(1);
 
+  });
+
+  it("normalizes fleet model unavailability without leaking host details", async () => {
+    vi.mocked(resolveFleetHost).mockRejectedValue(
+      new FleetUnavailableError(
+        "No healthy server at http://private-fleet.internal",
+      ),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: "Requested model is unavailable",
+      code: "MODEL_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+    expect(JSON.stringify(body)).not.toContain("private-fleet");
   });
 
   it("logs fleetRetry: true only after the alternate attempt succeeds", async () => {
