@@ -41,7 +41,8 @@ export function createSubmissionWithNextAttempt({
         where: { userId, activityId },
         _max: { attemptNumber: true },
       });
-      const attemptNumber = (aggregate._max.attemptNumber ?? 0) + 1;
+      const { _max: maximums } = aggregate;
+      const attemptNumber = (maximums.attemptNumber ?? 0) + 1;
 
       return tx.submission.create({
         data: {
