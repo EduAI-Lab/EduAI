@@ -87,6 +87,7 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
@@ -130,6 +131,7 @@ import {
   enqueueQuestionGeneration,
   isEnqueueRequested,
 } from "~/lib/queue/chat-producer.server";
+import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import {
@@ -961,15 +963,18 @@ export async function action({ request }: ActionFunctionArgs) {
             { "Retry-After": String(error.retryAfterSeconds) },
           );
         }
-        // Invalid payload is the caller's fault (400); a queue/Redis failure is
-        // ours (502) — never mask an infra outage as a client error.
+        // Invalid payload is the caller's fault (400); Redis/DB outages are 503
+        // (#1112) — never mask an infra outage as a client error.
+        const status = httpStatusForEnqueueError(error);
         const isValidationError = error instanceof ZodError;
         return chatApiReject(
-          isValidationError ? 400 : 502,
+          status,
           {
             error: isValidationError
               ? "Invalid AI job payload"
-              : "Failed to enqueue AI job",
+              : status === 503
+                ? "Queue unavailable"
+                : "Failed to enqueue AI job",
             details: error instanceof Error ? error.message : "Unknown error",
           },
           { chatMode, userId: actingUser.id },
@@ -2540,6 +2545,7 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
               priorAssistantText,
               toolsUsed: adhdToolsUsed,
+              onlyDeterministic: isAdhdOversightDeterministicOnly(),
             })
           : emptyOversightAuditResult();
 
