@@ -187,6 +187,10 @@ model Variants {
   answer             String?
   /// Array of choice objects for MCQ questions: [{letter: "A", text: "Option A"}, ...]
   choices            Json?                 @db.JsonB
+  /// When true, MCQ allows multiple correct letters in correctAnswers
+  selectAllThatApply Boolean               @default(false) @map("select_all_that_apply")
+  /// JSON string[] of correct choice letters when selectAllThatApply; null for single-correct
+  correctAnswers     Json?                 @map("correct_answers") @db.JsonB
   /// Core Question CUID; null until variant is approved and pushed to Core
   coreQuestionId     String?               @unique @map("core_question_id")
   /// users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.
