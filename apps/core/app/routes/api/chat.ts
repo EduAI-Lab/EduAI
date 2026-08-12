@@ -112,7 +112,11 @@ import {
   requireServiceKey,
 } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
-import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
+import {
+  checkRateLimit,
+  getChatRateLimitConfig,
+  parseEnvInt,
+} from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import {
@@ -732,36 +736,34 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // #987: cap LLM completion requests per real end-user. Keyed by
-    // actingUser.id (post-proxy-resolution) so AI Tutor's proxied traffic is
-    // metered per underlying student, not lumped under the shared "service"
-    // caller id. Pure server-to-server calls with no proxyUser stay
-    // unmetered here — they're already gated by the EDUAI_API_KEY secret.
-    if (actingUser.id !== "service") {
-      const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
-      const chatRateWindowMs = parseEnvInt(
-        process.env.CHAT_RATE_WINDOW_MS,
-        60_000,
+    // #987/#1113: meter every authenticated caller before provider work. The
+    // acting user is final here, so approved proxy traffic remains per-user
+    // while direct service-key traffic shares a stable non-secret bucket.
+    const { limit: chatRateLimit, windowMs: chatRateWindowMs } =
+      getChatRateLimitConfig();
+    const rateLimit = await checkRateLimit(
+      `chat:${actingUser.id}`,
+      chatRateLimit,
+      chatRateWindowMs,
+    );
+    if (rateLimit.limited) {
+      const requestContext = getRequestContext(request);
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+          ...requestContext,
+          actionCode: "RATE_LIMIT_EXCEEDED",
+          outcome: "DENIED",
+          entityType: "Chat",
+          details: { userId: actingUser.id },
+        }),
       );
-      if (
-        isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)
-      ) {
-        const requestContext = getRequestContext(request);
-        fireAndForget(
-          logSecurityEvent({
-            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
-            ...requestContext,
-            actionCode: "RATE_LIMIT_EXCEEDED",
-            outcome: "DENIED",
-            entityType: "Chat",
-            details: { userId: actingUser.id },
-          }),
-        );
-        return new Response(JSON.stringify({ error: "Too Many Requests" }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+      return chatApiReject(
+        429,
+        { error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter },
+        { chatMode, userId: actingUser.id },
+        { "Retry-After": String(rateLimit.retryAfter) },
+      );
     }
 
     const normalizedIncomingMessages = filterIncomingClientMessages(

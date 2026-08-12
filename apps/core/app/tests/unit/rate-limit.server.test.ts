@@ -9,6 +9,7 @@ vi.mock("~/lib/queue/connection.server", () => ({
 
 import {
   checkRateLimit,
+  getChatRateLimitConfig,
   isRateLimited,
   parseEnvInt,
   resetRateLimitsForTests,
@@ -113,6 +114,31 @@ describe("isRateLimited", () => {
     vi.setSystemTime(start + 1_000); // exactly at the boundary, not past it
 
     expect(isRateLimited("10.0.0.9", 1, 1_000)).toBe(false);
+  });
+});
+
+describe("getChatRateLimitConfig", () => {
+  it("uses the documented 100 request / 60 second defaults", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT", "");
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "");
+
+    expect(getChatRateLimitConfig()).toEqual({ limit: 100, windowMs: 60_000 });
+  });
+
+  it("prefers CHAT_RATE_LIMIT_WINDOW_MS over the legacy window alias", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT", "25");
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "30000");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "45000");
+
+    expect(getChatRateLimitConfig()).toEqual({ limit: 25, windowMs: 30_000 });
+  });
+
+  it("falls back to CHAT_RATE_WINDOW_MS while the legacy alias remains supported", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "45000");
+
+    expect(getChatRateLimitConfig()).toMatchObject({ windowMs: 45_000 });
   });
 });
 

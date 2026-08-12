@@ -9,6 +9,11 @@ export type RateLimitResult = {
   retryAfter: number;
 };
 
+export type ChatRateLimitConfig = {
+  limit: number;
+  windowMs: number;
+};
+
 /**
  * Number(process.env.X ?? fallback) only falls back on null/undefined. Guard
  * against blank and non-finite values so configuration cannot silently become
@@ -18,6 +23,14 @@ export function parseEnvInt(value: string | undefined, fallback: number): number
   if (value === undefined || value.trim() === "") return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function getChatRateLimitConfig(): ChatRateLimitConfig {
+  const legacyWindowMs = parseEnvInt(process.env.CHAT_RATE_WINDOW_MS, 60_000);
+  return {
+    limit: parseEnvInt(process.env.CHAT_RATE_LIMIT, 100),
+    windowMs: parseEnvInt(process.env.CHAT_RATE_LIMIT_WINDOW_MS, legacyWindowMs),
+  };
 }
 
 // Bound the process-local fallback (#990). The stale window is comfortably

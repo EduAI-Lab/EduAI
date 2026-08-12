@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { runCompletion, type CompletionRequest } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 
 /**
@@ -19,12 +20,15 @@ export async function action({ request }: ActionFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  // Auth only — completion is stateless; no user identity is needed past this gate.
+  let rateLimitIdentity = apiKeySession?.user?.id ?? null;
   if (!apiKeySession?.user) {
     const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) {
+    if (session?.user) {
+      rateLimitIdentity = session.user.id;
+    } else {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;
+      rateLimitIdentity = "service";
     }
   }
 
@@ -39,6 +43,25 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const payload = body as Partial<CompletionRequest>;
+  const { limit, windowMs } = getChatRateLimitConfig();
+  const rateLimit = await checkRateLimit(
+    `completion:${rateLimitIdentity ?? "service"}`,
+    limit,
+    windowMs,
+  );
+  if (rateLimit.limited) {
+    return new Response(
+      JSON.stringify({ error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(rateLimit.retryAfter),
+        },
+      },
+    );
+  }
+
   const outcome = await runCompletion({
     model: typeof payload.model === "string" ? payload.model : "",
     apiKeys: payload.apiKeys,
