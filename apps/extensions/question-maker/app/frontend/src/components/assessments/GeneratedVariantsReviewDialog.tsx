@@ -24,6 +24,7 @@ import {
 } from '../../lib/difficulty';
 import type { QuestionDifficulty } from '../../types/question';
 import type { GenerateBankVariantsResult, GeneratedVariantPreview } from '../../services/assessmentVariantService';
+import { markCorrectChoices } from '../../lib/mcq';
 import { toast } from 'sonner';
 
 type VariantStatus = 'pending' | 'approving' | 'approved' | 'discarding' | 'discarded';
@@ -185,13 +186,15 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
   /** MCQ option grid — mirrors the view modal's choice cards (letter chip + correct highlight). */
   const renderChoices = (v: GeneratedVariantPreview) => {
     if (!Array.isArray(v.choices) || v.choices.length === 0) return null;
+    const correctFlags = markCorrectChoices(v.answer, v.choices, {
+      selectAllThatApply: v.selectAllThatApply,
+      correctAnswers: v.correctAnswers,
+    });
     return (
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
         {v.choices.map((c, i) => {
           const letter = c.letter ?? String.fromCharCode(65 + i);
-          const isAnswer =
-            v.answer != null &&
-            (String(v.answer).trim() === letter || String(v.answer).trim() === c.text?.trim());
+          const isAnswer = correctFlags[i];
           return (
             <div
               key={`${letter}-${i}`}

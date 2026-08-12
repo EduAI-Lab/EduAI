@@ -18,6 +18,8 @@ export async function loadOrderedVariantsForAssessment(assessmentId) {
               questionText: true,
               answer: true,
               choices: true,
+              selectAllThatApply: true,
+              correctAnswers: true,
               difficulty: true,
               reasoningLevel: true,
               questionMetadataId: true,
