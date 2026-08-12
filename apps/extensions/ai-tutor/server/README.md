@@ -218,6 +218,10 @@ CourseOffering ─┬─ Module ─── Lesson ─── Activity ─┬─ Su
 
 See `server/prisma/schema.prisma` for the full schema.
 
+Submission attempt numbers are unique per `(userId, activityId)`. The answer-submission path
+allocates the next number inside an interactive transaction, while the database constraint is the
+final concurrency guard and only collisions on that exact constraint are retried.
+
 ### Migrations
 
 ```bash
