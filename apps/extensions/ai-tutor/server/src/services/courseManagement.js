@@ -8,6 +8,7 @@
  */
 
 import { prisma } from '../config/database.js';
+import { CourseContentImportSchema } from '../../../shared/schemas/mutations.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from './courseCloning.js';
 import { resolveCoreCourseById } from './courseResolver.js';
 import { setCoreCoursePublishState } from './eduaiClient.js';
@@ -29,26 +30,20 @@ export class CourseMutationError extends Error {
 
 const COURSE_INSTRUCTORS = { instructors: { select: { userId: true } } };
 
-function normalizeImportRequest(body = {}) {
-  const { sourceCourseId, moduleIds, lessonIds, targetModuleId } = body;
-  const normalizedModuleIds = Array.isArray(moduleIds)
-    ? moduleIds.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-    : [];
-  const normalizedLessonIds = Array.isArray(lessonIds)
-    ? lessonIds.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-    : [];
-  const numericTargetModuleId =
-    typeof targetModuleId === 'number' || typeof targetModuleId === 'string'
-      ? Number(targetModuleId)
-      : null;
-  const numericSourceCourseId =
-    typeof sourceCourseId === 'number' || typeof sourceCourseId === 'string'
-      ? Number(sourceCourseId)
-      : null;
-
-  if (numericSourceCourseId !== null && !Number.isFinite(numericSourceCourseId)) {
-    throw new CourseMutationError('Invalid sourceCourseId');
+function parseImportRequest(body = {}) {
+  const parsed = CourseContentImportSchema.safeParse(body);
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path[0];
+    throw new CourseMutationError(
+      field === 'sourceCourseId' ? 'Invalid sourceCourseId' : 'Invalid import request',
+    );
   }
+  const {
+    sourceCourseId: numericSourceCourseId = null,
+    moduleIds: normalizedModuleIds = [],
+    lessonIds: normalizedLessonIds = [],
+    targetModuleId: numericTargetModuleId = null,
+  } = parsed.data;
   if (normalizedModuleIds.length === 0 && normalizedLessonIds.length === 0) {
     throw new CourseMutationError('Nothing to import');
   }
@@ -91,7 +86,7 @@ async function requireLiveCourseAdmin(course, user, message = 'Not authorized fo
 /** Clone selected modules/lessons after validating every course boundary. */
 export async function importCourseContentForUser({ courseId, body, user }) {
   const { normalizedModuleIds, normalizedLessonIds, numericTargetModuleId, numericSourceCourseId } =
-    normalizeImportRequest(body);
+    parseImportRequest(body);
 
   const destination = await loadCourseForAdmin(courseId);
   await requireLiveCourseAdmin(destination, user);

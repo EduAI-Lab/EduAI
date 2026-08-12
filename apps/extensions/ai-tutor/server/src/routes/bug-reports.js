@@ -9,14 +9,28 @@ import {
   updateBugReportStatus,
 } from '../services/bugReports.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
+import {
+  BugReportCreateSchema,
+  BugReportStatusUpdateSchema,
+} from '../../../shared/schemas/mutations.js';
 
 const router = express.Router();
 
 router.post("/bug-reports", async (req, res) => {
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: "Authentication required" });
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const parsedBody = BugReportCreateSchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    const issue = parsedBody.error.issues[0];
+    const descriptionIssue = issue?.path[0] === 'description';
+    return res.status(400).json({
+      error: descriptionIssue
+        ? 'description must be between 10 and 2000 characters'
+        : 'Invalid payload',
+    });
+  }
   try {
-    await createBugReport(authUser, req.body || {});
+    await createBugReport(authUser, parsedBody.data);
     res.status(201).json({ ok: true });
   } catch (error) {
     if (error instanceof BugReportError) {
@@ -54,10 +68,18 @@ router.get("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req, 
   }
 });
 
-router.patch("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req, res) => {
+router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
+  const parsedBody = BugReportStatusUpdateSchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({ error: 'Invalid bug report status' });
+  }
   try {
     const cookie = getEduAiCookieForRequest(req);
-    const updated = await updateBugReportStatus(req.params.bugReportId, req.body?.status, cookie);
+    const updated = await updateBugReportStatus(
+      req.params.bugReportId,
+      parsedBody.data.status,
+      cookie,
+    );
     res.json(updated);
   } catch (error) {
     if (error instanceof BugReportError) {

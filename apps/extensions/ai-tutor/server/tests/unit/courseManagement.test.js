@@ -92,6 +92,22 @@ describe('course authoring service boundaries', () => {
     expect(cloneCourseContent).not.toHaveBeenCalled();
   });
 
+  it('rejects a mixed-validity id array instead of importing its valid subset', async () => {
+    await expect(
+      importCourseContentForUser({
+        courseId: 20,
+        body: { sourceCourseId: 10, moduleIds: [3, 'not-an-id'] },
+        user,
+      }),
+    ).rejects.toMatchObject({
+      name: 'CourseMutationError',
+      status: 400,
+      message: 'Invalid import request',
+    });
+    expect(courseFindUnique).not.toHaveBeenCalled();
+    expect(cloneCourseContent).not.toHaveBeenCalled();
+  });
+
   it('authorizes and clones modules inside the service boundary', async () => {
     await importCourseContentForUser({
       courseId: 20,

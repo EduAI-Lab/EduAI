@@ -47,6 +47,27 @@ describe('topic service boundaries', () => {
     expect(courseFindUnique).not.toHaveBeenCalled();
   });
 
+  it('rejects a malformed mapping instead of applying the valid subset', async () => {
+    await expect(
+      remapCourseTopics({
+        courseId: 20,
+        user,
+        body: {
+          mappings: [
+            { fromTopicId: 'topic-a', toTopicId: 'topic-b' },
+            { fromTopicId: '', toTopicId: 'topic-c' },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: 'TopicMutationError',
+      status: 400,
+      message: 'No valid mappings provided',
+    });
+    expect(courseFindUnique).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it('performs the remap in a serializable transaction', async () => {
     const tx = {
       topic: {

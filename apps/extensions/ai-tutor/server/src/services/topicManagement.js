@@ -7,6 +7,7 @@
 
 import { prisma } from '../config/database.js';
 import { isCourseAdmin } from '../middleware/auth.js';
+import { TopicRemapSchema } from '../../../shared/schemas/mutations.js';
 
 export class TopicMutationError extends Error {
   constructor(message, status = 400, code) {
@@ -84,26 +85,15 @@ async function preloadSecondaryTopics(tx, courseId, normalized) {
   return { sourceByTopic, targetByTopic };
 }
 
-function normalizeMappings(body = {}) {
-  const mappings = Array.isArray(body.mappings) ? body.mappings : [];
-  const normalized = mappings
-    .map((mapping) => ({
-      fromTopicId: String(mapping?.fromTopicId ?? ''),
-      toTopicId: String(mapping?.toTopicId ?? ''),
-    }))
-    .filter(
-      (mapping) =>
-        mapping.fromTopicId.length > 0 &&
-        mapping.toTopicId.length > 0 &&
-        mapping.fromTopicId !== mapping.toTopicId,
-    );
-  if (normalized.length === 0) throw new TopicMutationError('No valid mappings provided');
-  return normalized;
+function parseMappings(body = {}) {
+  const parsed = TopicRemapSchema.safeParse(body);
+  if (!parsed.success) throw new TopicMutationError('No valid mappings provided');
+  return parsed.data.mappings;
 }
 
 /** Rewrite all activity references for a course in one serializable transaction. */
 export async function remapCourseTopics({ courseId, user, body }) {
-  const normalized = normalizeMappings(body);
+  const normalized = parseMappings(body);
   const course = await prisma.courseOffering.findUnique({
     where: { id: courseId },
     include: { instructors: { select: { userId: true } } },

@@ -115,6 +115,10 @@ import {
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/liveCoursePrincipal.js';
+import {
+  CourseContentImportSchema,
+  ExternalCourseImportSchema,
+} from '../../../shared/schemas/mutations.js';
 
 const router = express.Router();
 
@@ -570,11 +574,11 @@ router.post(
   requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   async (req, res) => {
     const instructor = req.user;
-    const { externalCourseId } = req.body || {};
-
-    if (!externalCourseId || typeof externalCourseId !== 'string') {
+    const parsedBody = ExternalCourseImportSchema.safeParse(req.body);
+    if (!parsedBody.success) {
       return res.status(400).json({ error: 'externalCourseId is required' });
     }
+    const { externalCourseId } = parsedBody.data;
 
     try {
       // #578: only courses in the instructor's Core-scoped list are importable.
@@ -814,11 +818,18 @@ router.post(
     if (!Number.isFinite(courseId)) {
       return res.status(400).json({ error: 'Invalid course id' });
     }
+    const parsedBody = CourseContentImportSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      const field = parsedBody.error.issues[0]?.path[0];
+      return res.status(400).json({
+        error: field === 'sourceCourseId' ? 'Invalid sourceCourseId' : 'Invalid import request',
+      });
+    }
 
     try {
       const updated = await importCourseContentForUser({
         courseId,
-        body: req.body,
+        body: parsedBody.data,
         user: authUser,
       });
       res.json(updated);

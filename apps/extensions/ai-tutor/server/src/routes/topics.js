@@ -56,6 +56,7 @@ import {
   remapCourseTopics,
   TopicMutationError,
 } from '../services/topicManagement.js';
+import { CreateTopicSchema, TopicRemapSchema } from '../../../shared/schemas/mutations.js';
 
 const router = express.Router();
 
@@ -159,10 +160,11 @@ router.post(
       return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-    if (!name) {
+    const parsedBody = CreateTopicSchema.safeParse(req.body);
+    if (!parsedBody.success) {
       return res.status(400).json({ error: 'name is required' });
     }
+    const { name } = parsedBody.data;
 
     try {
       const { course } = await ensureCourseTopicAccess(courseId, instructor);
@@ -305,12 +307,16 @@ router.post(
     if (!Number.isFinite(courseId)) {
       return res.status(400).json({ error: 'Invalid course id' });
     }
+    const parsedBody = TopicRemapSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      return res.status(400).json({ error: 'No valid mappings provided' });
+    }
 
     try {
       await remapCourseTopics({
         courseId,
         user: instructor,
-        body: req.body,
+        body: parsedBody.data,
       });
       res.json({ ok: true });
     } catch (e) {

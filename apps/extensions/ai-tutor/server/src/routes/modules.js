@@ -24,6 +24,7 @@ import {
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/liveCoursePrincipal.js';
+import { CreateModuleSchema } from '../../../shared/schemas/mutations.js';
 
 const router = express.Router();
 
@@ -158,8 +159,14 @@ router.post(
       return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    const { title, description, position } = req.body || {};
-    if (!title) return res.status(400).json({ error: 'title required' });
+    const parsedBody = CreateModuleSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      const field = parsedBody.error.issues[0]?.path[0];
+      return res
+        .status(400)
+        .json({ error: field === 'title' ? 'title required' : 'Invalid payload' });
+    }
+    const { title, description, position } = parsedBody.data;
 
     try {
       const course = await prisma.courseOffering.findUnique({
