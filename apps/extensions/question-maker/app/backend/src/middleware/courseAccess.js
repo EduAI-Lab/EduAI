@@ -9,9 +9,11 @@
  *     caller-scoped endpoint, with no service-key path).
  *
  * A QM `Course` row is 1:1 with a Core course (unique `core_course_id`) and is
- * owned by whoever linked it. Access here is therefore resolved against the Core
- * enrollment/unit data, NOT QM ownership — except for courses not yet linked to
- * Core, where we fall back to owner-only instructor access.
+ * owned by whoever linked it. Access is resolved against Core enrollment/unit
+ * data only — local ownership is an FK, not an authorization grant (#1114).
+ * When Core is unreachable or enrollment resolution fails, access fails closed
+ * (returns null). Platform ADMIN short-circuits; UNIT_ADMIN uses the unit lock
+ * when department data is available.
  */
 import { prisma } from '../config/database.js';
 import {
@@ -55,6 +57,9 @@ export async function getAuthorizedUnits(reqUser, cookie) {
  * the `{ level, rank }` access or null. Use this when the course has already
  * been fetched (e.g. a resource loader eager-loaded it) to avoid a re-query.
  *
+ * Ownership alone never grants access (#1114): Core enrollment/unit data must
+ * authorize the caller. Fail closed when Core is unreachable.
+ *
  * @param {{id: string, role?: string, authorizedUnits?: string[]}} reqUser
  * @param {object} course  a loaded QM Course instance (must include userId + coreCourseId)
  * @param {{cookie?: string}} [opts]  caller cookie, forwarded to /api/me
@@ -64,10 +69,8 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
 
   if (reqUser.role === 'ADMIN') return LEVELS.admin;
 
-  // Course not yet linked to Core: no enrollment data exists, so fall back to
-  // owner-only instructor access (a TA/co-instructor has no access here).
+  // Course not yet linked to Core: no enrollment/unit data can authorize anyone.
   if (!course.coreCourseId) {
-    if (reqUser.id === course.userId) return LEVELS.instructor;
     return null;
   }
 
@@ -97,7 +100,7 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   try {
     const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie });
     enrollments = data?.enrollments ?? [];
-  } catch (err) {
+  } catch {
     // #225 SEAM-02 / #1197 product decision: fail-CLOSED here, including for
     // the QM course owner. Once a course is linked (`coreCourseId` set),
     // Core enrollments are the sole source of truth for who has access — a
@@ -115,8 +118,6 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
 
   const mine = enrollments.find((e) => e.studentId === reqUser.id && e.isActive);
   if (!mine) {
-    // Linker may not appear in Core roster yet after a fresh link/sync.
-    if (reqUser.id === course.userId) return LEVELS.instructor;
     return null;
   }
 

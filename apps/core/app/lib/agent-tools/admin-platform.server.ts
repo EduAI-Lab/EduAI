@@ -15,6 +15,7 @@ import {
   InvalidOllamaBaseUrlError,
   ollamaTagsUrl,
 } from "~/lib/ai/ollama-url.server";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import {
   findActiveReEmbedJob,
   getReEmbedJobForCourse,
@@ -882,7 +883,10 @@ export async function listAdminVllmModels(actor: RbacUser) {
   const vllmPort = process.env.VLLM_PORT || "8001";
   const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+  const apiKey = resolveVllmApiKey();
+  if (!apiKey) {
+    return { error: "VLLM_API_KEY_NOT_CONFIGURED" };
+  }
 
   try {
     const modelsUrl = `${baseUrl}/models`;

@@ -267,8 +267,13 @@ Configure Core on s378 to use the cmps01 HTTP endpoints:
 ```env
 OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<same value as cmps01's CMPS01_INTERNAL_KEY>"
 ```
+
+`VLLM_API_KEY` must be a real generated secret (`openssl rand -hex 32`), not the
+`vllm-local` placeholder — as soon as `VLLM_BASE_URL` points at cmps01, Core
+refuses to fall back to `vllm-local` even though s378 runs
+`NODE_ENV=development` (see #1115).
 
 Then restart Core and verify from `apps/core`:
 
