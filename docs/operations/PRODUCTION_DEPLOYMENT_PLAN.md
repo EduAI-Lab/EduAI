@@ -41,6 +41,19 @@ IT has been asked to provide production aliases under `eduai.ok.ubc.ca` for the 
 - Deploy only clean, reviewed commits from `main`.
 - Keep the previous release available until post-deploy checks pass.
 
+## Initial production host inventory
+
+Read-only checks were performed over SSH on 2026-08-11.
+
+- Public host resolves to `s348.ok.ubc.ca`; the existing checkout is `/srv/www/my.eduai.ok.ubc.ca`.
+- `/srv/www/eduai.ok.ubc.ca` is a symlink to the Core checkout.
+- Host OS is Ubuntu 22.04; Node is `v22.18.0` and npm is `10.8.2`.
+- Apache and Docker services are running. The application account cannot currently access the Docker socket without additional group/sudo configuration.
+- PostgreSQL is listening on `127.0.0.1:5432`; Redis was not listening on the inspected ports.
+- The existing checkout is on `main` at old commit `c1c7097`, with broad file drift and untracked deployment state. It must not be reset or pulled over in place before a backup/migration plan exists.
+- The existing checkout uses an older Core-only layout with PM2-era deployment files, not the current monorepo production layout.
+- DNS resolves cmps01, cmps02, and cmps03. Initial port probing did not establish connectivity to cmps01:8001, and the remaining probes timed out; firewall/routing access still needs confirmation.
+
 ## Change log
 
 ### 2026-08-11
