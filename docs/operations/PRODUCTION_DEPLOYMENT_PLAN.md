@@ -90,3 +90,6 @@ The candidate variables should be removed from local files only after confirming
 - Created and verified a 23 MB custom-format backup of the existing `eduai` database at `/srv/www/eduai-production/shared/backups/eduai-legacy-20260812-134416.dump`; the legacy database remains untouched.
 - Added `infra/production/PROVISIONING_CHECKLIST.md`, separating non-privileged preparation from interactive sudo/database/Apache actions and requiring a dedicated production database role.
 - Preserved unrelated local changes in `TESTS.md`, `docs/end-user-testing-core-student-ta-1429.md`, and `tests/e2e/tests/core/ai-chat-happy-path.spec.ts`; they are not part of deployment commits.
+- Created a separate operations worktree at `.worktrees/production-ops` on branch `codex/production-ops` so deployment work does not interfere with another agent's branch.
+- Added a root-owned, fixed-action production helper and narrow sudoers procedure for local Redis and Core/Apache service bootstrap.
+- Created the new empty `eduai_prod` database with owner group `eduai_prod_admins`, application login `eduai_prod_app`, and pgvector `0.8.1`; the existing `eduai` database remains untouched.

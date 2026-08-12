@@ -42,6 +42,8 @@ The application service runs from `current`. The old checkout remains available 
 
 See [`PROVISIONING_CHECKLIST.md`](./PROVISIONING_CHECKLIST.md) for the database, Redis, permissions, environment, systemd, Apache, and final pre-release checks.
 
+For privileged bootstrap operations, use the narrow helper and sudoers procedure in [`SUDOERS_SETUP.md`](./SUDOERS_SETUP.md).
+
 Run these commands interactively as an administrator after reviewing the host-specific paths and package names:
 
 ```bash
