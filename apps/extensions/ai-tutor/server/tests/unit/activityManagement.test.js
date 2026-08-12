@@ -8,7 +8,7 @@ const activityUpdate = vi.fn();
 const topicFindUnique = vi.fn();
 const topicFindMany = vi.fn();
 const promptFindUnique = vi.fn();
-const isUnitAdminForCourse = vi.fn();
+const authorizeLiveCoursePrincipal = vi.fn();
 
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
@@ -24,8 +24,13 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-vi.mock('../../src/middleware/auth.js', () => ({
-  isUnitAdminForCourse: (...args) => isUnitAdminForCourse(...args),
+vi.mock('../../src/services/liveCoursePrincipal.js', () => ({
+  authorizeLiveCoursePrincipal: (...args) => authorizeLiveCoursePrincipal(...args),
+  isAllowedLiveCourseStaffPrincipal: (principal) =>
+    principal?.state === 'allowed' &&
+    ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'].includes(principal.kind),
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE: 'COURSE_AUTH_UNAVAILABLE',
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE: 'Course authorization unavailable',
 }));
 
 const { ActivityMutationError, createActivityForLesson, updateActivityForEditor } =
@@ -67,7 +72,11 @@ function activityFixture() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  isUnitAdminForCourse.mockResolvedValue(false);
+  authorizeLiveCoursePrincipal.mockResolvedValue({
+    state: 'allowed',
+    kind: 'INSTRUCTOR',
+    role: 'INSTRUCTOR',
+  });
   topicFindMany.mockResolvedValue([]);
   promptFindUnique.mockResolvedValue({ id: 7 });
   activityFindFirst.mockResolvedValue({ position: 2 });
@@ -76,6 +85,59 @@ beforeEach(() => {
 });
 
 describe('activity authoring service boundaries', () => {
+  it('authorizes a live instructor when the local mirror is absent', async () => {
+    lessonFindUnique.mockResolvedValue({
+      ...lessonFixture(),
+      module: { ...lessonFixture().module, courseOffering: { id: 20, instructors: [] } },
+    });
+    topicFindUnique.mockResolvedValue({ id: 'topic-main', courseOfferingId: 20 });
+    topicFindMany.mockResolvedValue([]);
+
+    await createActivityForLesson({
+      lessonId: 10,
+      user,
+      payload: {
+        question: 'Question',
+        mainTopicId: 'topic-main',
+        secondaryTopicIds: [],
+        enableTeachMode: true,
+        enableGuideMode: false,
+        enableCustomMode: false,
+      },
+    });
+
+    expect(authorizeLiveCoursePrincipal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 20, instructors: [] }),
+      user,
+    );
+    expect(activityCreate).toHaveBeenCalled();
+  });
+
+  it('fails closed on live Core authorization outage before writing', async () => {
+    authorizeLiveCoursePrincipal.mockResolvedValue({
+      state: 'unavailable',
+      kind: null,
+      role: null,
+    });
+    lessonFindUnique.mockResolvedValue(lessonFixture());
+
+    await expect(
+      createActivityForLesson({
+        lessonId: 10,
+        user,
+        payload: {
+          question: 'Question',
+          mainTopicId: 'topic-main',
+          secondaryTopicIds: [],
+          enableTeachMode: true,
+          enableGuideMode: false,
+          enableCustomMode: false,
+        },
+      }),
+    ).rejects.toMatchObject({ status: 503, code: 'COURSE_AUTH_UNAVAILABLE' });
+    expect(activityCreate).not.toHaveBeenCalled();
+  });
+
   it('rejects cross-course secondary topics before writing an activity', async () => {
     lessonFindUnique.mockResolvedValue(lessonFixture());
     topicFindUnique.mockResolvedValue({ id: 'topic-main', courseOfferingId: 20 });
@@ -145,6 +207,7 @@ describe('activity authoring service boundaries', () => {
         },
       },
     });
+    authorizeLiveCoursePrincipal.mockResolvedValue({ state: 'denied', kind: null, role: null });
 
     await expect(
       updateActivityForEditor({

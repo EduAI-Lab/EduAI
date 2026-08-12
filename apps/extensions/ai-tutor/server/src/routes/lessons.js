@@ -1,7 +1,7 @@
-import express from "express";
-import { prisma } from "../config/database.js";
-import { requireRole, isUnitAdminForCourse } from "../middleware/auth.js";
-import { mapLesson, mapProgressData } from "../utils/mappers.js";
+import express from 'express';
+import { prisma } from '../config/database.js';
+import { requireRole } from '../middleware/auth.js';
+import { mapLesson, mapProgressData } from '../utils/mappers.js';
 import {
   parsePaginationParams,
   paginated,
@@ -18,9 +18,30 @@ import {
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/enrollmentSync.js';
-import { authorizeLiveCoursePrincipal } from '../services/liveCoursePrincipal.js';
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from '../services/liveCoursePrincipal.js';
 
 const router = express.Router();
+
+async function requireLiveStaffAccess(res, course, user, message) {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === 'unavailable') {
+    res.status(503).json({
+      error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    });
+    return false;
+  }
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
+    res.status(403).json({ error: message });
+    return false;
+  }
+  return true;
+}
 
 router.use(
   '/modules/:moduleId/lessons',
@@ -38,10 +59,7 @@ async function getExactCourseMembership(course, authUser) {
   const liveTa = principal.state === 'allowed' && principal.role === 'TA';
   return {
     principal,
-    isInstructor:
-      principal.state === 'allowed' &&
-      principal.kind === 'INSTRUCTOR' &&
-      course.instructors?.some((entry) => entry.userId === authUser.id),
+    isInstructor: principal.state === 'allowed' && principal.kind === 'INSTRUCTOR',
     isTa: liveTa,
     isStudent: principal.state === 'allowed' && principal.role === 'STUDENT',
     isUnitAdmin: principal.state === 'allowed' && principal.kind === 'UNIT_ADMIN',
@@ -165,10 +183,15 @@ router.post(
       });
       if (!module) return res.status(404).json({ error: 'Module not found' });
 
-      const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this module' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          module.courseOffering,
+          authUser,
+          'Not authorized for this module',
+        ))
+      ) {
+        return;
       }
 
       // Append to the end of the module's lesson list when the client sends no
@@ -419,12 +442,15 @@ router.patch(
       });
       if (!lesson) return res.status(404).json({ error: "Lesson not found" });
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this module" });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          authUser,
+          'Not authorized for this module',
+        ))
+      ) {
+        return;
       }
 
       const { position, total } = await moveToPosition({
@@ -474,12 +500,15 @@ router.patch(
         return res.status(404).json({ error: 'Lesson not found' });
       }
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === instructor.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(instructor, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          instructor,
+          'Not authorized for this lesson',
+        ))
+      ) {
+        return;
       }
 
       // Validate parent course is published — `isPublished` is Core-owned
@@ -538,12 +567,15 @@ router.patch(
         return res.status(404).json({ error: 'Lesson not found' });
       }
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === instructor.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(instructor, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          instructor,
+          'Not authorized for this lesson',
+        ))
+      ) {
+        return;
       }
 
       const updated = await prisma.lesson.update({
@@ -586,13 +618,15 @@ router.delete(
         return res.status(404).json({ error: 'Lesson not found' });
       }
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      const isAdmin = authUser.role === 'ADMIN';
-      if (!isInstructor && !unitAdmin && !isAdmin) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          authUser,
+          'Not authorized for this lesson',
+        ))
+      ) {
+        return;
       }
 
       await prisma.lesson.delete({ where: { id: lessonId } });
@@ -643,13 +677,15 @@ router.patch(
         return res.status(404).json({ error: 'Lesson not found' });
       }
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      const isAdmin = authUser.role === 'ADMIN';
-      if (!isInstructor && !unitAdmin && !isAdmin) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          authUser,
+          'Not authorized for this lesson',
+        ))
+      ) {
+        return;
       }
 
       const updated = await prisma.lesson.update({
@@ -699,12 +735,15 @@ router.put(
       });
       if (!module) return res.status(404).json({ error: "Module not found" });
 
-      const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
-      // `isUnitAdminForCourse` is async — without the await this resolved to a
-      // (always truthy) Promise, so the guard below never denied anyone.
-      const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this module" });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          module.courseOffering,
+          authUser,
+          'Not authorized for this module',
+        ))
+      ) {
+        return;
       }
 
       const existing = await prisma.lesson.findMany({

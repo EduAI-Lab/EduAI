@@ -50,9 +50,9 @@
  *   services/progressCalculation.js
  */
 
-import express from "express";
-import { prisma } from "../config/database.js";
-import { requireRole, isUnitAdminForCourse, isCourseAdmin } from "../middleware/auth.js";
+import express from 'express';
+import { prisma } from '../config/database.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
 import {
   mapCourseOffering,
   mapCourseOfferingAfterPublishWrite,
@@ -109,7 +109,12 @@ import {
 import { listAdminBugReports } from '../services/bugReports.js';
 import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
-import { authorizeLiveCoursePrincipal } from '../services/liveCoursePrincipal.js';
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from '../services/liveCoursePrincipal.js';
 
 const router = express.Router();
 
@@ -123,12 +128,7 @@ async function resolveCourseStaffMembership(course, authUser) {
   const liveTa = principal.state === 'allowed' && principal.role === 'TA';
   return {
     principal,
-    hasAdminAccess:
-      principal.state === 'allowed' &&
-      (principal.kind === 'ADMIN' ||
-        principal.kind === 'UNIT_ADMIN' ||
-        (principal.kind === 'INSTRUCTOR' &&
-          course.instructors?.some((entry) => entry.userId === authUser.id))),
+    hasAdminAccess: isAllowedLiveCourseStaffPrincipal(principal),
     isTa: liveTa,
   };
 }
@@ -696,6 +696,7 @@ router.get("/courses/:courseId", async (req, res) => {
 
     const isLearner = authUser.role === 'STUDENT' || authUser.role === 'TA';
     let liveEnrollment = null;
+    let liveStaffPrincipal = null;
 
     if (isLearner) {
       try {
@@ -713,39 +714,46 @@ router.get("/courses/:courseId", async (req, res) => {
           code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
         });
       }
-    } else if (course.coreOfferingId) {
-      // Staff authorization is based on ADMIN, instructor assignment, or the
-      // live UNIT_ADMIN department check — never on CourseEnrollment. It is
-      // therefore safe for management callers to use the bounded local mirror
-      // when the Core roster is unavailable, while learner callers above fail
-      // closed instead of authorizing from stale rows.
+    } else {
       try {
-        await syncCourseEnrollments(courseId, {
-          course,
-          ttlMs: AUTO_SYNC_TTL_MS,
-          signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+        liveStaffPrincipal = await authorizeLiveCoursePrincipal(course, authUser);
+      } catch {
+        liveStaffPrincipal = { state: 'unavailable', kind: null, role: null };
+      }
+      if (liveStaffPrincipal.state === 'unavailable') {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
         });
-      } catch (e) {
-        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        logSafeError(
-          `[courses] Staff enrollment auto-sync (${phase}) failed; serving local mirror`,
-          e,
-        );
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(liveStaffPrincipal)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      if (course.coreOfferingId) {
+        // Retain the response-data synchronization only after exact live
+        // staff authorization has succeeded; a stale mirror never grants
+        // access and a Core outage cannot trigger a local write.
+        try {
+          await syncCourseEnrollments(courseId, {
+            course,
+            ttlMs: AUTO_SYNC_TTL_MS,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          });
+        } catch (e) {
+          const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+          logSafeError(
+            `[courses] Staff enrollment auto-sync (${phase}) failed after live authorization`,
+            e,
+          );
+        }
       }
     }
 
-    const enrollments = isLearner
-      ? []
-      : await prisma.courseEnrollment.findMany({
-          where: { courseOfferingId: courseId },
-          select: { userId: true, role: true },
-        });
-
-    // #1072 step 2/4: single-course read-through, resolved once and reused
-    // for both the UNIT_ADMIN department check below and the response body
-    // — `department` is Core-owned data, not a local column. Degrades to a
-    // stale-but-present course (and a closed unit-admin department check) on
-    // any Core failure rather than hard-erroring. Bounded to
+    // #1072 step 2/4: single-course read-through for the response body —
+    // `department` is Core-owned data, not a local column. Degrades to a
+    // stale-but-present course on any Core failure rather than hard-erroring.
+    // Bounded to
     // `AUTO_SYNC_TIMEOUT_MS` (#1173 review) — without a signal here, a Core
     // that's up but hung on this lookup defeats the local fallback the
     // enrollment sync above was just bounded to guarantee.
@@ -759,13 +767,9 @@ router.get("/courses/:courseId", async (req, res) => {
       res.set("X-Core-Status", "unavailable");
     }
 
-    const isAdmin = authUser.role === "ADMIN";
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = enrollments.find((e) => e.userId === authUser.id);
-    const unitAdmin = await isUnitAdminForCourse(authUser, course, coreCourse);
     const isMember = isLearner
       ? liveEnrollment?.allowed === true
-      : isAdmin || isInstructor || enrollment != null || unitAdmin;
+      : isAllowedLiveCourseStaffPrincipal(liveStaffPrincipal);
 
     if (!isMember) {
       return res.status(403).json({ error: "Not authorized for this course" });

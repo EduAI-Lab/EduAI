@@ -90,11 +90,16 @@ describe("Admin routes", () => {
     // tests override this per-course via mockResolvedValue/mockResolvedValueOnce.
     listEduAiCourseEnrollmentsServiceKey.mockReset();
     listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
-    vi.mocked(authorizeLiveStudentEnrollment).mockReset().mockResolvedValue({
-      allowed: true,
-      state: 'allowed',
-      role: 'INSTRUCTOR',
-    });
+    vi.mocked(authorizeLiveStudentEnrollment)
+      .mockReset()
+      .mockImplementation(
+        async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+          const assigned = course?.instructors?.some((entry) => entry.userId === userId);
+          const role = assigned && allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : null;
+          const allowed = allowedRoles.includes(role);
+          return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        },
+      );
   });
 
   // ── GET /api/admin/users ──────────────────────────────────────────

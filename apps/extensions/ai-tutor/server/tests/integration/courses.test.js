@@ -57,6 +57,7 @@ vi.mock("../../src/services/topicSync.js", () => ({
 vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
+  LIVE_ENROLLMENT_SYNC_TIMEOUT_MS: 3_000,
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE: 'ENROLLMENT_AUTH_UNAVAILABLE',
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE: 'Enrollment authorization unavailable',
   authorizeLiveStudentEnrollment: vi.fn(),
@@ -89,7 +90,7 @@ describe("Courses routes", () => {
           const role =
             instructor && allowedRoles.includes('INSTRUCTOR')
               ? 'INSTRUCTOR'
-              : (enrollment?.role ?? (allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : null));
+              : (enrollment?.role ?? null);
           const allowed = allowedRoles.includes(role);
           return { allowed, state: allowed ? 'allowed' : 'denied', role };
         },

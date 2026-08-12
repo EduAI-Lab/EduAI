@@ -6,8 +6,11 @@
  */
 
 import { getPolicy } from '../services/policyService.js';
-import { resolveCoreCourseById } from '../services/courseResolver.js';
-import { authorizeLiveCoursePrincipal } from '../services/liveCoursePrincipal.js';
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  resolveLiveCoreCourseById,
+} from '../services/liveCoursePrincipal.js';
 import { isIP } from 'node:net';
 
 const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
@@ -243,7 +246,7 @@ export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
   if (coreCourse === undefined) {
     const coreOfferingId = course?.coreOfferingId ?? null;
     if (!coreOfferingId) return false;
-    ({ course: coreCourse } = await resolveCoreCourseById(coreOfferingId));
+    ({ course: coreCourse } = await resolveLiveCoreCourseById(coreOfferingId));
   }
 
   return coreCourse?.department != null && user.authorizedUnits.includes(coreCourse.department);
@@ -266,11 +269,5 @@ export async function isCourseAdmin(user, course, resolvedCoreCourse) {
   // fallback when that path does not match.
   if (await isUnitAdminForCourse(user, course, resolvedCoreCourse)) return true;
   const principal = await authorizeLiveCoursePrincipal(course, user);
-  return (
-    principal.state === 'allowed' &&
-    (principal.kind === 'ADMIN' ||
-      principal.kind === 'UNIT_ADMIN' ||
-      (principal.kind === 'INSTRUCTOR' &&
-        course?.instructors?.some((entry) => entry.userId === user.id)))
-  );
+  return isAllowedLiveCourseStaffPrincipal(principal);
 }

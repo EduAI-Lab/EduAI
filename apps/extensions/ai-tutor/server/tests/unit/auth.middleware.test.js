@@ -7,7 +7,17 @@ vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn(),
 }));
 
-vi.mock("../../src/services/courseResolver.js", () => ({
+const authorizeLiveCoursePrincipal = vi.fn();
+
+vi.mock('../../src/services/liveCoursePrincipal.js', () => ({
+  authorizeLiveCoursePrincipal: (...args) => authorizeLiveCoursePrincipal(...args),
+  isAllowedLiveCourseStaffPrincipal: (principal) =>
+    principal?.state === 'allowed' &&
+    ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'].includes(principal.kind),
+  resolveLiveCoreCourseById: (...args) => resolveCoreCourseById(...args),
+}));
+
+vi.mock('../../src/services/courseResolver.js', () => ({
   resolveCoreCourseById: vi.fn(),
 }));
 
@@ -559,6 +569,24 @@ describe("isUnitAdminForCourse", () => {
     it("fails soft to false when Core is unavailable", async () => {
       resolveCoreCourseById.mockResolvedValue({ course: null, coreUnavailable: true });
       expect(await isUnitAdminForCourse(unitAdminCosc, course)).toBe(false);
+    });
+  });
+
+  describe('isCourseAdmin', () => {
+    it('accepts an exact live instructor when the preloaded mirror is absent', async () => {
+      authorizeLiveCoursePrincipal.mockResolvedValue({
+        state: 'allowed',
+        kind: 'INSTRUCTOR',
+        role: 'INSTRUCTOR',
+      });
+
+      const { isCourseAdmin } = await import('../../src/middleware/auth.js');
+      const result = await isCourseAdmin(
+        { id: 'instructor-1', role: 'INSTRUCTOR' },
+        { id: 1, coreOfferingId: 'core-1', instructors: [] },
+      );
+
+      expect(result).toBe(true);
     });
   });
 });

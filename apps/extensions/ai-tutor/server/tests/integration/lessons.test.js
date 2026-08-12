@@ -44,7 +44,9 @@ describe("Lessons routes", () => {
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
       async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
         const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
-        const effectiveRole = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+        const instructor = course.instructors?.some((row) => row.userId === userId);
+        const effectiveRole =
+          instructor && allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
         const allowed = allowedRoles.includes(effectiveRole);
         return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
       },

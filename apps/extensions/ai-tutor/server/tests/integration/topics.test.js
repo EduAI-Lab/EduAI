@@ -38,11 +38,14 @@ describe("Topics routes", () => {
 
   beforeEach(async () => {
     await truncateAll();
-    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
-      allowed: true,
-      state: 'allowed',
-      role: 'INSTRUCTOR',
-    });
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+        const assigned = course?.instructors?.some((entry) => entry.userId === userId);
+        const role = assigned && allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : null;
+        const allowed = allowedRoles.includes(role);
+        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+      },
+    );
     listEduAiCourseTopics.mockReset();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);

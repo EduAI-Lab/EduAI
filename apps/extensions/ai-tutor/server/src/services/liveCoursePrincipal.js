@@ -1,8 +1,57 @@
 import { resolveCoreCourseById } from './courseResolver.js';
-import { authorizeLiveStudentEnrollment } from './enrollmentSync.js';
+import {
+  authorizeLiveStudentEnrollment,
+  LIVE_ENROLLMENT_SYNC_TIMEOUT_MS,
+} from './enrollmentSync.js';
 
 export const LIVE_COURSE_AUTH_UNAVAILABLE_CODE = 'COURSE_AUTH_UNAVAILABLE';
 export const LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE = 'Course authorization unavailable';
+export const LIVE_COURSE_AUTH_TIMEOUT_MS = LIVE_ENROLLMENT_SYNC_TIMEOUT_MS;
+
+/**
+ * Resolve one Core course for a staff authorization decision with a finite
+ * deadline. The resolver normally propagates AbortSignal to fetch, but the
+ * explicit race also protects this authorization boundary from a test double
+ * or upstream client that ignores cancellation and never settles.
+ */
+export async function resolveLiveCoreCourseById(coreOfferingId, options = {}) {
+  if (!coreOfferingId) return { course: null, coreUnavailable: false };
+
+  const timeoutMs = options.timeoutMs ?? LIVE_COURSE_AUTH_TIMEOUT_MS;
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    timeoutController.abort(
+      new DOMException('Live course authorization timed out', 'TimeoutError'),
+    );
+  }, timeoutMs);
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, timeoutController.signal])
+    : timeoutController.signal;
+  let onAbort;
+  const unavailableOnAbort = new Promise((resolve) => {
+    onAbort = () => resolve({ course: null, coreUnavailable: true });
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+
+  try {
+    return await Promise.race([
+      resolveCoreCourseById(coreOfferingId, { signal }),
+      unavailableOnAbort,
+    ]);
+  } catch {
+    return { course: null, coreUnavailable: true };
+  } finally {
+    clearTimeout(timeoutId);
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+export function isAllowedLiveCourseStaffPrincipal(principal) {
+  return (
+    principal?.state === 'allowed' && ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'].includes(principal.kind)
+  );
+}
 
 /** Resolve one current course principal without consulting pre-sync local relationships. */
 export async function authorizeLiveCoursePrincipal(course, user) {
@@ -13,7 +62,7 @@ export async function authorizeLiveCoursePrincipal(course, user) {
   }
 
   if (user.role === 'UNIT_ADMIN') {
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(
+    const { course: coreCourse, coreUnavailable } = await resolveLiveCoreCourseById(
       course.coreOfferingId,
     );
     if (coreUnavailable) return { state: 'unavailable', kind: null, role: null };

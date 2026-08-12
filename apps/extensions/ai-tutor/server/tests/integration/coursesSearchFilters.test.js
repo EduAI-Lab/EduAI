@@ -51,6 +51,7 @@ vi.mock("../../src/services/topicSync.js", () => ({
 vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
+  LIVE_ENROLLMENT_SYNC_TIMEOUT_MS: 3_000,
   syncCourseEnrollments: vi
     .fn()
     .mockResolvedValue({ synced: 0, created: 0, deleted: 0, errors: [] }),

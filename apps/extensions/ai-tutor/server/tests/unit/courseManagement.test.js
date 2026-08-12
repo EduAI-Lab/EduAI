@@ -38,6 +38,9 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
 
 vi.mock('../../src/services/liveCoursePrincipal.js', () => ({
   authorizeLiveCoursePrincipal: (...args) => authorizeLiveCoursePrincipal(...args),
+  isAllowedLiveCourseStaffPrincipal: (principal) =>
+    principal?.state === 'allowed' &&
+    ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'].includes(principal.kind),
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE: 'COURSE_AUTH_UNAVAILABLE',
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE: 'Course authorization unavailable',
 }));

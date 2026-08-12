@@ -23,11 +23,11 @@
  *   services/activityAnalytics.js, shared/schemas/aiGuidance.js, shared/schemas/activity.js
  */
 
-import { randomUUID } from "crypto";
-import express from "express";
-import { prisma } from "../config/database.js";
-import { requireRole, isUnitAdminForCourse, isCourseAdmin } from "../middleware/auth.js";
-import { mapActivity, mapImportableActivity } from "../utils/mappers.js";
+import { randomUUID } from 'crypto';
+import express from 'express';
+import { prisma } from '../config/database.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import { mapActivity, mapImportableActivity } from '../utils/mappers.js';
 import {
   parsePaginationParams,
   paginated,
@@ -86,11 +86,28 @@ import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
 import { gateCourseThrough } from '../middleware/liveCoursePrincipal.js';
 import {
   authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/liveCoursePrincipal.js';
 
 const router = express.Router();
+
+async function requireLiveStaffAccess(res, course, user, message) {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === 'unavailable') {
+    res.status(503).json({
+      error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    });
+    return false;
+  }
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
+    res.status(403).json({ error: message });
+    return false;
+  }
+  return true;
+}
 
 const activityCourseInclude = {
   lesson: { include: { module: { include: { courseOffering: true } } } },
@@ -157,10 +174,7 @@ async function getExactCourseMembership(course, authUser) {
   const liveTa = principal.state === 'allowed' && principal.role === 'TA';
   return {
     principal,
-    isInstructor:
-      principal.state === 'allowed' &&
-      principal.kind === 'INSTRUCTOR' &&
-      course.instructors?.some((entry) => entry.userId === authUser.id),
+    isInstructor: principal.state === 'allowed' && principal.kind === 'INSTRUCTOR',
     isTa: liveTa,
     isStudent: principal.state === 'allowed' && principal.role === 'STUDENT',
     isUnitAdmin: principal.state === 'allowed' && principal.kind === 'UNIT_ADMIN',
@@ -700,15 +714,17 @@ router.delete(
         return res.status(404).json({ error: 'Activity not found' });
       }
 
-      const isInstructor = activity.lesson.module.courseOffering.instructors.some(
-        (assignment) => assignment.userId === instructor.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(
-        instructor,
+      const principal = await authorizeLiveCoursePrincipal(
         activity.lesson.module.courseOffering,
+        instructor,
       );
-
-      if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
+      if (principal.state === 'unavailable') {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(principal)) {
         return res.status(403).json({ error: 'Not authorized for this activity' });
       }
 
@@ -835,14 +851,7 @@ router.post(
           code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
         });
       }
-      if (
-        targetPrincipal.state !== 'allowed' ||
-        (!['ADMIN', 'UNIT_ADMIN'].includes(targetPrincipal.kind) &&
-          !(
-            targetPrincipal.kind === 'INSTRUCTOR' &&
-            targetCourse.instructors?.some((entry) => entry.userId === authUser.id)
-          ))
-      ) {
+      if (!isAllowedLiveCourseStaffPrincipal(targetPrincipal)) {
         return res.status(403).json({ error: 'Not authorized for this lesson' });
       }
 
@@ -875,14 +884,7 @@ router.post(
           code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
         });
       }
-      if (
-        sourcePrincipal.state !== 'allowed' ||
-        (!['ADMIN', 'UNIT_ADMIN'].includes(sourcePrincipal.kind) &&
-          !(
-            sourcePrincipal.kind === 'INSTRUCTOR' &&
-            sourceCourse.instructors?.some((entry) => entry.userId === authUser.id)
-          ))
-      ) {
+      if (!isAllowedLiveCourseStaffPrincipal(sourcePrincipal)) {
         return res.status(403).json({ error: 'Not authorized for the source activity' });
       }
 
@@ -970,14 +972,7 @@ router.get(
           code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
         });
       }
-      if (
-        destinationPrincipal.state !== 'allowed' ||
-        (!['ADMIN', 'UNIT_ADMIN'].includes(destinationPrincipal.kind) &&
-          !(
-            destinationPrincipal.kind === 'INSTRUCTOR' &&
-            course.instructors?.some((entry) => entry.userId === authUser.id)
-          ))
-      ) {
+      if (!isAllowedLiveCourseStaffPrincipal(destinationPrincipal)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -1038,12 +1033,7 @@ router.get(
             code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
           });
         }
-        if (
-          principal.state === 'allowed' &&
-          (['ADMIN', 'UNIT_ADMIN'].includes(principal.kind) ||
-            (principal.kind === 'INSTRUCTOR' &&
-              candidate.instructors?.some((entry) => entry.userId === authUser.id)))
-        ) {
+        if (isAllowedLiveCourseStaffPrincipal(principal)) {
           authorizedManageableCourses.push(candidate.id);
         }
       }
@@ -2032,10 +2022,15 @@ router.patch(
       if (!activity) return res.status(404).json({ error: "Activity not found" });
 
       const courseOffering = activity.lesson.module.courseOffering;
-      const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          courseOffering,
+          authUser,
+          'Not authorized for this lesson',
+        ))
+      ) {
+        return;
       }
 
       const { position, total } = await moveToPosition({
@@ -2100,14 +2095,15 @@ router.put(
       });
       if (!lesson) return res.status(404).json({ error: "Lesson not found" });
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      // `isUnitAdminForCourse` is async — without the await this resolved to a
-      // (always truthy) Promise, so the guard below never denied anyone.
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          authUser,
+          'Not authorized for this lesson',
+        ))
+      ) {
+        return;
       }
 
       const existing = await prisma.activity.findMany({

@@ -8,7 +8,12 @@
  */
 
 import { prisma } from '../config/database.js';
-import { isUnitAdminForCourse } from '../middleware/auth.js';
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from './liveCoursePrincipal.js';
 
 export class ActivityMutationError extends Error {
   constructor(message, status = 400, code) {
@@ -47,9 +52,15 @@ function assertAtLeastOneMode(payload) {
 
 async function assertLessonEditor(lesson, user) {
   const course = lesson.module.courseOffering;
-  const isInstructor = course.instructors.some((assignment) => assignment.userId === user.id);
-  const unitAdmin = await isUnitAdminForCourse(user, course);
-  if (!isInstructor && !unitAdmin && user.role !== 'ADMIN') {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === 'unavailable') {
+    throw new ActivityMutationError(
+      LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      503,
+      LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    );
+  }
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
     throw new ActivityMutationError('Not authorized for this lesson', 403);
   }
   return course;
@@ -57,9 +68,15 @@ async function assertLessonEditor(lesson, user) {
 
 async function assertActivityEditor(activity, user) {
   const course = activity.lesson.module.courseOffering;
-  const isInstructor = course.instructors.some((assignment) => assignment.userId === user.id);
-  const unitAdmin = await isUnitAdminForCourse(user, course);
-  if (!isInstructor && !unitAdmin && user.role !== 'ADMIN') {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === 'unavailable') {
+    throw new ActivityMutationError(
+      LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      503,
+      LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    );
+  }
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
     throw new ActivityMutationError('Not authorized for this activity', 403);
   }
   return course;

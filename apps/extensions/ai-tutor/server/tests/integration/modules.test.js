@@ -47,7 +47,9 @@ describe("Modules routes", () => {
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
       async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
         const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
-        const effectiveRole = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+        const instructor = course.instructors?.some((row) => row.userId === userId);
+        const effectiveRole =
+          instructor && allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
         const allowed = allowedRoles.includes(effectiveRole);
         return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
       },
@@ -98,8 +100,24 @@ describe("Modules routes", () => {
 
   // ── POST /api/courses/:courseId/modules ─────────
 
-  describe("POST /api/courses/:courseId/modules append order", () => {
-    it("appends a new module to the end when no position is supplied", async () => {
+  describe('POST /api/courses/:courseId/modules append order', () => {
+    it('authorizes a live instructor on the first request when the local mirror is absent', async () => {
+      await prisma.courseInstructor.deleteMany({ where: { courseOfferingId: seed.course.id } });
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
+        allowed: true,
+        state: 'allowed',
+        role: 'INSTRUCTOR',
+      });
+
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'First Live Module' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe('First Live Module');
+    });
+
+    it('appends a new module to the end when no position is supplied', async () => {
       // seedMinimalCourse creates one module at position 0.
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/modules`)
@@ -638,7 +656,22 @@ describe("Modules routes", () => {
       expect(res.body.title).toBe("New COSC Module");
     });
 
-    it("gets 403 when creating a module on a MATH course", async () => {
+    it('returns 503 and does not write when live Core authorization is unavailable', async () => {
+      const before = await prisma.module.count({ where: { courseOfferingId: coscCourse.id } });
+      vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+
+      const res = await request(unitAdminApp)
+        .post(`/api/courses/${coscCourse.id}/modules`)
+        .send({ title: 'Must Not Write', position: 1 });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('COURSE_AUTH_UNAVAILABLE');
+      expect(await prisma.module.count({ where: { courseOfferingId: coscCourse.id } })).toBe(
+        before,
+      );
+    });
+
+    it('gets 403 when creating a module on a MATH course', async () => {
       const res = await request(unitAdminApp)
         .post(`/api/courses/${mathCourse.id}/modules`)
         .send({ title: "New MATH Module", position: 1 });

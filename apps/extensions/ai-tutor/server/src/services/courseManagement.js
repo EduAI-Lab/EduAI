@@ -13,6 +13,7 @@ import { resolveCoreCourseById } from './courseResolver.js';
 import { setCoreCoursePublishState } from './eduaiClient.js';
 import {
   authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
 } from './liveCoursePrincipal.js';
@@ -81,14 +82,7 @@ async function requireLiveCourseAdmin(course, user, message = 'Not authorized fo
       LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
     );
   }
-  if (
-    principal.state !== 'allowed' ||
-    (!['ADMIN', 'UNIT_ADMIN'].includes(principal.kind) &&
-      !(
-        principal.kind === 'INSTRUCTOR' &&
-        course.instructors?.some((entry) => entry.userId === user.id)
-      ))
-  ) {
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
     throw new CourseMutationError(message, 403);
   }
   return principal;
