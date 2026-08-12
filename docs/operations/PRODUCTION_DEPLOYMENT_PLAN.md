@@ -85,5 +85,7 @@ The candidate variables should be removed from local files only after confirming
 - Chose a new `/srv/www/eduai-production` release layout so the stale production checkout remains available during migration.
 - Added a read-only `infra/production/preflight.sh` for repeatable host, dependency, service, and inference reachability checks.
 - Ran the preflight remotely without installing it: PostgreSQL and cmps01:8001 are reachable; Redis is absent; cmps02/03 are blocked or unavailable; Core is inactive; the public Core URL returns HTTP 503; and the new production release/config directories do not yet exist.
+- Confirmed the production PostgreSQL listener is Docker-managed by the existing `eduai-pgvector` container (`pgvector/pgvector:pg15`) on `127.0.0.1:5432`; reuse this container rather than installing a second PostgreSQL instance.
+- Confirmed cmps01, cmps02, and cmps03 are now network-reachable from s348. Requests without credentials return proxy/auth errors (`403` on cmps01 and `401` on cmps02/03), so the inference fleet is reachable and requires the configured internal API key.
 - Added `infra/production/PROVISIONING_CHECKLIST.md`, separating non-privileged preparation from interactive sudo/database/Apache actions and requiring a dedicated production database role.
 - Preserved unrelated local changes in `TESTS.md`, `docs/end-user-testing-core-student-ta-1429.md`, and `tests/e2e/tests/core/ai-chat-happy-path.spec.ts`; they are not part of deployment commits.
