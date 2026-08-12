@@ -75,9 +75,23 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 
   if (!outcome.ok) {
-    return new Response(JSON.stringify({ error: outcome.error }), {
+    const isProviderFailure = "code" in outcome;
+    const responseBody = isProviderFailure
+      ? {
+          error: outcome.error,
+          code: outcome.code,
+          retryable: outcome.retryable,
+          provider: outcome.provider,
+        }
+      : { error: outcome.error };
+    return new Response(JSON.stringify(responseBody), {
       status: outcome.status,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(isProviderFailure && outcome.retryAfter
+          ? { "Retry-After": String(outcome.retryAfter) }
+          : {}),
+      },
     });
   }
 

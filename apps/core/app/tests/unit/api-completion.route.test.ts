@@ -152,10 +152,35 @@ describe("POST /api/completion", () => {
     expect(runCompletion).not.toHaveBeenCalled();
   });
 
-  it("maps a runCompletion failure to its status", async () => {
-    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "MODEL_NOT_FOUND", status: 422 } as never);
+  it("preserves ordinary validation failures as their existing error shape", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "model is required", status: 400 } as never);
     const res = await action(makeArgs({ model: "bogus", messages: [] }));
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "model is required" });
+    expect(res.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("serializes the stable provider failure and a valid retry hint", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      status: 503,
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+      retryAfter: 9,
+    } as never);
+
+    const res = await action(makeArgs({ model: "openai:gpt-4o", messages: [] }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+    });
+    expect(res.headers.get("Retry-After")).toBe("9");
   });
 
   it("returns 200 JSON for a non-streaming success", async () => {
