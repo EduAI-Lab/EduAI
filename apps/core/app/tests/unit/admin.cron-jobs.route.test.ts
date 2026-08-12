@@ -27,7 +27,6 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   getRecentCronJobRuns: vi.fn(),
   findRunningCronRun: vi.fn(),
   startCronRun: vi.fn(),
-  triggerCronJobAsync: vi.fn(),
   updateCronSchedule: vi.fn(),
   resetCronSchedule: vi.fn(),
 }));
@@ -39,7 +38,6 @@ import {
   getRecentCronJobRuns,
   findRunningCronRun,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
   resetCronSchedule,
 } from "~/lib/db.cron-jobs.server";
@@ -73,7 +71,6 @@ beforeEach(() => {
   vi.mocked(getRecentCronJobRuns).mockResolvedValue([]);
   vi.mocked(findRunningCronRun).mockResolvedValue(null);
   vi.mocked(startCronRun).mockResolvedValue({ runId: "run-1", created: true });
-  vi.mocked(triggerCronJobAsync).mockReturnValue(undefined);
   vi.mocked(updateCronSchedule).mockResolvedValue(undefined);
   vi.mocked(resetCronSchedule).mockResolvedValue(undefined);
 });
@@ -162,7 +159,7 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
     expect(b.error).toMatch(/extension server/);
   });
 
-  it("starts a run and fires triggerCronJobAsync for a valid triggerable job", async () => {
+  it("records a run for the worker to dispatch for a valid triggerable job", async () => {
     const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
     expect(status(res)).toBe(200);
     expect(findRunningCronRun).toHaveBeenCalledWith("backup-nightly");
@@ -170,7 +167,6 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
       source: "ADMIN_UI",
       triggeredByUserId: ADMIN_USER.id,
     });
-    expect(triggerCronJobAsync).toHaveBeenCalledWith("backup-nightly", "backup-nightly.sh", "run-1", undefined);
     const b = body(res);
     expect(b.runId).toBe("run-1");
   });
@@ -180,7 +176,6 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
     const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
     expect(status(res)).toBe(200);
     expect(startCronRun).not.toHaveBeenCalled();
-    expect(triggerCronJobAsync).not.toHaveBeenCalled();
     const b = body(res);
     expect(b).toEqual({ runId: "run-existing", reused: true });
   });

@@ -3,6 +3,10 @@ import path from "node:path";
 import prisma from "~/lib/prisma.server";
 import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
 
+declare global {
+  var __manualCronRunIds: Set<string> | undefined;
+}
+
 export type CronJobStatusValue = "RUNNING" | "SUCCESS" | "ERROR";
 export type CronJobTriggerSource = "SCHEDULE" | "ADMIN_UI" | "ADMIN_CHAT" | "UNKNOWN";
 export type CronJobExecution = "SCRIPT" | "CORE";
@@ -328,4 +332,29 @@ export function triggerCronJobAsync(
       console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
     );
   });
+}
+
+/**
+ * Dispatch administrator-triggered runs from the dedicated worker. Keeping
+ * this claim in the worker means shell scripts always execute as eduai-cron;
+ * the Core web process only records the requested run in Postgres.
+ */
+export async function dispatchManualCronRuns(): Promise<void> {
+  const claimed = globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
+  const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string }>>`
+    SELECT id, "jobName"
+    FROM cron_job_runs
+    WHERE status = 'RUNNING'::"CronJobStatus"
+      AND "triggerSource" IN ('ADMIN_UI'::"CronJobTriggerSource", 'ADMIN_CHAT'::"CronJobTriggerSource")
+    ORDER BY "startedAt" ASC
+    LIMIT 20
+  `;
+
+  for (const row of rows) {
+    if (claimed.has(row.id)) continue;
+    const job = KNOWN_CRON_JOBS.find((candidate) => candidate.name === row.jobName);
+    if (!job || job.triggerEnabled === false) continue;
+    claimed.add(row.id);
+    triggerCronJobAsync(row.jobName, job.script, row.id, job.execution);
+  }
 }

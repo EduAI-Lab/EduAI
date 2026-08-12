@@ -48,7 +48,6 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import prisma from "~/lib/prisma.server";
@@ -757,9 +756,8 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     source: "ADMIN_CHAT",
     triggeredByUserId: actor.id,
   });
-  if (created) {
-    triggerCronJobAsync(jobName, job.script, runId, job.execution);
-  }
+  // The dedicated cron worker claims ADMIN_CHAT runs during reconciliation so
+  // shell jobs execute under eduai-cron instead of the Core web account.
   return { ok: true, runId, jobName, reused: !created };
 }
 

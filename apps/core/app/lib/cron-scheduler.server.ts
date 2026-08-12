@@ -1,6 +1,6 @@
 import type { ScheduledTask } from "node-cron";
 import cron from "node-cron";
-import { KNOWN_CRON_JOBS, startCronRun, triggerCronJobAsync } from "~/lib/db.cron-jobs.server";
+import { dispatchManualCronRuns, KNOWN_CRON_JOBS, startCronRun, triggerCronJobAsync } from "~/lib/db.cron-jobs.server";
 import prisma from "~/lib/prisma.server";
 import { redactErrorForConsole } from "~/lib/redact.server";
 
@@ -46,6 +46,7 @@ function scheduleOne(
 
 /** Refresh schedules from the database in the dedicated cron worker only. */
 export async function refreshCronSchedules(): Promise<void> {
+  await dispatchManualCronRuns();
   const overrides = await prisma.cronJobScheduleOverride.findMany();
   const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
   const schedules = getTaskScheduleMap();

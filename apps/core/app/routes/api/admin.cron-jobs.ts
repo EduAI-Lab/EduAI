@@ -9,7 +9,6 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 
@@ -75,9 +74,8 @@ export async function action({ request }: ActionFunctionArgs) {
       source: "ADMIN_UI",
       triggeredByUserId: user.id,
     });
-    if (created) {
-      triggerCronJobAsync(jobName, job.script, runId, job.execution);
-    }
+    // The worker claims ADMIN_UI runs during its next reconciliation cycle;
+    // shell jobs therefore execute under eduai-cron, never the web account.
 
     return data({ runId, reused: !created });
   }

@@ -224,6 +224,15 @@ if [ "$DO_RESTART" = "1" ]; then
     echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
     exit 1
   fi
+  if want core; then
+    # The worker executes the checked-in shell scripts from /opt/eduai/cron,
+    # not from the web checkout. Sync them on every Core deploy so a script
+    # change cannot remain stale after the worker restarts.
+    echo "  syncing cron scripts to /opt/eduai/cron"
+    for script in infra/cron/*.sh; do
+      sudo install -m 0750 -o eduai-cron -g eduai-cron "$script" /opt/eduai/cron/
+    done
+  fi
   # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
   # members lifecycle control over every eduai-* unit individually, so this does
   # not have to go through eduai-dev.target. Core is skipped when it was already

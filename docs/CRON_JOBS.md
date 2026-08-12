@@ -18,7 +18,7 @@ There are two distinct layers of scheduled work in EduAI:
 | **Infra shell scripts** | Dedicated Core cron worker | Core's `node-cron` scheduler | Yes |
 | **Extension in-process jobs** | Inside the AI Tutor and Question Maker Node servers | Each extension's own scheduler | No (external) |
 
-The admin panel at **Admin → Cron Jobs** surfaces both layers in one view. Triggering a job from the panel runs the corresponding shell script immediately (infra jobs only). Extension-managed jobs show an "External" badge and cannot be triggered from Core.
+The admin panel at **Admin → Cron Jobs** surfaces both layers in one view. Triggering an infra job records an admin run for the dedicated worker; it is dispatched during the next reconciliation cycle under `eduai-cron`. Extension-managed jobs show an "External" badge and cannot be triggered from Core.
 
 ---
 
@@ -87,8 +87,8 @@ needed.
 
 Click **Edit** next to any infra job's schedule to open the schedule editor. Enter a valid 5-field cron expression; the human-readable label auto-fills for common patterns (daily, weekly, monthly) and can be edited freely.
 
-Saving the schedule updates the database. The same worker reconciliation cycle
-applies the change within 30 seconds, so no deployment or server restart is
+Saving the schedule updates the database. The worker applies the change during
+its next 30-second reconciliation cycle, so no deployment or server restart is
 needed. A yellow "custom" badge appears on the row.
 
 To restore the original schedule, re-open the editor and click **Reset to default**.
@@ -149,8 +149,8 @@ Add an entry to `KNOWN_CRON_JOBS` in `apps/core/app/lib/db.cron-jobs.server.ts`:
 ```
 
 The cron worker discovers it during the next 30-second reconciliation cycle. The
-job will appear in the admin panel, can be triggered manually, and has its
-schedule editable via the UI.
+job will appear in the admin panel, can be triggered manually (and dispatched
+under `eduai-cron`), and has its schedule editable via the UI.
 
 ### 3. Deploy
 

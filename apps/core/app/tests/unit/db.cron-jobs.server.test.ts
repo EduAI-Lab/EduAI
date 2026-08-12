@@ -36,6 +36,7 @@ const {
   startCronRun,
   finishCronRun,
   triggerCronJobAsync,
+  dispatchManualCronRuns,
   KNOWN_CRON_JOBS,
 } = await import("~/lib/db.cron-jobs.server");
 
@@ -47,6 +48,7 @@ beforeEach(() => {
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
   mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
+  globalThis.__manualCronRunIds = undefined;
 });
 
 describe("listCronJobStatuses", () => {
@@ -329,5 +331,19 @@ describe("triggerCronJobAsync", () => {
     expect(persistedMessage).not.toContain("s3kr3t");
     expect(persistedMessage).toContain("[REDACTED]");
     expect(persistedMessage).toContain("done");
+  });
+
+  it("dispatches admin-triggered shell runs from the worker process", async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    mockQueryRaw.mockResolvedValueOnce([{ id: "run-manual", jobName: "backup-nightly" }]);
+
+    await dispatchManualCronRuns();
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "bash",
+      [expect.stringContaining("backup-nightly.sh")],
+      expect.any(Object),
+    );
   });
 });

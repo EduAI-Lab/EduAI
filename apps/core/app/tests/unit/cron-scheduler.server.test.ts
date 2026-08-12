@@ -17,6 +17,7 @@ vi.mock("~/lib/prisma.server", () => ({
 
 const mockStartCronRun = vi.hoisted(() => vi.fn());
 const mockTriggerCronJobAsync = vi.hoisted(() => vi.fn());
+const mockDispatchManualCronRuns = vi.hoisted(() => vi.fn());
 const mockKnownCronJobs = vi.hoisted(() => [
   {
     name: "backup-nightly",
@@ -46,6 +47,7 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   KNOWN_CRON_JOBS: mockKnownCronJobs,
   startCronRun: mockStartCronRun,
   triggerCronJobAsync: mockTriggerCronJobAsync,
+  dispatchManualCronRuns: mockDispatchManualCronRuns,
 }));
 
 const {
@@ -60,6 +62,7 @@ beforeEach(() => {
   mockOverrideFindMany.mockResolvedValue([]);
   mockCronSchedule.mockImplementation(() => mockScheduledTask());
   mockStartCronRun.mockResolvedValue({ runId: "run-1", created: true });
+  mockDispatchManualCronRuns.mockResolvedValue(undefined);
 });
 
 describe("refreshCronSchedules", () => {
