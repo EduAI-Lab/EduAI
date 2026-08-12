@@ -54,6 +54,21 @@ Read-only checks were performed over SSH on 2026-08-11.
 - The existing checkout uses an older Core-only layout with PM2-era deployment files, not the current monorepo production layout.
 - DNS resolves cmps01, cmps02, and cmps03. Initial port probing did not establish connectivity to cmps01:8001, and the remaining probes timed out; firewall/routing access still needs confirmation.
 
+## Local environment audit
+
+The root `.env` cleanup is complete: the five obsolete application/frontend port overrides were removed, leaving only the database port overrides currently consumed by the development compose file. The root `.env.example` remains the documented source for those overrides plus the optional Redis port.
+
+The remaining application-local variables were classified by searching runtime code, scripts, tests, and configuration:
+
+| File | Classification | Variables |
+|---|---|---|
+| `apps/core/.env` | Active | `FIRECRAWL_API_KEY`, `OPENROUTER_API_KEY`, `LOG_LEVEL`, and other configured Core runtime values |
+| `apps/core/.env` | Removal candidates | `LOCAL_EMBEDDING_RUNTIME`, `ROUTER_AUTO_DEFAULT`, `UBC_TIMEZONE` have no current runtime/config references |
+| `apps/extensions/question-maker/.env` | Active/test-only | `LOG_LEVEL` is active; `TEST_DATABASE_URL` is test-only |
+| `apps/extensions/question-maker/.env` | Removal candidates | `JWT_SECRET`, `JWT_EXPIRES_IN`, `BCRYPT_ROUNDS`, `OPENROUTER_API_KEY`, and `OPENROUTER_EMBEDDING_MODEL` have no current references in the repository |
+
+The candidate variables should be removed from local files only after confirming they are not required by an external, server-side process. They should not be copied into the new production environment.
+
 ## Change log
 
 ### 2026-08-11
