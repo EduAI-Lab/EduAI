@@ -2067,7 +2067,7 @@ ${buildEmptyCourseRagBlock()}`;
 
     streamConfig.maxTokens = longOutputCap.maxTokens;
 
-    const longOutputCapApplied =
+    let longOutputCapApplied =
       longOutputCap.isLongOutputIntent &&
       longOutputCap.maxTokens < maxTokensBeforeLongOutputCap;
     const didHitLongOutputCap = (usage: unknown): boolean => {
@@ -2077,7 +2077,7 @@ ${buildEmptyCourseRagBlock()}`;
 
       return didHitAppliedLongOutputCap({
         capApplied: longOutputCapApplied,
-        maxTokens: longOutputCap.maxTokens,
+        maxTokens: streamConfig.maxTokens,
         completionTokens,
       });
     };
@@ -2143,6 +2143,15 @@ ${buildEmptyCourseRagBlock()}`;
         minOutput: 256,
       });
 
+      if (longOutputCap.isLongOutputIntent) {
+        const adminContextMaxTokens = streamConfig.maxTokens;
+        streamConfig.maxTokens = Math.min(
+          adminContextMaxTokens,
+          longOutputCap.maxTokens,
+        );
+        longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+      }
+      
       chatApiTrace("max output tokens capped", {
         contextWindow: adminContextWindow,
         estimatedInputTokens,
