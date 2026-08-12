@@ -5,8 +5,8 @@
  *
  * Requires: Core, AI Tutor, and Question Maker dev servers running locally
  * (see each app's README for `npm run dev`), plus a seeded instructor
- * account matching CREDENTIALS below (the default matches the seed data
- * from `apps/core`'s `npm run db:seed`).
+ * account matching CREDENTIALS below. Set EDUAI_LOCAL_SEED_PASSWORD to the
+ * local-only password used when Core's fixture database was seeded.
  *
  * Auth: pages with `requiresAuth: false` in pages.mjs are audited in a fresh
  * logged-out browser context so sign-in screens are captured as-is. All other
@@ -22,7 +22,7 @@
  *   AI_TUTOR_URL          default http://localhost:3001
  *   QM_URL                default http://localhost:5180
  *   AUDIT_EMAIL           default instructor.cs@eduai.local
- *   AUDIT_PASSWORD        default EduAI2026!
+ *   EDUAI_LOCAL_SEED_PASSWORD  required local-only fixture password
  *   MOBILE_AUDIT_OUT_DIR  default docs/implementations/screenshots/mobile-audit
  *
  * Usage:
@@ -38,9 +38,16 @@ const OUT_ROOT =
   process.env.MOBILE_AUDIT_OUT_DIR ||
   path.resolve("../../docs/implementations/screenshots/mobile-audit");
 const CORE_URL = APPS.core.baseUrl;
+const LOCAL_SEED_PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim();
+if (!LOCAL_SEED_PASSWORD) {
+  console.error(
+    'FATAL: set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the mobile audit',
+  );
+  process.exit(2);
+}
 const CREDENTIALS = {
-  email: process.env.AUDIT_EMAIL || "instructor.cs@eduai.local",
-  password: process.env.AUDIT_PASSWORD || "EduAI2026!",
+  email: process.env.AUDIT_EMAIL || 'instructor.cs@eduai.local',
+  password: LOCAL_SEED_PASSWORD,
 };
 
 function collectAudits() {

@@ -2,7 +2,7 @@
 
 Captured locally on **2026-07-08** against branch `feat/at-course-feedback-viewer-784`.
 
-**Login:** `instructor.cs@eduai.local` / `EduAI2026!` (instructor), `student1@eduai.local` (student/TA)
+**Login:** `instructor.cs@eduai.local` / the local-only value of `EDUAI_LOCAL_SEED_PASSWORD` (instructor), `student1@eduai.local` (student/TA)
 
 | #   | File                                    | Description                                                  |
 | --- | --------------------------------------- | ------------------------------------------------------------ |

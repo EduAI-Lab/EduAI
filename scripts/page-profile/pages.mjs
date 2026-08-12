@@ -37,18 +37,25 @@
  * blocking flag or seed state has been arranged.
  */
 
-/** Seeded accounts — apps/core/prisma/seed.ts, SEED_PASSWORD = 'EduAI2026!'. */
+const LOCAL_SEED_PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim();
+if (!LOCAL_SEED_PASSWORD) {
+  throw new Error(
+    'Set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the page profiler',
+  );
+}
+
+/** Seeded accounts — apps/core/prisma/seed.ts, using EDUAI_LOCAL_SEED_PASSWORD. */
 export const ACCOUNTS = {
   anon: null,
-  student: { email: "student1@eduai.local", password: "EduAI2026!" },
+  student: { email: 'student1@eduai.local', password: LOCAL_SEED_PASSWORD },
   // A TA is a STUDENT-platform user carrying an Enrollment(role=TA) — the
   // distinction is per-course, not platform-wide, so this account is only a
   // "ta" on the courses it is enrolled to TA. Course pages render a third tree
   // for it (CourseDetailTaView), separate from both manager and student.
-  ta: { email: "ta.cs@eduai.local", password: "EduAI2026!" },
-  instructor: { email: "instructor.cs@eduai.local", password: "EduAI2026!" },
-  unitAdmin: { email: "unitadmin.cosc@eduai.local", password: "EduAI2026!" },
-  admin: { email: "admin@eduai.local", password: "EduAI2026!" },
+  ta: { email: 'ta.cs@eduai.local', password: LOCAL_SEED_PASSWORD },
+  instructor: { email: 'instructor.cs@eduai.local', password: LOCAL_SEED_PASSWORD },
+  unitAdmin: { email: 'unitadmin.cosc@eduai.local', password: LOCAL_SEED_PASSWORD },
+  admin: { email: 'admin@eduai.local', password: LOCAL_SEED_PASSWORD },
 };
 
 export const APPS = {
