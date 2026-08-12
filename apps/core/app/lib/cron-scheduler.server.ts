@@ -46,7 +46,11 @@ function scheduleOne(
 
 /** Refresh schedules from the database in the dedicated cron worker only. */
 export async function refreshCronSchedules(): Promise<void> {
-  await dispatchManualCronRuns();
+  try {
+    await dispatchManualCronRuns();
+  } catch (err) {
+    console.error("[cron] Failed to dispatch manual runs:", redactErrorForConsole(err));
+  }
   const overrides = await prisma.cronJobScheduleOverride.findMany();
   const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
   const schedules = getTaskScheduleMap();
