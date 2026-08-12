@@ -23,6 +23,7 @@ import {
 import {
   getSectionsForAssessment,
   createAssessmentSection,
+  reorderAssessmentSections,
   updateAssessmentSection,
   deleteAssessmentSection,
   addVariantToSection,
@@ -279,6 +280,35 @@ router.post('/:id/sections', authenticateToken, requireRole(QM_AUTHORIZED), writ
     next(error);
   }
 });
+
+/** PUT /api/assessments/:assessmentId/sections/reorder – bulk rewrite section positions (instructor-only). */
+router.put(
+  '/:assessmentId/sections/reorder',
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  writeAssessmentByAssessmentId,
+  async (req, res, next) => {
+    try {
+      const { sectionIds } = req.body ?? {};
+      const sections = await reorderAssessmentSections(
+        req.params.assessmentId,
+        req.qmCourse.userId,
+        sectionIds,
+        req.qmCourse.id,
+      );
+      res.json({
+        success: true,
+        message: 'Sections reordered successfully',
+        data: sections,
+      });
+    } catch (error) {
+      if (error?.message && /sectionIds/i.test(error.message)) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      next(error);
+    }
+  },
+);
 
 /** PUT /api/assessments/:assessmentId/sections/:sectionId – updates section metadata (instructor-only). */
 router.put('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessmentByAssessmentId, async (req, res, next) => {

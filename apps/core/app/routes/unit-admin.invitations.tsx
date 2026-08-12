@@ -3,7 +3,6 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
-import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 import { firstFieldError } from "~/lib/form-errors";
 import {
@@ -53,6 +52,7 @@ import {
   BreadcrumbSeparator,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 // Unit admins may invite instructors and students only.
 type InviteRole = "INSTRUCTOR" | "STUDENT";
@@ -81,7 +81,7 @@ const ROLE_LABEL: Record<InviteRole, string> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
   if (session.user.role !== "UNIT_ADMIN") return redirect("/dashboard");
   // The whole surface is gated by the policy flag — when off, it doesn't exist.

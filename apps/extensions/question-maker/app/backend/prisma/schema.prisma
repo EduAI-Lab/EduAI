@@ -23,8 +23,10 @@ model User {
   courseAccess         CourseAccess[]
   createdQuestions     QuestionMetadata[]    @relation("QuestionMetadataCreator")
   createdVariants      Variants[]            @relation("VariantsCreator")
-  canvasIntegration    CanvasIntegration?
-  canvasCourseMappings CanvasCourseMapping[]
+  canvasIntegration          CanvasIntegration?
+  canvasCourseMappings       CanvasCourseMapping[]
+  canvasBankMappings         CanvasBankMapping[]
+  canvasBankQuestionMappings CanvasBankQuestionMapping[]
 
   @@map("users")
 }
@@ -48,6 +50,7 @@ model Course {
   canvasMapping           CanvasCourseMapping?
   variantSelectionCursors VariantSelectionCursor[]
 
+  @@index([userId])
   @@map("courses")
 }
 
@@ -68,6 +71,9 @@ model CourseAccess {
   @@unique([userId, courseId])
   @@index([userId, role])
   @@index([userId, department])
+  // `userId` already leads the unique above; `courseId` leads nothing, and the
+  // Cascade from Course means a course deletion scans this table without it.
+  @@index([courseId])
   @@map("course_access")
 }
 
@@ -104,12 +110,16 @@ model QuestionMetadata {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
 
-  course           Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  primaryTopic     Topics                   @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
-  creator          User?                    @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
-  variants         Variants[]
-  selectionCursors VariantSelectionCursor[]
+  course                     Course                     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  primaryTopic               Topics                     @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
+  creator                    User?                      @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  variants                   Variants[]
+  selectionCursors           VariantSelectionCursor[]
+  canvasBankQuestionMappings CanvasBankQuestionMapping[]
 
+  @@index([courseId])
+  @@index([primaryTopicId])
+  @@index([createdBy])
   @@map("question_metadata")
 }
 
@@ -144,6 +154,11 @@ model Assessments {
   variants Variants[]
   sections AssessmentSections[]
 
+  /// Distinct from `assessments_practice_exam_unique` above: that index is
+  /// partial (`WHERE name = 'Practice Exam'`), so the planner can only use it
+  /// when a query's predicate implies that predicate. Ordinary
+  /// `WHERE course_id = ?` reads need this unconditional index (#1368).
+  @@index([courseId])
   @@map("assessments")
 }
 
@@ -190,6 +205,18 @@ model Variants {
   sectionLinks              SectionVariants[]
   selectionCursorLastPicked VariantSelectionCursor[]
 
+  /// Single-column FK indexes are deliberate (#1368). Composites covering the
+  /// hot reads — `(question_metadata_id, is_draft, id)` for assembly's
+  /// `pickVariantForSlot` and `(question_metadata_id, created_at, id)` for
+  /// variant paging — would each beat the plain index for their own query, but
+  /// this is the app's hottest insert path (bank generation bulk-inserts
+  /// variants) and stacking indexes on the same leading column costs write
+  /// throughput. Revisit after the assembly N+1 fix reshapes those queries;
+  /// optimizing for the current shape first would be wasted work.
+  @@index([questionMetadataId])
+  @@index([assessmentId])
+  @@index([referenceId])
+  @@index([createdBy])
   @@map("variants")
 }
 
@@ -223,6 +250,7 @@ model AssessmentSections {
   assessment      Assessments       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   sectionVariants SectionVariants[]
 
+  @@index([assessmentId])
   @@map("assessment_sections")
 }
 
@@ -241,6 +269,9 @@ model SectionVariants {
   variant Variants           @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@unique([sectionId, variantId])
+  /// No index on `sectionId` — it leads the unique above, which already serves
+  /// `WHERE section_id = ?`. Only the trailing column needs its own (#1368).
+  @@index([variantId])
   @@map("section_variants")
 }
 
@@ -296,5 +327,56 @@ model VariantSelectionCursor {
   lastVariant      Variants?        @relation(fields: [lastVariantId], references: [id], onDelete: SetNull)
 
   @@unique([courseId, questionMetadataId])
+  /// `lastVariantId` is indexed for writes, not reads: the relation is
+  /// `onDelete: SetNull`, so without it every `DELETE FROM variants` seq-scans
+  /// this table looking for rows to null out, and `variants` is the
+  /// highest-churn table in the app (#1368).
+  @@index([questionMetadataId])
+  @@index([lastVariantId])
   @@map("variant_selection_cursors")
+}
+
+/// Maps a Core question bank CUID to a Canvas Assessment Question Bank for sync.
+/// One Canvas bank → one local course per instructor (the synced Canvas course).
+model CanvasBankMapping {
+  id             Int       @id @default(autoincrement())
+  userId         String    @map("user_id")
+  /// Local QM course that owns this synced bank (must match Canvas course mapping)
+  localCourseId  Int       @map("local_course_id")
+  /// Core QuestionBank id (cuid string) — banks live in EduAI Core
+  localBankId    String    @map("local_bank_id")
+  canvasCourseId Int       @map("canvas_course_id")
+  canvasBankId   Int       @map("canvas_bank_id")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, canvasBankId])
+  @@index([localCourseId])
+  @@map("canvas_bank_mappings")
+}
+
+/// Maps a Canvas assessment question id to a local QuestionMetadata shell for re-sync.
+/// Scoped by local course so the same remote question can exist independently per course
+/// without overwriting another course's content.
+model CanvasBankQuestionMapping {
+  id                         Int      @id @default(autoincrement())
+  userId                     String   @map("user_id")
+  localCourseId              Int      @map("local_course_id")
+  localQuestionMetadataId    Int      @map("local_question_metadata_id")
+  canvasAssessmentQuestionId Int      @map("canvas_assessment_question_id")
+  /// Core QuestionBank id (cuid string) that last synced this remote question
+  localBankId                String?  @map("local_bank_id")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localQuestionMetadata  QuestionMetadata @relation(fields: [localQuestionMetadataId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, canvasAssessmentQuestionId, localCourseId])
+  @@index([localQuestionMetadataId])
+  @@index([localCourseId])
+  @@map("canvas_bank_question_mappings")
 }

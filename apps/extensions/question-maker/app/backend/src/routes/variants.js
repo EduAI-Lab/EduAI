@@ -27,6 +27,7 @@ import {
 import { prisma } from '../config/database.js';
 import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
 import { pushVariantToCore, VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from '../services/coreWiringService.js';
+import { shouldPushApprovedVariantToCore } from '../services/variant-push-gate.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
@@ -171,6 +172,10 @@ router.put(
         if (!reverting && !aiTagOnly) {
           return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
         }
+        // §19 TA own-only edit applies here too: the aiTagOnly path is still an edit.
+        if (aiTagOnly && access.level === 'ta' && current.createdBy !== req.user.id) {
+          return res.status(403).json({ success: false, error: 'TAs can only edit their own variants' });
+        }
       } else {
         // Draft branch — instructor-only approval (§16).
         if (isDraft === false && !isInstructorPlus) {
@@ -190,7 +195,7 @@ router.put(
 
       // State-based push: fires whenever the caller sets isDraft=false and the variant is not yet
       // linked to Core. The stable idempotencyKey makes repeated calls to Core safe.
-      if (isDraft === false && variant.isDraft === false && !variant.coreQuestionId) {
+      if (isDraft === false && shouldPushApprovedVariantToCore(variant)) {
         const course = variant.questionMetadata?.course;
         if (course?.coreCourseId) {
           try {

@@ -924,6 +924,7 @@ export async function findRelevantContent(
     // can still change the final ordering without turning the ANN query back
     // into a full scan.
     const hybridCandidateLimit = Number(effectiveLimit) * 4;
+    const lexicalCandidateLimit = Math.max(hybridCandidateLimit, Number(effectiveLimit));
 
     // pgvector can use an ANN index only when the index operator itself is the
     // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
@@ -937,6 +938,7 @@ export async function findRelevantContent(
         WITH vector_candidates AS MATERIALIZED (
           SELECT
             mc.content,
+            mc.content_tsv,
             cm.title AS material_title,
             me.embedding <=> ${queryEmbedding}::vector AS distance
           FROM material_embeddings me
@@ -948,6 +950,29 @@ export async function findRelevantContent(
             ${visibilityFilter}
           ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
           LIMIT ${hybridCandidateLimit}
+        ), lexical_candidates AS MATERIALIZED (
+          SELECT
+            mc.content,
+            mc.content_tsv,
+            cm.title AS material_title,
+            me.embedding <=> ${queryEmbedding}::vector AS distance
+          FROM material_chunks mc
+          JOIN material_embeddings me ON me."chunkId" = mc.id
+          JOIN course_materials cm ON mc."materialId" = cm.id
+          WHERE cm."courseId" = ${courseId}
+            AND cm."deletedAt" IS NULL
+            ${canvasPublishFilter}
+            ${visibilityFilter}
+            AND mc.content_tsv @@ plainto_tsquery('english', ${userQuery})
+          ORDER BY ts_rank(mc.content_tsv, plainto_tsquery('english', ${userQuery})) DESC
+          LIMIT ${lexicalCandidateLimit}
+        ), candidate_chunks AS (
+          SELECT content, content_tsv, material_title, distance
+          FROM vector_candidates
+          WHERE 1 - distance > ${threshold}
+          UNION
+          SELECT content, content_tsv, material_title, distance
+          FROM lexical_candidates
         )
         SELECT
           content,
@@ -955,13 +980,14 @@ export async function findRelevantContent(
           (1 - distance) * ${alpha} +
           COALESCE(
             ts_rank(
-              to_tsvector('english', content),
+              -- content_tsv is generated/stored and backed by the GIN index;
+              -- avoid rebuilding a tsvector for every hybrid candidate.
+              content_tsv,
               plainto_tsquery('english', ${userQuery})
             ),
             0
           ) * ${bm25Weight} AS score
-        FROM vector_candidates
-        WHERE 1 - distance > ${threshold}
+        FROM candidate_chunks
         ORDER BY score DESC
         LIMIT ${Number(effectiveLimit)}
       `,
@@ -1241,8 +1267,23 @@ export async function processMaterialEmbeddings(
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
 
-    const createdChunks = await tx.materialChunk.createManyAndReturn({
-      data: chunks.map((chunkContent, i) => ({ materialId, index: i, content: chunkContent })),
+    // #941: `content_tsv` is an `Unsupported("tsvector")` GENERATED column on
+    // this model, so Prisma's generated client omits write helpers
+    // (create/createMany/etc.) that would need to construct a full row shape
+    // client-side — only reads and raw SQL remain available. Insert via
+    // $executeRaw instead, following the same Prisma.sql/Prisma.join pattern
+    // insertMaterialEmbeddingsBatched (above) already uses for the sibling
+    // Unsupported("vector") column on MaterialEmbedding.
+    const chunkRows = chunks.map((chunkContent, i) =>
+      Prisma.sql`(${randomUUID()}, ${materialId}, ${i}, ${chunkContent}, NOW())`,
+    );
+    await tx.$executeRaw`
+      INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
+      VALUES ${Prisma.join(chunkRows)}
+    `;
+    const createdChunks = await tx.materialChunk.findMany({
+      where: { materialId },
+      orderBy: { index: "asc" },
     });
 
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);

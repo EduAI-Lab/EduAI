@@ -23,6 +23,12 @@ vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
+// Keep the fire-and-forget Core import mirror from racing truncate/seed (#1114
+// enrollment stubs made the catalog look "teaching" and re-wrote anchors).
+vi.mock('../../src/services/importTaughtCoursesService.js', () => ({
+  importTaughtCoursesFromCore: vi.fn().mockResolvedValue({ imported: 0, skipped: 0 }),
+}));
+
 const { default: app } = await import('../../src/app.js');
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
@@ -32,10 +38,23 @@ const TEST_USER = { id: 'cuid-pagination-user', email: 'paging@test.com', role: 
 
 const cookie = () => ({ Cookie: 'session=valid' });
 
+/** Session + teaching enrollment stub (no catalog mirror side effects). */
 function sessionFetch() {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve({ user: TEST_USER }),
+  return vi.fn().mockImplementation((url) => {
+    const path = String(url).split('?')[0];
+    if (path.endsWith('/api/sessions/validate')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
+    }
+    if (/\/enrollments$/.test(path)) {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }],
+          }),
+      });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
 }
 

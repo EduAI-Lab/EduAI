@@ -1,4 +1,3 @@
-import { auth } from "~/lib/auth/server";
 import { CanvasApiError, CanvasVerificationError } from "~/lib/canvas/client.server";
 import {
   CanvasNotConnectedError,
@@ -25,6 +24,7 @@ import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   return handleCanvasRequest(request);
@@ -46,7 +46,7 @@ function canvasSubpath(pathname: string): string {
 }
 
 async function handleCanvasRequest(request: Request): Promise<Response> {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json({ success: false, error: "UNAUTHORIZED" }, 401);
   }

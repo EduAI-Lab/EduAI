@@ -7,9 +7,18 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
-}));
+// The GET loader needs the wide row (it echoes `courseScopeGuardrailEnabled`);
+// the PATCH action is gate-only. Both entry points are stubbed separately so a
+// future repoint of either one fails loudly instead of silently. Everything
+// else — notably `canManageCourseRagSettings` — stays real.
+vi.mock("~/lib/auth/course-access.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/course-access.server")>();
+  return {
+    ...actual,
+    resolveCourseAccessWithCourse: vi.fn(),
+    resolveCourseAccessGate: vi.fn(),
+  };
+});
 
 vi.mock("~/lib/courses/server", () => ({
   getCourseRagSettings: vi.fn(),
@@ -22,7 +31,10 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { loader, action } from "~/routes/api/courses.id.rag-settings";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessGate,
+  resolveCourseAccessWithCourse,
+} from "~/lib/auth/course-access.server";
 import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import prisma from "~/lib/prisma.server";
 
@@ -112,7 +124,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
   });
 
   it("returns 403 for a caller below instructor rank", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "student", rank: 0 },
     } as never);
@@ -121,7 +133,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
   });
 
   it("updates and invalidates the cache on success", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "instructor", rank: 2 },
     } as never);

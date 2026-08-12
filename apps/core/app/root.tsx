@@ -11,7 +11,6 @@ import type { LoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/root";
 import "./app.css";
 
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicies } from "~/lib/policy.server";
 import {
@@ -30,6 +29,7 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Root middleware — the single request chokepoint that every route matches.
@@ -43,15 +43,12 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
-    const isDataDocumentNavigation =
-      url.pathname.endsWith(".data") &&
-      (request.headers.get("sec-fetch-dest") === "document" ||
-        request.headers.get("accept")?.includes("text/html"));
-
-    // React Router uses `.data` internally for client-side loader requests.
-    // Reject only address-bar/document navigation so those implementation
-    // payloads cannot be browsed directly without breaking app navigation.
-    if (isDataDocumentNavigation) {
+    // `.data` is React Router's internal single-fetch transport. This app does
+    // not enable single-fetch (`future.v8_singleFetch`), so no legitimate
+    // client request needs this public URL. Reject every variant rather than
+    // relying on browser navigation headers, which are absent or spoofable on
+    // direct/API-style requests and would otherwise expose loader payloads.
+    if (url.pathname.endsWith(".data")) {
       const blocked = new Response("Not Found", { status: 404 });
       applySecurityHeaders(blocked.headers, {
         isProd: process.env.NODE_ENV === "production",
@@ -85,7 +82,7 @@ export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
-      const session = await auth.api.getSession({ headers: request.headers });
+      const session = await getRequestSession(request);
       if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
         return new Response(
           JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
@@ -118,13 +115,15 @@ const GUEST_ROOT_PREFERENCES = {
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
 
-  // getSession and getPolicies are independent — run them in parallel so a policy
-  // cache-miss does not serialize behind the session lookup on every navigation.
+  // getRequestSession and getPolicies are independent — run them in parallel so a
+  // policy cache-miss does not serialize behind the session lookup on every
+  // navigation. The session itself resolves once per inbound request (#946):
+  // this loader and every matched route loader share the same memo entry.
   // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
   const [session, policies] = await Promise.all([
-    auth.api.getSession({ headers: request.headers }),
+    getRequestSession(request),
     getPolicies(),
   ]);
 
@@ -138,12 +137,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const isExempt =
     url.pathname.startsWith("/settings") ||
     url.pathname.startsWith("/auth/");
-  if (!isExempt) {
-    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
-    if (expiredRedirect) return expiredRedirect;
-  }
-
-  const row = await prisma.userPreference.findUnique({
+  // #1369: the preference lookup and the expiry check depend only on `session.user.id`,
+  // so fire the preference read first and await it last instead of serializing it behind
+  // the expiry check on every authenticated render. `isPasswordExpiredForUser` is memoized
+  // for 60s per process, so the saved round-trip lands on the cache miss — roughly one
+  // render per user per minute — not on every render. The costs are one wasted
+  // (primary-key indexed) preference read in the rare expired case, and a second pool
+  // connection held for the length of the overlap.
+  //
+  // Deliberately not `Promise.all`/`allSettled`: both wait for the preference read to
+  // settle before the expiry redirect can be returned, so a degraded DB would delay the
+  // redirect to /settings by up to the pool timeout (P2024, ~10s). That redirect is the
+  // only route a user has back to the change-password form, so it must not queue behind an
+  // independent read. Awaiting the promise below still surfaces its rejection on the
+  // non-expired path; the bare `.catch` only marks it handled so an early return cannot
+  // raise an unhandled rejection.
+  const preferencePromise = prisma.userPreference.findUnique({
     where: { userId: session.user.id },
     select: {
       assistDefault: true,
@@ -152,6 +161,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       theme: true,
     },
   });
+  preferencePromise.catch(() => {});
+
+  if (!isExempt) {
+    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
+    if (expiredRedirect) return expiredRedirect;
+  }
+  const row = await preferencePromise;
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
