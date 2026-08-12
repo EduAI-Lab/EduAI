@@ -24,6 +24,12 @@ const mapVariant = (variant: any): QuestionVariant => ({
   reasoningLevel: variant.reasoningLevel ?? variant.reasoning_level ?? undefined,
   answer: variant.answer ?? null,
   choices: Array.isArray(variant.choices) ? variant.choices : (variant.choices ? [variant.choices] : null),
+  selectAllThatApply: Boolean(variant.selectAllThatApply ?? variant.select_all_that_apply),
+  correctAnswers: Array.isArray(variant.correctAnswers)
+    ? variant.correctAnswers
+    : Array.isArray(variant.correct_answers)
+      ? variant.correct_answers
+      : null,
   questionMetadataId: variant.questionMetadataId ?? variant.question_metadata_id ?? undefined,
   assessmentId: variant.assessmentId ?? null,
   secondaryTopicsId: Array.isArray(variant.secondaryTopicsId)
@@ -248,6 +254,8 @@ export const questionService = {
     secondaryTopicsId?: string[];
     answer?: string | null;
     choices?: MCQChoice[] | null;
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[] | null;
     referenceId?: number;
     isAiGenerated?: boolean;
     isDraft?: boolean;
@@ -265,6 +273,8 @@ export const questionService = {
     secondaryTopicsId?: string[];
     answer?: string | null;
     choices?: MCQChoice[] | null;
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[] | null;
     referenceId?: number;
     isAiGenerated?: boolean;
     isDraft?: boolean;

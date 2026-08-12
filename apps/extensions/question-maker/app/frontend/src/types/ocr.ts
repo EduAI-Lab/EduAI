@@ -11,6 +11,9 @@ export interface StoredQuestion {
   choices?: { letter: string; text: string }[];
   /** Correct answer (letter for MCQ, text for others); restored from history. */
   answer?: string | null;
+  /** Multi-correct MCQ (#1360); restored from history when present. */
+  selectAllThatApply?: boolean;
+  correctAnswers?: string[] | null;
 }
 
 // OCR Job record for history tracking

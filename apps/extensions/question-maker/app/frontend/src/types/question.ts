@@ -178,6 +178,8 @@ export interface ExtractedQuestion {
     secondaryTopicIds: string[];
     /** MCQ options: only present for type === 'MCQ'. */
     choices?: MCQChoice[] | null;
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[] | null;
 }
 
 export interface QuestionVariantEntry {

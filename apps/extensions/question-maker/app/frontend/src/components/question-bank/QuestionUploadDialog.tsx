@@ -203,6 +203,8 @@ export function mapExtractedToDraftQuestions(items: ExtractedQuestion[]): DraftQ
                 primaryTopicId,
                 secondaryTopicIds,
                 choices,
+                selectAllThatApply: Boolean(item.selectAllThatApply),
+                correctAnswers: Array.isArray(item.correctAnswers) ? item.correctAnswers.map((l) => String(l)) : [],
                 include: (item as { include?: boolean }).include !== false
             };
         });
@@ -690,6 +692,10 @@ export const QuestionUploadDialog = ({
                 summary: draft.summary,
                 ...(draft.type === 'MCQ' && draft.choices && draft.choices.length >= 2 && { choices: draft.choices }),
                 ...(draft.answer != null && draft.answer !== '' && { answer: draft.answer }),
+                ...(draft.type === 'MCQ' && draft.selectAllThatApply && {
+                    selectAllThatApply: true,
+                    correctAnswers: Array.isArray(draft.correctAnswers) ? draft.correctAnswers : [],
+                }),
             }));
             updateJobStatus(currentJobId, 'success', {
                 questionsCount: draftQuestions.length,
@@ -715,6 +721,10 @@ export const QuestionUploadDialog = ({
                 summary: draft.summary,
                 ...(draft.type === 'MCQ' && draft.choices && draft.choices.length >= 2 && { choices: draft.choices }),
                 ...(draft.answer != null && draft.answer !== '' && { answer: draft.answer }),
+                ...(draft.type === 'MCQ' && draft.selectAllThatApply && {
+                    selectAllThatApply: true,
+                    correctAnswers: Array.isArray(draft.correctAnswers) ? draft.correctAnswers : [],
+                }),
             }));
             updateJobStatus(currentJobId, 'discarded', {
                 questionsCount: draftQuestions.length,
@@ -751,6 +761,8 @@ export const QuestionUploadDialog = ({
                 : null,
             instructions: '',
             answer: sq.answer ?? null,
+            selectAllThatApply: sq.type === 'mcq' ? Boolean(sq.selectAllThatApply) : false,
+            correctAnswers: sq.type === 'mcq' && Array.isArray(sq.correctAnswers) ? sq.correctAnswers.map(String) : [],
         }));
         setDraftQuestions(restoredDrafts);
         setProcessingStage('review');
@@ -838,7 +850,11 @@ export const QuestionUploadDialog = ({
             primaryTopicId: draft.primaryTopicId ?? null,
             secondaryTopicIds: draft.secondaryTopicIds,
             ...(draft.type === 'MCQ' && draft.choices && draft.choices.length >= 2 && {
-                choices: draft.choices.filter((c) => c.text.trim().length > 0)
+                choices: draft.choices.filter((c) => c.text.trim().length > 0),
+                selectAllThatApply: Boolean(draft.selectAllThatApply),
+                correctAnswers: draft.selectAllThatApply && Array.isArray(draft.correctAnswers)
+                    ? draft.correctAnswers
+                    : null,
             })
         }));
 
@@ -1333,6 +1349,10 @@ export const QuestionUploadDialog = ({
                                                                 onChoicesChange={(newChoices) => updateDraft(draft.id, { choices: newChoices })}
                                                                 answer={draft.answer ?? ''}
                                                                 onAnswerChange={(letter) => updateDraft(draft.id, { answer: letter || null })}
+                                                                selectAllThatApply={Boolean(draft.selectAllThatApply)}
+                                                                correctAnswers={Array.isArray(draft.correctAnswers) ? draft.correctAnswers : []}
+                                                                onSelectAllThatApplyChange={(value) => updateDraft(draft.id, { selectAllThatApply: value })}
+                                                                onCorrectAnswersChange={(letters) => updateDraft(draft.id, { correctAnswers: letters })}
                                                                 idPrefix={`upload-draft-${draft.id}`}
                                                             />
                                                         </div>
