@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'node:http';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,5 +78,87 @@ describe('Question Maker AI admission audit controls', () => {
     expect(first.status).toBe(200);
     expect(blocked.status).toBe(429);
     expect(isolated.status).toBe(200);
+  });
+
+  it('aborts the shared operation and deferred upstream when a complete request socket closes', async () => {
+    const app = express();
+    app.use(express.json());
+    let signal;
+    let handlerReady;
+    let resolveHandlerReady;
+    handlerReady = new Promise((resolve) => { resolveHandlerReady = resolve; });
+    let responseClosed;
+    let resolveResponseClosed;
+    responseClosed = new Promise((resolve) => { resolveResponseClosed = resolve; });
+    let upstreamCanceled;
+    let resolveUpstreamCanceled;
+    upstreamCanceled = new Promise((resolve) => { resolveUpstreamCanceled = resolve; });
+
+    app.post('/socket-ai', qmAiProviderCallAdmission({ getCost: () => 1 }), (req, res) => {
+      signal = req.aiOperation.signal;
+      signal.addEventListener('abort', resolveUpstreamCanceled, { once: true });
+      res.once('close', resolveResponseClosed);
+      resolveHandlerReady();
+    });
+
+    const server = http.createServer(app);
+    await new Promise((resolve) => server.listen(0, resolve));
+    const { port } = server.address();
+    const client = http.request({ port, method: 'POST', path: '/socket-ai', headers: { 'content-type': 'application/json' } });
+    client.on('error', () => {});
+    client.end('{}');
+
+    try {
+      await handlerReady;
+      expect(signal.aborted).toBe(false);
+      client.destroy();
+      await responseClosed;
+      expect(signal.aborted).toBe(true);
+      await upstreamCanceled;
+    } finally {
+      client.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('does not abort a normal delayed response before finish/close', async () => {
+    const app = express();
+    app.use(express.json());
+    let signal;
+    let handlerReady;
+    let resolveHandlerReady;
+    handlerReady = new Promise((resolve) => { resolveHandlerReady = resolve; });
+    let releaseResponse;
+    const responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+
+    app.post('/delayed-ai', qmAiProviderCallAdmission({ getCost: () => 1 }), async (req, res) => {
+      signal = req.aiOperation.signal;
+      resolveHandlerReady();
+      await responseGate;
+      res.end('ok');
+    });
+
+    const server = http.createServer(app);
+    await new Promise((resolve) => server.listen(0, resolve));
+    const { port } = server.address();
+    const response = new Promise((resolve, reject) => {
+      const client = http.request({ port, method: 'POST', path: '/delayed-ai', headers: { 'content-type': 'application/json' } }, (res) => {
+        res.resume();
+        res.once('end', () => resolve({ client, statusCode: res.statusCode }));
+      });
+      client.once('error', reject);
+      client.end('{}');
+    });
+
+    try {
+      await handlerReady;
+      expect(signal.aborted).toBe(false);
+      releaseResponse();
+      const result = await response;
+      expect(result.statusCode).toBe(200);
+      expect(signal.aborted).toBe(false);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

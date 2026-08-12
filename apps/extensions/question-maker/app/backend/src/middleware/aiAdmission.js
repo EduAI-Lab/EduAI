@@ -358,20 +358,29 @@ export function qmAiProviderCallAdmission({ validate, getCost = (req) => req?.ai
       if (typeof req.off === 'function') req.off('aborted', abortForDisconnect);
       else req.removeListener?.('aborted', abortForDisconnect);
       if (typeof res.off === 'function') {
-        res.off('finish', dispose);
-        res.off('close', dispose);
+        res.off('finish', onResponseFinish);
+        res.off('close', onResponseClose);
       }
     };
     const abortForDisconnect = () => {
       if (!controller.signal.aborted) controller.abort(new DOMException('Client disconnected', 'AbortError'));
+    };
+    // `finish` is the normal response lifecycle and must not cancel a request
+    // that completed successfully. A `close` without either response-ended
+    // marker is a premature client/socket close; abort the actual operation
+    // before removing listeners and the deadline timer.
+    const onResponseFinish = () => dispose();
+    const onResponseClose = () => {
+      if (!res.writableEnded && !res.finished) abortForDisconnect();
+      dispose();
     };
     if (typeof req.once === 'function') {
       if (req.aborted) abortForDisconnect();
       else req.once('aborted', abortForDisconnect);
     }
     if (typeof res.once === 'function') {
-      res.once('finish', dispose);
-      res.once('close', dispose);
+      res.once('finish', onResponseFinish);
+      res.once('close', onResponseClose);
     }
 
     req.aiOperation = {
