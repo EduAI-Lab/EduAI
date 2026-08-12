@@ -68,7 +68,20 @@ router.post(
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
-      const { questionText, difficulty, reasoningLevel, assessmentId, secondaryTopicsId, answer, choices, referenceId, isAiGenerated, isDraft } = req.body;
+      const {
+        questionText,
+        difficulty,
+        reasoningLevel,
+        assessmentId,
+        secondaryTopicsId,
+        answer,
+        choices,
+        selectAllThatApply,
+        correctAnswers,
+        referenceId,
+        isAiGenerated,
+        isDraft,
+      } = req.body;
 
       if (!questionText || !questionText.trim()) {
         return res.status(400).json({
@@ -92,6 +105,8 @@ router.post(
           secondaryTopicsId,
           answer,
           choices,
+          selectAllThatApply,
+          correctAnswers,
           referenceId,
           isAiGenerated,
           isDraft,
@@ -142,7 +157,20 @@ router.put(
   requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
-      const { questionText, difficulty, reasoningLevel, assessmentId, secondaryTopicsId, answer, choices, referenceId, isAiGenerated, isDraft: isDraftRaw } = req.body;
+      const {
+        questionText,
+        difficulty,
+        reasoningLevel,
+        assessmentId,
+        secondaryTopicsId,
+        answer,
+        choices,
+        selectAllThatApply,
+        correctAnswers,
+        referenceId,
+        isAiGenerated,
+        isDraft: isDraftRaw,
+      } = req.body;
       const isDraft = parseIsDraft(isDraftRaw);
 
       const enumError = validateVariantEnums({ difficulty, reasoningLevel });
@@ -168,6 +196,8 @@ router.put(
           secondaryTopicsId === undefined &&
           answer === undefined &&
           choices === undefined &&
+          selectAllThatApply === undefined &&
+          correctAnswers === undefined &&
           referenceId === undefined;
         if (!reverting && !aiTagOnly) {
           return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
@@ -185,7 +215,20 @@ router.put(
 
       const variant = await updateVariant(
         req.params.variantId,
-        { questionText, difficulty, reasoningLevel, assessmentId, secondaryTopicsId, answer, choices, referenceId, isAiGenerated, isDraft },
+        {
+          questionText,
+          difficulty,
+          reasoningLevel,
+          assessmentId,
+          secondaryTopicsId,
+          answer,
+          choices,
+          selectAllThatApply,
+          correctAnswers,
+          referenceId,
+          isAiGenerated,
+          isDraft,
+        },
         req.qmCourse.userId
       );
 

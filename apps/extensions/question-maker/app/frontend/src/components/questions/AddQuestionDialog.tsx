@@ -1129,14 +1129,21 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                         selectAllThatApply: editSelectAllThatApply,
                                                         correctAnswers: editSelectAllThatApply ? editCorrectAnswers : null,
                                                     };
-                                                    await questionService.updateVariant(viewVariant.id, payload);
-                                                    const updatedVariantData = { ...viewEntry.variant, ...payload };
+                                                    const saved = await questionService.updateVariant(viewVariant.id, payload);
+                                                    const updatedVariantData = { ...viewEntry.variant, ...saved };
                                                     const updatedEntry: QuestionVariantEntry = { ...viewEntry, variant: updatedVariantData };
                                                     vp.onSelectVariant(updatedEntry);
-                                                    vp.onUpdateVariant?.(viewVariant.id, payload);
+                                                    vp.onUpdateVariant?.(viewVariant.id, {
+                                                      choices: saved.choices ?? payload.choices,
+                                                      answer: saved.answer ?? payload.answer,
+                                                      selectAllThatApply: saved.selectAllThatApply,
+                                                      correctAnswers: saved.correctAnswers ?? null,
+                                                    });
                                                     setEditingChoices(false);
                                                     toast('Choices saved', {
-                                                        description: 'Variant choices and correct answer updated.',
+                                                        description: saved.selectAllThatApply
+                                                          ? 'Variant choices and correct answers updated.'
+                                                          : 'Variant choices and correct answer updated.',
                                                     });
                                                 } catch (err: any) {
                                                     toast.error('Failed to save choices', {

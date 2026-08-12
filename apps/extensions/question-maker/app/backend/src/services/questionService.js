@@ -1050,7 +1050,8 @@ export const updateVariant = async (variantId, variantData, userId) => {
 
     const ALLOWED_VARIANT_UPDATE_FIELDS = [
       'questionText', 'difficulty', 'reasoningLevel', 'assessmentId', 'secondaryTopicsId',
-      'answer', 'choices', 'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
+      'answer', 'choices', 'selectAllThatApply', 'correctAnswers',
+      'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
     ];
     const normalizedData = {
       ...Object.fromEntries(
