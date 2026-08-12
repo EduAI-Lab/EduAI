@@ -2317,6 +2317,8 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
+        serverId: fleetPick?.serverId ?? null,
+        chatId: chat?.id ?? null,
       });
     };
 
