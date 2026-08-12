@@ -173,12 +173,11 @@ The tutoring pipeline (`apps/extensions/ai-tutor/server/src/services/aiGuidance.
 - **Entry point(s):** `POST /activities/:activityId/teach|guide|custom` (`apps/extensions/ai-tutor/server/src/routes/activities.js` → `handleAiInteraction`)
 - **Flow:**
   1. Student A sends a normal teach/guide/custom request but sets `chatId` to B's session id
-  2. `handleAiInteraction` (Stage 2) looks up `existingSession` scoped to `{ chatId: payload.chatId, userId: authUser.id, activityId, mode }` — since the row belongs to B, not A, this lookup returns `null`
-  3. However, the next line computes `chatId = payload.chatId || existingSession?.chatId || null` — this uses `payload.chatId` (A's attacker-supplied value) directly via the `||`, **regardless of whether the ownership lookup in step 2 succeeded**; the `existingSession` check's result is otherwise unused for gating this value
-  4. That `chatId` is forwarded to Core's `/api/chat` as the `chatId` in the request body, authenticated with **A's own** forwarded session cookie
-  5. Core's chat-continuation logic loads the chat scoped by `{ id: chatId, userId }` using the caller's own Core-session `userId` (A's), per Core's `apps/core/app/routes/api/chat.ts` — so Core itself, not AI Tutor, is what ultimately prevents A's request from being associated with B's chat history
-- **Expected outcome:** Depends entirely on Core's own chatId-ownership enforcement in `/api/chat`, since AI Tutor's own Stage-2 ownership check computes `existingSession` but doesn't actually gate the `chatId` value passed onward with it.
-- **Failure modes / what could go wrong:** This is a real gap in AI Tutor's own code: the `existingSession` ownership lookup exists but its result isn't used to reject a mismatched `chatId` before forwarding it — the safety net is entirely delegated to Core's independent ownership check on its side. If Core's chat-continuation logic ever changed to trust a caller-supplied `chatId` without re-scoping by its own session's `userId`, this would become a session-hijacking path. Worth hardening in AI Tutor by rejecting the request outright (`403`/`404`) when `payload.chatId` is non-empty but `existingSession` is `null`.
+  2. `handleAiInteraction` (Stage 2) trims the supplied `chatId` and looks up `existingSession` scoped to `{ chatId, userId: authUser.id, activityId, mode }` — since the row belongs to B, not A, this lookup returns `null`
+  3. Because a non-empty `chatId` was supplied but `existingSession` is `null`, the route rejects immediately with `404 { error: 'Session not found' }` — A's `chatId` is never forwarded to Core, and no model call, `AiChatSession` write, or `AiInteractionTrace` happens for the request
+  4. As additional defense-in-depth on the write side, `upsertChatSession` (used for the *response's own* `chatId`, e.g. one newly minted by Core) re-checks the row's `userId` before updating it, so even a chatId collision on the write path can't silently repoint another student's session row
+- **Expected outcome:** `404 { error: 'Session not found' }`; no chat call, no `AiChatSession`/trace row, no metrics recorded. AI Tutor rejects the mismatched `chatId` itself and no longer depends on Core's own chatId-ownership enforcement as the only safety net.
+- **Failure modes / what could go wrong:** None found — the ownership lookup's result now gates the request directly, and `upsertChatSession` independently re-verifies ownership before writing.
 - **Related code:**
   - `apps/extensions/ai-tutor/server/src/routes/activities.js`
   - `apps/core/app/routes/api/chat.ts`
@@ -202,4 +201,20 @@ The tutoring pipeline (`apps/extensions/ai-tutor/server/src/services/aiGuidance.
 - **Related code:**
   - `apps/extensions/ai-tutor/server/src/services/aiGuidance.js`
   - `apps/extensions/ai-tutor/shared/schemas/aiGuidance.js`
+  - `apps/extensions/ai-tutor/server/src/routes/activities.js`
+
+---
+
+### UC-STUDENT-011: Requesting Teach or Guide mode on an activity where it isn't configured
+
+- **Category:** Wrong/Malformed Usage
+- **Actor:** STUDENT enrolled in a published course, on an activity with `enableTeachMode: false` (for `/teach`) or `enableGuideMode: false` (for `/guide`)
+- **Preconditions:** None
+- **Entry point(s):** `POST /activities/:activityId/teach`, `POST /activities/:activityId/guide` (`apps/extensions/ai-tutor/server/src/routes/activities.js`)
+- **Flow:**
+  1. Student (e.g. via a leftover UI affordance or direct API call) sends `POST /activities/:activityId/teach` or `/guide` for an activity where that specific mode is disabled
+  2. Route passes the enrollment/publish gates, then explicitly checks `if (!activity.enableTeachMode) return res.status(400)...` (respectively `enableGuideMode`) before body-schema validation or any model call — mirroring the existing `enableCustomMode` check on `/custom` (UC-STUDENT-007)
+- **Expected outcome:** `400 { "error": "Teach mode is not enabled for this activity" }` or `400 { "error": "Guide mode is not enabled for this activity" }`; no EduAI call, no `AiChatSession`/trace write.
+- **Failure modes / what could go wrong:** None — the mode check runs server-side on every request, so a student can't reach `generateTeachResponse`/`generateGuideResponse` for a mode the instructor didn't enable, regardless of client-side UI state.
+- **Related code:**
   - `apps/extensions/ai-tutor/server/src/routes/activities.js`

@@ -1,0 +1,15 @@
+# S10 — rbac-permissions-capabilities (issue #1189). Drift-override BUILD.
+# Pure capabilities vs docs/implementations/rbac-matrix.md §7/§8/§10 (+ policy overlays).
+# PolicyOn is meaningful for TA manage-topics and instructor/unit view-course-chats —
+# do NOT force PolicyOn=no for unit/instructor (needed for view-course-chats coverage).
+# docs/PICT_CENSUS.md § S10
+Access:        admin, unit, instructor, ta, student, none
+Capability:    view-material, delete-material, rename-material, view-topics, manage-topics, view-course-chats
+IsPublished:   yes, no
+PolicyOn:      yes, no
+MaterialOwn:   yes, no
+
+IF [Capability] in {"delete-material", "rename-material", "manage-topics", "view-course-chats"} THEN [IsPublished] = "yes";
+IF [Access] in {"admin", "student", "none"} THEN [PolicyOn] = "no";
+IF [Capability] in {"view-material", "view-topics", "delete-material", "rename-material"} THEN [PolicyOn] = "no";
+IF [Capability] in {"view-material", "view-topics", "manage-topics", "view-course-chats"} THEN [MaterialOwn] = "yes";

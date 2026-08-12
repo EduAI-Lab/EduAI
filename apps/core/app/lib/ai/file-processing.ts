@@ -1228,7 +1228,10 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
     await loadZipWithLimits(arrayBuffer, 'DOCX');
 
     // Extract as HTML first, then convert to markdown-like format for better RAG performance
-    const result = await mammoth.convertToHtml({ arrayBuffer });
+    // mammoth's Node build only accepts `{ path }` / `{ buffer }` (NodeJsInput), not
+    // `{ arrayBuffer }` (BrowserInput) — passing arrayBuffer here throws "Could not
+    // find file in options" for every real DOCX upload processed server-side.
+    const result = await mammoth.convertToHtml({ buffer: Buffer.from(arrayBuffer) });
 
     if (result.messages && result.messages.length > 0) {
       console.warn('DOCX extraction warnings:', result.messages);

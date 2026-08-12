@@ -462,7 +462,9 @@ authService / extractionUtils / courseCodeUtils — all ≤2 dims.
 | `normalizeTerm` | 3 | `packages/ui/src/lib/term.ts` ~100 | DROP |
 | `ext↔ext` | — | extensions hold zero refs to each other | **assert-only** |
 
-`cross-ext-read` is validated against pict 3.7.4: 82 combos → **17 rows**.
+`cross-ext-read` is validated against pict 3.7.4: 82 combos → **18 rows** (#1189 regen; was 17 under an earlier constraint snapshot). Seed rows (`cross-ext-read.seed.tsv`) pin the silent-omission cells (`course-field` + `session-cookie` + `present` + not enrolled) for both extensions.
+
+`material` DataKind: no AT/QM materials client today — extension adapters `it.skip` those rows; Core soft-delete filtering remains covered by `material-visibility` (#1180).
 
 ```
 Ext:            ai-tutor, question-maker
@@ -481,11 +483,14 @@ is the leak class) · course-field over cookie while not enrolled → null (the 
 trap**) · `enrollment-role` → role if enrolled else null · else resolved.
 
 `cross-ext-push`: accept / 401 / 403 / 409-adopt (`P2002`) / 503; a draft must **not** sync; POST is
-cookie-only and never service-key.
+cookie-only and never service-key. Seed rows pin valid `201` fresh and `adopt-p2002` success paths.
+QM adapter covers the client push path; Core adapter runs the real `POST /api/questions` action.
 
 The client-gate models are a distinct pattern: the client predicates are authored as literal "UI
-mirror of the backend 403 gate," and **TA is the consistently divergent cell**. The model runs one
-oracle against both the client predicate and the backend gate — any disagreement is the bug.
+mirror of the backend 403 gate," and **TA is the consistently divergent cell** (delete-material).
+`manage-rag` also diverges for **unit** (backend `rank >= 2` includes unit; client is admin|instructor
+only). The model runs one oracle against both the client predicate and the backend gate — any
+disagreement is the bug (`it.fails` on the divergent side).
 
 `ext↔ext` needs no model. Extensions hold zero references to each other; they link only through Core
 (`coreOfferingId` / `coreCourseId`) and nav URLs (`extension-urls.ts`). Write a static test that greps
