@@ -81,7 +81,7 @@ restart.
 
 ```bash
 git pull
-bash infra/s378/go-live-build.sh              # env, generate, migrate, seed, build, restart
+bash infra/s378/go-live-build.sh              # env, generate, migrate, extension seed, build, restart
 bash infra/s378/go-live-build.sh --install    # after a branch switch (adds npm install)
 bash infra/s378/go-live-build.sh --only qm    # core | aitutor | qm
                                               # (ai-tutor / question-maker also accepted)
@@ -97,13 +97,17 @@ is the entire point (the dev server shipped ~12MB of unbundled JS per page).
 
 | Script | Purpose |
 |--------|---------|
-| `go-live-build.sh` | **The deploy command.** env → generate → migrate → seed → build → restart |
+| `go-live-build.sh` | **The deploy command.** env → generate → migrate → extension seed → build → restart |
 | `go-live-env.sh` | Public URLs + **sync `EDUAI_API_KEY` from Core → AI Tutor + QM** |
 | `go-live-apache.sh` | Install/reload the Apache vhosts **from this repo** (needs sudo; rare) |
 | `go-live-systemd-install.sh` | Install/enable the system units + polkit rule (needs sudo; once) |
 
 > `~/dev-vhosts/` is **legacy and no longer a source of truth.** The vhosts and
 > units tracked in `infra/s378/` are what get installed; edit them here.
+
+Core fixture seeding is deliberately absent from this deploy path. The Core
+seed contains fixed demo identities and is restricted to local/test hosts; use
+the documented invitation/operator bootstrap for the first shared administrator.
 
 ## Shared `EDUAI_API_KEY` (required for extension APIs)
 

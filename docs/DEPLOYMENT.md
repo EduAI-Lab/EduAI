@@ -128,8 +128,9 @@ cd ../extensions/ai-tutor/server && npx prisma migrate deploy
 
 App development commands already migrate and seed-if-empty on startup, but explicit migration is
 useful before restarting the shared stack because it fails before traffic is sent to an incompatible
-schema. `go-live-build.sh` runs both of these plus Question Maker's, so a normal deploy does not
-need them run by hand.
+schema. `go-live-build.sh` runs all three migrations. It seeds extension-local catalog data only;
+Core fixture seeding is intentionally forbidden on shared hosts because it provisions fixed demo
+identities. Bootstrap the first real Core administrator through the invitation/operator flow.
 
 ### Deploying a branch
 

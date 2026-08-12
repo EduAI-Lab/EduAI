@@ -8,7 +8,7 @@
 #
 # Order is the whole point and is not negotiable:
 #
-#   env  ->  generate  ->  migrate  ->  seed  ->  BUILD  ->  restart
+#   env  ->  generate  ->  migrate  ->  extension seed  ->  BUILD  ->  restart
 #
 # `go-live-env.sh` rewrites the VITE_* public URLs. Those used to be read when
 # the dev server started; now they are BAKED INTO THE BUNDLE at build time. Run
@@ -152,13 +152,14 @@ step "migrate"
 # baseline script first.
 ( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
 
-step "seed if empty"
-# The old units exec'd `npm run dev`, whose script chained `seed:if-empty` for all
-# three apps. The new units exec the server directly, so without this a freshly
-# reset or recreated database comes up with no AI providers and no admin user:
-# every unit reports active, BUILD_OK prints, and nobody can sign in.
-# All three are no-ops when the database already has rows.
-( cd apps/core                                  && npm run db:seed:if-empty )
+step "seed extension data if empty"
+# Core fixture seeding is intentionally disabled on s378. Core's seed contains
+# fixed demo identities, including an ADMIN account, and its local-only guard
+# must never be bypassed by a shared deployment. Bootstrap the first real Core
+# administrator through the documented invitation/operator flow instead.
+#
+# The extension seeds contain only local application/catalog data and remain
+# no-ops when their databases already have rows.
 ( cd apps/extensions/ai-tutor/server            && npm run seed:if-empty )
 ( cd apps/extensions/question-maker/app/backend && npm run seed:if-empty )
 
