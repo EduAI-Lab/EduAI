@@ -340,6 +340,56 @@ describe("POST /api/eduai/generate-questions", () => {
     expect(res.body.aiErrorReason).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain('503');
   });
+
+  it('maps an upstream generation rate limit to a stable 429 response', async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    const rateLimited = new Error('provider body api_key=must-not-leak');
+    rateLimited.statusCode = 429;
+    eduaiService.generateQuestions.mockRejectedValue(rateLimited);
+
+    const res = await request(app)
+      .post('/api/eduai/generate-questions')
+      .set('Cookie', 'session=v')
+      .send({ prompt: 'x', courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(429);
+    expect(res.body).toMatchObject({ code: 'EDUAI_UPSTREAM_RATE_LIMITED' });
+    expect(JSON.stringify(res.body)).not.toContain('api_key');
+  });
+
+  it('cancels a hung Core course search at the shared generation deadline', async () => {
+    const user = { ...INSTRUCTOR, id: 'inst-core-hang-generation' };
+    authAs(user);
+    const coreFetch = vi.fn((url, options = {}) => {
+      if (String(url).endsWith('/api/sessions/validate')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+      }
+      const signal = options.signal;
+      if (!signal) return Promise.reject(new Error('generation request did not receive a shared signal'));
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    vi.stubGlobal('fetch', coreFetch);
+    mockFindCoursesByProjectedCode.mockImplementation((_code, { signal } = {}) =>
+      fetch('http://core.test/api/courses?search=COSC', { signal }).then((response) => response.json()),
+    );
+
+    const res = await request(app)
+      .post('/api/eduai/generate-questions')
+      .set('Cookie', 'session=v')
+      .send({ prompt: 'x', courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe('QM_AI_OPERATION_DEADLINE');
+    expect(mockFindCoursesByProjectedCode).toHaveBeenCalledWith(
+      'COSC 101',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(coreFetch.mock.calls.some(([, options]) => options?.signal?.aborted)).toBe(true);
+    expect(eduaiService.generateQuestions).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/eduai/courses', () => {

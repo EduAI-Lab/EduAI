@@ -87,6 +87,21 @@ const testApiKeyAdmission = qmAiProviderCallAdmission({
   getCost: (req) => req.aiAdmission.providerCalls,
 });
 
+const generationAdmission = qmAiProviderCallAdmission({
+  validate: (body) => {
+    const budget = validateGenerationBudget({
+      prompt: body?.prompt,
+      numQuestions: body?.numQuestions,
+    });
+    if (budget.status) return budget;
+
+    // generateQuestions makes one provider call and may make one bounded
+    // JSON-repair call, so reserve the complete worst-case fanout up front.
+    return { ...budget, providerCalls: 2 };
+  },
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
 function sendStableAiFailure(res, error, fallbackCode, fallbackMessage) {
   const statusCode = Number(error?.statusCode ?? error?.status);
   if (statusCode === 429) {
@@ -164,29 +179,20 @@ router.post('/chat', qmAiUserRateLimit, chatAdmission, async (req, res) => {
 });
 
 /** POST /api/eduai/generate-questions – requests generated questions from EduAI using the provided prompt and options. */
-router.post('/generate-questions', qmAiUserRateLimit, async (req, res) => {
+router.post('/generate-questions', qmAiUserRateLimit, generationAdmission, async (req, res) => {
   try {
-    const {
-      prompt,
-      courseCode,
-      model,
-      apiKeys,
-      numQuestions,
+    const { 
+      courseCode, 
+      model, 
+      apiKeys, 
       difficultyDistribution,
       reasoningDistribution,
       mcqRequiredChoiceCount,
     } = req.body;
 
-    // Validate required fields and apply the same prompt/count budget as the
-    // legacy provider endpoint before resolving a course or calling EduAI.
-    const budget = validateGenerationBudget({ prompt, numQuestions });
-    if (budget.status) {
-      return res.status(budget.status).json({
-        success: false,
-        error: budget.message,
-        code: budget.code,
-      });
-    }
+    // Admission already validated and normalized the finite generation
+    // budget before reserving provider capacity or resolving the course.
+    const budget = req.aiAdmission;
 
     if (!courseCode) {
       return res.status(400).json({
@@ -252,11 +258,12 @@ router.post('/generate-questions', qmAiUserRateLimit, async (req, res) => {
     });
   } catch (error) {
     logEduaiRouteError('EduAI question generation error', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate questions',
-      code: 'EDUAI_GENERATION_FAILED',
-    });
+    return sendStableAiFailure(
+      res,
+      error,
+      'EDUAI_GENERATION_FAILED',
+      'Failed to generate questions',
+    );
   }
 });
 
