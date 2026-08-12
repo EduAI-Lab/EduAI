@@ -128,6 +128,15 @@ function resolveTopicName(activity, topicId) {
 async function upsertChatSession({ userId, activityId, mode, chatId, tutorModelId }) {
   if (!chatId) return null;
 
+  // Defense-in-depth (#1412): scope the update by userId too, not just the
+  // unique chatId, so a chatId that somehow belongs to another user can't
+  // have its row updated (and a trace mis-linked to it) by this request.
+  const existing = await prisma.aiChatSession.findUnique({ where: { chatId } });
+  if (existing && existing.userId !== userId) {
+    console.error(`Refusing to upsert aiChatSession ${chatId}: owned by a different user`);
+    return null;
+  }
+
   return prisma.aiChatSession.upsert({
     where: { chatId },
     update: { modelId: tutorModelId ?? null },
@@ -257,18 +266,18 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   try {
     // Stage 2: verify the client's chatId belongs to this user. Skip when no
     // chatId provided (new session — Core will mint one after the response).
-    const hasChatId = Boolean(payload.chatId && payload.chatId.trim().length > 0);
-    const existingSession = hasChatId
+    const chatId = payload.chatId?.trim() || null;
+    const existingSession = chatId
       ? await prisma.aiChatSession.findFirst({
-          where: { chatId: payload.chatId, userId: authUser.id, activityId, mode },
+          where: { chatId, userId: authUser.id, activityId, mode },
         })
       : null;
 
     // A client-supplied chatId that doesn't resolve to a session owned by this
     // user/activity/mode either belongs to someone else or is stale — reject
     // rather than silently reusing it (see #1412).
-    if (hasChatId && !existingSession) {
-      return res.status(403).json({ error: 'Chat session not found' });
+    if (chatId && !existingSession) {
+      return res.status(404).json({ error: 'Session not found' });
     }
 
     // Stage 3: model + policy resolution. Tutor selection respects student picks
@@ -277,7 +286,6 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       await resolveSupervisorSettings();
     const tutorModelId = await resolveTutorModelSelection(payload.modelId);
     const cookie = getEduAiCookieForRequest(req);
-    const chatId = existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
     // Stage 4: fetch testable questions + the course code, both from the
