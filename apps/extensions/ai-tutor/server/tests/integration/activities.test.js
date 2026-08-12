@@ -1589,6 +1589,25 @@ describe("Tutoring-flow: question consumption via Core", () => {
   let studentApp;
   let activity;
 
+  function stubLiveStudentFetch(handler = () => undefined) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, options) => {
+        if (typeof url === 'string' && url.includes('/courses/cuid-core-offering/enrollments')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                enrollments: [{ studentId: student.id, role: 'STUDENT', isActive: true }],
+              }),
+            text: () => Promise.resolve(''),
+          });
+        }
+        return handler(url, options);
+      }),
+    );
+  }
+
   beforeEach(async () => {
     await truncateAll();
     prof = makeProfessor();
@@ -1874,8 +1893,8 @@ describe("Tutoring-flow: question consumption via Core", () => {
   // #1412: a client-supplied chatId that doesn't resolve to a session owned
   // by this user/activity/mode must be rejected rather than silently reused
   // (previously the ownership lookup's result was discarded).
-  it("/teach rejects a chatId belonging to a different user", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+  it('/teach rejects a chatId belonging to a different user', async () => {
+    stubLiveStudentFetch();
 
     const otherStudent = makeStudent();
     await prisma.courseEnrollment.create({
@@ -1893,7 +1912,8 @@ describe("Tutoring-flow: question consumption via Core", () => {
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1910,12 +1930,13 @@ describe("Tutoring-flow: question consumption via Core", () => {
     expect(await prisma.aiInteractionTrace.count({ where: { userId: student.id } })).toBe(0);
   });
 
-  it("/teach rejects an unknown/stale chatId", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+  it('/teach rejects an unknown/stale chatId', async () => {
+    stubLiveStudentFetch();
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1946,27 +1967,25 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url) => {
-        if (typeof url === "string" && url.includes("/questions")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ questions: [], total: 0 }),
-            text: () => Promise.resolve(""),
-          });
-        }
+    stubLiveStudentFetch((url) => {
+      if (typeof url === 'string' && url.includes('/questions')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ content: "AI response", chatId: "my-existing-chat" }),
-          text: () => Promise.resolve(""),
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
         });
-      }),
-    );
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ content: 'AI response', chatId: 'my-existing-chat' }),
+        text: () => Promise.resolve(''),
+      });
+    });
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -2005,11 +2024,12 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal("fetch", vi.fn());
+    stubLiveStudentFetch();
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -2031,11 +2051,12 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal("fetch", vi.fn());
+    stubLiveStudentFetch();
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -2064,28 +2085,26 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url) => {
-        if (typeof url === "string" && url.includes("/questions")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ questions: [], total: 0 }),
-            text: () => Promise.resolve(""),
-          });
-        }
+    stubLiveStudentFetch((url) => {
+      if (typeof url === 'string' && url.includes('/questions')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ content: "AI response", chatId: "colliding-chat-id" }),
-          text: () => Promise.resolve(""),
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
         });
-      }),
-    );
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ content: 'AI response', chatId: 'colliding-chat-id' }),
+        text: () => Promise.resolve(''),
+      });
+    });
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
-      .set("Cookie", "session=test-cookie")
-      .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+      .set('Cookie', 'session=test-cookie')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
 
     expect(res.status).toBe(200);
 
@@ -2481,7 +2500,7 @@ describe("teach/guide/custom: enrollment and publish gate (§308)", () => {
 
   // #1411: /teach and /guide must reject when the activity's own enable flag
   // is off, mirroring the check /custom already has for enableCustomMode.
-  it("returns 400 on /teach when enableTeachMode is disabled for the activity", async () => {
+  it('returns 400 on /teach when enableTeachMode is disabled for the activity', async () => {
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
       id: seed.course.coreOfferingId,
       isPublished: true,
@@ -2508,7 +2527,7 @@ describe("teach/guide/custom: enrollment and publish gate (§308)", () => {
     expect(res.body.error).toMatch(/teach mode is not enabled/i);
   });
 
-  it("returns 400 on /guide when enableGuideMode is disabled for the activity", async () => {
+  it('returns 400 on /guide when enableGuideMode is disabled for the activity', async () => {
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
       id: seed.course.coreOfferingId,
       isPublished: true,
