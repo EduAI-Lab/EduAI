@@ -62,6 +62,9 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // #1369: unindexed FK. Every authenticated request resolves a session, and the
+  // `onDelete: Cascade` from User seq-scans this table on account deletion.
+  @@index([userId])
   @@map("session")
 }
 
@@ -83,6 +86,11 @@ model Account {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  // #1369: `getPasswordChangedAt` filters { userId, providerId: "credential" } from
+  // the root loader on every authenticated render, and the unique above leads with
+  // `providerId` so it cannot serve that lookup. Composite rather than `userId`
+  // alone: same write cost, and it still covers any `userId`-prefix query.
+  @@index([userId, providerId])
   @@map("account")
 }
 
@@ -163,6 +171,11 @@ model Course {
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
+  // #1369: FK -> Discipline.code (onDelete: Restrict, onUpdate: Cascade). Without an
+  // index every discipline rename or delete seq-scans courses to enforce the action.
+  @@index([department])
+  // #1369 deferred: `instructorId` returned 223/238 rows on the perf seed, so the
+  // planner would ignore an index there. Re-evaluate against production selectivity.
   @@map("courses")
 }
 
@@ -268,6 +281,12 @@ model AIInteraction {
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
 
+  // #1369 deferred: `courseId` measured 0.605 ms Seq Scan -> 0.096 ms Bitmap Index Scan on
+  // the perf seed (1,373 rows), but nothing reads it — this model is write-only, with
+  // `create` in ai/routing/telemetry.server.ts its one production call site. Index it when
+  // a per-course reporting read lands. `userId` matched 1362/1373 rows on the perf seed and
+  // `modelId` is low-cardinality (a handful of models), so neither index would be selective
+  // enough for the planner to use. Re-evaluate `userId` once production has many active users.
   @@map("ai_interactions")
 }
 
@@ -339,6 +358,9 @@ model UserProviderSettings {
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
+  // #1369 deferred: the unique above leads with `userId`, so the `onDelete: Cascade`
+  // from AIProvider seq-scans this table. One row per user per provider keeps it tiny;
+  // revisit if provider deletes ever become routine.
   @@map("user_provider_settings")
 }
 
@@ -460,6 +482,12 @@ model Question {
 
   @@index([courseId, topicId, testable])
   @@index([createdBy])
+  // #1369 deferred: a bare `@@index([topicId])` measured 1.105 ms -> 0.095 ms on the perf
+  // seed (10,046 rows), but Core never issues a topic-only filter — `listQuestions` types
+  // `courseId` as required, so `topicId` is only ever an extra narrowing on top of the
+  // composite above, which already seeks. The `Restrict` FK check doesn't need it either:
+  // topics are soft-deleted via `courseTopic.update({ deletedAt })`, never hard-deleted.
+  // Add it if a cross-course topic view ever ships.
   @@map("questions")
 }
 
@@ -656,6 +684,9 @@ model CanvasRosterMember {
   @@index([email])
   @@index([sisUserIdLookup])
   @@index([canvasUserId])
+  // #1369 deferred: `syncedByUserId` has the default `Restrict`, so a user delete
+  // seq-scans here. This table grows with every roster sync, making it the likeliest
+  // of the deferred candidates to need an index later.
   @@map("canvas_roster_members")
 }
 
@@ -719,6 +750,8 @@ model Invitation {
 
   @@index([email])
   @@index([status])
+  // #1369 deferred: `invitedById` / `acceptedUserId` are both `onDelete: SetNull` from
+  // User, so a user delete seq-scans here. Table is small; revisit past ~10k rows.
   @@map("invitations")
 }
 
