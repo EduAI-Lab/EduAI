@@ -1,0 +1,20 @@
+[Unit]
+Description=EduAI Core production service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ssaada08
+Group=eduai
+UMask=0007
+WorkingDirectory=/srv/www/eduai-production/current/apps/core
+EnvironmentFile=/etc/eduai/eduai-core.env
+ExecStart=/usr/bin/node /srv/www/eduai-production/current/node_modules/@react-router/serve/bin.js ./build/server/index.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
