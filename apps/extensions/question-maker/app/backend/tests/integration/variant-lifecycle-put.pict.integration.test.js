@@ -14,12 +14,14 @@
  * enrollment role drives the resolved course-access level, and the session
  * role drives the QM_AUTHORIZED flat gate. Shared cases/oracle loading comes
  * from tests/helpers/pictModel.js; shared auth/settings/coreApiService mocks
- * come from tests/helpers/pictRouteMocks.js (#1188).
+ * come from tests/helpers/pictRouteMocks.js; the row-runner (describe.each +
+ * request + status assertion) comes from tests/helpers/pictRouteRunner.js
+ * (#1188).
  */
-import { vi, describe, it, expect, beforeEach } from 'vitest';
-import request from 'supertest';
+import { vi, beforeEach } from 'vitest';
 import { loadPictModel } from '../helpers/pictModel.js';
 import { stubSessionUser, stubEnrollment } from '../helpers/pictRouteMocks.js';
+import { describePictRoute } from '../helpers/pictRouteRunner.js';
 
 const { mockUpdateVariant, mockVariantsFindOne, mockEnrollments } = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
@@ -129,28 +131,27 @@ function isKnownDrift(row) {
   );
 }
 
-describe.each(rows.map((row, index) => ({ row, index })))(
-  'variant-lifecycle-put PICT row #$index $row.AccessLevel/$row.CurrentIsDraft/$row.Ownership/$row.RequestedIsDraft/$row.FieldChangeKind',
-  ({ row }) => {
-    const run = isKnownDrift(row) ? it.fails : it;
-    run('matches the oracle', async () => {
-      const isDraft = row.CurrentIsDraft === 'draft';
-      const createdBy = row.AccessLevel === 'ta' ? (row.Ownership === 'own' ? TA_USER.id : 'someone-else') : 'anyone';
-      loadVariant({ isDraft, createdBy });
+function setupRow(row) {
+  const isDraft = row.CurrentIsDraft === 'draft';
+  const createdBy = row.AccessLevel === 'ta' ? (row.Ownership === 'own' ? TA_USER.id : 'someone-else') : 'anyone';
+  loadVariant({ isDraft, createdBy });
 
-      if (row.AccessLevel === 'ta') {
-        authAs(TA_USER, 'TA');
-      } else {
-        authAs(INSTRUCTOR_PLUS_USER, null);
-      }
+  if (row.AccessLevel === 'ta') {
+    authAs(TA_USER, 'TA');
+  } else {
+    authAs(INSTRUCTOR_PLUS_USER, null);
+  }
 
-      const res = await request(app)
-        .put('/api/questions/variants/42')
-        .set('Cookie', 'session=v')
-        .send(buildBody(row));
+  return buildBody(row);
+}
 
-      const expected = variantLifecyclePutOracle(row);
-      expect(res.status).toBe(expected.status);
-    });
-  },
-);
+describePictRoute('variant-lifecycle-put', {
+  app,
+  rows,
+  method: 'put',
+  path: '/api/questions/variants/42',
+  setupRow,
+  oracle: variantLifecyclePutOracle,
+  isKnownDrift,
+  label: (row) => `${row.AccessLevel}/${row.CurrentIsDraft}/${row.Ownership}/${row.RequestedIsDraft}/${row.FieldChangeKind}`,
+});

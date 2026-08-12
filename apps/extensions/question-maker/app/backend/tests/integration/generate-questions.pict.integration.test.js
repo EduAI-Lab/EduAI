@@ -12,12 +12,14 @@
  * established mocking (no DB / live Core; eduaiService and course-code
  * access resolution are mocked). Shared cases/oracle loading comes from
  * tests/helpers/pictModel.js; shared auth/settings/coreApiService mocks come
- * from tests/helpers/pictRouteMocks.js (#1188).
+ * from tests/helpers/pictRouteMocks.js; the row-runner (describe.each +
+ * request + status assertion) comes from tests/helpers/pictRouteRunner.js
+ * (#1188).
  */
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import request from 'supertest';
+import { vi, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadPictModel } from '../helpers/pictModel.js';
 import { stubSessionUser } from '../helpers/pictRouteMocks.js';
+import { describePictRoute } from '../helpers/pictRouteRunner.js';
 
 const { mockFindCoursesByProjectedCode, mockEnrollments, eduaiService } = vi.hoisted(() => ({
   mockFindCoursesByProjectedCode: vi.fn(),
@@ -91,38 +93,36 @@ function buildBody(row) {
   return body;
 }
 
-describe.each(rows.map((row, index) => ({ row, index })))(
-  'generate-questions PICT row #$index',
-  ({ row }) => {
-    it('matches the oracle', async () => {
-      authAs(row.Authorized === 'yes' ? INSTRUCTOR : STUDENT);
-      if (row.CourseAccess === 'yes') accessibleCourse();
-      else mockFindCoursesByProjectedCode.mockResolvedValue([]);
-      eduaiService.generateQuestions.mockResolvedValue([{ id: 'q1' }]);
+function setupRow(row) {
+  authAs(row.Authorized === 'yes' ? INSTRUCTOR : STUDENT);
+  if (row.CourseAccess === 'yes') accessibleCourse();
+  else mockFindCoursesByProjectedCode.mockResolvedValue([]);
+  eduaiService.generateQuestions.mockResolvedValue([{ id: 'q1' }]);
+  return buildBody(row);
+}
 
-      const res = await request(app)
-        .post('/api/eduai/generate-questions')
-        .set('Cookie', 'session=v')
-        .send(buildBody(row));
+async function verify({ expected }) {
+  if (expected.status !== 200) return;
+  const call = eduaiService.generateQuestions.mock.calls[0][0];
+  expect(call.numQuestions).toBe(expected.forwarded.numQuestions);
+  if (expected.forwarded.mcqRequiredChoiceCount === undefined) {
+    expect(call).not.toHaveProperty('mcqRequiredChoiceCount');
+  } else {
+    expect(call.mcqRequiredChoiceCount).toBe(expected.forwarded.mcqRequiredChoiceCount);
+  }
+  expect(call.difficultyDistribution).toEqual(expected.forwarded.difficultyDistribution);
+  expect(call.reasoningDistribution).toEqual(expected.forwarded.reasoningDistribution);
+}
 
-      const expected = generateQuestionsOracle(row);
-      expect(res.status).toBe(expected.status);
-
-      if (expected.status === 200) {
-        expect(res.status).toBe(200);
-        const call = eduaiService.generateQuestions.mock.calls[0][0];
-        expect(call.numQuestions).toBe(expected.forwarded.numQuestions);
-        if (expected.forwarded.mcqRequiredChoiceCount === undefined) {
-          expect(call).not.toHaveProperty('mcqRequiredChoiceCount');
-        } else {
-          expect(call.mcqRequiredChoiceCount).toBe(expected.forwarded.mcqRequiredChoiceCount);
-        }
-        expect(call.difficultyDistribution).toEqual(expected.forwarded.difficultyDistribution);
-        expect(call.reasoningDistribution).toEqual(expected.forwarded.reasoningDistribution);
-      }
-    });
-  },
-);
+describePictRoute('generate-questions', {
+  app,
+  rows,
+  method: 'post',
+  path: '/api/eduai/generate-questions',
+  setupRow,
+  oracle: generateQuestionsOracle,
+  verify,
+});
 
 it('sanity: MAX_QUESTIONS matches the mocked config.maxQuestions', () => {
   expect(MAX_QUESTIONS).toBe(50);

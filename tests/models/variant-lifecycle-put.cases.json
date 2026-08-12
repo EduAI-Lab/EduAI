@@ -31,20 +31,6 @@
     "AccessLevel": "ta",
     "CurrentIsDraft": "draft",
     "Ownership": "other",
-    "RequestedIsDraft": "true",
-    "FieldChangeKind": "onlyAiTag"
-  },
-  {
-    "AccessLevel": "ta",
-    "CurrentIsDraft": "approved",
-    "Ownership": "other",
-    "RequestedIsDraft": "true",
-    "FieldChangeKind": "content"
-  },
-  {
-    "AccessLevel": "ta",
-    "CurrentIsDraft": "approved",
-    "Ownership": "own",
     "RequestedIsDraft": "false",
     "FieldChangeKind": "onlyAiTag"
   },
@@ -52,8 +38,22 @@
     "AccessLevel": "ta",
     "CurrentIsDraft": "draft",
     "Ownership": "other",
+    "RequestedIsDraft": "true",
+    "FieldChangeKind": "content"
+  },
+  {
+    "AccessLevel": "instructor_plus",
+    "CurrentIsDraft": "approved",
+    "Ownership": "own",
+    "RequestedIsDraft": "true",
+    "FieldChangeKind": "onlyAiTag"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "approved",
+    "Ownership": "other",
     "RequestedIsDraft": "false",
-    "FieldChangeKind": "none"
+    "FieldChangeKind": "content"
   },
   {
     "AccessLevel": "ta",
@@ -64,9 +64,16 @@
   },
   {
     "AccessLevel": "instructor_plus",
-    "CurrentIsDraft": "draft",
+    "CurrentIsDraft": "approved",
     "Ownership": "own",
     "RequestedIsDraft": "absent",
-    "FieldChangeKind": "onlyAiTag"
+    "FieldChangeKind": "none"
+  },
+  {
+    "AccessLevel": "ta",
+    "CurrentIsDraft": "draft",
+    "Ownership": "other",
+    "RequestedIsDraft": "false",
+    "FieldChangeKind": "none"
   }
 ]
