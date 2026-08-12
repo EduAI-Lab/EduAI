@@ -12,7 +12,11 @@ import { prisma } from '../config/database.js';
 import { safeRequestLogFields } from '../utils/safeLogging.js';
 import {
   qmAiUserRateLimit,
+  qmAiProviderCallAdmission,
+  validateChatAdmission,
+  validateTestApiKeyAdmission,
   validateGenerationBudget,
+  isQmAiDeadlineError,
 } from '../middleware/aiAdmission.js';
 
 const router = express.Router();
@@ -69,19 +73,41 @@ function logEduaiRouteError(event, error) {
 
 router.use(authenticateToken, requireRole(QM_AUTHORIZED));
 
+const chatAdmission = qmAiProviderCallAdmission({
+  validate: validateChatAdmission,
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+const testApiKeyAdmission = qmAiProviderCallAdmission({
+  validate: validateTestApiKeyAdmission,
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+function sendStableAiFailure(res, error, fallbackCode, fallbackMessage) {
+  const statusCode = Number(error?.statusCode ?? error?.status);
+  if (statusCode === 429) {
+    return res.status(429).json({
+      success: false,
+      error: 'AI provider rate limit exceeded; try again later',
+      code: 'EDUAI_UPSTREAM_RATE_LIMITED',
+    });
+  }
+  if (isQmAiDeadlineError(error) || statusCode === 504) {
+    return res.status(504).json({
+      success: false,
+      error: 'AI operation timed out; try again later',
+      code: 'QM_AI_OPERATION_DEADLINE',
+    });
+  }
+  return res.status(500).json({ success: false, error: fallbackMessage, code: fallbackCode });
+}
+
 /** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course code. */
-router.post("/chat", async (req, res) => {
+router.post('/chat', qmAiUserRateLimit, chatAdmission, async (req, res) => {
   try {
-    const { messages, model, apiKeys, courseCode, streaming } = req.body;
-
-    // Validate required fields
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: "Messages array is required" });
-    }
-
-    if (!courseCode) {
-      return res.status(400).json({ error: "Course code is required" });
-    }
+    const { model, apiKeys, streaming } = req.body;
+    const { messages } = req.aiAdmission;
+    const courseCode = typeof req.body.courseCode === 'string' ? req.body.courseCode.trim() : '';
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
@@ -109,7 +135,9 @@ router.post("/chat", async (req, res) => {
       courseId: coreCourseId,
       courseCode: resolvedCourseCode,
       streaming: streaming || false,
-      cookie: req.headers.cookie ?? "",
+      cookie: req.headers.cookie ?? '',
+      signal: req.aiOperation?.signal,
+      deadlineAt: req.aiOperation?.deadlineAt,
     });
 
     res.json({
@@ -124,11 +152,10 @@ router.post("/chat", async (req, res) => {
     });
   } catch (error) {
     logEduaiRouteError('EduAI chat error', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to process chat request',
-      code: 'EDUAI_CHAT_FAILED',
-    });
+    if (Number(error?.statusCode ?? error?.status) === 429 || isQmAiDeadlineError(error) || Number(error?.statusCode ?? error?.status) === 504) {
+      return sendStableAiFailure(res, error, 'EDUAI_CHAT_FAILED', 'Failed to process chat request');
+    }
+    res.status(500).json({ success: false, error: 'Failed to process chat request', code: 'EDUAI_CHAT_FAILED' });
   }
 });
 
@@ -201,7 +228,9 @@ router.post('/generate-questions', qmAiUserRateLimit, async (req, res) => {
         application: 30,
       },
       ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
-      cookie: req.headers.cookie ?? "",
+      cookie: req.headers.cookie ?? '',
+      signal: req.aiOperation?.signal,
+      deadlineAt: req.aiOperation?.deadlineAt,
     });
 
     res.json({
@@ -301,12 +330,14 @@ router.get("/courses/:courseId/topics", async (req, res) => {
  * (e.g. `'ollama'` for the independent UBC status chip). Echoes back `provider`
  * so the UI can report which path is live.
  */
-router.post("/test-api-key", async (req, res) => {
+router.post('/test-api-key', qmAiUserRateLimit, testApiKeyAdmission, async (req, res) => {
   try {
     const result = await eduaiService.testApiKey({
       cookie: req.headers.cookie ?? "",
       apiKeys: req.body?.apiKeys ?? {},
-      forceProvider: req.body?.provider,
+      forceProvider: req.aiAdmission.provider || undefined,
+      signal: req.aiOperation?.signal,
+      deadlineAt: req.aiOperation?.deadlineAt,
     });
 
     if (result.success) {
@@ -317,21 +348,21 @@ router.post("/test-api-key", async (req, res) => {
         data: result.response,
       });
     } else {
-      res.status(400).json({
+      const status = Number(result.statusCode) === 429 ? 429 : 400;
+      res.status(status).json({
         success: false,
         provider: result.provider,
-        error: 'EduAI API key test failed',
-        code: 'EDUAI_API_KEY_TEST_REJECTED',
+        error: status === 429 ? 'AI provider rate limit exceeded; try again later' : 'EduAI API key test failed',
+        code: status === 429 ? 'EDUAI_UPSTREAM_RATE_LIMITED' : 'EDUAI_API_KEY_TEST_REJECTED',
         statusCode: Number.isInteger(result.statusCode) ? result.statusCode : undefined,
       });
     }
   } catch (error) {
     logEduaiRouteError('EduAI API key test error', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to test EduAI API key',
-      code: 'EDUAI_API_KEY_TEST_FAILED',
-    });
+    if (Number(error?.statusCode ?? error?.status) === 429 || isQmAiDeadlineError(error) || Number(error?.statusCode ?? error?.status) === 504) {
+      return sendStableAiFailure(res, error, 'EDUAI_API_KEY_TEST_FAILED', 'Failed to test EduAI API key');
+    }
+    res.status(500).json({ success: false, error: 'Failed to test EduAI API key', code: 'EDUAI_API_KEY_TEST_FAILED' });
   }
 });
 

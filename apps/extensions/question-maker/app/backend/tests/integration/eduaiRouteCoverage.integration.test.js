@@ -172,6 +172,36 @@ describe("POST /api/eduai/chat", () => {
     expect(res.body.details).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain('provider down');
   });
+
+  it('rejects oversized transcripts before resolving the course or calling EduAI', async () => {
+    authAs(INSTRUCTOR);
+    const res = await request(app)
+      .post('/api/eduai/chat')
+      .set('Cookie', 'session=v')
+      .send({ messages: [{ role: 'user', content: 'x'.repeat(12_001) }], courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('QM_CHAT_MESSAGE_TOO_LARGE');
+    expect(mockFindCoursesByProjectedCode).not.toHaveBeenCalled();
+    expect(eduaiService.chat).not.toHaveBeenCalled();
+  });
+
+  it('stops on an upstream 429 without leaking its body', async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourse();
+    const rateLimited = new Error('provider body api_key=must-not-leak');
+    rateLimited.statusCode = 429;
+    eduaiService.chat.mockRejectedValue(rateLimited);
+
+    const res = await request(app)
+      .post('/api/eduai/chat')
+      .set('Cookie', 'session=v')
+      .send({ messages: [{ role: 'user', content: 'hi' }], courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(429);
+    expect(res.body).toMatchObject({ code: 'EDUAI_UPSTREAM_RATE_LIMITED' });
+    expect(JSON.stringify(res.body)).not.toContain('api_key');
+  });
 });
 
 describe("POST /api/eduai/generate-questions", () => {
@@ -432,6 +462,32 @@ describe("POST /api/eduai/test-api-key", () => {
     expect(res.body.details).toBeUndefined();
     expect(res.body.code).toBe('EDUAI_API_KEY_TEST_FAILED');
     expect(JSON.stringify(res.body)).not.toContain('network error');
+  });
+
+  it('rejects ambiguous provider keys before invoking the probe', async () => {
+    authAs(INSTRUCTOR);
+    const res = await request(app)
+      .post('/api/eduai/test-api-key')
+      .set('Cookie', 'session=v')
+      .send({ apiKeys: { google: { apiKey: 'g' }, openai: { apiKey: 'o' } } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('QM_TEST_API_KEY_AMBIGUOUS_PROVIDER');
+    expect(eduaiService.testApiKey).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable 429 when the probe is rate limited', async () => {
+    authAs(INSTRUCTOR);
+    eduaiService.testApiKey.mockResolvedValue({ success: false, provider: 'google', statusCode: 429 });
+
+    const res = await request(app)
+      .post('/api/eduai/test-api-key')
+      .set('Cookie', 'session=v')
+      .send({ provider: 'google', apiKeys: { google: { apiKey: 'g' } } });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('EDUAI_UPSTREAM_RATE_LIMITED');
+    expect(JSON.stringify(res.body)).not.toContain('provider body');
   });
 });
 

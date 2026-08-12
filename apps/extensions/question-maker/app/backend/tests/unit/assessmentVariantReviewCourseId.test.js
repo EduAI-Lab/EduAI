@@ -115,4 +115,54 @@ describe("reviewVariantExamWithAi (#1072 course code read-through)", () => {
     expect(chatArgs.courseCode).toBe("COSC 121");
     expect(chatArgs.cookie).toBe("session=abc");
   });
+
+  it('rejects an oversized pair set before any provider call or Core metadata probe', async () => {
+    const slots = Array.from({ length: 11 }, (_, index) => ({
+      id: index + 1,
+      questionText: `Question ${index + 1}`,
+      answer: 'answer',
+      choices: [],
+    }));
+    loadOrderedVariantsForAssessment.mockResolvedValue(slots);
+
+    await expect(reviewVariantExamWithAi(42, {
+      baselineAssessmentId: 10,
+      variantAssessmentId: 11,
+      courseId: 3,
+      cookie: 'session=abc',
+    })).rejects.toMatchObject({ code: 'QM_REVIEW_PAIR_COUNT_TOO_LARGE' });
+
+    expect(chat).not.toHaveBeenCalled();
+    expect(enrichCourseDetail).not.toHaveBeenCalled();
+  });
+
+  it('does not call a later pair after an upstream 429', async () => {
+    const rateLimited = new Error('provider body should not escape');
+    rateLimited.statusCode = 429;
+    loadOrderedVariantsForAssessment.mockResolvedValue([
+      { id: 1, questionText: 'Original', answer: 'a', choices: [] },
+      { id: 2, questionText: 'Second', answer: 'b', choices: [] },
+    ]);
+    chat.mockRejectedValueOnce(rateLimited).mockResolvedValue({
+      content: JSON.stringify({
+        conceptual_equivalence: 5,
+        difficulty_similarity: 5,
+        structural_validity: 5,
+        answer_correctness: 5,
+        topic_alignment: 5,
+        distinctness: 4,
+        usability: 'usable_as_is',
+        brief_reason: 'ok',
+      }),
+    });
+
+    await expect(reviewVariantExamWithAi(42, {
+      baselineAssessmentId: 10,
+      variantAssessmentId: 11,
+      courseId: 3,
+      includeOverallSummary: false,
+      cookie: 'session=abc',
+    })).rejects.toMatchObject({ statusCode: 429 });
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
 });

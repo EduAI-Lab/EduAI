@@ -154,11 +154,27 @@ describe("generateBankVariantsForQuestions — validation guards", () => {
 
 // ---------------------------------------------------------------------------
 
-describe("generateBankVariantsForQuestions — per-question orchestration", () => {
-  it("records an error (does not throw) when a question is not found in the DB", async () => {
+describe('generateBankVariantsForQuestions — per-question orchestration', () => {
+  it('stops bank fanout immediately after an upstream 429', async () => {
+    const rateLimited = new Error('upstream body must stay private');
+    rateLimited.statusCode = 429;
+    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [makePrimaryVariant()] }));
+    mockGenerateQuestions.mockRejectedValueOnce(rateLimited);
+
+    await expect(generateBankVariantsForQuestions(USER_ID, {
+      courseId: 1,
+      questionIds: [10, 20],
+      variantsToAdd: 1,
+    })).rejects.toMatchObject({ statusCode: 429 });
+
+    expect(mockGenerateQuestions).toHaveBeenCalledTimes(1);
+    expect(mockMetaFindOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('records an error (does not throw) when a question is not found in the DB', async () => {
     mockMetaFindOne.mockResolvedValueOnce(null);
 
-    const { results, errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+    const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
     expect(errors).toHaveLength(1);
     expect(errors[0].questionId).toBe(10);

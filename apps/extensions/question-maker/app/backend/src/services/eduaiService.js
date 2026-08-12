@@ -12,6 +12,11 @@ import {
 import {
   generationBudgetError,
   validateGenerationBudget,
+  assertQmAiDeadline,
+  qmAiCallTimeoutMs,
+  isQmAiDeadlineError,
+  createQmAiDeadlineError,
+  validateTestApiKeyAdmission,
 } from "../middleware/aiAdmission.js";
 import { campusProbeParams } from "./modelCatalog.js";
 
@@ -20,6 +25,20 @@ import { campusProbeParams } from "./modelCatalog.js";
 const CORE_PAGE_SIZE = 200;
 
 const DEBUG_PREFIX = "[EduAI]";
+
+function perCallAbortSignal(parentSignal, timeoutMs) {
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  timer.unref?.();
+  const signal = parentSignal && typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([parentSignal, timeoutController.signal])
+    : parentSignal || timeoutController.signal;
+  return {
+    signal,
+    timedOut: () => timeoutController.signal.aborted,
+    dispose: () => clearTimeout(timer),
+  };
+}
 
 /**
  * Cloud providers we can probe for the connectivity badge, in preference order,
@@ -230,12 +249,15 @@ class EduAIService {
 
   /** Sends a completion payload to EduAI (#858 — no chat/RAG/tool overhead). */
   async chat(params) {
+    const deadlineAt = Number.isFinite(params?.deadlineAt) ? params.deadlineAt : undefined;
+    assertQmAiDeadline({ deadlineAt, signal: params?.signal });
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
       throw new Error("EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core.");
     }
 
     let chatStartMs;
+    let callSignal;
     try {
       const model = params.model || "google:gemini-2.5-flash";
       const { systemPrompt, messages } = this.buildCompletionPayload(params);
@@ -261,21 +283,32 @@ class EduAIService {
         requestPayload.courseCode = params.courseCode;
       }
 
-      // Allow caller to override (e.g. extraction needs longer than default 60s)
-      const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
+      // A per-call timeout is always bounded by the operation deadline. The
+      // parent signal is passed into Axios so timeout work is actually canceled
+      // instead of merely being hidden behind Promise.race.
+      const timeoutMs = qmAiCallTimeoutMs({
+        deadlineAt,
+        requestedMs: params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60_000,
+      });
+      callSignal = perCallAbortSignal(params.signal, timeoutMs);
       chatStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} completion request starting`, {
         timeoutMs,
         messageCount: (requestPayload.messages || []).length,
       });
 
-      const response = await axios.post(`${this.baseURL}/api/completion`, requestPayload, {
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        timeout: timeoutMs,
-      });
+      const response = await axios.post(
+        `${this.baseURL}/api/completion`,
+        requestPayload,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+          timeout: timeoutMs,
+          signal: callSignal.signal,
+        }
+      );
 
       const elapsedMs = Date.now() - chatStartMs;
       const responseData = response.data;
@@ -287,6 +320,12 @@ class EduAIService {
       return responseData;
     } catch (error) {
       const elapsedMs = typeof chatStartMs === "number" ? Date.now() - chatStartMs : undefined;
+      if (error?.response?.status === 429 || error?.statusCode === 429) {
+        throw toStableUpstreamError(error);
+      }
+      if (isQmAiDeadlineError(error) || params?.signal?.aborted || (deadlineAt != null && deadlineAt <= Date.now()) || callSignal?.timedOut()) {
+        throw createQmAiDeadlineError();
+      }
       if (error.response) {
         console.error(
           `${DEBUG_PREFIX} completion response failed`,
@@ -303,6 +342,8 @@ class EduAIService {
         console.error(`${DEBUG_PREFIX} completion setup failed`, {});
         throw toStableUpstreamError(error);
       }
+    } finally {
+      callSignal?.dispose();
     }
   }
 
@@ -322,6 +363,8 @@ class EduAIService {
       mcqRequiredChoiceCount,
       cookie,
       timeoutMs,
+      signal,
+      deadlineAt,
     } = params;
 
     const budget = validateGenerationBudget({ prompt, numQuestions });
@@ -409,6 +452,7 @@ OUTPUT RULES (mandatory):
     const userPrompt = userPromptOverride ?? defaultUserPrompt;
 
     try {
+      assertQmAiDeadline({ deadlineAt, signal });
       const genStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} generateQuestions calling chat`, {
         count: boundedNumQuestions,
@@ -432,6 +476,8 @@ OUTPUT RULES (mandatory):
             ? timeoutMs
             : (config.qmAiProviderTimeoutMs ?? 30_000),
         cookie,
+        signal,
+        deadlineAt,
       });
 
       const genElapsedMs = Date.now() - genStartMs;
@@ -472,6 +518,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
                 ? timeoutMs
                 : (config.qmAiProviderTimeoutMs ?? 30_000),
             cookie,
+            signal,
+            deadlineAt,
           });
           const repairRaw = repairResponse?.content ?? repairResponse?.message ?? repairResponse;
           if (repairRaw !== null && typeof repairRaw === "object") {
@@ -715,6 +763,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         `${DEBUG_PREFIX} generateQuestions failed`,
         safeRequestLogFields(error),
       );
+      if (isQmAiDeadlineError(error) || Number(error?.statusCode) === 429) {
+        throw error;
+      }
       const stableError = new Error("EduAI question generation failed");
       stableError.name = "EduAIQuestionGenerationError";
       const statusCode = error?.statusCode;
@@ -857,7 +908,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
    * UI can tell the user which path is live. `forceProvider` pins the probe to a
    * specific path (e.g. `'ollama'` for the independent UBC status chip).
    */
-  async testApiKey({ cookie, apiKeys: clientApiKeys = {}, forceProvider } = {}) {
+  async testApiKey({ cookie, apiKeys: clientApiKeys = {}, forceProvider, signal, deadlineAt } = {}) {
+    const admission = validateTestApiKeyAdmission({
+      apiKeys: clientApiKeys,
+      ...(forceProvider != null ? { provider: forceProvider } : {}),
+    });
+    if (admission.status) {
+      const error = new Error(admission.message);
+      error.status = admission.status;
+      error.statusCode = admission.status;
+      error.code = admission.code;
+      error.isPublic = true;
+      throw error;
+    }
+    assertQmAiDeadline({ deadlineAt, signal });
     if (!this.isConfigured()) {
       return {
         success: false,
@@ -872,26 +936,10 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       };
     }
 
-    let campusModels = null;
-    if (
-      forceProvider === "ollama" ||
-      forceProvider === "vllm" ||
-      !Object.keys(clientApiKeys || {}).length
-    ) {
-      try {
-        campusModels = await this.listAIModels({ cookie });
-      } catch (err) {
-        console.warn(
-          `${DEBUG_PREFIX} campus model catalog unavailable for probe`,
-          safeRequestLogFields(err),
-        );
-      }
-    }
-
     const { provider, model, apiKeys } = this.getConnectivityTestParams(
       clientApiKeys,
       forceProvider,
-      campusModels,
+      null,
     );
     try {
       const response = await this.chat({
@@ -903,6 +951,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         // Status chips should fail fast — full extract uses a longer timeout.
         timeoutMs: 20000,
         cookie,
+        signal,
+        deadlineAt,
       });
 
       return {
@@ -912,6 +962,17 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         response: response,
       };
     } catch (error) {
+      if (error?.response?.status === 429 || error?.statusCode === 429) {
+        return {
+          success: false,
+          provider,
+          error: 'AI provider rate limit exceeded; try again later',
+          statusCode: 429,
+        };
+      }
+      if (isQmAiDeadlineError(error) || signal?.aborted || (deadlineAt != null && deadlineAt <= Date.now())) {
+        throw createQmAiDeadlineError();
+      }
       if (error.statusCode === 401) {
         return {
           success: false,

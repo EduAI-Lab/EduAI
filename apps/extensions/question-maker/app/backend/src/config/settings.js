@@ -80,7 +80,21 @@ export const config = {
   qmAiProviderTimeoutMs: positiveInt(process.env.QM_AI_PROVIDER_TIMEOUT_MS, 30_000),
   qmGeneratePromptMaxChars: positiveInt(process.env.QM_GENERATE_PROMPT_MAX_CHARS, 12_000),
   qmAiRateLimitWindowMs: positiveInt(process.env.QM_AI_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
-  qmAiRateLimitMax: positiveInt(process.env.QM_AI_RATE_LIMIT_MAX, 60),
+  // AI routes are caller-admitted as a group. Request-count limiting is only
+  // a secondary guard; provider-call admission below accounts for fanout.
+  qmAiRateLimitMax: positiveInt(process.env.QM_AI_RATE_LIMIT_MAX, 20),
+  qmAiProviderCallLimit: positiveInt(process.env.QM_AI_PROVIDER_CALL_LIMIT, 60),
+  qmAiOperationDeadlineMs: positiveInt(process.env.QM_AI_OPERATION_DEADLINE_MS, 90_000),
+  qmBankMaxQuestionIds: positiveInt(process.env.QM_BANK_MAX_QUESTION_IDS, 10),
+  qmBankMaxVariantsPerQuestion: positiveInt(process.env.QM_BANK_MAX_VARIANTS_PER_QUESTION, 2),
+  qmBankMaxProviderCalls: positiveInt(process.env.QM_BANK_MAX_PROVIDER_CALLS, 24),
+  qmReviewMaxPairs: positiveInt(process.env.QM_REVIEW_MAX_PAIRS, 10),
+  qmReviewMaxProviderCalls: positiveInt(process.env.QM_REVIEW_MAX_PROVIDER_CALLS, 21),
+  qmChatMaxMessages: positiveInt(process.env.QM_CHAT_MAX_MESSAGES, 40),
+  qmChatMaxMessageChars: positiveInt(process.env.QM_CHAT_MAX_MESSAGE_CHARS, 12_000),
+  qmChatMaxAggregateChars: positiveInt(process.env.QM_CHAT_MAX_AGGREGATE_CHARS, 80_000),
+  qmTestApiKeyMaxBodyBytes: positiveInt(process.env.QM_TEST_API_KEY_MAX_BODY_BYTES, 8_192),
+  qmTestApiKeyMaxProviderKeyChars: positiveInt(process.env.QM_TEST_API_KEY_MAX_PROVIDER_KEY_CHARS, 512),
 
   // Canvas outbound request budgets. Every request has a socket/response
   // deadline and every multi-page operation has a shared wall-clock deadline.

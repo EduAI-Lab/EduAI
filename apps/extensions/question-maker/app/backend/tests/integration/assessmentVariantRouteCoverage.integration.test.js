@@ -236,6 +236,47 @@ describe("POST /api/assessment-variant/generate-bank-variants", () => {
       expect.objectContaining({ questionIds: [1, 2], variantsToAdd: 2 }),
     );
   });
+
+  it('rejects duplicate and over-budget ids before course admission or service calls', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    const res = await request(app)
+      .post('/api/assessment-variant/generate-bank-variants')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questionIds: [1, 1] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('QM_BANK_QUESTION_IDS_DUPLICATE');
+    expect(variantSvc.generateBankVariantsForQuestions).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fanout whose worst-case repair calls exceed 24', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    const res = await request(app)
+      .post('/api/assessment-variant/generate-bank-variants')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questionIds: [1, 2, 3, 4, 5, 6, 7] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('QM_BANK_PROVIDER_CALL_BUDGET');
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(variantSvc.generateBankVariantsForQuestions).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable 429 for a rate-limited bank generation call', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    const rateLimited = new Error('provider body api_key=must-not-leak');
+    rateLimited.statusCode = 429;
+    variantSvc.generateBankVariantsForQuestions.mockRejectedValue(rateLimited);
+
+    const res = await request(app)
+      .post('/api/assessment-variant/generate-bank-variants')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questionIds: [1] });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('EDUAI_UPSTREAM_RATE_LIMITED');
+    expect(JSON.stringify(res.body)).not.toContain('api_key');
+  });
 });
 
 describe("POST /api/assessment-variant/review-variant-ai", () => {
@@ -272,5 +313,33 @@ describe("POST /api/assessment-variant/review-variant-ai", () => {
         applyUsabilityPenalty: true,
       }),
     );
+  });
+
+  it('rejects non-finite assessment ids before the service call', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    const res = await request(app)
+      .post('/api/assessment-variant/review-variant-ai')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, baselineAssessmentId: 'not-a-number', variantAssessmentId: 2 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('QM_REVIEW_ASSESSMENT_ID_INVALID');
+    expect(variantSvc.reviewVariantExamWithAi).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable 429 for a rate-limited review call', async () => {
+    authAs({ ...INSTRUCTOR, id: 'inst-review-rate-limit' }, 'INSTRUCTOR');
+    const rateLimited = new Error('provider body api_key=must-not-leak');
+    rateLimited.statusCode = 429;
+    variantSvc.reviewVariantExamWithAi.mockRejectedValue(rateLimited);
+
+    const res = await request(app)
+      .post('/api/assessment-variant/review-variant-ai')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, baselineAssessmentId: 1, variantAssessmentId: 2 });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('EDUAI_UPSTREAM_RATE_LIMITED');
+    expect(JSON.stringify(res.body)).not.toContain('api_key');
   });
 });

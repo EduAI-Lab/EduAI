@@ -221,9 +221,41 @@ describe('chat', () => {
     expect(opts.timeout).toBe(60000);
   });
 
-  it("omits courseId from the payload when it is not provided", async () => {
-    axios.post.mockResolvedValue({ status: 200, data: { content: "ok" } });
-    await eduaiService.chat({ messages: [], courseCode: "BIO 101" });
+  it('passes the shared deadline signal into Axios and aborts the in-flight call', async () => {
+    vi.useFakeTimers();
+    let capturedOptions;
+    axios.post.mockImplementation((_url, _payload, options) => {
+      capturedOptions = options;
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('canceled'), { code: 'ERR_CANCELED', request: {} }));
+        }, { once: true });
+      });
+    });
+
+    const deadlineAt = Date.now() + 90_000;
+    const pending = eduaiService.chat({
+      messages: [{ role: 'user', content: 'wait' }],
+      timeoutMs: 120_000,
+      deadlineAt,
+    });
+    const rejection = expect(pending).rejects.toMatchObject({
+      statusCode: 504,
+      code: 'QM_AI_OPERATION_DEADLINE',
+    });
+
+    await vi.advanceTimersByTimeAsync(89_999);
+    expect(capturedOptions.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await rejection;
+    expect(capturedOptions.signal.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('omits courseId from the payload when it is not provided', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'ok' } });
+    await eduaiService.chat({ messages: [], courseCode: 'BIO 101' });
     const payload = axios.post.mock.calls[0][1];
     expect(payload.courseCode).toBe("BIO 101");
     expect(payload).not.toHaveProperty("courseId");
@@ -323,6 +355,16 @@ describe("generateQuestions", () => {
     })).rejects.toMatchObject({ status: 400, code: 'QM_QUESTION_COUNT_TOO_LARGE' });
 
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('does not start a JSON repair call after an upstream 429', async () => {
+    axios.post.mockRejectedValueOnce(responseError({
+      status: 429,
+      data: { error: 'provider body api_key=must-not-leak' },
+    }));
+
+    await expect(eduaiService.generateQuestions(baseParams)).rejects.toMatchObject({ statusCode: 429 });
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
   it('never logs malformed model content during the JSON repair path', async () => {
