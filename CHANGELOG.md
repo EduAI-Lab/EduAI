@@ -2,6 +2,10 @@
 
 ## [Week 15 — August 10–16, 2026]
 
+### Fixed
+
+- [core] fix: `addAdminCourseTA` wrapped `addCourseTA`'s already-shaped `{ ta: {...} }` result a second time, producing a double-nested `{ ok: true, ta: { ta: {...} } }` instead of a flat `ta` — any consumer reading `response.ta.<field>` got `undefined`. Separately, `convertHtmlToMarkdown`'s `<ol>` handler used a function replacer that referenced `$1` (only meaningful in string replacers), so every ordered-list item in DOCX/HTML uploads rendered as the literal text `"$1"` instead of its content. Closes #1447, #1449. (@evanbones, 2026-08-12) — #PR
+
 ### Added
 
 - [core] feat: Add `GET /api/ai-jobs/:jobId`, a producer-side status endpoint exposing a live, caller-owned `AiJob` snapshot plus its current queue position — recomputed from Postgres on every read (not a stale enqueue-time value) so it reflects jobs that have drained since enqueue and stays correct across a Redis restart. Scoped to the requesting user (404, not 403, on another user's job id, so the response can't confirm the id exists), with a service-key path so Question Maker can poll the synthetic-`service`-owned jobs it creates server-to-server. Closes #917. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
