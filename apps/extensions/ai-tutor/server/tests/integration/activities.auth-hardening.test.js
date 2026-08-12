@@ -211,6 +211,55 @@ describe('activity auth hardening', () => {
     expect(feedback.status).toBe(403);
   });
 
+  it('does not let a platform TA keep staff access after live demotion to STUDENT', async () => {
+    const activity = await createActivity();
+    const ta = makeStudent({ role: 'TA' });
+    await enroll(ta, 'TA');
+    await prisma.courseInstructor.create({
+      data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'LEAD' },
+    });
+    const submission = await prisma.submission.create({
+      data: {
+        activityId: activity.id,
+        userId: ta.id,
+        attemptNumber: 1,
+        response: { answerOption: 0 },
+        aiFeedback: { message: 'Try again.' },
+        isCorrect: false,
+      },
+    });
+    await prisma.activityFeedback.create({
+      data: { activityId: activity.id, userId: ta.id, submissionId: submission.id, rating: 2 },
+    });
+
+    // Each route's first live lookup reports the current STUDENT role. Any
+    // follow-up enrollment lookup mirrors the stale local TA row, reproducing
+    // the old compatibility fallback's failure while keeping the test's
+    // second authorization boundary realistic.
+    let liveLookup = 0;
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseOfferingId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+        liveLookup += 1;
+        if (liveLookup % 2 === 1) {
+          return { allowed: true, state: 'allowed', role: 'STUDENT' };
+        }
+        const role = course?.enrollments?.find((entry) => entry.userId === userId)?.role ?? null;
+        const allowed = allowedRoles.includes(role);
+        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+      },
+    );
+
+    const app = await createApp({ mockUser: ta });
+    const activities = await request(app).get(`/api/lessons/${seed.lesson.id}/activities`);
+    const submissions = await request(app).get(`/api/activities/${activity.id}/submissions`);
+    const feedback = await request(app).get(`/api/activities/${activity.id}/feedback`);
+
+    expect(activities.status).toBe(200);
+    expect(activities.body.data[0]).not.toHaveProperty('answer');
+    expect(submissions.status).toBe(403);
+    expect(feedback.status).toBe(403);
+  });
+
   it.each(['teach', 'guide', 'custom'])(
     'rejects a platform STUDENT with a TA enrollment from /%s',
     async (mode) => {

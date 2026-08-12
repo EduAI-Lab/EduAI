@@ -120,12 +120,7 @@ const COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE = 'Course collection authorizat
 
 async function resolveCourseStaffMembership(course, authUser) {
   const principal = await authorizeLiveCoursePrincipal(course, authUser);
-  const liveTa =
-    principal.state === 'allowed' &&
-    (principal.role === 'TA' ||
-      (authUser.role === 'TA' &&
-        principal.role !== null &&
-        course.enrollments?.some((entry) => entry.userId === authUser.id && entry.role === 'TA')));
+  const liveTa = principal.state === 'allowed' && principal.role === 'TA';
   return {
     principal,
     hasAdminAccess:

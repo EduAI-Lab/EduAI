@@ -82,11 +82,18 @@ describe("Courses routes", () => {
     vi.mocked(syncCourseEnrollments).mockClear();
     vi.mocked(authorizeLiveStudentEnrollment)
       .mockReset()
-      .mockImplementation(async (_courseId, _userId, { allowedRoles = ['STUDENT'] } = {}) => ({
-        allowed: true,
-        state: 'allowed',
-        role: allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : 'STUDENT',
-      }));
+      .mockImplementation(
+        async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+          const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+          const instructor = course?.instructors?.some((entry) => entry.userId === userId);
+          const role =
+            instructor && allowedRoles.includes('INSTRUCTOR')
+              ? 'INSTRUCTOR'
+              : (enrollment?.role ?? (allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : null));
+          const allowed = allowedRoles.includes(role);
+          return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        },
+      );
     vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
 
     // Course-owned fields (title/isPublished/etc) are Core-owned (#1072 step
@@ -354,6 +361,11 @@ describe("Courses routes", () => {
     it("TA enrolled in course can access course details", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: true,
+        state: 'allowed',
+        role: 'TA',
+      });
 
       const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
 
@@ -369,6 +381,11 @@ describe("Courses routes", () => {
       });
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: true,
+        state: 'allowed',
+        role: 'TA',
+      });
 
       const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
 

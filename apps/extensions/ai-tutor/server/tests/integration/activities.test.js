@@ -1308,7 +1308,96 @@ describe("Activities routes", () => {
       expect(imported.length).toBe(1);
     });
 
-    it("400 when sourceActivityId is missing", async () => {
+    it('denies a stale source-course instructor before reading authored import fields', async () => {
+      const sourceCourse = await seedMinimalCourse(prof.id);
+      const sourceActivity = await prisma.activity.create({
+        data: {
+          lessonId: sourceCourse.lesson.id,
+          mainTopicId: sourceCourse.topic.id,
+          instructionsMd: 'Secret source instructions.',
+          config: {
+            question: 'Secret source question?',
+            questionType: 'MCQ',
+            options: ['No', 'Yes'],
+            answer: 1,
+          },
+          customPrompt: 'Secret source custom prompt.',
+          customPromptTitle: 'Secret source title',
+        },
+      });
+      const targetCountBefore = await prisma.activity.count({
+        where: { lessonId: targetLesson.id },
+      });
+      const findUnique = vi.spyOn(prisma.activity, 'findUnique');
+
+      // gateCourseThrough and the handler each authorize the destination;
+      // only after both succeed does the third lookup authorize the source.
+      vi.mocked(authorizeLiveStudentEnrollment)
+        .mockResolvedValueOnce({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' })
+        .mockResolvedValueOnce({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' })
+        .mockResolvedValueOnce({ allowed: false, state: 'denied', role: 'STUDENT' });
+
+      const res = await request(profApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: sourceActivity.id });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/source activity/i);
+      expect(JSON.stringify(res.body)).not.toContain('Secret source');
+      expect(
+        findUnique.mock.calls.some(
+          ([args]) => args?.where?.id === sourceActivity.id && args?.include,
+        ),
+      ).toBe(false);
+      expect(await prisma.activity.count({ where: { lessonId: targetLesson.id } })).toBe(
+        targetCountBefore,
+      );
+    });
+
+    it('returns 503 and performs no source read or clone when source authorization is unavailable', async () => {
+      const sourceCourse = await seedMinimalCourse(prof.id);
+      const sourceActivity = await prisma.activity.create({
+        data: {
+          lessonId: sourceCourse.lesson.id,
+          mainTopicId: sourceCourse.topic.id,
+          instructionsMd: 'Unavailable source instructions.',
+          config: {
+            question: 'Unavailable source question?',
+            questionType: 'MCQ',
+            options: ['No', 'Yes'],
+            answer: 1,
+          },
+          customPrompt: 'Unavailable source custom prompt.',
+        },
+      });
+      const targetCountBefore = await prisma.activity.count({
+        where: { lessonId: targetLesson.id },
+      });
+      const findUnique = vi.spyOn(prisma.activity, 'findUnique');
+
+      vi.mocked(authorizeLiveStudentEnrollment)
+        .mockResolvedValueOnce({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' })
+        .mockResolvedValueOnce({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' })
+        .mockResolvedValueOnce({ allowed: false, state: 'unavailable', role: null });
+
+      const res = await request(profApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: sourceActivity.id });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('COURSE_AUTH_UNAVAILABLE');
+      expect(JSON.stringify(res.body)).not.toContain('Unavailable source');
+      expect(
+        findUnique.mock.calls.some(
+          ([args]) => args?.where?.id === sourceActivity.id && args?.include,
+        ),
+      ).toBe(false);
+      expect(await prisma.activity.count({ where: { lessonId: targetLesson.id } })).toBe(
+        targetCountBefore,
+      );
+    });
+
+    it('400 when sourceActivityId is missing', async () => {
       const res = await request(profApp)
         .post(`/api/lessons/${targetLesson.id}/activities/import`)
         .send({});

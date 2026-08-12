@@ -14,6 +14,7 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function activity() {
@@ -26,16 +27,19 @@ function activity() {
 describe('BYOK provider routing', () => {
   it('never sends a tutor provider key to a different-provider supervisor', async () => {
     const googleKey = 'google-canary-secret';
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ content: 'Try isolating x.' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ content: '{"approved":true}' }),
-      });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ content: 'Try isolating x.' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ content: '{"approved":true}' }),
+        }),
+    );
 
     const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
     const result = await generateGuideResponse({
@@ -60,24 +64,27 @@ describe('BYOK provider routing', () => {
   it('uses distinct canary secrets for tutor and supervisor fallback iterations', async () => {
     const googleKey = 'google-canary-secret';
     const openAiKey = 'openai-canary-secret';
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ content: 'First draft.' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ content: '{"approved":false,"feedbackToTutor":"Try again."}' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ content: 'Revised draft.' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ content: '{"approved":true}' }),
-      });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ content: 'First draft.' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ content: '{"approved":false,"feedbackToTutor":"Try again."}' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ content: 'Revised draft.' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ content: '{"approved":true}' }),
+        }),
+    );
 
     const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
     await generateGuideResponse({

@@ -8,7 +8,18 @@ vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
     ...actual,
     authorizeLiveStudentEnrollment: vi
       .fn()
-      .mockResolvedValue({ allowed: true, state: 'allowed', role: 'INSTRUCTOR' }),
+      .mockImplementation(
+        async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+          const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+          const instructor = course?.instructors?.some((entry) => entry.userId === userId);
+          const role =
+            instructor && allowedRoles.includes('INSTRUCTOR')
+              ? 'INSTRUCTOR'
+              : (enrollment?.role ?? (allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : null));
+          const allowed = allowedRoles.includes(role);
+          return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        },
+      ),
   };
 });
 import {
