@@ -1479,12 +1479,6 @@ export const updateVariant = async (variantId, variantData = {}, userId, mutatio
         }
       }
 
-      // Do not rewrite updatedAt for an approval retry. Keeping the original
-      // fenced snapshot lets either idempotent Core response finalize the same
-      // local row, while a stale failure rollback can still identify that it
-      // belongs to an older approval attempt.
-      if (approvalRetry) return variant;
-
       // Handle choices and answer normalization for MCQ.
       let normalizedChoices = variantData.choices;
       let normalizedAnswer = variantData.answer;

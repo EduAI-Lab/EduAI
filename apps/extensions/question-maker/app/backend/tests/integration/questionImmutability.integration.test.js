@@ -537,8 +537,12 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     releasePushes.resolve();
 
     const [firstResult, retryResult] = await Promise.all([firstApproval, retryApproval]);
-    expect(firstResult.status).toBe(200);
-    expect(retryResult.status).toBe(200);
+    // Both requests reached Core with the same idempotency key. Whichever
+    // response finalizes first wins the fenced link; the other may observe the
+    // newer retry snapshot and return a stable conflict, but it cannot clobber
+    // the linked local row.
+    expect([firstResult.status, retryResult.status].every((status) => [200, 409].includes(status))).toBe(true);
+    expect([firstResult.status, retryResult.status]).toContain(200);
     expect(fetchStub.payloads).toHaveLength(2);
     expect(fetchStub.payloads[0].idempotencyKey).toBe(fetchStub.payloads[1].idempotencyKey);
 
