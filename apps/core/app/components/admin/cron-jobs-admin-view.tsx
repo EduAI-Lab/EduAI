@@ -404,6 +404,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<string | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
+  const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
 
   async function triggerJob(jobName: string) {
     setTriggering((prev) => new Set(prev).add(jobName));
