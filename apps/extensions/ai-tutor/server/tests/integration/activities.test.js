@@ -600,6 +600,22 @@ describe('Activities routes', () => {
       });
     });
 
+    function submitAnswer(app, answerOption = 1) {
+      return request(app)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption });
+    }
+
+    async function getAttemptNumbers(userId) {
+      const submissions = await prisma.submission.findMany({
+        where: { userId, activityId: activity.id },
+        orderBy: { attemptNumber: 'asc' },
+        select: { attemptNumber: true },
+      });
+
+      return submissions.map((submission) => submission.attemptNumber);
+    }
+
     it('returns isCorrect=true for correct MCQ answer', async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
@@ -625,6 +641,67 @@ describe('Activities routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
       expect(res.body.isCorrect).toBe(false);
+    });
+
+    it('assigns unique attempt numbers to two concurrent submissions', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const responses = await Promise.all([submitAnswer(studentApp), submitAnswer(studentApp)]);
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      const attemptNumbers = await getAttemptNumbers(student.id);
+      expect(attemptNumbers).toEqual([1, 2]);
+      expect(new Set(attemptNumbers).size).toBe(attemptNumbers.length);
+    });
+
+    it('assigns unique attempt numbers to three concurrent submissions', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const responses = await Promise.all([
+        submitAnswer(studentApp),
+        submitAnswer(studentApp),
+        submitAnswer(studentApp),
+      ]);
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+      const attemptNumbers = await getAttemptNumbers(student.id);
+      expect(attemptNumbers).toEqual([1, 2, 3]);
+      expect(new Set(attemptNumbers).size).toBe(attemptNumbers.length);
+    });
+
+    it(
+      'keeps attempt sequences independent for concurrent submissions by different students',
+      async () => {
+        const firstStudent = await enrollStudent();
+        const secondStudent = await enrollStudent();
+        const firstStudentApp = await createApp({ mockUser: firstStudent });
+        const secondStudentApp = await createApp({ mockUser: secondStudent });
+
+        const responses = await Promise.all([
+          submitAnswer(firstStudentApp),
+          submitAnswer(secondStudentApp),
+        ]);
+
+        expect(responses.map((response) => response.status)).toEqual([200, 200]);
+        await expect(getAttemptNumbers(firstStudent.id)).resolves.toEqual([1]);
+        await expect(getAttemptNumbers(secondStudent.id)).resolves.toEqual([1]);
+      },
+    );
+
+    it('keeps sequential attempt numbers contiguous', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const responses = [
+        await submitAnswer(studentApp),
+        await submitAnswer(studentApp),
+        await submitAnswer(studentApp),
+      ];
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+      await expect(getAttemptNumbers(student.id)).resolves.toEqual([1, 2, 3]);
     });
 
     it('returns 403 for unenrolled STUDENT', async () => {
