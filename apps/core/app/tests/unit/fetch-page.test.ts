@@ -63,10 +63,12 @@ describe("runFetchPage - scrape success path", () => {
       title: "Page Title",
       markdown: "# Hello\n\nThis is the page content.",
     });
-    expect(scrapeMock).toHaveBeenCalledWith(
-      "https://example.com/page",
-      expect.objectContaining({ timeout: expect.any(Number) }),
-    );
+    expect(scrapeMock).toHaveBeenCalledWith("https://example.com/page", {
+      timeout: expect.any(Number),
+    });
+    const timeout = scrapeMock.mock.calls[0]?.[1]?.timeout;
+    expect(timeout).toBeGreaterThan(0);
+    expect(timeout).toBeLessThanOrEqual(5000);
     expect(crawlMock).not.toHaveBeenCalled();
   });
 
