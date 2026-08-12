@@ -27,7 +27,6 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
   const { captureScreenshot, getCapturedData } = useBugReportCapture(captureEnabled);
 
   const handleSubmit = async (data: BugReportSubmitData) => {
-    await captureScreenshot();
     const capturedData = getCapturedData();
 
     await bugReportApi.submit({
@@ -45,8 +44,9 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
   const value = useMemo(
     () => ({
       openBugReport: () => {
-        setOpen(true);
-        void captureScreenshot();
+        // Capture before mounting the dialog so html2canvas does not include
+        // its portal/backdrop in the report image.
+        void captureScreenshot().then(() => setOpen(true));
       }
     }),
     [captureScreenshot]
