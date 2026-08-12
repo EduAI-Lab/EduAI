@@ -3,7 +3,7 @@ import {
   MAIN_TOUR_STORAGE_KEY,
   hasSeenMainTour,
   markMainTourSeen,
-} from './mainTourStorage';
+} from '../../../tour/mainTourStorage';
 
 describe('mainTourStorage', () => {
   beforeEach(() => {

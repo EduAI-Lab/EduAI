@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { GuidedTourProvider, useGuidedTour } from './GuidedTourContext';
-import { MAIN_TOUR_STORAGE_KEY } from '../tour/mainTourStorage';
+import { GuidedTourProvider, useGuidedTour } from '../../../contexts/GuidedTourContext';
+import { MAIN_TOUR_STORAGE_KEY } from '../../../tour/mainTourStorage';
 
 function TourHarness() {
   const { startTour, stopTour } = useGuidedTour();
