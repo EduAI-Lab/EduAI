@@ -9,7 +9,6 @@ import { createHash } from 'crypto';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
-import { auth } from '~/lib/auth/server';
 import {
   resolveCourseAccessWithCourse,
   wantsIncludeDeleted,

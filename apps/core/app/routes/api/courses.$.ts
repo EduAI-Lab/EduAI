@@ -1,5 +1,4 @@
 import { createCourse, getCourses } from "~/lib/courses/server";
-import { auth } from "~/lib/auth/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";

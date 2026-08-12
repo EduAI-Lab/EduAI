@@ -1,7 +1,6 @@
 import { Link, redirect, useLoaderData } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
-import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
 import {
