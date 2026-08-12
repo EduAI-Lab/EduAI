@@ -72,3 +72,11 @@ export function stopCronScheduler(): void {
   getTaskMap().clear();
   getTaskScheduleMap().clear();
 }
+
+/**
+ * Backward-compatible hook for admin-tool callers. Scheduling is owned by the
+ * dedicated worker; it observes the persisted override on its next refresh.
+ */
+export function rescheduleJob(_jobName: string, _schedule: string | null): void {
+  // Intentionally no-op in the web process.
+}
