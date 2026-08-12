@@ -174,10 +174,17 @@ function resolveConditions(rawMode) {
   }
 }
 
-/** @param {import("../app/lib/eval/eval-adhd-assist-conditions.ts").EvalCondition} condition */
+/**
+ * @param {import("../app/lib/eval/eval-adhd-assist-conditions.ts").EvalCondition} condition
+ * `runMode` is a legacy internal label distinct from EvalCondition; only
+ * "off" vs anything-else actually affects the request (see `adhdAssist =
+ * mode !== "off"` below). Every non-baseline condition gets its own label
+ * here purely so logs/output attribute turns to the right condition.
+ */
 function conditionToRunMode(condition) {
   if (condition === "baseline") return "off";
   if (condition === "assist-oversight") return "on";
+  if (condition === "assist-deterministic") return "assist-deterministic";
   return "assist-prompt-only";
 }
 
@@ -188,13 +195,19 @@ function runModeToConditionLabel(runMode) {
       ? "baseline"
       : runMode === "on"
         ? "assist-oversight"
-        : "assist-prompt-only";
+        : runMode === "assist-deterministic"
+          ? "assist-deterministic"
+          : "assist-prompt-only";
   return CONDITIONS[condition].label;
 }
 
 function warnOversightExpectation(condition) {
   const cfg = CONDITIONS[condition];
-  if (cfg.requiresOversight === false) {
+  if (cfg.requiresDeterministicOnly) {
+    process.stderr.write(
+      `[${condition}] Ensure EduAI core has ADHD_ASSIST_OVERSIGHT unset or true, AND ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY=true (deterministic-only ablation).\n`,
+    );
+  } else if (cfg.requiresOversight === false) {
     process.stderr.write(
       `[${condition}] Ensure EduAI core has ADHD_ASSIST_OVERSIGHT=false (prompt-only; no second-pass rewrite).\n`,
     );
