@@ -10,7 +10,6 @@
 
 ### Fixed
 
-- [core] fix: Canvas file downloads now preserve a signed redirect to the live Canvas CDN (`*.canvas-user-content.com`, `*.inscloudgate.net`) instead of rewriting the redirect Location onto the configured Canvas origin, which invalidated the signed URL — only local Docker Canvas aliases are still rewritten. The Canvas bearer token is now sent only to the configured Canvas origin and is never forwarded on a cross-origin redirect hop; any other, non-allowlisted cross-host redirect is rejected before a second request is made. Closes #1264. (@saadtab01, 2026-08-09) — [#1437](https://github.com/EduAI-Lab/EduAI/pull/1437)
 - [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
@@ -31,6 +30,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [monorepo] test: PICT S10 cross-extension + client/server gate drift contracts (#1189) — four models (`cross-ext-read`, `cross-ext-push`, `course-detail-manager-view`, `rbac-permissions-capabilities`) with generated case tables and spec-derived oracles; AT/QM/Core adapters (incl. Core `POST /api/questions` push adapter); `ext↔ext` import-isolation assert; known TA delete-material UI drift via `it.fails` (#1390); unit manage-rag client/server mismatch kept visible as `it.fails` (#1406). (@GlowyBlack, 2026-08-05) — [#1391](https://github.com/EduAI-Lab/EduAI/pull/1391)
 - [core] test: `dashboard-data.server.test.ts` pins the #1041 per-role query gating at its new home in the SSR loader (ADMIN takes one active-course total read + the platform user total; UNIT_ADMIN two total-only reads and no user total; the course-card roles fetch one small page and expose `courseTotal`, no admin aggregates). The dashboard view-config and role-view tests are reworked to drive the presentational `DashboardBody` from loader data. `courses-server.test.ts` covers `listCoursesForUser`'s `countOnly` and empty-page paths, `canvas-integration.server.test.ts` pins `getDashboardCanvasIntegration`'s role/policy gates, and `canvas-dashboard-card.test.tsx` asserts loader-supplied integration data renders without a client fetch. (@yta3216, 2026-08-05) — [#1407](https://github.com/EduAI-Lab/EduAI/pull/1407)
 - [core] test: `insertMaterialEmbeddingsBatched` (#943) coverage in `embedding.test.ts` — zero-chunk no-op, single-batch call count and param binding correctness, `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE + 1` chunk boundary split into `ceil(N/batchSize)` calls with rows correctly partitioned, and unique row ids. (@saadtab01, 2026-08-04) — [#1355](https://github.com/EduAI-Lab/EduAI/pull/1355)
 
@@ -43,6 +43,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [ai-tutor] feat: Move course search and the term/status/progress filters server-side on `GET /api/courses` (plus a new `GET /api/courses/facets` so dropdown options span the caller's whole accessible set), so the course switcher, command palette, and the instructor/student lists reach past the bounded 200-course page instead of filtering it. Closes #1208. (@abdullahmoh21, 2026-08-02) — [#1345](https://github.com/EduAI-Lab/EduAI/pull/1345)
+### Changed
+
+- [core] perf: Hybrid RAG's `ts_rank(to_tsvector('english', content), plainto_tsquery(...))` no longer re-tokenizes `material_chunks.content` on every query — a generated `content_tsv` column stores the tsvector, its planner-valid `@@` candidate query uses the GIN index, and semantic-threshold candidates remain independently eligible for combined reranking. Closes #941. (@saadtab01, 2026-08-04) — [#1354](https://github.com/EduAI-Lab/EduAI/pull/1354)
+
+### Tests
+
+- [core] test: Extend hybrid retrieval unit coverage and add live PostgreSQL checks for generated-column updates, `@@` matching, test-database provisioning, and an `EXPLAIN` plan selecting the GIN index. Closes #941. (@saadtab01, 2026-08-04) — [#1354](https://github.com/EduAI-Lab/EduAI/pull/1354)
+
+## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
 
@@ -95,6 +104,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] perf: Index the three measured-hot unindexed foreign keys that back a real query (`account(userId, providerId)`, `session.userId`, `courses.department`), parallelize the root loader's password-expiry and preference lookups, and narrow `getCourseEnrollments` to an explicit `select`. Closes #1369. (@abdullahmoh21, 2026-08-07) — [#1425](https://github.com/EduAI-Lab/EduAI/pull/1425)
+- [question-maker] perf: Index the 13 foreign keys that had no usable index, turning the seq scans behind variant, question, and assessment-section lookups into index scans (up to 1461x on `variants.question_metadata_id`). Closes #1368. (@abdullahmoh21, 2026-08-07) — [#1426](https://github.com/EduAI-Lab/EduAI/pull/1426)
 - [question-maker] perf: Mirror per-user Core enrollment access locally and apply course visibility in SQL, so course-list totals use `COUNT` and page windows use database `skip`/`take` with stable ordering; refresh the access snapshot once per TTL to avoid refetching the full catalog on every page. Closes #1206. (@saad, 2026-08-06) — [#1410](https://github.com/EduAI-Lab/EduAI/pull/1410)
 
 - [ai-tutor] perf: Hoist the per-pair topic lookups in `POST /courses/:courseId/topics/remap` into one course-scoped `findMany`, and batch the `ActivitySecondaryTopic` reads whenever the mapping pairs don't observe each other's writes, cutting a caller-sized bulk remap from roughly 8N queries to 3 + 4N without changing any response. Closes #1372. (@abdullahmoh21, 2026-08-07) — [#1427](https://github.com/EduAI-Lab/EduAI/pull/1427)
@@ -105,6 +116,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Add `root-loader-parallel.test.ts` (holds the expiry check open to prove the preference query is already in flight, so a re-serialization fails deterministically) and extend `enrollments.server.test.ts` with query-shape assertions for both enrollment readers, covering the cursor and no-cursor branches. Closes #1369. (@abdullahmoh21, 2026-08-07) — [#1425](https://github.com/EduAI-Lab/EduAI/pull/1425)
 - [core] tests: Cover image inputs after image-rule retirement across kNN, hybrid, and LLM classifier routing modes. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
 - [core] test: Add `routing-rules-fp-guardrail.test.ts` — asserts realistic easy/topic-adjacent homework prompts do not escalate under the broadened rules, plus two abstract-question regression tests for a false-positive caught during dev-split re-evaluation. (@superbolt08, 2026-08-05) — [#1394](https://github.com/EduAI-Lab/EduAI/pull/1394)
 - [core] test: Add `chat-rag-context-token-estimate.test.ts` — covers `ragContextTokenEstimateForCourseRagHits` (zero hits, multi-hit summation with per-hit ceiling, threshold-shape check against rule5's `>2000` tokens / `>=4` chunks expectation). (@superbolt08, 2026-08-05) — [#1396](https://github.com/EduAI-Lab/EduAI/pull/1396)
@@ -130,6 +142,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] test: `security-headers.test.ts` now asserts the HTML CSP allows no third-party font origins and additionally that `fonts.googleapis.com` / `fonts.gstatic.com` stay absent, so re-adding a Google Fonts `<link>` cannot quietly reintroduce the origins. (@yta3216, 2026-08-05)
 - [packages/ui] test: New `self-hosted-font.test.ts` pins the #1221 contract — `base.css` imports `@fontsource-variable/outfit`, all three `--font-sans` declarations name the `"Outfit Variable"` family (dropping `Variable` leaves valid CSS that silently falls through to the system sans), and none of the three app document heads reference a Google Fonts origin. The deleted `<link>` blocks were identical across the apps, so a merge can resurrect one of them alone without anything visibly breaking. (@yta3216, 2026-08-05)
 ## [Week 13 — July 27 – August 2, 2026]
+
+### Fixed
+
+- [infra/core] fix: Reject example LiteLLM / cmps01 secrets at deploy — `deploy-edge-proxy.sh` exits before starting services when `CMPS01_INTERNAL_KEY` is unset, empty, too short, or a known placeholder (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`), matched case-insensitively so a capitalized copy of the same value isn't a bypass. LiteLLM `master_key` and health-check bearers use the same secret. `resolveVllmApiKey()` no longer falls back to `vllm-local` once a deployment explicitly points at a real vLLM host — `NODE_ENV=production`, or `VLLM_BASE_URL` set — rather than gating on `NODE_ENV` alone, since s378 intentionally runs `NODE_ENV=development` (`docs/DEPLOYMENT.md`) but sets `VLLM_BASE_URL` to point at cmps01, and that's the one deployment this guard exists to protect. Breaking change for the existing cmps01/s378 deployment: once this lands, both `CMPS01_INTERNAL_KEY` on cmps01 and `VLLM_API_KEY` on Core's production `.env` must be a real generated secret (`openssl rand -hex 32`) — the old `vllm-local` value now hard-fails instead of silently working. (#1115, @Ayyhab, 2026-07-29) — [#1268](https://github.com/EduAI-Lab/EduAI/pull/1268)
 
 ### Added
 
@@ -192,6 +208,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Make AI-job enqueue and re-embed start consistent — persist `bullJobId = idempotencyKey` at `AiJob` create time (not after Redis `add`) so a FAILED-not-deleted row from a failed push is discoverable by a same-key retry from the instant it exists; mark (not delete) the row `FAILED` on a push failure, so a caller polling its id or retrying with the same key finds a real terminal state instead of an orphan — a keyed enqueue race now resolves at `create()` itself, so a losing concurrent request never calls Redis at all. Scope re-embed idempotency keys to `(courseId, idempotencyKey)`, replay a terminal row on key reuse within a 24h retry window instead of double-running the work, and recycle it into a fresh run once that window has passed (directly, when the row was found stale by key, instead of falling through to a flow that would otherwise replay the reclaim's own fresh timestamp as a valid result) instead of returning stale `COMPLETED`/`FAILED` state forever; reclaim a `RUNNING` row that's gone 30+ minutes or a `PENDING` row stuck 5+ minutes with no progress as a presumed crash, without proceeding if the reclaim write itself fails, and log (not swallow) a failure to compensate-delete a row after a failed claim; report `keyHonored: false` rather than silent success when an active job already carries a different caller's idempotency key; route the embedding-settings PATCH's `reEmbed=true` path through the same `QueueUnavailableError` → 503 classification as the dedicated endpoint. Classify Redis/DB outages as `QueueUnavailableError` → HTTP 503 (not 400/502) throughout, including a failed best-effort idempotency-key attach onto an active job. (#1112, @Ayyhab, 2026-07-29) — [#1269](https://github.com/EduAI-Lab/EduAI/pull/1269)
 - [ai-tutor] security: Fix an authorization bypass in the three AI Tutor bulk-reorder handlers, which called the async `isUnitAdminForCourse` without awaiting it and so tested an always-truthy Promise, letting any INSTRUCTOR reorder any course's tree. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)
 - [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 

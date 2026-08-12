@@ -1,13 +1,9 @@
 /**
  * Vitest runs this file before any test file loads. Load root .env first, then apply test-only overrides.
  */
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { loadTestEnv } from './helpers/testEnv.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootEnv = path.resolve(__dirname, '../../../.env');
-dotenv.config({ path: rootEnv });
+loadTestEnv();
 
 // Integration tests: prefer a real Postgres (see TEST_PLAN.md).
 if (process.env.TEST_DATABASE_URL) {
