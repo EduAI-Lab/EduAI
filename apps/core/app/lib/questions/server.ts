@@ -11,6 +11,8 @@ export type CreateQuestionBody = {
   reasoningLevel?: "FACTUAL" | "ANALYTICAL" | "APPLICATION";
   choices?: { letter: string; text: string }[];
   answer?: string;
+  selectAllThatApply?: boolean;
+  correctAnswers?: string[] | null;
   testable?: boolean;
   secondaryTopicIds?: string[];
 };
@@ -29,6 +31,8 @@ const CreateQuestionSchema = z.object({
   reasoningLevel: z.enum(["FACTUAL", "ANALYTICAL", "APPLICATION"]).optional(),
   choices: z.array(z.object({ letter: z.string().min(1), text: z.string().min(1) })).optional(),
   answer: z.string().optional(),
+  selectAllThatApply: z.boolean().optional(),
+  correctAnswers: z.array(z.string().min(1)).nullable().optional(),
   testable: z.boolean().optional(),
   secondaryTopicIds: z.array(z.string().min(1)).optional(),
 });
@@ -65,6 +69,8 @@ export async function createQuestion(
     reasoningLevel = "FACTUAL",
     choices,
     answer,
+    selectAllThatApply = false,
+    correctAnswers,
     testable = false,
     secondaryTopicIds = [],
   } = parsed.data;
@@ -115,6 +121,8 @@ export async function createQuestion(
           reasoningLevel,
           choices: choices ?? Prisma.JsonNull,
           answer,
+          selectAllThatApply,
+          correctAnswers: correctAnswers ?? Prisma.JsonNull,
           testable,
         },
       });

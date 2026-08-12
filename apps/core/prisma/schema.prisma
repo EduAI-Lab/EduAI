@@ -469,9 +469,11 @@ model Question {
   type            QuestionType
   difficulty      QuestionDifficulty       @default(MEDIUM)
   reasoningLevel  ReasoningLevel           @default(FACTUAL)
-  choices         Json?
-  answer          String?
-  testable        Boolean                  @default(false)
+  choices            Json?
+  answer             String?
+  selectAllThatApply Boolean                  @default(false)
+  correctAnswers     Json?
+  testable           Boolean                  @default(false)
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
