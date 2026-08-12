@@ -506,7 +506,7 @@ export async function addAdminCourseTA(
 
   const result = await addCourseTA(courseId, { userId: opts.userId });
   if ("error" in result) return { error: result.error };
-  return { ok: true, ta: result };
+  return { ok: true, ta: result.ta };
 }
 
 export async function removeAdminCourseTA(
