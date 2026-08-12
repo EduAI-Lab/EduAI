@@ -86,10 +86,24 @@ function isRetryableEduAiResponse(status, errorText) {
   // Core application rate-limit payload, whose window is much longer than the
   // bounded backoff.
   try {
-    return JSON.parse(errorText)?.error !== 'Too Many Requests';
+    const coreError = JSON.parse(errorText)?.error;
+    return coreError !== 'RATE_LIMITED' && coreError !== 'Too Many Requests';
   } catch {
     return true;
   }
+}
+
+function eduAiErrorMessage(status, errorText) {
+  let detail = '';
+  try {
+    const coreError = JSON.parse(errorText)?.error;
+    if (typeof coreError === 'string' && coreError.trim()) {
+      detail = `: ${coreError.trim()}`;
+    }
+  } catch {
+    // Non-JSON proxy responses keep the established status-only message.
+  }
+  return `AI API returned status ${status}${detail}`;
 }
 
 /**
@@ -214,7 +228,7 @@ async function callEduAI({
         }
 
         console.error('[aiGuidance] API error:', response.status, errorText);
-        const error = new Error(`AI API returned status ${response.status}`);
+        const error = new Error(eduAiErrorMessage(response.status, errorText));
         error.status = response.status;
         throw error;
       }
