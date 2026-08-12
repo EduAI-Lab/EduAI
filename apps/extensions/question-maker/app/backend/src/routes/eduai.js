@@ -17,6 +17,7 @@ import {
   validateTestApiKeyAdmission,
   validateGenerationBudget,
   isQmAiDeadlineError,
+  assertQmAiDeadline,
 } from '../middleware/aiAdmission.js';
 
 const router = express.Router();
@@ -29,23 +30,26 @@ const router = express.Router();
  * Reuses the same access helper as the per-course middleware. Returns
  * `{ course, access }` on success, or null when no accessible match exists.
  */
-async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
-  const matches = await findCoursesByProjectedCode(courseCode);
+async function resolveCourseCodeAccess(reqUser, courseCode, cookie, signal) {
+  const matches = await findCoursesByProjectedCode(courseCode, { signal });
+  assertQmAiDeadline({ signal });
   for (const course of matches) {
-    const access = await resolveAccessForCourse(reqUser, course, { cookie });
+    const access = await resolveAccessForCourse(reqUser, course, { cookie, signal });
+    assertQmAiDeadline({ signal });
     if (access && access.rank >= LEVELS.ta.rank) return { course, access };
   }
   return null;
 }
 
 /** Resolve a Core course id only through a locally anchored QM course + live access. */
-async function resolveCoreCourseAccess(reqUser, coreCourseId, cookie) {
+async function resolveCoreCourseAccess(reqUser, coreCourseId, cookie, signal) {
   if (typeof coreCourseId !== 'string' || !coreCourseId.trim()) return null;
   const courses = await prisma.course.findMany({
     where: { coreCourseId: coreCourseId.trim() },
   });
   for (const course of courses) {
-    const access = await resolveAccessForCourse(reqUser, course, { cookie });
+    const access = await resolveAccessForCourse(reqUser, course, { cookie, signal });
+    assertQmAiDeadline({ signal });
     if (access && access.rank >= LEVELS.ta.rank) return { course, access };
   }
   return null;
@@ -111,7 +115,7 @@ router.post('/chat', qmAiUserRateLimit, chatAdmission, async (req, res) => {
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie, req.aiOperation?.signal);
     if (!resolved) {
       return res.status(403).json({
         success: false,
@@ -192,7 +196,7 @@ router.post('/generate-questions', qmAiUserRateLimit, async (req, res) => {
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie, req.aiOperation?.signal);
     if (!resolved) {
       return res.status(403).json({
         success: false,

@@ -14,9 +14,10 @@ import {
   getCoursesByIdsFromCore,
   listCoursesFromCore,
   searchCoursesFromCore,
-} from "./coreApiService.js";
-import { dedupeCoursesByCoreId, normalizeCourseCode } from "./courseCodeUtils.js";
-import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
+} from './coreApiService.js';
+import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
+import { ensureCourseAnchor } from './ensureCourseAnchor.js';
+import { assertQmAiDeadline } from '../middleware/aiAdmission.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
@@ -125,7 +126,7 @@ function enrichCourseRow(course, coreById, accessLevel) {
  * directly (§3 "detail from GET /api/courses/:id") — degrades gracefully
  * (placeholder, not a hard error) when Core is unreachable.
  */
-export async function enrichCourseDetail(course, { cookie } = {}) {
+export async function enrichCourseDetail(course, { cookie, signal } = {}) {
   const row = course;
 
   let core = null;
@@ -139,8 +140,11 @@ export async function enrichCourseDetail(course, { cookie } = {}) {
       // — a fragile retry edge that silently degraded a resolvable course to
       // a placeholder). `cookie` stays as the fallback variant for
       // environments with no EDUAI_API_KEY configured (#1072 unified contract).
-      core = await getCourseFromCore(row.coreCourseId, { cookie, preferCookie: false });
+      const coreOptions = { cookie, preferCookie: false };
+      if (signal) coreOptions.signal = signal;
+      core = await getCourseFromCore(row.coreCourseId, coreOptions);
     } catch {
+      if (signal?.aborted) assertQmAiDeadline({ signal });
       core = null; // Core unreachable — degrade the detail response, don't hard-error.
     }
   }
@@ -612,18 +616,20 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
  * Returns raw `Course` model instances (not enriched rows) so callers can
  * pass them straight to `resolveAccessForCourse`.
  */
-export async function findCoursesByProjectedCode(codeQuery) {
+export async function findCoursesByProjectedCode(codeQuery, { signal } = {}) {
   const target = normalizeCourseCode(codeQuery);
   if (!target) return [];
 
   let coreById = new Map();
   try {
+    assertQmAiDeadline({ signal });
     // #1125: let Core do the code match instead of pulling the catalog and
     // filtering here. The exact-match check below still applies, since Core's
     // `search` is a substring match.
-    const coreCourses = await searchCoursesFromCore(target, {}, { serviceKeyOnly: true });
+    const coreCourses = await searchCoursesFromCore(target, { signal }, { serviceKeyOnly: true });
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
     return []; // Core unreachable — no code-based match is possible; degrade to no access.
   }
 

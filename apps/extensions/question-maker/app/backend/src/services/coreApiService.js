@@ -3,7 +3,8 @@
  * Each function maps to one Core endpoint and throws on non-success responses
  * (status stored on the error as .status, parsed body as .body).
  */
-import { config } from "../config/settings.js";
+import { config } from '../config/settings.js';
+import { assertQmAiDeadline } from '../middleware/aiAdmission.js';
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -52,8 +53,19 @@ const CORE_PAGE_SIZE = 200;
 const CORE_MAX_PAGES = 50;
 
 /** GET a Core path with service-key headers, mirroring the pre-#1041 catalog read. */
-async function readServiceKeyPage(path) {
-  const res = await fetch(`${config.coreUrl}${path}`, { headers: serviceHeaders() });
+async function readServiceKeyPage(path, { signal } = {}) {
+  assertQmAiDeadline({ signal });
+  let res;
+  try {
+    res = await fetch(`${config.coreUrl}${path}`, {
+      headers: serviceHeaders(),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (error) {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
+    throw error;
+  }
+  assertQmAiDeadline({ signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw coreError(body.error || "Core courses fetch failed", res.status, body);
@@ -79,7 +91,7 @@ async function fetchCoursePages(
     // read: send `serviceHeaders()` and let Core answer, rather than refusing
     // to call when no key is configured (`fetchFromCore` throws 503 there).
     const data = serviceKeyOnly
-      ? await readServiceKeyPage(`/api/courses?${params}`)
+      ? await readServiceKeyPage(`/api/courses?${params}`, authOptions)
       : await fetchFromCore(`/api/courses?${params}`, authOptions);
     return {
       courses: Array.isArray(data?.data) ? data.data : [],
@@ -117,8 +129,9 @@ async function fetchCoursePages(
  */
 async function fetchFromCore(
   path,
-  { method = "GET", body, cookie, preferCookie = false, cookieOnly = false } = {},
+  { method = 'GET', body, cookie, preferCookie = false, cookieOnly = false, signal } = {},
 ) {
+  assertQmAiDeadline({ signal });
   const url = `${config.coreUrl}${path}`;
   let variants = authHeaderVariants({ cookie, preferCookie });
   if (cookieOnly) {
@@ -133,13 +146,19 @@ async function fetchFromCore(
 
   let lastError;
   for (const authHeaders of variants) {
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      // Omit the key entirely rather than passing `body: undefined`: `method`
-      // defaults to GET here, and a GET carrying a body key is rejected.
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      if (signal?.aborted) assertQmAiDeadline({ signal });
+      throw error;
+    }
+    assertQmAiDeadline({ signal });
     if (res.ok) return res.json();
 
     const errBody = await res.json().catch(() => ({}));
@@ -255,7 +274,9 @@ export async function getCourseEnrollmentsFromCore(coreCourseId, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/enrollments`, {
     cookie: opts.cookie,
     preferCookie: false,
+    signal: opts.signal,
   }).catch((err) => {
+    if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
     if (err.status === 404) return { enrollments: [] };
     throw err;
   });
@@ -278,8 +299,10 @@ export async function getCourseFromCore(coreCourseId, opts = {}) {
     return await fetchFromCore(`/api/courses/${coreCourseId}`, {
       cookie: opts.cookie,
       preferCookie: opts.preferCookie ?? Boolean(opts.cookie),
+      signal: opts.signal,
     });
   } catch (err) {
+    if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
     if (err.status === 404) return null;
     throw err;
   }
@@ -347,10 +370,19 @@ export async function getQuestionByIdFromCore(coreQuestionId) {
  * session-only (no service-key path), so the caller's cookie must be forwarded;
  * it is the only source of `authorizedUnits` for a UNIT_ADMIN caller.
  */
-export async function getMyProfileFromCore(cookieHeader) {
-  const res = await fetch(`${config.coreUrl}/api/me`, {
-    headers: { cookie: cookieHeader ?? "" },
-  });
+export async function getMyProfileFromCore(cookieHeader, opts = {}) {
+  assertQmAiDeadline({ signal: opts.signal });
+  let res;
+  try {
+    res = await fetch(`${config.coreUrl}/api/me`, {
+      headers: { cookie: cookieHeader ?? '' },
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    });
+  } catch (error) {
+    if (opts.signal?.aborted) assertQmAiDeadline({ signal: opts.signal });
+    throw error;
+  }
+  assertQmAiDeadline({ signal: opts.signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw coreError(body.error || "Core profile fetch failed", res.status, body);
@@ -387,7 +419,7 @@ export async function getCoursesByIdsFromCore(
     const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
     const path = `/api/courses?ids=${encodeURIComponent(chunk.join(","))}`;
     const data = serviceKeyOnly
-      ? await readServiceKeyPage(path)
+      ? await readServiceKeyPage(path, authOptions)
       : await fetchFromCore(path, authOptions);
     if (Array.isArray(data?.data)) courses.push(...data.data);
   }
@@ -407,7 +439,7 @@ export async function searchCoursesFromCore(
   });
   const path = `/api/courses?${params}`;
   const data = serviceKeyOnly
-    ? await readServiceKeyPage(path)
+    ? await readServiceKeyPage(path, authOptions)
     : await fetchFromCore(path, authOptions);
   return Array.isArray(data?.data) ? data.data : [];
 }

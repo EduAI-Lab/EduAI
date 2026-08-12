@@ -46,6 +46,7 @@ vi.mock("../../src/config/settings.js", () => {
     maxQuestions: 50,
     qmGeneratePromptMaxChars: 20,
     qmAiRateLimitMax: 100,
+    qmAiOperationDeadlineMs: 25,
   };
   return { config: cfg, default: cfg };
 });
@@ -201,6 +202,36 @@ describe("POST /api/eduai/chat", () => {
     expect(res.status).toBe(429);
     expect(res.body).toMatchObject({ code: 'EDUAI_UPSTREAM_RATE_LIMITED' });
     expect(JSON.stringify(res.body)).not.toContain('api_key');
+  });
+
+  it('cancels a hung Core course search at the shared deadline before AI chat', async () => {
+    const user = { ...INSTRUCTOR, id: 'inst-core-hang-chat' };
+    authAs(user);
+    const coreFetch = vi.fn((url, options = {}) => {
+      if (String(url).endsWith('/api/sessions/validate')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+      }
+      const signal = options.signal;
+      if (!signal) return Promise.resolve({ ok: true, json: () => Promise.resolve({ data: [] }) });
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    vi.stubGlobal('fetch', coreFetch);
+    mockFindCoursesByProjectedCode.mockImplementation((_code, { signal } = {}) =>
+      fetch('http://core.test/api/courses?search=COSC', { signal }).then((response) => response.json()),
+    );
+
+    const res = await request(app)
+      .post('/api/eduai/chat')
+      .set('Cookie', 'session=v')
+      .send({ messages: [{ role: 'user', content: 'hi' }], courseCode: 'COSC 101' });
+
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe('QM_AI_OPERATION_DEADLINE');
+    expect(mockFindCoursesByProjectedCode).toHaveBeenCalledWith('COSC 101', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(coreFetch.mock.calls.some(([, options]) => options?.signal?.aborted)).toBe(true);
+    expect(eduaiService.chat).not.toHaveBeenCalled();
   });
 });
 

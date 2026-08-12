@@ -30,14 +30,10 @@ const { variantSvc, mockCourseFindOne, mockAssessmentFindOne, mockEnrollments } 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
-vi.mock("../../src/config/settings.js", () => {
-  const cfg = {
-    coreUrl: "http://core.test",
-    eduaiApiKey: "k",
-    corsOrigins: ["*"],
-    nodeEnv: "test",
-    logLevel: "silent",
-  };
+
+vi.mock('../../src/services/authService.js', () => ({ findOrCreateUser: vi.fn().mockResolvedValue({}) }));
+vi.mock('../../src/config/settings.js', () => {
+  const cfg = { coreUrl: 'http://core.test', eduaiApiKey: 'k', corsOrigins: ['*'], nodeEnv: 'test', logLevel: 'silent', qmAiOperationDeadlineMs: 25 };
   return { config: cfg, default: cfg };
 });
 vi.mock("../../src/services/assessmentVariantService.js", () => variantSvc);
@@ -276,6 +272,36 @@ describe("POST /api/assessment-variant/generate-bank-variants", () => {
     expect(res.status).toBe(429);
     expect(res.body.code).toBe('EDUAI_UPSTREAM_RATE_LIMITED');
     expect(JSON.stringify(res.body)).not.toContain('api_key');
+  });
+
+  it('cancels a hung Core roster fetch before bank generation starts', async () => {
+    const user = { ...INSTRUCTOR, id: 'inst-core-hang-bank' };
+    authAs(user, 'INSTRUCTOR');
+    const coreFetch = vi.fn((url, options = {}) => {
+      if (String(url).endsWith('/api/sessions/validate')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+      }
+      const signal = options.signal;
+      if (!signal) return Promise.resolve({ ok: true, json: () => Promise.resolve({ enrollments: [] }) });
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    vi.stubGlobal('fetch', coreFetch);
+    mockEnrollments.mockImplementation((_courseId, { signal } = {}) =>
+      fetch('http://core.test/api/courses/cuid-core-course/enrollments', { signal })
+        .then((response) => response.json()),
+    );
+
+    const res = await request(app)
+      .post('/api/assessment-variant/generate-bank-variants')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questionIds: [1] });
+
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe('QM_AI_OPERATION_DEADLINE');
+    expect(coreFetch.mock.calls.some(([, options]) => options?.signal?.aborted)).toBe(true);
+    expect(variantSvc.generateBankVariantsForQuestions).not.toHaveBeenCalled();
   });
 });
 

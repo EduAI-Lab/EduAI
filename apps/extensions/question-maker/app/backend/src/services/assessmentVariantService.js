@@ -854,8 +854,9 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
   // `code` is Core-owned (#1072 §4 step 10) — read through Core. Preserve
   // spacing so Core can resolve by code; prefer coreCourseId when linked.
-  const courseDetail = await enrichCourseDetail(course, { cookie });
-  const courseCode = (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
+  const courseDetail = await enrichCourseDetail(course, { cookie, signal });
+  const courseCode =
+    (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
   const coreCourseId =
     typeof course.coreCourseId === "string" && course.coreCourseId.trim()
       ? course.coreCourseId.trim()
@@ -1244,7 +1245,7 @@ export async function reviewVariantExamWithAi(userId, params) {
   // Resolve Core course metadata only after the bounded pair check. Oversized
   // requests therefore perform no provider or Core metadata probe.
   const reviewCourse = baselineAssessment.course;
-  const courseDetail = await enrichCourseDetail(reviewCourse, { cookie });
+  const courseDetail = await enrichCourseDetail(reviewCourse, { cookie, signal });
   const reviewCourseCode =
     (courseDetail?.code && String(courseDetail.code).trim()) || `COURSE-${courseId}`;
   const reviewCoreCourseId =
