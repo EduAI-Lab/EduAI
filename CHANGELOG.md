@@ -2,6 +2,10 @@
 
 ## [Week 15 — August 10–16, 2026]
 
+### Fixed
+
+- [ai-tutor] fix: `/teach` and `/guide` never checked `activity.enableTeachMode`/`enableGuideMode`, so disabling a mode for an activity only hid it client-side — an enrolled student calling the endpoint directly still got a working AI tutoring response. Both routes now 400 when their mode is disabled, mirroring `/custom`'s existing `enableCustomMode` check. Closes #1411. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
+- [ai-tutor] fix: `handleAiInteraction`'s chat-session ownership lookup (`existingSession`, scoped by `chatId`/`userId`/`activityId`/`mode`) was computed but never enforced — a client-supplied `chatId` was reused unconditionally whenever truthy, so a `chatId` belonging to another user's session (or a stale/unknown one) was passed through to the upstream EduAI call and `upsertChatSession`. Now rejected with 404 when the `chatId` doesn't resolve to a session owned by the caller, matching the sibling session-messages endpoint. `upsertChatSession`'s write path is also now scoped by `userId` (defense-in-depth, not exploitable today) so a colliding `chatId` returned by Core can't repoint another user's session row or mis-link a trace to it. Closes #1412. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
 ### Added
 
 - [docs] docs: Add `docs/end-to-end-user-workflows/` — README plus per-extension (Core, Question Maker, AI Tutor) workflow tracking templates for Epic #1429's pre-pilot end-to-end testing pass, with a role-based (Admin/Unit Admin/Instructor/TA/Student) findings table and the Claude-find/simulate/review/sweep-then-human testing methodology. Closes #1457. (@ariqmuldi, 2026-08-10) — #1458
