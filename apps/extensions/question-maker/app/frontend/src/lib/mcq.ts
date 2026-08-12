@@ -15,8 +15,6 @@
  * When `selectAllThatApply` is set with `correctAnswers`, multiple letters may
  * be marked correct.
  */
-import type { MCQChoice } from '../types/question';
-
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
 
 /**
@@ -25,9 +23,15 @@ const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
  * choices contain genuine duplicates of the answer. In select-all-that-apply
  * mode with `correctAnswers`, any listed letters may be true.
  */
+/** Choice rows may arrive from API previews with optional letter/text. */
+export type McqChoiceLike = {
+  letter?: string | null;
+  text?: string | null;
+};
+
 export function markCorrectChoices(
   answer: string | null | undefined,
-  choices: Pick<MCQChoice, 'letter' | 'text'>[],
+  choices: McqChoiceLike[],
   options?: { selectAllThatApply?: boolean; correctAnswers?: string[] | null }
 ): boolean[] {
   if (
