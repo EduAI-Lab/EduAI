@@ -420,6 +420,15 @@ describe('POST /api/questions/extract/save', () => {
 });
 
 describe('POST /api/questions/approve', () => {
+  it('requires authentication before validating the request target', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+
+    const res = await request(app).post('/api/questions/approve').send({ questions: [] });
+
+    expect(res.status).toBe(401);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
   it('requires a non-empty questions array', async () => {
     authAs(INSTRUCTOR, 'INSTRUCTOR');
     const res = await request(app)
@@ -427,6 +436,41 @@ describe('POST /api/questions/approve', () => {
       .set('Cookie', 'session=v')
       .send({ questions: [] });
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Questions array is required');
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', {}],
+    ['non-numeric', { courseId: 'not-a-number' }],
+    ['zero', { courseId: 0 }],
+    ['negative', { courseId: -1 }],
+    ['non-integer', { courseId: 1.5 }],
+  ])('rejects a %s top-level course target', async (_label, target) => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ ...target, questions: [{ courseId: 1, primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Valid courseId is required');
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('accepts a positive-integer classId as the legacy target alias', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    mockCreateMultiple.mockResolvedValue([{ id: 1 }]);
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ classId: '1', questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(201);
   });
 
   it('rejects when a question is missing courseId/primaryTopicId', async () => {

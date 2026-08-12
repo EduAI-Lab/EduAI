@@ -48,6 +48,29 @@ function denyTaNotOwner(req, res) {
   return false;
 }
 
+/** Validate and normalize the single target course for an approval batch. */
+function validateApprovalTarget(req, res, next) {
+  const { questions, courseId, classId } = req.body;
+
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Questions array is required'
+    });
+  }
+
+  const targetCourseId = Number(courseId ?? classId);
+  if (!Number.isInteger(targetCourseId) || targetCourseId <= 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Valid courseId is required'
+    });
+  }
+
+  req.approvalCourseId = targetCourseId;
+  next();
+}
+
 /**
  * Resolve an assessment only if it belongs to the given course. The order routes mutate
  * per-assessment composition, so a client-supplied assessmentId must not point at an
@@ -555,16 +578,9 @@ router.post(
 );
 
 /** POST /api/questions/approve – bulk saves approved generated questions into the question bank. */
-router.post('/approve', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.post('/approve', authenticateToken, requireRole(QM_AUTHORIZED), validateApprovalTarget, async (req, res, next) => {
   try {
     const { questions, courseId, classId } = req.body;
-
-    if (!questions || !Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Questions array is required'
-      });
-    }
 
     const normalizedQuestions = questions.map((q) => {
       const candidateCourseId = q.courseId ?? q.classId ?? courseId ?? classId;
