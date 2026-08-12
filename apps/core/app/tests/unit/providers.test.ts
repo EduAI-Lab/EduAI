@@ -134,6 +134,7 @@ describe("createAIProviderRegistry", () => {
 
   it("does not append /v1 to a vLLM base URL that already ends with it", () => {
     process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+    process.env.VLLM_API_KEY = "env-key";
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
 
@@ -162,8 +163,8 @@ describe("createAIProviderRegistry", () => {
     expect(createOpenAIMock).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "env-key" }));
   });
 
-  it("falls back to the 'vllm-local' default API key when neither user nor env key is present", () => {
-    process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
+  it("uses the 'vllm-local' default API key for a loopback vLLM instance", () => {
+    process.env.VLLM_BASE_URL = "http://127.0.0.1:8001";
     delete process.env.VLLM_API_KEY;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });

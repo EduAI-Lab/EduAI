@@ -414,7 +414,10 @@ describe("startAdminCourseReEmbed", () => {
   it("starts a new job when none is active", async () => {
     mockResolvedCourseId();
     vi.mocked(findActiveReEmbedJob).mockResolvedValue(null);
-    vi.mocked(startReEmbedJob).mockResolvedValue({ id: "job2", status: "PENDING" } as never);
+    vi.mocked(startReEmbedJob).mockResolvedValue({
+      job: { id: "job2", status: "PENDING" },
+      created: true,
+    } as never);
     const result = await startAdminCourseReEmbed(ADMIN, OPTS);
     expect(result).toMatchObject({ alreadyRunning: false, job: { serialized: true, id: "job2" } });
   });
