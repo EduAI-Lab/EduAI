@@ -22,6 +22,8 @@ import express from "express";
 import {
   createVariant,
   updateVariant,
+  linkVariantToCore,
+  rollbackVariantApproval,
   deleteVariant,
   getVariantsByQuestion,
 } from "../services/questionService.js";
@@ -183,14 +185,30 @@ router.put(
         return res.status(400).json({ success: false, error: enumError });
       }
 
-      const current = req.variant;
       const access = req.courseAccess;
       const isInstructorPlus = access.rank >= LEVELS.instructor.rank;
+      const current = req.variant;
 
-      // §19 approved-variant lock: once approved, content edits are blocked except
-      // reverting to draft (instructor+) or toggling the AI-generated tag.
+      // Keep the inexpensive resource-snapshot checks for immediate RBAC
+      // responses. `updateVariant` repeats the same decisions after acquiring
+      // the question fence; these checks must never be treated as the
+      // authoritative immutability guard because `req.variant` can be stale.
       if (current.isDraft === false) {
         const reverting = isDraft === true && isInstructorPlus;
+        const approvalRetry =
+          isDraft === false &&
+          isInstructorPlus &&
+          current.coreQuestionId == null &&
+          req.qmCourse.coreCourseId &&
+          isAiGenerated === undefined &&
+          questionText === undefined &&
+          difficulty === undefined &&
+          reasoningLevel === undefined &&
+          assessmentId === undefined &&
+          secondaryTopicsId === undefined &&
+          answer === undefined &&
+          choices === undefined &&
+          referenceId === undefined;
         const aiTagOnly =
           isAiGenerated !== undefined &&
           isDraftRaw === undefined &&
@@ -204,8 +222,8 @@ router.put(
           selectAllThatApply === undefined &&
           correctAnswers === undefined &&
           referenceId === undefined;
-        if (!reverting && !aiTagOnly) {
-          return res.status(409).json({ success: false, error: "VARIANT_LOCKED" });
+        if (!reverting && !aiTagOnly && !approvalRetry) {
+          return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
         }
         // §19 TA own-only edit applies here too: the aiTagOnly path is still an edit.
         if (aiTagOnly && access.level === "ta" && current.createdBy !== req.user.id) {
@@ -214,17 +232,13 @@ router.put(
             .json({ success: false, error: "TAs can only edit their own variants" });
         }
       } else {
-        // Draft branch — instructor-only approval (§16).
         if (isDraft === false && !isInstructorPlus) {
           return res
             .status(403)
             .json({ success: false, error: "Only instructors can approve variants" });
         }
-        // §19 TA own-only edit: a TA may edit only a draft they created.
-        if (access.level === "ta" && current.createdBy !== req.user.id) {
-          return res
-            .status(403)
-            .json({ success: false, error: "TAs can only edit their own variants" });
+        if (access.level === 'ta' && current.createdBy !== req.user.id) {
+          return res.status(403).json({ success: false, error: 'TAs can only edit their own variants' });
         }
       }
 
@@ -245,6 +259,11 @@ router.put(
           isDraft,
         },
         req.qmCourse.userId,
+        {
+          isInstructorPlus,
+          accessLevel: access.level,
+          requestUserId: req.user.id,
+        },
       );
 
       // State-based push: fires whenever the caller sets isDraft=false and the variant is not yet
@@ -254,19 +273,45 @@ router.put(
         if (course?.coreCourseId) {
           try {
             const pushResult = await pushVariantToCore(variant, course, req.headers.cookie);
-            await prisma.variants.update({
-              where: { id: variant.id },
-              data: { coreQuestionId: pushResult.coreQuestionId },
-            });
+            const linkResult = await linkVariantToCore(
+              variant.id,
+              req.qmCourse.userId,
+              variant,
+              pushResult.coreQuestionId,
+            );
+            if (!linkResult.applied) {
+              return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
+            }
             // Prisma's update() returns a new object rather than mutating `variant`
             // in place (unlike Sequelize's `.update()`) — patch it locally so the
             // response below reflects the freshly-linked Core id.
-            variant.coreQuestionId = pushResult.coreQuestionId;
+            variant.coreQuestionId = linkResult.variant.coreQuestionId;
           } catch (coreErr) {
             // Roll approval back to draft before returning an error. updateVariant
             // already persisted isDraft:false; leaving it approved would trip
             // VARIANT_LOCKED on the next approve and block the promised retry.
-            await prisma.variants.update({ where: { id: variant.id }, data: { isDraft: true } });
+            let rollbackFailed = false;
+            try {
+              const rollbackResult = await rollbackVariantApproval(variant.id, req.qmCourse.userId, variant);
+              // A concurrent retry may have moved the row to another state;
+              // only a demonstrably draft row makes the error response below
+              // truthful. Treat any other outcome as an explicit local/Core
+              // consistency failure instead of claiming rollback succeeded.
+              if (rollbackResult?.variant?.isDraft !== true) {
+                rollbackFailed = true;
+              }
+            } catch (rollbackErr) {
+              rollbackFailed = true;
+              logger.error({ err: rollbackErr, variantId: variant.id }, 'Failed to roll variant back after Core push failure');
+            }
+
+            if (rollbackFailed) {
+              return res.status(500).json({
+                success: false,
+                error: 'VARIANT_ROLLBACK_FAILED',
+                message: 'Core publish failed and the local approval rollback could not be confirmed.',
+              });
+            }
 
             if (coreErr.status === 422) {
               const errBody = coreErr.body ?? {};

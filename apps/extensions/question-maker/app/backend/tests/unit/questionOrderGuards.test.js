@@ -14,6 +14,9 @@ const {
   mockQuestionCreate,
   mockQuestionFindFirst,
   mockQuestionUpdate,
+  mockVariantsFindFirst,
+  mockExecuteRaw,
+  mockTransaction,
 } = vi.hoisted(() => ({
   mockCourseFindFirst: vi.fn(),
   mockTopicFindMany: vi.fn(),
@@ -22,6 +25,9 @@ const {
   mockQuestionCreate: vi.fn(),
   mockQuestionFindFirst: vi.fn(),
   mockQuestionUpdate: vi.fn(),
+  mockVariantsFindFirst: vi.fn().mockResolvedValue(null),
+  mockExecuteRaw: vi.fn().mockResolvedValue(0),
+  mockTransaction: vi.fn(),
 }));
 
 vi.mock('../../src/config/settings.js', () => {
@@ -42,7 +48,8 @@ vi.mock('../../src/config/database.js', () => ({
       findFirst: mockQuestionFindFirst,
       update: mockQuestionUpdate,
     },
-    variants: { findFirst: vi.fn().mockResolvedValue(null) },
+    variants: { findFirst: mockVariantsFindFirst },
+    $transaction: mockTransaction,
   },
 }));
 
@@ -62,6 +69,21 @@ const { addQuestionToAssessment } = await import('../../src/services/assessmentS
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransaction.mockImplementation(async (callback) => callback({
+    $executeRaw: mockExecuteRaw,
+    course: { findFirst: mockCourseFindFirst },
+    topics: { findMany: mockTopicFindMany },
+    assessments: {
+      findMany: mockAssessmentFindMany,
+      findFirst: mockAssessmentFindFirst,
+    },
+    questionMetadata: {
+      findFirst: mockQuestionFindFirst,
+      update: mockQuestionUpdate,
+    },
+    variants: { findFirst: mockVariantsFindFirst },
+  }));
+  mockVariantsFindFirst.mockResolvedValue(null);
   mockCourseFindFirst.mockResolvedValue({ id: 1 });
   mockTopicFindMany.mockResolvedValue([{ id: 'topic-a' }]);
   mockAssessmentFindMany.mockResolvedValue([{ id: 10 }]);

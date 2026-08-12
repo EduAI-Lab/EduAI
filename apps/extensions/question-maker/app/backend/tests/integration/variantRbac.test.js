@@ -219,6 +219,11 @@ describe("approved-variant lock (§19)", () => {
       "42",
       expect.objectContaining({ isAiGenerated: true }),
       COURSE.userId,
+      expect.objectContaining({
+        isInstructorPlus: true,
+        accessLevel: 'instructor',
+        requestUserId: INSTRUCTOR.id,
+      }),
     );
   });
 
