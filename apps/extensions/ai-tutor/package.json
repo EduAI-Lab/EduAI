@@ -16,8 +16,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "oxlint . --ignore-pattern server",
     "lint:fix": "oxlint --fix . --ignore-pattern server",
-    "format": "oxfmt . --ignore-pattern server",
-    "format:check": "oxfmt --check . --ignore-pattern server",
+    "format": "oxfmt . '!server'",
+    "format:check": "oxfmt --check . '!server'",
     "knip": "knip",
     "typecheck:fast": "react-router typegen && tsgo"
   },

@@ -274,6 +274,13 @@ A few things worth knowing before you touch the setup:
 - **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
   the root `prepare` script. Use `git commit --no-verify` to bypass it, or
   `npx lefthook run pre-commit` to run it by hand.
+- **The two tools exclude paths differently, and the mismatch is deliberate.**
+  Where a workspace contains a nested workspace — ai-tutor over `server/`,
+  question-maker over `app/` — the lint scripts use `oxlint . --ignore-pattern
+  server` while the format scripts use `oxfmt . '!server'`. oxfmt rejects
+  `--ignore-pattern` outright ("not expected in this context"), and oxlint
+  ignores a bare `'!server'` positional and walks the directory anyway. Keep
+  each tool on its own form; making them match breaks one of them.
 
 **Fleet routing smoke tests (Core)**
 
