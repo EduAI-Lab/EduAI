@@ -40,6 +40,8 @@ The application service runs from `current`. The old checkout remains available 
 
 ## One-time server preparation
 
+See [`PROVISIONING_CHECKLIST.md`](./PROVISIONING_CHECKLIST.md) for the database, Redis, permissions, environment, systemd, Apache, and final pre-release checks.
+
 Run these commands interactively as an administrator after reviewing the host-specific paths and package names:
 
 ```bash
