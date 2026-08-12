@@ -241,8 +241,250 @@ describe("useCourseMaterials.deleteMaterial", () => {
     const { result } = renderHook(() => useCourseMaterials("course-1"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await expect(result.current.deleteMaterial("mat-1")).rejects.toThrow("Forbidden");
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(result.current.materials).toHaveLength(1);
-  });
-});
+    await expect(result.current.deleteMaterial('mat-1')).rejects.toThrow('Forbidden')
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(result.current.materials).toHaveLength(1)
+  })
+})
+
+/**
+ * #949: the POST only returns 202 + a materialId; every real outcome is
+ * resolved by polling the list until the row leaves PROCESSING. These drive the
+ * clock directly so a 1.5s poll interval does not cost 1.5s of wall time.
+ */
+describe('useCourseMaterials.uploadMaterial (#949 async contract)', () => {
+  const POLL_MS = 1500
+  const TIMEOUT_MS = 5 * 60 * 1000
+
+  const processing = { ...material, id: 'mat-new', status: 'PROCESSING', processedAt: null }
+  const file = new File(['slides'], 'week2.pdf', { type: 'application/pdf' })
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  /** Mount and settle the initial list read. */
+  async function mount(initial: unknown[] = []) {
+    vi.mocked(fetch).mockResolvedValueOnce(materialsResponse(initial))
+    const { result } = renderHook(() => useCourseMaterials('course-1'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.loading).toBe(false)
+    return result
+  }
+
+  /** Start an upload and drive the clock far enough for `polls` poll rounds. */
+  async function upload(
+    result: { current: ReturnType<typeof useCourseMaterials> },
+    polls = 1,
+  ) {
+    let pending!: Promise<unknown>
+    await act(async () => {
+      pending = result.current.uploadMaterial(file)
+      await vi.advanceTimersByTimeAsync(0) // POST + the immediate refetch
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_MS * polls)
+    })
+    return pending
+  }
+
+  const accepted = () =>
+    new Response(JSON.stringify({ materialId: 'mat-new' }), { status: 202 })
+
+  it('posts multipart form data and resolves ready once the row settles', async () => {
+    const result = await mount()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing])) // immediate repaint
+      .mockResolvedValueOnce(materialsResponse([{ ...processing, status: 'READY' }]))
+
+    expect(await upload(result)).toEqual({
+      status: 'ready',
+      materialId: 'mat-new',
+    })
+
+    const [url, init] = vi.mocked(fetch).mock.calls[1] as [string, RequestInit]
+    expect(url).toBe('/api/courses/course-1/materials')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBeInstanceOf(FormData)
+    expect((init.body as FormData).get('file')).toBe(file)
+  })
+
+  it('paints the PROCESSING row before the outcome is known', async () => {
+    const result = await mount()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValue(materialsResponse([processing]))
+
+    let pending!: Promise<unknown>
+    await act(async () => {
+      pending = result.current.uploadMaterial(file)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    // The POST has returned 202 but nothing has settled yet.
+    expect(result.current.materials).toEqual([processing])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TIMEOUT_MS + POLL_MS)
+    })
+    await expect(pending).resolves.toEqual({ status: 'processing', materialId: 'mat-new' })
+  })
+
+  it('reports a late duplicate and deletes the receipt row', async () => {
+    const result = await mount()
+    const receipt = { ...processing, status: 'FAILED', duplicateOfId: 'mat-1' }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([receipt]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // receipt cleanup
+      .mockResolvedValueOnce(materialsResponse([])) // refetch after delete
+
+    expect(await upload(result)).toEqual({
+      status: 'duplicate',
+      materialId: 'mat-new',
+      duplicateOfId: 'mat-1',
+    })
+
+    expect(fetch).toHaveBeenCalledWith('/api/courses/course-1/materials/mat-new', {
+      method: 'DELETE',
+    })
+  })
+
+  it('still reports the duplicate when receipt cleanup fails', async () => {
+    const result = await mount()
+    const receipt = { ...processing, status: 'FAILED', duplicateOfId: 'mat-1' }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([receipt]))
+      .mockResolvedValueOnce(new Response('Forbidden', { status: 403 })) // cleanup denied
+
+    expect(await upload(result)).toEqual({
+      status: 'duplicate',
+      materialId: 'mat-new',
+      duplicateOfId: 'mat-1',
+    })
+  })
+
+  it('reports failed for a FAILED row with no duplicate pointer', async () => {
+    const result = await mount()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([{ ...processing, status: 'FAILED' }]))
+
+    expect(await upload(result)).toEqual({
+      status: 'failed',
+      materialId: 'mat-new',
+    })
+  })
+
+  it('stops watching when the row is no longer on page 1', async () => {
+    const result = await mount()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([])) // row gone (deleted elsewhere)
+
+    expect(await upload(result)).toEqual({
+      status: 'processing',
+      materialId: 'mat-new',
+    })
+  })
+
+  it('keeps polling through a transient list-read failure', async () => {
+    const result = await mount()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(materialsResponse([{ ...processing, status: 'READY' }]))
+
+    expect(await upload(result, 2)).toEqual({
+      status: 'ready',
+      materialId: 'mat-new',
+    })
+  })
+
+  it('gives up as processing once the poll deadline passes', async () => {
+    const result = await mount()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValue(materialsResponse([processing])) // never settles
+
+    let pending!: Promise<unknown>
+    await act(async () => {
+      pending = result.current.uploadMaterial(file)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TIMEOUT_MS + POLL_MS)
+    })
+
+    await expect(pending).resolves.toEqual({ status: 'processing', materialId: 'mat-new' })
+  })
+
+  it('throws the API error field when the POST is rejected', async () => {
+    const result = await mount()
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'FILE_TOO_LARGE' }), { status: 400 }),
+    )
+
+    await expect(result.current.uploadMaterial(file)).rejects.toThrow('FILE_TOO_LARGE')
+  })
+
+  it('falls back to the status code when the error body is not JSON', async () => {
+    const result = await mount()
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('<html>502</html>', { status: 502 }))
+
+    await expect(result.current.uploadMaterial(file)).rejects.toThrow('Upload failed (502)')
+  })
+
+  it('merges a polled row in place without dropping later pages', async () => {
+    // `loadMore` pulled page 2; a poll only re-reads page 1, so the merge must
+    // update the watched row and leave the rest of the list alone.
+    const page2 = { ...material, id: 'mat-old' }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ materials: [processing], nextCursor: 'c1' }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ materials: [page2], nextCursor: null }), { status: 200 }),
+      )
+
+    const { result } = renderHook(() => useCourseMaterials('course-1'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await result.current.loadMore()
+    })
+    expect(result.current.materials.map((m) => m.id)).toEqual(['mat-new', 'mat-old'])
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(materialsResponse([processing]))
+      .mockResolvedValueOnce(materialsResponse([{ ...processing, status: 'READY' }]))
+
+    expect(await upload(result)).toEqual({
+      status: 'ready',
+      materialId: 'mat-new',
+    })
+    expect(result.current.materials.find((m) => m.id === 'mat-new')?.status).toBe('READY')
+  })
+})

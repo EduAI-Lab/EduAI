@@ -12,6 +12,9 @@ import {
   joinSemanticChunks,
   DEFAULT_SEMANTIC_CHUNK_OVERLAP,
   extractTextFromFile,
+  processUploadedFile,
+  validateUploadedFile,
+  extractUploadedFileContent,
   findEquationSpans,
   enrichExtractedDocumentContent,
   assertZipWithinLimits,
@@ -25,7 +28,6 @@ import {
   extractPptxText,
   extractPdfText,
   extractPdfTextIsolated,
-  processUploadedFile,
   resetPdfExtractionConcurrencyForTests,
   holdPdfExtractionSlotForTests,
   getPdfExtractionMaxConcurrent,
@@ -1227,4 +1229,41 @@ describe("processUploadedFile", () => {
       /^Failed to process file huge\.txt: Extracted content of \d+ characters exceeds the maximum/,
     );
   }, 20_000);
+});
+
+// ---------------------------------------------------------------------------
+// processUploadedFile — validate-then-extract composition (#949)
+// ---------------------------------------------------------------------------
+
+describe("processUploadedFile (#949 split)", () => {
+  const textFile = () =>
+    new File(["Lecture one. Introduction to testing."], "notes.txt", {
+      type: "text/plain",
+    });
+
+  it("runs both halves and returns the extracted FileInfo", async () => {
+    const info = await processUploadedFile(textFile());
+    const direct = await extractUploadedFileContent(textFile());
+
+    expect(info.title).toBe("notes");
+    expect(info.mimeType).toBe("text/plain");
+    expect(info.content).toContain("Lecture one");
+    // Composition, not a reimplementation: identical bytes hash identically.
+    expect(info.checksum).toBe(direct.checksum);
+  });
+
+  it("validates before extracting, so a rejected file never reaches extraction", async () => {
+    // Declared application/pdf with PNG magic bytes: passes validateFile on the
+    // declared type, fails the #225 RAG-05 signature sniff inside
+    // validateUploadedFile — so processUploadedFile must reject with the same
+    // error rather than attempting extraction.
+    const spoofed = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "notes.pdf", {
+      type: "application/pdf",
+    });
+    const expected =
+      "File declared as application/pdf does not start with the PDF signature (%PDF)";
+
+    await expect(validateUploadedFile(spoofed)).rejects.toThrow(expected);
+    await expect(processUploadedFile(spoofed)).rejects.toThrow(expected);
+  });
 });
