@@ -375,6 +375,11 @@ This read model is the **single source of queue position and ETA** — `enqueue`
 never stale. Producers and clients read status via a `serializeAiJob()` snapshot (ISO timestamps),
 matching `serializeReEmbedJob`:
 
+Served by `GET /api/ai-jobs/:jobId`, scoped to the caller's own jobs (a session, or the
+`EDUAI_API_KEY` service-key path for jobs Question Maker/AI Tutor create under the synthetic
+`service` user) — 404s rather than 403s on a job id the caller doesn't own, so the response can't
+confirm the id exists.
+
 ```typescript
 {
   id, kind, type, source, status,
