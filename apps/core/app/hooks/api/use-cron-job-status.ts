@@ -1,77 +1,103 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useSyncExternalStore } from "react"
 import { apiFetch } from "~/hooks/api/config"
 import type { CronJobEntry } from "~/lib/db.cron-jobs.server"
 
 export type CronStatusColor = "green" | "orange" | "red"
 
-function computeColor(jobs: CronJobEntry[]): CronStatusColor | null {
+type Snapshot = { jobs: CronJobEntry[]; color: CronStatusColor | null }
+const empty: Snapshot = { jobs: [], color: null }
+let snapshot = empty
+let timer: ReturnType<typeof setTimeout> | null = null
+let inFlight: Promise<void> | null = null
+let nextDelayMs = 30_000
+const listeners = new Set<() => void>()
+
+function colorFor(jobs: CronJobEntry[]): CronStatusColor | null {
   let anyRun = false
-  let anyRunning = false
-  let anyError = false
+  let running = false
+  let error = false
   for (const job of jobs) {
-    if (job.lastRun) {
-      anyRun = true
-      if (job.lastRun.status === "ERROR") anyError = true
-      if (job.lastRun.status === "RUNNING") anyRunning = true
-    }
+    if (!job.lastRun) continue
+    anyRun = true
+    running ||= job.lastRun.status === "RUNNING"
+    error ||= job.lastRun.status === "ERROR"
   }
   if (!anyRun) return null
-  if (anyError) return "red"
-  if (anyRunning) return "orange"
-  return "green"
+  return error ? "red" : running ? "orange" : "green"
 }
 
-/** Polls the sidebar badge only while visible; the cron admin page owns refreshes when open. */
-export function useCronJobStatus(enabled: boolean): CronStatusColor | null {
-  const [color, setColor] = useState<CronStatusColor | null>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const cancelledRef = useRef(false)
+function publish(jobs: CronJobEntry[]) {
+  snapshot = { jobs, color: colorFor(jobs) }
+  listeners.forEach((listener) => listener())
+}
 
-  useEffect(() => {
-    if (!enabled) return
-    cancelledRef.current = false
+function clearTimer() {
+  if (timer) clearTimeout(timer)
+  timer = null
+}
 
-    function clearTimer() {
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
+function schedule() {
+  clearTimer()
+  if (listeners.size && document.visibilityState === "visible") {
+    timer = setTimeout(() => void refresh(), nextDelayMs)
+  }
+}
 
-    function scheduleNext(delay: number) {
-      clearTimer()
-      if (!cancelledRef.current && document.visibilityState === "visible") {
-        timerRef.current = setTimeout(() => void poll(), delay)
-      }
-    }
+async function refresh() {
+  if (!listeners.size || document.visibilityState !== "visible" || inFlight) return inFlight ?? undefined
+  inFlight = apiFetch<{ jobs: CronJobEntry[] }>("/api/admin/cron-jobs")
+    .then((result) => {
+      publish(result.jobs)
+      nextDelayMs = snapshot.color === "orange" ? 15_000 : 30_000
+    })
+    .catch(() => {
+      nextDelayMs = 60_000
+    })
+    .finally(() => {
+      inFlight = null
+      schedule()
+    })
+  return inFlight
+}
 
-    async function poll() {
-      if (cancelledRef.current || document.visibilityState !== "visible") return
-      let nextDelay = 30_000
-      try {
-        const resp = await apiFetch<{ jobs: CronJobEntry[] }>("/api/admin/cron-jobs")
-        if (!cancelledRef.current) {
-          const nextColor = computeColor(resp.jobs)
-          setColor(nextColor)
-          nextDelay = nextColor === "orange" ? 15_000 : 30_000
-        }
-      } catch {
-        nextDelay = 60_000
-      }
-      scheduleNext(nextDelay)
-    }
-
-    function onVisibilityChange() {
-      clearTimer()
-      if (document.visibilityState === "visible") void poll()
-    }
-
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  if (listeners.size === 1) {
     document.addEventListener("visibilitychange", onVisibilityChange)
-    if (document.visibilityState === "visible") void poll()
-    return () => {
-      cancelledRef.current = true
+    void refresh()
+  }
+  return () => {
+    listeners.delete(listener)
+    if (!listeners.size) {
       clearTimer()
       document.removeEventListener("visibilitychange", onVisibilityChange)
+      snapshot = empty
     }
-  }, [enabled])
+  }
+}
 
-  return enabled ? color : null
+function onVisibilityChange() {
+  clearTimer()
+  if (document.visibilityState === "visible") void refresh()
+}
+
+export function useCronJobStatuses(enabled: boolean, initialJobs?: CronJobEntry[]) {
+  useEffect(() => {
+    if (initialJobs?.length && !snapshot.jobs.length) publish(initialJobs)
+  }, [initialJobs])
+  const value = useSyncExternalStore(
+    enabled ? subscribe : () => () => undefined,
+    () => snapshot,
+    () => snapshot,
+  )
+  return {
+    jobs: enabled ? value.jobs : initialJobs ?? [],
+    color: enabled ? value.color : null,
+    refresh,
+    setJobs: enabled ? publish : () => undefined,
+  }
+}
+
+export function useCronJobStatus(enabled: boolean): CronStatusColor | null {
+  return useCronJobStatuses(enabled).color
 }

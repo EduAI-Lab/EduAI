@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
+import { useCronJobStatuses } from "~/hooks/api/use-cron-job-status";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -399,48 +400,10 @@ export interface CronJobsAdminViewProps {
 }
 
 export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps) {
-  const [jobs, setJobs] = useState<CronJobEntry[]>(initialJobs);
+  const { jobs, refresh: fetchStatuses, setJobs } = useCronJobStatuses(true, initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<string | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [isDocumentVisible, setIsDocumentVisible] = useState(
-    () => typeof document === "undefined" || document.visibilityState === "visible",
-  );
-
-  const hasRunning = jobs.some((j) => j.lastRun?.status === "RUNNING");
-
-  const fetchStatuses = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/cron-jobs");
-      if (!res.ok) return;
-      const body = (await res.json()) as { jobs: CronJobEntry[] };
-      setJobs(body.jobs);
-    } catch {
-      // network blip — ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    const onVisibilityChange = () => setIsDocumentVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, []);
-
-  // Poll every 3 s while any job is RUNNING, stop otherwise.
-  useEffect(() => {
-    if (hasRunning && isDocumentVisible) {
-      pollRef.current = setInterval(fetchStatuses, 3000);
-    } else {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [hasRunning, isDocumentVisible, fetchStatuses]);
 
   async function triggerJob(jobName: string) {
     setTriggering((prev) => new Set(prev).add(jobName));
