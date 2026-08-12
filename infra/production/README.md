@@ -6,6 +6,16 @@ This directory contains the production Core deployment templates. They are inten
 
 Do not reset, clean, or pull over that directory until it has been backed up and the replacement deployment has passed validation.
 
+## Read-only preflight
+
+Run [`preflight.sh`](./preflight.sh) on the production host before any privileged provisioning:
+
+```bash
+bash infra/production/preflight.sh
+```
+
+The script checks installed tools, runtime versions, filesystem paths, the legacy checkout state, service/listener state, PostgreSQL/Redis, cmps01–03 reachability, and the public URL. It does not modify files, services, databases, or environment values.
+
 ## Target layout
 
 The replacement deployment uses a release layout:
