@@ -4,7 +4,7 @@
 
 Student course chat happy path: an enrolled student opens `/chat` for a published course, acknowledges the chat privacy notice, submits a course question, and reads the streamed assistant response.
 
-The browser path is persisted as [`tests/e2e/tests/core/ai-chat-happy-path.spec.ts`](../tests/e2e/tests/core/ai-chat-happy-path.spec.ts). The AI provider response is mocked only at the stream boundary so the test remains deterministic while the course enrollment, publish state, session, route, composer, privacy notice, streaming renderer, and response surface remain real.
+The browser path is persisted as [`tests/e2e/tests/core/ai-chat-happy-path.spec.ts`](../../tests/e2e/tests/core/ai-chat-happy-path.spec.ts). The AI provider response is mocked only at the stream boundary so the test remains deterministic while the course enrollment, publish state, session, route, composer, privacy notice, streaming renderer, and response surface remain real.
 
 ## Findings
 
