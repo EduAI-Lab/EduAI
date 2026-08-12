@@ -534,7 +534,7 @@ Creates a `Submission` record, evaluates correctness, updates `ActivityStudentMe
 
 ### `POST /api/activities/:activityId/teach`
 
-AI Teach mode chat. Uses the `learning-prompt` template.
+AI Teach mode chat. Uses the `learning-prompt` template. Requires `enableTeachMode` to be true on the activity — `400 { error: 'Teach mode is not enabled for this activity' }` otherwise.
 
 **Auth:** Course member.
 
@@ -551,13 +551,15 @@ AI Teach mode chat. Uses the `learning-prompt` template.
 }
 ```
 
+If `chatId` is supplied, it must resolve to an `AiChatSession` owned by the caller for this activity and mode — otherwise `404 { error: 'Session not found' }` (never silently forwarded on to Core).
+
 **Response:** AI-generated text response with `chatId` for session continuity.
 
 ---
 
 ### `POST /api/activities/:activityId/guide`
 
-AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, options, and student answer in context.
+AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, options, and student answer in context. Requires `enableGuideMode` to be true on the activity — `400 { error: 'Guide mode is not enabled for this activity' }` otherwise.
 
 **Auth:** Course member.
 
@@ -568,6 +570,8 @@ AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, 
 }
 ```
 
+Same `chatId` ownership check as teach.
+
 ---
 
 ### `POST /api/activities/:activityId/custom`
@@ -577,6 +581,8 @@ AI Custom mode chat. Uses the activity's `customPrompt` field. Requires `enableC
 **Auth:** Course member.
 
 **Body:** Same as guide.
+
+Same `chatId` ownership check as teach.
 
 ---
 
