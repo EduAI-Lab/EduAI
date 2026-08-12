@@ -50,6 +50,8 @@ export interface QuestionVariant {
     referenceId: number | null;
     answer: string | null;
     choices?: MCQChoice[] | null; // For MCQ questions only
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[] | null;
     isAiGenerated?: boolean; // Indicates if this variant was generated using AI
     isDraft?: boolean; // Indicates if this variant is a draft and needs review
     /** Core Question CUID after approval push — required for AI Tutor testable toggle. */
