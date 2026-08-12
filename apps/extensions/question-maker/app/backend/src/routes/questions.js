@@ -8,8 +8,8 @@
  *    requireQuestionAccess) and scope the service by the authorized course's
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
  *  - #312: TA may edit/delete only question_metadata they created.
- *  - List/aggregate routes (list, stats, generate, approve) carry the flat gate
- *    only and remain caller-scoped.
+ *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
+ *    remain caller-scoped.
  */
 import express from 'express';
 import {
@@ -577,48 +577,68 @@ router.post(
   }
 );
 
-/** POST /api/questions/approve – bulk saves approved generated questions into the question bank. */
-router.post('/approve', authenticateToken, requireRole(QM_AUTHORIZED), validateApprovalTarget, async (req, res, next) => {
-  try {
-    const { questions, courseId, classId } = req.body;
+/** POST /api/questions/approve – bulk saves approved questions into one authorized course. */
+router.post(
+  '/approve',
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  validateApprovalTarget,
+  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.approvalCourseId }),
+  async (req, res, next) => {
+    try {
+      const { questions } = req.body;
+      const targetCourseId = req.qmCourse.id;
 
-    const normalizedQuestions = questions.map((q) => {
-      const candidateCourseId = q.courseId ?? q.classId ?? courseId ?? classId;
-      const desc = q.description ?? q.content;
-      return {
-        description: typeof desc === 'string' && desc.trim() ? desc.trim() : null,
-        courseId: candidateCourseId === '' ? undefined : candidateCourseId,
-        // No default: topics use CUID string PKs with a real FK, so a fabricated id
-        // ("1") matches no topic and fails the insert. Require a valid one up front.
-        primaryTopicId: normalizePrimaryTopicId(q.primaryTopicId),
-        type: q.type,
-        questionOrder: q.questionOrder,
-        createdBy: req.user.id
-      };
-    });
+      for (const question of questions) {
+        const suppliedCourseId = question.courseId ?? question.classId;
+        if (suppliedCourseId !== undefined) {
+          const parsedCourseId = Number(suppliedCourseId);
+          if (
+            !Number.isInteger(parsedCourseId) ||
+            parsedCourseId <= 0 ||
+            parsedCourseId !== targetCourseId
+          ) {
+            return res.status(400).json({
+              success: false,
+              error: 'Each question courseId must match the authorized target course'
+            });
+          }
+        }
+      }
 
-    const invalid = normalizedQuestions.find(
-      (q) => q.courseId === undefined || q.courseId === null || !q.primaryTopicId
-    );
-
-    if (invalid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Each question must include courseId and a valid primaryTopicId'
+      const normalizedQuestions = questions.map((q) => {
+        const desc = q.description ?? q.content;
+        return {
+          description: typeof desc === 'string' && desc.trim() ? desc.trim() : null,
+          courseId: targetCourseId,
+          // No default: topics use CUID string PKs with a real FK, so a fabricated id
+          // ("1") matches no topic and fails the insert. Require a valid one up front.
+          primaryTopicId: normalizePrimaryTopicId(q.primaryTopicId),
+          type: q.type,
+          questionOrder: q.questionOrder,
+          createdBy: req.user.id
+        };
       });
+
+      if (normalizedQuestions.some((q) => !q.primaryTopicId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Each question must include a valid primaryTopicId'
+        });
+      }
+
+      const savedQuestions = await createMultipleQuestions(req.qmCourse.userId, normalizedQuestions);
+
+      res.status(201).json({
+        success: true,
+        message: `${savedQuestions.length} questions saved successfully`,
+        data: savedQuestions
+      });
+    } catch (error) {
+      next(error);
     }
-
-    const savedQuestions = await createMultipleQuestions(req.user.id, normalizedQuestions);
-
-    res.status(201).json({
-      success: true,
-      message: `${savedQuestions.length} questions saved successfully`,
-      data: savedQuestions
-    });
-  } catch (error) {
-    next(error);
   }
-});
+);
 
 /** PUT /api/questions/:id/order – updates an assessment-specific order value for the question (instructor-only, §17). */
 router.put(

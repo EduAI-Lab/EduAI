@@ -12,9 +12,10 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 
-const { mockCreateMultiple, mockEnrollments } = vi.hoisted(() => ({
+const { mockCreateMultiple, mockEnrollments, mockCourseFindOne } = vi.hoisted(() => ({
   mockCreateMultiple: vi.fn(),
   mockEnrollments: vi.fn(),
+  mockCourseFindOne: vi.fn(),
 }));
 
 vi.mock('../../src/services/authService.js', () => ({ findOrCreateUser: vi.fn().mockResolvedValue({}) }));
@@ -52,7 +53,7 @@ vi.mock('../../src/services/coreApiService.js', () => ({
 }));
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
-    course: { findUnique: vi.fn() },
+    course: { findUnique: mockCourseFindOne },
     questionMetadata: { findFirst: vi.fn() },
     variants: {},
     assessments: {},
@@ -64,10 +65,15 @@ vi.mock('../../src/config/database.js', () => ({
 const { default: app } = await import('../../src/app.js');
 
 const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
+const COURSE = { id: 1, userId: INSTRUCTOR.id, coreCourseId: 'cuid-core-course' };
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user: INSTRUCTOR }) }));
+  mockCourseFindOne.mockResolvedValue(COURSE);
+  mockEnrollments.mockResolvedValue({
+    enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }],
+  });
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -76,7 +82,7 @@ describe('POST /api/questions/approve topic validation (#4)', () => {
     const res = await request(app)
       .post('/api/questions/approve')
       .set('Cookie', 'session=v')
-      .send({ questions: [{ courseId: 1, description: 'Q', type: 'MCQ' }] });
+      .send({ courseId: 1, questions: [{ courseId: 1, description: 'Q', type: 'MCQ' }] });
 
     expect(res.status).toBe(400);
     expect(String(res.body.error || '')).toMatch(/topic/i);
@@ -88,7 +94,10 @@ describe('POST /api/questions/approve topic validation (#4)', () => {
     const res = await request(app)
       .post('/api/questions/approve')
       .set('Cookie', 'session=v')
-      .send({ questions: [{ courseId: 1, primaryTopicId: 'ckcuidtopic123', description: 'Q', type: 'MCQ' }] });
+      .send({
+        courseId: 1,
+        questions: [{ courseId: 1, primaryTopicId: 'ckcuidtopic123', description: 'Q', type: 'MCQ' }],
+      });
 
     expect(res.status).toBe(201);
     expect(mockCreateMultiple).toHaveBeenCalledWith(
