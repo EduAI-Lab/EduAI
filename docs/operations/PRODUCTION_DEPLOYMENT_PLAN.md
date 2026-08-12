@@ -84,3 +84,4 @@ The candidate variables should be removed from local files only after confirming
 - Added secret-free production Core templates under `infra/production/`: bootstrap runbook, environment template, systemd unit, and Apache reverse-proxy configuration.
 - Chose a new `/srv/www/eduai-production` release layout so the stale production checkout remains available during migration.
 - Added a read-only `infra/production/preflight.sh` for repeatable host, dependency, service, and inference reachability checks.
+- Ran the preflight remotely without installing it: PostgreSQL and cmps01:8001 are reachable; Redis is absent; cmps02/03 are blocked or unavailable; Core is inactive; the public Core URL returns HTTP 503; and the new production release/config directories do not yet exist.
