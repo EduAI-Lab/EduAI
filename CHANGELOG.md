@@ -351,6 +351,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
+### Fixed
+
+- [question-maker] fix: Enforce trusted QM course-anchor ownership and fail closed — `POST /api/course` requires ADMIN/UNIT_ADMIN/INSTRUCTOR plus a teaching enrollment for instructors; concurrent creates share `ensureCourseAnchor` (advisory lock + re-locked P2002 recovery, safe to create-under-lock if the conflicting row is gone) with auto-import and ADMIN catalog materialization; the ADMIN list's anchor backfill is batched at a size that respects the DB pool and uses `Promise.allSettled` so one failed anchor doesn't 500 the whole list; `resolveAccessForCourse` / list access no longer elevate local owners when Core is down. (#1114, @Ayyhab, 2026-07-29) — [#1270](https://github.com/EduAI-Lab/EduAI/pull/1270)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Added
