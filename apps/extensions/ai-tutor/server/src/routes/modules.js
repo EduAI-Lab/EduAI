@@ -24,7 +24,7 @@ import {
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/liveCoursePrincipal.js';
-import { CreateModuleSchema } from '../../../shared/schemas/mutations.js';
+import { CreateModuleSchema, UpdateModuleSchema } from '../../../shared/schemas/mutations.js';
 
 const router = express.Router();
 
@@ -445,17 +445,18 @@ router.patch(
       return res.status(400).json({ error: 'Invalid module id' });
     }
 
-    const { title, description, position } = req.body || {};
-    if (title === undefined && description === undefined && position === undefined) {
-      return res.status(400).json({ error: 'Nothing to update' });
+    const parsedBody = UpdateModuleSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      const field = parsedBody.error.issues[0]?.path[0];
+      const error =
+        field === 'title'
+          ? 'title cannot be empty'
+          : field === 'position'
+            ? 'position must be a number'
+            : 'Nothing to update';
+      return res.status(400).json({ error });
     }
-    if (title !== undefined && !title) {
-      return res.status(400).json({ error: 'title cannot be empty' });
-    }
-    const numericPosition = position !== undefined ? Number(position) : undefined;
-    if (numericPosition !== undefined && !Number.isFinite(numericPosition)) {
-      return res.status(400).json({ error: 'position must be a number' });
-    }
+    const { title, description, position } = parsedBody.data;
 
     try {
       const module = await prisma.module.findUnique({
@@ -487,7 +488,7 @@ router.patch(
         data: {
           title: title ?? undefined,
           description: description === undefined ? undefined : description,
-          position: numericPosition,
+          position,
         },
       });
 

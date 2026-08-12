@@ -24,7 +24,7 @@ import {
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
 } from '../services/liveCoursePrincipal.js';
-import { CreateLessonSchema } from '../../../shared/schemas/mutations.js';
+import { CreateLessonSchema, UpdateLessonSchema } from '../../../shared/schemas/mutations.js';
 
 const router = express.Router();
 
@@ -654,17 +654,18 @@ router.patch(
       return res.status(400).json({ error: 'Invalid lesson id' });
     }
 
-    const { title, contentMd, position } = req.body || {};
-    if (title === undefined && contentMd === undefined && position === undefined) {
-      return res.status(400).json({ error: 'Nothing to update' });
+    const parsedBody = UpdateLessonSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      const field = parsedBody.error.issues[0]?.path[0];
+      const error =
+        field === 'title'
+          ? 'title cannot be empty'
+          : field === 'position'
+            ? 'position must be a number'
+            : 'Nothing to update';
+      return res.status(400).json({ error });
     }
-    if (title !== undefined && !title) {
-      return res.status(400).json({ error: 'title cannot be empty' });
-    }
-    const numericPosition = position !== undefined ? Number(position) : undefined;
-    if (numericPosition !== undefined && !Number.isFinite(numericPosition)) {
-      return res.status(400).json({ error: 'position must be a number' });
-    }
+    const { title, contentMd, position } = parsedBody.data;
 
     try {
       const lesson = await prisma.lesson.findUnique({
@@ -700,7 +701,7 @@ router.patch(
         data: {
           title: title ?? undefined,
           contentMd: contentMd ?? undefined,
-          position: numericPosition,
+          position,
         },
       });
 

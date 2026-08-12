@@ -8,6 +8,8 @@ import {
   CreateTopicSchema,
   ExternalCourseImportSchema,
   TopicRemapSchema,
+  UpdateLessonSchema,
+  UpdateModuleSchema,
 } from '../../../shared/schemas/mutations.js';
 
 describe('shared mutation request schemas', () => {
@@ -59,5 +61,16 @@ describe('shared mutation request schemas', () => {
     expect(BugReportStatusUpdateSchema.parse({ status: 'resolved' })).toEqual({
       status: 'resolved',
     });
+  });
+
+  it('validates partial module and lesson updates without accepting empty payloads', () => {
+    expect(UpdateModuleSchema.parse({ position: '5' })).toEqual({ position: 5 });
+    expect(UpdateLessonSchema.parse({ title: 'Updated', contentMd: null })).toEqual({
+      title: 'Updated',
+      contentMd: null,
+    });
+    expect(UpdateModuleSchema.safeParse({}).success).toBe(false);
+    expect(UpdateLessonSchema.safeParse({ title: '' }).success).toBe(false);
+    expect(UpdateLessonSchema.safeParse({ position: 'not-a-number' }).success).toBe(false);
   });
 });

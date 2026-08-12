@@ -30,6 +30,31 @@ export const CreateLessonSchema = z.object({
   position: z.number().int().optional(),
 });
 
+const UpdatePositionSchema = z
+  .union([z.number(), z.string().trim().min(1)])
+  .transform((value) => Number(value))
+  .refine((value) => Number.isFinite(value), 'Expected a number');
+
+export const UpdateModuleSchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    description: OptionalTextSchema,
+    position: UpdatePositionSchema.optional(),
+  })
+  .refine((payload) => Object.values(payload).some((value) => value !== undefined), {
+    message: 'Nothing to update',
+  });
+
+export const UpdateLessonSchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    contentMd: OptionalTextSchema,
+    position: UpdatePositionSchema.optional(),
+  })
+  .refine((payload) => Object.values(payload).some((value) => value !== undefined), {
+    message: 'Nothing to update',
+  });
+
 export const CreateTopicSchema = z.object({
   name: z.string().trim().min(1),
 });
@@ -86,6 +111,8 @@ export default {
   CourseContentImportSchema,
   CreateModuleSchema,
   CreateLessonSchema,
+  UpdateModuleSchema,
+  UpdateLessonSchema,
   CreateTopicSchema,
   TopicRemapSchema,
   BugReportCreateSchema,
