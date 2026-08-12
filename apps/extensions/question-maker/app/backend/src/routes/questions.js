@@ -35,6 +35,10 @@ import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
 import { parseLimitOffset } from '../utils/listPagination.js';
 import { parseQuestionListFilters } from '../utils/questionListQuery.js';
+import {
+  parseApprovalTarget,
+  prepareApprovalQuestions
+} from '../utils/questionApproval.js';
 
 const router = express.Router();
 
@@ -50,20 +54,11 @@ function denyTaNotOwner(req, res) {
 
 /** Validate and normalize the single target course for an approval batch. */
 function validateApprovalTarget(req, res, next) {
-  const { questions, courseId, classId } = req.body;
-
-  if (!Array.isArray(questions) || questions.length === 0) {
+  const { error, targetCourseId } = parseApprovalTarget(req.body);
+  if (error) {
     return res.status(400).json({
       success: false,
-      error: 'Questions array is required'
-    });
-  }
-
-  const targetCourseId = Number(courseId ?? classId);
-  if (!Number.isInteger(targetCourseId) || targetCourseId <= 0) {
-    return res.status(400).json({
-      success: false,
-      error: 'Valid courseId is required'
+      error
     });
   }
 
@@ -588,46 +583,19 @@ router.post(
     try {
       const { questions } = req.body;
       const targetCourseId = req.qmCourse.id;
-
-      for (const question of questions) {
-        const suppliedCourseId = question.courseId ?? question.classId;
-        if (suppliedCourseId !== undefined) {
-          const parsedCourseId = Number(suppliedCourseId);
-          if (
-            !Number.isInteger(parsedCourseId) ||
-            parsedCourseId <= 0 ||
-            parsedCourseId !== targetCourseId
-          ) {
-            return res.status(400).json({
-              success: false,
-              error: 'Each question courseId must match the authorized target course'
-            });
-          }
-        }
-      }
-
-      const normalizedQuestions = questions.map((q) => {
-        const desc = q.description ?? q.content;
-        return {
-          description: typeof desc === 'string' && desc.trim() ? desc.trim() : null,
-          courseId: targetCourseId,
-          // No default: topics use CUID string PKs with a real FK, so a fabricated id
-          // ("1") matches no topic and fails the insert. Require a valid one up front.
-          primaryTopicId: normalizePrimaryTopicId(q.primaryTopicId),
-          type: q.type,
-          questionOrder: q.questionOrder,
-          createdBy: req.user.id
-        };
+      const prepared = prepareApprovalQuestions(questions, {
+        targetCourseId,
+        createdBy: req.user.id,
+        normalizeTopicId: normalizePrimaryTopicId
       });
-
-      if (normalizedQuestions.some((q) => !q.primaryTopicId)) {
+      if (prepared.error) {
         return res.status(400).json({
           success: false,
-          error: 'Each question must include a valid primaryTopicId'
+          error: prepared.error
         });
       }
 
-      const savedQuestions = await createMultipleQuestions(req.qmCourse.userId, normalizedQuestions);
+      const savedQuestions = await createMultipleQuestions(req.qmCourse.userId, prepared.questions);
 
       res.status(201).json({
         success: true,
