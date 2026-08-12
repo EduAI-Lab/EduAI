@@ -56,7 +56,7 @@ vi.mock("@ai-sdk/react", () => ({
       isLoading: false,
       stop: stopChat,
       append: appendMock,
-      setMessages: setChatMessages,
+      setMessages,
       setInput: setChatInput,
     };
   },
