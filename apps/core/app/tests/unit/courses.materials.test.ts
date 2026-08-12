@@ -492,6 +492,40 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(processUploadedFile).not.toHaveBeenCalled();
   });
 
+  it("returns HTTP 413 for chunked overflow, cancels the source, and never double-reads it", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    const cancel = vi.fn();
+    let index = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          const chunk = index++ === 0 ? "x".repeat(52 * 1024 * 1024) : "y";
+          controller.enqueue(new TextEncoder().encode(chunk));
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const formData = vi.fn(() => Promise.reject(new Error("formData must not be called")));
+    const result = await action({
+      request: {
+        url: `http://localhost/api/courses/${COURSE_ID}/materials`,
+        method: "POST",
+        headers: new Headers({ "Content-Type": "multipart/form-data; boundary=boundary" }),
+        body,
+        signal: new AbortController().signal,
+        formData,
+      } as unknown as Request,
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    } as any);
+    expect(result.status).toBe(413);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(formData).not.toHaveBeenCalled();
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when course not found", async () => {
     mockSession("INSTRUCTOR");
     mockAccess(null, null);

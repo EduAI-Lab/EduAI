@@ -11,7 +11,6 @@ import { getPolicy } from "~/lib/policy.server"
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
 import { getActorContext, getRequestContext } from "~/lib/request-context.server"
 import { getRequestSession } from "~/lib/auth/request-session.server";
-import { isLocalDemoEnabled } from "~/lib/deployment-safety.server"
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
@@ -53,15 +52,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
 
-  return {
-    redirectTo,
-    allowRegistration,
-    forceReauth,
-    // Keep the deployment contract visible to the unauthenticated UI loader:
-    // fixed demo controls are disabled entirely, and any future local-only
-    // fixture affordance must remain false in shared/production/ambiguous modes.
-    showDemoLogin: isLocalDemoEnabled(),
-  };
+  return { redirectTo, allowRegistration, forceReauth };
 }
 
 export async function action({ request }: ActionFunctionArgs) {

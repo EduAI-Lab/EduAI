@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
 import { SEED_IDS } from './seed';
-import { assertLocalDemoEnvironment } from '../app/lib/deployment-safety.server';
+import {
+  assertLocalDemoEnvironment,
+  getLocalSeedPassword,
+} from '../app/lib/deployment-safety.server';
 
 const prisma = new PrismaClient();
 
@@ -15,9 +18,10 @@ const SEED_STUDENT_IDS = [
 
 async function main() {
   // Fail closed before even inspecting the target database. This script can
-  // invoke seed.ts, which creates a fixed-password ADMIN, so NODE_ENV alone is
-  // never an authorization to auto-provision fixtures.
+  // invoke seed.ts, which creates an ADMIN, so NODE_ENV alone is never an
+  // authorization to auto-provision fixtures.
   assertLocalDemoEnvironment();
+  getLocalSeedPassword();
 
   const [userCount, seedStudentsNeedingBackfill] = await Promise.all([
     prisma.user.count(),

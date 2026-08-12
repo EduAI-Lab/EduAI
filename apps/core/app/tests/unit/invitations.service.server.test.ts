@@ -104,7 +104,8 @@ describe("getInvitationByToken", () => {
 
 describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
   it("consumes with an atomic original-token/PENDING/expiry conditional", async () => {
-    prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation());
+    const originalExpiry = new Date("2026-07-25T12:00:00.000Z");
+    prismaMock.invitation.findUnique.mockResolvedValue(baseInvitation({ expiresAt: originalExpiry }));
     prismaMock.user.findUnique
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "new-u1", email: "invitee@ubc.ca", role: "STUDENT" });
@@ -117,7 +118,7 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
       role: "INSTRUCTOR",
     });
     prismaMock.__tx.invitation.updateMany.mockResolvedValue({ count: 1 });
-    prismaMock.__tx.invitation.findUnique.mockResolvedValue(baseInvitation());
+    prismaMock.__tx.invitation.findUnique.mockResolvedValue(baseInvitation({ expiresAt: originalExpiry }));
     prismaMock.user.delete.mockResolvedValue({});
 
     const result = await acceptInvitation(
@@ -131,7 +132,10 @@ describe("acceptInvitation TOCTOU (#225 AUTH-18)", () => {
         id: "inv1",
         tokenHash: TOKEN_HASH,
         status: "PENDING",
-        expiresAt: { gte: expect.any(Date) },
+        expiresAt: {
+          equals: originalExpiry,
+          gte: expect.any(Date),
+        },
       },
       data: expect.objectContaining({ status: "ACCEPTED" }),
     });

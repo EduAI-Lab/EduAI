@@ -85,15 +85,9 @@ describe("auth/login loader", () => {
       redirectTo: "/dashboard",
       allowRegistration: false,
       forceReauth: false,
-      showDemoLogin: false,
     });
   });
 
-  it("does not expose demo-login behavior when deployment mode is ambiguous", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
-    const result = await loader(makeLoaderArgs());
-    expect(result).toMatchObject({ showDemoLogin: false });
-  });
 });
 
 describe("auth/login action", () => {
@@ -125,6 +119,38 @@ describe("auth/login action", () => {
       context: {} as never,
     } as never)) as Response;
     expect(result.status).toBe(413);
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
+  it("returns HTTP 413 for chunked overflow, cancels the source, and never double-reads it", async () => {
+    const cancel = vi.fn();
+    let index = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          const chunk = index++ === 0 ? "x".repeat(64 * 1024) : "y";
+          controller.enqueue(new TextEncoder().encode(chunk));
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const formData = vi.fn(() => Promise.reject(new Error("formData must not be called")));
+    const result = (await action({
+      request: {
+        url: "http://localhost/auth/login",
+        method: "POST",
+        headers: new Headers({ "Content-Type": "application/x-www-form-urlencoded" }),
+        body,
+        signal: new AbortController().signal,
+        formData,
+      } as unknown as Request,
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(formData).not.toHaveBeenCalled();
     expect(auth.handler).not.toHaveBeenCalled();
   });
 

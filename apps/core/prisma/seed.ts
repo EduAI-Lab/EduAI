@@ -9,7 +9,10 @@ import {
 } from "../app/lib/canvas/student-id.server";
 // Canonical UBC term code + academic-year attribution (source of truth: packages/ui/src/lib/term.ts).
 import { termInfoFromDate, type TermCode } from '@eduai/ui/term';
-import { assertLocalDemoEnvironment } from '../app/lib/deployment-safety.server';
+import {
+  assertLocalDemoEnvironment,
+  getLocalSeedPassword,
+} from '../app/lib/deployment-safety.server';
 
 export const prisma = new PrismaClient();
 
@@ -1508,10 +1511,8 @@ export async function seedUsers() {
   }
 }
 
-const SEED_PASSWORD = "EduAI2026!";
-
-async function seedPasswords() {
-  const hashed = await hashPassword(SEED_PASSWORD);
+async function seedPasswords(seedPassword: string) {
+  const hashed = await hashPassword(seedPassword);
   const userIds = Object.values(SEED_IDS.users);
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
@@ -2127,6 +2128,10 @@ async function seedMaterials() {
 async function main() {
   console.log("Seeding Core...");
 
+  // Validate before any fixture write so a missing local password cannot leave
+  // a partially seeded database behind.
+  const seedPassword = getLocalSeedPassword();
+
   const disciplineCount = await seedDisciplines();
   console.log(`  ${disciplineCount} disciplines seeded (Workday units registry)`);
 
@@ -2134,9 +2139,9 @@ async function main() {
   console.log("  AI providers and models seeded");
 
   await seedUsers();
-  await seedPasswords();
+  await seedPasswords(seedPassword);
   console.log(
-    "  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with 8-digit IDs 10000001–10000005) with default password",
+    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with 8-digit IDs 10000001–10000005) with EDUAI_LOCAL_SEED_PASSWORD',
   );
 
   // Fail fast BEFORE any course row is written — a bad term literal must not
@@ -2189,9 +2194,10 @@ const isMainModule =
 
 if (isMainModule) {
   try {
-    // This seed creates deterministic privileged accounts with a documented
-    // fixture password. Never permit it in shared/production/ambiguous modes.
+    // This seed creates deterministic privileged accounts. Never permit it in
+    // shared/production/ambiguous modes or without an explicit local password.
     assertLocalDemoEnvironment();
+    getLocalSeedPassword();
   } catch (error) {
     console.error('Seed refused:', error instanceof Error ? error.message : String(error));
     process.exit(1);

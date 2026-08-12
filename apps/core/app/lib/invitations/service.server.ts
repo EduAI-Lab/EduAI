@@ -368,8 +368,10 @@ export async function acceptInvitation(
           tokenHash: hashToken(input.token),
           status: "PENDING",
           // Preserve the existing exact-expiry contract: getInvitationByToken
-          // treats an invite at its expiry instant as still valid.
-          expiresAt: { gte: new Date() },
+          // treats an invite at its expiry instant as still valid. Equality
+          // also fences this consume to the original snapshot, so a resend
+          // cannot be mistaken for the invitation that was displayed.
+          expiresAt: { equals: invite.expiresAt, gte: new Date() },
         },
         data: {
           status: "ACCEPTED",
