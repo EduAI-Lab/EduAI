@@ -25,11 +25,22 @@ vi.mock("~/lib/db.log-retention-policy.server", () => ({
   updateLogRetentionPolicy: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("~/lib/db.ai-interaction-stats.server", () => ({
+  getInteractionCountsByServer: vi.fn().mockResolvedValue([]),
+  getInteractionCountsByModel: vi.fn().mockResolvedValue([]),
+  getPeakUsageHours: vi.fn().mockResolvedValue([]),
+}));
+
 import { loader, action } from "~/routes/admin.logs";
 import { auth } from "~/lib/auth/server";
 import { listAuditLogs, listSecurityLogs, runAuditLogRetention } from "~/lib/db.auditlog.server";
 import { listSystemLogs, runSystemLogRetention } from "~/lib/db.systemlog.server";
 import { getLogRetentionPolicy, updateLogRetentionPolicy } from "~/lib/db.log-retention-policy.server";
+import {
+  getInteractionCountsByServer,
+  getInteractionCountsByModel,
+  getPeakUsageHours,
+} from "~/lib/db.ai-interaction-stats.server";
 
 function makeLoaderArgs(path: string) {
   return {
@@ -75,6 +86,9 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "admin-1", role: "ADMIN" },
   } as never);
+  vi.mocked(getInteractionCountsByServer).mockResolvedValue([] as never);
+  vi.mocked(getInteractionCountsByModel).mockResolvedValue([] as never);
+  vi.mocked(getPeakUsageHours).mockResolvedValue([] as never);
 });
 
 describe("admin.logs loader authz", () => {
@@ -157,6 +171,149 @@ describe("admin.logs loader tab dispatch", () => {
       rows: { createdAt: string }[];
     };
     expect(result.rows[0].createdAt).toBe(createdAt.toISOString());
+  });
+});
+
+describe("admin.logs loader — servers tab date defaulting", () => {
+  it("defaults to a trailing-30-day window on first visit (no date params at all)", async () => {
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers"))) as {
+      query: { dateFrom?: string; dateTo?: string; datePreset?: string };
+    };
+
+    expect(result.query.datePreset).toBe("30");
+    expect(result.query.dateFrom).toBeDefined();
+    expect(result.query.dateTo).toBeDefined();
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeInstanceOf(Date);
+    expect(call.dateTo).toBeInstanceOf(Date);
+    const spanMs = call.dateTo!.getTime() - call.dateFrom!.getTime();
+    // ~30 days, allowing slack for test execution time.
+    expect(spanMs).toBeGreaterThan(29 * 24 * 60 * 60 * 1000);
+    expect(spanMs).toBeLessThan(31 * 24 * 60 * 60 * 1000);
+  });
+
+  it("resolves a numeric datePreset to a fresh N-day window", async () => {
+    await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset=7"));
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    const spanMs = call.dateTo!.getTime() - call.dateFrom!.getTime();
+    expect(spanMs).toBeGreaterThan(6 * 24 * 60 * 60 * 1000);
+    expect(spanMs).toBeLessThan(8 * 24 * 60 * 60 * 1000);
+  });
+
+  it('treats datePreset="" as an explicit All time selection (no date bound)', async () => {
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset="))) as {
+      query: { dateFrom?: string; dateTo?: string; datePreset?: string };
+    };
+
+    expect(result.query.datePreset).toBe("");
+    expect(result.query.dateFrom).toBeUndefined();
+    expect(result.query.dateTo).toBeUndefined();
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeUndefined();
+    expect(call.dateTo).toBeUndefined();
+  });
+
+  it("an explicit custom dateFrom/dateTo pair wins over any default", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&dateFrom=2026-01-01&dateTo=2026-01-05"),
+    )) as { query: { dateFrom?: string; dateTo?: string; datePreset?: string } };
+
+    expect(result.query.dateFrom).toBe("2026-01-01");
+    expect(result.query.dateTo).toBe("2026-01-05");
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+    expect(call.dateTo?.toISOString()).toBe("2026-01-05T23:59:59.999Z");
+  });
+
+  it("does not apply the servers-tab date default to other tabs", async () => {
+    await loader(makeLoaderArgs("/admin/logs?tab=audit"));
+    const call = vi.mocked(listAuditLogs).mock.calls[0][0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeUndefined();
+    expect(call.dateTo).toBeUndefined();
+  });
+
+  it("treats a present-but-empty custom dateFrom/dateTo (blank inputs submitted) as no selection, applying the 30-day default instead of going unbounded", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&dateFrom=&dateTo="),
+    )) as { query: { dateFrom?: string; dateTo?: string; datePreset?: string } };
+
+    expect(result.query.datePreset).toBe("30");
+    expect(result.query.dateFrom).toBeDefined();
+    expect(result.query.dateTo).toBeDefined();
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeInstanceOf(Date);
+    expect(call.dateTo).toBeInstanceOf(Date);
+  });
+
+  it("treats an unparseable custom dateFrom (e.g. hand-edited garbage) as no selection, applying the 30-day default instead of going unbounded", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&dateFrom=not-a-date"),
+    )) as { query: { dateFrom?: string; dateTo?: string; datePreset?: string } };
+
+    expect(result.query.datePreset).toBe("30");
+    expect(result.query.dateFrom).toBeDefined();
+    expect(result.query.dateTo).toBeDefined();
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    expect(call.dateFrom).toBeInstanceOf(Date);
+    expect(call.dateTo).toBeInstanceOf(Date);
+  });
+
+  it("rejects an out-of-allow-list datePreset (e.g. \"0\") and falls back to the 30-day default instead of a zero-width window", async () => {
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset=0"))) as {
+      query: { dateFrom?: string; dateTo?: string; datePreset?: string };
+    };
+
+    expect(result.query.datePreset).toBe("30");
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    const spanMs = call.dateTo!.getTime() - call.dateFrom!.getTime();
+    expect(spanMs).toBeGreaterThan(29 * 24 * 60 * 60 * 1000);
+    expect(spanMs).toBeLessThan(31 * 24 * 60 * 60 * 1000);
+  });
+
+  it("rejects an arbitrarily large datePreset instead of computing an unbounded-in-practice window", async () => {
+    const result = (await loader(
+      makeLoaderArgs("/admin/logs?tab=servers&datePreset=99999"),
+    )) as { query: { datePreset?: string } };
+
+    expect(result.query.datePreset).toBe("30");
+
+    const call = vi.mocked(getInteractionCountsByServer).mock.calls[0]?.[0] as {
+      dateFrom?: Date;
+      dateTo?: Date;
+    };
+    const spanMs = call.dateTo!.getTime() - call.dateFrom!.getTime();
+    expect(spanMs).toBeLessThan(31 * 24 * 60 * 60 * 1000);
   });
 });
 

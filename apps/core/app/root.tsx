@@ -43,15 +43,12 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
-    const isDataDocumentNavigation =
-      url.pathname.endsWith(".data") &&
-      (request.headers.get("sec-fetch-dest") === "document" ||
-        request.headers.get("accept")?.includes("text/html"));
-
-    // React Router uses `.data` internally for client-side loader requests.
-    // Reject only address-bar/document navigation so those implementation
-    // payloads cannot be browsed directly without breaking app navigation.
-    if (isDataDocumentNavigation) {
+    // `.data` is React Router's internal single-fetch transport. This app does
+    // not enable single-fetch (`future.v8_singleFetch`), so no legitimate
+    // client request needs this public URL. Reject every variant rather than
+    // relying on browser navigation headers, which are absent or spoofable on
+    // direct/API-style requests and would otherwise expose loader payloads.
+    if (url.pathname.endsWith(".data")) {
       const blocked = new Response("Not Found", { status: 404 });
       applySecurityHeaders(blocked.headers, {
         isProd: process.env.NODE_ENV === "production",
