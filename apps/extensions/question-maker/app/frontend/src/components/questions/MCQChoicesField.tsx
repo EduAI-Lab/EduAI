@@ -69,13 +69,18 @@ export function MCQChoicesField({
   const handleRemoveChoice = (index: number) => {
     if (safeChoices.length <= 2) return;
     const survivors = safeChoices.filter((_, i) => i !== index);
-    const next = survivors.map((c, i) => ({ ...c, letter: LETTERS[i] }));
+    const next = survivors.map((c, i) => ({ ...c, letter: LETTERS[i]! }));
     // Re-lettering shifts later options; remap correctness through old→new letters.
-    const remap = new Map(survivors.map((c, i) => [c.letter, LETTERS[i]]));
+    const remap = new Map<string, string>(
+      survivors.map((c, i) => [c.letter, LETTERS[i]!]),
+    );
 
     if (multi) {
       const nextCorrect = sortedUnique(
-        safeCorrect.map((l) => remap.get(l)).filter((l): l is string => Boolean(l)),
+        safeCorrect.flatMap((l) => {
+          const mapped = remap.get(l);
+          return mapped ? [mapped] : [];
+        }),
       );
       onCorrectAnswersChange?.(nextCorrect);
       onAnswerChange(nextCorrect[0] ?? '');
