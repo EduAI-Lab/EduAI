@@ -160,11 +160,15 @@ describe("resolveCourseAccess", () => {
     expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it("does not call user.findUnique when UNIT_ADMIN course department is null (§19 unit lock)", async () => {
+  it("still denies a UNIT_ADMIN a null-department course, speculated units notwithstanding (§19 unit lock)", async () => {
+    // The units read is speculated in parallel with the course fetch, so it is
+    // issued even on this branch (query counts are pinned in the query-behavior
+    // suite below). What the unit lock guarantees is the DECISION: a null
+    // department never matches.
     prismaMock.course.findFirst.mockResolvedValue({ ...COURSE, department: null });
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
     const access = await resolveCourseAccess({ id: "u1", role: "UNIT_ADMIN" }, "c1");
     expect(access).toBeNull();
-    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
   });
 
   it("returns null for an enrollment with an unrecognized role", async () => {
@@ -294,6 +298,111 @@ describe("resolveCourseAccessGate", () => {
     const gate = await resolveCourseAccessGate(user, "c1");
     const wide = await resolveCourseAccessWithCourse(user, "c1");
     expect(gate.access).toEqual(wide.access);
+  });
+});
+
+// #947 / PR #1493 review: the resolver speculates its companion lookups in
+// parallel with the course fetch. These tests pin BOTH halves of that bargain —
+// the round trip actually saved, and the extra query the speculation costs on
+// the paths that used to short-circuit — so neither can drift unnoticed.
+describe("resolveCourseAccessGate query behavior", () => {
+  /** Holds `course.findFirst` open so we can observe what was issued alongside it. */
+  function deferCourseFetch(course: unknown) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    prismaMock.course.findFirst.mockImplementation(async () => {
+      await gate;
+      return course;
+    });
+    return release;
+  }
+
+  it("starts the UNIT_ADMIN authorized-units lookup without waiting for the course", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
+    const releaseCourse = deferCourseFetch(COURSE);
+
+    const pending = resolveCourseAccessGate({ id: "u1", role: "UNIT_ADMIN" }, "c1");
+    await Promise.resolve();
+
+    // The units read is in flight while the course query is still open — it
+    // keys on user.id alone and never depended on course.department.
+    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "u1" },
+      select: { authorizedUnits: true },
+    });
+
+    releaseCourse();
+    await expect(pending).resolves.toMatchObject({ access: { level: "unit", rank: 3 } });
+    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the enrollment lookup without waiting for the course (non-admin roles)", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
+    const releaseCourse = deferCourseFetch(COURSE);
+
+    const pending = resolveCourseAccessGate({ id: "u1", role: "STUDENT" }, "c1");
+    await Promise.resolve();
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledTimes(1);
+
+    releaseCourse();
+    await expect(pending).resolves.toMatchObject({ access: { level: "ta", rank: 1 } });
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("issues no companion query at all for ADMIN", async () => {
+    await resolveCourseAccessGate({ id: "u1", role: "ADMIN" }, "c1");
+    expect(prismaMock.enrollment.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("skips the units query when the caller already carries authorizedUnits", async () => {
+    const { access } = await resolveCourseAccessGate(
+      { id: "u1", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
+      "c1",
+    );
+    expect(access).toEqual({ level: "unit", rank: 3 });
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  // Documented tradeoff: speculation is not free on paths that previously
+  // short-circuited. Each costs exactly one extra query, and no more.
+  it("costs one speculated enrollment query on a missing course (tradeoff)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const result = await resolveCourseAccessGate({ id: "u1", role: "STUDENT" }, "missing");
+    expect(result).toEqual({ course: null, access: null });
+    // Previously the enrollment read never happened for a missing course.
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledTimes(1);
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("costs one speculated units query on a missing course for UNIT_ADMIN (tradeoff)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
+    const result = await resolveCourseAccessGate({ id: "u1", role: "UNIT_ADMIN" }, "missing");
+    expect(result).toEqual({ course: null, access: null });
+    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1);
+    expect(prismaMock.enrollment.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("costs one speculated units query when the §19 unit lock skips the check (tradeoff)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ ...COURSE, department: null });
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
+    const { access } = await resolveCourseAccessGate({ id: "u1", role: "UNIT_ADMIN" }, "c1");
+    expect(access).toBeNull();
+    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1);
+    // Falling through to the enrollment check still issues it lazily, once.
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-read units when UNIT_ADMIN falls through to the enrollment check", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["MATH"] });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
+    const { access } = await resolveCourseAccessGate({ id: "u1", role: "UNIT_ADMIN" }, "c1");
+    expect(access).toEqual({ level: "ta", rank: 1 });
+    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1);
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledTimes(1);
   });
 });
 

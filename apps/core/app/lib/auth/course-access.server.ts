@@ -83,19 +83,24 @@ export type GateCourse = Prisma.CourseGetPayload<{
  * resolvers below delegate here and differ ONLY in how wide a course row they
  * ask for — the RBAC logic is never duplicated.
  *
- * The enrollment lookup is keyed on `courseId`/`userId` alone, so it does not
- * depend on the course row and can start alongside it. It is only *speculated*
- * for roles whose decision always needs it:
- *   - ADMIN short-circuits before the enrollment check and never reads it.
- *   - UNIT_ADMIN reaches it only after the unit check falls through, and that
- *     check is already sequential behind `course.department` — speculating
- *     there would add a query without saving a round trip, so it stays lazy.
- * Every other role always needs the enrollment, so it runs in parallel with the
- * course fetch. Net effect: no role issues more queries than before, and the
- * common path drops one round trip.
+ * Neither companion lookup depends on the course row, so both can start
+ * alongside it. Each is *speculated* only for the roles that consult it:
+ *   - The enrollment (keyed on `courseId`/`userId`) for every role except
+ *     ADMIN, which short-circuits before reading it, and UNIT_ADMIN, which
+ *     reaches it only after the unit check falls through.
+ *   - The authorized units (keyed on `user.id`) for UNIT_ADMIN only. Free when
+ *     the caller already carries `authorizedUnits` — `getAuthorizedUnits`
+ *     returns without a query.
+ * The common path therefore drops a round trip: one parallel batch instead of
+ * two sequential queries.
  *
- * `getAuthorizedUnits` DOES depend on `course.department` and stays sequential
- * on the UNIT_ADMIN branch.
+ * Deliberate tradeoff (PR #1493 review): speculation is not free on the paths
+ * that previously short-circuited. A missing or soft-deleted course still pays
+ * for the lookup its role would have needed, and a UNIT_ADMIN hitting a
+ * null-department course pays for a units read the §19 unit lock would have
+ * skipped. Both are bounded at one extra query on a request that 404s or falls
+ * through to the enrollment check anyway, so the hot-path win is worth it.
+ * Query counts on those paths are pinned in `course-access.server.test.ts`.
  */
 async function resolveAccess<C extends { department: string | null }>(
   user: RbacUser,
@@ -108,9 +113,11 @@ async function resolveAccess<C extends { department: string | null }>(
     });
 
   const speculated = user.role !== "ADMIN" && user.role !== "UNIT_ADMIN";
-  const [course, preloadedEnrollment] = await Promise.all([
+  const speculatedUnits = user.role === "UNIT_ADMIN";
+  const [course, preloadedEnrollment, preloadedUnits] = await Promise.all([
     fetchCourse(),
     speculated ? findEnrollment() : null,
+    speculatedUnits ? getAuthorizedUnits(user) : null,
   ]);
 
   if (!course) return { course: null, access: null };
@@ -120,7 +127,9 @@ async function resolveAccess<C extends { department: string | null }>(
   if (user.role === "UNIT_ADMIN") {
     // §19 unit lock: a null department is never a match for UNIT_ADMIN.
     if (course.department !== null) {
-      const units = await getAuthorizedUnits(user);
+      // `preloadedUnits` is always populated here (speculatedUnits is true for
+      // UNIT_ADMIN); the fallback only guards future callers.
+      const units = preloadedUnits ?? (await getAuthorizedUnits(user));
       if (units.includes(course.department)) {
         return { course, access: LEVELS.unit };
       }
