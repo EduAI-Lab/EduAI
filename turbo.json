@@ -102,22 +102,7 @@
       "outputs": ["coverage/**"]
     },
     "lint": {
-      "inputs": [
-        "src/**",
-        "app/**",
-        "server/**",
-        "shared/**",
-        "scripts/**",
-        "test/**",
-        "tests/**",
-        "prisma/**",
-        "*.ts",
-        "*.tsx",
-        "*.js",
-        "*.mjs",
-        "*.cjs",
-        "package.json"
-      ],
+      "inputs": ["$TURBO_DEFAULT$"],
       "outputs": []
     },
     "lint:fix": {
@@ -127,39 +112,12 @@
       "cache": false
     },
     "format:check": {
-      "inputs": [
-        "src/**",
-        "app/**",
-        "server/**",
-        "shared/**",
-        "scripts/**",
-        "test/**",
-        "tests/**",
-        "prisma/**",
-        "*.ts",
-        "*.tsx",
-        "*.js",
-        "*.mjs",
-        "*.cjs",
-        "package.json"
-      ],
+      "inputs": ["$TURBO_DEFAULT$"],
       "outputs": []
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "inputs": [
-        "src/**",
-        "app/**",
-        "server/**",
-        "shared/**",
-        "test/**",
-        "tests/**",
-        "prisma/**",
-        "*.ts",
-        "*.tsx",
-        "tsconfig*.json",
-        "package.json"
-      ],
+      "inputs": ["$TURBO_DEFAULT$"],
       "outputs": []
     },
     "dev": {
