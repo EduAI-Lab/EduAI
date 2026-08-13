@@ -19,7 +19,7 @@ import {
   Label,
   Input,
 } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, {
   CanvasCourse,
@@ -50,7 +50,6 @@ export const CanvasBankSyncDialog = ({
   selectedLocalBankId = null,
   onSyncSuccess,
 }: CanvasBankSyncDialogProps) => {
-  const { toast } = useToast();
   const { canManageCanvas } = useQmPermissionsForCourse(localCourseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
@@ -117,10 +116,8 @@ export const CanvasBankSyncDialog = ({
       const courses = await canvasService.getCourses();
       setCanvasCourses(courses);
     } catch (error: any) {
-      toast({
-        title: 'Failed to load Canvas courses',
+      toast.error('Failed to load Canvas courses', {
         description: error?.response?.data?.error || error.message,
-        variant: 'destructive',
       });
     } finally {
       setIsLoadingCourses(false);
@@ -133,10 +130,8 @@ export const CanvasBankSyncDialog = ({
       const list = await canvasService.getQuestionBanks(canvasCourseId);
       setBanks(list);
     } catch (error: any) {
-      toast({
-        title: 'Failed to load Canvas banks',
+      toast.error('Failed to load Canvas banks', {
         description: error?.response?.data?.error || error.message,
-        variant: 'destructive',
       });
       setBanks([]);
     } finally {
@@ -146,19 +141,15 @@ export const CanvasBankSyncDialog = ({
 
   const handleConnect = async () => {
     if (!canvasUrl) {
-      toast({
-        title: 'Canvas URL required',
+      toast.error('Canvas URL required', {
         description: 'Please enter your Canvas instance URL.',
-        variant: 'destructive',
       });
       return;
     }
 
     if (!apiKey) {
-      toast({
-        title: 'API Key required',
+      toast.error('API Key required', {
         description: 'Please enter your Canvas API key.',
-        variant: 'destructive',
       });
       return;
     }
@@ -172,17 +163,14 @@ export const CanvasBankSyncDialog = ({
       setIntegration(result);
       setShowConnectForm(false);
       if (usedTestMode) {
-        toast({
-          title: 'Canvas test mode',
+        toast('Canvas test mode', {
           description: 'Using mock Canvas data because live credentials were unavailable.',
         });
       }
       await loadCanvasCourses();
     } catch (error: any) {
-      toast({
-        title: 'Connection failed',
+      toast.error('Connection failed', {
         description: error?.response?.data?.error || error.message,
-        variant: 'destructive',
       });
     } finally {
       setIsConnecting(false);
@@ -191,10 +179,8 @@ export const CanvasBankSyncDialog = ({
 
   const handleSync = async () => {
     if (!localCourseId || !selectedCanvasCourseId || !selectedCanvasBankId || !selectedTopicId) {
-      toast({
-        title: 'Missing fields',
+      toast.error('Missing fields', {
         description: 'Select Canvas course, bank, and a local topic.',
-        variant: 'destructive',
       });
       return;
     }
@@ -209,17 +195,14 @@ export const CanvasBankSyncDialog = ({
           targetBankId: targetBankId === '__new__' ? undefined : targetBankId,
         },
       );
-      toast({
-        title: 'Bank synced',
+      toast('Bank synced', {
         description: `Created ${result.created}, updated ${result.updated}, skipped ${result.skipped}`,
       });
       onSyncSuccess?.(result);
       onClose();
     } catch (error: any) {
-      toast({
-        title: 'Sync failed',
+      toast.error('Sync failed', {
         description: error?.response?.data?.error || error.message,
-        variant: 'destructive',
       });
     } finally {
       setIsLoading(false);

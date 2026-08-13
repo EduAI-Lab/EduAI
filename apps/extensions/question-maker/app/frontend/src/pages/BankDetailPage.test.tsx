@@ -9,7 +9,14 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import BankDetailPage from './BankDetailPage';
 
 const navigate = vi.fn();
-const toast = vi.fn();
+const { toast } = vi.hoisted(() => {
+  const toastFn = Object.assign(vi.fn(), { error: vi.fn() });
+  return { toast: toastFn };
+});
+
+vi.mock('sonner', () => ({
+  toast,
+}));
 
 vi.mock('react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router')>();
@@ -19,8 +26,8 @@ vi.mock('react-router', async (importOriginal) => {
   };
 });
 
-vi.mock('@/components/ui/use-toast', () => ({
-  useToast: () => ({ toast }),
+vi.mock('sonner', () => ({
+  toast,
 }));
 
 vi.mock('../hooks/useCourseFromRoute', () => ({

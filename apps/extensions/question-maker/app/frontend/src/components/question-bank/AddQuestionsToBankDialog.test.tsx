@@ -8,10 +8,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { AddQuestionsToBankDialog } from './AddQuestionsToBankDialog';
 import type { Question } from '../../types/question';
 
-const toast = vi.fn();
+const { toast } = vi.hoisted(() => {
+  const toastFn = Object.assign(vi.fn(), { error: vi.fn() });
+  return { toast: toastFn };
+});
 
-vi.mock('@/components/ui/use-toast', () => ({
-  useToast: () => ({ toast }),
+vi.mock('sonner', () => ({
+  toast,
 }));
 
 vi.mock('../../services/questionService', () => ({

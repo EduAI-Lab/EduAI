@@ -14,7 +14,7 @@ import {
   Input,
   Badge,
 } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { questionService } from '../../services/questionService';
 import { questionBankService } from '../../services/questionBankService';
 import type { Question } from '../../types/question';
@@ -44,7 +44,6 @@ export function AddQuestionsToBankDialog({
   bankName,
   onAdded,
 }: AddQuestionsToBankDialogProps) {
-  const { toast } = useToast();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [memberIds, setMemberIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -132,8 +131,7 @@ export function AddQuestionsToBankDialog({
         }
       }
       if (added > 0) {
-        toast({
-          title: 'Questions added',
+        toast('Questions added', {
           description: `${added} question${added === 1 ? '' : 's'} added to ${bankName || 'bank'}${
             failed ? ` (${failed} failed)` : ''
           }.`,
@@ -141,10 +139,8 @@ export function AddQuestionsToBankDialog({
         onAdded?.(added);
         onClose();
       } else {
-        toast({
-          title: 'Could not add questions',
+        toast.error('Could not add questions', {
           description: 'No questions were added. Check Core linkage and try again.',
-          variant: 'destructive',
         });
       }
     } finally {

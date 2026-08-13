@@ -5,10 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { CanvasBankSyncDialog } from './CanvasBankSyncDialog';
 
-const toast = vi.fn();
+const { toast } = vi.hoisted(() => {
+  const toastFn = Object.assign(vi.fn(), { error: vi.fn() });
+  return { toast: toastFn };
+});
 
-vi.mock('@/components/ui/use-toast', () => ({
-  useToast: () => ({ toast }),
+vi.mock('sonner', () => ({
+  toast,
 }));
 
 vi.mock('@/hooks/useQmPermissions', () => ({

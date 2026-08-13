@@ -9,7 +9,7 @@ import { Button, Badge, Alert, AlertDescription } from '@eduai/ui';
 import { IconArrowLeft, IconLoader2 } from '@tabler/icons-react';
 import { useCourseFromRoute } from '../hooks/useCourseFromRoute';
 import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { questionService } from '../services/questionService';
 import {
   questionBankService,
@@ -52,7 +52,6 @@ export function BankDetailPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<QuestionVariantEntry | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
-  const { toast } = useToast();
 
   const writesDisabled = accessLoading || !canCreateQuestion;
 
@@ -289,20 +288,17 @@ export function BankDetailPage() {
               bankId,
               removeTarget.questionId,
             );
-            toast({
-              title: 'Removed from bank',
+            toast('Removed from bank', {
               description: `Question #${removeTarget.questionId} was removed from ${bank.name}.`,
             });
             setRemoveTarget(null);
             setRefreshKey((k) => k + 1);
           } catch (error: any) {
-            toast({
-              title: 'Could not remove question',
+            toast.error('Could not remove question', {
               description:
                 error?.response?.data?.error ||
                 error?.message ||
                 'Please try again.',
-              variant: 'destructive',
             });
             throw error;
           } finally {

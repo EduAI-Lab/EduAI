@@ -371,5 +371,6 @@ model CanvasBankQuestionMapping {
   localQuestionMetadata  QuestionMetadata @relation(fields: [localQuestionMetadataId], references: [id], onDelete: Cascade)
 
   @@unique([userId, canvasAssessmentQuestionId])
+  @@index([localQuestionMetadataId])
   @@map("canvas_bank_question_mappings")
 }
