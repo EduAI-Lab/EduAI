@@ -5,6 +5,7 @@
 
 ### Added
 
+- [question-maker] feat: Auto-show the main onboarding tour on a user's first QM visit — unseen users hitting `/`/`dashboard` redirect to `/courses`, the tour idle-starts via `requestIdleCallback` (Core ProductTour pattern), and finish/dismiss persists `localStorage` key `qm:tour:main:v1`. Removes the dead `sessionStorage.newUserTourPending` path. Closes #1359. (@GlowyBlack, 2026-08-12) — [#1501](https://github.com/EduAI-Lab/EduAI/pull/1501)
 - [core] feat: Add `GET /api/ai-jobs/:jobId`, a producer-side status endpoint exposing a live, caller-owned `AiJob` snapshot plus its current queue position — recomputed from Postgres on every read (not a stale enqueue-time value) so it reflects jobs that have drained since enqueue and stays correct across a Redis restart. Scoped to the requesting user (404, not 403, on another user's job id, so the response can't confirm the id exists), with a service-key path so Question Maker can poll the synthetic-`service`-owned jobs it creates server-to-server. Closes #917. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
 - [docs] docs: Add `docs/end-to-end-user-workflows/` — README plus per-extension (Core, Question Maker, AI Tutor) workflow tracking templates for Epic #1429's pre-pilot end-to-end testing pass, with a role-based (Admin/Unit Admin/Instructor/TA/Student) findings table and the Claude-find/simulate/review/sweep-then-human testing methodology. Closes #1457. (@ariqmuldi, 2026-08-10) — #1458
 
