@@ -20,7 +20,7 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useNavigation, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { IconNotebook, IconPlus, IconUpload } from '@tabler/icons-react';
 import {
@@ -52,48 +52,71 @@ import { LessonCard } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { PublishMenu } from '../components/PublishMenu';
 import { accentForCourse } from '../lib/course-display';
-import api from '../lib/api';
+import api, { FULL_TREE_READ_PAGE_SIZE } from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/instructor.module';
-import { PermissionGate } from '../components/rbac/PermissionGate';
+import { PermissionGate } from '@eduai/ui';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 import { splitTitle } from '~/lib/course-title';
+import { PaginationControls } from '~/components/common/PaginationControls';
+import { ListSearchInput } from '~/components/common/ListSearchInput';
+import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
+import {
+  absoluteOrdinal,
+  movedRowIndex,
+  parseListUrlParams,
+  redirectPastEnd,
+} from '~/lib/list-params';
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
  * (sequential because its id lives on the module). The course header is
  * needed for breadcrumbs and to compute the publish-cascade gate.
  */
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response('Invalid module id', { status: 400 });
   }
 
+  // #1207: page + search live in the URL; `search` is applied server-side.
+  const { page, search } = parseListUrlParams(request);
+
   const [module, lessonsPage] = await Promise.all([
     api.moduleById(moduleId) as Promise<ModuleDetail>,
-    // #1043: lessons endpoint returns the pagination envelope. Reorder host —
-    // keep `total` to refuse a partial-order persist past the page.
-    api.lessonsForModule(moduleId),
+    api.lessonsForModule(moduleId, { page, search }),
   ]);
-  const lessons = lessonsPage.data;
-  const lessonsTotal = lessonsPage.total;
 
-  // Fetch the course + its ordered module list in parallel. The sibling list
-  // gives the module's true 1-based ordinal (matching the course-view chip),
-  // which the raw `position` field can't — it's 1-based from the seed but
-  // 0-based via UI create.
-  const [course, siblingModules] = await Promise.all([
+  redirectPastEnd(request, {
+    page,
+    total: lessonsPage.total,
+    pageSize: lessonsPage.pageSize,
+  });
+
+  // #1207: the module's 1-based ordinal now comes from the server. It used to
+  // be a `findIndex` over the full sibling module list, which the raw
+  // `position` field can't supply (1-based from the seed, 0-based via UI
+  // create) — but that list is paged now, so a module past page 1 scored -1
+  // and rendered as "0".
+  const [course, moduleContext] = await Promise.all([
     api.courseById(module.courseOfferingId) as Promise<Course>,
-    api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
+    api.moduleContext(moduleId),
   ]);
-  const moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
 
-  return { course, module, lessons, lessonsTotal, moduleOrder };
+  return {
+    course,
+    module,
+    lessons: lessonsPage.data,
+    lessonsTotal: lessonsPage.total,
+    moduleOrder: moduleContext.moduleOrdinal,
+    page: lessonsPage.page,
+    pageSize: lessonsPage.pageSize,
+    search,
+  };
 }
 
 /**
@@ -103,6 +126,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function InstructorModuleLessons({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
   const perms = useAtPermissions();
@@ -112,17 +137,20 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     lessons: initialLessons,
     lessonsTotal: initialLessonsTotal,
     moduleOrder,
+    page,
+    pageSize,
+    search,
   } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
-  // #1043/#1162: `total` is state, not a loader constant — refresh/create/import
-  // replace `lessons`, so the truncation flag has to move with them or it goes
-  // stale and re-enables reorder once the list crosses the page bound.
+  // `total` is state, not a loader constant — refresh/create/import replace
+  // `lessons`, and the pager reads this.
   const [lessonsTotal, setLessonsTotal] = useState(initialLessonsTotal);
-  // More lessons than the bounded page we loaded — reorder disabled all the way
-  // down (provider, item, drag handle) so a partial-order persist can't orphan
-  // the unseen tail, and the UI never advertises a drag it will reject.
-  const lessonsTruncated = lessonsTotal > lessons.length;
+  // #1207: reorder works across pages now via `PATCH /lessons/:id/position`;
+  // it is only disabled while a search is active, because a filtered list hides
+  // the rows between two visible matches.
+  const [movingLesson, setMovingLesson] = useState<Lesson | null>(null);
+  const searching = search !== '';
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [creating, setCreating] = useState(false);
@@ -169,15 +197,74 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     setLessonsTotal(initialLessonsTotal);
   }
 
+  const goToPage = (nextPage: number) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('page', String(nextPage));
+        return next;
+      },
+      { preventScrollReset: false },
+    );
+  };
+
+  // Reset to page 1 alongside the term — the old page number is meaningless
+  // against a narrowed result set.
+  const setLessonSearch = (term: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (term === '') next.delete('search');
+      else next.set('search', term);
+      next.delete('page');
+      return next;
+    });
+  };
+
+  // Refetch the CURRENT page and term (#1207), not page 1.
   const refreshLessons = async () => {
     if (!numericModuleId) return;
     try {
-      const lessonData = await api.lessonsForModule(numericModuleId);
+      const lessonData = await api.lessonsForModule(numericModuleId, { page, search });
       setLessons(lessonData.data);
       setLessonsTotal(lessonData.total);
     } catch (error) {
       console.error('Failed to refresh lessons', error);
     }
+  };
+
+  /**
+   * Land the instructor on the page that actually contains a just-created
+   * lesson (#1207).
+   *
+   * A new lesson is appended, so it lands on the last page — while the pager is
+   * usually on an earlier one, and an active search almost certainly doesn't
+   * match the new title. Plain `refreshLessons()` would redraw the same rows and
+   * the create would read as a silent failure.
+   */
+  const revealNewestLesson = async () => {
+    // `+ 1`: state still holds the pre-create count. `lessonsTotal` counts
+    // matches while a search is active, so ask the server for the real count.
+    let unfilteredTotal = lessonsTotal + 1;
+    if (searching && numericModuleId) {
+      try {
+        unfilteredTotal = (await api.lessonsForModule(numericModuleId, { page: 1, search: '' }))
+          .total;
+      } catch (error) {
+        console.error('Failed to count lessons after create', error);
+      }
+    }
+
+    const lastPage = Math.max(1, Math.ceil(unfilteredTotal / pageSize));
+    if (searching || page !== lastPage) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('search');
+        next.set('page', String(lastPage));
+        return next;
+      });
+      return;
+    }
+    await refreshLessons();
   };
 
   const ensureSourceCoursesLoaded = () => {
@@ -217,7 +304,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
     setLoadingSourceModules(true);
     try {
-      const modulesData = await api.modulesForCourse(nextCourseId);
+      const modulesData = await api.modulesForCourse(nextCourseId, {
+        pageSize: FULL_TREE_READ_PAGE_SIZE,
+      });
       if (sourceModulesRequestIdRef.current === courseRequestId) {
         setSourceModules(modulesData.data);
       }
@@ -247,7 +336,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
     setLoadingSourceLessons(true);
     try {
-      const lessonData = await api.lessonsForModule(nextModuleId);
+      const lessonData = await api.lessonsForModule(nextModuleId, {
+        pageSize: FULL_TREE_READ_PAGE_SIZE,
+      });
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
         setSourceLessons(lessonData.data);
       }
@@ -275,7 +366,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       setTitle('');
       setContent('');
       setCreateOpen(false);
-      await refreshLessons();
+      await revealNewestLesson();
     } catch (error) {
       console.error('Failed to create lesson', error);
     } finally {
@@ -340,38 +431,45 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
-  // Persist a drag-reordered lesson list: reorder the local list to match the
-  // dropped order optimistically, then confirm with the bulk reorder endpoint;
-  // a failure rolls back to the prior order.
-  const reorderLessonsList = async (orderedIds: number[]) => {
-    if (!numericModuleId) return;
-    if (lessonsTruncated) {
-      toast.error('This module has more lessons than can be reordered at once.');
-      return;
-    }
+  /**
+   * Persist a single lesson move to an absolute ordinal within the module
+   * (#1207). Shared by the drag handler and the "Move to position…" dialog; see
+   * `moveModule` in instructor.course.tsx for the full rationale.
+   */
+  const moveLesson = async (lessonId: number, targetOrdinal: number) => {
     const current = lessons;
-    const byId = new Map(current.map((l) => [l.id, l]));
-    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];
-    if (next.length !== current.length) {
-      // Dropped order came from a stale render (list changed mid-drag);
-      // refetch rather than persisting a partial order.
-      toast.error('The lesson list changed while reordering. Refreshing — please try again.');
-      await refreshLessons();
-      return;
-    }
-
-    setLessons(next);
     setReorderingLessons(true);
     try {
-      const updated = await api.reorderLessons(numericModuleId, orderedIds);
-      setLessons(updated);
+      await api.moveLessonToPosition(lessonId, targetOrdinal);
+      await refreshLessons();
     } catch (error) {
-      console.error('Failed to reorder lessons', error);
+      console.error('Failed to move lesson', error);
       toast.error('Failed to reorder lessons. The previous order was restored.');
       setLessons(current);
     } finally {
       setReorderingLessons(false);
+      setMovingLesson(null);
     }
+  };
+
+  const reorderLessonsList = async (orderedIds: number[]) => {
+    if (!numericModuleId || searching) return;
+    const previousIds = lessons.map((l) => l.id);
+    const movedIndex = movedRowIndex(orderedIds, previousIds);
+    if (movedIndex === -1) return;
+
+    const byId = new Map(lessons.map((l) => [l.id, l]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];
+    if (next.length !== lessons.length) {
+      // Dropped order came from a stale render (list changed mid-drag); refetch
+      // rather than persisting a move against a list we no longer have.
+      toast.error('The lesson list changed while reordering. Refreshing — please try again.');
+      await refreshLessons();
+      return;
+    }
+    setLessons(next);
+
+    await moveLesson(orderedIds[movedIndex], absoluteOrdinal(page, pageSize, movedIndex));
   };
 
   const openEditLesson = (lesson: Lesson) => {
@@ -750,19 +848,28 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </Dialog>
       </PermissionGate>
 
-      {lessonsTruncated && perms.canManageContent ? (
-        <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-          Showing {lessons.length} of {lessonsTotal} lessons. Reordering is unavailable until the
-          full list fits on one page, so a partial order can&apos;t be saved over the rest.
-        </p>
-      ) : null}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <ListSearchInput
+          value={search}
+          label="Search lessons"
+          placeholder="Search lessons…"
+          onSearchChange={setLessonSearch}
+        />
+        {searching && perms.canManageContent ? (
+          <p className="text-sm text-muted-foreground">Clear the search to reorder lessons.</p>
+        ) : null}
+      </div>
 
       {oLessons.length === 0 ? (
         <Card>
           <EmptyState
             icon={<IconNotebook size={22} aria-hidden="true" />}
-            title="No lessons yet"
-            description="Add a lesson, or import one from another course to get started."
+            title={searching ? 'No lessons match your search' : 'No lessons yet'}
+            description={
+              searching
+                ? 'Try a different search term.'
+                : 'Add a lesson, or import one from another course to get started.'
+            }
           />
         </Card>
       ) : (
@@ -772,9 +879,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           strategy="grid"
           disabled={
             !perms.canManageContent ||
-            oLessons.length < 2 ||
+            lessonsTotal < 2 ||
             reorderingLessons ||
-            lessonsTruncated
+            searching
           }
         >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -791,14 +898,16 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
                 : null;
             const busy = publishingId === lesson.id;
-            const canReorder =
-              perms.canManageContent && oLessons.length > 1 && !lessonsTruncated;
+            const canReorder = perms.canManageContent && lessonsTotal > 1 && !searching;
+            // Absolute 1-based ordinal, so numbering and the "3.2" order text
+            // stay correct on page 2 instead of restarting at 1 (#1207).
+            const ordinal = absoluteOrdinal(page, pageSize, idx) + 1;
             return (
               <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
                 {({ handleProps }) => (
                     <LessonCard
-                      index={idx + 1}
-                      orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
+                      index={ordinal}
+                      orderText={moduleOrder > 0 ? `${moduleOrder}.${ordinal}` : undefined}
                       title={lesson.title}
                       content={lesson.contentMd}
                       accentColor={accentColor}
@@ -830,6 +939,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                             }
                             onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
                             onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
+                            // Cross-page move (#1207): drag can only reach rows
+                            // on this page.
+                            onMove={
+                              perms.canManageContent && lessonsTotal > 1 && !searching
+                                ? () => setMovingLesson(lesson)
+                                : undefined
+                            }
                           />
                         ) : undefined
                       }
@@ -853,6 +969,33 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </div>
         </SortableProvider>
       )}
+
+      <PaginationControls
+        page={page}
+        pageSize={pageSize}
+        total={lessonsTotal}
+        onPageChange={goToPage}
+        disabled={navigation.state === 'loading' || reorderingLessons}
+      />
+
+      <MoveToPositionDialog
+        open={movingLesson !== null}
+        onOpenChange={(open) => {
+          if (!open) setMovingLesson(null);
+        }}
+        itemTitle={movingLesson?.title ?? ''}
+        itemNoun="lesson"
+        currentPosition={
+          movingLesson
+            ? absoluteOrdinal(page, pageSize, lessons.findIndex((l) => l.id === movingLesson.id)) + 1
+            : 1
+        }
+        total={lessonsTotal}
+        submitting={reorderingLessons}
+        onSubmit={(position) => {
+          if (movingLesson) return moveLesson(movingLesson.id, position);
+        }}
+      />
       <ConfirmDialog
         open={pendingPublish !== null}
         onOpenChange={(open) => {

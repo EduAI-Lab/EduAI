@@ -4,10 +4,12 @@
  *
  * Covers:
  *  - isHybridBm25Enabled() reads RAG_HYBRID_BM25 correctly
- *  - RAG_HYBRID_BM25=1 → hybrid SQL (ts_rank + plainto_tsquery + ORDER BY score)
- *  - RAG_HYBRID_BM25 unset → pure-vector SQL (similarity threshold filter)
+ *  - RAG_HYBRID_BM25=1 → GIN lexical candidates unioned with bounded ANN candidates
+ *  - RAG_HYBRID_BM25 unset → ANN vector candidates followed by thresholding
  *  - RAG_HYBRID_BM25_ALPHA env var adjusts the vector/BM25 weights
  *  - Return shape is identical ({content, similarity, materialTitle}) regardless of path
+ *  - #941: the hybrid path reads the stored/GIN-indexed `content_tsv` column
+ *    instead of recomputing `to_tsvector(content)` inline on every query
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -20,10 +22,18 @@ vi.mock("~/lib/courses/server", () => ({
 }));
 
 const queryRawMock = vi.hoisted(() => vi.fn());
+const executeRawMock = vi.hoisted(() => vi.fn());
 const courseFindUniqueMock = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $queryRaw: queryRawMock,
+    // findRelevantContent (#940) wraps a single chained `SELECT set_config(...)`
+    // GUC statement + the query in a transaction so both run on the same
+    // pooled connection in 2 round trips instead of 3+ separate `SET`
+    // statements. The real PrismaClient accepts an array of pending raw-query
+    // promises; mimic that by resolving each entry and returning the results array.
+    $executeRaw: executeRawMock,
+    $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     course: { findUnique: courseFindUniqueMock },
   },
 }));
@@ -60,22 +70,58 @@ delete process.env.OLLAMA_BASE_URL;
 
 // ── Module import (after mocks) ───────────────────────────────────────────────
 
-const { findRelevantContent, isHybridBm25Enabled } = await import("~/lib/ai/embedding");
+const {
+  findRelevantContent,
+  isHybridBm25Enabled,
+  resolveIvfflatProbes,
+  __resetPgvectorIterativeScanCacheForTests,
+} = await import("~/lib/ai/embedding");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
  * Join the TemplateStringsArray from a $queryRaw tagged-template call so we can
- * assert that the correct SQL fragments are present.
+ * assert that the correct SQL fragments are present. `pgvectorSupportsIterativeScan()`
+ * issues its own one-time, process-cached `$queryRaw` version check (reset via
+ * `__resetPgvectorIterativeScanCacheForTests()` below), so retrieval-query calls
+ * are always at index 1, not 0.
  * calls[n][0] is the TemplateStringsArray; [1..] are interpolated values.
  */
-function capturedSql(callIndex = 0): string {
-  const [templateStrings] = queryRawMock.mock.calls[callIndex] as [string[]];
-  return templateStrings.join("__param__");
+const RETRIEVAL_QUERY_CALL_INDEX = 1;
+
+/**
+ * Renders an interpolated value for SQL-text assertions: nested `Prisma.sql`
+ * fragments (e.g. canvasPublishFilter/visibilityFilter, spliced in as values
+ * rather than template-string literals) are inlined recursively so their SQL
+ * text is visible; every other value collapses to a placeholder.
+ */
+function renderSqlValue(value: unknown): string {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    "strings" in value &&
+    "values" in value
+  ) {
+    const frag = value as { strings: readonly string[]; values: unknown[] };
+    return frag.strings
+      .map((s, i) => s + (i < frag.values.length ? renderSqlValue(frag.values[i]) : ""))
+      .join("");
+  }
+  return "__param__";
+}
+
+function capturedSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
+  const [templateStrings, ...values] = queryRawMock.mock.calls[callIndex] as [
+    string[],
+    ...unknown[],
+  ];
+  return templateStrings
+    .map((s, i) => s + (i < values.length ? renderSqlValue(values[i]) : ""))
+    .join("");
 }
 
 /** Interpolated values passed to $queryRaw (everything after the template strings). */
-function capturedParams(callIndex = 0): unknown[] {
+function capturedParams(callIndex = RETRIEVAL_QUERY_CALL_INDEX): unknown[] {
   return (queryRawMock.mock.calls[callIndex] as unknown[]).slice(1);
 }
 
@@ -86,6 +132,11 @@ const QUERY = "What is assignment 4 about?";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  __resetPgvectorIterativeScanCacheForTests();
+  // First $queryRaw call in every test is the cached pgvector version check;
+  // report 0.8.0 so iterative scanning is enabled (repository's documented
+  // minimum supported pgvector version).
+  queryRawMock.mockResolvedValueOnce([{ extversion: "0.8.0" }]);
   getCourseRagSettingsMock.mockResolvedValue({ ragTopK: null, ragSimilarityThreshold: null });
   courseFindUniqueMock.mockResolvedValue(null);
   delete process.env.RAG_HYBRID_BM25;
@@ -95,6 +146,19 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.RAG_HYBRID_BM25;
   delete process.env.RAG_HYBRID_BM25_ALPHA;
+  delete process.env.RAG_IVFFLAT_PROBES;
+});
+
+describe("resolveIvfflatProbes()", () => {
+  it("allows probes up to the migration's 100 IVFFlat lists (probes == lists is a valid full-index scan)", () => {
+    process.env.RAG_IVFFLAT_PROBES = "100";
+    expect(resolveIvfflatProbes()).toBe(100);
+  });
+
+  it("clamps above 100 back down to the lists count", () => {
+    process.env.RAG_IVFFLAT_PROBES = "500";
+    expect(resolveIvfflatProbes()).toBe(100);
+  });
 });
 
 // ── isHybridBm25Enabled ───────────────────────────────────────────────────────
@@ -128,19 +192,71 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     ]);
   });
 
-  it("uses ts_rank and plainto_tsquery in the SQL", async () => {
+  it("uses ts_rank and plainto_tsquery against the stored content_tsv column", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("ts_rank");
     expect(sql).toContain("plainto_tsquery");
-    expect(sql).toContain("to_tsvector");
+    expect(sql).toContain("content_tsv");
+    expect(sql).toContain("content_tsv @@");
   });
 
-  it("applies the vector similarity threshold and orders by combined score", async () => {
+  it("unions GIN-eligible lexical candidates with semantic-threshold candidates", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
+    expect(sql).toContain("candidate_chunks AS");
+    expect(sql).toContain("content_tsv @@");
+    expect(sql).toContain("UNION");
+    expect(sql).toContain("WHERE 1 - distance >");
+  });
+
+  it("keeps visibility and deletion filters in both UNION arms", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const sql = capturedSql();
+    // Both filters belong to the vector_candidates and lexical_candidates CTEs,
+    // which appear before the UNION that combines them into candidate_chunks.
+    // Count occurrences in the complete query rather than splitting at UNION;
+    // the post-UNION projection intentionally references candidate_chunks only.
+    expect(sql.match(/cm\."deletedAt" IS NULL/g)).toHaveLength(2);
+    expect(sql.match(/cm\."visibleToStudents" = true/g)).toHaveLength(2);
+  });
+
+  // #941: content_tsv is a GENERATED ALWAYS ... STORED column (GIN-indexed) derived
+  // from content via to_tsvector('english', ...); the hybrid query must read that
+  // stored column instead of recomputing to_tsvector(content) inline on every query.
+  it("does not recompute to_tsvector(content) inline — reads the stored content_tsv column", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).not.toContain("to_tsvector");
+    expect(sql).toContain("mc.content_tsv");
+  });
+
+  it("unions GIN lexical candidates with ANN semantic candidates before hybrid reranking", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
+    expect(sql).toMatch(
+      /ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/,
+    );
+    expect(sql.indexOf("ORDER BY me.embedding <=>")).toBeLessThan(
+      sql.indexOf("ORDER BY score DESC"),
+    );
     expect(sql).toContain("ORDER BY score DESC");
-    expect(sql).toContain("AND 1 -");
+    expect(sql).toContain("WHERE 1 - distance >");
+    expect(capturedParams()).toContain(16);
+  });
+
+  it("uses bounded iterative ANN scanning so course filters retain recall", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    // The probes/iterative-scan GUCs are chained into one `SELECT set_config(...)`
+    // statement (single round trip) rather than separate `SET LOCAL` calls.
+    const guCsFragment = executeRawMock.mock.calls[0][0] as { sql: string; values: unknown[] };
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.probes'");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.iterative_scan', 'relaxed_order', true)");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.max_probes'");
+    // max_probes must be >= the index's lists=100 (pgvector's own default is
+    // 32768), not one below it.
+    expect(guCsFragment.values).toContain("32768");
   });
 
   // #315: soft-deleted materials must never leak into RAG context, including on
@@ -174,22 +290,19 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
 
   it("defaults to alpha=0.7 (vector) and bm25Weight=0.3", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    // Hybrid SQL interpolation order: queryEmbedding, alpha, userQuery, bm25Weight, courseId, limit
     const params = capturedParams();
-    const alpha = params[1] as number;
-    const bm25Weight = params[3] as number;
-    expect(alpha).toBeCloseTo(0.7);
-    expect(bm25Weight).toBeCloseTo(0.3);
+    const queryParamIndex = params.lastIndexOf(QUERY);
+    expect(params[queryParamIndex - 1]).toBeCloseTo(0.7);
+    expect(params[queryParamIndex + 1]).toBeCloseTo(0.3);
   });
 
   it("respects RAG_HYBRID_BM25_ALPHA for the vector/BM25 weight split", async () => {
     process.env.RAG_HYBRID_BM25_ALPHA = "0.5";
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const params = capturedParams();
-    const alpha = params[1] as number;
-    const bm25Weight = params[3] as number;
-    expect(alpha).toBeCloseTo(0.5);
-    expect(bm25Weight).toBeCloseTo(0.5);
+    const queryParamIndex = params.lastIndexOf(QUERY);
+    expect(params[queryParamIndex - 1]).toBeCloseTo(0.5);
+    expect(params[queryParamIndex + 1]).toBeCloseTo(0.5);
   });
 
   it("respects the caller-supplied limit", async () => {
@@ -205,19 +318,6 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(params[params.length - 1]).toBe(2);
   });
 
-  it("excludes deleted and unpublished materials from the SQL filter", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    const sql = capturedSql();
-    expect(sql).toContain('cm."deletedAt" IS NULL');
-    expect(capturedFragmentSql()).toContain('cm."unpublishedAt" IS NULL');
-  });
-
-  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    const frag = capturedFragmentSql();
-    expect(frag).toContain("NOT EXISTS");
-    expect(frag).toContain("canvas_material_exclusions");
-  });
 });
 
 // ── Pure-vector path (baseline) ───────────────────────────────────────────────
@@ -236,11 +336,26 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     expect(sql).not.toContain("plainto_tsquery");
   });
 
-  it("orders by similarity DESC and applies the threshold filter", async () => {
+  it("orders ANN candidates by cosine distance before applying the threshold", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
-    expect(sql).toContain("ORDER BY similarity DESC");
-    expect(sql).toContain("AND 1 -");
+    expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
+    expect(sql).toMatch(
+      /ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/,
+    );
+    expect(sql).toContain("WHERE 1 - distance >");
+    expect(sql).toContain("ORDER BY distance ASC");
+  });
+
+  it("uses bounded iterative ANN scanning before applying the course filter", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const guCsFragment = executeRawMock.mock.calls[0][0] as { sql: string; values: unknown[] };
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.probes'");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.iterative_scan', 'relaxed_order', true)");
+    expect(guCsFragment.sql).toContain("set_config('ivfflat.max_probes'");
+    // max_probes must be >= the index's lists=100 (pgvector's own default is
+    // 32768), not one below it.
+    expect(guCsFragment.values).toContain("32768");
   });
 
   it("maps the similarity column correctly", async () => {
@@ -252,17 +367,6 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     });
   });
 
-  it("excludes unpublished materials from the SQL filter", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(capturedFragmentSql()).toContain('cm."unpublishedAt" IS NULL');
-  });
-
-  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    const frag = capturedFragmentSql();
-    expect(frag).toContain("NOT EXISTS");
-    expect(frag).toContain("canvas_material_exclusions");
-  });
 });
 
 // ── Student-visibility gate (#839) ────────────────────────────────────────────
@@ -272,7 +376,7 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
  * query. Duck-typed on `.strings` (a Prisma.Sql fragment) rather than
  * `instanceof`, which isn't reliable across the generated client build.
  */
-function capturedFragmentSql(callIndex = 0): string {
+function capturedFragmentSql(callIndex = RETRIEVAL_QUERY_CALL_INDEX): string {
   return capturedParams(callIndex)
     .filter(
       (p): p is { strings: string[] } =>
@@ -307,17 +411,46 @@ describe("findRelevantContent — student-visibility gate (#839)", () => {
 
   it("does not restrict visibility for staff callers (default)", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(capturedFragmentSql()).not.toContain("visibleToStudents");
+    const frag = capturedFragmentSql();
+    expect(frag).not.toContain("visibleToStudents");
+    expect(frag).not.toContain("unpublishedAt");
+    expect(frag).not.toContain("canvas_material_exclusions");
+  });
+
+  // Canvas-unpublished / retroactively-excluded materials are a student-only
+  // gate, same as visibleToStudents/availableAt — mirrors the REST route's
+  // studentVisibilityWhere (courses.materials.$.ts), which staff bypass
+  // entirely. Applying it unconditionally would make a material an instructor
+  // can read directly invisible to that same instructor in RAG.
+  it("excludes Canvas-unpublished and retroactively-excluded materials when restrictToStudentVisible=true (pure-vector)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain('"unpublishedAt"');
+    expect(frag).toContain("NOT EXISTS");
+    expect(frag).toContain("canvas_material_exclusions");
+  });
+
+  it("excludes Canvas-unpublished and retroactively-excluded materials when restrictToStudentVisible=true (hybrid)", async () => {
+    process.env.RAG_HYBRID_BM25 = "1";
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain('"unpublishedAt"');
+    expect(frag).toContain("NOT EXISTS");
+    expect(frag).toContain("canvas_material_exclusions");
   });
 
   it("always filters soft-deleted materials in BOTH paths", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     expect(capturedSql()).toContain('cm."deletedAt" IS NULL');
 
+    // vi.clearAllMocks() wipes queryRawMock.mock.calls, but the pgvector
+    // version-gate check is cached at module scope (not per-test) and was
+    // already resolved by the call above — the second findRelevantContent()
+    // call below issues only the retrieval query, landing back at index 0.
     vi.clearAllMocks();
     queryRawMock.mockResolvedValue([]);
     process.env.RAG_HYBRID_BM25 = "1";
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(capturedSql()).toContain('cm."deletedAt" IS NULL');
+    expect(capturedSql(0)).toContain('cm."deletedAt" IS NULL');
   });
 });

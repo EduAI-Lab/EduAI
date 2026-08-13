@@ -28,6 +28,9 @@ vi.mock('react-router', async (importActual) => {
   return {
     ...actual,
     useNavigate: () => vi.fn(),
+    // #1207: these routes now drive a URL-backed pager + search box.
+    useNavigation: () => ({ state: 'idle' }),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
     useParams: () => ({ courseId: '42' }),
   };
 });
@@ -49,7 +52,10 @@ vi.mock('~/hooks/useCourseTopics', () => ({
 }));
 vi.mock('~/components/courses/CourseTopicsHeroAction', () => ({ CourseTopicsHeroAction: () => null }));
 
-vi.mock('~/components/rbac/PermissionGate', () => ({
+// PermissionGate now ships from @eduai/ui — partial-mock so the other primitives
+// this route imports keep their real implementations.
+vi.mock('@eduai/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@eduai/ui')>()),
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -73,7 +79,7 @@ const course = { id: 42, title: 'Test Course', code: 'COSC 101', isPublished: tr
 const module_ = { id: 10, title: 'Module 1', description: '', position: 0, isPublished: false };
 
 function wrap(modules = [module_]) {
-  const props = { loaderData: { course, modules } } as unknown as Route.ComponentProps;
+  const props = { loaderData: { course, modules, modulesTotal: modules.length, page: 1, pageSize: 25, search: '' } } as unknown as Route.ComponentProps;
   return render(
     <MemoryRouter>
       <InstructorCourseModules {...props} />

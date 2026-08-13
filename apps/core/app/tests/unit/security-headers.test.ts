@@ -61,16 +61,19 @@ describe("applySecurityHeaders", () => {
     expect(csp).toContain("'strict-dynamic'");
   });
 
-  it("whitelists Google Fonts origins and denies framing in the HTML CSP", () => {
+  it("allows no third-party font origins and denies framing in the HTML CSP", () => {
     const headers = new Headers();
     applySecurityHeaders(headers, { isProd: true, nonce: "abc" });
 
     const csp = headers.get("Content-Security-Policy") ?? "";
-    expect(csp).toContain(
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    );
-    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    // `data:` covers the woff2 fonts Vite inlines under `assetsInlineLimit`.
+    expect(csp).toContain("font-src 'self' data:");
     expect(csp).toContain("frame-ancestors 'none'");
+    // Outfit is self-hosted (#1221) — re-adding a Google Fonts <link> anywhere
+    // would need these origins back, so assert they stay gone.
+    expect(csp).not.toContain("fonts.googleapis.com");
+    expect(csp).not.toContain("fonts.gstatic.com");
   });
 
   it("uses a locked-down resource CSP when no nonce is given", () => {
@@ -89,13 +92,16 @@ describe("applySecurityHeaders", () => {
 // that both an API (JSON) response and a page (HTML) response carry the right
 // headers — the gap the helper-only tests could not catch (#982, PR #1016).
 describe("root middleware", () => {
-  const runProd = async (response: Response): Promise<Response> => {
+  const runProd = async (
+    response: Response,
+    request = new Request("https://eduai.example/api/status"),
+  ): Promise<Response> => {
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";
     try {
       // Middleware ignores its first arg; a Response-returning next() is enough.
       // Must await before restoring env — the isProd check runs after `await next()`.
-      return await (middleware[0] as any)(undefined, async () => response);
+      return await (middleware[0] as any)({ request }, async () => response);
     } finally {
       process.env.NODE_ENV = prev;
     }
@@ -138,5 +144,50 @@ describe("root middleware", () => {
 
     // entry.server owns the HTML response; middleware must leave it untouched.
     expect(res.headers.get("Content-Security-Policy")).toBe(nonceCsp);
+  });
+
+  it("rejects direct navigation to React Router .data URLs", async () => {
+    const request = new Request("https://eduai.example/dashboard.data", {
+      headers: { Accept: "text/html", "Sec-Fetch-Dest": "document" },
+    });
+    let called = false;
+
+    const res = await (middleware[0] as any)({ request }, async () => {
+      called = true;
+      return new Response("{}");
+    });
+
+    expect(res.status).toBe(404);
+    expect(called).toBe(false);
+  });
+
+  it("rejects .data URLs even when the request resembles an internal fetch", async () => {
+    const request = new Request("https://eduai.example/dashboard.data", {
+      headers: { Accept: "application/json", "Sec-Fetch-Dest": "empty" },
+    });
+
+    const res = await runProd(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+      request,
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects .data URLs without browser navigation headers", async () => {
+    const request = new Request("https://eduai.example/dashboard.data", {
+      headers: { Accept: "*/*" },
+    });
+    let called = false;
+
+    const res = await (middleware[0] as any)({ request }, async () => {
+      called = true;
+      return new Response("{}");
+    });
+
+    expect(res.status).toBe(404);
+    expect(called).toBe(false);
   });
 });

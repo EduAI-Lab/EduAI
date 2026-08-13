@@ -40,8 +40,14 @@ export { Avatar } from "./avatar"
 export type { AvatarProps } from "./avatar"
 export { PageHeading } from "./page-heading"
 export type { PageHeadingProps } from "./page-heading"
+export { Spinner } from "./spinner"
+export type { SpinnerProps } from "./spinner"
 export { PageLoader } from "./page-loader"
 export type { PageLoaderProps } from "./page-loader"
+export { SignOutCard } from "./sign-out-card"
+export type { SignOutCardProps } from "./sign-out-card"
+export { PermissionGate } from "./permission-gate"
+export type { PermissionGateProps } from "./permission-gate"
 export { CourseHeroCard } from "./course-hero-card"
 export type { CourseHeroCardProps } from "./course-hero-card"
 export { CourseTopicsHeroAction } from "./course-topics-hero-action"
@@ -122,6 +128,29 @@ export { useAiServiceStatus } from "./hooks/use-ai-service-status"
 export type { AiServiceStatusPair, UseAiServiceStatusOptions, UseAiServiceStatusResult } from "./hooks/use-ai-service-status"
 export { AccessibilitySettings } from "./settings/accessibility-settings"
 export type { AccessibilitySettingsProps, UiDensity as AccessibilityUiDensity, UiTheme as AccessibilityUiTheme } from "./settings/accessibility-settings"
+export { BugReportsAdminView } from "./bug-reports/bug-reports-admin-view"
+export type { BugReportsAdminViewProps } from "./bug-reports/bug-reports-admin-view"
+export type {
+  AdminBugReportRow,
+  BugReportStatus,
+  BugReportContext,
+} from "./bug-reports/types"
+export {
+  BUG_TYPE_LABELS,
+  STATUS_LABELS,
+  STATUS_OPTIONS,
+  buildBugReportCopyText,
+  getReporterLabel,
+  getContextLabel,
+  sortReports,
+  CORE_STATUS_TO_UI,
+  UI_STATUS_TO_CORE,
+  toUiStatus,
+  normalizeAdminBugReportRow,
+} from "./bug-reports/bug-reports-utils"
+export type { RawAdminBugReport } from "./bug-reports/bug-reports-utils"
+export { SettingsPageScaffold } from "./settings/settings-page-scaffold"
+export type { SettingsPageScaffoldProps, SettingsTab } from "./settings/settings-page-scaffold"
 export { ProvidersTable } from "./settings/providers-table"
 export type { ProvidersTableProps, AIProviderRow } from "./settings/providers-table"
 export { ProviderFormDialog } from "./settings/provider-form-dialog"
@@ -173,7 +202,6 @@ export * from "./ui/breadcrumb"
 export * from "./ui/button-group"
 export * from "./ui/calendar"
 export * from "./ui/carousel"
-export * from "./ui/chart"
 export * from "./ui/chat-container"
 export * from "./ui/checkbox"
 export * from "./ui/code-block"
@@ -190,6 +218,7 @@ export * from "./ui/input-otp"
 export * from "./ui/label"
 export * from "./ui/loader"
 export * from "./ui/markdown"
+export * from "./ui/markdown-styles"
 export { LazyStreamdown } from "./ui/lazy-streamdown"
 export * from "./ui/menubar"
 export * from "./ui/navigation-menu"

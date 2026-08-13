@@ -2,7 +2,7 @@
  * Express error-handling middleware that converts thrown errors into structured JSON responses.
  * Provides a 404 generator for unknown routes and a centralized formatter/logger for unexpected failures.
  */
-import { Prisma } from '../../generated/prisma/index.js';
+import { Prisma } from '@eduai/question-maker-prisma-client';
 import { logger } from '../utils/logger.js';
 import { PaginationError } from '../utils/pagination.js';
 

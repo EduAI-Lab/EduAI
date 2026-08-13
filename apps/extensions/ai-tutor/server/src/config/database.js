@@ -1,3 +1,3 @@
-import { PrismaClient } from '../../generated/prisma/index.js';
+import { PrismaClient } from '@eduai/ai-tutor-prisma-client';
 
 export const prisma = new PrismaClient();

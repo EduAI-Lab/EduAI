@@ -201,7 +201,7 @@ Oracle: `Deleted=yes` → 404 for everyone on every path · staff roles → 200,
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
-| `course-access-across-apps` ⭐ | 6 | Core `lib/courses/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
+| `course-access-across-apps` ⭐ | 5 | Core `lib/auth/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
 
 ```
 effective_access(user, app, course) =
@@ -214,29 +214,32 @@ apps. The floor is allowed to differ: QM excludes STUDENT (`QUESTION_MAKER_ROLES
 STUDENT as first-class, Core is full. Without the split, an intentional floor difference is
 indistinguishable from an accidental RBAC divergence.
 
+`App` is **not** a model dimension — it is an adapter parameter. Every generated row is replayed
+through all three adapters (`×3`) so Core, QM, and AI Tutor receive identical shared inputs. The
+QM role floor is applied only when the adapter passes `app === "question-maker"` to the oracle.
+
 ```
 Role:        ADMIN, UNIT_ADMIN, INSTRUCTOR, TA, STUDENT
-App:         core, ai-tutor, question-maker
 Enrollment:  none, inactive, active-INSTRUCTOR, active-TA, active-STUDENT
-CourseState: present, deleted, published, unpublished
+CourseState: deleted, published, unpublished
 UnitMatch:   in-unit, out-of-unit, null-dept
 TaWidening:  plain-STUDENT, STUDENT-with-TA-enrollment
 
-IF [App] = "question-maker" THEN [Role] in {"ADMIN","UNIT_ADMIN","INSTRUCTOR","TA"};
 # UnitMatch is only meaningful for UNIT_ADMIN — constrain, or the table wastes rows
 ```
 
 Cost: three per-app adapters (separate codebases, different ORMs, different harnesses). Model and
-oracle are single-sourced; only the world-builders differ.
+oracle are single-sourced; only the world-builders differ. Each adapter replays the full case
+table.
 
 ### S3 — Core AI / RAG / chat
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
 | `auto-router-model-selection` | 6 | `lib/ai/routing/router.ts:155-238,347-447` + `chat.ts:958` | **BUILD** |
-| `chat-entry-admission` | 6 | `lib/ai/chat.ts:470-790` | **BUILD** |
-| `chat-rag-inject-oracle` | 5 | `lib/ai/course-rag-policy.ts:39` + `chat.ts:1363` | **BUILD** |
-| `byok-vs-platform-key-resolution` | 5 | `chat.ts:1064-1177` + `lib/ai/provider-types.ts:75-110` | **BUILD** |
+| `chat-entry-admission` | 7 | `routes/api/chat.ts` admission (~462–788): auth × proxy × chatMode × publish × enrollment × course-id source × persisted-chat | **BUILD** |
+| `chat-rag-inject-oracle` | 5 | `lib/ai/course-rag-policy.ts:39` + `chat.ts` inject call site | **BUILD** |
+| `byok-vs-platform-key-resolution` | 6 | `provider-types.ts` mergeLocalInferenceFromEnv + `providers.ts` createAIProviderRegistry vLLM apiKey | **BUILD** |
 | `rag-retrieval-path-fork` | 4 | `lib/ai/embedding.ts:633-717` | DEFER |
 | `embedding-settings-validate` | 3–4 | `lib/ai/embedding-config.ts:168` | DEFER |
 | `fleet-host-selection` | 3–4 | `lib/ai/routing/fleet/resolve-fleet.ts:61-131` + `chat.ts:1023` | DEFER |
@@ -248,9 +251,12 @@ oracle are single-sourced; only the world-builders differ.
 Notes for the BUILD set: router mode is `rules / knn / hybrid / llm` with a mode override, and a
 classifier throw downgrades silently to `rules` — the oracle must pin that downgrade. Chat admission
 forks on service-key vs cookie auth, `proxyUser`, `chatMode=admin`, publish/enrollment state,
-`chatbotType` mismatch (410) and course-pin conflict (409). RAG injection is an information-exposure
-oracle (which course material enters the prompt), with similarity thresholds 0.8 / 0.55. BYOK
-resolution precedence is fleet > user > env for `baseUrl`.
+course-id source (`body` / `body-missing` → 404 / `persisted`), `chatbotType` mismatch or
+missing chat (410) and course-pin conflict (409) — dimension count moved 6→7 when course-id
+source was split from enrollment. RAG injection is an information-exposure oracle (which course
+material enters the prompt), with similarity thresholds 0.8 / 0.55 plus AlwaysSource (env vs
+explicit arg) for the always-with-course flag. BYOK resolution precedence is fleet > user > env
+for `baseUrl`; apiKey source tags add a sixth dimension (user / platform / default).
 
 `rag-retrieval-path-fork` is DEFER only because the pilot (S1) already covers its two SQL branches
 through the `Path` dimension.
@@ -308,10 +314,9 @@ the surface entirely — the better outcome, if it lands first.
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
-| `password-set-reuse-gate` | 6+ | `lib/auth/server.ts:92` | **BUILD** |
-| `enforce-admin-if-apikey` ⭐ | 4–5 | `lib/auth/guards.server.ts:48` | **BUILD** |
-| `api-me-action` ⭐ | 4 | `routes/api/me.ts:57` | **BUILD** |
-| `role-forked-listing` ⭐ | 4–5 | Core `course-access.server.ts:118` + ai-tutor `routes/courses.js:164` | **BUILD** |
+| `password-set-reuse-gate` | 6 | `lib/auth/server.ts:92` | **BUILD** |
+| `auth-precedence` ⭐ (was `enforce-admin-if-apikey` + `api-me-action`) | 3 | `lib/auth/guards.server.ts:48` + `routes/api/me.ts:57` | **BUILD** |
+| `role-forked-listing` ⭐ | 5 | Core `course-access.server.ts:118` + ai-tutor `routes/courses.js:164` | **BUILD** |
 | `signup-registration-gate` | 4 | `lib/auth/server.ts:182` | DEFER |
 | `requireInviter` | 4 | `guards.server.ts:185` | DEFER |
 | `isStrongPassword` | 4 | `lib/auth/password-policy.ts:20` | DEFER |
@@ -325,14 +330,23 @@ the surface entirely — the better outcome, if it lands first.
 a documented precedence (a wrong current password beats the reuse check) that the oracle must encode
 rather than discover.
 
-`enforce-admin-if-apikey` and `api-me-action` are **two implementations of one precedence rule** —
-invalid key **plus** cookie defers to the cookie, invalid key **without** cookie is 401. They belong
-in one model with a site dimension. A partial hand-written matrix already exists at
-`guards.server.test.ts:125-200`, so this is largely converting enumerated cases to a generated table
-and filling the holes it exposes.
+`auth-precedence` (built as one model, per the drift-override rationale below): `enforce-admin-if-apikey`
+and the `/api/me` composition are **two implementations of one precedence rule** — invalid key **plus**
+cookie defers to the cookie, invalid key **without** cookie is 401. `KeyState × CookieState × Site` (3
+dims, down from the 4–5 estimated per standalone endpoint — merging into one model collapses the
+overlap). The precedence cases at `guards.server.test.ts:154-465` became PICT rows.
+
+`guards.server.test.ts` itself is **kept, not converted away** — it covers robustness edges the 3-dim
+precedence model has no axis for: x-api-key whitespace trimming, malformed/userless session shapes,
+missing/orphan user records, and the exact `logSecurityEvent` fields per denial path. Those are
+implementation invariants, not additional points in `KeyState × CookieState × Site`; folding them into
+the generated adapter would duplicate the same assertions on every row rather than add coverage.
 
 `role-forked-listing`: the publish gate keys on **enrollment** role, not platform role — a frequent
-source of TA-parity divergence between Core and ai-tutor.
+source of TA-parity divergence between Core and ai-tutor. Building it surfaced a real cross-app
+inconsistency for a platform-STUDENT holding instructor-of-record status (visible in Core, not in
+ai-tutor) — filed as #1386, not a bug in either oracle since each side's actual behavior is
+internally correct.
 
 `enrollment-floor`: the last-active-INSTRUCTOR floor applies on demote and deactivate but **not** on
 add, and it binds ADMIN too (no override).
@@ -351,8 +365,13 @@ add, and it binds ADMIN too (no override).
 | `bug-reports-auth-select` | 3 | bug-reports action | DROP |
 
 `resolveChatReadAccess` dims: `owner × admin × courseId × access-level × policy-flag ×
-owner-active-student`. `createQuestion` has a 6-way error oracle plus deleted/missing topic-set
-folding. `admin-write-confirmation` covers preview consumption and the same-turn anti-replay guard.
+owner-active-student`. `createQuestion` has a 6-way error oracle (5 errors + success) plus
+deleted/missing topic-set folding. `admin-write-confirmation` models the real caller-facing entry
+point `runConfirmedAdminWriteTool` (not just the underlying preview map) — `confirmed ×
+preview-state × identity × confirm-turn × run-outcome` — covering both preview consumption and the
+same-turn anti-replay guard; found that `/set-password` never actually reaches the strength/reuse
+gate in `password-set-reuse-gate` (a `better-auth` SERVER_ONLY endpoint has no `ctx.path`), filed as
+#1385.
 
 Confirmed thin, not modelled: agent-readiness (static data table), disciplines (cache + validate),
 `dashboard.stats` (role-only switch), agent-tools wiring/delegation.
@@ -443,7 +462,9 @@ authService / extractionUtils / courseCodeUtils — all ≤2 dims.
 | `normalizeTerm` | 3 | `packages/ui/src/lib/term.ts` ~100 | DROP |
 | `ext↔ext` | — | extensions hold zero refs to each other | **assert-only** |
 
-`cross-ext-read` is validated against pict 3.7.4: 82 combos → **17 rows**.
+`cross-ext-read` is validated against pict 3.7.4: 82 combos → **18 rows** (#1189 regen; was 17 under an earlier constraint snapshot). Seed rows (`cross-ext-read.seed.tsv`) pin the silent-omission cells (`course-field` + `session-cookie` + `present` + not enrolled) for both extensions.
+
+`material` DataKind: no AT/QM materials client today — extension adapters `it.skip` those rows; Core soft-delete filtering remains covered by `material-visibility` (#1180).
 
 ```
 Ext:            ai-tutor, question-maker
@@ -462,11 +483,14 @@ is the leak class) · course-field over cookie while not enrolled → null (the 
 trap**) · `enrollment-role` → role if enrolled else null · else resolved.
 
 `cross-ext-push`: accept / 401 / 403 / 409-adopt (`P2002`) / 503; a draft must **not** sync; POST is
-cookie-only and never service-key.
+cookie-only and never service-key. Seed rows pin valid `201` fresh and `adopt-p2002` success paths.
+QM adapter covers the client push path; Core adapter runs the real `POST /api/questions` action.
 
 The client-gate models are a distinct pattern: the client predicates are authored as literal "UI
-mirror of the backend 403 gate," and **TA is the consistently divergent cell**. The model runs one
-oracle against both the client predicate and the backend gate — any disagreement is the bug.
+mirror of the backend 403 gate," and **TA is the consistently divergent cell** (delete-material).
+`manage-rag` also diverges for **unit** (backend `rank >= 2` includes unit; client is admin|instructor
+only). The model runs one oracle against both the client predicate and the backend gate — any
+disagreement is the bug (`it.fails` on the divergent side).
 
 `ext↔ext` needs no model. Extensions hold zero references to each other; they link only through Core
 (`coreOfferingId` / `coreCourseId`) and nav URLs (`extension-urls.ts`). Write a static test that greps

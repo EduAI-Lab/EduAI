@@ -36,6 +36,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { hashPassword } from "better-auth/crypto";
+import { Prisma } from "@prisma/client";
 import prisma from "../app/lib/prisma.server";
 import { formatPgVectorLiteral } from "../app/lib/ai/pgvector";
 
@@ -444,12 +445,20 @@ async function main() {
       });
       nMaterials++;
 
-      const chunkRows = Array.from({ length: CFG.chunksPerMaterial }, (_, i) => ({
-        materialId: material.id,
-        index: i,
-        content: `Chunk ${i} of material ${m}, course ${c}. Synthetic text for vector-scan latency.`,
-      }));
-      const chunks = await prisma.materialChunk.createManyAndReturn({ data: chunkRows });
+      // #941: content_tsv is an Unsupported("tsvector") generated column on
+      // MaterialChunk, so Prisma's client omits create/createMany for this
+      // model — insert via raw SQL instead (mirrors app/lib/ai/embedding.ts).
+      const chunkRows = Array.from({ length: CFG.chunksPerMaterial }, (_, i) =>
+        Prisma.sql`(${randomUUID()}, ${material.id}, ${i}, ${`Chunk ${i} of material ${m}, course ${c}. Synthetic text for vector-scan latency.`}, NOW())`,
+      );
+      await prisma.$executeRaw`
+        INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
+        VALUES ${Prisma.join(chunkRows)}
+      `;
+      const chunks = await prisma.materialChunk.findMany({
+        where: { materialId: material.id },
+        orderBy: { index: "asc" },
+      });
       nChunks += chunks.length;
 
       if (CFG.embeddings) {

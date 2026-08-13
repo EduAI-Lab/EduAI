@@ -10,10 +10,12 @@ import {
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding-config";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
+import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import {
   InvalidOllamaBaseUrlError,
   ollamaTagsUrl,
 } from "~/lib/ai/ollama-url.server";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import {
   findActiveReEmbedJob,
   getReEmbedJobForCourse,
@@ -409,7 +411,7 @@ export async function startAdminCourseReEmbed(
     return adminPayload({ job: serializeReEmbedJob(active), alreadyRunning: true });
   }
 
-  const job = await startReEmbedJob(courseId);
+  const { job } = await startReEmbedJob(courseId);
   return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: false });
 }
 
@@ -627,6 +629,7 @@ export async function createAdminAiProvider(actor: RbacUser, input: Record<strin
 
   try {
     const provider = await prisma.aIProvider.create({ data: parsed.data });
+    invalidateTierModelCache();
     return { ok: true, provider };
   } catch (error: unknown) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -658,6 +661,7 @@ export async function updateAdminAiProvider(
     where: { id: providerId },
     data: parsed.data,
   });
+  invalidateTierModelCache();
   return { ok: true, provider };
 }
 
@@ -666,6 +670,7 @@ export async function deleteAdminAiProvider(actor: RbacUser, providerId: string)
   if (denied) return denied;
 
   await prisma.aIProvider.delete({ where: { id: providerId } });
+  invalidateTierModelCache();
   return { ok: true, providerId };
 }
 
@@ -684,6 +689,7 @@ export async function createAdminAiModel(actor: RbacUser, input: Record<string, 
   }
 
   const model = await prisma.aIModel.create({ data: parsed.data });
+  invalidateTierModelCache();
   return { ok: true, model };
 }
 
@@ -706,6 +712,7 @@ export async function updateAdminAiModel(
   }
 
   const model = await prisma.aIModel.update({ where: { id: modelId }, data: parsed.data });
+  invalidateTierModelCache();
   return { ok: true, model };
 }
 
@@ -714,6 +721,7 @@ export async function deleteAdminAiModel(actor: RbacUser, modelId: string) {
   if (denied) return denied;
 
   await prisma.aIModel.delete({ where: { id: modelId } });
+  invalidateTierModelCache();
   return { ok: true, modelId };
 }
 
@@ -876,7 +884,10 @@ export async function listAdminVllmModels(actor: RbacUser) {
   const vllmPort = process.env.VLLM_PORT || "8001";
   const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+  const apiKey = resolveVllmApiKey();
+  if (!apiKey) {
+    return { error: "VLLM_API_KEY_NOT_CONFIGURED" };
+  }
 
   try {
     const modelsUrl = `${baseUrl}/models`;

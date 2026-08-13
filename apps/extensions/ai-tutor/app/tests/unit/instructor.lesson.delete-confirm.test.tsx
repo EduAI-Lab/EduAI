@@ -30,6 +30,9 @@ vi.mock('react-router', async (importActual) => {
   return {
     ...actual,
     useParams: () => ({ lessonId: '1' }),
+    // #1207: the lesson builder now drives a URL-backed pager + search box.
+    useNavigation: () => ({ state: 'idle' }),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
   };
 });
 
@@ -45,7 +48,10 @@ vi.mock('~/components/layout/ShellBreadcrumbContext', () => ({
   ShellBreadcrumbContext: {},
 }));
 
-vi.mock('~/components/rbac/PermissionGate', () => ({
+// PermissionGate now ships from @eduai/ui — partial-mock so the other primitives
+// this route imports keep their real implementations.
+vi.mock('@eduai/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@eduai/ui')>()),
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -82,7 +88,7 @@ const activity = {
 
 function wrap(activities = [activity]) {
   const props = {
-    loaderData: { course, module, lesson, activities, orderText: '1.1' },
+    loaderData: { course, module, lesson, activities, activitiesTotal: activities.length, orderText: '1.1', page: 1, pageSize: 25, search: '' },
   } as unknown as Route.ComponentProps;
   return render(
     <MemoryRouter>

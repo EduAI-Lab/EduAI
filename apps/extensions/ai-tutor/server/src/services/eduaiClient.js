@@ -269,6 +269,9 @@ export async function getCoreAdminBugReport(cookie, bugReportId) {
  * them would be strictly worse.
  *
  * Returns the raw envelope so callers can read `total` without a second call.
+ *
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)`
+ *   so a hung Core can't hold this open past a caller's fallback (#1173 review).
  */
 export async function listCoreAdminUsers(cookie, options = {}) {
   if (!cookie) {
@@ -291,7 +294,7 @@ export async function listCoreAdminUsers(cookie, options = {}) {
       const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
       const params = new URLSearchParams();
       params.set('ids', chunk.join(','));
-      const envelope = await fetchCoreUsers(cookie, params);
+      const envelope = await fetchCoreUsers(cookie, params, options.signal);
       data.push(...(envelope?.data ?? []));
     }
     return { data, total: data.length, page: 1, pageSize: data.length };
@@ -302,14 +305,15 @@ export async function listCoreAdminUsers(cookie, options = {}) {
   params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
   if (options.role) params.set('role', options.role);
   if (options.search) params.set('search', options.search);
-  return fetchCoreUsers(cookie, params);
+  return fetchCoreUsers(cookie, params, options.signal);
 }
 
 /** Single `GET /api/users` request with the ADMIN session cookie. */
-async function fetchCoreUsers(cookie, params) {
+async function fetchCoreUsers(cookie, params, signal) {
   const url = `${getCoreBaseUrl()}/api/users?${params}`;
   const response = await fetch(url, {
     headers: { cookie },
+    signal,
   });
 
   if (!response.ok) {
@@ -450,7 +454,7 @@ export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   }
 }
 
-export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
+export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
@@ -458,6 +462,7 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
   }
   const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
+    signal: options.signal,
   });
   try {
     const parsed = EduAiEnrollmentListSchema.parse(data);
@@ -523,8 +528,11 @@ export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cooki
  * Fetches a single Core course by id using the service key.
  * Returns the course object on 200, null on 404 (soft-deleted or missing).
  * Throws on 5xx or network error so the caller can skip and retry next run.
+ *
+ * @param {number} coreOfferingId
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)` to bound the call
  */
-export async function fetchCoreCourseSafe(coreOfferingId) {
+export async function fetchCoreCourseSafe(coreOfferingId, options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
@@ -532,6 +540,7 @@ export async function fetchCoreCourseSafe(coreOfferingId) {
   try {
     return await requestEduAi(`/courses/${coreOfferingId}`, {
       headers: { Authorization: `Bearer ${serviceKey}` },
+      signal: options.signal,
     });
   } catch (err) {
     if (err.status === 404) return null;
@@ -543,8 +552,12 @@ export async function fetchCoreCourseSafe(coreOfferingId) {
  * Fetches a single Core topic by id using the service key.
  * Returns the topic object on 200, null on 404 (soft-deleted or missing).
  * Throws on 5xx or network error so the caller can skip and retry next run.
+ *
+ * @param {number} coreOfferingId
+ * @param {number} coreTopicId
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)` to bound the call
  */
-export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId) {
+export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
@@ -552,6 +565,7 @@ export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId) {
   try {
     return await requestEduAi(`/courses/${coreOfferingId}/topics/${coreTopicId}`, {
       headers: { Authorization: `Bearer ${serviceKey}` },
+      signal: options.signal,
     });
   } catch (err) {
     if (err.status === 404) return null;

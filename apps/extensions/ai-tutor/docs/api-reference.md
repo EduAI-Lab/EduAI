@@ -40,15 +40,74 @@ List endpoints return the platform pagination envelope (#1043), matching EduAI C
 | **Required** | `GET /api/courses`, `GET /api/admin/courses`, `GET /api/activities/importable` | `400 PAGINATION_REQUIRED` |
 | **Optional** | `GET /api/courses/:courseId/modules`, `GET /api/modules/:moduleId/lessons`, `GET /api/lessons/:lessonId/activities`, `GET /api/courses/:courseId/topics` | Defaults to page 1, `pageSize` 200 |
 
-The optional-mode ("tree") endpoints default to a single bounded page of 200 because their readers need the whole set — drag-and-drop reorder, ordinal derivation, the lesson player — rather than a real pager.
+Reordering and ordinals for these endpoints are documented under [Ordering and structure](#ordering-and-structure).
+
+The optional-mode ("tree") endpoints keep a large default page for callers that don't drive a pager (breadcrumb lookups, dropdown feeds). Their UI readers now page for real (#1207): reorder goes through `PATCH .../position` with an absolute ordinal, ordinals come from the context endpoints below, and the lesson player appends pages as the student advances — so none of them needs the whole set any more.
+
+### Search
+
+Every list endpoint above accepts an optional `search` query param (#1207). Filtering happens **server-side, in SQL**: the term is ANDed onto the endpoint's existing visibility scope, and the same `where` feeds both the count and the page — so `total` is the count of *matching* rows and a pager built on it pages the filtered set.
+
+| Endpoint | Matched against |
+| --- | --- |
+| `GET /api/courses/:courseId/modules` | `title`, `description` |
+| `GET /api/modules/:moduleId/lessons` | `title` |
+| `GET /api/lessons/:lessonId/activities` | `title`, `instructionsMd`, `config.question` |
+| `GET /api/courses/:courseId/topics` | `name` |
+| `GET /api/activities/importable` | the above, plus the parent lesson and module titles |
+
+Matching is case-insensitive on ordinary columns. An activity's question text lives in the `config` JSON rather than a column, so it is matched with a JSON path filter, which Prisma cannot make case-insensitive; the term is tried as typed, lower-cased, and upper-cased to compensate.
+
+An absent, empty, or whitespace-only `search` means "no filter". Because search is applied server-side, clients **must not** filter the returned page again — doing so is what made a match on page 2 render as "no results" while the pager reported a non-zero total.
 
 **Pagination errors:**
 - `400 PAGINATION_REQUIRED` — a required-mode endpoint was called without both `page` and `pageSize`.
 - `400 PAGINATION_INVALID` — `page` or `pageSize` was supplied but is not a finite number.
+- `400 SEARCH_INVALID` — `search` was repeated, which Express parses as an array.
+- `400 SEARCH_TOO_LONG` — `search` exceeds 200 characters.
 
-Both are shaped `{ error: string, code: string }`.
+All are shaped `{ error: string, code: string }`.
 
 **Ordering.** Every paginated query carries a unique tie-break (`id`) as its final sort key, so tied rows can't shift between pages and be duplicated or skipped.
+
+---
+
+## Ordering and structure
+
+The ordered tree levels (modules, lessons, activities) sort by `position asc, id asc`. `position` has no unique constraint and is not guaranteed contiguous — `POST` appends with `last.position + 1` and deletions leave gaps — so it is a sort key, **not** a rank.
+
+### Move to position
+
+```
+PATCH /api/modules/:moduleId/position
+PATCH /api/lessons/:lessonId/position
+PATCH /api/activities/:activityId/position
+```
+
+Body: `{ "position": <0-based ordinal> }`. Response: `{ <module|lesson|activity>, position, total }`.
+
+Auth: course instructor / unit-admin / admin.
+
+`position` is an **ordinal** — an index into the ordered sibling list — not a raw `position` column value. The server resolves it against the actual ordering and rewrites only the rows whose index changed, leaving the siblings contiguous.
+
+Added in #1207 so a paged client can reorder without holding every sibling: a drag on page 3 sends `(page - 1) * pageSize + dropIndex`, and a "Move to position…" prompt sends a typed ordinal directly. An out-of-range ordinal is **clamped** rather than rejected (a concurrent delete shouldn't turn a legitimate drag into an error), so callers should trust the returned `position` over their own optimistic guess.
+
+- `400 POSITION_INVALID` — `position` is missing, non-integer, or negative.
+- `404` — the row does not exist, or is not part of the list it was resolved against.
+
+The bulk `PUT .../order` endpoints remain for the single-page case. They still require `orderedIds` to be the complete sibling set and `400` otherwise — the server-side backstop against a caller holding one page reassigning `0..n-1` over the whole list.
+
+### Structural context
+
+```
+GET /api/modules/:moduleId/context  -> { moduleOrdinal, moduleTotal }
+GET /api/lessons/:lessonId/context  -> { moduleOrdinal, lessonOrdinal, moduleTotal,
+                                         lessonTotal, prevLessonId, nextLessonId }
+```
+
+All ordinals are 1-based. These exist (#1207) because clients used to derive them with `findIndex` over a full sibling list — a read that silently produced a wrong ordinal (or `-1`, rendering as "0") for anything past the first page. Counting the rows that sort before the target is exact at any tree size.
+
+Visibility matches the list endpoints: a student's ordinals and totals count only published siblings, so the numbering agrees with the tree they can actually navigate. `403` if the caller can't see the row; `404` if it doesn't exist.
 
 ---
 
@@ -103,7 +162,38 @@ List courses for the current user.
 
 **Pagination:** Required — see [Pagination](#pagination). `page` and `pageSize` are both mandatory; omitting either returns `400 PAGINATION_REQUIRED`.
 
+**Search and filters (#1208):** all optional, all applied server-side and AND-ed onto the caller's role scope — a filter can only narrow what the caller may already see, never widen it.
+
+| Param | Repeatable | Values | Notes |
+| --- | --- | --- | --- |
+| `search` | no | free text, ≤ 200 chars | Matches course title **or** code, case-insensitively. |
+| `term` | yes | `"W1::2026"` (`term::year`) | |
+| `status` | yes | `published` \| `draft` | |
+| `progress` | yes | `not-started` \| `in-progress` \| `completed` | Ignored for roles whose rows carry no progress (instructor/admin), rather than rejected. |
+
+Repeated values within one dimension are OR-ed; separate dimensions are AND-ed. `total` reflects the **filtered** count, so the pager stays correct under a filter.
+
+`search`, `term` and `status` are matched against the Core catalog rather than local columns — title/code/term/year/isPublished are Core-owned read-throughs with no column on `CourseOffering` (#1072 step 4). Consequently, when Core is unavailable these filters return an empty list and the response carries `X-Core-Status: unavailable`; clients must render that as "search unavailable" rather than "no matches".
+
+**Filter errors:** `400 SEARCH_INVALID` (repeated `search`), `400 SEARCH_TOO_LONG`, `400 FILTER_INVALID` (unknown enum value), `400 FILTER_TOO_MANY` (> 25 values in one dimension). Same `{ error, code }` shape as the pagination errors.
+
 **Response:** `Paginated<Course>` — `{ data: Course[], total, page, pageSize }`
+
+---
+
+### `GET /api/courses/facets`
+
+Filter options for the course list, scoped to what the caller can see.
+
+**Auth:** any supported course role.
+
+**Why:** dropdown options must span the caller's whole accessible set, not the loaded page — a term appearing only on page 3 would otherwise never be offered as a filter. Kept separate from the list response so the `{ data, total, page, pageSize }` envelope stays untouched, and so clients can fetch it once per mount instead of per keystroke.
+
+**Response:** `{ terms: string[], statuses: string[], progress: string[], coreUnavailable: boolean }` — raw filter values, ordered most-recent-first for `terms`. Clients supply the labels (they already own the term vocabulary used for the list's section headings). `progress` is empty for roles whose rows carry no progress.
+
+Fail-soft: when Core is unavailable this returns empty arrays with `X-Core-Status: unavailable`, never a 500.
+
+`coreUnavailable` repeats that outage state in the body, because the two empty responses mean different things and a client that can't read response headers can't tell them apart: `coreUnavailable: false` with empty `terms` means the caller genuinely has no terms to filter by, while `coreUnavailable: true` means the options are unknown. Render the second as "filters unavailable" and leave the dropdowns disabled rather than showing an empty option list, and don't cache the result — an outage response would otherwise pin empty filters in place until the next mount.
 
 ---
 
@@ -418,7 +508,7 @@ Delete an activity.
 
 Submit an answer attempt for an activity.
 
-**Auth:** Course member.
+**Auth:** Enrolled student only — platform role must be STUDENT and course enrollment role must be STUDENT. The server uses the authenticated user for identity; any client-supplied `userId` in the request body is ignored.
 
 **Body:**
 ```json
@@ -444,7 +534,7 @@ Creates a `Submission` record, evaluates correctness, updates `ActivityStudentMe
 
 ### `POST /api/activities/:activityId/teach`
 
-AI Teach mode chat. Uses the `learning-prompt` template.
+AI Teach mode chat. Uses the `learning-prompt` template. Requires `enableTeachMode` to be true on the activity — `400 { error: 'Teach mode is not enabled for this activity' }` otherwise.
 
 **Auth:** Course member.
 
@@ -461,13 +551,15 @@ AI Teach mode chat. Uses the `learning-prompt` template.
 }
 ```
 
+If `chatId` is supplied, it must resolve to an `AiChatSession` owned by the caller for this activity and mode — otherwise `404 { error: 'Session not found' }` (never silently forwarded on to Core).
+
 **Response:** AI-generated text response with `chatId` for session continuity.
 
 ---
 
 ### `POST /api/activities/:activityId/guide`
 
-AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, options, and student answer in context.
+AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, options, and student answer in context. Requires `enableGuideMode` to be true on the activity — `400 { error: 'Guide mode is not enabled for this activity' }` otherwise.
 
 **Auth:** Course member.
 
@@ -478,6 +570,8 @@ AI Guide mode chat. Uses the `exercise-prompt` template. Includes the question, 
 }
 ```
 
+Same `chatId` ownership check as teach.
+
 ---
 
 ### `POST /api/activities/:activityId/custom`
@@ -487,6 +581,8 @@ AI Custom mode chat. Uses the activity's `customPrompt` field. Requires `enableC
 **Auth:** Course member.
 
 **Body:** Same as guide.
+
+Same `chatId` ownership check as teach.
 
 ---
 

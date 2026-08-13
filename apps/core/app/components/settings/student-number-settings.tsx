@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { IconLoader, IconLock, IconSchool } from "@tabler/icons-react";
+import { Spinner } from "@eduai/ui";
+import { IconLock, IconSchool } from "@tabler/icons-react";
 
 import { linkCanvasRoster } from "~/lib/canvas/client";
 import {
   isValidUbcStudentNumber,
   UBC_STUDENT_NUMBER_MESSAGE,
-} from "~/lib/canvas/schemas";
+} from "~/lib/canvas/student-number";
 import {
   Button,
   Card,
@@ -144,7 +145,7 @@ export function StudentNumberSettings({
             >
               {saving ? (
                 <>
-                  <IconLoader className="h-4 w-4 mr-2 animate-spin" />
+                  <Spinner className="mr-2" />
                   Saving…
                 </>
               ) : (

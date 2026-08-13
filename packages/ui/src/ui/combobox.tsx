@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { IconCheck, IconChevronDown } from "@tabler/icons-react"
 import { Button } from "./button"
 import {
@@ -33,6 +34,27 @@ export interface ComboboxProps {
   emptyText?: string
   disabled?: boolean
   className?: string
+  /**
+   * Controlled search term (#1207). Supply this together with `filter={false}`
+   * to drive a SERVER-side search: the consumer owns the term, debounces it,
+   * refetches, and passes the results back as `options`.
+   *
+   * Leave both unset for the default behaviour — an internal term filtering the
+   * `options` already in memory, which is correct only when `options` is the
+   * complete candidate set.
+   */
+  searchValue?: string
+  onSearchChange?: (search: string) => void
+  /**
+   * Whether to filter `options` in-memory by the search term. Defaults to true.
+   * Set false when the options are already a server-filtered page — filtering
+   * again would hide rows the server deliberately returned.
+   */
+  filter?: boolean
+  /** Show a loading row instead of `emptyText` while results are in flight. */
+  loading?: boolean
+  /** Rendered under the list — used for a "showing N of M" truncation note. */
+  footer?: ReactNode
 }
 
 export function Combobox({
@@ -44,15 +66,29 @@ export function Combobox({
   emptyText = "No option found.",
   disabled = false,
   className,
+  searchValue,
+  onSearchChange,
+  filter = true,
+  loading = false,
+  footer,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
+  const [internalSearch, setInternalSearch] = useState("")
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Controlled when the consumer supplies a term (server-side search);
+  // uncontrolled otherwise, preserving the original in-memory behaviour.
+  const controlled = searchValue !== undefined
+  const search = controlled ? searchValue : internalSearch
+  const setSearch = (next: string) => {
+    if (!controlled) setInternalSearch(next)
+    onSearchChange?.(next)
+  }
 
   const selected = options.find((o) => o.value === value)
 
   const filtered =
-    search.trim() === ""
+    !filter || search.trim() === ""
       ? options
       : options.filter((o) => {
           const q = search.toLowerCase()
@@ -66,7 +102,10 @@ export function Combobox({
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue === value ? null : selectedValue)
     setOpen(false)
-    setSearch("")
+    // Only the internal term is reset. Clearing a CONTROLLED term would make
+    // the consumer refetch an unfiltered page that may not contain the row just
+    // selected, leaving the trigger with no label to render for its own value.
+    setInternalSearch("")
   }
 
   // Close on outside click / Escape. A plain positioned panel (not a Radix
@@ -78,13 +117,13 @@ export function Combobox({
     const handleMouse = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false)
-        setSearch("")
+        setInternalSearch("")
       }
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false)
-        setSearch("")
+        setInternalSearch("")
       }
     }
     document.addEventListener("mousedown", handleMouse)
@@ -123,7 +162,13 @@ export function Combobox({
               autoFocus
             />
             <CommandList>
-              <CommandEmpty>{emptyText}</CommandEmpty>
+              {loading ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  Searching…
+                </div>
+              ) : (
+                <CommandEmpty>{emptyText}</CommandEmpty>
+              )}
               <CommandGroup>
                 {filtered.map((o) => (
                   <CommandItem
@@ -154,6 +199,9 @@ export function Combobox({
                 ))}
               </CommandGroup>
             </CommandList>
+            {footer ? (
+              <div className="border-t px-3 py-2 text-xs text-muted-foreground">{footer}</div>
+            ) : null}
           </Command>
         </div>
       )}
@@ -170,6 +218,15 @@ export interface MultiSelectProps {
   emptyText?: string
   disabled?: boolean
   className?: string
+  /**
+   * When provided, `options` is treated as server-driven (e.g. a search-select
+   * backed by an API call): local filtering is skipped and the raw search text
+   * is forwarded here instead so the caller can debounce/fetch. Omit for the
+   * default fully-local behavior.
+   */
+  onSearchChange?: (query: string) => void
+  /** Shows a loading indicator in place of the empty-state text. Only meaningful with `onSearchChange`. */
+  loading?: boolean
 }
 
 export function MultiSelect({
@@ -181,12 +238,18 @@ export function MultiSelect({
   emptyText = "No option found.",
   disabled = false,
   className,
+  onSearchChange,
+  loading = false,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  // When `onSearchChange` makes `options` server-driven, selected rows drop out
+  // of `options` as the user types a new query. Cache labels by value so chips
+  // and checkmarks stay visible until deselected.
+  const selectedOptionsCache = useRef(new Map<string, ComboboxOption>())
 
   const filtered =
-    search.trim() === ""
+    onSearchChange || search.trim() === ""
       ? options
       : options.filter((o) => {
           const q = search.toLowerCase()
@@ -197,6 +260,11 @@ export function MultiSelect({
           )
         })
 
+  const handleSearchChange = (next: string) => {
+    setSearch(next)
+    onSearchChange?.(next)
+  }
+
   const handleSelect = (selectedValue: string) => {
     const isSelected = value.includes(selectedValue)
     onValueChange(
@@ -204,14 +272,27 @@ export function MultiSelect({
     )
   }
 
-  const selectedOptions = options.filter((o) => value.includes(o.value))
+  for (const o of options) {
+    if (value.includes(o.value)) selectedOptionsCache.current.set(o.value, o)
+  }
+  for (const key of [...selectedOptionsCache.current.keys()]) {
+    if (!value.includes(key)) selectedOptionsCache.current.delete(key)
+  }
+  const selectedOptions = value
+    .map((v) => selectedOptionsCache.current.get(v))
+    .filter((o): o is ComboboxOption => o != null)
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) setSearch("")
+        if (!next) {
+          setSearch("")
+          // Clear the server-driven search too — otherwise reopening shows the
+          // previous query's results under a blank input.
+          onSearchChange?.("")
+        }
       }}
       modal={false}
     >
@@ -249,11 +330,11 @@ export function MultiSelect({
           <CommandInput
             placeholder={searchPlaceholder}
             value={search}
-            onValueChange={setSearch}
+            onValueChange={handleSearchChange}
             autoFocus
           />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{loading ? "Searching..." : emptyText}</CommandEmpty>
             <CommandGroup>
               {filtered.map((o) => (
                 <CommandItem

@@ -28,10 +28,18 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
 import { mapActivity, mapImportableActivity } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import {
+  parsePaginationParams,
+  paginated,
+  parseSearchParam,
+  searchWhere,
+  activitySearchWhere,
+  PaginationError,
+} from '../utils/pagination.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
 import { cloneActivityIntoLesson } from '../services/activityCloning.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import {
   hasActivityFeedback,
   recordActivityFeedback,
@@ -119,6 +127,15 @@ function resolveTopicName(activity, topicId) {
 // (student started a fresh chat) we insert a new row so history is preserved.
 async function upsertChatSession({ userId, activityId, mode, chatId, tutorModelId }) {
   if (!chatId) return null;
+
+  // Defense-in-depth (#1412): scope the update by userId too, not just the
+  // unique chatId, so a chatId that somehow belongs to another user can't
+  // have its row updated (and a trace mis-linked to it) by this request.
+  const existing = await prisma.aiChatSession.findUnique({ where: { chatId } });
+  if (existing && existing.userId !== userId) {
+    console.error(`Refusing to upsert aiChatSession ${chatId}: owned by a different user`);
+    return null;
+  }
 
   return prisma.aiChatSession.upsert({
     where: { chatId },
@@ -249,12 +266,19 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   try {
     // Stage 2: verify the client's chatId belongs to this user. Skip when no
     // chatId provided (new session — Core will mint one after the response).
-    const existingSession =
-      payload.chatId && payload.chatId.trim().length > 0
-        ? await prisma.aiChatSession.findFirst({
-            where: { chatId: payload.chatId, userId: authUser.id, activityId, mode },
-          })
-        : null;
+    const chatId = payload.chatId?.trim() || null;
+    const existingSession = chatId
+      ? await prisma.aiChatSession.findFirst({
+          where: { chatId, userId: authUser.id, activityId, mode },
+        })
+      : null;
+
+    // A client-supplied chatId that doesn't resolve to a session owned by this
+    // user/activity/mode either belongs to someone else or is stale — reject
+    // rather than silently reusing it (see #1412).
+    if (chatId && !existingSession) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
     // Stage 3: model + policy resolution. Tutor selection respects student picks
     // when policy allows, otherwise falls back to the policy default.
@@ -262,7 +286,6 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       await resolveSupervisorSettings();
     const tutorModelId = await resolveTutorModelSelection(payload.modelId);
     const cookie = getEduAiCookieForRequest(req);
-    const chatId = payload.chatId || existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
     // Stage 4: fetch testable questions + the course code, both from the
@@ -406,15 +429,18 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    // Structure-bounded list (a lesson has a handful of activities). The
-    // instructor grid + drag-and-drop reorder and the student lesson player
-    // (which index-walks this array) need the whole set, so callers request one
-    // bounded page (pageSize=200); pagination is optional here.
+    // #1207: `search` narrows in SQL over the activity's own text. The same
+    // `whereClause` feeds the count and the page, so `total` drives the pager
+    // over the filtered set rather than the whole lesson.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const search = parseSearchParam(req);
+    const searchFragment = activitySearchWhere(search);
+    const whereClause = searchFragment ? { AND: [{ lessonId }, searchFragment] } : { lessonId };
+
     const [total, activities] = await prisma.$transaction([
-      prisma.activity.count({ where: { lessonId } }),
+      prisma.activity.count({ where: whereClause }),
       prisma.activity.findMany({
-        where: { lessonId },
+        where: whereClause,
         orderBy: [{ position: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,
@@ -1142,10 +1168,26 @@ router.get(
         manageableCourseIds = owned.map((c) => c.id);
       }
 
-      const importableWhere = {
+      const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
         ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
       };
+      // #1207: this scope spans EVERY course the caller manages, so a bounded
+      // page over it is an instructor's whole activity corpus — server-side
+      // search is the only way to reach a candidate past the first page. The
+      // parent lesson/module titles are searchable too, because the picker's
+      // option rows display them ("module · lesson"), so a user typing a module
+      // name expects a hit.
+      const search = parseSearchParam(req);
+      const activityFragment = activitySearchWhere(search);
+      const parentFragment = searchWhere(search, ['lesson.title', 'lesson.module.title']);
+      const searchFragment =
+        activityFragment && parentFragment
+          ? { OR: [...activityFragment.OR, ...parentFragment.OR] }
+          : null;
+      const importableWhere = searchFragment
+        ? { AND: [importableScope, searchFragment] }
+        : importableScope;
       const [total, activities] = await prisma.$transaction([
         prisma.activity.count({ where: importableWhere }),
         prisma.activity.findMany({
@@ -1207,7 +1249,7 @@ router.post('/questions/:id/answer', async (req, res) => {
                   select: {
                     id: true,
                     coreOfferingId: true,
-                    enrollments: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
                   },
                 },
               },
@@ -1222,10 +1264,10 @@ router.post('/questions/:id/answer', async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
 
-    if (authUser.role !== 'STUDENT' && authUser.role !== 'TA') {
-      return res.status(403).json({ error: 'Only students and TAs can submit answers' });
+    if (authUser.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can submit answers' });
     }
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id && e.role === 'STUDENT');
     if (!isEnrolled) {
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }
@@ -1324,6 +1366,10 @@ router.post('/activities/:activityId/teach', async (req, res) => {
     if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
 
+    if (!activity.enableTeachMode) {
+      return res.status(400).json({ error: 'Teach mode is not enabled for this activity' });
+    }
+
     let payload;
     try {
       payload = TeachRequestSchema.parse(req.body || {});
@@ -1394,6 +1440,10 @@ router.post('/activities/:activityId/guide', async (req, res) => {
     const lesson = activity.lesson;
     if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
+
+    if (!activity.enableGuideMode) {
+      return res.status(400).json({ error: 'Guide mode is not enabled for this activity' });
+    }
 
     let payload;
     try {
@@ -1940,6 +1990,72 @@ router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req,
   }
 });
 
+/**
+ * PATCH /activities/:activityId/position — move one activity to an absolute
+ * ordinal within its lesson. See `PATCH /modules/:moduleId/position` for the
+ * #1207 rationale; `position` is a 0-based ordinal across the whole lesson.
+ */
+router.patch(
+  '/activities/:activityId/position',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) {
+      return res.status(400).json({ error: 'Invalid activity id' });
+    }
+
+    try {
+      const targetPosition = parsePositionBody(req.body?.position);
+
+      const activity = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          lesson: {
+            include: {
+              module: {
+                include: {
+                  courseOffering: { include: { instructors: { select: { userId: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+      const courseOffering = activity.lesson.module.courseOffering;
+      const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
+      const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      }
+
+      const { position, total } = await moveToPosition({
+        model: 'activity',
+        id: activityId,
+        scopeWhere: { lessonId: activity.lessonId },
+        targetPosition,
+      });
+
+      const updated = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          promptTemplate: { select: { id: true, name: true } },
+          mainTopic: true,
+          secondaryTopics: { include: { topic: true } },
+        },
+      });
+      res.json({ activity: mapActivity(updated), position, total });
+    } catch (e) {
+      if (e instanceof ReorderError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
 // Reorder every activity within a lesson in one atomic write. Positions are
 // reassigned 0..n-1 from the client-supplied ordered id list (issue #1047).
 router.put(
@@ -1980,7 +2096,9 @@ router.put(
       const isInstructor = lesson.module.courseOffering.instructors.some(
         (i) => i.userId === authUser.id,
       );
-      const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+      // `isUnitAdminForCourse` is async — without the await this resolved to a
+      // (always truthy) Promise, so the guard below never denied anyone.
+      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
       if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Not authorized for this lesson' });
       }

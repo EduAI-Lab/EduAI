@@ -1,4 +1,5 @@
 import type { FleetHealthResult } from "./types";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 
 const HEALTH_CACHE_TTL_MS = 30_000;
 const HEALTH_TIMEOUT_MS = 5_000;
@@ -6,10 +7,6 @@ const HEALTH_TIMEOUT_MS = 5_000;
 type CacheEntry = FleetHealthResult;
 
 const healthCache = new Map<string, CacheEntry>();
-
-function vllmAuthHeader(): string {
-  return process.env.VLLM_API_KEY?.trim() || "vllm-local";
-}
 
 /**
  * Parse `/v1/models` payload.
@@ -51,9 +48,21 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
   }
 
   const checkedAt = Date.now();
+  const apiKey = resolveVllmApiKey();
+  if (!apiKey) {
+    const result: FleetHealthResult = {
+      ok: false,
+      modelIds: null,
+      checkedAt,
+      error: "VLLM_API_KEY not configured",
+    };
+    healthCache.set(normalized, result);
+    return result;
+  }
+
   try {
     const res = await fetch(`${normalized}/v1/models`, {
-      headers: { Authorization: `Bearer ${vllmAuthHeader()}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
     });
     if (!res.ok) {

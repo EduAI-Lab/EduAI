@@ -9,10 +9,7 @@ import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
 import { withAutoChatModel } from "~/lib/chat-auto-model";
-import {
-  routerAutoDefaultEnabled,
-  routingPickerEnabled,
-} from "~/lib/router-env.server";
+import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import type { User } from "~/lib/auth/types";
@@ -35,24 +32,59 @@ export interface ChatBaseData {
   theme: string;
 }
 
-/** Resolve the signed-in user + chat models + preferences (or redirect to login). */
-export async function loadChatBaseData(
+/**
+ * Resolve the signed-in user for a chat route, or redirect to login.
+ *
+ * Split out of {@link loadChatBaseData} so `/chat/:chatId` can start the
+ * transcript read (which needs only the viewer's id + role) concurrently with
+ * the base-data reads instead of waiting for all of them first.
+ */
+export async function requireChatSessionUser(
   request: LoaderFunctionArgs["request"],
-): Promise<ChatBaseData> {
+): Promise<User> {
   const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     throw redirect("/auth/login");
   }
 
-  const routerAutoEnabled = routerAutoDefaultEnabled();
-  const showRoutingModels = routingPickerEnabled();
+  return session.user;
+}
 
-  const dbModels = await prisma.aIModel.findMany({
-    where: { isActive: true },
-    include: { provider: true },
-    orderBy: [{ provider: { name: "asc" } }, { name: "asc" }],
-  });
+/**
+ * Resolve chat models + preferences for an already-authenticated user.
+ *
+ * The routing settings, the model registry read and the accessible course codes
+ * are mutually independent, so they run in parallel. Only the preference read
+ * is genuinely dependent — it needs `availableCourseCodes` to validate the
+ * stored last-course against what the user can still see.
+ */
+export async function loadChatBaseDataForUser(user: User): Promise<ChatBaseData> {
+  const [routingModelSettings, dbModels, availableCourseCodes] = await Promise.all([
+    getRoutingModelSettings(),
+    prisma.aIModel.findMany({
+      where: { isActive: true, provider: { isActive: true } },
+      // Select only what ChatModelOption needs. `include: { provider: true }`
+      // pulled every model + provider column into memory to build a 7-field
+      // object; the extra columns never reached the client either way.
+      select: {
+        modelId: true,
+        name: true,
+        description: true,
+        maxTokens: true,
+        supportsImages: true,
+        supportsTools: true,
+        provider: { select: { name: true } },
+      },
+      orderBy: [{ provider: { name: "asc" } }, { name: "asc" }],
+    }),
+    getAccessibleCourseCodes(user),
+  ]);
+
+  const routerAutoEnabled =
+    routingModelSettings.autoLlmEnabled ||
+    routingModelSettings.autoRulesEnabled;
+  const showRoutingModels = routerAutoEnabled;
 
   const registryModels: ChatModelOption[] = dbModels.map((model) => ({
     id: `${model.provider.name}:${model.modelId}`,
@@ -64,18 +96,24 @@ export async function loadChatBaseData(
     supportsTools: model.supportsTools,
   }));
 
-  const chatModels = withAutoChatModel(registryModels, showRoutingModels);
+  const chatModels = withAutoChatModel(registryModels, routingModelSettings);
 
-  const availableCourseCodes = await getAccessibleCourseCodes(session.user);
-  const preferences = await getUserPreference(session.user.id, availableCourseCodes);
+  const preferences = await getUserPreference(user.id, availableCourseCodes);
 
   return {
     chatModels,
     routerAutoEnabled,
     showRoutingModels,
-    user: session.user,
+    user,
     ...preferences,
   };
+}
+
+/** Resolve the signed-in user + chat models + preferences (or redirect to login). */
+export async function loadChatBaseData(
+  request: LoaderFunctionArgs["request"],
+): Promise<ChatBaseData> {
+  return loadChatBaseDataForUser(await requireChatSessionUser(request));
 }
 
 /**

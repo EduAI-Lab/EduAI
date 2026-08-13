@@ -1,0 +1,25 @@
+# LiteLLM router — single public port for all vLLM backends on cmps01.
+#
+# Backends bind host loopback only (127.0.0.1:18001 / :18002).
+# LiteLLM uses network_mode: host (see docker-compose.yml) so 127.0.0.1 works.
+# Do NOT use host.docker.internal here — Linux cannot reach 127.0.0.1 services that way.
+#
+# deploy-edge-proxy.sh renders this template → litellm-config.runtime.yaml with
+# CMPS01_INTERNAL_KEY as master_key (#1115). Backend api_key values talk to local
+# vLLM OpenAI servers (often unauthenticated) and are unrelated to the master key.
+
+model_list:
+  - model_name: qwen2.5-7b-instruct
+    litellm_params:
+      model: openai/qwen2.5-7b-instruct
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+  - model_name: qwen2.5-32b-instruct
+    litellm_params:
+      model: openai/qwen2.5-32b-instruct
+      api_base: http://127.0.0.1:18002/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: "${CMPS01_INTERNAL_KEY}"

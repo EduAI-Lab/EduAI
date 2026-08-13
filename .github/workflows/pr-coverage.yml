@@ -112,6 +112,9 @@ jobs:
           set -euo pipefail
           npm run db:generate -w edu-ai
           ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+          # question-maker's schema outputs to @eduai/question-maker-prisma-client. Without
+          # this, every backend file that imports it fails to load and the whole workspace
+          # reports 0% (the scheduled coverage-report workflow already does this).
           ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
 
       # Guard the reporter itself. #1192 shipped a path-resolution bug that made every

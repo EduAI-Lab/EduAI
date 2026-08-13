@@ -21,7 +21,8 @@ export function createStreamStartupProbe(options?: {
   hooks: StreamStartupHooks;
   wait: () => Promise<void>;
 } {
-  const timeoutMs = Math.max(0, options?.timeoutMs ?? 10_000);
+  // Zero would wait forever and hold an admission slot on a silent provider.
+  const timeoutMs = Math.max(1, options?.timeoutMs ?? 10_000);
   let settled = false;
   let resolveReady: () => void = () => {};
   let rejectReady: (error: unknown) => void = () => {};
@@ -44,10 +45,6 @@ export function createStreamStartupProbe(options?: {
   };
 
   const wait = async () => {
-    if (timeoutMs === 0) {
-      await waitPromise;
-      return;
-    }
     await Promise.race([
       waitPromise,
       new Promise<void>((resolve) => {

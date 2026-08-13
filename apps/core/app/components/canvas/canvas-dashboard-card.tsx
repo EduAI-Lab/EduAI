@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Spinner } from "@eduai/ui";
 import { Link } from "react-router";
-import { IconLoader, IconRefresh } from "@tabler/icons-react";
+import { IconRefresh } from "@tabler/icons-react";
 
 import { CanvasFetchDialog } from "~/components/canvas/canvas-fetch-dialog";
 import { Button } from "@eduai/ui";
@@ -12,15 +13,28 @@ interface CanvasDashboardCardProps {
   /** Render the card greyed-out and non-interactive (e.g. an admin policy turned
    * Canvas off) instead of hiding it — mirrors the Settings Canvas tab (#807). */
   disabled?: boolean;
+  /** Integration resolved by the dashboard loader (#1220). When supplied — the
+   * value may be `null`, meaning "not connected" — the card renders it directly
+   * and never issues the client fetch. Leave `undefined` to keep the legacy
+   * mount-then-fetch behaviour. */
+  initialIntegration?: CanvasIntegrationPublic | null;
 }
 
-export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardProps) {
-  const [integration, setIntegration] = useState<CanvasIntegrationPublic | null>(null);
-  const [loading, setLoading] = useState(true);
+export function CanvasDashboardCard({
+  disabled = false,
+  initialIntegration,
+}: CanvasDashboardCardProps) {
+  const isServerResolved = initialIntegration !== undefined;
+  const [integration, setIntegration] = useState<CanvasIntegrationPublic | null>(
+    initialIntegration ?? null,
+  );
+  const [loading, setLoading] = useState(!isServerResolved);
   const [error, setError] = useState<string | null>(null);
   const [fetchDialogOpen, setFetchDialogOpen] = useState(false);
 
   useEffect(() => {
+    // Loader already resolved it — nothing to fetch (#1220).
+    if (isServerResolved) return;
     // Policy-off: the Canvas API 403s ("Forbidden: instructors only"). Skip the
     // fetch so the greyed card doesn't show a spurious error beneath it (#807).
     // `cancelled` also drops late results from a fetch that started while the
@@ -49,7 +63,7 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
     return () => {
       cancelled = true;
     };
-  }, [disabled]);
+  }, [disabled, isServerResolved]);
 
   return (
     <>
@@ -64,7 +78,7 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
         <CardContent className="space-y-4">
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <IconLoader className="h-4 w-4 animate-spin" />
+              <Spinner />
               Checking Canvas connection…
             </div>
           ) : integration ? (

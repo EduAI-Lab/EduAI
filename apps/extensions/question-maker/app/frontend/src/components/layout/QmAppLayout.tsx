@@ -31,6 +31,8 @@ import { useCourses } from '@/hooks/useCourses';
 import { useAiServicesStatus } from '@/hooks/useAiServicesStatus';
 import { useGuidedTour } from '@/contexts/GuidedTourContext';
 import { useBugReport } from '@/contexts/BugReportContext';
+import { getNavForUser, getNavSecondaryForUser } from '@/lib/rbac/nav';
+import type { QmNavItemKey } from '@/lib/rbac/types';
 import { Tooltip } from '@/components/ui/tooltip';
 import { CourseSwitcher } from '@/components/layout/CourseSwitcher';
 import { CommandPalette } from '@/components/command/CommandPalette';
@@ -108,45 +110,14 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   );
 }
 
-type NavItemKey =
-  | 'dashboard'
-  | 'courses'
-  | 'library'
-  | 'help';
-
-const NAV_ICONS: Record<NavItemKey, Icon> = {
+const NAV_ICONS: Record<QmNavItemKey, Icon> = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
+  'bug-reports': IconBug,
+  'back-to-eduai': IconBooks,
 };
-
-interface NavItem {
-  key: NavItemKey;
-  title: string;
-  href: string;
-  external?: boolean;
-}
-
-function getNavForUser(user: { role: string } | null): NavItem[] {
-  if (!user) return [];
-  return [
-    { key: 'dashboard', title: 'Dashboard', href: '/dashboard' },
-    { key: 'courses', title: 'Courses', href: '/courses' },
-    { key: 'library', title: 'Question Library', href: '/library' },
-  ];
-}
-
-function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
-  if (!user) return [];
-  // Settings lives in the navUser dropdown (like Core).
-  // Bug reports is in the site-header top actions (like Core).
-  // Cross-app navigation (EduAI Core + other extensions) lives in the
-  // footer AppSwitcher. Secondary nav only has Help.
-  return [
-    { key: 'help', title: 'Help', href: '/help' },
-  ];
-}
 
 /** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
 const qmLogo = (
@@ -184,14 +155,14 @@ function QmAppLayoutInner() {
     }
   };
 
-  const navMain = getNavForUser(user ? { role: user.role } : null).map((item) => ({
+  const navMain = getNavForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
     external: item.external,
   }));
 
-  const navSecondary = getNavSecondaryForUser(user ? { role: user.role } : null).map((item) => ({
+  const navSecondary = getNavSecondaryForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
@@ -303,14 +274,14 @@ export function QmAppLayout() {
 export function QmAccessShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
 
-  const navMain = getNavForUser(user ? { role: user.role } : null).map((item) => ({
+  const navMain = getNavForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],
     external: item.external,
   }));
 
-  const navSecondary = getNavSecondaryForUser(user ? { role: user.role } : null).map((item) => ({
+  const navSecondary = getNavSecondaryForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
     icon: NAV_ICONS[item.key],

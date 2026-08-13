@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '../generated/prisma/index.js';
+import { Prisma, PrismaClient } from '@eduai/ai-tutor-prisma-client';
 
 /**
  * AI Tutor seed.

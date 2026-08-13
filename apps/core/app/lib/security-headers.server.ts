@@ -17,15 +17,19 @@ export function generateNonce(): string {
  *   chunk — required for hydration.
  * - `style-src` keeps `'unsafe-inline'`: React inline `style={}` attributes and
  *   UI libraries cannot carry a nonce, and style injection is low-risk versus
- *   scripts. Google Fonts' stylesheet origin is whitelisted.
+ *   scripts. No third-party stylesheet origin is whitelisted — Outfit is
+ *   self-hosted (#1221), so fonts.googleapis.com is no longer reachable.
  * - `frame-ancestors 'none'` is the modern equivalent of `X-Frame-Options: DENY`.
  */
 function buildHtmlCsp(nonce: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    // `data:` — Vite inlines any font under `assetsInlineLimit` (4 KB) into the
+    // stylesheet as a base64 `data:font/woff2` URL; without this the browser
+    // blocks it and that glyph range silently falls back.
+    "font-src 'self' data:",
     "img-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",

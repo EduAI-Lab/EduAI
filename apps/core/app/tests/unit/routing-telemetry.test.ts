@@ -14,12 +14,12 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
-vi.mock("~/lib/ai/energy/measurement.server", () => ({
-  measureTurnEnergy: vi.fn(),
+vi.mock("~/lib/ai/energy/estimate.server", () => ({
+  estimateTurnEnergy: vi.fn(),
 }));
 
 import prisma from "~/lib/prisma.server";
-import { measureTurnEnergy } from "~/lib/ai/energy/measurement.server";
+import { estimateTurnEnergy } from "~/lib/ai/energy/estimate.server";
 
 describe("normalizeTokenUsage", () => {
   it("maps OpenAI-compatible snake_case fields", () => {
@@ -135,7 +135,7 @@ describe("persistAiInteractionTelemetry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
-    vi.mocked(measureTurnEnergy).mockResolvedValue({
+    vi.mocked(estimateTurnEnergy).mockReturnValue({
       energyJoules: 1.5,
       carbonGramsCO2: 0.1,
       energySource: "ESTIMATED_FROM_TOKENS",
@@ -146,6 +146,13 @@ describe("persistAiInteractionTelemetry", () => {
   it("persists totalTokens alongside prompt/completion counts", async () => {
     await persistAiInteractionTelemetry(baseParams);
 
+    expect(estimateTurnEnergy).toHaveBeenCalledWith({
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      estEnergyJoulesPerToken: null,
+      averageCarbonGramsPerToken: null,
+    });
     expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -161,5 +168,45 @@ describe("persistAiInteractionTelemetry", () => {
     vi.mocked(prisma.aIInteraction.create).mockRejectedValue(new Error("DB down"));
 
     await expect(persistAiInteractionTelemetry(baseParams)).resolves.toBeUndefined();
+  });
+
+  it("persists the fleet serverId when provided", async () => {
+    await persistAiInteractionTelemetry({ ...baseParams, serverId: "cmps01" });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serverId: "cmps01" }),
+      }),
+    );
+  });
+
+  it("persists a null serverId when the turn was not fleet-routed", async () => {
+    await persistAiInteractionTelemetry(baseParams);
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serverId: null }),
+      }),
+    );
+  });
+
+  it("persists the owning chatId when provided (#1351 — distinct chat counts)", async () => {
+    await persistAiInteractionTelemetry({ ...baseParams, chatId: "chat_1" });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ chatId: "chat_1" }),
+      }),
+    );
+  });
+
+  it("persists a null chatId when the turn has no owning chat (e.g. a worker/background completion)", async () => {
+    await persistAiInteractionTelemetry(baseParams);
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ chatId: null }),
+      }),
+    );
   });
 });

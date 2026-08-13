@@ -2,16 +2,16 @@
  * Unit tests for importTaughtCoursesFromCore (QM backend).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Prisma } from '../../generated/prisma/index.js';
+import { Prisma } from '@eduai/question-maker-prisma-client';
 
 const courseFindMany = vi.fn();
 const courseFindUnique = vi.fn();
-const courseCreate = vi.fn();
 const courseUpdate = vi.fn();
 const topicsFindMany = vi.fn();
 const topicsCreate = vi.fn();
 const assessmentsFindFirst = vi.fn();
 const createAssessment = vi.fn();
+const ensureCourseAnchorMock = vi.fn();
 
 // ensurePracticeExam serializes via a transaction-scoped advisory lock; in
 // unit tests the transaction is a passthrough and the lock query a no-op.
@@ -27,7 +27,6 @@ vi.mock('../../src/config/database.js', () => ({
     course: {
       findMany: courseFindMany,
       findUnique: courseFindUnique,
-      create: courseCreate,
       update: courseUpdate,
     },
     topics: {
@@ -35,6 +34,10 @@ vi.mock('../../src/config/database.js', () => ({
       create: topicsCreate,
     },
   },
+}));
+
+vi.mock('../../src/services/ensureCourseAnchor.js', () => ({
+  ensureCourseAnchor: (...args) => ensureCourseAnchorMock(...args),
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
@@ -68,7 +71,10 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     vi.clearAllMocks();
     courseFindMany.mockResolvedValue([]);
     courseFindUnique.mockResolvedValue(null);
-    courseCreate.mockImplementation(async ({ data }) => ({ id: 99, ...data }));
+    ensureCourseAnchorMock.mockImplementation(async (userId, coreCourseId) => ({
+      course: { id: 99, userId, coreCourseId },
+      created: true,
+    }));
     topicsFindMany.mockResolvedValue([{ id: 1, name: 'Topic A' }]);
     topicsCreate.mockResolvedValue({});
     assessmentsFindFirst.mockResolvedValue(null);
@@ -99,9 +105,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     expect(result.imported).toBe(1);
     // `name`/`code` are Core-owned and never written locally (#1072 §4 step 10)
     // — the anchor is just userId + coreCourseId.
-    expect(courseCreate).toHaveBeenCalledWith({
-      data: { userId: 'u1', coreCourseId: 'core-1' },
-    });
+    expect(ensureCourseAnchorMock).toHaveBeenCalledWith('u1', 'core-1');
     expect(createAssessment).toHaveBeenCalled();
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalled();
   });
@@ -122,7 +126,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
 
     expect(result.imported).toBe(0);
     expect(result.synced).toBe(1);
-    expect(courseCreate).not.toHaveBeenCalled();
+    expect(ensureCourseAnchorMock).not.toHaveBeenCalled();
     expect(courseUpdate).not.toHaveBeenCalled();
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalledWith(localCourse, 'session=abc');
   });
@@ -145,7 +149,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
 
     expect(result.imported).toBe(0);
     expect(result.synced).toBe(1);
-    expect(courseCreate).not.toHaveBeenCalled();
+    expect(ensureCourseAnchorMock).not.toHaveBeenCalled();
     expect(courseUpdate).toHaveBeenCalledWith({ where: { id: adminAnchor.id }, data: { userId: 'u1' } });
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalledWith(adminAnchor, 'session=abc');
     expect(createAssessment).toHaveBeenCalled();
@@ -182,14 +186,11 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     expect(result.synced).toBe(1);
   });
 
-  it('adopts the existing anchor when Course.create loses the unique-constraint race', async () => {
+  it('adopts the existing anchor when ensureCourseAnchor reports created: false (lost race)', async () => {
     listCoursesFromCore.mockResolvedValue([{ id: 'core-6', callerEnrollmentRole: 'INSTRUCTOR' }]);
     courseFindMany.mockResolvedValue([]);
-    courseCreate.mockRejectedValue(new Error('duplicate key value violates unique constraint'));
     const racedAnchor = { id: 10, userId: 'u1', coreCourseId: 'core-6' };
-    courseFindUnique.mockImplementation(async ({ where }) =>
-      where?.coreCourseId === 'core-6' ? racedAnchor : null,
-    );
+    ensureCourseAnchorMock.mockResolvedValue({ course: racedAnchor, created: false });
 
     const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
 

@@ -1,4 +1,19 @@
 /*
+ * SUPERSEDED — do not use these values.
+ *
+ * The live colour tokens are packages/ui/src/styles/base.css, imported by all
+ * three apps. This file has drifted from them and is kept only as a historical
+ * reference alongside the rest of this bundle.
+ *
+ * Note it is dark-mode-first: its `:root` holds dark values, so diffing it
+ * against an app's light-mode `:root` reports drift that is not real.
+ *
+ * The typography and assistive-reading material in this bundle IS still
+ * referenced (see apps/extensions/ai-tutor/app/components/settings/assistive-mode.tsx)
+ * — this notice applies to the colour tokens only.
+ */
+
+/*
  * EduAI Design System — Color Tokens
  * Brand: UBC-aligned (UBC Blue #002145, UBC Gold #FFD100, UBC Light Blue #0055B3)
  * All colors expressed in oklch() for shadcn/ui compatibility.

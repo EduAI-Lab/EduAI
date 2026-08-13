@@ -3,11 +3,12 @@
  * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
  */
 import { createId } from '@paralleldrive/cuid2';
-import { Prisma } from '../../generated/prisma/index.js';
+import { Prisma } from '@eduai/question-maker-prisma-client';
 import { prisma } from '../config/database.js';
 import { listCoursesFromCore, getCourseEnrollmentsFromCore } from './coreApiService.js';
 import { syncTopicsFromCoreForCourse } from './topicSyncService.js';
 import { createAssessment } from './assessmentService.js';
+import { ensureCourseAnchor } from './ensureCourseAnchor.js';
 import { logger } from '../utils/logger.js';
 
 const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
@@ -90,11 +91,11 @@ async function provisionCourse(userId, course, cookie) {
  * An anchor can pre-exist under ANOTHER user's id — an ADMIN opening the
  * course list materializes catalog anchors under their own userId (#1074).
  * If the current owner holds no active teaching enrollment in Core, transfer
- * ownership to the importing instructor: ownership is the Core-down access
- * fallback (`courseAccess.resolveAccessForCourse`), and an ADMIN never needs
- * it (their role short-circuits access). If the owner IS a teaching
- * co-instructor/TA, leave ownership alone — first import wins, both keep
- * enrollment-based access while Core is up.
+ * ownership to the importing instructor so the local FK reflects a teaching
+ * owner. Access itself no longer follows ownership (#1114 fail-closed); this
+ * claim still keeps the mirror's ownership bookkeeping accurate. If the owner
+ * IS a teaching co-instructor/TA, leave ownership alone — first import wins.
+ * When the Core roster is unreachable, leave ownership unchanged (conservative).
  */
 async function maybeClaimAnchor(userId, course) {
   let roster = [];
@@ -171,17 +172,15 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
 
     if (!anchor) {
       try {
-        anchor = await prisma.course.create({ data: { userId, coreCourseId: coreCourse.id } });
-        imported++;
+        // Same locked ensure as POST /api/course and ADMIN materialization
+        // (#1114 / #1270) — never a bare create that can abort a racing POST.
+        const ensured = await ensureCourseAnchor(userId, coreCourse.id);
+        anchor = ensured.course;
+        if (ensured.created) imported++;
       } catch (err) {
-        // Unique `core_course_id` race: a concurrent request (or an ADMIN list
-        // visit) created the anchor between our read and this insert. Adopt it.
-        anchor = await prisma.course.findUnique({ where: { coreCourseId: coreCourse.id } });
-        if (!anchor) {
-          logger.warn({ err, userId, coreCourseId: coreCourse.id }, 'Auto-import failed for Core course');
-          skipped++;
-          continue;
-        }
+        logger.warn({ err, userId, coreCourseId: coreCourse.id }, 'Auto-import failed for Core course');
+        skipped++;
+        continue;
       }
     }
 

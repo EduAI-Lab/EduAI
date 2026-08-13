@@ -2,25 +2,51 @@
  * Root app component: wires auth providers, router, and top-level pages.
  * Defines navigation for login, homepage, assessments, help, and an optional API test route.
  */
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router';
 import { Toaster, ThemeProvider, ThemeSyncInitializer } from '@eduai/ui';
 import { AuthProvider } from './contexts/AuthContext';
 import { QmAppGate } from './components/auth/QmAppGate';
 import { QmAppLayout } from './components/layout/QmAppLayout';
-import { CourseSelectionPage } from './pages/CourseSelectionPage';
-import { CourseDetailPage } from './pages/CourseDetailPage';
-import DashboardPage from './pages/DashboardPage';
-import QuestionBankPage from './pages/QuestionBankPage';
-import SettingsPage from './pages/SettingsPage';
-import { QuestionComposerPage } from './pages/QuestionComposerPage';
-import { ApiTestPage } from './pages/ApiTestPage';
-import AssessmentBuilderPage from './pages/AssessmentBuilderPage';
-import BankDetailPage from './pages/BankDetailPage';
-import { HelpPage } from './pages/HelpPage';
-import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
-import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
+
+// Pages are lazy so each route becomes its own chunk. Importing them statically
+// collapsed the whole app into a single entry chunk, which is what everyone
+// downloaded before rendering the dashboard — including the question bank's OCR
+// stack and the assessment builder's Word export. Nothing here is above the fold
+// on more than one route, so there is no reason to ship them together.
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const QuestionBankPage = lazy(() => import('./pages/QuestionBankPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AssessmentBuilderPage = lazy(() => import('./pages/AssessmentBuilderPage'));
+const CourseSelectionPage = lazy(() =>
+  import('./pages/CourseSelectionPage').then((m) => ({ default: m.CourseSelectionPage }))
+);
+const CourseDetailPage = lazy(() =>
+  import('./pages/CourseDetailPage').then((m) => ({ default: m.CourseDetailPage }))
+);
+const QuestionComposerPage = lazy(() =>
+  import('./pages/QuestionComposerPage').then((m) => ({ default: m.QuestionComposerPage }))
+);
+const ApiTestPage = lazy(() => import('./pages/ApiTestPage').then((m) => ({ default: m.ApiTestPage })));
+const HelpPage = lazy(() => import('./pages/HelpPage').then((m) => ({ default: m.HelpPage })));
+const BugReportsAdminPage = lazy(() =>
+  import('./pages/BugReportsAdminPage').then((m) => ({ default: m.BugReportsAdminPage }))
+);
+const AssessmentVariantPage = lazy(() =>
+  import('./pages/AssessmentVariantPage').then((m) => ({ default: m.AssessmentVariantPage }))
+);
+const BankDetailPage = lazy(() => import('./pages/BankDetailPage'));
+
+/** Shown while a route chunk is in flight. Deliberately plain — it is visible for a few hundred ms at most. */
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+    </div>
+  );
+}
 
 /** Legacy `/home` route: redirect to the default course's course detail page, falling back to /courses */
 function RedirectHomeRoute() {
@@ -97,6 +123,7 @@ function App() {
             <QmAppGate>
               <BugReportProvider>
                 <div className="min-h-screen bg-background">
+                  <Suspense fallback={<RouteFallback />}>
                   <Routes>
                     <Route element={<QmAppLayout />}>
                       <Route path="/dashboard" element={<DashboardPage />} />
@@ -131,6 +158,7 @@ function App() {
                     <Route path="/study" element={<RedirectLegacyStudyRoute />} />
                     <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
+                  </Suspense>
                   <Toaster />
                 </div>
               </BugReportProvider>

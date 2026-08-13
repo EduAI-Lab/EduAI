@@ -13,8 +13,8 @@ import {
   IconEye,
   IconEyeOff,
   IconClock,
+  IconDownload,
 } from "@tabler/icons-react";
-import { Download } from "lucide-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
@@ -67,8 +67,9 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
-import { canManageTopics, canManageInstructors, canManageStudents, courseChatViewPolicyKey, manageEnrollmentsPolicyKey } from "~/lib/rbac";
+import { useStudentCandidates } from "~/hooks/api/use-student-candidates";
 import type { CourseAccess } from "~/lib/rbac";
+import { resolveManagerViewClientGates } from "~/lib/courses/manager-view-client-gates";
 import {
   PolicyTooltip,
   DisabledTooltip,
@@ -88,10 +89,16 @@ interface Props {
   enrollments: CourseEnrollment[];
   enrollmentsLoading?: boolean;
   enrollmentsError?: string | null;
+  enrollmentsTotal?: number;
+  hasMoreEnrollments?: boolean;
+  enrollmentsLoadingMore?: boolean;
+  onLoadMoreEnrollments?: () => void;
   materials: CourseMaterial[];
+  hasMoreMaterials?: boolean;
+  materialsLoadingMore?: boolean;
+  onLoadMoreMaterials?: () => void;
   tas: CourseTA[];
   instructors: StaffUser[];
-  studentUsers: StaffUser[];
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
@@ -115,12 +122,12 @@ interface Props {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function fileTypeColor(mime: string): string {
-  if (mime.includes("pdf")) return "oklch(0.63 0.22 25)";
+  if (mime.includes("pdf")) return "var(--color-file-pdf)";
   if (mime.includes("pptx") || mime.includes("presentation"))
-    return "oklch(0.55 0.18 48)";
+    return "var(--color-file-slides)";
   if (mime.includes("docx") || mime.includes("word"))
-    return "oklch(0.52 0.18 230)";
-  return "oklch(0.55 0.12 260)";
+    return "var(--color-file-doc)";
+  return "var(--color-file-generic)";
 }
 
 function formatSize(bytes: number): string {
@@ -174,10 +181,16 @@ export function CourseDetailManagerView({
   enrollments,
   enrollmentsLoading = false,
   enrollmentsError = null,
+  enrollmentsTotal,
+  hasMoreEnrollments = false,
+  enrollmentsLoadingMore = false,
+  onLoadMoreEnrollments,
   materials,
+  hasMoreMaterials = false,
+  materialsLoadingMore = false,
+  onLoadMoreMaterials,
   tas,
   instructors,
-  studentUsers,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -239,61 +252,34 @@ export function CourseDetailManagerView({
   }, [materialsSuccess]);
 
   const { isEnabled } = usePolicyGate();
-  const canManage = canManageTopics(access, isEnabled("tas.canManageTopics"));
-  // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
-  // management) also opens to an owning instructor when the enrollment policy is
-  // on. Mirrors the TA endpoint and loader gates.
-  const canAssignInstructor = canManageInstructors(access);
-  // §807: resolve each policy-gated tab to one of show-enabled / show-greyed /
-  // hide. `'always'` → the role qualifies regardless of any flag (admin/unit);
-  // `'never'` → the role can never access it (hide the tab); a PolicyKey → the
-  // role qualifies but the flag decides enabled vs greyed-with-tooltip.
-  const staffGate = manageEnrollmentsPolicyKey(access);
-  const showStaffTab = staffGate !== "never";
-  const canManageStaff =
-    staffGate === "always" || (staffGate !== "never" && isEnabled(staffGate));
-  const chatGate = courseChatViewPolicyKey(access);
-  const showChatTab = chatGate !== "never";
-  const canViewChats =
-    chatGate === "always" || (chatGate !== "never" && isEnabled(chatGate));
-  const canManageStudentEnrollments = canManageStudents(access);
-  const canManageRagSettings = access === "admin" || access === "instructor";
+  const {
+    canManage,
+    canAssignInstructor,
+    showStaffTab,
+    canManageStaff,
+    showChatTab,
+    canViewChats,
+    canManageStudentEnrollments,
+    canManageRagSettings,
+    canDeleteMaterial: canDeleteMaterialForUploader,
+  } = resolveManagerViewClientGates(access, isEnabled, currentUserId);
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
+  // Server already pages active STUDENT rows (#1042 review); keep the client
+  // filter as a belt-and-suspenders so a mismatched payload can't render staff.
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
-  const enrolledStudentIds = new Set(studentEnrollments.map((e) => e.userId));
-  const availableStudents = studentUsers.filter((u) => !enrolledStudentIds.has(u.id));
+  const studentCandidates = useStudentCandidates(courseId, "enrolled");
+  const taCandidates = useStudentCandidates(courseId, "ta");
 
-  // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
-  // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
-  // TAs can delete only their own uploads (uploadedBy === currentUserId).
-  const canDeleteMaterial = (material: CourseMaterial) => {
-    if (canManage) return true;
-    // TA own-only: check if this is their upload.
-    return (
-      access === 'ta' &&
-      material.uploadedBy !== null &&
-      material.uploadedBy !== undefined &&
-      material.uploadedBy === currentUserId
-    );
-  };
+  const canDeleteMaterial = (material: CourseMaterial) =>
+    canDeleteMaterialForUploader(material.uploadedBy);
 
   // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
-  const canRenameMaterial = (material: CourseMaterial) => {
-    if (canManage) return true;
-    return (
-      access === 'ta' &&
-      material.uploadedBy !== null &&
-      material.uploadedBy !== undefined &&
-      material.uploadedBy === currentUserId
-    );
-  };
+  const canRenameMaterial = (material: CourseMaterial) =>
+    canDeleteMaterialForUploader(material.uploadedBy);
 
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
-  );
-  const availableTAs = studentUsers.filter(
-    (u) => !tas.some((ta) => ta.userId === u.id),
   );
 
   const handleTopicCreate = async (e: React.FormEvent) => {
@@ -531,7 +517,10 @@ export function CourseDetailManagerView({
     ...(course.isActive ? ["Active"] : [])
   ];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
-  const studentCount = studentEnrollments.length;
+  // `enrollmentsTotal` is the server-side active-STUDENT count across all
+  // pages; only the loaded pages are actually in `studentEnrollments`
+  // (#1042 cursor paging).
+  const studentCount = enrollmentsTotal ?? studentEnrollments.length;
 
   return (
     <DetailPageScaffold
@@ -1011,7 +1000,7 @@ export function CourseDetailManagerView({
                     size="sm"
                     onClick={() => setCanvasSyncOpen(true)}
                   >
-                    <Download className="h-4 w-4 mr-1.5" />
+                    <IconDownload className="h-4 w-4 mr-1.5" />
                     Sync from Canvas
                   </Button>
                 )}
@@ -1089,6 +1078,17 @@ export function CourseDetailManagerView({
               );
             }}
           />
+          {hasMoreMaterials && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              disabled={materialsLoadingMore}
+              onClick={() => onLoadMoreMaterials?.()}
+            >
+              {materialsLoadingMore ? "Loading…" : "Load more materials"}
+            </Button>
+          )}
         </PageTabsContent>
 
         {/* ── Topics ── */}
@@ -1244,19 +1244,32 @@ export function CourseDetailManagerView({
                       ))}
                     </div>
                   )}
+                  {hasMoreEnrollments && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="self-start"
+                      disabled={enrollmentsLoadingMore}
+                      onClick={() => onLoadMoreEnrollments?.()}
+                    >
+                      {enrollmentsLoadingMore ? "Loading…" : "Load more students"}
+                    </Button>
+                  )}
 
-                  {canManageStudentEnrollments && availableStudents.length > 0 && (
+                  {canManageStudentEnrollments && (
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                       <div className="flex-1 space-y-2">
                         <Label htmlFor="enroll-student">Add students</Label>
                         <MultiSelect
-                          options={availableStudents.map((u) => ({
+                          options={studentCandidates.candidates.map((u) => ({
                             value: u.id,
                             label: u.name,
                             description: u.email,
                           }))}
                           value={selectedStudentIds}
                           onValueChange={setSelectedStudentIds}
+                          onSearchChange={studentCandidates.search}
+                          loading={studentCandidates.loading}
                           placeholder="Search and select students to enroll"
                           searchPlaceholder="Search by name or email…"
                           emptyText="No matching students."
@@ -1433,40 +1446,36 @@ export function CourseDetailManagerView({
                     ))}
                   </div>
                 )}
-                {availableTAs.length > 0 ? (
-                  <div className="flex flex-col gap-3">
-                    <MultiSelect
-                      options={availableTAs.map((u) => ({
-                        value: u.id,
-                        label: u.name,
-                        description: u.email,
-                      }))}
-                      value={selectedTAIds}
-                      onValueChange={setSelectedTAIds}
-                      placeholder="Search and select TAs to add"
-                      searchPlaceholder="Search by name or email"
-                      emptyText="No TAs found"
-                    />
-                    <Button
-                      onClick={handleAddTAs}
-                      disabled={selectedTAIds.length === 0 || addingTAs}
-                      className="self-end"
-                    >
-                      <IconUserPlus className="w-4 h-4 mr-1" />
-                      {addingTAs
-                        ? "Adding…"
-                        : `Add ${
-                            selectedTAIds.length > 0
-                              ? `${selectedTAIds.length} `
-                              : ""
-                          }TA${selectedTAIds.length !== 1 ? "s" : ""}`}
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No other TAs available to assign.
-                  </p>
-                )}
+                <div className="flex flex-col gap-3">
+                  <MultiSelect
+                    options={taCandidates.candidates.map((u) => ({
+                      value: u.id,
+                      label: u.name,
+                      description: u.email,
+                    }))}
+                    value={selectedTAIds}
+                    onValueChange={setSelectedTAIds}
+                    onSearchChange={taCandidates.search}
+                    loading={taCandidates.loading}
+                    placeholder="Search and select TAs to add"
+                    searchPlaceholder="Search by name or email"
+                    emptyText="No TAs found"
+                  />
+                  <Button
+                    onClick={handleAddTAs}
+                    disabled={selectedTAIds.length === 0 || addingTAs}
+                    className="self-end"
+                  >
+                    <IconUserPlus className="w-4 h-4 mr-1" />
+                    {addingTAs
+                      ? "Adding…"
+                      : `Add ${
+                          selectedTAIds.length > 0
+                            ? `${selectedTAIds.length} `
+                            : ""
+                        }TA${selectedTAIds.length !== 1 ? "s" : ""}`}
+                  </Button>
+                </div>
               </div>
             </div>
           </PageTabsContent>

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { prismaMock, txDeleteMany, txCreateManyAndReturn, txExecuteRaw, embedMany } = vi.hoisted(() => {
+const { prismaMock, txDeleteMany, txFindMany, txExecuteRaw, embedMany } = vi.hoisted(() => {
   const txDeleteMany = vi.fn();
-  const txCreateManyAndReturn = vi.fn();
+  const txFindMany = vi.fn();
   const txExecuteRaw = vi.fn();
   const embedMany = vi.fn();
 
@@ -17,14 +17,14 @@ const { prismaMock, txDeleteMany, txCreateManyAndReturn, txExecuteRaw, embedMany
       await fn({
         materialChunk: {
           deleteMany: txDeleteMany,
-          createManyAndReturn: txCreateManyAndReturn,
+          findMany: txFindMany,
         },
         $executeRaw: txExecuteRaw,
       });
     }),
   };
 
-  return { prismaMock, txDeleteMany, txCreateManyAndReturn, txExecuteRaw, embedMany };
+  return { prismaMock, txDeleteMany, txFindMany, txExecuteRaw, embedMany };
 });
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -57,7 +57,8 @@ describe("processMaterialEmbeddings", () => {
     });
     process.env.EMBEDDING_PROVIDER = "cloud";
     process.env.OPENAI_API_KEY = "test-key";
-    txCreateManyAndReturn.mockResolvedValue([{ id: "chunk-1", index: 0 }]);
+    txExecuteRaw.mockResolvedValue(1);
+    txFindMany.mockResolvedValue([{ id: "chunk-1", index: 0 }]);
     embedMany.mockResolvedValue({ embeddings: [sampleEmbedding] });
   });
 
@@ -84,13 +85,24 @@ describe("processMaterialEmbeddings", () => {
 
     expect(prismaMock.$transaction).toHaveBeenCalled();
     expect(txDeleteMany).toHaveBeenCalledWith({ where: { materialId: "mat-1" } });
-    expect(txCreateManyAndReturn).toHaveBeenCalled();
+    expect(txExecuteRaw).toHaveBeenCalled();
+    expect(txFindMany).toHaveBeenCalled();
   });
 
   it("does not delete existing chunks on first ingest (no replace option)", async () => {
     await processMaterialEmbeddings("mat-1", "Hello world.");
 
     expect(txDeleteMany).not.toHaveBeenCalled();
-    expect(txCreateManyAndReturn).toHaveBeenCalled();
+    expect(txExecuteRaw).toHaveBeenCalled();
+    expect(txFindMany).toHaveBeenCalled();
+  });
+
+  it("throws when chunking yields zero segments (whitespace-only content) (#225 RAG-06)", async () => {
+    await expect(processMaterialEmbeddings("mat-1", "   \n\t  ")).rejects.toThrow(
+      "No content chunks generated",
+    );
+
+    expect(embedMany).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 });

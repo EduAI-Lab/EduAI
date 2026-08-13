@@ -4,7 +4,7 @@
  * A failing test here means the handler is misclassifying an error.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Prisma } from '../../generated/prisma/index.js';
+import { Prisma } from '@eduai/question-maker-prisma-client';
 import { notFound, errorHandler } from '../../src/middleware/errorHandler.js';
 
 function prismaError(code, meta) {

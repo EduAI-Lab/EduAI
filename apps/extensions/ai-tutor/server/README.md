@@ -2,6 +2,19 @@
 
 Express 5 API for AiTutor. Handles authentication, RBAC, course content CRUD, AI tutoring flows, admin operations, bug report management, and Prisma-backed persistence.
 
+## Develop with the monorepo
+
+Prefer starting databases and Core from the **repo root** (`npm run dev` or `npm run docker:dev:db`). This server expects Core at `CORE_URL` (default `http://localhost:3000`) for `POST /api/sessions/validate`.
+
+```bash
+# from repo root — API only
+npx turbo run dev --filter=ai-tutor-server
+# or:
+cd apps/extensions/ai-tutor/server && npm run dev
+```
+
+Do not document a standalone `docker compose up -d db` inside this package as the primary setup path.
+
 ## Architecture
 
 ```
@@ -11,6 +24,7 @@ server/
     app.js                # Express app factory (createApp), middleware + route mounting
     config/
       database.js         # PrismaClient singleton
+      cors.js             # Exact-origin CORS allowlist configuration
       bootstrapAdmins.js  # Hardcoded admin email list
     middleware/
       auth.js             # requireAuth, requireRole, requireRoles, requireInstructorPolicy
@@ -48,7 +62,7 @@ server/
     schema.prisma         # Database schema (PostgreSQL)
     seed.ts               # Seed script (destructive reset + demo data)
     migrations/           # Migration history
-  test/
+  tests/
     globalSetup.js        # Test DB setup
     setup.js              # Test environment config
     helpers.js            # Test utilities
@@ -60,7 +74,7 @@ server/
 
 The middleware chain in `app.js` processes requests in this order:
 
-1. **CORS** — Open origin with `credentials: true`.
+1. **CORS** — Exact-origin allowlist via `CORS_ORIGINS` with `credentials: true`.
 2. **JSON parser** — `express.json()` for all routes.
 3. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
 4. **Auth gate** — `requireAuth` (`middleware/auth.js`) posts the incoming cookie to Core's
@@ -90,7 +104,7 @@ The middleware chain in `app.js` processes requests in this order:
 
 ### Roles
 
-`STUDENT`, `PROFESSOR`, `TA` (unsupported), `ADMIN`. See [SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md) for full permissions.
+`STUDENT`, `INSTRUCTOR`, `TA`, `ADMIN`, `UNIT_ADMIN`. See [SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md) for full permissions.
 
 ### Middleware
 
@@ -122,16 +136,16 @@ All routes are mounted under `/api`. See [docs/api-reference.md](../docs/api-ref
 |--------|-----------|------|
 | System | `GET /health` | None |
 | Auth | `GET /me` | Any authenticated |
-| Courses | 9 endpoints | PROFESSOR (write), course member (read) |
-| Modules | 5 endpoints | PROFESSOR (write), course member (read) |
-| Lessons | 5 endpoints | PROFESSOR (write), course member (read) |
-| Activities | 9 endpoints | PROFESSOR (write), course member (read/submit) |
-| Topics | 4 endpoints | PROFESSOR (write), course member (read) |
-| Prompts | 2 endpoints | PROFESSOR |
+| Courses | 9 endpoints | INSTRUCTOR (write), course member (read) |
+| Modules | 5 endpoints | INSTRUCTOR (write), course member (read) |
+| Lessons | 5 endpoints | INSTRUCTOR (write), course member (read) |
+| Activities | 9 endpoints | INSTRUCTOR (write), course member (read/submit) |
+| Topics | 4 endpoints | INSTRUCTOR (write), course member (read) |
+| Prompts | 2 endpoints | INSTRUCTOR |
 | Suggested Prompts | 1 endpoint | Any authenticated |
 | AI Models | 2 endpoints | Any authenticated |
 | Admin | 12 endpoints | ADMIN |
-| Bug Reports | 3 endpoints | STUDENT/PROFESSOR (create), ADMIN (manage) |
+| Bug Reports | 3 endpoints | STUDENT/INSTRUCTOR (create), ADMIN (manage) |
 
 ## AI Tutoring System
 
@@ -168,12 +182,17 @@ Source of truth: `server/.env.example`.
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
+| `NODE_ENV` | Yes | `development` in the generated local `.env` | Selects runtime defaults; production deployments must set `production` explicitly |
 | `PORT` | No | `4000` | Express listen port |
-| `CORE_URL` | Yes | - | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
-| `EDUAI_BASE_URL` | No | `http://localhost:5174/api` | EduAI API base URL |
+| `CORE_URL` | Yes | `http://localhost:3000` | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
+| `EDUAI_BASE_URL` | No | `http://localhost:3000/api` | Core API base URL (course import/sync, policies, chat completion) |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
+| `CORS_ORIGINS` | No | `http://localhost:3001` only when `NODE_ENV` is explicitly `development` or `test`; otherwise empty/fail-closed | Comma-separated canonical browser origins with no wildcards, paths, queries, fragments, or credentials; deployments must configure every trusted frontend origin |
 | `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
+| `EDUAI_ENFORCE_URL_CONSISTENCY` | No | - | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
+
+When `EDUAI_BASE_URL` is unset, `services/eduaiClient.js` still falls back to `http://localhost:5174/api` (legacy); use `.env.example` or set it explicitly for local dev.
 
 ### EduAI API Key Precedence
 
@@ -182,6 +201,8 @@ Source of truth: `server/.env.example`.
 3. If neither exists, EduAI-dependent endpoints fail with configuration errors.
 
 ## Database
+
+Dependencies are installed from the monorepo root (`npm install`); use the following only for package-local commands.
 
 ### Schema
 
@@ -201,16 +222,16 @@ See `server/prisma/schema.prisma` for the full schema.
 
 ```bash
 # Apply migrations
-cd server && npx prisma migrate deploy
+cd apps/extensions/ai-tutor/server && npx prisma migrate deploy
 
 # Create a new migration after schema changes
-cd server && npx prisma migrate dev --name description_of_change
+cd apps/extensions/ai-tutor/server && npx prisma migrate dev --name description_of_change
 ```
 
 ### Seed Data
 
 ```bash
-cd server && npm run seed
+cd apps/extensions/ai-tutor/server && npm run seed
 ```
 
 > **Warning:** The seed script is destructive. It calls `clearDatabase()` and deletes all existing rows before inserting demo data.
@@ -233,7 +254,7 @@ Seed creates:
 ### Commands
 
 ```bash
-cd server
+cd apps/extensions/ai-tutor/server
 npm run test              # All tests
 npm run test:unit         # Unit tests only
 npm run test:integration  # Integration tests only
@@ -243,7 +264,7 @@ npm run test:watch        # Watch mode
 ### Test Structure
 
 ```
-test/
+tests/
   globalSetup.js          # Database preparation
   setup.js                # Environment config
   helpers.js              # createTestApp(), test utilities

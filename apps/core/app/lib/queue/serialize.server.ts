@@ -5,18 +5,18 @@ import type { AiJob } from "@prisma/client";
  * `serializeReEmbedJob` in `app/lib/ai/re-embed-job.server.ts`.
  *
  * Contract §8: this read model is the single source of queue position and ETA.
- * `queuePosition` is computed live per poll (PENDING jobs ahead in the same
- * queue) and ETA is derived from rolling durations — both are #917. For #914 the
- * field is present in the shape but returned as `null`; nothing persists it.
+ * `queuePosition` is computed live per read via `getQueuePosition()` in
+ * `queue-stats.server.ts` (#915) and passed in by the caller — nothing persists
+ * it. ETA from rolling durations is #917 (status endpoint).
  */
-export function serializeAiJob(job: AiJob) {
+export function serializeAiJob(job: AiJob, options?: { queuePosition?: number | null }) {
   return {
     id: job.id,
     kind: job.kind,
     type: job.type,
     source: job.source,
     status: job.status,
-    queuePosition: null as number | null, // computed live at read time (#917)
+    queuePosition: options?.queuePosition ?? null,
     result: job.result ?? null,
     errorMessage: job.errorMessage,
     attempts: job.attempts,

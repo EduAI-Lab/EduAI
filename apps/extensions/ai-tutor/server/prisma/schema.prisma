@@ -1,9 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  // App-local output so turbo `dev` can generate AI Tutor + Question Maker in
-  // parallel without racing/clobbering the hoisted root `@prisma/client`
-  // (Windows EPERM on query_engine-windows.dll.node).
-  output   = "../generated/prisma"
+  output   = "../node_modules/@eduai/ai-tutor-prisma-client"
 }
 
 datasource db {

@@ -167,6 +167,11 @@ export type JobPayload = z.infer<typeof JobPayloadSchema>;
 - Payload is JSON-serializable — it round-trips through Redis and the `AiJob.result` column.
 - `idempotencyKey`, when present, is passed to BullMQ as the job id so a re-enqueue is a no-op.
 
+After creating the durable row, the producer adds one internal queue-envelope
+field: `aiJobId: AiJob.id`. Callers cannot supply it and it is not stored in
+`AiJob.payload`. The worker uses it to claim the row by primary key even if
+Redis dequeues the job before the producer finishes persisting `bullJobId`.
+
 ---
 
 ## 4. BullMQ topology
@@ -176,14 +181,14 @@ jobs contending for it:
 
 | Queue name       | Holds                                              | Worker concurrency |
 |------------------|----------------------------------------------------|--------------------|
-| `ai-jobs:chat`   | interactive (high prio) **+** background when the heavy pool is unset (low prio) | sized to chat pool (cmps01 + cmps02) |
-| `ai-jobs:heavy`  | background (low prio), once cmps03 / `VLLM_FLEET_HEAVY_URL` is configured | sized to heavy pool (cmps03) |
+| `ai-jobs-chat`   | interactive (high prio) **+** background when the heavy pool is unset (low prio) | sized to chat pool (cmps01 + cmps02) |
+| `ai-jobs-heavy`  | background (low prio), once cmps03 / `VLLM_FLEET_HEAVY_URL` is configured | sized to heavy pool (cmps03) |
 
 - **Queue = resolved pool, not nominal `JobType`.** The producer resolves
   `feature → JobType → pool` (reusing the fleet's `resolveFleetHost()` pool logic) and enqueues to
   *that* pool's queue. v1 (heavy pool unset): interactive **and** background both land on
-  `ai-jobs:chat`; background carries low priority so interactive always drains first. When cmps03
-  lands, background re-resolves to `ai-jobs:heavy` and stops contending — no schema or contract
+  `ai-jobs-chat`; background carries low priority so interactive always drains first. When cmps03
+  lands, background re-resolves to `ai-jobs-heavy` and stops contending — no schema or contract
   change.
 - **Priority** is BullMQ's per-job `priority` (lower number = drained first): `interactive` jobs
   enqueue at high priority, `background` at low. Priority only *matters* while a single pool serves
@@ -261,7 +266,7 @@ the instant a job ahead drains. It is **computed live at read time** (count of `
 in the same queue) and returned only by `serializeAiJob()`; nothing persists it. See [§8](#8-status--eta-read-model-917).
 
 **`bullJobId` is unique per queue, not globally.** BullMQ's auto-generated ids are per-queue
-counters, so `ai-jobs:chat` and `ai-jobs:heavy` both issue `"1"`. The row therefore stores the
+counters, so `ai-jobs-chat` and `ai-jobs-heavy` both issue `"1"`. The row therefore stores the
 `queueName` it was pushed onto and the uniqueness is the pair `(queueName, bullJobId)`. Every
 lookup by BullMQ id — producer dedupe (§6) and worker transition (§7) — MUST key on the pair.
 
@@ -280,22 +285,31 @@ async function enqueue(job: JobPayload): Promise<{ jobId: string }>;
 
 Steps (all-or-nothing on the DB row):
 1. **Validate** `job` with `JobPayloadSchema`; reject on failure (throws / 400 at the route).
-2. **Resolve the target queue** from the fleet pool for `job.type` (`ai-jobs:heavy` when the heavy
-   pool is configured for a `background` job, else `ai-jobs:chat`) and the **priority** from
+2. **Resolve the target queue** from the fleet pool for `job.type` (`ai-jobs-heavy` when the heavy
+   pool is configured for a `background` job, else `ai-jobs-chat`) and the **priority** from
    `job.type` (`interactive → high`, `background → low`).
 3. **Create** the `AiJob` row as `PENDING` (`payload = job`, `queueName` = the queue resolved in
    step 2). Position is not stored (§5).
-4. **Add** to that queue with priority:
-   `queue.add(job.kind, job, { jobId: job.idempotencyKey, priority })`.
+4. **Add** to that queue with priority and the durable row id embedded in the payload, so a worker
+   can always find its row independent of step 5 below:
+   `queue.add(job.kind, { ...job, aiJobId: aiJob.id }, { jobId: job.idempotencyKey, priority })`.
 5. **Persist** the returned BullMQ id into `AiJob.bullJobId` — unique against `queueName`, never
    on its own (§5).
 6. **Return** `{ jobId: aiJob.id }` — the durable handle only. Queue position / ETA are **not**
    returned here; the client reads them from the status endpoint (§8), which is the single source
    of position (computed live per poll). `enqueue` accepts work; it does not report on the queue.
 
-Failure between steps 3 and 4 (Redis down) leaves a `PENDING` row with no `bullJobId` — a reaper
-(#915) marks such rows `FAILED`. Backpressure / queue-full rejection is specified in **#915**;
-this contract only guarantees the signature and the row lifecycle above.
+Failure at step 4 (Redis down / queue unreachable) used to leave a `PENDING` row with no
+`bullJobId` for a #915 reaper, or (an earlier #1112 pass) delete it. **#1269 review** settles this:
+the producer marks the row **`FAILED`** (never deletes it) and throws `QueueUnavailableError` so
+routes return **HTTP 503** — a deleted keyed row would let a same-key retry mint a second row that
+silently no-ops against Redis if the original add actually succeeded despite the client-visible
+failure, leaving that second row stuck `PENDING` forever; a `FAILED` row is discoverable by both a
+status poll and the idempotency fast path instead. A failure at step 5 does **not** mark the row
+FAILED — the job is already durably queued and a worker will still complete it via the embedded
+`aiJobId`; only a future idempotency lookup by `bullJobId` would miss it, a narrower documented gap.
+Backpressure / queue-full rejection remains **#915**; this contract guarantees the signature, the
+row lifecycle above, and no orphan `PENDING` on a failed push.
 
 `jobId` returned to callers is the **`AiJob.id`** (stable, DB-backed), never the raw BullMQ id.
 
@@ -303,14 +317,17 @@ this contract only guarantees the signature and the row lifecycle above.
 
 ## 7. Dequeue / dispatch contract — worker (#168)
 
+Implemented by `apps/core/app/lib/queue/worker.server.ts`; the standalone process
+entrypoint is `apps/core/scripts/ai-job-worker.ts` (`npm run queue:worker`).
+
 The worker consumes each pool queue and is the **only** writer of terminal state. It MUST:
 
-1. **Consume** from each pool queue (`ai-jobs:chat`, `ai-jobs:heavy`) with a BullMQ `Worker` bound
+1. **Consume** from each pool queue (`ai-jobs-chat`, `ai-jobs-heavy`) with a BullMQ `Worker` bound
    to the shared ioredis connection, one worker per pool sized to that pool's capacity. BullMQ
    drains higher-priority jobs first, so interactive work is served ahead of background whenever a
    queue holds both.
-2. **Transition** the `AiJob` (looked up by `(queueName, bullJobId)` — the id alone is ambiguous
-   across pools, §5) `PENDING → RUNNING`, set `startedAt`,
+2. **Transition** the `AiJob` (looked up by the internal `aiJobId` queue-envelope field, with
+   `(queueName, bullJobId)` retained for legacy jobs) `PENDING → RUNNING`, set `startedAt`,
    increment `attempts`.
 3. **Route:** map `job.type → fleet pool` via `resolveFleetHost()` (fleet layer). Resolve the
    model id (`requestedModel` or Auto) *before* the fleet pick, exactly as the live chat path
@@ -357,6 +374,11 @@ This read model is the **single source of queue position and ETA** — `enqueue`
 (§6). Position is computed live on every poll, so it decreases as the worker drains the pool and is
 never stale. Producers and clients read status via a `serializeAiJob()` snapshot (ISO timestamps),
 matching `serializeReEmbedJob`:
+
+Served by `GET /api/ai-jobs/:jobId`, scoped to the caller's own jobs (a session, or the
+`EDUAI_API_KEY` service-key path for jobs Question Maker/AI Tutor create under the synthetic
+`service` user) — 404s rather than 403s on a job id the caller doesn't own, so the response can't
+confirm the id exists.
 
 ```typescript
 {
