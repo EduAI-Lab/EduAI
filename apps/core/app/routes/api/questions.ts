@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
@@ -14,6 +13,7 @@ import {
   listQuestions,
 } from "~/lib/questions/server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -47,7 +47,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return json(404, { error: "COURSE_NOT_FOUND" });
     }
   } else {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return json(401, { error: "Unauthorized" });
     }
@@ -107,7 +107,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // POST /api/questions accepts session-cookie auth only (no service-key path).
   // The GET loader above accepts service keys; add a Bearer branch here if a
   // backend service ever needs to create questions without a user session.
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

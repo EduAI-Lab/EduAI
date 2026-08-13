@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccess,
@@ -8,6 +7,7 @@ import {
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getQuestionById, updateQuestionTestable } from "~/lib/questions/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -21,7 +21,7 @@ async function resolveAuth(request: Request) {
     const guard = await requireServiceKey(request);
     return { guard, serviceKey: !guard, session: null };
   }
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   return { guard: null, serviceKey: false, session };
 }
 

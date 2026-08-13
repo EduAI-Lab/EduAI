@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { listChats } from "~/lib/chat-history/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * GET /api/chats?limit=N&courseId=&userId=&scope=own|all
@@ -12,7 +12,7 @@ import { listChats } from "~/lib/chat-history/server";
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   try {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,

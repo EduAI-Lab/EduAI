@@ -6,6 +6,7 @@ import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import prisma from "~/lib/prisma.server";
 import type { Session } from "./server";
+import { getRequestSession } from "./request-session.server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
 const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
@@ -51,7 +52,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     return { response: null, session: null };
   }
 
-  const cookieSession = await auth.api.getSession({ headers: request.headers });
+  const cookieSession = await getRequestSession(request);
   if (cookieSession?.user?.role === "ADMIN" && (await isActiveAdminUser(cookieSession.user.id))) {
     return { response: null, session: cookieSession };
   }
@@ -150,7 +151,7 @@ type AdminGate =
  * otherwise `{ session }`.
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
-  const resolved = await auth.api.getSession({ headers: request.headers });
+  const resolved = await getRequestSession(request);
   if (!resolved?.user || resolved.user.role !== "ADMIN") {
     fireAndForget(
       logSecurityEvent({
@@ -186,7 +187,7 @@ export async function requireInviter(
   request: Request,
   action: string,
 ): Promise<AdminGate> {
-  const resolved = await auth.api.getSession({ headers: request.headers });
+  const resolved = await getRequestSession(request);
   const role = resolved?.user?.role;
 
   let inviter = resolved;
