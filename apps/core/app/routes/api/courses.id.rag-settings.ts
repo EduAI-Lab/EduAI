@@ -13,7 +13,6 @@
  */
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import {
   canManageCourseRagSettings,
   resolveCourseAccessWithCourse,
@@ -24,6 +23,7 @@ import {
 } from "~/lib/courses/server";
 import { UpdateCourseRagSettingsSchema } from "~/lib/courses/schemas";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 // ---------------------------------------------------------------------------
 // GET
@@ -37,7 +37,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -101,7 +101,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

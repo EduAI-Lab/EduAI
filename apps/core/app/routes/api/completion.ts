@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { runCompletion, type CompletionRequest } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * POST /api/completion — stateless LLM completion for extension AI assist (#858).
@@ -21,7 +21,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // Auth only — completion is stateless; no user identity is needed past this gate.
   if (!apiKeySession?.user) {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;

@@ -9,7 +9,6 @@ import { createHash } from 'crypto';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
-import { auth } from '~/lib/auth/server';
 import {
   resolveCourseAccessWithCourse,
   wantsIncludeDeleted,
@@ -21,6 +20,7 @@ import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.ser
 import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
 import { parseCursorParams, splitPage } from '~/lib/cursor-list.server';
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -98,7 +98,7 @@ async function resolveMaterialsAccess(
   | { response: Response; user?: never; access?: never; isPublished?: never }
   | { response?: never; user: Session['user']; access: AccessLevel; isPublished: boolean }
 > {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return { response: json(401, { error: 'Unauthorized' }) };
   }
@@ -630,7 +630,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // soft-deleted materials — including those in a soft-deleted course. The access
   // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
   // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (wantsIncludeDeleted(request, session?.user)) {
     // The access resolver (skipped here) is what 404s a nonexistent course, so
     // check existence explicitly — otherwise an unknown id returns 200 {[]},
