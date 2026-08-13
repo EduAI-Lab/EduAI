@@ -109,6 +109,9 @@ const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I
 // course access" branch (the owner-fallback in resolveAccessForCourse only
 // applies to the course's own userId).
 const OUTSIDER_INSTRUCTOR = { id: 'inst-2', role: 'INSTRUCTOR', email: 'i2@t.co', name: 'I2' };
+// Real course TA: platform role STUDENT + course enrollment TA (#225 AUTH-12).
+const TA = { id: 'ta-1', role: 'STUDENT', email: 't@t.co', name: 'TA' };
+const STUDENT = { id: 'stu-1', role: 'STUDENT', email: 's@t.co', name: 'S' };
 
 const COURSE = { id: 1, userId: 'inst-1', coreCourseId: 'cuid-core-course' };
 const OTHER_COURSE = { id: 2, userId: 'other-owner', coreCourseId: 'cuid-other-course' };
@@ -499,8 +502,20 @@ describe('POST /api/questions/approve', () => {
     expect(mockCreateMultiple).not.toHaveBeenCalled();
   });
 
-  it('rejects a QM-authorized caller whose target-course access is below TA', async () => {
+  it('rejects a caller whose target-course access is below TA', async () => {
     authAs(OUTSIDER_INSTRUCTOR, 'STUDENT');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('rejects a course STUDENT (platform STUDENT, no TA access)', async () => {
+    authAs(STUDENT, 'STUDENT');
 
     const res = await request(app)
       .post('/api/questions/approve')
@@ -576,8 +591,8 @@ describe('POST /api/questions/approve', () => {
     expect(mockCreateMultiple).not.toHaveBeenCalled();
   });
 
-  it('honors the TA course-access threshold for a caller that passes the platform role gate', async () => {
-    authAs(OUTSIDER_INSTRUCTOR, 'TA');
+  it('authorizes a real course TA (platform STUDENT, TA enrollment) in their own course', async () => {
+    authAs(TA, 'TA');
     mockCreateMultiple.mockResolvedValue([{ id: 1 }]);
 
     const res = await request(app)
@@ -586,6 +601,10 @@ describe('POST /api/questions/approve', () => {
       .send({ courseId: COURSE.id, questions: [{ primaryTopicId: 't1' }] });
 
     expect(res.status).toBe(201);
+    expect(mockCreateMultiple).toHaveBeenCalledWith(
+      COURSE.userId,
+      expect.arrayContaining([expect.objectContaining({ courseId: COURSE.id, createdBy: TA.id })])
+    );
   });
 
   it('saves an authorized batch under the course owner while preserving caller authorship', async () => {

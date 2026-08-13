@@ -10,6 +10,9 @@
  *  - #312: TA may edit/delete only question_metadata they created.
  *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
  *    remain caller-scoped.
+ *  - POST /approve is the exception: no flat role gate — a course TA (platform
+ *    STUDENT + TA enrollment) may create question_metadata shells, so the
+ *    per-course gate alone authorizes that route (see its inline comment).
  */
 import express from 'express';
 import {
@@ -572,11 +575,18 @@ router.post(
   }
 );
 
-/** POST /api/questions/approve – bulk saves approved questions into one authorized course. */
+/**
+ * POST /api/questions/approve – bulk saves approved questions into one authorized course.
+ *
+ * Unlike the other authoring routes, this endpoint has no flat platform-role gate:
+ * a course TA (platform STUDENT + TA enrollment) is authorized to create
+ * question_metadata shells (§16, issue #1106), and `requireCourseAccess({ min: 'ta' })`
+ * is the sole authorization gate — it admits ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) /
+ * TA(C) while rejecting everyone else with insufficient course access.
+ */
 router.post(
   '/approve',
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   validateApprovalTarget,
   requireCourseAccess({ min: 'ta', getCourseId: (req) => req.approvalCourseId }),
   async (req, res, next) => {
