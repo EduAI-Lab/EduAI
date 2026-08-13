@@ -9,9 +9,15 @@ readonly REDIS_VOLUME="eduai-redis-data"
 readonly CORE_ENV="/etc/eduai/eduai-core.env"
 readonly CORE_UNIT="/etc/systemd/system/eduai-core.service"
 readonly APACHE_VHOST="/etc/apache2/sites-available/my.eduai.ok.ubc.ca.conf"
+readonly STAGED_DIR="/srv/www/eduai-production/shared/staged"
+readonly ENV_SOURCE="$STAGED_DIR/eduai-core.env"
+readonly CORE_UNIT_SOURCE="$STAGED_DIR/eduai-core.service"
+readonly APACHE_SOURCE="$STAGED_DIR/my.eduai.ok.ubc.ca.conf"
 die() { echo "ERROR: $*" >&2; exit 1; }
+no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
 case "${1:-}" in
   redis-install)
+    no_extra_args "$@"
     if docker inspect "$REDIS_NAME" >/dev/null 2>&1; then
       state=$(docker inspect -f '{{.State.Status}}' "$REDIS_NAME")
       [ "$state" = running ] || docker start "$REDIS_NAME" >/dev/null
@@ -27,31 +33,30 @@ case "${1:-}" in
     docker exec "$REDIS_NAME" redis-cli ping
     ;;
   install-env)
-    source_path="${2:-}"
-    [ -n "$source_path" ] || die "usage: install-env /srv/www/eduai-production/shared/staged/eduai-core.env"
-    [ -f "$source_path" ] || die "environment source does not exist"
-    grep -q '^NODE_ENV=production$' "$source_path" || die "environment must set NODE_ENV=production"
-    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$source_path" && die "environment still contains placeholders"
-    install -o root -g eduai -m 0640 "$source_path" "$CORE_ENV"
+    no_extra_args "$@"
+    [ -f "$ENV_SOURCE" ] || die "environment source does not exist: $ENV_SOURCE"
+    grep -q '^NODE_ENV=production$' "$ENV_SOURCE" || die "environment must set NODE_ENV=production"
+    grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$ENV_SOURCE" && die "environment still contains placeholders"
+    install -o root -g eduai -m 0640 "$ENV_SOURCE" "$CORE_ENV"
     echo "Installed $CORE_ENV"
     ;;
   install-core-unit)
-    source_path="/srv/www/eduai-production/shared/staged/eduai-core.service"
-    [ -f "$source_path" ] || die "staged Core unit does not exist: $source_path"
-    install -o root -g root -m 0644 "$source_path" "$CORE_UNIT"
+    no_extra_args "$@"
+    [ -f "$CORE_UNIT_SOURCE" ] || die "staged Core unit does not exist: $CORE_UNIT_SOURCE"
+    install -o root -g root -m 0644 "$CORE_UNIT_SOURCE" "$CORE_UNIT"
     systemctl daemon-reload
     echo "Installed $CORE_UNIT"
     ;;
   install-apache-vhost)
-    source_path="${2:-}"
-    [ -f "$source_path" ] || die "usage: install-apache-vhost /srv/www/eduai-production/shared/staged/my.eduai.ok.ubc.ca.conf"
-    install -o root -g root -m 0644 "$source_path" "$APACHE_VHOST"
+    no_extra_args "$@"
+    [ -f "$APACHE_SOURCE" ] || die "staged Apache vhost does not exist: $APACHE_SOURCE"
+    install -o root -g root -m 0644 "$APACHE_SOURCE" "$APACHE_VHOST"
     a2ensite my.eduai.ok.ubc.ca.conf >/dev/null
     apache2ctl configtest
     echo "Installed and validated $APACHE_VHOST"
     ;;
-  enable-core) systemctl enable eduai-core ;;
-  restart-core) systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
-  reload-apache) apache2ctl configtest; systemctl reload apache2 ;;
+  enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
+  restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
+  reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
   *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, enable-core, restart-core, reload-apache" ;;
 esac
