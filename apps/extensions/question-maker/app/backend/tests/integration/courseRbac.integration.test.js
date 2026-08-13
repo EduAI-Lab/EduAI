@@ -100,25 +100,48 @@ describeDb("course RBAC (integration)", () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  describe('GET /api/course/:id/access', () => {
-    it('denies a linked owner when Core returns no active enrollment', async () => {
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
+  describe("GET /api/course/:id/access", () => {
+    it("denies a linked owner when Core returns no active enrollment", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(
+          multiUserHandlers(async (url) => {
+            if (/\/enrollments$/.test(String(url).split("?")[0])) {
+              return { ok: true, json: async () => ({ enrollments: [] }) };
+            }
+            return { ok: false, status: 404, json: async () => ({}) };
+          }),
+        ),
+      );
+      const res = await request(app)
+        .get(`/api/course/${courseId}/access`)
+        .set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
 
-    it('does not grant an owner access to an unlinked QM-native course', async () => {
-      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
+    it("does not grant ownership-based access to an unlinked QM-native course", async () => {
+      await prisma.course.update({
+        where: { id: courseId },
+        data: { coreCourseId: null },
+      });
 
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
+      const res = await request(app)
+        .get(`/api/course/${courseId}/access`)
+        .set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
 
-    it('does not grant a STUDENT owner access to an unlinked QM-native course', async () => {
-      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
+    it("does not grant a STUDENT owner access to an unlinked QM-native course", async () => {
+      await prisma.course.update({
+        where: { id: courseId },
+        data: { coreCourseId: null },
+      });
 
-      const res = await request(app).get(`/api/course/${courseId}/access`).set(asStudentOwner());
+      const res = await request(app)
+        .get(`/api/course/${courseId}/access`)
+        .set(asStudentOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
