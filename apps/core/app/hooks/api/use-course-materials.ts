@@ -46,6 +46,14 @@ export type UploadOutcome =
 const UPLOAD_POLL_INTERVAL_MS = 1500
 /** Give up watching after this long; the server keeps going regardless. */
 const UPLOAD_POLL_TIMEOUT_MS = 5 * 60 * 1000
+/**
+ * Slow re-read that stays alive for as long as *any* row is still PROCESSING
+ * (#1494 review). `watchUpload` gives up after five minutes, but the UI tells
+ * the user "the list will update when it finishes" — without this the list
+ * would then sit stale forever. Deliberately much slower than the active poll:
+ * this is the long tail, not the common case.
+ */
+const BACKGROUND_REFRESH_INTERVAL_MS = 30 * 1000
 
 /** Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch. */
 export function useCourseMaterials(courseId: string) {
@@ -117,6 +125,39 @@ export function useCourseMaterials(courseId: string) {
         : [row, ...prev],
     )
   }, [])
+
+  /**
+   * Quiet re-read of page 1: refreshes the rows already on screen and picks up
+   * rows added since the last read, without touching `loading` (which would
+   * flash the whole list into its skeleton) or `nextCursor` (which would
+   * discard pages the user loaded via `loadMore`). Errors are swallowed — the
+   * next tick retries, and a transient read failure is not worth surfacing over
+   * a list the user can already see.
+   */
+  const refreshFirstPage = useCallback(async () => {
+    try {
+      const data = await fetchPage(null)
+      setMaterials((prev) => {
+        const fresh = new Map(data.materials.map((m) => [m.id, m]))
+        const known = new Set(prev.map((m) => m.id))
+        const updated = prev.map((m) => fresh.get(m.id) ?? m)
+        const added = data.materials.filter((m) => !known.has(m.id))
+        return added.length > 0 ? [...added, ...updated] : updated
+      })
+    } catch {
+      /* transient read failure — the next tick retries */
+    }
+  }, [fetchPage])
+
+  const hasProcessingRow = materials.some((m) => m.status === 'PROCESSING')
+
+  useEffect(() => {
+    if (!courseId || !hasProcessingRow) return
+    const timer = setInterval(() => {
+      void refreshFirstPage()
+    }, BACKGROUND_REFRESH_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [courseId, hasProcessingRow, refreshFirstPage])
 
   /**
    * Watch a material until it leaves PROCESSING (#949). Uploads are ordered

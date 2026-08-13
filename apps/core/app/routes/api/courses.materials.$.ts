@@ -492,7 +492,6 @@ async function processMaterialAsync(
             rawText: fileInfo.content,
           },
         });
-        await markDuplicateReceipt(materialId, duplicate.id);
         try {
           // Replace any stale chunks/embeddings from before the soft-delete so
           // restoring a material doesn't append duplicate RAG content (#685 review).
@@ -512,6 +511,16 @@ async function processMaterialAsync(
             requestContext,
           );
         }
+        // Receipt LAST, deliberately (#1494 review): marking it before the
+        // restored row settles hands the client a terminal "duplicate, nothing
+        // was added" outcome while the restored material is still PROCESSING —
+        // and the client deletes the receipt on that outcome, so a later
+        // restore failure would have nothing left to surface it. Keeping the
+        // receipt PROCESSING until restoration lands means a poller either
+        // waits or sees the settled truth. A restore that dies mid-embed
+        // strands the receipt in PROCESSING, which is the same fire-and-forget
+        // hole documented above and recovers the same way (re-upload reclaims).
+        await markDuplicateReceipt(materialId, duplicate.id);
         return;
       }
 
@@ -586,6 +595,14 @@ async function processMaterialAsync(
  *   - FAILED or soft-deleted → a stranded row from an earlier attempt (failed
  *     extraction, or a process that died mid-run). Reclaim it and retry, which
  *     is also the only recovery path for the fire-and-forget hole above.
+ *
+ * The claim is a single conditional `updateMany` rather than a read followed by
+ * an unconditional `update` (#1494 review): two identical retries can both read
+ * the row as FAILED, and an unconditional update would let both start embedding
+ * the same materialId, leaving the final status nondeterministic. Restating the
+ * "not already claimed" predicate in the UPDATE's WHERE makes the database
+ * serialize them on the row lock — exactly one gets `count === 1` and proceeds,
+ * and the loser falls through to the same 409 a live concurrent upload returns.
  */
 async function reclaimProvisionalRow(
   courseId: string,
@@ -594,16 +611,17 @@ async function reclaimProvisionalRow(
 ): Promise<{ outcome: 'conflict' | 'reclaimed'; materialId: string } | null> {
   const existing = await prisma.courseMaterial.findFirst({
     where: { courseId, checksum: provisionalChecksum },
-    select: { id: true, status: true, deletedAt: true },
+    select: { id: true },
   });
   if (!existing) return null;
 
-  if (existing.status === 'PROCESSING' && !existing.deletedAt) {
-    return { outcome: 'conflict', materialId: existing.id };
-  }
-
-  await prisma.courseMaterial.update({
-    where: { id: existing.id },
+  const claimed = await prisma.courseMaterial.updateMany({
+    // Reclaimable is the negation of "live and mid-flight": anything that is
+    // not PROCESSING, plus soft-deleted rows regardless of their status.
+    where: {
+      id: existing.id,
+      OR: [{ status: { not: 'PROCESSING' } }, { deletedAt: { not: null } }],
+    },
     data: {
       status: 'PROCESSING',
       uploadedBy: userId,
@@ -614,6 +632,13 @@ async function reclaimProvisionalRow(
       rawText: null,
     },
   });
+
+  if (claimed.count === 0) {
+    // Either the row was live PROCESSING all along, or a concurrent retry won
+    // the claim a moment ago. Both mean "someone else is already processing
+    // these bytes", which is the 409 case.
+    return { outcome: 'conflict', materialId: existing.id };
+  }
   return { outcome: 'reclaimed', materialId: existing.id };
 }
 

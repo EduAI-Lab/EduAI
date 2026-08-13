@@ -488,3 +488,78 @@ describe('useCourseMaterials.uploadMaterial (#949 async contract)', () => {
     expect(result.current.materials.find((m) => m.id === 'mat-new')?.status).toBe('READY')
   })
 })
+
+describe('useCourseMaterials background refresh (#1494 review)', () => {
+  const REFRESH_MS = 30 * 1000
+  const processing = { ...material, id: 'mat-slow', status: 'PROCESSING', processedAt: null }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  async function mount(initial: unknown[]) {
+    vi.mocked(fetch).mockResolvedValueOnce(materialsResponse(initial))
+    const { result, unmount } = renderHook(() => useCourseMaterials('course-1'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    return { result, unmount }
+  }
+
+  it('keeps re-reading the list while a row is still PROCESSING', async () => {
+    // `watchUpload` has given up (or the user reloaded onto a mid-flight row),
+    // but the UI still promises the list will update when processing finishes.
+    const { result } = await mount([processing])
+    expect(result.current.materials[0].status).toBe('PROCESSING')
+
+    vi.mocked(fetch).mockResolvedValue(
+      materialsResponse([{ ...processing, status: 'READY' }]),
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS)
+    })
+
+    expect(result.current.materials[0].status).toBe('READY')
+  })
+
+  it('does not poll when nothing is PROCESSING, and stops once the row settles', async () => {
+    const { result } = await mount([material])
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS * 3)
+    })
+    // Only the initial list read — an all-settled list must not poll at all.
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(result.current.materials[0].status).toBe('READY')
+  })
+
+  it('leaves the list untouched when a background read fails', async () => {
+    const { result } = await mount([processing])
+    vi.mocked(fetch).mockRejectedValue(new Error('network down'))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS)
+    })
+
+    // A transient failure behind a list the user can already see is not worth
+    // surfacing; the next tick retries.
+    expect(result.current.materials[0].status).toBe('PROCESSING')
+    expect(result.current.error).toBeNull()
+  })
+
+  it('clears the interval on unmount', async () => {
+    const { unmount } = await mount([processing])
+    const callsBefore = vi.mocked(fetch).mock.calls.length
+    unmount()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_MS * 3)
+    })
+    expect(vi.mocked(fetch).mock.calls.length).toBe(callsBefore)
+  })
+})

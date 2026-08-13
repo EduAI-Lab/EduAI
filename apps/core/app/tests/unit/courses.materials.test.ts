@@ -18,6 +18,7 @@ vi.mock("~/lib/prisma.server", () => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       delete: vi.fn(),
     },
     canvasMaterialExclusion: {
@@ -162,11 +163,32 @@ function mockExtraction(overrides: Record<string, unknown> = {}) {
   } as never);
 }
 
+/** Every `courseMaterial.update` argument object, in call order. */
+function updateCalls(): Array<{ where?: any; data?: any }> {
+  return vi.mocked(prisma.courseMaterial.update).mock.calls.map(([arg]) => arg as any);
+}
+
+/** Index of the first `update` matching `predicate`, or -1. */
+function updateCallIndex(predicate: (call: { where?: any; data?: any }) => boolean): number {
+  return updateCalls().findIndex(predicate);
+}
+
+/**
+ * Updates that write the duplicate receipt onto *this upload's* provisional row
+ * (`mat-restore` in the restore tests) — as opposed to the restored original.
+ */
+function receiptUpdates(): Array<{ where?: any; data?: any }> {
+  return updateCalls().filter((c) => c.where?.id === "mat-restore");
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(validateUploadedFile).mockResolvedValue(undefined);
   mockExtraction();
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
+  // The provisional-row claim is a conditional updateMany; default to "this
+  // caller won the claim" so only the contention tests have to say otherwise.
+  vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
   mockAccess({ level: "instructor", rank: 2 });
   // Reset to code defaults so per-test overrides don't leak across tests.
@@ -826,6 +848,71 @@ describe("POST /api/courses/:courseId/materials action", () => {
     );
   });
 
+  it("keeps the receipt PROCESSING until a slow restore settles (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: new Date(),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+    // Re-embedding the restored material is still in flight.
+    let finishEmbedding: () => void = () => {};
+    vi.mocked(processMaterialEmbeddings).mockImplementation(
+      () => new Promise<void>((resolve) => { finishEmbedding = () => resolve(); }),
+    );
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    // Marking the receipt terminal here would tell a polling client "duplicate,
+    // nothing was added" while the restored row is still PROCESSING — and the
+    // client deletes the receipt on that outcome, losing the later truth.
+    expect(receiptUpdates()).toHaveLength(0);
+
+    finishEmbedding();
+    await flushBackgroundWork();
+    expect(receiptUpdates()).toHaveLength(1);
+    expect(receiptUpdates()[0].data).toEqual(
+      expect.objectContaining({ status: "FAILED", duplicateOfId: "existing-mat" }),
+    );
+  });
+
+  it("resolves the receipt only after a failing restore has landed FAILED (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: new Date(),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(new Error("embedding provider down"));
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(202);
+    await flushBackgroundWork();
+
+    // The restored row records the failure...
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing-mat" },
+        data: expect.objectContaining({ status: "FAILED" }),
+      }),
+    );
+    // ...and only then does the receipt resolve, so the client's poll observes
+    // the settled outcome rather than a premature "nothing was added".
+    const restoreFailedAt = updateCallIndex(
+      (c) => c.where?.id === "existing-mat" && c.data?.status === "FAILED",
+    );
+    const receiptAt = updateCallIndex((c) => c.where?.id === "mat-restore");
+    expect(receiptAt).toBeGreaterThan(restoreFailedAt);
+  });
+
   it("returns 409 when the identical bytes are already being processed", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
@@ -835,11 +922,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
     );
     // The colliding `pending:` row is still mid-flight → a genuine concurrent
     // upload of the same file, which still fails fast exactly as before #949.
+    // The conditional claim matches nothing because the row is live PROCESSING.
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "inflight-mat",
-      status: "PROCESSING",
-      deletedAt: null,
     } as never);
+    vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 0 } as never);
 
     const res = await action(stubUploadArgs());
     expect(res.status).toBe(409);
@@ -859,8 +946,6 @@ describe("POST /api/courses/:courseId/materials action", () => {
     // bytes is the recovery path for the fire-and-forget hole.
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
       id: "stranded-mat",
-      status: "FAILED",
-      deletedAt: null,
     } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
 
@@ -868,14 +953,70 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.materialId).toBe("stranded-mat");
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "stranded-mat" },
+        where: expect.objectContaining({ id: "stranded-mat" }),
         data: expect.objectContaining({ status: "PROCESSING", duplicateOfId: null }),
       }),
     );
     await flushBackgroundWork();
     expect(extractUploadedFileContent).toHaveBeenCalled();
+  });
+
+  it("claims a stranded row conditionally, not with a blind update (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "stranded-mat",
+    } as never);
+
+    await action(stubUploadArgs());
+
+    // The "not already claimed" predicate must live in the UPDATE's WHERE, so
+    // the database — not a stale read — decides who gets the row.
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "stranded-mat",
+          OR: [{ status: { not: "PROCESSING" } }, { deletedAt: { not: null } }],
+        }),
+      }),
+    );
+  });
+
+  it("409s the loser when two identical retries race for the same stranded row (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    const p2002 = () =>
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      });
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(p2002());
+    // Both retries read the row as reclaimable...
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "stranded-mat",
+    } as never);
+    // ...but the conditional claim only matches for the first one.
+    vi.mocked(prisma.courseMaterial.updateMany)
+      .mockResolvedValueOnce({ count: 1 } as never)
+      .mockResolvedValueOnce({ count: 0 } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
+
+    const [first, second] = await Promise.all([
+      action(stubUploadArgs()),
+      action(stubUploadArgs()),
+    ]);
+
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(409);
+    expect((await second.json()).materialId).toBe("stranded-mat");
+    await flushBackgroundWork();
+    // Exactly one background run against the shared row — the whole point of
+    // the atomic claim is that the loser never starts a second extraction.
+    expect(extractUploadedFileContent).toHaveBeenCalledTimes(1);
   });
 
   it("returns 500 for a create() failure unrelated to the checksum unique constraint", async () => {
