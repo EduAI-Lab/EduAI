@@ -214,7 +214,15 @@ export async function runCompletion(request: CompletionRequest) {
   }
 
   if (streaming) {
-    return { ok: true as const, streaming: true as const, result, fleetServerId };
+    return {
+      ok: true as const,
+      streaming: true as const,
+      result,
+      fleetServerId,
+      // Exposed so the route can classify a late stream error without parsing
+      // the model identifier again.
+      provider: parsedModel.providerId,
+    };
   }
 
   try {
