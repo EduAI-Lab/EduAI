@@ -26,13 +26,25 @@ export function normalizeMcqCorrectness({
     choiceLetters.map((l) => String(l).trim().toUpperCase()).filter(Boolean)
   );
 
+  /** Lenient: legacy `answer` may be a letter or full choice text. */
   const coerceLetter = (raw: string | null | undefined): string | null => {
     if (raw == null) return null;
     const s = String(raw).trim();
     if (!s) return null;
-    // Prefer leading letter like existing extractAnswerLetter callers may pass
     const letter = s.length === 1 ? s.toUpperCase() : s.charAt(0).toUpperCase();
     return letter;
+  };
+
+  /** Strict: `correctAnswers` entries must be single A–Z letters. */
+  const strictLetter = (raw: string | null | undefined): string => {
+    if (raw == null) {
+      throw new Error(`correctAnswers entries must be single letters (got ${JSON.stringify(raw)})`);
+    }
+    const s = String(raw).trim();
+    if (!/^[A-Za-z]$/.test(s)) {
+      throw new Error(`correctAnswers entries must be single letters (got ${JSON.stringify(raw)})`);
+    }
+    return s.toUpperCase();
   };
 
   if (!selectAllThatApply) {
@@ -43,9 +55,7 @@ export function normalizeMcqCorrectness({
   }
 
   const fromArray = Array.isArray(correctAnswers) ? correctAnswers : [];
-  const unique = [
-    ...new Set(fromArray.map(coerceLetter).filter((l): l is string => Boolean(l))),
-  ].sort();
+  const unique = [...new Set(fromArray.map(strictLetter))].sort();
   if (unique.length === 0) throw new Error('MCQ requires at least one correct answer');
   for (const letter of unique) {
     if (!allowed.has(letter)) throw new Error(`Correct answer ${letter} is not in choices`);

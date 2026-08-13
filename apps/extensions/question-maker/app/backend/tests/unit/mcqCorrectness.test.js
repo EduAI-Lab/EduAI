@@ -47,4 +47,13 @@ describe('normalizeMcqCorrectness', () => {
       choiceLetters: letters,
     })).toThrow(/not in choices/i);
   });
+
+  it('multi mode: rejects multi-character correctAnswers entries', () => {
+    expect(() => normalizeMcqCorrectness({
+      selectAllThatApply: true,
+      answer: null,
+      correctAnswers: ['AB'],
+      choiceLetters: letters,
+    })).toThrow(/single letters/i);
+  });
 });

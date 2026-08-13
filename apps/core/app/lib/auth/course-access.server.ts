@@ -184,16 +184,15 @@ export function wantsIncludeDeleted(
 }
 
 /**
- * §19 answer-visibility rule: `Question.answer` is never returned to a caller
- * whose resolved access is `student`. Enforced at the serialization layer —
- * call this on every question response path, regardless of route guards.
- * Returns the input untouched for every other access level.
+ * §19 answer-visibility rule: `Question.answer` / `correctAnswers` are never
+ * returned to a caller whose resolved access is `student`. Enforced at the
+ * serialization layer — call this on every question response path, regardless
+ * of route guards. Returns the input untouched for every other access level.
  */
-export function stripAnswerForStudents<T extends { answer?: unknown }>(
-  question: T,
-  access: AccessLevel | null,
-): T | Omit<T, "answer"> {
+export function stripAnswerForStudents<
+  T extends { answer?: unknown; correctAnswers?: unknown },
+>(question: T, access: AccessLevel | null): T | Omit<T, "answer" | "correctAnswers"> {
   if (access?.level !== "student") return question;
-  const { answer: _answer, ...rest } = question;
+  const { answer: _answer, correctAnswers: _correctAnswers, ...rest } = question;
   return rest;
 }

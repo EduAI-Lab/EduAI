@@ -1004,7 +1004,6 @@ export const updateVariant = async (variantId, variantData, userId) => {
       variantData.answer !== undefined
       || variantData.correctAnswers !== undefined
       || variantData.selectAllThatApply !== undefined
-      || variantData.choices !== undefined
     );
     
     if (isMcq) {
@@ -1037,8 +1036,13 @@ export const updateVariant = async (variantId, variantData, userId) => {
         normalizedSelectAllThatApply = normalized.selectAllThatApply;
         normalizedCorrectAnswers = normalized.correctAnswers;
       }
-    } else if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
-      normalizedAnswer = variantData.answer.trim();
+    } else {
+      // Non-MCQ: never persist multi-correct fields from raw client payloads.
+      normalizedSelectAllThatApply = false;
+      normalizedCorrectAnswers = null;
+      if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
+        normalizedAnswer = variantData.answer.trim();
+      }
     }
 
     const nextIsDraft = variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : undefined;

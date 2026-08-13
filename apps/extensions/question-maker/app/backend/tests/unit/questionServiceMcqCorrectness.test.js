@@ -143,5 +143,71 @@ describe('questionService MCQ multi-correct persistence', () => {
         }),
       );
     });
+
+    it('choices-only edit does not re-normalize stored answer', async () => {
+      mockVariantFindFirst.mockResolvedValue({
+        id: 6,
+        isDraft: true,
+        answer: null,
+        choices: CHOICES,
+        selectAllThatApply: false,
+        correctAnswers: null,
+        questionMetadata: { id: 10, type: 'MCQ' },
+      });
+      mockVariantUpdate.mockResolvedValue({ id: 6 });
+
+      await updateVariant(6, {
+        choices: [
+          { letter: 'A', text: 'Alpha edited' },
+          { letter: 'B', text: 'Beta' },
+          { letter: 'C', text: 'Gamma' },
+        ],
+      }, USER_ID);
+
+      expect(mockVariantUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            choices: [
+              { letter: 'A', text: 'Alpha edited' },
+              { letter: 'B', text: 'Beta' },
+              { letter: 'C', text: 'Gamma' },
+            ],
+          }),
+        }),
+      );
+      const data = mockVariantUpdate.mock.calls[0][0].data;
+      expect(data.answer).toBeUndefined();
+      expect(data.selectAllThatApply).toBeUndefined();
+      expect(data.correctAnswers).toBeUndefined();
+    });
+
+    it('non-MCQ update forces selectAllThatApply false and correctAnswers null', async () => {
+      mockVariantFindFirst.mockResolvedValue({
+        id: 7,
+        isDraft: true,
+        answer: 'text',
+        choices: null,
+        selectAllThatApply: false,
+        correctAnswers: null,
+        questionMetadata: { id: 11, type: 'SA' },
+      });
+      mockVariantUpdate.mockResolvedValue({ id: 7 });
+
+      await updateVariant(7, {
+        selectAllThatApply: true,
+        correctAnswers: ['A', 'B'],
+        answer: 'Updated SA',
+      }, USER_ID);
+
+      expect(mockVariantUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            answer: 'Updated SA',
+            selectAllThatApply: false,
+            correctAnswers: null,
+          }),
+        }),
+      );
+    });
   });
 });

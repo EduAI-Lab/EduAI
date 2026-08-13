@@ -148,9 +148,14 @@ describe("createQuestion", () => {
     const result = await createQuestion(
       {
         ...baseBody,
+        choices: [
+          { letter: "A", text: "One" },
+          { letter: "B", text: "Two" },
+          { letter: "C", text: "Three" },
+        ],
         selectAllThatApply: true,
-        correctAnswers: ["A", "C"],
-        answer: "A",
+        correctAnswers: ["C", "A"],
+        answer: "Z",
       },
       CREATOR,
     );
@@ -159,6 +164,7 @@ describe("createQuestion", () => {
     const createData = db.question.create.mock.calls[0][0].data;
     expect(createData.selectAllThatApply).toBe(true);
     expect(createData.correctAnswers).toEqual(["A", "C"]);
+    expect(createData.answer).toBe("A");
   });
 
   it("returns VALIDATION_ERROR when correctAnswers contains an empty string", async () => {
@@ -170,6 +176,45 @@ describe("createQuestion", () => {
     const fields = (result as { fields: Record<string, string> }).fields;
     expect(fields).toHaveProperty("correctAnswers");
     expect(db.course.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns VALIDATION_ERROR when selectAllThatApply has no correctAnswers", async () => {
+    const result = await createQuestion(
+      { ...baseBody, selectAllThatApply: true, correctAnswers: [] },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields).toHaveProperty("correctAnswers");
+  });
+
+  it("returns VALIDATION_ERROR when correctAnswers letters are not in choices", async () => {
+    const result = await createQuestion(
+      {
+        ...baseBody,
+        selectAllThatApply: true,
+        correctAnswers: ["A", "Z"],
+      },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields.correctAnswers).toMatch(/not in choices/i);
+  });
+
+  it("returns VALIDATION_ERROR when selectAllThatApply is set on a non-MCQ type", async () => {
+    const result = await createQuestion(
+      {
+        ...baseBody,
+        type: "SA",
+        selectAllThatApply: true,
+        correctAnswers: ["A"],
+      },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields).toHaveProperty("selectAllThatApply");
   });
 
   it("returns VALIDATION_ERROR for a malformed body (missing content, bad enum)", async () => {

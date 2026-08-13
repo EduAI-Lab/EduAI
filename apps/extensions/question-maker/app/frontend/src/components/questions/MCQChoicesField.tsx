@@ -68,20 +68,25 @@ export function MCQChoicesField({
 
   const handleRemoveChoice = (index: number) => {
     if (safeChoices.length <= 2) return;
-    const removedLetter = safeChoices[index]?.letter;
-    const next = safeChoices.filter((_, i) => i !== index).map((c, i) => ({ ...c, letter: LETTERS[i] }));
-    onChoicesChange(next);
+    const survivors = safeChoices.filter((_, i) => i !== index);
+    const next = survivors.map((c, i) => ({ ...c, letter: LETTERS[i] }));
+    // Re-lettering shifts later options; remap correctness through old→new letters.
+    const remap = new Map(survivors.map((c, i) => [c.letter, LETTERS[i]]));
+
     if (multi) {
-      if (removedLetter && safeCorrect.includes(removedLetter)) {
-        const nextCorrect = sortedUnique(safeCorrect.filter((l) => l !== removedLetter));
-        onCorrectAnswersChange?.(nextCorrect);
-        onAnswerChange(nextCorrect[0] ?? '');
-      }
+      const nextCorrect = sortedUnique(
+        safeCorrect.map((l) => remap.get(l)).filter((l): l is string => Boolean(l)),
+      );
+      onCorrectAnswersChange?.(nextCorrect);
+      onAnswerChange(nextCorrect[0] ?? '');
+      onChoicesChange(next);
       return;
     }
-    // If the removed (or now-relettered) choice was the answer, clear it.
-    if (removedLetter === answer) {
-      onAnswerChange('');
+
+    const remappedAnswer = answer ? remap.get(answer) : undefined;
+    onChoicesChange(next);
+    if (answer && remappedAnswer !== answer) {
+      onAnswerChange(remappedAnswer ?? '');
     }
   };
 
@@ -112,6 +117,11 @@ export function MCQChoicesField({
       onSelectAllThatApplyChange?.(false);
       onAnswerChange(first);
       onCorrectAnswersChange?.(first ? [first] : []);
+      return;
+    }
+    if (checked && !multi) {
+      onSelectAllThatApplyChange?.(true);
+      onCorrectAnswersChange?.(answer ? [answer] : []);
       return;
     }
     onSelectAllThatApplyChange?.(checked);

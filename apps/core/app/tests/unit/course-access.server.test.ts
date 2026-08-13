@@ -302,13 +302,24 @@ describe("buildCourseListFilter", () => {
 });
 
 describe("stripAnswerForStudents", () => {
-  const QUESTION = { id: "q1", content: "2+2?", answer: "4" };
+  const QUESTION = {
+    id: "q1",
+    content: "2+2?",
+    answer: "4",
+    correctAnswers: ["A", "C"],
+  };
 
   it("drops answer for student-level access", () => {
     const access: AccessLevel = { level: "student", rank: 0 };
     const out = stripAnswerForStudents(QUESTION, access);
     expect(out).toEqual({ id: "q1", content: "2+2?" });
     expect("answer" in out).toBe(false);
+  });
+
+  it("drops correctAnswers for student-level access", () => {
+    const access: AccessLevel = { level: "student", rank: 0 };
+    const out = stripAnswerForStudents(QUESTION, access);
+    expect("correctAnswers" in out).toBe(false);
   });
 
   it.each([
@@ -326,13 +337,15 @@ describe("stripAnswerForStudents", () => {
   });
 
   it("no-ops cleanly when answer is null", () => {
-    const q = { id: "q1", answer: null };
+    const q = { id: "q1", answer: null, correctAnswers: null };
     const out = stripAnswerForStudents(q, { level: "student", rank: 0 });
     expect("answer" in out).toBe(false);
+    expect("correctAnswers" in out).toBe(false);
   });
 
   it("does not mutate the input object", () => {
     stripAnswerForStudents(QUESTION, { level: "student", rank: 0 });
     expect(QUESTION.answer).toBe("4");
+    expect(QUESTION.correctAnswers).toEqual(["A", "C"]);
   });
 });

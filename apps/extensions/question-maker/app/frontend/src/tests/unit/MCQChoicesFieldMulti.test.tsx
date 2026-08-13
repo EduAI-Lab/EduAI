@@ -105,4 +105,73 @@ describe('MCQChoicesField multi-correct (#1360)', () => {
     expect(screen.getByText('Click letters to mark all correct answers')).toBeInTheDocument();
     expect(screen.queryByText('Click a letter to mark the correct answer')).not.toBeInTheDocument();
   });
+
+  it('toggle on seeds correctAnswers from the current single answer', () => {
+    const onSelectAllThatApplyChange = vi.fn();
+    const onCorrectAnswersChange = vi.fn();
+    const onAnswerChange = vi.fn();
+    const onChoicesChange = vi.fn();
+
+    render(
+      <MCQChoicesField
+        choices={CHOICES}
+        answer="B"
+        selectAllThatApply={false}
+        correctAnswers={[]}
+        onChoicesChange={onChoicesChange}
+        onAnswerChange={onAnswerChange}
+        onCorrectAnswersChange={onCorrectAnswersChange}
+        onSelectAllThatApplyChange={onSelectAllThatApplyChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all that apply/i }));
+    expect(onSelectAllThatApplyChange).toHaveBeenCalledWith(true);
+    expect(onCorrectAnswersChange).toHaveBeenCalledWith(['B']);
+  });
+
+  it('removing an early choice remaps multi correctAnswers through re-lettering', () => {
+    const onCorrectAnswersChange = vi.fn();
+    const onAnswerChange = vi.fn();
+    const onChoicesChange = vi.fn();
+
+    render(
+      <MCQChoicesField
+        choices={CHOICES}
+        answer="C"
+        selectAllThatApply={true}
+        correctAnswers={['C', 'D']}
+        onChoicesChange={onChoicesChange}
+        onAnswerChange={onAnswerChange}
+        onCorrectAnswersChange={onCorrectAnswersChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove option A/i }));
+    // Survivors B,C,D → A,B,C; old C,D → B,C
+    expect(onChoicesChange).toHaveBeenCalledWith([
+      { letter: 'A', text: 'Two' },
+      { letter: 'B', text: 'Three' },
+      { letter: 'C', text: 'Four' },
+    ]);
+    expect(onCorrectAnswersChange).toHaveBeenCalledWith(['B', 'C']);
+    expect(onAnswerChange).toHaveBeenCalledWith('B');
+  });
+
+  it('removing an early choice remaps the single answer letter', () => {
+    const onAnswerChange = vi.fn();
+    const onChoicesChange = vi.fn();
+
+    render(
+      <MCQChoicesField
+        choices={CHOICES}
+        answer="C"
+        onChoicesChange={onChoicesChange}
+        onAnswerChange={onAnswerChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove option A/i }));
+    expect(onAnswerChange).toHaveBeenCalledWith('B');
+  });
 });
