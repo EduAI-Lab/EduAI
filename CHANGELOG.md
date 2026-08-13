@@ -4,6 +4,7 @@
 
 ### Added
 
+- [core] feat: Complete the async AI-job status read model with explicit route registration and an advisory `etaSeconds` estimate derived from recent per-pool completion durations and worker concurrency. Closes #1508. (@superbolt08, 2026-08-12) — [#1506](https://github.com/EduAI-Lab/EduAI/pull/1506)
 - [core] feat: Add `GET /api/ai-jobs/:jobId`, a producer-side status endpoint exposing a live, caller-owned `AiJob` snapshot plus its current queue position — recomputed from Postgres on every read (not a stale enqueue-time value) so it reflects jobs that have drained since enqueue and stays correct across a Redis restart. Scoped to the requesting user (404, not 403, on another user's job id, so the response can't confirm the id exists), with a service-key path so Question Maker can poll the synthetic-`service`-owned jobs it creates server-to-server. Closes #917. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
 
 ### Fixed
