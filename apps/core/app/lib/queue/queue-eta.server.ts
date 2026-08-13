@@ -47,24 +47,33 @@ export async function getQueueEtaSeconds(
   if (!job.queueName) return null;
 
   try {
-    const rows = await client.aiJob.findMany({
-      where: {
-        queueName: job.queueName,
-        status: "COMPLETED",
-        startedAt: { not: null },
-        completedAt: { not: null },
-      },
-      select: { startedAt: true, completedAt: true },
-      orderBy: { completedAt: "desc" },
-      take: ETA_SAMPLE_SIZE,
-    });
+    const [rows, runningCount] = await Promise.all([
+      client.aiJob.findMany({
+        where: {
+          queueName: job.queueName,
+          status: "COMPLETED",
+          startedAt: { not: null },
+          completedAt: { not: null },
+        },
+        select: { startedAt: true, completedAt: true },
+        orderBy: { completedAt: "desc" },
+        take: ETA_SAMPLE_SIZE,
+      }),
+      client.aiJob.count({
+        where: { queueName: job.queueName, status: "RUNNING" },
+      }),
+    ]);
     const durationMs = meanDurationMs(rows);
     if (durationMs === null) return null;
 
     if (job.queueName !== QUEUE_CHAT && job.queueName !== QUEUE_HEAVY)
       return null;
     const concurrency = workerConcurrency(job.queueName);
-    return Math.ceil((queuePosition * durationMs) / (concurrency * 1000));
+    // queuePosition includes the pending job itself. Add active jobs so a
+    // saturated pool is not treated as if all workers were idle.
+    return Math.ceil(
+      ((runningCount + queuePosition) * durationMs) / (concurrency * 1000),
+    );
   } catch (error) {
     // ETA is advisory. A stats read must not make an otherwise valid status
     // response fail when the aggregation query is temporarily unavailable.

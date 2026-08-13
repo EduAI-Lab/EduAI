@@ -2,8 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findMany = vi.hoisted(() => vi.fn());
+const count = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/prisma.server", () => ({ default: { aiJob: { findMany } } }));
+vi.mock("~/lib/prisma.server", () => ({
+  default: { aiJob: { findMany, count } },
+}));
 
 import {
   ETA_SAMPLE_SIZE,
@@ -14,6 +17,7 @@ const job = { queueName: "ai-jobs-chat", status: "PENDING" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  count.mockResolvedValue(0);
 });
 
 describe("getQueueEtaSeconds", () => {
@@ -41,6 +45,21 @@ describe("getQueueEtaSeconds", () => {
       orderBy: { completedAt: "desc" },
       take: ETA_SAMPLE_SIZE,
     });
+    expect(count).toHaveBeenCalledWith({
+      where: { queueName: "ai-jobs-chat", status: "RUNNING" },
+    });
+  });
+
+  it("includes active pool workers in the estimate", async () => {
+    findMany.mockResolvedValue([
+      {
+        startedAt: new Date("2026-08-12T00:00:00.000Z"),
+        completedAt: new Date("2026-08-12T00:01:00.000Z"),
+      },
+    ]);
+    count.mockResolvedValue(8);
+
+    await expect(getQueueEtaSeconds(job, 1)).resolves.toBe(68);
   });
 
   it("returns null before the pool has a usable completion sample", async () => {
