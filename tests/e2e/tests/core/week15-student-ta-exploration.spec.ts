@@ -158,6 +158,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
           courseId: COURSES.hist210,
         },
       });
+      expect(chatRes.status()).toBe(403);
       test.info().annotations.push({
         type: 'finding',
         description: `POST /api/chat with unenrolled courseId (hist210) as student1 -> ${chatRes.status()}`,
@@ -169,6 +170,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       // 3. Enrollment list for a course student1 IS enrolled in (as STUDENT, not staff)
       const enrOwnRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`);
+      expect(enrOwnRes.status()).toBe(403);
       test.info().annotations.push({
         type: 'finding',
         description: `GET enrollments for own enrolled course (cosc101) as STUDENT -> ${enrOwnRes.status()}`,
@@ -176,6 +178,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       // 4. Questions endpoint for an enrolled course
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
+      expect(qRes.status()).toBe(200);
       test.info().annotations.push({
         type: 'finding',
         description: `GET /api/questions?courseId=cosc101 as STUDENT (enrolled) -> ${qRes.status()}`,
@@ -202,6 +205,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       const res = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/materials`);
+      expect(res.status()).toBe(200);
       test.info().annotations.push({
         type: 'finding',
         description: `GET materials for enrolled course (cosc101) as STUDENT -> ${res.status()}`,
@@ -229,6 +233,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       if (someoneElsesReport) {
         const guessRes = await studentCtx.get(`${CORE_URL}/api/bug-reports/${someoneElsesReport.id}`);
+        expect(guessRes.status()).toBe(404);
         test.info().annotations.push({
           type: 'finding',
           description: `Student fetching another user's bug report by id -> ${guessRes.status()}`,
@@ -318,6 +323,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     try {
       // Can TA view questions (with answers) in their own course?
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
+      expect(qRes.status()).toBe(200);
       test.info().annotations.push({
         type: 'finding',
         description: `GET /api/questions?courseId=cosc101 as TA -> ${qRes.status()}`,
@@ -334,6 +340,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
 
       // TA in cosc101 querying questions for a course they have no relation to
       const qOtherRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.math200}`);
+      expect(qOtherRes.status()).toBe(403);
       test.info().annotations.push({
         type: 'finding',
         description: `GET /api/questions?courseId=math200 (TA not related to this course) -> ${qOtherRes.status()}`,
@@ -357,6 +364,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       const enrollRes = await ctx.post(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`, {
         data: { userId: 'seed_user_student_05', role: 'STUDENT' },
       });
+      expect(enrollRes.status()).toBe(403);
       test.info().annotations.push({
         type: 'finding',
         description: `POST enrollments (add student) as TA in own course -> ${enrollRes.status()}`,
