@@ -224,6 +224,42 @@ describe('approved-variant lock (§19)', () => {
     expect(res.status).toBe(403);
     expect(mockUpdateVariant).not.toHaveBeenCalled();
   });
+
+  it("real TA (INSTRUCTOR platform role + TA enrollment) cannot aiTag-only-edit another user's approved variant → 403 (#1413)", async () => {
+    // QM_AUTHORIZED gates platform role TA out entirely (see "TA blocked at
+    // platform role gate" above) — a real course-level TA is a platform
+    // INSTRUCTOR enrolled as course TA, which is what makes `access.level`
+    // resolve to 'ta' inside the route.
+    authAs(INSTRUCTOR, 'TA');
+    loadVariant({ isDraft: false, createdBy: 'someone-else' });
+
+    const res = await request(app)
+      .put('/api/questions/variants/42')
+      .set('Cookie', 'session=v')
+      .send({ isAiGenerated: true });
+
+    expect(res.status).toBe(403);
+    expect(mockUpdateVariant).not.toHaveBeenCalled();
+  });
+
+  it('real TA can aiTag-only-edit their own approved variant → 200 (#1413)', async () => {
+    authAs(INSTRUCTOR, 'TA');
+    loadVariant({ isDraft: false, createdBy: INSTRUCTOR.id });
+    mockUpdateVariant.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      isAiGenerated: true,
+      questionMetadata: { course: COURSE },
+    });
+
+    const res = await request(app)
+      .put('/api/questions/variants/42')
+      .set('Cookie', 'session=v')
+      .send({ isAiGenerated: true });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateVariant).toHaveBeenCalled();
+  });
 });
 
 describe('PATCH testable is instructor-gated (§16 push domain)', () => {

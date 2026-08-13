@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
@@ -18,6 +17,7 @@ import {
 } from "~/lib/courses/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
   if (topicId) {
@@ -87,7 +87,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return topicsGetResponse(courseId, topicId);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -157,7 +157,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   let session = null;
   let access: AccessLevel | null = null;
   if (!serviceAuth) {
-    session = await auth.api.getSession({ headers: request.headers });
+    session = await getRequestSession(request);
 
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

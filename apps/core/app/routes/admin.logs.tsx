@@ -18,7 +18,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { auth } from "~/lib/auth/server";
 import {
   listAuditLogs,
   listSecurityLogs,
@@ -36,6 +35,7 @@ import {
   getPeakUsageHours,
 } from "~/lib/db.ai-interaction-stats.server";
 import type { Route } from "./+types/admin.logs";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 25;
@@ -66,7 +66,7 @@ const SERVERS_DATE_PRESET_DAYS = new Set([7, 30, 90]);
 
 /** Reject non-admins for both loader and action; returns the session user on success. */
 async function requireAdminUser(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     throw redirect("/auth/login");
   }

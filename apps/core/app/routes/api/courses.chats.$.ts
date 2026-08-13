@@ -14,13 +14,13 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
@@ -28,7 +28,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Course ID is required" }, 400);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json({ error: "Unauthorized" }, 401);
   }

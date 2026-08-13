@@ -12,10 +12,10 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 25;
@@ -26,7 +26,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Course ID is required" }, 400);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json({ error: "Unauthorized" }, 401);
   }
