@@ -23,6 +23,7 @@ Core listens at **http://localhost:3000**. Do not treat this package as a standa
 - Chat + RAG (`POST /api/chat`), embeddings (pgvector, `ivfflat` ANN index on `material_embeddings` tunable via `RAG_IVFFLAT_PROBES` — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md#ann-index-940)), AI provider catalog
 - Policy registry (`GET /api/policies`) and admin tooling
 - Administrator-managed automatic routing: AI Management controls separate `Auto` (LLM-classified) and `Auto (rules)` (fixed-rule) modes. Both select only active tiered models on active providers, while explicit model selections remain unchanged.
+- ADHD Assist mode: toggling regenerates response **content**, not just styling — the policy (`app/lib/ai/adhd-assist.ts`) enforces a Top summary / Step ladder / Next? structure, and `app/lib/ai/adhd-oversight.ts` audits and rewrites (or forces deterministic fallback) any reply that doesn't comply
 - Course-scope guardrail: an always-on system-prompt policy (Layer A) plus an optional second-pass 7B classifier (Layer B, `COURSE_SCOPE_GUARDRAIL_ENABLED` + each course's `courseScopeGuardrailEnabled` setting) that keeps browser learning chat on-topic for the enrolled course, failing open on classifier errors/timeouts and bypassed by admin preview and service-key calls.
 - Service-key and session APIs consumed by extensions
 
