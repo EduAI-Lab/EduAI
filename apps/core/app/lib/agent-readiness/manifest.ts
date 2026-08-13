@@ -161,6 +161,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "GET",
+    path: "/api/ai-jobs/:jobId",
+    readiness: "excluded",
+    reason: "Authenticated background AI-job status polling for UI clients; not an agent operation",
+    routeFile: "routes/api.ai-jobs.$jobId.ts",
+  }),
+  entry({
     method: "POST",
     path: "/api/completion",
     readiness: "excluded",
