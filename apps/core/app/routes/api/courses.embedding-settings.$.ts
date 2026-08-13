@@ -14,6 +14,7 @@ import {
 } from "~/lib/ai/embedding";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 
 async function requireManageSession(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -141,22 +142,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const { startReEmbedJob, serializeReEmbedJob } = await import(
       "~/lib/ai/re-embed-job.server"
     );
-    const job = await startReEmbedJob(courseId);
+    const { job, created } = await startReEmbedJob(courseId);
     reEmbedJob = serializeReEmbedJob(job);
 
     // A re-embed started through the settings PATCH must be audited the same way
     // the dedicated /re-embed route audits it, so this path is not a coverage gap.
-    fireAndForget(
-      logAuditAction({
-        ...getActorContext(authResult.session?.user ?? null),
-        ...requestContext,
-        actionCode: "RE_EMBED_JOB_CREATED",
-        category: "AI_CONFIG",
-        entityType: "ReEmbedJob",
-        entityId: job.id,
-        details: { courseId },
-      }),
-    );
+    if (created) {
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(authResult.session?.user ?? null),
+          ...requestContext,
+          actionCode: "RE_EMBED_JOB_CREATED",
+          category: "AI_CONFIG",
+          entityType: "ReEmbedJob",
+          entityId: job.id,
+          details: { courseId },
+        }),
+      );
+    }
   }
 
   const refreshed = fields;
@@ -206,6 +209,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   });
   } catch (error) {
     console.error("[embedding-settings] PATCH failed:", error);
-    return jsonResponse(formatApiError(error), 500);
+    // startReEmbedJob (reEmbed=true path) can throw QueueUnavailableError on
+    // a DB/queue outage — that must surface as 503, not a generic 500 (#1269
+    // review).
+    return jsonResponse(formatApiError(error), httpStatusForEnqueueError(error));
   }
 }

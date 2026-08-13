@@ -1678,6 +1678,236 @@ describe('Tutoring-flow: question consumption via Core', () => {
     expect(sessions).toHaveLength(0);
   });
 
+  // #1412: a client-supplied chatId that doesn't resolve to a session owned
+  // by this user/activity/mode must be rejected rather than silently reused
+  // (previously the ownership lookup's result was discarded).
+  it('/teach rejects a chatId belonging to a different user', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    const otherStudent = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: otherStudent.id, role: 'STUDENT' },
+    });
+    await prisma.aiChatSession.create({
+      data: {
+        userId: otherStudent.id,
+        activityId: activity.id,
+        mode: 'teach',
+        chatId: 'someone-elses-chat',
+        modelId: 'model-1',
+      },
+    });
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'someone-elses-chat',
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/session not found/i);
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/completion'),
+      expect.anything(),
+    );
+    expect(
+      await prisma.aiInteractionTrace.count({ where: { userId: student.id } }),
+    ).toBe(0);
+  });
+
+  it('/teach rejects an unknown/stale chatId', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'never-existed',
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/session not found/i);
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/completion'),
+      expect.anything(),
+    );
+    expect(
+      await prisma.aiInteractionTrace.count({ where: { userId: student.id } }),
+    ).toBe(0);
+  });
+
+  // #1412 review: the happy path — an owned chatId — had no coverage at all,
+  // so a regression in the ownership `where` clause (e.g. breaking session
+  // continuation for legitimate owners) could ship green.
+  it('/teach forwards an owned chatId to Core and returns 200', async () => {
+    await prisma.aiChatSession.create({
+      data: {
+        userId: student.id,
+        activityId: activity.id,
+        mode: 'teach',
+        chatId: 'my-existing-chat',
+        modelId: 'model-1',
+      },
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (typeof url === 'string' && url.includes('/questions')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ questions: [], total: 0 }),
+            text: () => Promise.resolve(''),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'my-existing-chat' }),
+          text: () => Promise.resolve(''),
+        });
+      }),
+    );
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'my-existing-chat',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.chatId).toBe('my-existing-chat');
+
+    const completionCall = fetch.mock.calls.find(
+      ([url, opts]) =>
+        typeof url === 'string' && url.includes('/completion') && opts?.method === 'POST',
+    );
+    expect(completionCall).toBeDefined();
+    expect(JSON.parse(completionCall[1].body).chatId).toBe('my-existing-chat');
+  });
+
+  it('/teach rejects an owned chatId scoped to a different activity', async () => {
+    const otherActivity = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'A different activity.',
+        enableTeachMode: true,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+      },
+    });
+    await prisma.aiChatSession.create({
+      data: {
+        userId: student.id,
+        activityId: otherActivity.id,
+        mode: 'teach',
+        chatId: 'chat-for-other-activity',
+        modelId: 'model-1',
+      },
+    });
+
+    vi.stubGlobal('fetch', vi.fn());
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'chat-for-other-activity',
+      });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('/teach rejects an owned chatId scoped to a different mode', async () => {
+    await prisma.aiChatSession.create({
+      data: {
+        userId: student.id,
+        activityId: activity.id,
+        mode: 'guide',
+        chatId: 'chat-for-guide-mode',
+        modelId: 'model-1',
+      },
+    });
+
+    vi.stubGlobal('fetch', vi.fn());
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({
+        message: 'Explain sorting',
+        knowledgeLevel: 'beginner',
+        apiKey: 'test-key',
+        chatId: 'chat-for-guide-mode',
+      });
+
+    expect(res.status).toBe(404);
+  });
+
+  // #1412 review: even on the write path (a chatId minted/returned by Core
+  // rather than client-supplied), upsertChatSession must not repoint another
+  // user's session row or link this user's trace to it.
+  it("/teach does not overwrite another user's aiChatSession row when Core echoes back a colliding chatId", async () => {
+    const otherStudent = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: otherStudent.id, role: 'STUDENT' },
+    });
+    const otherSession = await prisma.aiChatSession.create({
+      data: {
+        userId: otherStudent.id,
+        activityId: activity.id,
+        mode: 'teach',
+        chatId: 'colliding-chat-id',
+        modelId: 'original-model',
+      },
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (typeof url === 'string' && url.includes('/questions')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ questions: [], total: 0 }),
+            text: () => Promise.resolve(''),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'colliding-chat-id' }),
+          text: () => Promise.resolve(''),
+        });
+      }),
+    );
+
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+    expect(res.status).toBe(200);
+
+    const unchanged = await prisma.aiChatSession.findUnique({ where: { id: otherSession.id } });
+    expect(unchanged.userId).toBe(otherStudent.id);
+    expect(unchanged.modelId).toBe('original-model');
+
+    const trace = await prisma.aiInteractionTrace.findFirst({ where: { userId: student.id } });
+    expect(trace?.aiChatSessionId).not.toBe(otherSession.id);
+  });
+
   // ── /teach, /guide: id / auth / payload validation ────────────────
 
   describe.each([
@@ -1962,5 +2192,55 @@ describe('teach/guide/custom: enrollment and publish gate (§308)', () => {
       .send({ message: 'Hi', knowledgeLevel: 'beginner' });
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/not enrolled/i);
+  });
+
+  // #1411: /teach and /guide must reject when the activity's own enable flag
+  // is off, mirroring the check /custom already has for enableCustomMode.
+  it('returns 400 on /teach when enableTeachMode is disabled for the activity', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: true });
+    const noTeach = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'No teach mode.',
+        enableTeachMode: false,
+        enableGuideMode: true,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+      },
+    });
+    const student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${noTeach.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/teach mode is not enabled/i);
+  });
+
+  it('returns 400 on /guide when enableGuideMode is disabled for the activity', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: true });
+    const noGuide = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'No guide mode.',
+        enableTeachMode: true,
+        enableGuideMode: false,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+      },
+    });
+    const student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${noGuide.id}/guide`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/guide mode is not enabled/i);
   });
 });

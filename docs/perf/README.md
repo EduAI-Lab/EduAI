@@ -19,6 +19,8 @@ before/after delta.
 ```
 docs/perf/
   README.md                    <- this file
+  backend/foreign-key-indexes.md
+                               which Core FKs are indexed, which are deliberately not, and why (#1369)
   backend/baseline/            the pinned BEFORE snapshot — API + code quality (issue #961)
     endpoints.md               inventory: app / method / path / auth / handler
     response-times.json        p50/p95/p99 + payload bytes + status per route (machine-readable)
