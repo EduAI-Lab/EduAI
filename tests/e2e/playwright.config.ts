@@ -34,6 +34,12 @@ export default defineConfig({
   use: {
     /* Default base URL is Core — adjust per-test with page.goto() or a fixture */
     baseURL: process.env.BASE_URL ?? CORE_URL,
+    /*
+     * Playwright's APIRequestContext does not synthesize Fetch Metadata like a
+     * browser does. These API flows are same-origin calls to their target app;
+     * negative CSRF tests set explicit cross-site headers in app-level suites.
+     */
+    extraHTTPHeaders: { 'Sec-Fetch-Site': 'same-origin' },
     /* Capture trace on first retry for easier debugging */
     trace: "on-first-retry",
     screenshot: "only-on-failure",

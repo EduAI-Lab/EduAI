@@ -211,6 +211,7 @@ services:
       QM_BACKEND_URL: http://localhost:8000
       QM_FRONTEND_URL: http://localhost:5173
       BASE_URL: http://localhost:3000
+      EDUAI_API_KEY: test-service-key-not-for-production
       CI: "true"
     volumes:
       - ./playwright-report:/e2e/playwright-report

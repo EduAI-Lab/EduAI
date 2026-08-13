@@ -19,6 +19,7 @@ import {
   listEduAiCourses,
   listEduAiCourseTopics,
   listEduAiCourseEnrollmentsServiceKey,
+  createCoreEnrollment,
   patchCoreEnrollmentRole,
   deleteCoreEnrollment,
   fetchCoreCourseSafe,
@@ -42,7 +43,7 @@ function okJson(body) {
   return {
     ok: true,
     status: 200,
-    text: () => Promise.resolve(''),
+    text: () => Promise.resolve(""),
     json: () => Promise.resolve(body),
   };
 }
@@ -76,12 +77,12 @@ describe("postCoreBugReport", () => {
     );
   });
 
-  it('POSTs to Core with the service key and AI_TUTOR source, returning null on success', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
+  it("POSTs to Core with the service key and AI_TUTOR source, returning null on success", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const mockFetch = vi
       .fn()
-      .mockResolvedValue({ ok: true, status: 201, text: () => Promise.resolve('') });
-    vi.stubGlobal('fetch', mockFetch);
+      .mockResolvedValue({ ok: true, status: 201, text: () => Promise.resolve("") });
+    vi.stubGlobal("fetch", mockFetch);
 
     const result = await postCoreBugReport("user-1", {
       description: "Broken",
@@ -96,90 +97,10 @@ describe("postCoreBugReport", () => {
     expect(opts.headers.Authorization).toBe("Bearer svc-key");
     const body = JSON.parse(opts.body);
     expect(body).toMatchObject({
-      source: 'AI_TUTOR',
-      userId: 'user-1',
-      description: 'Broken',
+      source: "AI_TUTOR",
+      userId: "user-1",
+      description: "Broken",
       isAnonymous: true,
-    });
-  });
-
-  it('throws with status when Core responds non-ok', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(notOk(400, 'Bad description')));
-
-    await expect(postCoreBugReport('user-1', { description: 'x' })).rejects.toMatchObject({
-      status: 400,
-    });
-  });
-});
-
-describe('listCoreAdminBugReports', () => {
-  it('throws 401 without a cookie', async () => {
-    await expect(listCoreAdminBugReports('')).rejects.toMatchObject({ status: 401 });
-  });
-
-  it('requests Core admin bug reports with query params and returns the parsed body', async () => {
-    const payload = { reports: [{ id: 'br-1' }] };
-    const mockFetch = vi.fn().mockResolvedValue(okJson(payload));
-    vi.stubGlobal('fetch', mockFetch);
-
-    const result = await listCoreAdminBugReports('cookie=abc', {
-      source: 'AI_TUTOR',
-      limit: 50,
-      offset: 10,
-    });
-
-    expect(result).toEqual(payload);
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://core.test/api/admin/bug-reports?source=AI_TUTOR&limit=50&offset=10');
-    expect(opts.headers.cookie).toBe('cookie=abc');
-  });
-
-  it('throws with status on a non-ok Core response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(notOk(403, 'Forbidden')));
-    await expect(listCoreAdminBugReports('cookie=abc')).rejects.toMatchObject({ status: 403 });
-  });
-});
-
-describe('getCoreAdminBugReport', () => {
-  it('throws 401 without a cookie', async () => {
-    await expect(getCoreAdminBugReport('', 'br-1')).rejects.toMatchObject({ status: 401 });
-  });
-
-  it('requests the single report and returns its body', async () => {
-    const payload = { id: 'br-1', description: 'full detail' };
-    const mockFetch = vi.fn().mockResolvedValue(okJson(payload));
-    vi.stubGlobal('fetch', mockFetch);
-
-    const result = await getCoreAdminBugReport('cookie=abc', 'br-1');
-
-    expect(result).toEqual(payload);
-    expect(mockFetch.mock.calls[0][0]).toBe('http://core.test/api/admin/bug-reports/br-1');
-  });
-
-  it('URL-encodes the bug report id', async () => {
-    const mockFetch = vi.fn().mockResolvedValue(okJson({ id: 'br/weird id' }));
-    vi.stubGlobal('fetch', mockFetch);
-
-    await getCoreAdminBugReport('cookie=abc', 'br/weird id');
-
-    expect(mockFetch.mock.calls[0][0]).toBe(
-      `http://core.test/api/admin/bug-reports/${encodeURIComponent('br/weird id')}`,
-    );
-  });
-
-  it('throws with status on a non-ok Core response (404)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(notOk(404, 'not found')));
-    await expect(getCoreAdminBugReport('cookie=abc', 'br-missing')).rejects.toMatchObject({
-      status: 404,
-    });
-  });
-});
-
-describe('patchCoreAdminBugReportStatus', () => {
-  it('throws 401 without a cookie', async () => {
-    await expect(patchCoreAdminBugReportStatus('', 'br-1', 'RESOLVED')).rejects.toMatchObject({
-      status: 401,
     });
   });
 
@@ -187,20 +108,7 @@ describe('patchCoreAdminBugReportStatus', () => {
     process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(400, "Bad description")));
 
-    const result = await patchCoreAdminBugReportStatus('cookie=abc', 'br-1', 'RESOLVED');
-
-    expect(result).toEqual(updated);
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://core.test/api/admin/bug-reports/br-1');
-    expect(opts.method).toBe('PATCH');
-    expect(JSON.parse(opts.body)).toEqual({ status: 'RESOLVED' });
-  });
-
-  it('throws with status on a non-ok Core response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(notOk(400, 'INVALID_STATUS')));
-    await expect(
-      patchCoreAdminBugReportStatus('cookie=abc', 'br-1', 'BOGUS'),
-    ).rejects.toMatchObject({
+    await expect(postCoreBugReport("user-1", { description: "x" })).rejects.toMatchObject({
       status: 400,
     });
   });
@@ -216,93 +124,10 @@ describe("listCoreAdminBugReports", () => {
     const mockFetch = vi.fn().mockResolvedValue(okJson(payload));
     vi.stubGlobal("fetch", mockFetch);
 
-  it('returns the parsed topics array on success', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    const topics = [
-      { id: 't1', courseId: 'core-1', name: 'Topic', createdAt: 'x', updatedAt: 'y' },
-    ];
-    const mockFetch = vi.fn().mockResolvedValue(okJson({ topics }));
-    vi.stubGlobal('fetch', mockFetch);
-
-    const result = await listEduAiCourseTopics('core-1');
-
-    expect(result).toEqual(topics);
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://eduai.test/api/courses/core-1/topics');
-    expect(opts.headers.Authorization).toBe('Bearer svc-key');
-  });
-
-  it('throws a 502 when the response fails schema validation', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ notTopics: true })));
-
-    await expect(listEduAiCourseTopics('core-1')).rejects.toMatchObject({ status: 502 });
-  });
-
-  it('surfaces a non-ok upstream response as a status-bearing error', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(notOk(503, 'Core unavailable')));
-
-    await expect(listEduAiCourseTopics('core-1')).rejects.toMatchObject({ status: 503 });
-  });
-});
-
-describe('listEduAiCourseEnrollmentsServiceKey', () => {
-  it('returns [] without hitting the network when externalCourseId is falsy', async () => {
-    const mockFetch = vi.fn();
-    vi.stubGlobal('fetch', mockFetch);
-    await expect(listEduAiCourseEnrollmentsServiceKey(null)).resolves.toEqual([]);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('throws when EDUAI_API_KEY is not configured', async () => {
-    delete process.env.EDUAI_API_KEY;
-    await expect(listEduAiCourseEnrollmentsServiceKey('core-1')).rejects.toThrow(
-      'EDUAI_API_KEY not configured',
-    );
-  });
-
-  it('returns the parsed enrollments array on success', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    const enrollments = [
-      {
-        studentId: 's1',
-        studentEmail: 'a@b.com',
-        studentName: 'A',
-        enrolledAt: 'x',
-        isActive: true,
-      },
-    ];
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ enrollments })));
-
-    const result = await listEduAiCourseEnrollmentsServiceKey('core-1');
-
-    expect(result).toEqual(enrollments);
-  });
-
-  it('throws a 502 when the response fails schema validation', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ nope: true })));
-
-    await expect(listEduAiCourseEnrollmentsServiceKey('core-1')).rejects.toMatchObject({
-      status: 502,
-    });
-  });
-
-  it('surfaces a non-ok upstream response as a status-bearing error', async () => {
-    process.env.EDUAI_API_KEY = 'svc-key';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(notOk(500, 'boom')));
-
-    await expect(listEduAiCourseEnrollmentsServiceKey('core-1')).rejects.toMatchObject({
-      status: 500,
-    });
-  });
-});
-
-describe('patchCoreEnrollmentRole', () => {
-  it('throws 401 without a cookie', async () => {
-    await expect(patchCoreEnrollmentRole('core-1', 'e1', 'TA', '')).rejects.toMatchObject({
-      status: 401,
+    const result = await listCoreAdminBugReports("cookie=abc", {
+      source: "AI_TUTOR",
+      limit: 50,
+      offset: 10,
     });
 
     expect(result).toEqual(payload);
@@ -322,11 +147,10 @@ describe("getCoreAdminBugReport", () => {
     await expect(getCoreAdminBugReport("", "br-1")).rejects.toMatchObject({ status: 401 });
   });
 
-  it('DELETEs the enrollment', async () => {
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve('') });
-    vi.stubGlobal('fetch', mockFetch);
+  it("requests the single report and returns its body", async () => {
+    const payload = { id: "br-1", description: "full detail" };
+    const mockFetch = vi.fn().mockResolvedValue(okJson(payload));
+    vi.stubGlobal("fetch", mockFetch);
 
     const result = await getCoreAdminBugReport("cookie=abc", "br-1");
 
@@ -499,9 +323,9 @@ describe("patchCoreEnrollmentRole", () => {
     await expect(patchCoreEnrollmentRole("core-1", "e1", "TA", "")).rejects.toMatchObject({
       status: 401,
     });
-  });
 
   it("PATCHes the enrollment role and returns the response body", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "e1", role: "TA" }));
     vi.stubGlobal("fetch", mockFetch);
 
@@ -512,10 +336,12 @@ describe("patchCoreEnrollmentRole", () => {
     expect(url).toBe("http://eduai.test/api/courses/core-1/enrollments/e1");
     expect(opts.method).toBe("PATCH");
     expect(opts.headers.cookie).toBe("session=abc");
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
     expect(JSON.parse(opts.body)).toEqual({ role: "TA" });
   });
 
   it("throws with status on a non-ok Core response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(403, "Forbidden")));
     await expect(
       patchCoreEnrollmentRole("core-1", "e1", "TA", "session=abc"),
@@ -529,6 +355,7 @@ describe("deleteCoreEnrollment", () => {
   });
 
   it("DELETEs the enrollment", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const mockFetch = vi
       .fn()
       .mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve("") });
@@ -540,13 +367,63 @@ describe("deleteCoreEnrollment", () => {
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("http://eduai.test/api/courses/core-1/enrollments/e1");
     expect(opts.method).toBe("DELETE");
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
   });
 
   it("throws with status on a non-ok Core response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(404, "not found")));
     await expect(deleteCoreEnrollment("core-1", "e1", "session=abc")).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe("createCoreEnrollment", () => {
+  it("POSTs the enrollment with user session and verified service provenance", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "e1", role: "STUDENT" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await createCoreEnrollment("core-1", "student-1", "STUDENT", "session=abc");
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://eduai.test/api/courses/core-1/enrollments");
+    expect(opts.method).toBe("POST");
+    expect(opts.headers.cookie).toBe("session=abc");
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
+    expect(JSON.parse(opts.body)).toEqual({ userId: "student-1", role: "STUDENT" });
+  });
+
+  it("reconciles an existing Core enrollment instead of diverging the local mirror", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(notOk(409, "already enrolled"))
+      .mockResolvedValueOnce(
+        okJson({
+          enrollments: [
+            {
+              id: "e1",
+              studentId: "student-1",
+              studentEmail: "student@example.test",
+              studentName: "Student",
+              enrolledAt: new Date().toISOString(),
+              isActive: true,
+              role: "STUDENT",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(okJson({ id: "e1", role: "TA" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(createCoreEnrollment("core-1", "student-1", "TA", "session=abc")).resolves.toEqual(
+      { id: "e1", role: "TA" },
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockFetch.mock.calls[2][1].method).toBe("PATCH");
   });
 });
 
@@ -594,8 +471,8 @@ describe("fetchCoreCourseSafe", () => {
 describe("fetchCoreTopicSafe", () => {
   it("throws when EDUAI_API_KEY is not configured", async () => {
     delete process.env.EDUAI_API_KEY;
-    await expect(fetchCoreTopicSafe('core-1', 'topic-1')).rejects.toThrow(
-      'EDUAI_API_KEY not configured',
+    await expect(fetchCoreTopicSafe("core-1", "topic-1")).rejects.toThrow(
+      "EDUAI_API_KEY not configured",
     );
   });
 

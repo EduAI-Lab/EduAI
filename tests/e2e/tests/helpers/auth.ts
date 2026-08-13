@@ -14,6 +14,12 @@ export function uniqueEmail(prefix = "user"): string {
 
 export const DEFAULT_PASSWORD = "E2eTestPass1!";
 
+/** Headers for direct calls to Core's extension-only session validation seam. */
+export function coreServiceHeaders(): Record<string, string> {
+  const key = process.env.EDUAI_API_KEY ?? 'test-service-key-not-for-production';
+  return { Authorization: `Bearer ${key}` };
+}
+
 export interface SignUpResult {
   email: string;
   password: string;

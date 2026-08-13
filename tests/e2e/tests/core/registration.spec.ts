@@ -5,9 +5,16 @@
  * against a real Core instance. All users are registered fresh per test to
  * avoid state bleed between parallel-unsafe suites.
  */
-import { test, expect } from "@playwright/test";
-import { CORE_URL } from "../../playwright.config";
-import { uniqueEmail, DEFAULT_PASSWORD, signUp, signIn, signOut } from "../helpers/auth";
+import { test, expect } from '@playwright/test';
+import { CORE_URL } from '../../playwright.config';
+import {
+  coreServiceHeaders,
+  uniqueEmail,
+  DEFAULT_PASSWORD,
+  signUp,
+  signIn,
+  signOut,
+} from '../helpers/auth';
 
 // ---------------------------------------------------------------------------
 // Sign-up
@@ -188,7 +195,9 @@ test.describe("POST /api/sessions/validate", () => {
     const email = uniqueEmail("validate");
     await signUp(request, { email, name: "Validate User" });
 
-    const res = await request.post(`${CORE_URL}/api/sessions/validate`);
+    const res = await request.post(`${CORE_URL}/api/sessions/validate`, {
+      headers: coreServiceHeaders(),
+    });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("user");
@@ -197,8 +206,10 @@ test.describe("POST /api/sessions/validate", () => {
     expect(body.user).toHaveProperty("id");
   });
 
-  test("returns 401 without a session cookie", async ({ request }) => {
-    const res = await request.post(`${CORE_URL}/api/sessions/validate`);
+  test('returns 401 without a session cookie', async ({ request }) => {
+    const res = await request.post(`${CORE_URL}/api/sessions/validate`, {
+      headers: coreServiceHeaders(),
+    });
     expect(res.status()).toBe(401);
   });
 

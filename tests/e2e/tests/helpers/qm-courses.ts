@@ -25,16 +25,19 @@ export async function importQmCourseForInstructor(
     const listRes = await instrCtx.get(`${QM}/api/course?page=1&pageSize=100`);
     expect(listRes.status()).toBe(200);
     const { data: courses } = await listRes.json();
-    const match = (courses as Array<{ id: number; coreCourseId?: string | null }>).find(
-      (c) => c.coreCourseId === coreCourseId,
-    );
+    const match = (
+      courses as Array<{ id: number; coreCourseId?: string | null }>
+    ).find((c) => c.coreCourseId === coreCourseId);
     if (match) return { qmCourseId: match.id };
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`QM never imported Core course ${coreCourseId}`);
 }
 
-function coreCourseForm(instrId: string, overrides: Record<string, string> = {}) {
+function coreCourseForm(
+  instrId: string,
+  overrides: Record<string, string> = {},
+) {
   const { code: codeBase, ...rest } = overrides;
   return {
     name: "E2E QM Course",
@@ -66,7 +69,9 @@ export async function createQmCourseForInstructor(
 
   try {
     await createAdmin(adminCtx, { prefix: "qm-course-admin" });
-    const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
+    const { id: instrId } = await (
+      await instrCtx.get(`${CORE_URL}/api/me`)
+    ).json();
 
     const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
       form: coreCourseForm(instrId, overrides),
@@ -74,7 +79,9 @@ export async function createQmCourseForInstructor(
     expect(coreRes.status()).toBe(201);
     const { id: coreCourseId } = await coreRes.json();
 
-    const qmRes = await instrCtx.post(`${QM}/api/course`, { data: { coreCourseId } });
+    const qmRes = await instrCtx.post(`${QM}/api/course`, {
+      data: { coreCourseId },
+    });
     // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
     expect([200, 201]).toContain(qmRes.status());
     const { data: qmCourse } = await qmRes.json();

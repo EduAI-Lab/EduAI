@@ -3,9 +3,9 @@ import {
   EduAiTopicListSchema,
   EduAiEnrollmentListSchema,
   EduAiQuestionListSchema,
-} from '../schemas/eduai.js';
-import { getEffectiveEduAiApiKey } from './systemSettings.js';
-const DEFAULT_BASE_URL = 'http://localhost:5174/api';
+} from "../schemas/eduai.js";
+import { getEffectiveEduAiApiKey } from "./systemSettings.js";
+const DEFAULT_BASE_URL = "http://localhost:5174/api";
 
 function normalizeBaseUrl(rawUrl) {
   if (!rawUrl) return DEFAULT_BASE_URL;
@@ -219,7 +219,7 @@ function getCoreBaseUrl() {
  */
 export async function listCoreAdminBugReports(
   cookie,
-  { source = 'AI_TUTOR', limit = 100, offset = 0 } = {},
+  { source = "AI_TUTOR", limit = 100, offset = 0 } = {},
 ) {
   if (!cookie) {
     const error = new Error("Session cookie is required to list Core bug reports");
@@ -383,21 +383,21 @@ export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreSta
  * Throws an Error with `status` set on HTTP failure.
  */
 export async function setCoreCoursePublishState(coreOfferingId, publish, options = {}) {
-  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  const cookie = typeof options.cookie === "string" ? options.cookie : "";
   if (!cookie) {
-    const error = new Error('Session cookie is required to update Core course publish state');
+    const error = new Error("Session cookie is required to update Core course publish state");
     error.status = 401;
     throw error;
   }
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
-    const error = new Error('EDUAI_API_KEY not configured');
+    const error = new Error("EDUAI_API_KEY not configured");
     error.status = 500;
     throw error;
   }
-  const action = publish ? 'publish' : 'unpublish';
+  const action = publish ? "publish" : "unpublish";
   return requestEduAi(`/courses/${coreOfferingId}/${action}`, {
-    method: 'PATCH',
+    method: "PATCH",
     cookie,
     headers: { Authorization: `Bearer ${serviceKey}` },
   });
@@ -503,6 +503,48 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, opt
   }
 }
 
+/**
+ * Add an enrollment in Core using the acting user's session. The service key
+ * proves server-to-server provenance to Core's CSRF boundary; Core still uses
+ * the forwarded user session for course RBAC and policy checks.
+ */
+export async function createCoreEnrollment(externalCourseId, userId, role, cookie) {
+  if (!cookie) {
+    const error = new Error("Session cookie required to create an enrollment in Core");
+    error.status = 401;
+    throw error;
+  }
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
+  try {
+    return await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
+      method: "POST",
+      cookie,
+      headers: { Authorization: `Bearer ${serviceKey}` },
+      body: { userId, role },
+    });
+  } catch (error) {
+    // Core reports an already-active row as 409. Re-read the authoritative row
+    // and align its role so this extension's ensure-style endpoint remains
+    // idempotent without allowing the local mirror to diverge from Core.
+    if (error?.status === 409) {
+      const existing = (await listEduAiCourseEnrollmentsServiceKey(externalCourseId)).find(
+        (enrollment) => enrollment.studentId === userId && enrollment.isActive !== false,
+      );
+      if (!existing) throw error;
+      if (existing.role !== role) {
+        return patchCoreEnrollmentRole(externalCourseId, existing.id, role, cookie);
+      }
+      return existing;
+    }
+    throw error;
+  }
+}
+
 export async function listEduAiModels() {
   const serviceKey = await getEffectiveEduAiApiKey();
   if (!serviceKey) {
@@ -532,9 +574,16 @@ export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, ro
     error.status = 401;
     throw error;
   }
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
   return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
     method: "PATCH",
     cookie,
+    headers: { Authorization: `Bearer ${serviceKey}` },
     body: { role },
   });
 }
@@ -546,9 +595,16 @@ export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cooki
     error.status = 401;
     throw error;
   }
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
   return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
     method: "DELETE",
     cookie,
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
 }
 
