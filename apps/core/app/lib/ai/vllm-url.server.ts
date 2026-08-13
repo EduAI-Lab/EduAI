@@ -17,6 +17,7 @@ function configuredVllmHostnames(): Set<string> {
   const hosts = new Set<string>();
   const rawUrls = [
     process.env.VLLM_BASE_URL,
+    process.env.VLLM_EMBEDDING_BASE_URL,
     process.env.VLLM_FLEET_HEAVY_URL,
     ...(process.env.VLLM_FLEET_CHAT_URLS?.split(",") ?? []),
   ];

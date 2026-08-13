@@ -96,6 +96,8 @@ describe("generateEmbeddings", () => {
   const originalOpenAiKey = process.env.OPENAI_API_KEY;
   const originalGoogleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const originalBatchSize = process.env.EMBED_MANY_BATCH_SIZE;
+  const originalVllmEmbeddingUrl = process.env.VLLM_EMBEDDING_BASE_URL;
+  const originalVllmApiKey = process.env.VLLM_API_KEY;
 
   let generateEmbeddings: typeof import("~/lib/ai/embedding").generateEmbeddings;
   let embedManyMock: Mock;
@@ -130,6 +132,10 @@ describe("generateEmbeddings", () => {
     else process.env.GOOGLE_GENERATIVE_AI_API_KEY = originalGoogleKey;
     if (originalBatchSize === undefined) delete process.env.EMBED_MANY_BATCH_SIZE;
     else process.env.EMBED_MANY_BATCH_SIZE = originalBatchSize;
+    if (originalVllmEmbeddingUrl === undefined) delete process.env.VLLM_EMBEDDING_BASE_URL;
+    else process.env.VLLM_EMBEDDING_BASE_URL = originalVllmEmbeddingUrl;
+    if (originalVllmApiKey === undefined) delete process.env.VLLM_API_KEY;
+    else process.env.VLLM_API_KEY = originalVllmApiKey;
   });
 
   it("returns an empty array for no chunks", async () => {
@@ -171,6 +177,28 @@ describe("generateEmbeddings", () => {
     expect(embedManyMock).toHaveBeenCalledTimes(2);
     expect(embedManyMock.mock.calls[0][0].values).toHaveLength(100);
     expect(embedManyMock.mock.calls[1][0].values).toHaveLength(1);
+  });
+
+  it("uses the configured CMPS OpenAI-compatible endpoint for local embeddings", async () => {
+    process.env.EMBEDDING_PROVIDER = "local";
+    process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+    process.env.VLLM_API_KEY = "cmps-test-key";
+    await reloadEmbeddingModule();
+
+    await generateEmbeddings(["local CMPS chunk"]);
+
+    expect(embedManyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when the configured CMPS endpoint has no API key", async () => {
+    process.env.EMBEDDING_PROVIDER = "local";
+    process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+    delete process.env.VLLM_API_KEY;
+    await reloadEmbeddingModule();
+
+    await expect(generateEmbeddings(["local CMPS chunk"])).rejects.toThrow(
+      "VLLM_API_KEY is required",
+    );
   });
 
   it("preserves chunk order across batches", async () => {

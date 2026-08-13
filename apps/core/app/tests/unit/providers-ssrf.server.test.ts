@@ -27,6 +27,7 @@ import { createAIProviderRegistry } from "~/lib/ai/providers";
 
 const originalOllamaUrl = process.env.OLLAMA_BASE_URL;
 const originalVllmUrl = process.env.VLLM_BASE_URL;
+const originalVllmEmbeddingUrl = process.env.VLLM_EMBEDDING_BASE_URL;
 
 afterEach(() => {
   createOllamaMock.mockClear();
@@ -35,6 +36,8 @@ afterEach(() => {
   else process.env.OLLAMA_BASE_URL = originalOllamaUrl;
   if (originalVllmUrl === undefined) delete process.env.VLLM_BASE_URL;
   else process.env.VLLM_BASE_URL = originalVllmUrl;
+  if (originalVllmEmbeddingUrl === undefined) delete process.env.VLLM_EMBEDDING_BASE_URL;
+  else process.env.VLLM_EMBEDDING_BASE_URL = originalVllmEmbeddingUrl;
 });
 
 describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
@@ -82,5 +85,18 @@ describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
     });
 
     expect(createOllamaMock).toHaveBeenCalledWith(expect.objectContaining({ headers: {} }));
+  });
+
+  it("allows the configured CMPS embedding endpoint host", () => {
+    process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
+    process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+
+    createAIProviderRegistry({
+      vllm: { isEnabled: true, baseUrl: "http://cmps01.ok.ubc.ca:8001/v1" },
+    });
+
+    expect(createOpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ baseURL: "http://cmps01.ok.ubc.ca:8001/v1" }),
+    );
   });
 });

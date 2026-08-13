@@ -36,8 +36,8 @@ case "${1:-}" in
     echo "Installed $CORE_ENV"
     ;;
   install-core-unit)
-    source_path="${2:-}"
-    [ -f "$source_path" ] || die "usage: install-core-unit /srv/www/eduai-production/shared/staged/eduai-core.service"
+    source_path="/srv/www/eduai-production/shared/staged/eduai-core.service"
+    [ -f "$source_path" ] || die "staged Core unit does not exist: $source_path"
     install -o root -g root -m 0644 "$source_path" "$CORE_UNIT"
     systemctl daemon-reload
     echo "Installed $CORE_UNIT"
