@@ -2,7 +2,12 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { ZodError } from "zod";
-import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
+import {
+  createDataStreamResponse,
+  formatDataStreamPart,
+  StreamData,
+  streamText,
+} from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -60,6 +65,10 @@ import {
 } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
+  capTokensForLongOutputIntent,
+  didHitAppliedLongOutputCap,
+} from "~/lib/ai/long-output-cap";
+import {
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
   courseScopeGuardrailEnabled,
@@ -97,7 +106,10 @@ import {
   computeAdhdResponseMetrics,
 } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { classifyRagRetrievalError, findRelevantContent } from "~/lib/ai/embedding";
+import {
+  classifyRagRetrievalError,
+  findRelevantContent,
+} from "~/lib/ai/embedding";
 import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
@@ -340,7 +352,9 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
  * the plain course-mode RAG path (courseRagHits, every course-scoped
  * request) so both surface the same field with the same formula.
  */
-export function ragContextTokenEstimateForCourseRagHits(hits: HybridRagHit[]): number {
+export function ragContextTokenEstimateForCourseRagHits(
+  hits: HybridRagHit[],
+): number {
   return hits.reduce((acc, hit) => acc + Math.ceil(hit.content.length / 4), 0);
 }
 
@@ -940,7 +954,8 @@ export async function action({ request }: ActionFunctionArgs) {
         aiInstructions: course.aiInstructions ?? null,
         courseTopics,
         // Defaulted off (was on) for easier testing
-        courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? false,
+        courseScopeGuardrailEnabled:
+          course.courseScopeGuardrailEnabled ?? false,
       };
     }
 
@@ -951,19 +966,23 @@ export async function action({ request }: ActionFunctionArgs) {
     // skips this entirely; the dispatch worker (#168) drains it later.
     if (isEnqueueRequested(body)) {
       try {
-        const { jobId, queuePosition, queueDepth } = await enqueueQuestionGeneration({
-          body,
-          messages: rawMessages,
-          userId: actingUser.id,
-          courseId: effectiveCourseId ?? undefined,
-          requestedModel: model,
-        });
+        const { jobId, queuePosition, queueDepth } =
+          await enqueueQuestionGeneration({
+            body,
+            messages: rawMessages,
+            userId: actingUser.id,
+            courseId: effectiveCourseId ?? undefined,
+            requestedModel: model,
+          });
         // 202 carries a live position/depth snapshot (#915); the client polls
         // the status endpoint (#917) for fresher values.
-        return new Response(JSON.stringify({ jobId, queuePosition, queueDepth }), {
-          status: 202,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ jobId, queuePosition, queueDepth }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       } catch (error) {
         // Queue saturated (#915): an honest rate signal, not a failure — 429
         // with Retry-After so the client backs off and retries.
@@ -1318,7 +1337,8 @@ export async function action({ request }: ActionFunctionArgs) {
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
-        ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
+        ragContextTokenEstimate =
+          ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err });
       }
@@ -1881,13 +1901,17 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       })();
 
-      let modelCapabilities: Awaited<ReturnType<typeof getChatModelCapabilities>>;
+      let modelCapabilities: Awaited<
+        ReturnType<typeof getChatModelCapabilities>
+      >;
       let courseRagResult: Awaited<typeof courseRagPromise>;
-      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all([
-        webToolsEnabledPromise,
-        getChatModelCapabilities(model),
-        courseRagPromise,
-      ]);
+      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all(
+        [
+          webToolsEnabledPromise,
+          getChatModelCapabilities(model),
+          courseRagPromise,
+        ],
+      );
 
       const tools = buildChatToolRegistry({
         effectiveCourseId,
@@ -2061,6 +2085,31 @@ ${buildEmptyCourseRagBlock()}`;
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
+
+    const maxTokensBeforeLongOutputCap = streamConfig.maxTokens;
+    const longOutputCap = capTokensForLongOutputIntent({
+      prompt: lastUserText,
+      currentMaxTokens: streamConfig.maxTokens,
+      adhdAssist: effectiveAdhdAssist,
+    });
+
+    streamConfig.maxTokens = longOutputCap.maxTokens;
+
+    let longOutputCapApplied =
+      longOutputCap.isLongOutputIntent &&
+      longOutputCap.maxTokens < maxTokensBeforeLongOutputCap;
+    const didHitLongOutputCap = (usage: unknown): boolean => {
+      const completionTokens = coalesceTokenUsage(
+        usage as Record<string, unknown> | undefined,
+      ).completionTokens;
+
+      return didHitAppliedLongOutputCap({
+        capApplied: longOutputCapApplied,
+        maxTokens: streamConfig.maxTokens,
+        completionTokens,
+      });
+    };
+
     const priorAssistantText = extractMessageText(
       [...trimmedMessages]
         .reverse()
@@ -2122,6 +2171,15 @@ ${buildEmptyCourseRagBlock()}`;
         minOutput: 256,
       });
 
+      if (longOutputCap.isLongOutputIntent) {
+        const adminContextMaxTokens = streamConfig.maxTokens;
+        streamConfig.maxTokens = Math.min(
+          adminContextMaxTokens,
+          longOutputCap.maxTokens,
+        );
+        longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+      }
+      
       chatApiTrace("max output tokens capped", {
         contextWindow: adminContextWindow,
         estimatedInputTokens,
@@ -2239,6 +2297,8 @@ ${buildEmptyCourseRagBlock()}`;
       forceHybridRag: effectiveForceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
+      longOutputIntent: longOutputCap.isLongOutputIntent,
+      effectiveMaxTokens: streamConfig.maxTokens,
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
@@ -2336,8 +2396,13 @@ ${buildEmptyCourseRagBlock()}`;
       const probe = shouldProbeFleetStream
         ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
         : null;
+      const streamData = streaming && !needsOversight ? new StreamData() : null;
 
-      const result = streamText({
+      // The AI SDK returns synchronously, but several compatible adapters and
+      // long-standing route tests return a promise. Normalizing both shapes
+      // here also keeps rejected/aborted startup promises inside the existing
+      // retry and AbortError handling path.
+      const result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
@@ -2377,6 +2442,10 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
+              streamData?.appendMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              });
+              void streamData?.close();
               const assistantText =
                 text || extractAssistantText(response?.messages);
               if (assistantText) {
@@ -2385,6 +2454,10 @@ ${buildEmptyCourseRagBlock()}`;
                     id: randomUUID(),
                     role: "assistant",
                     content: assistantText,
+                    metadata: {
+                      finishReason,
+                      hitLongOutputCap: didHitLongOutputCap(usage),
+                    },
                   },
                 ]).catch((err) => {
                   console.error(
@@ -2397,6 +2470,7 @@ ${buildEmptyCourseRagBlock()}`;
         onError: ({ error }) => {
           logStreamError(error, streamTrace);
           probe?.hooks.signalError(error);
+          void streamData?.close();
         },
       });
 
@@ -2436,13 +2510,14 @@ ${buildEmptyCourseRagBlock()}`;
           void pump;
         }
       }
-      return result;
+      return { result, streamData };
     };
 
     let result;
+    let liveStreamData: StreamData | null = null;
     let fleetRetry = false;
     try {
-      result = await runStreamText();
+      ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
         releaseAdmission();
@@ -2479,7 +2554,7 @@ ${buildEmptyCourseRagBlock()}`;
               previousServerId: failedPick.serverId,
               fleetRetryAttempt: true,
             });
-            result = await runStreamText();
+            ({ result, streamData: liveStreamData } = await runStreamText());
             // #876 success marker — only after the alternate attempt succeeds.
             fleetRetry = true;
             routerContext = {
@@ -2549,7 +2624,10 @@ ${buildEmptyCourseRagBlock()}`;
       let response: Awaited<typeof result.response> | undefined;
 
       try {
-        await result.consumeStream();
+        // `consumeStream` is an SDK convenience, not part of every compatible
+        // provider result. The result promises below are sufficient when it is
+        // absent.
+        await result.consumeStream?.();
 
         const consumed = await Promise.all([
           result.text,
@@ -2613,8 +2691,19 @@ ${buildEmptyCourseRagBlock()}`;
             response?.messages,
             text,
           );
-          if (toPersist.length > 0) {
-            await appendMessages(toPersist);
+
+          const messagesWithMetadata: GenericMessage[] = toPersist.map(
+            (message) => ({
+              ...(message as GenericMessage),
+              metadata: {
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              },
+            }),
+          );
+
+          if (messagesWithMetadata.length > 0) {
+            await appendMessages(messagesWithMetadata);
           }
         };
 
@@ -2648,6 +2737,11 @@ ${buildEmptyCourseRagBlock()}`;
               if (finalText) {
                 dataStream.write(formatDataStreamPart("text", finalText));
               }
+
+              dataStream.writeMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              });
+
               dataStream.write(
                 formatDataStreamPart("finish_message", {
                   finishReason: finishReason ?? "stop",
@@ -2666,6 +2760,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(usage),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2673,7 +2768,8 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
@@ -2731,9 +2827,10 @@ ${buildEmptyCourseRagBlock()}`;
       return withAdmissionRelease(
         result.toDataStreamResponse({
           headers,
+          ...(liveStreamData ? { data: liveStreamData } : {}),
           ...(chatMode === "admin"
             ? {
-                getErrorMessage: (error) => {
+                getErrorMessage: (error: unknown) => {
                   logStreamError(error, streamTrace);
                   const base = formatStreamError(error);
                   if (parsedModel.providerId === "vllm") {
@@ -2748,7 +2845,9 @@ ${buildEmptyCourseRagBlock()}`;
       );
     } else {
       try {
-        await result.consumeStream();
+        // Some compatible providers expose only the result promises and omit
+        // this optional SDK convenience method.
+        await result.consumeStream?.();
 
         const [text, usage, finishReason, sources, reasoning, response] =
           await Promise.all([
@@ -2761,9 +2860,16 @@ ${buildEmptyCourseRagBlock()}`;
           ]);
 
         if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter(
-            (message) => message.role === "assistant",
-          );
+          const assistantMessages: GenericMessage[] = response.messages
+            .filter((message) => message.role === "assistant")
+            .map((message) => ({
+              ...(message as GenericMessage),
+              metadata: {
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              },
+            }));
+
           await appendMessages(assistantMessages);
         } else {
           const assistantText =
@@ -2774,6 +2880,10 @@ ${buildEmptyCourseRagBlock()}`;
                 id: randomUUID(),
                 role: "assistant",
                 content: assistantText,
+                metadata: {
+                  finishReason,
+                  hitLongOutputCap: didHitLongOutputCap(usage),
+                },
               },
             ]);
           }
@@ -2809,6 +2919,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(usage),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2816,7 +2927,8 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
