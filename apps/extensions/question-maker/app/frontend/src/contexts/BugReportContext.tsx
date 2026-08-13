@@ -46,7 +46,8 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
       openBugReport: () => {
         // Capture before mounting the dialog so html2canvas does not include
         // its portal/backdrop in the report image.
-        void captureScreenshot().then(() => setOpen(true));
+        void captureScreenshot();
+        setOpen(true);
       }
     }),
     [captureScreenshot]

@@ -41,11 +41,11 @@ describe('BugReportProvider', () => {
     submit.mockResolvedValue(undefined);
   });
 
-  it('captures before opening and submits the cached screenshot', async () => {
+  it('opens immediately while capturing and submits the cached screenshot', async () => {
     renderProvider();
 
     fireEvent.click(screen.getByRole('button', { name: 'open report' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'submit report' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'submit report' })).toBeInTheDocument();
 
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'submit report' }));

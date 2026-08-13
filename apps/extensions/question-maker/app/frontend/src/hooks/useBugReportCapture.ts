@@ -25,6 +25,7 @@ export function useBugReportCapture(enabled: boolean) {
   const networkBuffer = useRef<NetworkEntry[]>([]);
   const screenshotRef = useRef<string | null>(null);
   const capturePromiseRef = useRef<Promise<void> | null>(null);
+  const captureGenerationRef = useRef(0);
   const patchedRef = useRef(false);
   const originalsRef = useRef<{
     log: typeof console.log;
@@ -46,6 +47,8 @@ export function useBugReportCapture(enabled: boolean) {
       consoleBuffer.current = [];
       networkBuffer.current = [];
       screenshotRef.current = null;
+      captureGenerationRef.current += 1;
+      capturePromiseRef.current = null;
       return;
     }
 
@@ -139,7 +142,9 @@ export function useBugReportCapture(enabled: boolean) {
     if (!enabled || typeof window === 'undefined') return;
     if (capturePromiseRef.current) return capturePromiseRef.current;
 
-    capturePromiseRef.current = (async () => {
+    const generation = captureGenerationRef.current;
+    let capturePromise!: Promise<void>;
+    capturePromise = (async () => {
       try {
         const html2canvas = (await import('html2canvas')).default;
         const canvas = await html2canvas(document.body, {
@@ -148,14 +153,19 @@ export function useBugReportCapture(enabled: boolean) {
           scale: 0.5
         });
         // JPEG keeps the report below Core's screenshot size cap.
-        screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
+        if (captureGenerationRef.current === generation) {
+          screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
+        }
       } catch {
         // ignore capture failures
       } finally {
-        capturePromiseRef.current = null;
+        if (capturePromiseRef.current === capturePromise) {
+          capturePromiseRef.current = null;
+        }
       }
     })();
-    return capturePromiseRef.current;
+    capturePromiseRef.current = capturePromise;
+    return capturePromise;
   }, [enabled]);
 
   const getCapturedData = useCallback(() => {

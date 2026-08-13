@@ -2,7 +2,7 @@
  * #1333: useBugReportCapture used to run html2canvas on a 10s setInterval for
  * every authenticated user on every page, forever. The fix drops the timer
  * entirely — capture now only runs when captureScreenshot() is called
- * (dialog open, submit) — so these tests pin the on-demand behavior plus the
+ * (dialog open) — so these tests pin the on-demand behavior plus the
  * concurrent-call dedup and teardown that made the on-demand switch safe.
  */
 import { act, renderHook } from '@testing-library/react';
@@ -104,6 +104,34 @@ describe('useBugReportCapture', () => {
     expect(html2canvas).toHaveBeenCalledTimes(2);
   });
 
+  it('does not resurrect a screenshot when disabled during an in-flight capture', async () => {
+    let resolveCapture!: (value: { toDataURL: typeof toDataURL }) => void;
+    html2canvas.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCapture = resolve;
+        })
+    );
+
+    const { result, rerender } = renderHook(({ enabled }) => useBugReportCapture(enabled), {
+      initialProps: { enabled: true },
+    });
+    let capture!: Promise<void>;
+    await act(async () => {
+      capture = result.current.captureScreenshot();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    rerender({ enabled: false });
+    await act(async () => {
+      resolveCapture({ toDataURL });
+      await capture;
+    });
+
+    expect(result.current.getCapturedData().screenshot).toBeNull();
+  });
+
   it('swallows capture failures instead of throwing', async () => {
     html2canvas.mockImplementationOnce(async () => {
       throw new Error('canvas boom');
@@ -121,17 +149,31 @@ describe('useBugReportCapture', () => {
   it('restores console/fetch and clears buffers when disabled after being enabled', async () => {
     const origLog = console.log;
     const origFetch = window.fetch;
+    const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    window.fetch = mockFetch as typeof window.fetch;
 
-    const { rerender } = renderHook(({ enabled }) => useBugReportCapture(enabled), {
+    const { result, rerender } = renderHook(({ enabled }) => useBugReportCapture(enabled), {
       initialProps: { enabled: true },
     });
 
     expect(console.log).not.toBe(origLog);
     expect(window.fetch).not.toBe(origFetch);
 
+    console.log('buffered log');
+    await act(async () => {
+      await window.fetch('/buffered-request');
+    });
+
     rerender({ enabled: false });
 
     expect(console.log).toBe(origLog);
-    expect(window.fetch).toBe(origFetch);
+    expect(window.fetch).toBe(mockFetch);
+    expect(result.current.getCapturedData()).toEqual({
+      consoleLogs: '[]',
+      networkLogs: '[]',
+      screenshot: null,
+    });
+
+    window.fetch = origFetch;
   });
 });
