@@ -23,6 +23,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
+import { APICallError } from "ai";
 import { action } from "~/routes/api/completion";
 import { runCompletion } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
@@ -206,5 +207,47 @@ describe("POST /api/completion", () => {
     } as never);
     const res = await action(makeArgs({ model: "gpt", messages: [], streaming: true }));
     expect(res).toBe(streamResponse);
+  });
+
+  it("routes a late streaming provider error through the stable contract", async () => {
+    const toDataStreamResponse = vi.fn(
+      (_options: { getErrorMessage?: (error: unknown) => string }) =>
+        new Response("stream", { status: 200 }),
+    );
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: true,
+      fleetServerId: "fleet-1",
+      provider: "openai",
+      result: { toDataStreamResponse },
+    } as never);
+
+    await action(makeArgs({ model: "openai:gpt-4o", messages: [], streaming: true }));
+
+    expect(toDataStreamResponse).toHaveBeenCalledTimes(1);
+    const options = toDataStreamResponse.mock.calls[0][0];
+    expect(options.getErrorMessage).toBeTypeOf("function");
+
+    const serialized = options.getErrorMessage!(
+      new APICallError({
+        message: "upstream error containing sk-do-not-leak",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-do-not-leak" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "12" },
+        responseBody: "private upstream body",
+        isRetryable: true,
+      }),
+    );
+
+    expect(serialized).not.toBe("An error occurred.");
+    expect(JSON.parse(serialized)).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+    });
+    expect(serialized).not.toContain("sk-do-not-leak");
+    expect(serialized).not.toContain("private upstream body");
   });
 });
