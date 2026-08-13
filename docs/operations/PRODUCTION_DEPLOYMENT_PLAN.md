@@ -93,7 +93,8 @@ The candidate variables should be removed from local files only after confirming
 - Created a separate operations worktree at `.worktrees/production-ops` on branch `codex/production-ops` so deployment work does not interfere with another agent's branch.
 - Added a root-owned, fixed-action production helper and narrow sudoers procedure for local Redis and Core/Apache service bootstrap.
 - Created the new empty `eduai_prod` database with owner group `eduai_prod_admins`, application login `eduai_prod_app`, and pgvector `0.8.1`; the existing `eduai` database remains untouched.
-- Removed `OPENROUTER_API_KEY` from the staged production environment and production template. Production embeddings will use the local CMPS Ollama edge (`mxbai-embed-large`); OpenRouter, OpenAI, and Google embedding keys are not required.
+- Removed `OPENROUTER_API_KEY` from the staged production environment and production template. Production embeddings will use CMPS01's OpenAI-compatible local endpoint (`/v1`, `mxbai-embed-large`); OpenRouter, OpenAI, Google, and Ollama variables are not required.
+- Added Core support for a local OpenAI-compatible embedding endpoint through `VLLM_EMBEDDING_BASE_URL` and `VLLM_EMBEDDING_MODEL`. The existing `VLLM_API_KEY` and `CMPS01_INTERNAL_KEY` protect the request.
 - The production inference configuration should use the same CMPS01 internal key for `VLLM_API_KEY` and `CMPS01_INTERNAL_KEY`. The key must be entered directly on s348 and must not be committed or pasted into chat.
 - Queue processing is intentionally disabled for the initial Core release. When a worker is deployed and verified, update the production queue variables—especially `QUEUE_ENQUEUE_ENABLED=true`—as part of the worker enablement change, then restart the Core service.
 - Attempted read-only SSH inspection of s378 using the production key; both `s378.ok.ubc.ca` and `dev.eduai.ok.ubc.ca` rejected that key, so the dev `.env` could not be inspected remotely.
