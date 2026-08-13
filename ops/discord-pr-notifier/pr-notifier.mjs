@@ -36,7 +36,7 @@ function parseIssues(body = "") {
 function prState(pr, repo) {
   const id = key(repo, pr.number);
   const existing = states[id] ?? { id, reviewers: [], approvers: [], completedReviewers: [], reviewRequestedAtByReviewer: {}, reviewerReminderAtByReviewer: [], threadId: null };
-  states[id] = { ...existing, repository: repo, number: pr.number, title: pr.title, url: pr.html_url, author: pr.user.login, open: pr.state === "open", draft: Boolean(pr.draft), sha: pr.head?.sha, linkedIssues: parseIssues(pr.body ?? ""), lastActivityAt: now() };
+  states[id] = { ...existing, repository: repo, number: pr.number, title: pr.title, url: pr.html_url, author: pr.user.login, assignees: (pr.assignees ?? []).map(({ login }) => login), open: pr.state === "open", draft: Boolean(pr.draft), sha: pr.head?.sha, linkedIssues: parseIssues(pr.body ?? ""), lastActivityAt: now() };
   return states[id];
 }
 function verifySignature(body, signature) {
@@ -52,8 +52,7 @@ async function discord(pathname, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 async function memberId(login) {
-  const handle = DISCORD_HANDLES[login];
-  if (!handle) return null;
+  const handle = DISCORD_HANDLES[login] ?? login;
   if (memberIds.has(handle)) return memberIds.get(handle);
   const members = await discord(`/guilds/${config.guildId}/members/search?limit=10&query=${encodeURIComponent(handle)}`, { method: "GET" });
   const match = members.find(({ user }) => user.username.toLowerCase() === handle.toLowerCase() || user.global_name?.toLowerCase() === handle.toLowerCase());
@@ -82,6 +81,7 @@ async function ensureThread(state) {
   const starter = await discord(`/channels/${config.channelId}/messages`, { method: "POST", body: JSON.stringify({ content: `**PR #${state.number}: ${state.title}**\n${state.url}\n${issues}` }) });
   const thread = await discord(`/channels/${config.channelId}/messages/${starter.id}/threads`, { method: "POST", body: JSON.stringify({ name: `PR #${state.number} - ${state.title}`.slice(0, 100), auto_archive_duration: 10080 }) });
   state.threadId = thread.id;
+  await addToThread(thread.id, unique([state.author, ...(state.assignees ?? []), ...(state.reviewers ?? [])]));
   return thread.id;
 }
 async function notify(state, text, users = []) { if (state.threadId) await send(state.threadId, text, users); }
@@ -118,7 +118,16 @@ async function handle(event, payload) {
   const state = prState(pr, repo);
   if (state.open) await ensureThread(state);
   if (!state.threadId) { await saveState(); return; }
+  await addToThread(state.threadId, unique([state.author, ...(state.assignees ?? []), ...(state.reviewers ?? [])]));
   if (event === "pull_request") {
+    if (payload.action === "assigned" && payload.assignee?.login) {
+      state.assignees = unique([...(state.assignees ?? []), payload.assignee.login]);
+      await addToThread(state.threadId, [payload.assignee.login]);
+    }
+    if (payload.action === "unassigned" && payload.assignee?.login) {
+      state.assignees = (state.assignees ?? []).filter((login) => login !== payload.assignee.login);
+      await removeFromThread(state.threadId, [payload.assignee.login]);
+    }
     if (payload.action === "opened" && state.draft) await setThreadArchived(state.threadId, true);
     if (payload.action === "review_requested" && payload.requested_reviewer?.login) {
       const reviewer = payload.requested_reviewer.login;
