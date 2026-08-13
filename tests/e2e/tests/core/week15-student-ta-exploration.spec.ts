@@ -176,22 +176,13 @@ test.describe('Student (student1) — UI walkthrough', () => {
         description: `GET enrollments for own enrolled course (cosc101) as STUDENT -> ${enrOwnRes.status()}`,
       });
 
-      // 4. Questions endpoint for an enrolled course
+      // 4. Questions endpoint is instructor/staff-only, even for an enrolled student
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
-      expect(qRes.status()).toBe(200);
+      expect(qRes.status()).toBe(403);
       test.info().annotations.push({
         type: 'finding',
         description: `GET /api/questions?courseId=cosc101 as STUDENT (enrolled) -> ${qRes.status()}`,
       });
-      if (qRes.status() === 200) {
-        const body = await qRes.json();
-        const items = Array.isArray(body) ? body : (body.questions ?? body.data ?? []);
-        const anyAnswerLeaked = items.some((q: any) => q.answer !== undefined && q.answer !== null);
-        test.info().annotations.push({
-          type: 'finding',
-          description: `Questions payload includes ${items.length} items; answer field present on any = ${anyAnswerLeaked}`,
-        });
-      }
 
       // 5. Admin-only route
       const usersRes = await ctx.get(`${CORE_URL}/api/users`);
