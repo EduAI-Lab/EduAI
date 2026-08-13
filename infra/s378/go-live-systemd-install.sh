@@ -23,6 +23,8 @@ UNITS=(eduai-core.service eduai-cron-worker.service eduai-aitutor-server.service
 SYSTEMD_DIR=/etc/systemd/system
 ENV_DIR=/etc/eduai
 POLKIT_DIR=/etc/polkit-1/rules.d
+CRON_SYNC=/usr/local/sbin/eduai-cron-sync
+SUDOERS_DIR=/etc/sudoers.d
 
 [ -d "$UNIT_SRC" ] || { echo "ERROR: missing $UNIT_SRC"; exit 1; }
 
@@ -138,6 +140,15 @@ done
 sudo install -m 0644 -o root -g root "$UNIT_SRC/eduai-dev.target" "$SYSTEMD_DIR/eduai-dev.target"
 echo "  $SYSTEMD_DIR/eduai-dev.target"
 
+echo
+echo "=== installing restricted cron sync helper ==="
+sudo install -m 0750 -o root -g root "$SCRIPT_DIR/eduai-cron-sync.sh" "$CRON_SYNC"
+printf '%%eduai-dev ALL=(root) NOPASSWD: %s\\n' "$CRON_SYNC" \
+  | sudo tee "$SUDOERS_DIR/eduai-cron-sync" >/dev/null
+sudo chmod 0440 "$SUDOERS_DIR/eduai-cron-sync"
+sudo visudo -cf "$SUDOERS_DIR/eduai-cron-sync"
+echo "  $CRON_SYNC (root-owned; fixed source and destination)"
+
 # The two frontend units are gone for good — both extension frontends are static
 # now and served by Apache. Remove any stale copies so eduai-dev.target does not
 # resurrect a Vite process that fights Apache for the site.
@@ -174,9 +185,7 @@ Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
   sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh   # smoke the script identity/env
   systemctl --user list-units 'eduai*'   # expect empty
 
-If the restart does prompt, the polkit rule is not taking effect. Fall back to a
-scoped sudoers entry:
-  echo '%eduai-dev ALL=(root) NOPASSWD: /usr/bin/systemctl restart eduai-*, /usr/bin/systemctl start eduai-*, /usr/bin/systemctl stop eduai-*' \\
-    | sudo tee /etc/sudoers.d/eduai-dev
-  sudo visudo -c
+If the restart does prompt, the polkit rule is not taking effect; fix the
+polkit installation rather than adding a broad sudoers wildcard. The only
+sudoers grant installed here is the argument-less, fixed-path cron sync helper.
 EOF

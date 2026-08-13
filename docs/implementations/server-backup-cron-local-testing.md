@@ -273,5 +273,5 @@ When local dry-runs pass:
 
 1. Deploy scripts per [`infra/cron/README.md`](../../infra/cron/README.md)
 2. Use **one** `DB_PASS` in `/etc/eduai/cron.env` (production typically uses one credential for all DBs)
-3. Verify with `sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh` — scheduling is handled by the Core in-process scheduler
+3. Verify with `sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh` — production scheduling is handled by the dedicated `eduai-cron-worker.service`
 4. Retire per-app QM-only backup cron if the platform job covers all three databases

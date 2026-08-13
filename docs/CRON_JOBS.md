@@ -71,7 +71,9 @@ Go to **Admin → Cron Jobs**. The panel shows:
 - **Duration** — wall time of that run.
 - **Status** — `Success`, `Error`, `Running` (pulsing), `Never run`, or `External`.
 
-The panel auto-refreshes every 3 seconds while any job shows `Running`.
+The panel uses the shared cron-status poller: it refreshes every 15 seconds while
+jobs are active and backs off to 30 seconds when idle. The sidebar and admin page
+share this same source, so they cannot start competing polling loops.
 
 Click **History** on any row to see the last 10 runs with status, duration, and output message.
 
@@ -83,7 +85,7 @@ Click **History** on any row to see the last 10 runs with status, duration, and 
 
 Schedule changes are stored in the database and picked up by the dedicated cron
 worker during its next 30-second reconciliation cycle. No web-server restart is
-needed.
+needed; the worker owns scheduling independently of web requests.
 
 Click **Edit** next to any infra job's schedule to open the schedule editor. Enter a valid 5-field cron expression; the human-readable label auto-fills for common patterns (daily, weekly, monthly) and can be edited freely.
 

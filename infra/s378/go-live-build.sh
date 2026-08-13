@@ -229,9 +229,7 @@ if [ "$DO_RESTART" = "1" ]; then
     # not from the web checkout. Sync them on every Core deploy so a script
     # change cannot remain stale after the worker restarts.
     echo "  syncing cron scripts to /opt/eduai/cron"
-    for script in infra/cron/*.sh; do
-      sudo install -m 0750 -o eduai-cron -g eduai-cron "$script" /opt/eduai/cron/
-    done
+    sudo /usr/local/sbin/eduai-cron-sync
   fi
   # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
   # members lifecycle control over every eduai-* unit individually, so this does

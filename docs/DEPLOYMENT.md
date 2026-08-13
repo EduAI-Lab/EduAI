@@ -93,7 +93,8 @@ Canvas credentials are stored encrypted in the database rather than in these env
 
 ## Shared development server (s378)
 
-The shared host runs three node processes plus the local data services, and serves both extension
+The shared host runs four node processes (Core, the dedicated cron worker, and
+the two extension servers) plus the local data services, and serves both extension
 frontends as static files from Apache. It is also the normal
 place to test campus inference because cmps01 is reachable from s378, while it may not be reachable
 from a developer laptop.
@@ -290,7 +291,7 @@ For fleet variables and firewall caveats, see
 ### Smoke checks
 
 ```bash
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
 
 curl -fsS http://127.0.0.1:3000/ >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null
