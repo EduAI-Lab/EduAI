@@ -30,6 +30,11 @@ import {
   runConfiguredLogRetentionIfDue,
   updateLogRetentionPolicy,
 } from "~/lib/db.log-retention-policy.server";
+import {
+  getInteractionCountsByModel,
+  getInteractionCountsByServer,
+  getPeakUsageHours,
+} from "~/lib/db.ai-interaction-stats.server";
 import type { Route } from "./+types/admin.logs";
 
 const DEFAULT_PAGE = 1;
@@ -52,6 +57,12 @@ const AUDIT_FILTER_CATEGORIES = new Set([
 const OUTCOME_VALUES = new Set(["SUCCESS", "FAILURE", "DENIED"]);
 const SYSTEM_LEVEL_VALUES = new Set(["ERROR", "WARN", "INFO"]);
 const SYSTEM_SOURCE_VALUES = new Set(["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "DB", "SSR", "API"]);
+// Must match the dropdown's numeric preset values in logs-admin-view.tsx
+// (DATE_RANGE_PRESETS). A bare /^\d+$/ check would accept any digit string
+// (including "0", or an arbitrarily large value from a hand-built URL),
+// silently producing a zero-width or unbounded-in-practice window instead
+// of a real preset.
+const SERVERS_DATE_PRESET_DAYS = new Set([7, 30, 90]);
 
 /** Reject non-admins for both loader and action; returns the session user on success. */
 async function requireAdminUser(request: Request) {
@@ -89,7 +100,7 @@ function parsePositiveInt(value: string | null, fallback: number, max: number = 
 
 /** Restricts tab values to known views so unknown query values cannot break rendering. */
 function parseLogsTab(value: string | null): LogsTab {
-  if (value === "security" || value === "system") {
+  if (value === "security" || value === "system" || value === "servers") {
     return value;
   }
   return "audit";
@@ -136,6 +147,11 @@ function parseDateFilter(value: string | undefined, mode: "start" | "end") {
   return boundary;
 }
 
+/** Formats a Date as YYYY-MM-DD in UTC, matching what <input type="date"> expects/emits. */
+function toDateInputValue(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 /** Normalizes unknown row payloads into serializable plain objects for the client. */
 function serializeRows(rows: unknown[]) {
   return rows.map((row) => {
@@ -178,6 +194,11 @@ function buildQueryState(
     code: readOptionalQueryValue(searchParams, "code"),
     dateFrom: readOptionalQueryValue(searchParams, "dateFrom"),
     dateTo: readOptionalQueryValue(searchParams, "dateTo"),
+    // Raw pass-through (not readOptionalQueryValue): "" ("All time") must stay
+    // distinguishable from "absent" so the Servers tab dropdown can tell "the
+    // admin explicitly chose All time" apart from "first visit, use the
+    // 30-day default" — trimming "" to undefined would collapse that.
+    datePreset: searchParams.has("datePreset") ? (searchParams.get("datePreset") ?? "") : undefined,
   };
 }
 
@@ -201,6 +222,55 @@ export async function loader({ request }: Route.LoaderArgs) {
   const dateFrom = parseDateFilter(readOptionalQueryValue(searchParams, "dateFrom"), "start");
   const dateTo = parseDateFilter(readOptionalQueryValue(searchParams, "dateTo"), "end");
 
+  // The Servers tab aggregates from the fleet registry + live health checks on
+  // every request (see db.ai-interaction-stats.server.ts), so an unbounded
+  // "all time" default would also aggregate the DB's entire interaction
+  // history on first load. Defaulting to the trailing 30 days keeps the first
+  // paint fast and matches what the date-range dropdown shows as selected.
+  //
+  // Resolution order: an explicit, non-empty dateFrom/dateTo pair (custom
+  // range) wins; otherwise a numeric datePreset ("7"/"30"/"90") resolves to
+  // "N days ago through now" computed fresh on every request, so "Last 30
+  // days" always means the 30 days ending now rather than a window frozen at
+  // first render; datePreset="" means "All time" was explicitly chosen (no
+  // bound); an unrecognized/invalid datePreset (e.g. "0", a huge number, or
+  // garbage from a hand-edited URL) falls back to the 30-day default rather
+  // than silently computing a bogus window from it; absent entirely (first
+  // visit, no query params at all) also falls back to the 30-day default.
+  const datePresetRaw = searchParams.get("datePreset");
+  const isAllTimePreset = datePresetRaw === "";
+  const datePresetDaysCandidate =
+    datePresetRaw !== null && datePresetRaw !== "" && /^\d+$/.test(datePresetRaw)
+      ? Number(datePresetRaw)
+      : null;
+  const datePresetDays =
+    datePresetDaysCandidate !== null && SERVERS_DATE_PRESET_DAYS.has(datePresetDaysCandidate)
+      ? datePresetDaysCandidate
+      : null;
+  // A blank OR invalid custom-range submission (dateFrom=&dateTo=, or
+  // dateFrom=not-a-date — e.g. the admin picked "Custom range…" and hit
+  // Apply without filling either field in, or a hand-edited URL) must NOT
+  // count as an explicit selection, or the 30-day default gets skipped while
+  // dateFrom/dateTo resolve to undefined, silently running an unbounded
+  // all-time aggregation. Check the *parsed* values, not the raw query
+  // strings, so unparseable dates fall through to the 30-day default too.
+  const hasExplicitDateParams = dateFrom !== undefined || dateTo !== undefined;
+
+  let serversDateFrom = dateFrom;
+  let serversDateTo = dateTo;
+  if (tab === "servers" && !hasExplicitDateParams) {
+    if (isAllTimePreset) {
+      // "All time" explicitly chosen: leave both undefined (no bound).
+    } else if (datePresetDays !== null) {
+      serversDateFrom = new Date(Date.now() - datePresetDays * 24 * 60 * 60 * 1000);
+      serversDateTo = new Date();
+    } else {
+      // No params at all, or an unrecognized/invalid datePreset value.
+      serversDateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      serversDateTo = new Date();
+    }
+  }
+
   const sharedReturn = (result: { rows: unknown[]; total: number }) => ({
     user,
     tab,
@@ -215,6 +285,58 @@ export async function loader({ request }: Route.LoaderArgs) {
       systemRetentionDays: retentionPolicy.systemRetentionDays,
     },
   });
+
+  if (tab === "servers") {
+    const [serverStats, modelStats, peakUsageHours] = await Promise.all([
+      getInteractionCountsByServer({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
+      getInteractionCountsByModel({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
+      getPeakUsageHours({ dateFrom: serversDateFrom, dateTo: serversDateTo }),
+    ]);
+    const query = buildQueryState(tab, page, pageSize, direction, searchParams);
+    return {
+      user,
+      tab,
+      page,
+      pageSize,
+      total: 0,
+      hasMore: false,
+      rows: [],
+      // Reflect the applied default back into the URL-driven query state so the
+      // dropdown shows what was actually applied — "Last 30 days" on first
+      // visit or an invalid/unrecognized datePreset, rather than echoing back
+      // a raw value (e.g. "0") the resolution logic above already rejected,
+      // which would show "Custom range…" while the data reflects the 30-day
+      // default. Derived from the same resolution as serversDateFrom/To
+      // above, not re-derived independently, so the two can't drift apart.
+      query: {
+        ...query,
+        dateFrom: hasExplicitDateParams
+          ? query.dateFrom
+          : serversDateFrom
+            ? toDateInputValue(serversDateFrom)
+            : undefined,
+        dateTo: hasExplicitDateParams
+          ? query.dateTo
+          : serversDateTo
+            ? toDateInputValue(serversDateTo)
+            : undefined,
+        datePreset: hasExplicitDateParams
+          ? undefined
+          : isAllTimePreset
+            ? ""
+            : datePresetDays !== null
+              ? String(datePresetDays)
+              : "30",
+      },
+      retentionPolicy: {
+        auditRetentionDays: retentionPolicy.auditRetentionDays,
+        systemRetentionDays: retentionPolicy.systemRetentionDays,
+      },
+      serverStats,
+      modelStats,
+      peakUsageHours,
+    };
+  }
 
   if (tab === "security") {
     const outcomeRaw = readOptionalQueryValue(searchParams, "outcome");
@@ -357,6 +479,9 @@ export default function AdminLogsRoute() {
         hasMore={data.hasMore}
         query={data.query}
         retentionPolicy={data.retentionPolicy}
+        serverStats={"serverStats" in data ? data.serverStats : undefined}
+        modelStats={"modelStats" in data ? data.modelStats : undefined}
+        peakUsageHours={"peakUsageHours" in data ? data.peakUsageHours : undefined}
       />
     </CoreAppShell>
   );

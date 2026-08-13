@@ -4,6 +4,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mockFindMany = vi.fn();
+const mockEnsureCourseAnchor = vi.fn();
 const mockCount = vi.fn();
 const mockCreateMany = vi.fn();
 const mockCourseAccessDeleteMany = vi.fn();
@@ -27,6 +28,10 @@ vi.mock('../../src/config/database.js', () => ({
       createMany: (...args) => mockCourseAccessCreateMany(...args),
     },
   },
+}));
+
+vi.mock('../../src/services/ensureCourseAnchor.js', () => ({
+  ensureCourseAnchor: (...args) => mockEnsureCourseAnchor(...args),
 }));
 
 vi.mock('../../src/middleware/courseAccess.js', () => ({
@@ -304,7 +309,7 @@ describe('listCoursesForUser', () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.accessLevel === 'admin')).toBe(true);
     expect(rows.map((r) => r.department).sort()).toEqual(['COSC', 'MATH']);
-    expect(mockCreateMany).not.toHaveBeenCalled();
+    expect(mockEnsureCourseAnchor).not.toHaveBeenCalled();
     expect(mockFindMany).toHaveBeenCalledTimes(1);
     // ADMIN's branch never touches the cookie-scoped roles call.
     expect(mockListCoursesFromCore).not.toHaveBeenCalled();
@@ -335,28 +340,26 @@ describe('listCoursesForUser', () => {
   });
 
   describe('ADMIN catalog materialization (#1074)', () => {
-    it('materializes an anchor for every Core course missing one, batched (one findMany + one createMany + one re-findMany)', async () => {
+    it('materializes an anchor for every Core course missing one via ensureCourseAnchor', async () => {
       mockFindMany
         .mockResolvedValueOnce([{ id: 1, coreCourseId: 'core-1' }])
         .mockResolvedValueOnce([
           { id: 1, coreCourseId: 'core-1' },
           { id: 2, coreCourseId: 'core-2' },
         ]);
-      mockCreateMany.mockResolvedValue({ count: 1 });
+      mockEnsureCourseAnchor.mockResolvedValue({
+        course: { id: 2, userId: 'admin-7', coreCourseId: 'core-2' },
+        created: true,
+      });
 
       const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
 
-      // Only the missing id (core-2) is inserted — core-1 already has a local
-      // anchor, so it's excluded from the batch — and it's materialized
-      // owned by the requesting admin.
-      expect(mockCreateMany).toHaveBeenCalledTimes(1);
-      expect(mockCreateMany).toHaveBeenCalledWith({
-        data: [{ userId: 'admin-7', coreCourseId: 'core-2' }],
-        skipDuplicates: true,
-      });
+      // Only the missing id (core-2) is ensured — core-1 already has a local
+      // anchor — and it's materialized owned by the requesting admin.
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledTimes(1);
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledWith('admin-7', 'core-2');
       // First findMany supplies the "existing anchors" read for free (no extra
-      // query); the second is the post-materialize re-fetch — never a
-      // per-course loop.
+      // query); the second is the post-materialize re-fetch.
       expect(mockFindMany).toHaveBeenCalledTimes(2);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.name).sort()).toEqual(['Core Course One', 'Core Course Two']);
@@ -370,7 +373,7 @@ describe('listCoursesForUser', () => {
 
       const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
 
-      expect(mockCreateMany).not.toHaveBeenCalled();
+      expect(mockEnsureCourseAnchor).not.toHaveBeenCalled();
       expect(mockFindMany).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(2);
     });
@@ -381,10 +384,56 @@ describe('listCoursesForUser', () => {
 
       const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
 
-      expect(mockCreateMany).not.toHaveBeenCalled();
+      expect(mockEnsureCourseAnchor).not.toHaveBeenCalled();
       expect(mockFindMany).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(1);
       expect(rows[0].coreUnavailable).toBe(true);
+    });
+
+    it('does not fail the whole list when one anchor backfill rejects (#1270 review: allSettled, not Promise.all)', async () => {
+      const bigCatalog = [
+        { id: 'core-1', name: 'Course One', code: 'C1', department: 'COSC' },
+        { id: 'core-2', name: 'Course Two', code: 'C2', department: 'COSC' },
+      ];
+      mockGetAllCoursesFromCore.mockResolvedValue(bigCatalog);
+      mockFindMany
+        .mockResolvedValueOnce([]) // no local anchors yet — both are missing
+        .mockResolvedValueOnce([{ id: 2, coreCourseId: 'core-2' }]); // only core-2 landed
+      mockEnsureCourseAnchor.mockImplementation(async (_userId, coreCourseId) => {
+        if (coreCourseId === 'core-1') throw new Error('P2024: pool timeout');
+        return { course: { id: 2, userId: 'admin-7', coreCourseId: 'core-2' }, created: true };
+      });
+
+      const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
+
+      // Must not throw despite one rejection — the request degrades to
+      // whatever backfilled successfully instead of 500ing the whole list.
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledTimes(2);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].code).toBe('C2');
+    });
+
+    it('processes every missing anchor across multiple batches when the catalog exceeds the batch size', async () => {
+      const missingCount = 20; // > ADMIN_ANCHOR_BACKFILL_BATCH_SIZE (8)
+      const bigCatalog = Array.from({ length: missingCount }, (_, i) => ({
+        id: `core-${i}`,
+        name: `Course ${i}`,
+        code: `C${i}`,
+        department: 'COSC',
+      }));
+      mockGetAllCoursesFromCore.mockResolvedValue(bigCatalog);
+      mockFindMany
+        .mockResolvedValueOnce([]) // nothing anchored locally yet
+        .mockResolvedValueOnce(bigCatalog.map((c, i) => ({ id: i, coreCourseId: c.id })));
+      mockEnsureCourseAnchor.mockImplementation(async (_userId, coreCourseId) => ({
+        course: { id: coreCourseId, userId: 'admin-7', coreCourseId },
+        created: true,
+      }));
+
+      const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
+
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledTimes(missingCount);
+      expect(rows).toHaveLength(missingCount);
     });
   });
 
@@ -438,16 +487,15 @@ describe('listCoursesForUser', () => {
       expect(rows).toHaveLength(0);
     });
 
-    it('falls back to owner-instructor when the course is absent from the cookie-scoped list', async () => {
+    it('denies the local owner when absent from the cookie-scoped list (#1114 fail-closed)', async () => {
       // Mirrors the unpublished-student edge and the "linker not yet in Core
-      // roster" edge: the cookie list omits the course, but the caller is the
-      // local QM owner — grant instructor so the anchor stays reachable.
+      // roster" edge: the cookie list omits the course — ownership alone must
+      // not keep the anchor visible.
       mockFindMany.mockResolvedValue([{ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }]);
       mockListCoursesFromCore.mockResolvedValue([]);
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].accessLevel).toBe('instructor');
+      expect(rows).toHaveLength(0);
     });
 
     it('denies a non-owner absent from the cookie-scoped list', async () => {
@@ -458,15 +506,14 @@ describe('listCoursesForUser', () => {
       expect(rows).toHaveLength(0);
     });
 
-    it('grants owner-instructor access for a course not yet linked to Core, without any cookie-scoped lookup gating it', async () => {
+    it('denies an unlinked course even for the local owner (#1114)', async () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: 'owner-1', coreCourseId: null }]);
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].accessLevel).toBe('instructor');
+      expect(rows).toHaveLength(0);
     });
 
-    it('degrades to owner-fallback for every row when Core is unreachable for the cookie-scoped call', async () => {
+    it('fails closed for every row when Core is unreachable for the cookie-scoped call (#1114)', async () => {
       mockFindMany.mockResolvedValue([
         { id: 1, userId: 'owner-1', coreCourseId: 'core-1' },
         { id: 2, userId: 'stranger', coreCourseId: 'core-2' },
@@ -474,8 +521,7 @@ describe('listCoursesForUser', () => {
       mockListCoursesFromCore.mockRejectedValue(new Error('Core unreachable'));
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].id).toBe(1);
+      expect(rows).toHaveLength(0);
     });
 
     describe('UNIT_ADMIN unit lock', () => {
