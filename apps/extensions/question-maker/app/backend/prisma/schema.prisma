@@ -337,10 +337,11 @@ model VariantSelectionCursor {
 }
 
 /// Maps a Core question bank CUID to a Canvas Assessment Question Bank for sync.
+/// One Canvas bank → one local course per instructor (the synced Canvas course).
 model CanvasBankMapping {
   id             Int       @id @default(autoincrement())
   userId         String    @map("user_id")
-  /// Local QM course id — same Canvas bank may sync into multiple courses
+  /// Local QM course that owns this synced bank (must match Canvas course mapping)
   localCourseId  Int       @map("local_course_id")
   /// Core QuestionBank id (cuid string) — banks live in EduAI Core
   localBankId    String    @map("local_bank_id")
@@ -352,14 +353,18 @@ model CanvasBankMapping {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, canvasBankId, localCourseId])
+  @@unique([userId, canvasBankId])
+  @@index([localCourseId])
   @@map("canvas_bank_mappings")
 }
 
 /// Maps a Canvas assessment question id to a local QuestionMetadata shell for re-sync.
+/// Scoped by local course so the same remote question can exist independently per course
+/// without overwriting another course's content.
 model CanvasBankQuestionMapping {
   id                         Int      @id @default(autoincrement())
   userId                     String   @map("user_id")
+  localCourseId              Int      @map("local_course_id")
   localQuestionMetadataId    Int      @map("local_question_metadata_id")
   canvasAssessmentQuestionId Int      @map("canvas_assessment_question_id")
   /// Core QuestionBank id (cuid string) that last synced this remote question
@@ -370,7 +375,8 @@ model CanvasBankQuestionMapping {
   user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   localQuestionMetadata  QuestionMetadata @relation(fields: [localQuestionMetadataId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, canvasAssessmentQuestionId])
+  @@unique([userId, canvasAssessmentQuestionId, localCourseId])
   @@index([localQuestionMetadataId])
+  @@index([localCourseId])
   @@map("canvas_bank_question_mappings")
 }

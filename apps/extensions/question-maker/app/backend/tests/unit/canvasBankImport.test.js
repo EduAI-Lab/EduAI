@@ -39,6 +39,7 @@ vi.mock('../../src/config/database.js', () => ({
   prisma: {
     canvasIntegration: { findUnique: vi.fn() },
     course: { findFirst: vi.fn() },
+    canvasCourseMapping: { findUnique: vi.fn() },
     canvasBankMapping: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -99,7 +100,13 @@ beforeEach(() => {
     coreCourseId: 'core_1',
     userId: 'owner',
   });
+  prisma.canvasCourseMapping.findUnique.mockResolvedValue({
+    localCourseId: 9,
+    canvasCourseId: 1,
+    userId: 'u1',
+  });
   listBanks.mockResolvedValue([{ id: 'bank_default', name: 'Course bank' }]);
+  // Default: no existing bank mapping for this Canvas bank
   prisma.canvasBankMapping.findUnique.mockResolvedValue(null);
   prisma.canvasBankMapping.upsert.mockResolvedValue({ id: 1 });
   prisma.canvasBankMapping.update.mockResolvedValue({
@@ -183,12 +190,20 @@ describe('importQuestionBankFromCanvas', () => {
     expect(prisma.canvasBankMapping.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          userId_canvasBankId_localCourseId: {
+          userId_canvasBankId: {
             userId: 'u1',
             canvasBankId: 10,
-            localCourseId: 9,
           },
         },
+      }),
+    );
+    expect(prisma.canvasBankQuestionMapping.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          localCourseId: 9,
+          canvasAssessmentQuestionId: 100,
+          localQuestionMetadataId: 55,
+        }),
       }),
     );
     expect(result).toMatchObject({
@@ -197,6 +212,84 @@ describe('importQuestionBankFromCanvas', () => {
       updated: 0,
       truncated: false,
     });
+  });
+
+  it('rejects when the local course is not linked to Canvas', async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue(null);
+    await expect(
+      importQuestionBankFromCanvas('u1', 1, 10, 9, { primaryTopicId: 't1' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('rejects when canvasCourseId does not match the synced course mapping', async () => {
+    prisma.canvasCourseMapping.findUnique.mockResolvedValue({
+      localCourseId: 9,
+      canvasCourseId: 77,
+      userId: 'u1',
+    });
+    await expect(
+      importQuestionBankFromCanvas('u1', 1, 10, 9, { primaryTopicId: 't1' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('rejects when the Canvas bank is already synced to a different local course', async () => {
+    prisma.canvasBankMapping.findUnique.mockResolvedValue({
+      id: 3,
+      userId: 'u1',
+      canvasBankId: 10,
+      localCourseId: 2,
+      localBankId: 'bank_elsewhere',
+    });
+    await expect(
+      importQuestionBankFromCanvas('u1', 1, 10, 9, { primaryTopicId: 't1' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite another course question when Canvas question id collides', async () => {
+    listBanks.mockResolvedValue([{ id: 'bank_extra', name: 'Extra' }]);
+    axiosRequest.mockImplementation(async (config) => {
+      if (String(config.url).includes('/questions')) {
+        return {
+          data: [
+            {
+              id: 100,
+              question_text: 'Explain polymorphism',
+              question_type: 'essay_question',
+            },
+          ],
+        };
+      }
+      return { data: { id: 10, title: 'Chapter 1' } };
+    });
+    // Course-scoped lookup finds nothing in course 9
+    prisma.canvasBankQuestionMapping.findUnique.mockResolvedValue(null);
+    createQuestion.mockResolvedValue({ id: 99 });
+    prisma.variants.create.mockResolvedValue({});
+    prisma.canvasBankQuestionMapping.create.mockResolvedValue({});
+    addQuestionsToBank.mockResolvedValue({ added: 1 });
+
+    const result = await importQuestionBankFromCanvas('u1', 1, 10, 9, {
+      primaryTopicId: 't1',
+      targetBankId: 'bank_extra',
+    });
+
+    expect(prisma.canvasBankQuestionMapping.findUnique).toHaveBeenCalledWith({
+      where: {
+        userId_canvasAssessmentQuestionId_localCourseId: {
+          userId: 'u1',
+          canvasAssessmentQuestionId: 100,
+          localCourseId: 9,
+        },
+      },
+    });
+    expect(prisma.questionMetadata.update).not.toHaveBeenCalled();
+    expect(createQuestion).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({ courseId: 9, skipBankAttach: true }),
+    );
+    expect(result.created).toBe(1);
+    expect(result.updated).toBe(0);
   });
 
   it('reuses targetBankId when provided', async () => {
