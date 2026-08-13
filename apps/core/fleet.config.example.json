@@ -1,0 +1,20 @@
+{
+  "$comment": "Fleet server registry (#1351). Copy to fleet.config.json (or point FLEET_CONFIG_PATH at a copy elsewhere) to register vLLM servers without editing env vars. `models` is optional — the admin Servers tab and routing both read the live model list from each server's /v1/models endpoint, so you don't need to keep this file in sync every time a model changes. Add a server here (e.g. AWS, once \"q\"-gated routing exists) and it starts appearing in the admin Servers tab automatically once it serves traffic — no other code change needed.",
+  "servers": [
+    {
+      "id": "cmps01",
+      "baseUrl": "http://cmps01.ok.ubc.ca:8001",
+      "jobTypes": ["interactive"]
+    },
+    {
+      "id": "cmps02",
+      "baseUrl": "http://cmps02.ok.ubc.ca:8001",
+      "jobTypes": ["interactive"]
+    },
+    {
+      "id": "cmps03",
+      "baseUrl": "http://cmps03.ok.ubc.ca:8001",
+      "jobTypes": ["background"]
+    }
+  ]
+}
