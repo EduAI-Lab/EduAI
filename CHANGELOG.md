@@ -1,5 +1,15 @@
 # Changelog
 
+## [Week 16 — August 10–16, 2026]
+
+### Added
+
+- [core] feat: Add production deployment runbook and bootstrap artifacts for Core at `my.eduai.ok.ubc.ca`, including a dedicated release layout, database/provisioning checklist, scoped service helper, systemd unit, Apache template, and local OpenAI-compatible CMPS embeddings via `mxbai-embed-large`. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
+
+### Changed
+
+- [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
+
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.

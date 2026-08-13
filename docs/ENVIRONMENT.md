@@ -89,7 +89,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `AI_JOB_EXECUTION_TIMEOUT_MS` | optional (default `120000`) | dev/prod | Maximum provider execution time for an async AI job before it is aborted and retried |
 | `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | optional (defaults `3` / `5000`) | dev/prod | BullMQ attempts and exponential retry base delay for async AI jobs |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
-| `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
+| `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `VLLM_EMBEDDING_BASE_URL`, `VLLM_EMBEDDING_MODEL` | optional | dev/prod | RAG embeddings — local OpenAI-compatible CMPS endpoint |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |
 | `REINDEX_CONCURRENCY` | optional (default `4`, range `1-16`) | dev/prod | #945 — max materials `reEmbedCourseMaterials` (course re-embed background job) processes concurrently via `p-limit`. Non-positive, fractional, blank, and non-numeric values use the default; values above 16 are capped at 16. Keeps large re-embed runs from overwhelming the Postgres connection pool or the embedding provider's rate limit; bump cautiously alongside `OLLAMA_EMBED_MANY_BATCH_SIZE` / `EMBED_MANY_BATCH_SIZE` |
 | `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |

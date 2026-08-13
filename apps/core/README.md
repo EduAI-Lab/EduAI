@@ -37,7 +37,7 @@ Copy from `.env.example` (root `npm install` also auto-copies if missing). Criti
 | `BETTER_AUTH_URL` | `http://localhost:3000` in local dev |
 | `ENCRYPTION_KEY` | Required for Canvas token storage (AES-256-GCM) |
 | `EDUAI_API_KEY` | Same value as AI Tutor server + Question Maker |
-| `EMBEDDING_PROVIDER` / `OPENROUTER_API_KEY` / `OLLAMA_BASE_URL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
+| `EMBEDDING_PROVIDER` / `VLLM_EMBEDDING_BASE_URL` / `VLLM_EMBEDDING_MODEL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
 
 Full inventory: [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) and `apps/core/.env.example`.
 

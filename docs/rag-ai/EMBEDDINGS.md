@@ -113,8 +113,8 @@ Single reference for keys and `.env` entries (avoids duplicating the same three 
 | ---- | -------- | ---- | ---------------------- |
 | `EMBEDDING_PROVIDER` | `apps/core/.env` | `local` / `ollama` → Ollama; `cloud` or unset → cloud chain | **Yes** — selects path |
 | `EMBEDDING_DIMENSION` | `apps/core/.env` | Expected vector length (default **1024**); must match pgvector column | **Yes** — validation |
-| `OLLAMA_BASE_URL` | `apps/core/.env` | Ollama host (same as chat; cmps01 on dev server) | **Yes** (local path) |
-| `OLLAMA_EMBEDDING_MODEL` | `apps/core/.env` | Local embed model (default **`mxbai-embed-large`**) | **Yes** (local path) |
+| `VLLM_EMBEDDING_BASE_URL` | `apps/core/.env` | OpenAI-compatible local embedding endpoint (CMPS01 `/v1`) | **Yes** (local path) |
+| `VLLM_EMBEDDING_MODEL` | `apps/core/.env` | Local embed model (default **`mxbai-embed-large`**) | **Yes** (local path) |
 | `OPENROUTER_API_KEY` | `apps/core/.env` | Cloud embed via OpenRouter (`openai/text-embedding-3-small` @ 1024 dims) | **Yes** (cloud / fallback) |
 | `OPENROUTER_EMBEDDING_MODEL` | `apps/core/.env` | Override OpenRouter model id | Optional |
 | `OPENROUTER_HTTP_REFERER` | `apps/core/.env` | OpenRouter ranking header; defaults to `BETTER_AUTH_URL` | Optional |
@@ -133,11 +133,9 @@ Template: [`apps/core/.env.example`](../../apps/core/.env.example).
 ```env
 EMBEDDING_PROVIDER=local
 EMBEDDING_DIMENSION=1024
-OLLAMA_BASE_URL="http://localhost:11434/"
-OLLAMA_EMBEDDING_MODEL=mxbai-embed-large
+VLLM_EMBEDDING_BASE_URL="http://cmps01.ok.ubc.ca:8001/v1"
+VLLM_EMBEDDING_MODEL=mxbai-embed-large
 ```
-
-Pull the model once: `ollama pull mxbai-embed-large`
 
 **Laptop without Ollama (cloud fallback):**
 
@@ -160,8 +158,8 @@ OPENROUTER_API_KEY=sk-or-...
 
 **When `EMBEDDING_PROVIDER=local` or `ollama`:**
 
-1. Ollama (`OLLAMA_BASE_URL` + `OLLAMA_EMBEDDING_MODEL`)
-2. On failure → cloud chain (1024-dim models)
+1. OpenAI-compatible local endpoint (`VLLM_EMBEDDING_BASE_URL` + `VLLM_EMBEDDING_MODEL`)
+2. If no local endpoint is configured, the legacy Ollama client is used
 
 **When `EMBEDDING_PROVIDER=cloud` or unset:**
 
@@ -194,7 +192,7 @@ If any layer disagrees, you get errors like `expected 3072 dimensions, not 1024`
 
 | Target dimension | Typical provider | `.env` highlights |
 | ---------------- | ---------------- | ----------------- |
-| **1024** | Local Ollama | `EMBEDDING_PROVIDER=local`, `EMBEDDING_DIMENSION=1024`, `OLLAMA_EMBEDDING_MODEL=mxbai-embed-large` |
+| **1024** | Local CMPS endpoint | `EMBEDDING_PROVIDER=local`, `EMBEDDING_DIMENSION=1024`, `VLLM_EMBEDDING_BASE_URL=http://cmps01.ok.ubc.ca:8001/v1`, `VLLM_EMBEDDING_MODEL=mxbai-embed-large` |
 | **1024** | Cloud | `EMBEDDING_PROVIDER=cloud`, `EMBEDDING_DIMENSION=1024`, `OPENROUTER_API_KEY` or `OPENAI_API_KEY` |
 | **3072** | Cloud (legacy Gemini) | `EMBEDDING_PROVIDER=cloud`, `EMBEDDING_DIMENSION=3072`, `OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` |
 
