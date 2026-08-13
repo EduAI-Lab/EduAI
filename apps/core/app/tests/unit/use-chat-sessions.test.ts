@@ -88,7 +88,7 @@ describe("useChatSession", () => {
     mockFetch.mockResolvedValue(okJson(session));
     const { result, rerender } = renderHook(
       ({ id }: { id: string | null }) => useChatSession(id),
-      { initialProps: { id: "chat-1" } },
+      { initialProps: { id: "chat-1" as string | null } },
     );
 
     await waitFor(() => expect(result.current.session).toEqual(session));

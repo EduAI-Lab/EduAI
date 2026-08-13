@@ -10,7 +10,7 @@
  * view's own wiring, not their internals — mirrors the CourseMaterialsUpload
  * stub already used in CourseDetail.test.tsx.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
@@ -173,7 +173,7 @@ afterEach(() => {
 });
 
 function clickTab(name: RegExp) {
-  fireEvent.click(screen.getByRole("tab", { name }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0 });
 }
 
 describe("CourseDetailManagerView — tabs and overview", () => {
@@ -190,8 +190,9 @@ describe("CourseDetailManagerView — tabs and overview", () => {
 
   it("shows instructor and TA info on Overview when an instructor is assigned", () => {
     renderView();
-    expect(screen.getByText("Dr. Instructor")).toBeInTheDocument();
-    expect(screen.getByText("Terry Assistant")).toBeInTheDocument();
+    const overview = within(screen.getByRole("tabpanel", { name: /overview/i }));
+    expect(overview.getByText("Dr. Instructor")).toBeInTheDocument();
+    expect(overview.getByText("Terry Assistant")).toBeInTheDocument();
   });
 
   it("shows the no-instructor / no-TA fallback copy", () => {
@@ -239,7 +240,7 @@ describe("CourseDetailManagerView — materials tab", () => {
   it("shows a scheduled-visibility chip for a future availableAt", () => {
     const future = new Date(Date.now() + 86_400_000).toISOString();
     renderView({ materials: [{ ...MATERIAL, availableAt: future }] });
-    expect(screen.getByText(/visible to students on/i)).toBeInTheDocument();
+    expect(screen.getByTitle(/visible to students on/i)).toBeInTheDocument();
   });
 
   it("opens the delete-material confirmation, cancels without calling onDeleteMaterial", () => {
@@ -424,11 +425,12 @@ describe("CourseDetailManagerView — enrollments tab", () => {
     const props = renderView();
     clickTab(/enrollments/i);
 
-    const combos = screen.getAllByRole("combobox");
-    fireEvent.click(combos[combos.length - 1]);
-    fireEvent.mouseDown(screen.getByText("New Student"));
+    const panel = within(screen.getByRole("tabpanel", { name: /enrollments/i }));
+    fireEvent.click(panel.getByRole("combobox"));
+    // The MultiSelect's popover content is portalled to document.body, outside `panel`.
+    fireEvent.click(screen.getByText("New Student"));
 
-    fireEvent.click(screen.getByRole("button", { name: /enroll 1 student/i }));
+    fireEvent.click(panel.getByRole("button", { name: /enroll 1 student/i }));
     await waitFor(() => expect(props.onEnrollStudent).toHaveBeenCalledWith("student-2"));
   });
 
@@ -445,12 +447,13 @@ describe("CourseDetailManagerView — staff tab", () => {
   it("replaces the current instructor via the combobox", async () => {
     const props = renderView();
     clickTab(/staff/i);
-    expect(screen.getByText("Current")).toBeInTheDocument();
+    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    expect(panel.getByText("Current")).toBeInTheDocument();
 
-    const combos = screen.getAllByRole("combobox");
+    const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[0]);
-    fireEvent.mouseDown(screen.getByText("Other Prof"));
-    fireEvent.click(screen.getByRole("button", { name: /replace/i }));
+    fireEvent.mouseDown(panel.getByText("Other Prof"));
+    fireEvent.click(panel.getByRole("button", { name: /replace/i }));
 
     await waitFor(() => expect(props.onAssignInstructor).toHaveBeenCalledWith("user-other"));
     await waitFor(() =>
@@ -461,11 +464,12 @@ describe("CourseDetailManagerView — staff tab", () => {
   it("assigns an instructor when none is currently assigned", async () => {
     const props = renderView({ course: { ...COURSE, instructor: null } });
     clickTab(/staff/i);
-    expect(screen.getByText(/no instructor assigned yet/i)).toBeInTheDocument();
+    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    expect(panel.getByText(/no instructor assigned yet/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.mouseDown(screen.getByText("Other Prof"));
-    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    fireEvent.click(panel.getAllByRole("combobox")[0]);
+    fireEvent.mouseDown(panel.getByText("Other Prof"));
+    fireEvent.click(panel.getByRole("button", { name: "Assign" }));
 
     await waitFor(() => expect(props.onAssignInstructor).toHaveBeenCalledWith("user-other"));
     await waitFor(() =>
@@ -477,12 +481,13 @@ describe("CourseDetailManagerView — staff tab", () => {
     const onAssignInstructor = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onAssignInstructor });
     clickTab(/staff/i);
-    const combos = screen.getAllByRole("combobox");
+    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[0]);
-    fireEvent.mouseDown(screen.getByText("Other Prof"));
-    fireEvent.click(screen.getByRole("button", { name: /replace/i }));
+    fireEvent.mouseDown(panel.getByText("Other Prof"));
+    fireEvent.click(panel.getByRole("button", { name: /replace/i }));
     await waitFor(() =>
-      expect(screen.getByText(/could not assign instructor/i)).toBeInTheDocument(),
+      expect(panel.getByText(/could not assign instructor/i)).toBeInTheDocument(),
     );
   });
 
@@ -524,14 +529,15 @@ describe("CourseDetailManagerView — staff tab", () => {
     const props = renderView();
     clickTab(/staff/i);
 
-    const combos = screen.getAllByRole("combobox");
+    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[combos.length - 1]);
-    fireEvent.mouseDown(screen.getByText("New TA"));
+    fireEvent.click(screen.getByText("New TA"));
 
-    fireEvent.click(screen.getByRole("button", { name: /add 1 ta/i }));
+    fireEvent.click(panel.getByRole("button", { name: /add 1 ta/i }));
     await waitFor(() => expect(props.onAddTA).toHaveBeenCalledWith("user-newta"));
     await waitFor(() =>
-      expect(screen.getByText(/1 ta added successfully/i)).toBeInTheDocument(),
+      expect(panel.getByText(/1 ta added successfully/i)).toBeInTheDocument(),
     );
   });
 
@@ -544,12 +550,13 @@ describe("CourseDetailManagerView — staff tab", () => {
     const onAddTA = vi.fn().mockRejectedValue(new Error("fail"));
     renderView({ onAddTA });
     clickTab(/staff/i);
-    const combos = screen.getAllByRole("combobox");
+    const panel = within(screen.getByRole("tabpanel", { name: /staff/i }));
+    const combos = panel.getAllByRole("combobox");
     fireEvent.click(combos[combos.length - 1]);
-    fireEvent.mouseDown(screen.getByText("New TA"));
-    fireEvent.click(screen.getByRole("button", { name: /add 1 ta/i }));
+    fireEvent.click(screen.getByText("New TA"));
+    fireEvent.click(panel.getByRole("button", { name: /add 1 ta/i }));
     await waitFor(() =>
-      expect(screen.getByText(/1 of 1 tas failed to add/i)).toBeInTheDocument(),
+      expect(panel.getByText(/1 of 1 tas failed to add/i)).toBeInTheDocument(),
     );
   });
 });

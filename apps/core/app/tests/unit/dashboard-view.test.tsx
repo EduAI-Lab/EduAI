@@ -137,7 +137,7 @@ describe("DashboardView", () => {
   it("renders the quick-actions panel instead of courses when quickActions are given", () => {
     renderDashboard({
       quickActions: [
-        { label: "User management", description: "Manage users", href: "/admin/users" },
+        { label: "User management", description: "Manage users", href: "/admin/users", icon: null },
       ],
     });
 

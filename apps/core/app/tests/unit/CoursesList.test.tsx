@@ -692,7 +692,7 @@ describe('CoursesUnitAdminView — mutation flows', () => {
       />
     )
     fireEvent.click(screen.getByRole('button', { name: /create first course/i }))
-    expect(screen.getByText('Create course')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Create course' })).toBeInTheDocument()
   })
 
   it('shows the no-results state when the search text matches nothing', () => {

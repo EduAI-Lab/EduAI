@@ -349,7 +349,7 @@ describe("AiModelsAdminView", () => {
   describe("providers tab", () => {
     /** Radix Tabs mounts its panel asynchronously in jsdom. */
     const switchToProvidersTab = async () => {
-      fireEvent.click(screen.getByRole("tab", { name: "Providers" }));
+      fireEvent.mouseDown(screen.getByRole("tab", { name: "Providers" }), { button: 0 });
       await waitFor(() => {
         expect(screen.getByText("AI Providers")).toBeInTheDocument();
       });
@@ -367,7 +367,7 @@ describe("AiModelsAdminView", () => {
       await switchToProvidersTab();
       fireEvent.click(screen.getByRole("button", { name: /add provider/i }));
 
-      expect(screen.getByText("Create Provider")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Create Provider" })).toBeInTheDocument();
     });
 
     it("opens the edit-provider dialog prefilled from the table", async () => {
@@ -398,7 +398,7 @@ describe("AiModelsAdminView", () => {
         );
       });
       await waitFor(() => {
-        expect(screen.queryByText("Create Provider")).not.toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: "Create Provider" })).not.toBeInTheDocument();
       });
     });
 
@@ -627,7 +627,7 @@ describe("AiModelsAdminView", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Invalid response from server/),
+          screen.getByText(/Cannot reach \/api\/vllm-models/),
         ).toBeInTheDocument();
       });
     });

@@ -356,7 +356,7 @@ describe("useChatDetail", () => {
   it("clears the chat when chatId becomes null", async () => {
     mockFetch.mockResolvedValue(okJson(chatDetail));
     const { result, rerender } = renderHook(({ id }: { id: string | null }) => useChatDetail(id), {
-      initialProps: { id: "chat-1" },
+      initialProps: { id: "chat-1" as string | null },
     });
 
     await waitFor(() => expect(result.current.chat).toEqual(chatDetail));

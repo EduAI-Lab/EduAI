@@ -261,13 +261,15 @@ describe("UsersAdminView — toggle active", () => {
 });
 
 describe("UsersAdminView — chat history", () => {
-  it("opens the chat history dialog with the selected user from the row menu", () => {
+  it("opens the chat history dialog with the selected user from the row menu", async () => {
     renderView();
 
     openRowMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: /view chat history/i }));
 
-    expect(screen.getByTestId("chat-history-dialog")).toHaveTextContent(`${user.name} (${user.id})`);
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-history-dialog")).toHaveTextContent(`${user.name} (${user.id})`),
+    );
   });
 });
 
