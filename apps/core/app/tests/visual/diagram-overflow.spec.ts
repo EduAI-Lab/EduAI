@@ -16,22 +16,35 @@ import { DIAGRAM_FIXTURE_NAMES } from "~/tests/visual/diagram-payloads";
  *    oversized content (scrollWidth > clientWidth) silently opens a
  *    horizontal scroll region instead of being clipped/wrapped, reachable
  *    only via a sideways scroll gesture nothing in a chat UI prompts the
- *    user to make. Verified against both the pre-fix shape
- *    (`overflow-y-auto` only — computed overflow-x is `auto`) and the fix
- *    (`overflow-x-hidden` added — computed overflow-x is `hidden`, closing
- *    that scroll region off).
+ *    user to make. This is exercised below with the real rendered diagram
+ *    markup forced to an oversized width, since no catalog payload is
+ *    naturally wide enough to trigger it (see point 2).
  *
  * 2. Diagram containment (the defensive hardening): the four catalog
- *    diagrams, rendered via generate-fixtures.tsx (see that file for why
- *    Playwright can't render the .tsx components directly) against the
- *    app's real compiled CSS, must stay inside a narrow chat column.
- *    NOTE per reviewer's own Chrome check on #1422: this specific 5-stage
- *    payload does not actually overflow with or without the w-full/min-w-0
- *    classes when the diagram is tested in isolation (no ancestor flex
- *    context to trigger the flex `min-width: auto` shrink issue) — I
- *    reproduced the same result. These assertions are still kept as real
- *    containment coverage (Chromium, not Happy DOM), but the decisive
- *    before/after evidence for #1320 is test group 1 above, not this one.
+ *    diagrams, rendered via generate-fixtures.tsx against the app's real
+ *    compiled CSS, must stay inside a narrow chat column.
+ *
+ *    #1422 review follow-up: the reviewer's own Chrome check found the
+ *    5-stage process-flow payload does not overflow with or without the
+ *    w-full/min-w-0 classes when tested with no flex ancestor. To settle
+ *    whether an ancestor flex context changes that, generate-fixtures.tsx
+ *    now also renders each diagram inside the actual production ancestor
+ *    chain (packages/ui Message's `flex gap-3` row -> chat-message.tsx's
+ *    `flex flex-col gap-2 flex-1 min-w-0` content column -> the
+ *    `mx-auto w-full max-w-3xl` message list), both against a genuine
+ *    pre-#1320 component tree (pre1320-components/, a frozen snapshot of
+ *    these files from the fix commit's parent) and the current tree. Result
+ *    (see the "real chat-message ancestor chain" describe block below):
+ *    still no overflow either way, even stress-tested with a 7-stage
+ *    payload of much longer labels at a 320px viewport. That's because
+ *    `flex-1 min-w-0` on the content column (present before #1320, untouched
+ *    by the fix) already resets the one flex item in this chain whose
+ *    default min-width could matter; nothing below it is itself a row-axis
+ *    flex item, so `flex-wrap` always has a properly-bounded box to wrap
+ *    within regardless of the w-full/min-w-0 classes. The decisive,
+ *    reproducible-on-base evidence for #1320 is root cause 1, not this one —
+ *    the w-full/min-w-0 changes remain as low-risk defensive hardening for
+ *    ancestor contexts this integration doesn't currently have.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -84,60 +97,110 @@ function pageHtml(bodyHtml: string): string {
 </html>`;
 }
 
+/**
+ * Mimics the *real* ancestor chain, not just the message column: the
+ * `overflow-y-auto`(+/- `overflow-x-hidden`) scroll pane from
+ * chat-conversation-layout.tsx, wrapping the `mx-auto w-full max-w-3xl`
+ * message list `bodyHtml` (itself already the Message flex row + content
+ * column markup — see generate-fixtures.tsx's chat-message fixtures).
+ */
+function chatScrollPaneHtml(bodyHtml: string, withOverflowXHidden: boolean): string {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      ${CSS}
+      html, body { margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div style="width: ${COLUMN_WIDTH}px; height: 900px; overflow-y: auto; ${
+      withOverflowXHidden ? "overflow-x: hidden;" : ""
+    } overscroll-behavior: contain;">
+      <div class="px-4 md:px-6 py-4">
+        <div class="mx-auto w-full max-w-3xl space-y-1">${bodyHtml}</div>
+      </div>
+    </div>
+  </body>
+</html>`;
+}
+
 test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
-  // Same overflow-y-auto/overscroll-contain/scroll-smooth shape as
-  // chat-conversation-layout.tsx, with and without the overflow-x-hidden
-  // this PR adds, plus a deliberately oversized child (900px) — matching
-  // the "an eduai-diagram widget wider than its intended column" scenario
-  // the fix commit describes.
-  function scrollShapeHtml(withOverflowXHidden: boolean) {
+  /**
+   * Same overflow-y-auto/overscroll-contain shape as
+   * chat-conversation-layout.tsx, with and without the overflow-x-hidden
+   * this PR adds, wrapping the *real* rendered process-flow diagram markup
+   * (not a placeholder div — #1422 review) forced to an oversized width via
+   * an explicit wrapper. Forcing is necessary because, per the describe
+   * block above, no catalog payload is naturally wide enough on its own;
+   * this isolates root cause 1 (the scroll-pane overflow-x computation)
+   * using real component output for everything downstream of that forced
+   * width, matching the bug report's own description of "an eduai-diagram
+   * widget wider than its intended column".
+   */
+  function forcedWideDiagramHtml(withOverflowXHidden: boolean): string {
+    const diagramHtml = fs.readFileSync(
+      path.resolve(__dirname, "fixtures", "process-flow.html"),
+      "utf8",
+    );
     return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <style>
+      ${CSS}
       html, body { margin: 0; }
       #scroll {
         width: ${COLUMN_WIDTH}px;
-        height: 200px;
+        height: 300px;
         overflow-y: auto;
         ${withOverflowXHidden ? "overflow-x: hidden;" : ""}
       }
-      #wide { width: 900px; height: 100px; background: tomato; }
+      #force-wide { display: inline-block; min-width: 900px; }
     </style>
   </head>
-  <body><div id="scroll"><div id="wide"></div></div></body>
+  <body><div id="scroll"><div id="force-wide">${diagramHtml}</div></div></body>
 </html>`;
   }
 
-  test("without overflow-x-hidden, overflow-x computes to auto next to the oversized child (pre-fix)", async ({
+  test("without overflow-x-hidden, an oversized real diagram is reachable only via a sideways scroll (pre-fix)", async ({
     page,
   }) => {
-    await page.setContent(scrollShapeHtml(false));
-    const { overflowX, hasOverflow } = await page.evaluate(() => {
-      const el = document.querySelector("#scroll")!;
+    await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
+    await page.setContent(forcedWideDiagramHtml(false));
+    const { overflowX, scrollWidth, clientWidth, shellRight } = await page.evaluate(() => {
+      const scroll = document.querySelector("#scroll")!;
+      const shell = document.querySelector("[data-eduai-diagram]")!;
       return {
-        overflowX: getComputedStyle(el).overflowX,
-        hasOverflow: el.scrollWidth > el.clientWidth,
+        overflowX: getComputedStyle(scroll).overflowX,
+        scrollWidth: scroll.scrollWidth,
+        clientWidth: scroll.clientWidth,
+        shellRight: shell.getBoundingClientRect().right,
       };
     });
     // The CSS spec quirk the fix commit documents: unset overflow-x next to
-    // a non-'visible' overflow-y computes to 'auto', not 'visible' — so the
-    // 900px child (real overflow: scrollWidth > clientWidth) becomes
-    // reachable only via a sideways scroll gesture nothing in a chat UI
-    // prompts the user to make, i.e. off-screen in normal use.
+    // a non-'visible' overflow-y computes to 'auto', not 'visible'.
     expect(overflowX).toBe("auto");
-    expect(hasOverflow).toBe(true);
+    // Real overflow exists (not just a computed-style proxy), and the
+    // diagram's own box sits past the visible pane — off-screen until the
+    // user scrolls sideways, which nothing in the chat UI prompts them to
+    // do.
+    expect(scrollWidth).toBeGreaterThan(clientWidth);
+    expect(shellRight).toBeGreaterThan(COLUMN_WIDTH);
   });
 
-  test("with overflow-x-hidden, the oversized child cannot open a horizontal scroll region (post-fix)", async ({
+  test("with overflow-x-hidden, the oversized real diagram cannot open a horizontal scroll region (post-fix)", async ({
     page,
   }) => {
-    await page.setContent(scrollShapeHtml(true));
-    const overflowX = await page.evaluate(
-      () => getComputedStyle(document.querySelector("#scroll")!).overflowX,
-    );
+    await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
+    await page.setContent(forcedWideDiagramHtml(true));
+    const { overflowX, docScrollWidth } = await page.evaluate(() => ({
+      overflowX: getComputedStyle(document.querySelector("#scroll")!).overflowX,
+      docScrollWidth: document.documentElement.scrollWidth,
+    }));
     expect(overflowX).toBe("hidden");
+    expect(docScrollWidth).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
   });
 });
 
@@ -145,13 +208,12 @@ test.describe("diagram containment in a narrow chat column", () => {
   /**
    * Assert the rendered diagram markup stays fully inside a narrow column:
    * no page-level horizontal overflow, the diagram shell itself never
-   * extends past the column bounds, and — per #1422 review — every visible
-   * descendant (a stage chip, an icon, a label) is checked individually too.
-   * The shell-only check above would still pass if a chip inside a
-   * flex-wrap row extended past the shell and got clipped by
-   * `overflow-hidden`: getBoundingClientRect() reports an element's laid-out
-   * box regardless of clipping, so a per-element check catches that a
-   * shell-only or scrollWidth-only check cannot.
+   * extends past the column bounds, and every visible descendant (a stage
+   * chip, an icon, a label) is checked individually against *both* the
+   * column and the shell's own clip rectangle (#1422 review: a chip could
+   * previously extend past the shell — which owns `overflow-hidden` — while
+   * still landing inside the column, and the column-only check would miss
+   * that it's actually being clipped).
    */
   async function assertContained(page: Page, bodyHtml: string) {
     await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
@@ -182,9 +244,16 @@ test.describe("diagram containment in a narrow chat column", () => {
     });
     expect(elementBoxes.length).toBeGreaterThan(0);
     for (const box of elementBoxes) {
-      expect(box.x, `${box.tag}: left edge`).toBeGreaterThanOrEqual(columnBox!.x - 1);
-      expect(box.x + box.width, `${box.tag}: right edge`).toBeLessThanOrEqual(
+      // Inside the outer column...
+      expect(box.x, `${box.tag}: left edge vs column`).toBeGreaterThanOrEqual(columnBox!.x - 1);
+      expect(box.x + box.width, `${box.tag}: right edge vs column`).toBeLessThanOrEqual(
         columnBox!.x + columnBox!.width + 1,
+      );
+      // ...and inside the shell's own clip rectangle, since the shell (not
+      // the column) is what actually clips via overflow-hidden.
+      expect(box.x, `${box.tag}: left edge vs shell clip`).toBeGreaterThanOrEqual(shellBox!.x - 1);
+      expect(box.x + box.width, `${box.tag}: right edge vs shell clip`).toBeLessThanOrEqual(
+        shellBox!.x + shellBox!.width + 1,
       );
     }
   }
@@ -194,6 +263,74 @@ test.describe("diagram containment in a narrow chat column", () => {
       const fixturePath = path.resolve(__dirname, "fixtures", `${name}.html`);
       const html = fs.readFileSync(fixturePath, "utf8");
       await assertContained(page, html);
+    });
+  }
+});
+
+test.describe("diagram containment in the real chat-message ancestor chain (#1422 review)", () => {
+  /**
+   * The base-vs-head reproduction requested in review: each catalog payload
+   * rendered through the actual Message row / content column / max-w-3xl /
+   * scroll-pane nesting (see generate-fixtures.tsx's chat-message
+   * fixtures), against both a genuine pre-#1320 component tree + pre-#1320
+   * scroll pane ("base") and the current tree + pane ("head"). Both are
+   * asserted to keep every element visible and unclipped: per the top-of-
+   * file comment, this ancestor chain does not reproduce root cause 2 for
+   * any catalog payload (the reviewer's own finding, confirmed here against
+   * the real DOM shape rather than an isolated diagram). This is still
+   * valuable coverage, not a no-op: it locks in that today's real payloads
+   * never actually reach the clipping/scrolling boundary the two describe
+   * blocks above exercise directly, and it will catch a future regression
+   * (e.g. a wider chip, or a flex class removed from the content column)
+   * that made that boundary reachable.
+   */
+  async function assertVisibleAndUnclipped(page: Page, bodyHtml: string, withOverflowXHidden: boolean) {
+    await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
+    await page.setContent(chatScrollPaneHtml(bodyHtml, withOverflowXHidden));
+
+    const docScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(docScrollWidth).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+
+    const shellBox = await page.locator("[data-eduai-diagram]").boundingBox();
+    expect(shellBox).not.toBeNull();
+    expect(shellBox!.x + shellBox!.width).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+
+    const elementBoxes = await page.evaluate(() => {
+      const shell = document.querySelector("[data-eduai-diagram]")!;
+      return Array.from(shell.querySelectorAll<HTMLElement | SVGElement>("*"))
+        .map((el) => el.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.height > 0)
+        .map((box) => ({ left: box.x, right: box.x + box.width }));
+    });
+    expect(elementBoxes.length).toBeGreaterThan(0);
+    for (const box of elementBoxes) {
+      expect(box.left).toBeGreaterThanOrEqual(-1);
+      expect(box.right).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+      expect(box.right, "element must not be clipped by the diagram shell's overflow-hidden").toBeLessThanOrEqual(
+        shellBox!.x + shellBox!.width + 1,
+      );
+    }
+  }
+
+  for (const name of DIAGRAM_FIXTURE_NAMES) {
+    test(`${name}: base component tree + pre-#1320 scroll pane stays visible and unclipped`, async ({
+      page,
+    }) => {
+      const html = fs.readFileSync(
+        path.resolve(__dirname, "fixtures", "chat-message", `${name}-base.html`),
+        "utf8",
+      );
+      await assertVisibleAndUnclipped(page, html, false);
+    });
+
+    test(`${name}: head component tree + post-#1320 scroll pane stays visible and unclipped`, async ({
+      page,
+    }) => {
+      const html = fs.readFileSync(
+        path.resolve(__dirname, "fixtures", "chat-message", `${name}-head.html`),
+        "utf8",
+      );
+      await assertVisibleAndUnclipped(page, html, true);
     });
   }
 });
