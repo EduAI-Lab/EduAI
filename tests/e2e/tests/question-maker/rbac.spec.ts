@@ -13,7 +13,10 @@
 import { test, expect } from "@playwright/test";
 import { QM_BACKEND_URL } from "../../playwright.config";
 import { signUp, uniqueEmail, createInstructor } from "../helpers/auth";
-import { createQmCourseForInstructor } from "../helpers/qm-courses";
+import {
+  createQmCourseForInstructor,
+  createQmCourseForStudent,
+} from "../helpers/qm-courses";
 
 // ---------------------------------------------------------------------------
 // Question routes — blocked for STUDENT (requires AUTHORS role)
