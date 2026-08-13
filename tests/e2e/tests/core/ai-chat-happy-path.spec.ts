@@ -1,9 +1,9 @@
 /**
  * Core student AI-chat happy path for end-user testing (#1429, #1459).
  *
- * This deliberately drives the browser UI while mocking only the streamed AI
- * provider response, so the test remains deterministic and still exercises the
- * real course-scoped chat experience.
+ * This deliberately drives the browser UI with a deterministic stream fixture.
+ * The real /api/chat route is also probed below for an unenrolled caller so the
+ * success-path fixture cannot hide the course authorization boundary.
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
@@ -58,6 +58,28 @@ test.describe('Core student AI chat happy path (#1429, #1459)', () => {
         data: { userId: studentId, role: 'STUDENT' },
       })).status()).toBe(201);
       expect((await adminCtx.patch(`${CORE_URL}/api/courses/${courseId}/publish`)).status()).toBe(200);
+
+      // Exercise the real route before stubbing the successful browser turn:
+      // course authorization must reject an authenticated student who is not
+      // enrolled, without reaching the provider.
+      const outsiderCourseRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
+        form: {
+          name: 'AI Chat Outsider Course',
+          code: `CHAT-OUT-${RUN_SUFFIX}`,
+          section: '001',
+          term: 'W1',
+          year: '2026',
+          startDate: '2026-09-08',
+          department: 'COSC',
+          instructorUserIds: instructorId,
+        },
+      });
+      expect(outsiderCourseRes.status()).toBe(201);
+      const { id: outsiderCourseId } = await outsiderCourseRes.json();
+      const denied = await studentCtx.post(`${CORE_URL}/api/chat`, {
+        data: { messages: [{ role: 'user', content: 'unauthorized probe' }], courseId: outsiderCourseId },
+      });
+      expect(denied.status()).toBe(403);
 
       await injectSession(page, studentCtx);
       await page.route('**/api/chat', async (route) => {
