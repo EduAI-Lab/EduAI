@@ -139,6 +139,11 @@ only when the provider supplied a reliable hint. Core's own application limiter
 is the only `RATE_LIMITED` 429 contract; upstream provider throttling is a
 retryable provider availability failure.
 
+After a 200 stream has begun, HTTP status and headers are immutable, so a late
+provider error is serialized as the same `{ error, code, retryable, provider }`
+JSON object through the AI SDK stream error channel instead of a non-200
+response. A successful stream carries no provider error envelope.
+
 ### What Core still adds
 
 | Layer | Include? | Rationale |
