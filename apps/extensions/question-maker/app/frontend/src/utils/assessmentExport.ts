@@ -8,7 +8,6 @@ import type { Paragraph as DocxParagraph } from 'docx';
 import type { Assessment, QuestionVariant } from '../types/question';
 
 export type AssessmentExportBlock = {
-    order: number;
     stem: string;
     choiceLines: string[];
     answerLine: string | null;
@@ -32,7 +31,6 @@ export function collectAssessmentExportBlocks(
     resolveVariant?: (variantId: number) => QuestionVariant | undefined
 ): AssessmentExportBlock[] {
     const blocks: AssessmentExportBlock[] = [];
-    let order = 0;
 
     const sections = [...(assessment.sections ?? [])].sort(
         (a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id,
@@ -56,7 +54,7 @@ export function collectAssessmentExportBlocks(
             const rawAnswer = variant.answer?.trim();
             const answerLine = rawAnswer ? `Correct answer: ${rawAnswer}` : null;
 
-            blocks.push({ order: order++, stem, choiceLines, answerLine });
+            blocks.push({ stem, choiceLines, answerLine });
         });
     });
 

@@ -204,7 +204,7 @@ describeDb('assessmentSectionService (integration)', () => {
   });
 
   describe('reorderAssessmentSections', () => {
-    it('rewrites positions to 1..n in the given order', async () => {
+    it('rewrites positions to 0..n-1 in the given order', async () => {
       const a = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'A' });
       const b = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'B' });
       const c = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'C' });
@@ -216,10 +216,24 @@ describeDb('assessmentSectionService (integration)', () => {
       );
 
       expect(reordered.map((s) => ({ id: s.id, position: s.position }))).toEqual([
-        { id: c.id, position: 1 },
-        { id: a.id, position: 2 },
-        { id: b.id, position: 3 },
+        { id: c.id, position: 0 },
+        { id: a.id, position: 1 },
+        { id: b.id, position: 2 },
       ]);
+    });
+
+    it('keeps createAssessmentSection append-after-reorder (0-based shared base)', async () => {
+      const a = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'A' });
+      const b = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'B' });
+      const c = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'C' });
+
+      await svc.reorderAssessmentSections(assessmentId, USER.id, [a.id, b.id, c.id]);
+      await svc.deleteAssessmentSection(b.id, USER.id);
+
+      const d = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'D' });
+      const sections = await svc.getSectionsForAssessment(assessmentId, USER.id);
+      expect(sections.map((s) => s.id)).toEqual([a.id, c.id, d.id]);
+      expect(d.position).toBe(2);
     });
 
     it('rejects incomplete, duplicate, or foreign section ids', async () => {

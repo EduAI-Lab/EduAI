@@ -92,6 +92,5 @@ describe('collectAssessmentExportBlocks section ordering', () => {
 
     const blocks = collectAssessmentExportBlocks(assessment);
     expect(blocks.map((b) => b.stem)).toEqual(['A:Q0', 'A:Q1', 'B:Q0', 'B:Q1']);
-    expect(blocks.map((b) => b.order)).toEqual([0, 1, 2, 3]);
   });
 });

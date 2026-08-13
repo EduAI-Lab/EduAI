@@ -120,12 +120,17 @@ export const updateAssessmentSection = async (sectionId, userId, updates, course
 };
 
 /**
- * Rewrite section positions to 1..n for the given ordered id list.
+ * Rewrite section positions to 0..n-1 for the given ordered id list.
  * `sectionIds` must be exactly the set of sections on the assessment (no missing/extra/dupes).
+ * Uses the same 0-based convention as `createAssessmentSection` (count-based default).
  */
 export const reorderAssessmentSections = async (assessmentId, userId, sectionIds, courseId = null) => {
   assessmentId = Number(assessmentId);
-  await findAssessmentForUser(assessmentId, userId);
+  const assessment = await findAssessmentForUser(assessmentId, userId);
+
+  if (courseId != null && assessment.courseId !== courseId) {
+    throw new Error('Section not found');
+  }
 
   if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
     throw new Error('sectionIds must be a non-empty array');
@@ -139,34 +144,27 @@ export const reorderAssessmentSections = async (assessmentId, userId, sectionIds
     throw new Error('sectionIds must not contain duplicates');
   }
 
-  const existing = await prisma.assessmentSections.findMany({
-    where: { assessmentId },
-    select: { id: true, assessment: { select: { courseId: true } } },
-  });
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.assessmentSections.findMany({
+      where: { assessmentId },
+      select: { id: true },
+    });
 
-  if (courseId != null) {
-    const foreign = existing.find((s) => s.assessment?.courseId !== courseId);
-    if (foreign) {
-      throw new Error('Section not found');
+    const existingIds = new Set(existing.map((s) => s.id));
+    if (
+      normalizedIds.length !== existingIds.size ||
+      normalizedIds.some((id) => !existingIds.has(id))
+    ) {
+      throw new Error('sectionIds must list every section on the assessment exactly once');
     }
-  }
 
-  const existingIds = new Set(existing.map((s) => s.id));
-  if (
-    normalizedIds.length !== existingIds.size ||
-    normalizedIds.some((id) => !existingIds.has(id))
-  ) {
-    throw new Error('sectionIds must list every section on the assessment exactly once');
-  }
-
-  await prisma.$transaction(
-    normalizedIds.map((id, index) =>
-      prisma.assessmentSections.update({
+    for (const [index, id] of normalizedIds.entries()) {
+      await tx.assessmentSections.update({
         where: { id },
-        data: { position: index + 1 },
-      }),
-    ),
-  );
+        data: { position: index },
+      });
+    }
+  });
 
   return getSectionsForAssessment(assessmentId, userId);
 };

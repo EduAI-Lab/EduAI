@@ -1,5 +1,5 @@
 import { Button } from '@eduai/ui';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { IconPlus, IconLayoutList } from '@tabler/icons-react';
 import { Assessment, AssessmentSection, QuestionVariantEntry, Topic } from '../../types/question';
 import { AssessmentSectionCard } from './AssessmentSectionCard';
@@ -17,7 +17,7 @@ interface AssessmentBuilderProps {
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
-    onReorderSections?: (sectionIds: number[]) => void;
+    onReorderSections?: (sectionIds: number[]) => void | Promise<void>;
     readOnly?: boolean;
 }
 
@@ -38,6 +38,9 @@ export function AssessmentBuilder({
 }: AssessmentBuilderProps) {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerSectionId, setPickerSectionId] = useState<number | null>(null);
+    const [isReordering, setIsReordering] = useState(false);
+    // Sync guard — state alone still allows a second click in the same tick before re-render.
+    const reorderingRef = useRef(false);
 
     const sections = useMemo<AssessmentSection[]>(() => {
         const list = [...(assessment.sections ?? [])];
@@ -51,14 +54,21 @@ export function AssessmentBuilder({
         return section.sectionVariants.map((link) => link.variantId);
     }, [pickerSectionId, sections]);
 
-    const move = (fromIndex: number, toIndex: number) => {
-        if (!onReorderSections) return;
+    const move = async (fromIndex: number, toIndex: number) => {
+        if (!onReorderSections || reorderingRef.current) return;
         if (toIndex < 0 || toIndex >= sections.length) return;
         const ids = sections.map((s) => s.id);
         const tmp = ids[fromIndex];
         ids[fromIndex] = ids[toIndex];
         ids[toIndex] = tmp;
-        onReorderSections(ids);
+        reorderingRef.current = true;
+        setIsReordering(true);
+        try {
+            await onReorderSections(ids);
+        } finally {
+            reorderingRef.current = false;
+            setIsReordering(false);
+        }
     };
 
     return (
@@ -126,10 +136,10 @@ export function AssessmentBuilder({
                                     setPickerSectionId(section.id);
                                     setPickerOpen(true);
                                 }}
-                                canMoveUp={index > 0}
-                                canMoveDown={index < sections.length - 1}
-                                onMoveUp={onReorderSections ? () => move(index, index - 1) : undefined}
-                                onMoveDown={onReorderSections ? () => move(index, index + 1) : undefined}
+                                canMoveUp={!isReordering && index > 0}
+                                canMoveDown={!isReordering && index < sections.length - 1}
+                                onMoveUp={onReorderSections ? () => { void move(index, index - 1); } : undefined}
+                                onMoveDown={onReorderSections ? () => { void move(index, index + 1); } : undefined}
                                 readOnly={readOnly}
                             />
                         ))}
