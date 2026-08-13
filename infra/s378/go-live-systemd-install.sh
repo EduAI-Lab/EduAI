@@ -143,7 +143,7 @@ echo "  $SYSTEMD_DIR/eduai-dev.target"
 echo
 echo "=== installing restricted cron sync helper ==="
 sudo install -m 0750 -o root -g root "$SCRIPT_DIR/eduai-cron-sync.sh" "$CRON_SYNC"
-printf '%%eduai-dev ALL=(root) NOPASSWD: %s\\n' "$CRON_SYNC" \
+printf '%%eduai-dev ALL=(root) NOPASSWD: %s\n' "$CRON_SYNC" \
   | sudo tee "$SUDOERS_DIR/eduai-cron-sync" >/dev/null
 sudo chmod 0440 "$SUDOERS_DIR/eduai-cron-sync"
 sudo visudo -cf "$SUDOERS_DIR/eduai-cron-sync"
