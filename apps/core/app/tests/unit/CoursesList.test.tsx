@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesView, type CoursesViewProps } from '~/components/courses/courses-view'
 import { PolicyProvider, type PolicyValues } from '~/components/policy/policy-gate'
@@ -91,6 +91,47 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// Radix <Select> reads these DOM APIs while opening/positioning its portal
+// content; jsdom doesn't implement them. Stub with no-ops so Select
+// interactions in the tests below don't throw.
+beforeAll(() => {
+  if (!window.HTMLElement.prototype.hasPointerCapture) {
+    window.HTMLElement.prototype.hasPointerCapture = () => false
+  }
+  if (!window.HTMLElement.prototype.releasePointerCapture) {
+    window.HTMLElement.prototype.releasePointerCapture = () => {}
+  }
+  if (!window.HTMLElement.prototype.scrollIntoView) {
+    window.HTMLElement.prototype.scrollIntoView = () => {}
+  }
+})
+
+/** Opens the "Course actions" dropdown for a card (Radix DropdownMenu — opens on pointerdown). */
+function openCourseActions(button: HTMLElement = screen.getByRole('button', { name: /course actions/i })) {
+  fireEvent.pointerDown(button, { button: 0, ctrlKey: false })
+}
+
+/** Opens our custom `DepartmentCombobox` and clicks an option (selection fires on mousedown, not click). */
+function chooseDepartmentCombobox(comboboxTrigger: HTMLElement, optionLabel: string) {
+  fireEvent.click(comboboxTrigger)
+  fireEvent.mouseDown(screen.getByText(optionLabel))
+}
+
+/** Opens a Radix <Select> trigger and picks an option by its accessible (role="option") name. */
+async function chooseSelectOption(trigger: HTMLElement, optionName: RegExp) {
+  fireEvent.click(trigger)
+  fireEvent.click(await screen.findByRole('option', { name: optionName }))
+}
+
+function submitButtonFor(name: RegExp): HTMLElement {
+  return screen.getAllByRole('button', { name }).find((b) => b.getAttribute('type') === 'submit')!
+}
+
+/** The "Start date" field has no <Label htmlFor>, so it isn't reachable via getByLabelText. */
+function startDateInput(): HTMLInputElement {
+  return document.querySelector('input[name="startDate"]') as HTMLInputElement
+}
+
 // CoursesAdminView
 describe('CoursesAdminView', () => {
   it('shows "Create Course" button', () => {
@@ -132,6 +173,231 @@ describe('CoursesAdminView', () => {
     )
     // Each card has a "Course actions" 3-dot dropdown button
     expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
+  })
+})
+
+// CoursesAdminView — form submission, delete, publish, and empty-state flows
+describe('CoursesAdminView — mutation flows', () => {
+  const INSTRUCTORS = [{ id: 'i1', name: 'Prof X', email: 'x@example.edu' }]
+
+  it('submits the create form and calls onCreateCourse with the assembled data', async () => {
+    const onCreateCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={onCreateCourse}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    fireEvent.change(screen.getByLabelText('Course name'), { target: { value: 'New Course' } })
+
+    const combos = screen.getAllByRole('combobox')
+    chooseDepartmentCombobox(combos[0], 'Computer Science')
+
+    fireEvent.change(screen.getByLabelText('Course number'), { target: { value: '250' } })
+    fireEvent.change(startDateInput(), { target: { value: '2025-09-01' } })
+
+    await chooseSelectOption(screen.getAllByRole('combobox')[2], /prof x/i)
+
+    fireEvent.click(submitButtonFor(/create course/i))
+
+    await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1))
+    expect(onCreateCourse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'New Course',
+        code: 'COSC 250',
+        section: '01',
+        department: 'COSC',
+        instructorUserIds: ['i1'],
+      })
+    )
+  })
+
+  it('disables the create submit button until department and instructor are chosen', async () => {
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    expect(submitButtonFor(/create course/i)).toBeDisabled()
+
+    const combos = screen.getAllByRole('combobox')
+    chooseDepartmentCombobox(combos[0], 'Computer Science')
+    expect(submitButtonFor(/create course/i)).toBeDisabled()
+
+    await chooseSelectOption(screen.getAllByRole('combobox')[2], /prof x/i)
+    expect(submitButtonFor(/create course/i)).not.toBeDisabled()
+  })
+
+  it('closes the create dialog on Cancel without calling onCreateCourse', () => {
+    const onCreateCourse = vi.fn()
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        instructors={INSTRUCTORS}
+        onCreateCourse={onCreateCourse}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    expect(screen.getByText('Create new course')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    expect(screen.queryByText('Create new course')).not.toBeInTheDocument()
+    expect(onCreateCourse).not.toHaveBeenCalled()
+  })
+
+  it('opens the edit dialog via the course actions menu, edits the name, and calls onEditCourse', async () => {
+    const onEditCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={onEditCourse}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /edit course/i }))
+    await waitFor(() => expect(screen.getByDisplayValue(PUBLISHED_COURSE.name)).toBeInTheDocument())
+
+    fireEvent.change(screen.getByDisplayValue(PUBLISHED_COURSE.name), { target: { value: 'Renamed Course' } })
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => expect(onEditCourse).toHaveBeenCalledTimes(1))
+    expect(onEditCourse).toHaveBeenCalledWith(
+      PUBLISHED_COURSE.id,
+      expect.objectContaining({ name: 'Renamed Course', code: PUBLISHED_COURSE.code, department: 'COSC' })
+    )
+  })
+
+  it('closes the edit dialog on Cancel without calling onEditCourse', async () => {
+    const onEditCourse = vi.fn()
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={onEditCourse}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /edit course/i }))
+    await waitFor(() => expect(screen.getByText('Edit course')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await waitFor(() => expect(screen.queryByText('Edit course')).not.toBeInTheDocument())
+    expect(onEditCourse).not.toHaveBeenCalled()
+  })
+
+  it('cancels the delete confirmation without calling onDeleteCourse', async () => {
+    const onDeleteCourse = vi.fn()
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={onDeleteCourse}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete course/i }))
+    await waitFor(() => expect(screen.getByText('Delete course')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await waitFor(() => expect(screen.queryByText('Delete course')).not.toBeInTheDocument())
+    expect(onDeleteCourse).not.toHaveBeenCalled()
+  })
+
+  it('confirms deletion and calls onDeleteCourse with the course id', async () => {
+    const onDeleteCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={onDeleteCourse}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete course/i }))
+    await waitFor(() => expect(screen.getByText('Delete course')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+    await waitFor(() => expect(onDeleteCourse).toHaveBeenCalledWith(PUBLISHED_COURSE.id))
+  })
+
+  it('toggles a published course to unpublished via the actions menu', () => {
+    const onPublishToggle = vi.fn()
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={onPublishToggle}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /unpublish course/i }))
+    expect(onPublishToggle).toHaveBeenCalledWith(PUBLISHED_COURSE.id, false)
+  })
+
+  it('toggles a draft course to published via the actions menu', () => {
+    const onPublishToggle = vi.fn()
+    wrap(
+      <CoursesAdminView
+        courses={[DRAFT_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={onPublishToggle}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /publish course/i }))
+    expect(onPublishToggle).toHaveBeenCalledWith(DRAFT_COURSE.id, true)
+  })
+
+  it('shows the zero-courses empty state and opens the create dialog from it', () => {
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText('No courses yet.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /create your first course/i }))
+    expect(screen.getByText('Create new course')).toBeInTheDocument()
+  })
+
+  it('shows the no-results state when the search text matches nothing', () => {
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: 'nonexistent xyz' } })
+    expect(screen.getByText('No courses match your search.')).toBeInTheDocument()
   })
 })
 
@@ -208,6 +474,240 @@ describe('CoursesUnitAdminView', () => {
       />
     )
     expect(screen.getByRole('button', { name: /create course/i })).toBeDisabled()
+  })
+})
+
+// CoursesUnitAdminView — form submission, delete, publish, and empty-state flows
+describe('CoursesUnitAdminView — mutation flows', () => {
+  const INSTRUCTORS = [{ id: 'i1', name: 'Prof X', email: 'x@example.edu' }]
+
+  it('shows a readonly course-code field when there is exactly one authorized department', () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    const readonlyField = screen.getByDisplayValue('Computer Science (COSC)')
+    expect(readonlyField).toHaveAttribute('readonly')
+    // Only the department combobox for "no results"? No — a hidden input carries the value.
+    expect(document.querySelector('input[type="hidden"][name="department"]')).toHaveValue('COSC')
+  })
+
+  it('shows a department combobox (not readonly) when multiple departments are authorized', async () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={['COSC', 'MATH']}
+        instructors={INSTRUCTORS}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    expect(screen.queryByDisplayValue(/^Computer Science \(COSC\)$/)).not.toBeInTheDocument()
+    expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('submits the create form using the selected department when multiple are authorized', async () => {
+    const onCreateCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={['COSC', 'MATH']}
+        instructors={INSTRUCTORS}
+        onCreateCourse={onCreateCourse}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    fireEvent.change(screen.getByLabelText('Course name'), { target: { value: 'Linear Algebra' } })
+
+    const combos = screen.getAllByRole('combobox')
+    chooseDepartmentCombobox(combos[0], 'Mathematics')
+
+    fireEvent.change(screen.getByLabelText('Course number'), { target: { value: '200' } })
+    fireEvent.change(startDateInput(), { target: { value: '2025-09-01' } })
+    await chooseSelectOption(screen.getAllByRole('combobox')[2], /prof x/i)
+
+    fireEvent.click(submitButtonFor(/create course/i))
+    await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1))
+    expect(onCreateCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Linear Algebra', code: 'MATH 200', department: 'MATH' })
+    )
+  })
+
+  it('submits the create form using the single authorized department automatically', async () => {
+    const onCreateCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={['COSC']}
+        instructors={INSTRUCTORS}
+        onCreateCourse={onCreateCourse}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    fireEvent.change(screen.getByLabelText('Course name'), { target: { value: 'Intro CS' } })
+    fireEvent.change(screen.getByLabelText('Course number'), { target: { value: '110' } })
+    fireEvent.change(startDateInput(), { target: { value: '2025-09-01' } })
+    await chooseSelectOption(screen.getAllByRole('combobox')[1], /prof x/i)
+
+    fireEvent.click(submitButtonFor(/create course/i))
+    await waitFor(() => expect(onCreateCourse).toHaveBeenCalledTimes(1))
+    expect(onCreateCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'COSC 110', department: 'COSC' })
+    )
+  })
+
+  it('opens the edit dialog via the course actions menu and calls onEditCourse', async () => {
+    const onEditCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesUnitAdminView
+        courses={[PUBLISHED_COURSE]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={onEditCourse}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /edit course/i }))
+    await waitFor(() => expect(screen.getByDisplayValue(PUBLISHED_COURSE.name)).toBeInTheDocument())
+    fireEvent.change(screen.getByDisplayValue(PUBLISHED_COURSE.name), { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(onEditCourse).toHaveBeenCalledTimes(1))
+    expect(onEditCourse).toHaveBeenCalledWith(PUBLISHED_COURSE.id, expect.objectContaining({ name: 'Renamed' }))
+  })
+
+  it('confirms deletion and calls onDeleteCourse with the course id', async () => {
+    const onDeleteCourse = vi.fn().mockResolvedValue(undefined)
+    wrap(
+      <CoursesUnitAdminView
+        courses={[PUBLISHED_COURSE]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={onDeleteCourse}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete course/i }))
+    await waitFor(() => expect(screen.getByText('Delete course')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+    await waitFor(() => expect(onDeleteCourse).toHaveBeenCalledWith(PUBLISHED_COURSE.id))
+  })
+
+  it('cancels the delete confirmation without calling onDeleteCourse', async () => {
+    const onDeleteCourse = vi.fn()
+    wrap(
+      <CoursesUnitAdminView
+        courses={[PUBLISHED_COURSE]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={onDeleteCourse}
+        onPublishToggle={NOOP}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete course/i }))
+    await waitFor(() => expect(screen.getByText('Delete course')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await waitFor(() => expect(screen.queryByText('Delete course')).not.toBeInTheDocument())
+    expect(onDeleteCourse).not.toHaveBeenCalled()
+  })
+
+  it('toggles publish state via the actions menu', () => {
+    const onPublishToggle = vi.fn()
+    wrap(
+      <CoursesUnitAdminView
+        courses={[PUBLISHED_COURSE]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={onPublishToggle}
+      />
+    )
+    openCourseActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: /unpublish course/i }))
+    expect(onPublishToggle).toHaveBeenCalledWith(PUBLISHED_COURSE.id, false)
+  })
+
+  it('greys out delete (data-disabled) when unitAdmins.canDeleteCourses is off (#807)', () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[PUBLISHED_COURSE]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />,
+      { 'unitAdmins.canDeleteCourses': false }
+    )
+    openCourseActions()
+    expect(screen.getByRole('menuitem', { name: /delete course/i })).toHaveAttribute('data-disabled')
+  })
+
+  it('shows the zero-courses empty state without a create button when no departments are authorized', () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText(/no courses in .* yet/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /create first course/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the zero-courses empty state with a working create button when a department is authorized', () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /create first course/i }))
+    expect(screen.getByText('Create course')).toBeInTheDocument()
+  })
+
+  it('shows the no-results state when the search text matches nothing', () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[PUBLISHED_COURSE]}
+        authorizedUnits={['COSC']}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: 'nonexistent xyz' } })
+    expect(screen.getByText('No courses match your search.')).toBeInTheDocument()
   })
 })
 
