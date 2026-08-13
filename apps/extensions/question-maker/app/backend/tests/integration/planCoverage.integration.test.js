@@ -28,7 +28,7 @@ function sessionFetch(user) {
     if (path.endsWith('/api/sessions/validate')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
     }
-    if (/\/enrollments$/.test(path)) {
+    if (path.endsWith('/enrollments')) {
       return Promise.resolve({
         ok: true,
         json: () =>
@@ -50,7 +50,7 @@ function twoUserFetch() {
     if (path.endsWith('/api/sessions/validate')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
     }
-    if (/\/enrollments$/.test(path)) {
+    if (path.endsWith('/enrollments')) {
       const enrollments =
         user.id === USER_A.id
           ? [{ studentId: USER_A.id, role: 'INSTRUCTOR', isActive: true }]
