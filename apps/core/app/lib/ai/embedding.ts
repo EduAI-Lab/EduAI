@@ -271,6 +271,7 @@ const QUERY_EMBED_CACHE_MAX = Math.min(
 
 export type EmbeddingProviderKind =
   | "ollama-local"
+  | "vllm-local"
   | "openrouter"
   | "google"
   | "openai";
@@ -506,6 +507,17 @@ function createOllamaEmbeddingClient() {
   });
 }
 
+function createVllmEmbeddingClient() {
+  const baseURL = process.env.VLLM_EMBEDDING_BASE_URL?.trim();
+  if (!baseURL) return null;
+
+  return createOpenAI({
+    apiKey: process.env.VLLM_API_KEY?.trim() || "local-embedding",
+    baseURL,
+    headers: cmps01InternalAuthHeaders(),
+  });
+}
+
 function createOpenRouterEmbeddingClient() {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) return null;
@@ -528,6 +540,13 @@ function createOpenRouterEmbeddingClient() {
 function getLocalEmbeddingModel(
   settings: EffectiveEmbeddingSettings,
 ): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
+  const vllm = createVllmEmbeddingClient();
+  if (vllm) {
+    const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
+    logEmbeddingProvider("vllm-local", settings, modelId);
+    return { model: vllm.embedding(modelId), kind: "vllm-local" };
+  }
+
   const ollama = createOllamaEmbeddingClient();
   const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
   logEmbeddingProvider("ollama-local", settings, modelId);
@@ -645,7 +664,7 @@ async function embedWithConfiguredProvider<T>(
   } catch (err) {
     if (settings.wantsLocal) {
       throw new Error(
-        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
+        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix the configured local embedding service or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
         { cause: err },
       );
     }
