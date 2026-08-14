@@ -65,6 +65,16 @@ const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
 };
 
 /**
+ * `setPassword` is declared `serverOnly`, so it has no route and `ctx.path`
+ * is `undefined` for it — better-auth still gives every dispatch a stable
+ * `operationId` (the `auth.api.*` map key) even when there's no path, so
+ * that's the identity a server-only endpoint has to be matched on instead.
+ */
+const PASSWORD_SETTING_OPERATIONS: Record<string, "password" | "newPassword"> = {
+  setPassword: "newPassword",
+};
+
+/**
  * Auth paths that resolve a user via a reset token instead of a session.
  */
 export const TOKEN_RESET_PATHS = new Set(["/reset-password"]);
@@ -76,9 +86,17 @@ export const SKIP_REUSE_PATHS = new Set(["/sign-up/email"]);
 
 /**
  * Returns the password from a password-setting auth request, if present.
+ * `path` is `undefined` for server-only endpoints (no route), in which case
+ * `operationId` is used to identify the endpoint instead.
  */
-export function extractPolicyPassword(path: string, body: unknown): string | null {
-  const field = PASSWORD_SETTING_PATHS[path];
+export function extractPolicyPassword(
+  path: string | undefined,
+  operationId: string | undefined,
+  body: unknown,
+): string | null {
+  const field =
+    (path ? PASSWORD_SETTING_PATHS[path] : undefined) ??
+    (operationId ? PASSWORD_SETTING_OPERATIONS[operationId] : undefined);
   if (!field) {
     return null;
   }

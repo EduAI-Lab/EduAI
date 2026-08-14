@@ -58,43 +58,62 @@ describe("PASSWORD_POLICY_MESSAGE", () => {
 
 describe("extractPolicyPassword", () => {
   it("returns the password field on sign-up", () => {
-    expect(extractPolicyPassword("/sign-up/email", { password: "Abcdef1!" })).toBe(
-      "Abcdef1!",
-    );
+    expect(
+      extractPolicyPassword("/sign-up/email", undefined, { password: "Abcdef1!" }),
+    ).toBe("Abcdef1!");
   });
 
   it("returns the newPassword field on change-password", () => {
     expect(
-      extractPolicyPassword("/change-password", { newPassword: "Abcdef1!" }),
+      extractPolicyPassword("/change-password", undefined, { newPassword: "Abcdef1!" }),
     ).toBe("Abcdef1!");
   });
 
   it("returns the newPassword field on reset-password", () => {
     expect(
-      extractPolicyPassword("/reset-password", { newPassword: "Abcdef1!" }),
+      extractPolicyPassword("/reset-password", undefined, { newPassword: "Abcdef1!" }),
     ).toBe("Abcdef1!");
   });
 
   it("returns null for paths that are not password-setting", () => {
-    expect(extractPolicyPassword("/sign-in/email", { password: "x" })).toBeNull();
+    expect(extractPolicyPassword("/sign-in/email", undefined, { password: "x" })).toBeNull();
   });
 
   it("returns null when the expected field is absent or not a string", () => {
-    expect(extractPolicyPassword("/sign-up/email", {})).toBeNull();
-    expect(extractPolicyPassword("/sign-up/email", { password: 123 })).toBeNull();
-    expect(extractPolicyPassword("/sign-up/email", null)).toBeNull();
+    expect(extractPolicyPassword("/sign-up/email", undefined, {})).toBeNull();
+    expect(extractPolicyPassword("/sign-up/email", undefined, { password: 123 })).toBeNull();
+    expect(extractPolicyPassword("/sign-up/email", undefined, null)).toBeNull();
   });
 
   it("returns null for an unmapped path even if the body has a property literally named 'undefined'", () => {
     // Guards the early `if (!field) return null;` guard: without it, an unmapped path would
     // fall through to `body?.[undefined]`, which would read this property and leak it.
-    expect(extractPolicyPassword("/sign-in/email", { undefined: "leaked-password" })).toBeNull();
+    expect(
+      extractPolicyPassword("/sign-in/email", undefined, { undefined: "leaked-password" }),
+    ).toBeNull();
   });
 
   it("returns the newPassword field on set-password", () => {
-    expect(extractPolicyPassword("/set-password", { newPassword: "Abcdef1!" })).toBe(
-      "Abcdef1!",
-    );
+    expect(
+      extractPolicyPassword("/set-password", undefined, { newPassword: "Abcdef1!" }),
+    ).toBe("Abcdef1!");
+  });
+
+  it("returns the newPassword field for the setPassword operationId when path is undefined (#1385)", () => {
+    // `setPassword` is a better-auth `serverOnly` endpoint: it has no route, so
+    // `ctx.path` is always undefined for it and only `operationId` identifies it.
+    expect(
+      extractPolicyPassword(undefined, "setPassword", { newPassword: "Abcdef1!" }),
+    ).toBe("Abcdef1!");
+  });
+
+  it("returns null when neither path nor a mapped operationId is given", () => {
+    expect(
+      extractPolicyPassword(undefined, undefined, { newPassword: "Abcdef1!" }),
+    ).toBeNull();
+    expect(
+      extractPolicyPassword(undefined, "someOtherOperation", { newPassword: "Abcdef1!" }),
+    ).toBeNull();
   });
 });
 

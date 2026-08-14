@@ -139,6 +139,8 @@ export async function createAdminCourse(
         isActive: true,
       })),
     });
+    const { ensureDefaultBank } = await import("~/lib/question-banks/server");
+    await ensureDefaultBank(created.id, tx);
     return created;
   });
 

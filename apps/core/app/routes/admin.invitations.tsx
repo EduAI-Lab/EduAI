@@ -3,7 +3,6 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
-import { auth } from "~/lib/auth/server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
 import { firstFieldError } from "~/lib/form-errors";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
@@ -56,6 +55,7 @@ import {
   BreadcrumbSeparator,
 } from "@eduai/ui";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
@@ -90,7 +90,7 @@ const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
   if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
   return {

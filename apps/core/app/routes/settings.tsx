@@ -3,13 +3,13 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { isPasswordExpired, getPasswordChangedAt } from "~/lib/auth/password-expiry.server";
 
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { SettingsView } from "~/components/settings/settings-view";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return redirect("/auth/login");
   }
@@ -48,7 +48,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return redirect("/auth/login");
 
   const formData = await request.formData();

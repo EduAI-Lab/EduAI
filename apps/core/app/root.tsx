@@ -11,7 +11,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/root";
 import "./app.css";
 
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicies } from "~/lib/policy.server";
 import {
@@ -81,7 +81,7 @@ export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
-      const session = await auth.api.getSession({ headers: request.headers });
+      const session = await getRequestSession(request);
       if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
         return new Response(
           JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
@@ -118,7 +118,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
   const [session, policies] = await Promise.all([
-    auth.api.getSession({ headers: request.headers }),
+    getRequestSession(request),
     getPolicies(),
   ]);
 
