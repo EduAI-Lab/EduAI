@@ -6,7 +6,7 @@ import {
   Message as BasicMessage,
   MessageContent,
   MessageActions,
-  MessageAction
+  MessageAction,
 } from "@eduai/ui";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 import { Tool, MarkdownStylesProvider, type MarkdownStyles } from "@eduai/ui";
@@ -16,7 +16,10 @@ import {
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
 import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
-import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
+import {
+  getChatToolDisplayName,
+  isWebChatToolName,
+} from "~/lib/ai/web-tool-ui";
 import {
   relabelAssistiveHeadings,
   transformAssistiveDisplayCopy,
@@ -38,8 +41,10 @@ export interface ChatMessageProps {
   answeredByLabel?: string | null;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
-  /** When true, relabel Assistive policy headings at display time only (#699). */
   assistiveDisplay?: boolean;
+  showContinue?: boolean;
+  onContinue?: () => void;
+  continueDisabled?: boolean;
 }
 
 /**
@@ -61,7 +66,10 @@ export function coerceMessageContent(content: unknown): string {
   if (Array.isArray(content)) {
     // Array of message parts — gather text parts
     const texts = content
-      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
+      .filter(
+        (p): p is Record<string, unknown> =>
+          p !== null && typeof p === "object",
+      )
       .filter((p) => p.type === "text" && typeof p.text === "string")
       .map((p) => p.text as string);
     if (texts.length > 0) return texts.join("\n");
@@ -98,15 +106,21 @@ function ChatMessageBody({
   highlightRole = null,
   webToolsEnabled = false,
   assistiveDisplay = false,
+  showContinue = false,
+  onContinue,
+  continueDisabled = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     // Extract text content from all text parts
-    const textContent = message.parts
-      ?.filter((part) => part != null && part.type === "text")
-      .map((part) => (part as any).text as string)
-      .join("\n") || coerceMessageContent(message.content) || "";
+    const textContent =
+      message.parts
+        ?.filter((part) => part != null && part.type === "text")
+        .map((part) => (part as any).text as string)
+        .join("\n") ||
+      coerceMessageContent(message.content) ||
+      "";
 
     await navigator.clipboard.writeText(textContent);
     setCopied(true);
@@ -124,13 +138,17 @@ function ChatMessageBody({
       if (!part.toolInvocation) return null;
       return {
         type: part.toolInvocation.toolName ?? "unknown",
-        state: part.toolInvocation.state === "result" ? "output-available" : "input-available",
+        state:
+          part.toolInvocation.state === "result"
+            ? "output-available"
+            : "input-available",
         input: part.toolInvocation.args,
-        output: part.toolInvocation.state === "result"
-          ? (part.toolInvocation as any).result
-          : undefined,
+        output:
+          part.toolInvocation.state === "result"
+            ? (part.toolInvocation as any).result
+            : undefined,
         toolCallId: part.toolInvocation.toolCallId,
-        errorText: undefined
+        errorText: undefined,
       };
     }
 
@@ -142,7 +160,7 @@ function ChatMessageBody({
         input: part.input,
         output: part.output,
         toolCallId: part.toolCallId,
-        errorText: part.errorText
+        errorText: part.errorText,
       };
     }
 
@@ -154,7 +172,10 @@ function ChatMessageBody({
   const textParts = safeParts.filter((part) => part.type === "text");
   const toolParts = safeParts.filter((part) => {
     const t = (part as any).type as string | undefined;
-    if (!(typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-")))) {
+    if (!(
+      typeof t === "string" &&
+      (t === "tool-invocation" || t.startsWith("tool-"))
+    )) {
       return false;
     }
 
@@ -168,9 +189,14 @@ function ChatMessageBody({
   });
 
   // If no parts, fallback to message content — coerce to string regardless of DB shape
-  const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
-  const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
-  const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+  const rawTextFromParts = textParts
+    .map((part) => (part as any).text as string)
+    .join("\n");
+  const rawTextContent =
+    rawTextFromParts || coerceMessageContent(message.content);
+  const normalizedContent = isUser
+    ? rawTextContent
+    : normalizeMathMarkdown(rawTextContent);
   // #699: relabel Assistive policy headings at display time only (non-user).
   // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
   // defer full reorder + diagram widgets until structure is safe (idle stream,
@@ -200,7 +226,12 @@ function ChatMessageBody({
     return (
       <div className={cn("flex justify-end mb-4", highlightClass)}>
         <div className="rounded-2xl bg-muted/60 px-4 py-3 max-w-[80%] min-w-0">
-          <div className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", READING_SURFACE_CLASS)}>
+          <div
+            className={cn(
+              "whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
+              READING_SURFACE_CLASS,
+            )}
+          >
             {textContent}
           </div>
         </div>
@@ -222,7 +253,10 @@ function ChatMessageBody({
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
-                displayName={getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type}
+                displayName={
+                  getChatToolDisplayName(toolPart.type, webToolsEnabled) ??
+                  toolPart.type
+                }
                 defaultOpen={
                   toolPart.state === "input-streaming" ||
                   (toolPart.state === "output-available" &&
@@ -244,33 +278,47 @@ function ChatMessageBody({
                 chat keeps fences as ordinary markdown code blocks. While an
                 Assist reply is still streaming incomplete structure, keep plain
                 markdown (#1171) so half fences don't mount broken widgets. */}
-            {applyAssistiveReorder
-              ? splitEduaiDiagrams(textContent).map((segment, index) =>
-                  segment.kind === "diagram" ? (
-                    <EduaiDiagram
-                      key={`diagram-${index}-${segment.payload.typeId}`}
-                      payload={segment.payload}
-                    />
-                  ) : segment.text.trim().length === 0 ? null : (
-                    <MessageContent
-                      key={`md-${index}`}
-                      markdown={true}
-                      isAnimating={isStreaming}
-                      className="bg-transparent p-0 text-foreground"
-                    >
-                      {segment.text}
-                    </MessageContent>
-                  ),
-                )
-              : (
-                <MessageContent
-                  markdown={true}
-                  isAnimating={isStreaming}
-                  className="bg-transparent p-0 text-foreground"
+            {applyAssistiveReorder ? (
+              splitEduaiDiagrams(textContent).map((segment, index) =>
+                segment.kind === "diagram" ? (
+                  <EduaiDiagram
+                    key={`diagram-${index}-${segment.payload.typeId}`}
+                    payload={segment.payload}
+                  />
+                ) : segment.text.trim().length === 0 ? null : (
+                  <MessageContent
+                    key={`md-${index}`}
+                    markdown={true}
+                    isAnimating={isStreaming}
+                    className="bg-transparent p-0 text-foreground"
+                  >
+                    {segment.text}
+                  </MessageContent>
+                ),
+              )
+            ) : (
+              <MessageContent
+                markdown={true}
+                isAnimating={isStreaming}
+                className="bg-transparent p-0 text-foreground"
+              >
+                {textContent}
+              </MessageContent>
+            )}
+
+            {showContinue && onContinue && (
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onContinue}
+                  disabled={continueDisabled}
                 >
-                  {textContent}
-                </MessageContent>
-              )}
+                  Continue
+                </Button>
+              </div>
+            )}
 
             {answeredByLabel ? (
               <p className="text-xs text-muted-foreground px-1">
@@ -285,6 +333,7 @@ function ChatMessageBody({
                   size="sm"
                   onClick={handleCopy}
                   className="h-8 w-8 p-0"
+                  aria-label={copied ? "Copied" : "Copy message"}
                 >
                   {copied ? (
                     <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />

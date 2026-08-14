@@ -1,7 +1,6 @@
 import { Link, redirect, useLoaderData } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
-import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
 import {
@@ -14,6 +13,7 @@ import {
 } from '@eduai/ui'
 import { CourseChatsPanel } from '~/components/courses/course-chats-panel'
 import { useUnitChats } from '~/hooks/api/use-course-chats'
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Unit-level chats view for UNIT_ADMIN (§5d). The endpoint
@@ -22,7 +22,7 @@ import { useUnitChats } from '~/hooks/api/use-course-chats'
  * authorized units, are redirected.
  */
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request)
   if (!session?.user) return redirect('/auth/login')
 
   const department = params.department

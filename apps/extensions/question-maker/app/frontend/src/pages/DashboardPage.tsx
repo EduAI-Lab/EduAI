@@ -23,6 +23,7 @@ import {
   type QmDashboardQuickAction,
   type QmDashboardAnalytics,
 } from '@/components/dashboard/QmDashboardView';
+import { useAutoRedirectForMainTour } from '@/tour/useAutoRedirectForMainTour';
 
 const STAFF_ROLES = new Set(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']);
 
@@ -40,6 +41,7 @@ const DIFF_COLORS = {
 };
 
 export default function DashboardPage() {
+  useAutoRedirectForMainTour();
   const { user } = useAuth();
   const { displayCourses, isLoading: coursesLoading } = useDisplayCourses();
   const { stats: questionStats } = useQuestionStats();
