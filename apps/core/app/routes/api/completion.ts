@@ -1,7 +1,13 @@
 import type { ActionFunctionArgs } from "react-router";
 import { runCompletion, type CompletionRequest } from "~/lib/ai/completion.server";
+import {
+  classifyProviderError,
+  providerFailureBody,
+  providerFailureHeaders,
+} from "~/lib/ai/provider-errors.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { auth } from "~/lib/auth/server";
+import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * POST /api/completion — stateless LLM completion for extension AI assist (#858).
@@ -19,12 +25,15 @@ export async function action({ request }: ActionFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  // Auth only — completion is stateless; no user identity is needed past this gate.
+  let rateLimitIdentity = apiKeySession?.user?.id ?? null;
   if (!apiKeySession?.user) {
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) {
+    const session = await getRequestSession(request);
+    if (session?.user) {
+      rateLimitIdentity = session.user.id;
+    } else {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;
+      rateLimitIdentity = "service";
     }
   }
 
@@ -39,6 +48,25 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const payload = body as Partial<CompletionRequest>;
+  const { limit, windowMs } = getChatRateLimitConfig();
+  const rateLimit = await checkRateLimit(
+    `completion:${rateLimitIdentity ?? "service"}`,
+    limit,
+    windowMs,
+  );
+  if (rateLimit.limited) {
+    return new Response(
+      JSON.stringify({ error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(rateLimit.retryAfter),
+        },
+      },
+    );
+  }
+
   const outcome = await runCompletion({
     model: typeof payload.model === "string" ? payload.model : "",
     apiKeys: payload.apiKeys,
@@ -52,9 +80,16 @@ export async function action({ request }: ActionFunctionArgs) {
   });
 
   if (!outcome.ok) {
-    return new Response(JSON.stringify({ error: outcome.error }), {
+    const isProviderFailure = "code" in outcome;
+    const responseBody = isProviderFailure
+      ? providerFailureBody(outcome)
+      : { error: outcome.error };
+    return new Response(JSON.stringify(responseBody), {
       status: outcome.status,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(isProviderFailure ? providerFailureHeaders(outcome) : {}),
+      },
     });
   }
 
@@ -66,6 +101,13 @@ export async function action({ request }: ActionFunctionArgs) {
           ? { "X-Fleet-Server": outcome.fleetServerId }
           : {}),
       },
+      // HTTP status/headers are immutable once this 200 stream begins. Route
+      // late provider errors through the same sanitized contract as the
+      // pre-stream path via the AI SDK stream error channel.
+      getErrorMessage: (error) =>
+        JSON.stringify(
+          providerFailureBody(classifyProviderError(outcome.provider, error)),
+        ),
     });
   }
 

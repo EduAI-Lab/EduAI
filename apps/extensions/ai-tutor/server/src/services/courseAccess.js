@@ -37,6 +37,18 @@ export async function userHasTaEnrollment(userId) {
 }
 
 /**
+ * True when the user is instructor-of-record (a `CourseInstructor` row) on
+ * any course. #1386: a platform STUDENT who is also instructor-of-record on
+ * a course must see it the same way Core does (enrollment-role keyed, not
+ * platform-role keyed) — this lets the STUDENT branch fold those courses in
+ * the same way it already does for a held TA enrollment.
+ */
+export async function userHasInstructorOfRecordStatus(userId) {
+  const count = await prisma.courseInstructor.count({ where: { userId } });
+  return count > 0;
+}
+
+/**
  * Resolve the caller's course visibility.
  *
  * @param {{ id: string, role: string, authorizedUnits?: string[] }} authUser
@@ -99,30 +111,46 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
     };
   }
 
-  if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
+  const isStudentWithElevatedStanding = authUser.role === 'STUDENT'
+    && (await userHasTaEnrollment(authUser.id) || await userHasInstructorOfRecordStatus(authUser.id));
+
+  if (authUser.role === 'TA' || isStudentWithElevatedStanding) {
     // TAs see all TA-enrolled courses regardless of publish state (no progress),
     // plus published student-enrolled courses (with progress). The publish gate
     // reads through Core (#819) rather than the possibly-stale local column,
-    // same as the STUDENT branch below.
-    const allEnrollments = await prisma.courseEnrollment.findMany({
-      where: { userId: authUser.id },
-      select: { courseOfferingId: true, role: true },
-    });
+    // same as the STUDENT branch below. #1386: a STUDENT who is also
+    // instructor-of-record (a CourseInstructor row) on a course gets the same
+    // any-publish-state, no-progress treatment as a TA enrollment — Core's
+    // enrollment-role fallback (rbac-matrix.md §3) makes no platform-role
+    // distinction here, so ai-tutor's STUDENT fork shouldn't either.
+    const [allEnrollments, instructorRows] = await Promise.all([
+      prisma.courseEnrollment.findMany({
+        where: { userId: authUser.id },
+        select: { courseOfferingId: true, role: true },
+      }),
+      prisma.courseInstructor.findMany({
+        where: { userId: authUser.id },
+        select: { courseOfferingId: true },
+      }),
+    ]);
     const taOfferingIds = allEnrollments
       .filter((e) => e.role === 'TA')
       .map((e) => e.courseOfferingId);
+    const instructorOfferingIds = instructorRows.map((r) => r.courseOfferingId);
     const studentOfferingIds = allEnrollments
       .filter((e) => e.role === 'STUDENT')
       .map((e) => e.courseOfferingId);
 
-    // #1043: TA-enrolled courses (any publish state, no progress) UNION
-    // student-enrolled *published* courses (with progress) — collapsed into one
-    // query so the page and `total` are honest across the join. The published
-    // gate rides in the SQL `where` (publishedCoreIds), and progress is attached
-    // only to the student-role rows on the returned page. TA enrollment wins
-    // when a course is held under both roles.
+    // #1043/#1386: TA-enrolled + instructor-of-record courses (any publish
+    // state, no progress) UNION student-enrolled *published* courses (with
+    // progress) — collapsed into one query so the page and `total` are honest
+    // across the join. The published gate rides in the SQL `where`
+    // (publishedCoreIds), and progress is attached only to the student-role
+    // rows on the returned page. TA/instructor-of-record standing wins when a
+    // course is held under both that and a student enrollment.
+    const noProgressOfferingIds = [...new Set([...taOfferingIds, ...instructorOfferingIds])];
     const OR = [
-      ...(taOfferingIds.length > 0 ? [{ id: { in: taOfferingIds } }] : []),
+      ...(noProgressOfferingIds.length > 0 ? [{ id: { in: noProgressOfferingIds } }] : []),
       ...(studentOfferingIds.length > 0
         ? [{ id: { in: studentOfferingIds }, coreOfferingId: { in: publishedCoreIds } }]
         : []),
@@ -132,7 +160,7 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
       kind: 'taUnion',
       where: { OR },
       isEmpty: OR.length === 0,
-      taOfferingIdSet: new Set(taOfferingIds),
+      taOfferingIdSet: new Set(noProgressOfferingIds),
       hasProgress: studentOfferingIds.length > 0,
     };
   }

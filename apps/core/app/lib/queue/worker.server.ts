@@ -6,6 +6,7 @@ import {
   type WorkerOptions,
 } from "bullmq";
 import { runCompletion } from "~/lib/ai/completion.server";
+import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
@@ -131,7 +132,9 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
 export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobResult> {
   switch (payload.kind) {
     case "question-generation": {
+      const requestStartMs = Date.now();
       const model = await resolveWorkerModel(payload);
+      const prompt = payload.input.prompt;
       const completion = await runCompletion({
         model,
         apiKeys: serverApiKeys(model),
@@ -141,7 +144,7 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
         messages: [
           {
             role: "user",
-            content: payload.input.prompt,
+            content: prompt,
           },
         ],
         streaming: false,
@@ -154,6 +157,35 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
       }
       if (completion.streaming) {
         throw new Error("AI job completion unexpectedly returned a stream");
+      }
+
+      // Mirrors chat.ts's persistTurnTelemetry: background AiJob completions
+      // (question-generation via runCompletion) previously never wrote an
+      // AIInteraction row, so the admin Servers tab's per-server/per-model
+      // stats (which only ever queried AIInteraction) silently excluded all
+      // async Question Maker traffic — a completed CMPS03 job, for example,
+      // wouldn't move CMPS03's totals at all. Wrapped in its own try/catch
+      // (on top of persistAiInteractionTelemetry's own internal one) so a
+      // telemetry failure can never fail the job or its result — the job's
+      // primary output already succeeded by this point.
+      try {
+        await persistAiInteractionTelemetry({
+          userId: payload.userId,
+          courseId: payload.courseId ?? null,
+          resolvedModelId: completion.body.model,
+          query: prompt,
+          responseText: completion.body.content,
+          usage: completion.body.usage,
+          finishReason: completion.body.finishReason,
+          durationMs: Date.now() - requestStartMs,
+          wasAuto: isAutoRoutingModelId(payload.requestedModel ?? ""),
+          routingTier: null,
+          routerVersion: null,
+          routerFeatures: null,
+          serverId: completion.internal.fleetServerId,
+        });
+      } catch (err) {
+        console.error("[ai-job-worker] telemetry write failed", err);
       }
 
       return {

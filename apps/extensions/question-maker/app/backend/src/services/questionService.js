@@ -11,6 +11,11 @@ import {
   formatSemesterDisplay
 } from './courseListService.js';
 import { buildQuestionListQuery } from '../utils/questionListQuery.js';
+import {
+  attachQuestionToBanks,
+  listExternalQuestionIdsForBank,
+} from './questionBankService.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * `saveExtractedQuestions` writes each question's metadata/variant/section-link
@@ -175,7 +180,10 @@ export const createQuestion = async (userId, questionData) => {
       courseId,
       primaryTopicId,
       type = 'MCQ',
-      questionOrder = {}
+      questionOrder = {},
+      questionBankId,
+      questionBankIds,
+      skipBankAttach = false,
     } = questionData;
 
     const normalizedDescription = typeof description === 'string' && description.trim()
@@ -215,6 +223,33 @@ export const createQuestion = async (userId, questionData) => {
       }
     });
 
+    // Soft-fail default attach when Core is unlinked; fail loud for explicit banks.
+    if (!skipBankAttach) {
+      const hasExplicitBank =
+        (questionBankId != null && questionBankId !== '') ||
+        (Array.isArray(questionBankIds) && questionBankIds.length > 0);
+      try {
+        await attachQuestionToBanks(parsedCourseId, userId, question.id, {
+          questionBankId,
+          questionBankIds,
+        });
+      } catch (attachError) {
+        logger.warn(
+          {
+            err: attachError,
+            questionId: question.id,
+            courseId: parsedCourseId,
+            questionBankId,
+            questionBankIds,
+          },
+          'Failed to attach question to Core bank(s)',
+        );
+        if (hasExplicitBank) {
+          throw attachError;
+        }
+      }
+    }
+
     return question;
   } catch (error) {
     throw error;
@@ -249,6 +284,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
   try {
     const {
       courseId,
+      questionBankId,
       search,
       types,
       difficulties,
@@ -280,6 +316,24 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       if (Number.isInteger(parsedCourseId)) {
         whereClause.courseId = parsedCourseId;
       }
+    }
+
+    const parsedBankId =
+      questionBankId !== undefined && questionBankId !== '' && questionBankId !== null
+        ? String(questionBankId)
+        : null;
+    if (parsedBankId && !whereClause.courseId) {
+      const err = new Error('questionBankId requires courseId');
+      err.status = 400;
+      throw err;
+    }
+    if (parsedBankId && whereClause.courseId) {
+      const memberIds = await listExternalQuestionIdsForBank(
+        whereClause.courseId,
+        userId,
+        parsedBankId,
+      );
+      whereClause.id = { in: memberIds.length ? memberIds : [-1] };
     }
 
     const [rows, count] = await Promise.all([

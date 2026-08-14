@@ -1,5 +1,4 @@
 import prisma from "~/lib/prisma.server";
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
@@ -7,6 +6,7 @@ import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.s
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import { paginatedResponse, parsePaginationParams } from "~/lib/pagination.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function handleAiProvidersApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -28,7 +28,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
@@ -66,7 +66,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -117,7 +117,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         return apiError(400, "PROVIDER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -172,7 +172,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         return apiError(400, "PROVIDER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

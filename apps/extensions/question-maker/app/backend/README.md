@@ -14,8 +14,8 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 - **Canvas LMS integration**: connect a Canvas account, import quizzes as questions, export assessments as
   Canvas quizzes
 - **Auth**: no local accounts — every request is authenticated by validating the caller's session cookie
-  against Core (`requireAuth` in `src/middleware/auth.js`); RBAC is course-scoped (owner, Core enrollment
-  role, or unit-admin department match)
+  against Core (`requireAuth` in `src/middleware/auth.js`); RBAC is course-scoped from Core enrollment
+  role or unit-admin department match (local course ownership is an FK only — not an access grant; #1114)
 
 ## Tech Stack
 
@@ -37,7 +37,7 @@ src/
 │   └── settings.js          # Environment settings
 ├── middleware/
 │   ├── auth.js               # Core session validation (requireAuth/authenticateToken), role gates
-│   ├── courseAccess.js        # Per-course access-level resolution (owner/Core enrollment/unit-admin)
+│   ├── courseAccess.js        # Per-course access from Core enrollment/unit-admin (fail closed; #1114)
 │   ├── resourceAccess.js       # Ownership guards for variant/question/assessment routes
 │   ├── errorHandler.js        # Maps Prisma error codes + generic errors to HTTP responses
 │   ├── roles.js                # Role/level rank helpers
@@ -45,7 +45,8 @@ src/
 ├── routes/                  # course, questions, variants, assessments, assessmentVariant,
 │                             # eduai, canvas, topics, auth, bug-reports, internal
 ├── services/                 # Business logic — one service per domain (questionService,
-│                              # assessmentService, canvasService, coreWiringService, etc.)
+│                              # assessmentService, canvasService, coreWiringService,
+│                              # ensureCourseAnchor (locked create shared by POST/import/ADMIN list), etc.)
 ├── jobs/
 │   └── reconcile.js          # Daily cron: cleans up stale Core references (course/topic/question)
 └── utils/                    # encryption, Canvas URL SSRF guard, logger, model-size ranks

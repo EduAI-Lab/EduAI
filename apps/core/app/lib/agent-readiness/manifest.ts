@@ -496,6 +496,59 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "removeCourseTA",
     routeFile: "routes/api/courses.tas.$.ts",
   }),
+
+  // ── Question banks (#845) ───────────────────────────────────────────────────
+  entry({
+    method: "GET",
+    path: "/api/courses/:courseId/banks",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+    note: "List banks; nested /banks/* covers create/update/delete and memberships",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:courseId/banks",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/courses/:courseId/banks/:bankId",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/courses/:courseId/banks/:bankId",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/courses/:courseId/banks/:bankId/questions",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:courseId/banks/:bankId/questions",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/courses/:courseId/banks/:bankId/questions/:externalQuestionId",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.banks.$.ts",
+  }),
+
   entry({
     method: "GET",
     path: "/api/courses/:courseId/chats",

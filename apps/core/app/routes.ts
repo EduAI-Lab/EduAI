@@ -45,6 +45,12 @@ export default [
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
   route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
+  route("/api/courses/:courseId/banks", "routes/api/courses.banks.$.ts"),
+  route(
+    "/api/courses/:courseId/banks/*",
+    "routes/api/courses.banks.$.ts",
+    { id: "routes/api/courses.banks.$:*" },
+  ),
   route("/api/courses/:courseId/chats", "routes/api/courses.chats.$.ts"),
   route("/api/units/:department/chats", "routes/api/units.chats.$.ts"),
   route("/api/courses/:courseId/tas", "routes/api/courses.tas.$.ts"),

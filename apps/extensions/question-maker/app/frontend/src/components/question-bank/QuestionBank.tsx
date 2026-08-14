@@ -32,6 +32,7 @@ interface QuestionBankProps {
   onCreateVariant: (entry: QuestionVariantEntry) => void;
   onAddQuestion: () => void;
   onUploadQuestions: () => void;
+  onRemoveFromBank?: (entry: QuestionVariantEntry) => void;
   isLoading?: boolean;
   courseName?: string;
   emptyMessage?: string;
@@ -51,6 +52,7 @@ export const QuestionBank = ({
   onCreateVariant,
   onAddQuestion,
   onUploadQuestions,
+  onRemoveFromBank,
   isLoading = false,
   courseName,
   emptyMessage,
@@ -297,6 +299,7 @@ export const QuestionBank = ({
               variantNumber={variantNumbers.get(entry.variant.id)}
               onView={onViewVariant}
               onCreateVariant={onCreateVariant}
+              onRemoveFromBank={onRemoveFromBank}
               compact={dense}
             />
           ))}

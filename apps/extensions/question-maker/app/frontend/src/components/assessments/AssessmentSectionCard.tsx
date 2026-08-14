@@ -27,6 +27,8 @@ import {
   IconGitBranch,
   IconCircleCheck,
   IconDots,
+  IconChevronUp,
+  IconChevronDown,
 } from '@tabler/icons-react';
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
 import { reviewStatusConfirm } from '../../lib/review-status';
@@ -44,6 +46,10 @@ interface AssessmentSectionCardProps {
   onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
   onCreateVariant?: (entry: QuestionVariantEntry) => void;
   readOnly?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 /** Map our internal difficulty string to QuestionCard's difficultyLevel type */
@@ -80,6 +86,10 @@ export function AssessmentSectionCard({
   onToggleDraft,
   onCreateVariant,
   readOnly = false,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: AssessmentSectionCardProps) {
   const [localName, setLocalName] = useState(section.name);
   /**
@@ -133,6 +143,32 @@ export function AssessmentSectionCard({
         <span className="shrink-0 text-xs text-muted-foreground">
           {questions.length} {questions.length === 1 ? 'question' : 'questions'}
         </span>
+        {!readOnly && onMoveUp && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            className="size-8 shrink-0 p-0 text-muted-foreground"
+            aria-label="Move section up"
+          >
+            <IconChevronUp className="size-4" />
+          </Button>
+        )}
+        {!readOnly && onMoveDown && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            className="size-8 shrink-0 p-0 text-muted-foreground"
+            aria-label="Move section down"
+          >
+            <IconChevronDown className="size-4" />
+          </Button>
+        )}
         {!readOnly && (
           <Button
             type="button"

@@ -168,6 +168,7 @@ model Course {
   reEmbedJobs                 CourseReEmbedJob[]
   topics                      CourseTopic[]
   questions                   Question[]
+  questionBanks               QuestionBank[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
@@ -278,16 +279,20 @@ model AIInteraction {
   energySource     EnergyMeasurementSource?
   carbonGramsCO2   Float?
   finishReason     String?
+  /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed or pre-tracking. */
+  serverId         String?
+  /**
+   * Durable correlation id for metrics. Null for async Question Maker /
+   * background completions and pre-tracking rows. This is intentionally not a
+   * relation to Chat, so deleting a chat cannot rewrite historical metrics.
+   */
+  chatId           String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
   user             User                     @relation(fields: [userId], references: [id])
 
-  // #1369 deferred: `courseId` measured 0.605 ms Seq Scan -> 0.096 ms Bitmap Index Scan on
-  // the perf seed (1,373 rows), but nothing reads it — this model is write-only, with
-  // `create` in ai/routing/telemetry.server.ts its one production call site. Index it when
-  // a per-course reporting read lands. `userId` matched 1362/1373 rows on the perf seed and
-  // `modelId` is low-cardinality (a handful of models), so neither index would be selective
-  // enough for the planner to use. Re-evaluate `userId` once production has many active users.
+  @@index([serverId])
+  @@index([chatId])
   @@map("ai_interactions")
 }
 
@@ -501,6 +506,41 @@ model QuestionSecondaryTopic {
   @@id([questionId, topicId])
   @@index([topicId])
   @@map("question_secondary_topics")
+}
+
+/// Named question bank scoped to a Core course (Canvas-modeled).
+/// Questions from extensions (e.g. Question Maker) join via QuestionBankMembership.externalQuestionId.
+model QuestionBank {
+  id          String                   @id @default(cuid())
+  courseId    String
+  name        String
+  description String?
+  isDefault   Boolean                  @default(false)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  course      Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  memberships QuestionBankMembership[]
+
+  @@index([courseId, isDefault])
+  /// Partial unique (one default bank per course) is enforced in SQL:
+  /// question_banks_courseId_default_key WHERE "isDefault"
+  @@map("question_banks")
+}
+
+model QuestionBankMembership {
+  id                 String       @id @default(cuid())
+  questionBankId     String
+  /// Extension-local question id (e.g. QM QuestionMetadata.id as string)
+  externalQuestionId String
+  /// Source system that owns the question row
+  source             String       @default("question-maker")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  questionBank       QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+
+  @@unique([questionBankId, source, externalQuestionId])
+  @@index([source, externalQuestionId])
+  @@map("question_bank_memberships")
 }
 
 model BugReport {

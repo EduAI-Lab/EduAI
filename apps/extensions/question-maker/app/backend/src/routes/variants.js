@@ -172,6 +172,10 @@ router.put(
         if (!reverting && !aiTagOnly) {
           return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
         }
+        // §19 TA own-only edit applies here too: the aiTagOnly path is still an edit.
+        if (aiTagOnly && access.level === 'ta' && current.createdBy !== req.user.id) {
+          return res.status(403).json({ success: false, error: 'TAs can only edit their own variants' });
+        }
       } else {
         // Draft branch — instructor-only approval (§16).
         if (isDraft === false && !isInstructorPlus) {
