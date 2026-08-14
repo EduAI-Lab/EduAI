@@ -441,6 +441,15 @@ model CourseMaterial {
   /// is the asynchronous successor to the old synchronous 409. Null on every
   /// row that is not a duplicate receipt.
   duplicateOfId     String?
+  /// Durable-extraction bookkeeping (#949). Extraction runs off the request, so
+  /// the row is also the job record: a worker must hold a lease before it may
+  /// run, and the lease is what makes a restart recoverable. A PROCESSING row
+  /// whose `extractionLeaseUntil` has passed is definitionally abandoned — its
+  /// worker died — and the sweeper re-claims it and re-runs from the persisted
+  /// upload bytes. `extractionAttempts` bounds that retry loop so a file that
+  /// reliably kills its worker fails terminally instead of looping forever.
+  extractionAttempts Int            @default(0)
+  extractionLeaseUntil DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   processedAt       DateTime?
@@ -449,13 +458,43 @@ model CourseMaterial {
   duplicateOf       CourseMaterial? @relation("MaterialDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates        CourseMaterial[] @relation("MaterialDuplicate")
   chunks            MaterialChunk[]
+  uploadBlob        MaterialUploadBlob?
 
   @@unique([courseId, checksum])
   @@index([duplicateOfId])
   @@index([externalSource, externalId])
   @@index([uploadedBy])
   @@index([courseId, deletedAt])
+  @@index([status, extractionLeaseUntil])
   @@map("course_materials")
+}
+
+/// The raw uploaded bytes, persisted before the upload request returns 202 (#949).
+///
+/// Extraction no longer happens on the request, so the bytes have to outlive it:
+/// without this table a restart mid-extraction loses the upload entirely and
+/// strands the material row with nothing to retry from. Written in the same
+/// transaction as the `CourseMaterial` row, so a material in PROCESSING always
+/// has bytes to re-run against, and deleted as soon as the row reaches a terminal
+/// state (READY, FAILED, or a duplicate receipt) so this table only ever holds
+/// in-flight uploads rather than a second copy of the corpus.
+///
+/// Stored in Postgres rather than on a volume or in object storage deliberately:
+/// it is transactional with the row it belongs to, needs no new deployment
+/// surface, and the payload is already capped by the upload validator.
+model MaterialUploadBlob {
+  id         String         @id @default(cuid())
+  materialId String         @unique
+  /// Exactly the bytes the client uploaded — pre-extraction, unmodified.
+  bytes      Bytes
+  /// Declared upload metadata, kept so a resumed extraction can rebuild the same
+  /// `File` the original request would have handed to the extractor.
+  fileName   String
+  mimeType   String
+  createdAt  DateTime       @default(now())
+  material   CourseMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@map("material_upload_blobs")
 }
 
 model CanvasMaterialExclusion {

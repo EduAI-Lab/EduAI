@@ -27,6 +27,7 @@ import {
   extractDocxText,
   extractPptxText,
   extractPdfText,
+  convertHtmlToMarkdown,
   extractPdfTextIsolated,
   resetPdfExtractionConcurrencyForTests,
   holdPdfExtractionSlotForTests,
@@ -37,23 +38,22 @@ import {
   PdfExtractionBusyError,
 } from "~/lib/ai/file-processing";
 
-// mammoth is imported dynamically *inside* extractDocxText (call-time, not
-// module-top-level), so mocking it here reliably intercepts that call and lets DOCX
-// tests below exercise the downstream HTML->markdown conversion in isolation, without
-// depending on mammoth's actual DOCX parsing. A real, unmocked round trip (verifying
-// extractDocxText's call shape — `{ buffer }`, not `{ arrayBuffer }` — actually works
-// against the real mammoth package) is covered separately in
-// docx-extraction-integration.test.ts, which never mocks mammoth.
+// mammoth now runs inside the isolated extraction worker (#1494 review), a separate
+// process, so mocking it here would not intercept anything. DOCX tests below cover the
+// in-process halves only — the ZIP-bomb guard that runs before the worker is spawned,
+// and the HTML->markdown conversion applied to whatever the worker returns. The real,
+// unmocked round trip through the worker (verifying extractDocxText's call shape —
+// `{ buffer }`, not `{ arrayBuffer }` — actually works against the real mammoth
+// package, and that mammoth's messages reach `metadata.extractionWarnings`) is covered
+// separately in docx-extraction-integration.test.ts.
 // (`node:child_process`/`node:fs`/`node:fs/promises`, by contrast, are imported
 // statically at the top of file-processing.ts, which this test file also statically
 // imports — that ordering means those Node-builtin mocks are not reliably applied
 // here, so PDF-worker subprocess tests below use real spawn/fs instead.)
-vi.mock("mammoth", () => ({ convertToHtml: vi.fn() }));
-
-const mammothMock = await import("mammoth");
-
-const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 async function buildZipArrayBuffer(
   files: Record<string, string> = { "word/document.xml": "<xml/>" },
@@ -822,8 +822,12 @@ describe("mathML conversion via enrichExtractedDocumentContent", () => {
 // extractDocxText
 // ---------------------------------------------------------------------------
 
-describe("extractDocxText", () => {
-  it("converts mocked mammoth HTML output into markdown-like content", async () => {
+// mammoth moved into the isolated extraction worker (#1494 review), so mocking
+// it in this process no longer reaches the DOCX path. The HTML→markdown step it
+// feeds is unit-tested directly below; the real mammoth round trip is covered by
+// `docx-extraction-integration.test.ts`.
+describe("convertHtmlToMarkdown (the DOCX path's second half)", () => {
+  it("converts mammoth-shaped HTML into markdown-like content", () => {
     const html = `
       <h1>Title</h1>
       <p>Some <strong>bold</strong> and <em>italic</em> text.<br/>Next line.</p>
@@ -831,65 +835,31 @@ describe("extractDocxText", () => {
       <table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>
       <math><m:fraction><m:num>a</m:num><m:den>b</m:den></m:fraction></math>
     `;
-    vi.mocked(mammothMock.convertToHtml).mockResolvedValue({ value: html, messages: [] });
 
-    const buffer = await buildZipArrayBuffer();
-    const file = {
-      name: "notes.docx",
-      type: DOCX_MIME,
-      size: buffer.byteLength,
-      arrayBuffer: async () => buffer,
-    };
+    const content = convertHtmlToMarkdown(html);
 
-    const result = await extractDocxText(file as any);
-
-    expect(result.content).toContain("# Title");
-    expect(result.content).toContain("**bold**");
-    expect(result.content).toContain("*italic*");
-    expect(result.content).toContain("- First");
-    expect(result.content).toContain("- Second");
-    expect(result.content).toContain("| A | B |");
-    expect(result.content).toContain("\\frac{a}{b}");
-    expect(result.metadata?.processingMethod).toBe("mammoth.js + HTML conversion");
-    expect(result.metadata?.isClientSide).toBe(true);
+    expect(content).toContain("# Title");
+    expect(content).toContain("**bold**");
+    expect(content).toContain("*italic*");
+    expect(content).toContain("- First");
+    expect(content).toContain("- Second");
+    expect(content).toContain("| A | B |");
+    expect(content).toContain("\\frac{a}{b}");
   });
 
-  it("renders ordered-list items with their actual text", async () => {
-    vi.mocked(mammothMock.convertToHtml).mockResolvedValue({
-      value: "<ol><li>One</li><li>Two</li></ol>",
-      messages: [],
-    });
-    const buffer = await buildZipArrayBuffer();
-    const file = {
-      name: "list.docx",
-      type: DOCX_MIME,
-      size: buffer.byteLength,
-      arrayBuffer: async () => buffer,
-    };
-
-    const result = await extractDocxText(file as any);
-    expect(result.content).toContain("1. One");
-    expect(result.content).toContain("2. Two");
-    expect(result.content).not.toContain("$1");
+  // <ol> handling used to emit a literal "$1" per item, because the inner
+  // `content.replace(/<li.../, () => ...)` callback returns a string and function
+  // replacers get no $-pattern substitution. Now fixed to interpolate the captured
+  // item text; asserted directly here since mammoth no longer runs in this process.
+  it("renders ordered-list items with their actual text", () => {
+    const content = convertHtmlToMarkdown("<ol><li>One</li><li>Two</li></ol>");
+    expect(content).toContain("1. One");
+    expect(content).toContain("2. Two");
+    expect(content).not.toContain("$1");
   });
+});
 
-  it("surfaces mammoth extraction warnings in metadata without throwing", async () => {
-    vi.mocked(mammothMock.convertToHtml).mockResolvedValue({
-      value: "<p>Body</p>",
-      messages: [{ type: "warning", message: "Unsupported style" }],
-    });
-    const buffer = await buildZipArrayBuffer();
-    const file = {
-      name: "notes.docx",
-      type: DOCX_MIME,
-      size: buffer.byteLength,
-      arrayBuffer: async () => buffer,
-    };
-
-    const result = await extractDocxText(file as any);
-    expect(result.metadata?.extractionWarnings).toHaveLength(1);
-  });
-
+describe("extractDocxText", () => {
   it("wraps errors when the uploaded bytes are not a valid ZIP container", async () => {
     const file = {
       name: "fake.docx",
@@ -904,9 +874,9 @@ describe("extractDocxText", () => {
 // extractDocxText passes `{ buffer: Buffer.from(arrayBuffer) }` to mammoth, which is
 // the only input shape mammoth's Node build accepts (see its own lib/index.d.ts:
 // NodeJsInput = PathInput | BufferInput; BrowserInput = ArrayBufferInput was the
-// previous, broken shape). The real-mammoth regression test for this lives in
-// docx-extraction-integration.test.ts, kept in its own file so it never shares a
-// module registry with the `vi.mock("mammoth", ...)` above.
+// previous, broken shape) — the isolated worker reads the temp file into a
+// Buffer for exactly that reason. The real-mammoth regression test lives in
+// docx-extraction-integration.test.ts.
 
 // ---------------------------------------------------------------------------
 // extractPptxText
@@ -933,7 +903,7 @@ describe("extractPptxText", () => {
     expect(result.content).toContain("--- Slide 2 ---");
     expect(result.content).toContain("Second slide runs");
     expect(result.metadata?.slideCount).toBe(2);
-    expect(result.metadata?.processingMethod).toBe("client-side XML parsing");
+    expect(result.metadata?.processingMethod).toBe("XML parsing (isolated worker)");
   });
 
   it("falls back to a placeholder message when the presentation has no slides", async () => {
@@ -1217,7 +1187,7 @@ describe("processUploadedFile", () => {
     expect(result.pageCount).toBe(2);
     const metadata = result.metadata as Record<string, unknown> | undefined;
     expect(metadata?.slideCount).toBe(2);
-    expect(metadata?.processingLibrary).toBe("client-side XML parsing");
+    expect(metadata?.processingLibrary).toBe("XML parsing (isolated worker)");
     expect(result.content).toContain("Intro to the course");
   });
 

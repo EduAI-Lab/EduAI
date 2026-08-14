@@ -6,9 +6,16 @@
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
 import { createHash } from 'crypto';
-import { processMaterialEmbeddings } from '~/lib/ai/embedding';
-import { extractUploadedFileContent, validateUploadedFile } from '~/lib/ai/file-processing';
+import { validateUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
+import {
+  PENDING_CHECKSUM_PREFIX,
+  ensureMaterialSweeperRunning,
+  isChecksumConflict,
+  persistUploadBlob,
+  startMaterialExtraction,
+  toBytesColumn,
+} from '~/lib/materials/extraction-job.server';
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
@@ -36,22 +43,6 @@ function json(status: number, body: unknown) {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-/**
- * True for a Prisma unique-constraint violation on `CourseMaterial`'s
- * `(courseId, checksum)` index. `uploadMaterial`'s findFirst dedupe check and
- * its create() are not atomic, so two concurrent uploads of the same file can
- * both pass the findFirst check and race into create() — the DB constraint
- * (not the findFirst) is the real guard (#225 RAG-04).
- */
-function isChecksumConflict(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
-  );
 }
 
 /**
@@ -363,223 +354,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-/**
- * Namespace for the provisional checksum a material carries between the upload
- * response and the end of background extraction (#949).
- *
- * The `(courseId, checksum)` unique index is keyed on a hash of the *extracted
- * text*, which is not known until extraction finishes — so a row that must be
- * persisted before the response needs a stand-in. This mirrors the Canvas
- * importer's `canvas-pending:<canvasFileId>` idiom
- * (`lib/canvas/materials.server.ts`); user uploads have no external id, so the
- * raw bytes supply the stable key instead. `finalizeMaterial` overwrites it
- * with the real content checksum, so a surviving `pending:` row means
- * extraction never completed.
- */
-const PENDING_CHECKSUM_PREFIX = 'pending:';
-
 const DUPLICATE_CONTENT_MESSAGE =
   'A file with identical content already exists in this course';
-
-/**
- * Move a material to terminal FAILED and record why. Lifted verbatim out of the
- * old inline upload path so background failures keep the same audit surface:
- * the row is the client-visible signal, `logSystemError` is the operator one.
- */
-async function failMaterial(
-  materialId: string,
-  code: 'MATERIAL_EXTRACT_FAILED' | 'MATERIAL_EMBED_FAILED',
-  message: string,
-  error: unknown,
-  requestContext: ReturnType<typeof getRequestContext>,
-): Promise<void> {
-  console.error(`${code}:`, error);
-  try {
-    await prisma.courseMaterial.update({
-      where: { id: materialId },
-      data: { status: 'FAILED' },
-    });
-  } catch (updateError) {
-    console.error('Additionally failed to mark material FAILED:', updateError);
-  }
-  fireAndForget(
-    logSystemError({
-      ...requestContext,
-      source: 'AI',
-      code,
-      message,
-      error,
-    }),
-  );
-}
-
-/**
- * Terminal state for an upload whose extracted content turned out to already
- * exist on the course. This is the asynchronous successor to the synchronous
- * 409 the endpoint used to return: the provisional row stays as a receipt so a
- * client polling its `materialId` can resolve the outcome, marked FAILED and
- * pointing at the winner. Clients are expected to read it and then delete it,
- * so duplicate attempts don't accumulate in the materials list.
- */
-async function markDuplicateReceipt(materialId: string, winnerId: string): Promise<void> {
-  await prisma.courseMaterial.update({
-    where: { id: materialId },
-    data: { status: 'FAILED', duplicateOfId: winnerId, processedAt: new Date() },
-  });
-}
-
-/**
- * Background half of an upload (#949): extract, resolve duplicates against the
- * now-known content checksum, embed, and land the row in READY or FAILED.
- *
- * Started with `void` from the request path, following the `CourseReEmbedJob`
- * precedent (`lib/ai/re-embed-job.server.ts` — `void runReEmbedJob(...)`): the
- * DB row is the source of truth and the caller does not await it.
- *
- * KNOWN HOLE (same one `CourseReEmbedJob` has): in-process fire-and-forget dies
- * with the process. A restart mid-extraction strands the row in PROCESSING with
- * its `pending:` checksum intact, and nothing currently sweeps it — a re-upload
- * of the same bytes reclaims it (see `reclaimProvisionalRow`), but an untouched
- * row stays PROCESSING forever. A sweeper cron is deliberately out of scope here
- * and is flagged on #949.
- */
-async function processMaterialAsync(
-  materialId: string,
-  file: File,
-  courseId: string,
-  userId: string,
-  requestContext: ReturnType<typeof getRequestContext>,
-): Promise<void> {
-  let fileInfo;
-  try {
-    fileInfo = await extractUploadedFileContent(file);
-  } catch (extractError) {
-    // Unlike the old inline path, the row already exists here, so a killed PDF
-    // worker always leaves an auditable record (#1018 / #1161) — there is no
-    // longer a window where extraction fails before anything is persisted.
-    await failMaterial(
-      materialId,
-      'MATERIAL_EXTRACT_FAILED',
-      'Material extraction failed during background processing',
-      extractError,
-      requestContext,
-    );
-    return;
-  }
-
-  try {
-    // Late duplicate detection, mirroring the Canvas importer's post-extraction
-    // check (`lib/canvas/materials.server.ts`). Unlike that one, the P2002 catch
-    // below also covers the findFirst-to-update race this check cannot close.
-    const duplicate = await prisma.courseMaterial.findFirst({
-      where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
-    });
-
-    if (duplicate) {
-      if (duplicate.deletedAt) {
-        // Restore-on-re-upload (#685) — preserved from the old synchronous path,
-        // just deferred: the soft-deleted original comes back and is re-embedded
-        // with `replace: true`, and this upload's row becomes its receipt.
-        await prisma.courseMaterial.update({
-          where: { id: duplicate.id },
-          data: {
-            deletedAt: null,
-            deletedBy: null,
-            status: 'PROCESSING',
-            uploadedBy: userId,
-            processedAt: null,
-            duplicateOfId: null,
-            rawText: fileInfo.content,
-          },
-        });
-        try {
-          // Replace any stale chunks/embeddings from before the soft-delete so
-          // restoring a material doesn't append duplicate RAG content (#685 review).
-          await processMaterialEmbeddings(duplicate.id, fileInfo.content, {
-            replace: true,
-          });
-          await prisma.courseMaterial.update({
-            where: { id: duplicate.id },
-            data: { status: 'READY', processedAt: new Date() },
-          });
-        } catch (embeddingError) {
-          await failMaterial(
-            duplicate.id,
-            'MATERIAL_EMBED_FAILED',
-            'Material embedding failed while restoring a soft-deleted material',
-            embeddingError,
-            requestContext,
-          );
-        }
-        // Receipt LAST, deliberately (#1494 review): marking it before the
-        // restored row settles hands the client a terminal "duplicate, nothing
-        // was added" outcome while the restored material is still PROCESSING —
-        // and the client deletes the receipt on that outcome, so a later
-        // restore failure would have nothing left to surface it. Keeping the
-        // receipt PROCESSING until restoration lands means a poller either
-        // waits or sees the settled truth. A restore that dies mid-embed
-        // strands the receipt in PROCESSING, which is the same fire-and-forget
-        // hole documented above and recovers the same way (re-upload reclaims).
-        await markDuplicateReceipt(materialId, duplicate.id);
-        return;
-      }
-
-      await markDuplicateReceipt(materialId, duplicate.id);
-      return;
-    }
-
-    // Promote the provisional row: real title/type/size from the extracted
-    // metadata, and the content checksum that makes the dedup index meaningful.
-    await prisma.courseMaterial.update({
-      where: { id: materialId },
-      data: {
-        title: fileInfo.title,
-        mimeType: fileInfo.mimeType,
-        fileSize: fileInfo.fileSize,
-        checksum: fileInfo.checksum,
-        rawText: fileInfo.content,
-      },
-    });
-  } catch (finalizeError) {
-    // #225 RAG-04, deferred: two uploads of *different bytes* that extract to
-    // identical text both pass the findFirst above and race into this update.
-    // The unique index is the real guard; the loser becomes a receipt.
-    if (isChecksumConflict(finalizeError)) {
-      const winner = await prisma.courseMaterial.findFirst({
-        where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
-        select: { id: true },
-      });
-      if (winner) {
-        await markDuplicateReceipt(materialId, winner.id);
-        return;
-      }
-    }
-    await failMaterial(
-      materialId,
-      'MATERIAL_EXTRACT_FAILED',
-      'Material finalization failed during background processing',
-      finalizeError,
-      requestContext,
-    );
-    return;
-  }
-
-  try {
-    await processMaterialEmbeddings(materialId, fileInfo.content);
-    await prisma.courseMaterial.update({
-      where: { id: materialId },
-      data: { status: 'READY', processedAt: new Date() },
-    });
-  } catch (embeddingError) {
-    await failMaterial(
-      materialId,
-      'MATERIAL_EMBED_FAILED',
-      'Material embedding failed during background processing',
-      embeddingError,
-      requestContext,
-    );
-  }
-}
 
 /**
  * Resolve a `(courseId, pending:<bytehash>)` collision — two uploads of the
@@ -593,8 +369,10 @@ async function processMaterialAsync(
  *     before #949; only content-identical-but-byte-different duplicates became
  *     asynchronous.
  *   - FAILED or soft-deleted → a stranded row from an earlier attempt (failed
- *     extraction, or a process that died mid-run). Reclaim it and retry, which
- *     is also the only recovery path for the fire-and-forget hole above.
+ *     extraction, or a process that died mid-run). Reclaim it and retry. This
+ *     is the user-driven half of recovery; the sweeper
+ *     (`lib/materials/extraction-job.server.ts`) is the automatic half, and
+ *     neither depends on the other.
  *
  * The claim is a single conditional `updateMany` rather than a read followed by
  * an unconditional `update` (#1494 review): two identical retries can both read
@@ -630,6 +408,11 @@ async function reclaimProvisionalRow(
       processedAt: null,
       duplicateOfId: null,
       rawText: null,
+      // Hand the row back as a fresh job: clear the dead attempt's lease and
+      // reset its attempt count, or a row reclaimed after two failures would
+      // start one strike from being abandoned by the sweeper.
+      extractionLeaseUntil: null,
+      extractionAttempts: 0,
     },
   });
 
@@ -683,6 +466,10 @@ async function uploadMaterial(
 
   let materialId: string;
   try {
+    // The blob is created *with* the row, not after it (#1494 review): the 202
+    // promises the upload survives, so "row is PROCESSING" and "bytes exist to
+    // re-run from" must never be observable apart. A nested create is one
+    // statement — no partially-persisted upload to reason about.
     const created = await prisma.courseMaterial.create({
       data: {
         courseId,
@@ -693,6 +480,13 @@ async function uploadMaterial(
         rawText: null,
         status: 'PROCESSING',
         uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
+        uploadBlob: {
+          create: {
+            bytes: toBytesColumn(bytes),
+            fileName: file.name || 'upload',
+            mimeType: file.type || 'application/octet-stream',
+          },
+        },
       },
     });
     materialId = created.id;
@@ -711,6 +505,14 @@ async function uploadMaterial(
       }
       if (resolution?.outcome === 'reclaimed') {
         materialId = resolution.materialId;
+        // The reclaimed row's bytes belong to the attempt that died; replace
+        // them so a resume re-runs against what *this* caller uploaded.
+        await persistUploadBlob(
+          materialId,
+          bytes,
+          file.name || 'upload',
+          file.type || 'application/octet-stream',
+        );
       } else {
         // The colliding row disappeared between the failed insert and the
         // lookup — another request finalized or deleted it. Nothing to reclaim.
@@ -749,8 +551,12 @@ async function uploadMaterial(
     }),
   );
 
-  // Fire-and-forget, `CourseReEmbedJob` style — the row carries the state.
-  void processMaterialAsync(materialId, file, courseId, user.id, requestContext);
+  // Run it here and now for the common case, but the 202 no longer depends on
+  // this process surviving: the row is leased and the bytes are persisted, so a
+  // crash mid-extraction leaves an expired lease the sweeper picks up.
+  startMaterialExtraction(materialId, file, courseId, user.id, requestContext);
+  // Cheap after the first call — one guarded interval per process.
+  ensureMaterialSweeperRunning(requestContext);
 
   return json(202, {
     success: true,

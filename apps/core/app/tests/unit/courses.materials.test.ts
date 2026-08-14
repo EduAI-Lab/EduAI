@@ -21,6 +21,10 @@ vi.mock("~/lib/prisma.server", () => ({
       updateMany: vi.fn(),
       delete: vi.fn(),
     },
+    materialUploadBlob: {
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
+    },
     canvasMaterialExclusion: {
       findMany: vi.fn(),
     },
@@ -163,6 +167,38 @@ function mockExtraction(overrides: Record<string, unknown> = {}) {
   } as never);
 }
 
+/**
+ * The upload path issues two distinct conditional `updateMany` claims, told
+ * apart by their predicate: reclaiming a stranded provisional row asks for
+ * anything *not* live-PROCESSING, while taking the extraction lease asks for a
+ * PROCESSING row whose lease is absent or expired.
+ */
+function isReclaimClaim(where: any): boolean {
+  return Array.isArray(where?.OR) && where.OR.some((c: any) => c?.status?.not === 'PROCESSING');
+}
+
+/** Reclaim-claim `updateMany` calls only, in call order. */
+function reclaimClaims(): Array<{ where?: any; data?: any }> {
+  return vi
+    .mocked(prisma.courseMaterial.updateMany)
+    .mock.calls.map(([arg]) => arg as any)
+    .filter((arg) => isReclaimClaim(arg?.where));
+}
+
+/**
+ * Drive the reclaim claim's outcome per call (1 = won, 0 = lost), leaving the
+ * lease claim to always succeed so tests can isolate reclaim contention.
+ */
+function mockReclaim(...counts: number[]): void {
+  let index = 0;
+  vi.mocked(prisma.courseMaterial.updateMany).mockImplementation((async (args: any) => {
+    if (!isReclaimClaim(args?.where)) return { count: 1 };
+    const count = counts[Math.min(index, counts.length - 1)] ?? 1;
+    index += 1;
+    return { count };
+  }) as never);
+}
+
 /** Every `courseMaterial.update` argument object, in call order. */
 function updateCalls(): Array<{ where?: any; data?: any }> {
   return vi.mocked(prisma.courseMaterial.update).mock.calls.map(([arg]) => arg as any);
@@ -186,9 +222,12 @@ beforeEach(() => {
   vi.mocked(validateUploadedFile).mockResolvedValue(undefined);
   mockExtraction();
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
-  // The provisional-row claim is a conditional updateMany; default to "this
-  // caller won the claim" so only the contention tests have to say otherwise.
+  // Two different conditional updateMany claims now run per upload: reclaiming a
+  // stranded `pending:` row, and taking the extraction lease. Default both to
+  // "this caller won"; contention tests override via `mockReclaim`.
   vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 1 } as never);
+  vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
+  vi.mocked(prisma.materialUploadBlob.deleteMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
   mockAccess({ level: "instructor", rank: 2 });
   // Reset to code defaults so per-test overrides don't leak across tests.
@@ -734,7 +773,9 @@ describe("POST /api/courses/:courseId/materials action", () => {
 
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
       where: { id: "mat-failed" },
-      data: { status: "FAILED" },
+      // The lease is released alongside the terminal status so the sweeper does
+      // not later mistake a settled row for an abandoned one.
+      data: { status: "FAILED", extractionLeaseUntil: null },
     });
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
@@ -754,7 +795,9 @@ describe("POST /api/courses/:courseId/materials action", () => {
 
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
       where: { id: "mat-embed" },
-      data: { status: "FAILED" },
+      // The lease is released alongside the terminal status so the sweeper does
+      // not later mistake a settled row for an abandoned one.
+      data: { status: "FAILED", extractionLeaseUntil: null },
     });
   });
 
@@ -926,7 +969,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
       id: "inflight-mat",
     } as never);
-    vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 0 } as never);
+    mockReclaim(0);
 
     const res = await action(stubUploadArgs());
     expect(res.status).toBe(409);
@@ -953,11 +996,20 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.materialId).toBe("stranded-mat");
-    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith(
+    expect(reclaimClaims()).toHaveLength(1);
+    expect(reclaimClaims()[0].data).toEqual(
       expect.objectContaining({
-        where: expect.objectContaining({ id: "stranded-mat" }),
-        data: expect.objectContaining({ status: "PROCESSING", duplicateOfId: null }),
+        status: "PROCESSING",
+        duplicateOfId: null,
+        // The reclaimed row must come back as a fresh job, not one strike from
+        // the sweeper abandoning it.
+        extractionAttempts: 0,
+        extractionLeaseUntil: null,
       }),
+    );
+    // The bytes are replaced too, so a resume re-runs what this caller uploaded.
+    expect(prisma.materialUploadBlob.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { materialId: "stranded-mat" } }),
     );
     await flushBackgroundWork();
     expect(extractUploadedFileContent).toHaveBeenCalled();
@@ -978,12 +1030,10 @@ describe("POST /api/courses/:courseId/materials action", () => {
 
     // The "not already claimed" predicate must live in the UPDATE's WHERE, so
     // the database — not a stale read — decides who gets the row.
-    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith(
+    expect(reclaimClaims()[0].where).toEqual(
       expect.objectContaining({
-        where: expect.objectContaining({
-          id: "stranded-mat",
-          OR: [{ status: { not: "PROCESSING" } }, { deletedAt: { not: null } }],
-        }),
+        id: "stranded-mat",
+        OR: [{ status: { not: "PROCESSING" } }, { deletedAt: { not: null } }],
       }),
     );
   });
@@ -1000,9 +1050,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
       id: "stranded-mat",
     } as never);
     // ...but the conditional claim only matches for the first one.
-    vi.mocked(prisma.courseMaterial.updateMany)
-      .mockResolvedValueOnce({ count: 1 } as never)
-      .mockResolvedValueOnce({ count: 0 } as never);
+    mockReclaim(1, 0);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
 
     const [first, second] = await Promise.all([
