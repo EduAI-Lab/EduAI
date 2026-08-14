@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
@@ -118,7 +118,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // §8 view tier: any course relationship; students need a published course.
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -166,7 +166,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
-    const resolved = await resolveCourseAccessWithCourse(session.user, courseId);
+    const resolved = await resolveCourseAccessGate(session.user, courseId);
     if (!resolved.course) {
       return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
         status: 404,

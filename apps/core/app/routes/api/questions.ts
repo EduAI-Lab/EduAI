@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   stripAnswerForStudents,
   wantsIncludeDeleted,
   type AccessLevel,
@@ -71,7 +71,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return json(404, { error: "COURSE_NOT_FOUND" });
       }
     } else {
-      const resolved = await resolveCourseAccessWithCourse(session.user, courseId);
+      const resolved = await resolveCourseAccessGate(session.user, courseId);
       if (!resolved.course) {
         return json(404, { error: "COURSE_NOT_FOUND" });
       }
@@ -123,7 +123,7 @@ export async function action({ request }: ActionFunctionArgs) {
       : null;
 
   if (typeof bodyPreview?.courseId === "string" && bodyPreview.courseId) {
-    const { course, access } = await resolveCourseAccessWithCourse(
+    const { course, access } = await resolveCourseAccessGate(
       session.user,
       bodyPreview.courseId,
     );

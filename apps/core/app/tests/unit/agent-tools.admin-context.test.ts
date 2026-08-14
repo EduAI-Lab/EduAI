@@ -15,7 +15,7 @@ vi.mock("~/lib/bug-reports/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/agent-tools/course-context.server", () => ({

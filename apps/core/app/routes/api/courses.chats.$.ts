@@ -14,7 +14,7 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
@@ -33,7 +33,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
     return json({ error: "COURSE_NOT_FOUND" }, 404);
   }

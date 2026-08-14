@@ -918,6 +918,9 @@ export async function action({ request }: ActionFunctionArgs) {
       courseScopeGuardrailEnabled: boolean;
     } | null = null;
     if (effectiveCourseId) {
+      // Wide row on purpose: the prompt context below reads `name`, `code`,
+      // `description`, `responseStyleTags`, `aiInstructions` and
+      // `courseScopeGuardrailEnabled` — all outside GATE_COURSE_SELECT.
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
         effectiveCourseId,
