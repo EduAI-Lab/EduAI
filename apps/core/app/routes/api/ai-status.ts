@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { getAiServiceStatus } from "~/lib/ai/service-status.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Dual AI-service status for the header indicators (issue #764). Auth-gated but
@@ -8,7 +8,7 @@ import { getAiServiceStatus } from "~/lib/ai/service-status.server";
  * so students can also see at a glance whether the AI is live.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

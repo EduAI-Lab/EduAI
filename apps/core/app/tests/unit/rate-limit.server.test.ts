@@ -1,9 +1,24 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isRateLimited, parseEnvInt, resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+
+const redisEvalMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/queue/connection.server", () => ({
+  default: {},
+  rateLimitRedis: { eval: redisEvalMock },
+}));
+
+import {
+  checkRateLimit,
+  getChatRateLimitConfig,
+  isRateLimited,
+  parseEnvInt,
+  resetRateLimitsForTests,
+} from "~/lib/auth/rate-limit.server";
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  redisEvalMock.mockReset();
   resetRateLimitsForTests();
 });
 
@@ -99,6 +114,173 @@ describe("isRateLimited", () => {
     vi.setSystemTime(start + 1_000); // exactly at the boundary, not past it
 
     expect(isRateLimited("10.0.0.9", 1, 1_000)).toBe(false);
+  });
+});
+
+describe("getChatRateLimitConfig", () => {
+  it("uses the documented 100 request / 60 second defaults", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT", "");
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "");
+
+    expect(getChatRateLimitConfig()).toEqual({ limit: 100, windowMs: 60_000 });
+  });
+
+  it("prefers CHAT_RATE_LIMIT_WINDOW_MS over the legacy window alias", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT", "25");
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "30000");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "45000");
+
+    expect(getChatRateLimitConfig()).toEqual({ limit: 25, windowMs: 30_000 });
+  });
+
+  it("falls back to CHAT_RATE_WINDOW_MS while the legacy alias remains supported", () => {
+    vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "");
+    vi.stubEnv("CHAT_RATE_WINDOW_MS", "45000");
+
+    expect(getChatRateLimitConfig()).toMatchObject({ windowMs: 45_000 });
+  });
+});
+
+describe("checkRateLimit", () => {
+  it("uses Redis as the primary allow path", async () => {
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await expect(checkRateLimit("chat:user-1", 2, 60_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+    });
+    expect(redisEvalMock).toHaveBeenCalledOnce();
+  });
+
+  it("returns Redis threshold denial with a positive integer retryAfter", async () => {
+    redisEvalMock.mockResolvedValue([1, 1.2]);
+
+    await expect(checkRateLimit("chat:user-2", 2, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 2,
+    });
+  });
+
+  it("normalizes fractional limits before executing the Redis script", async () => {
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await checkRateLimit("chat:user-fractional", 2.9, 60_000);
+
+    expect(redisEvalMock.mock.calls[0]?.[5]).toBe(2);
+  });
+
+  it("fails closed with a positive retryAfter when the configured limit is zero", async () => {
+    await expect(checkRateLimit("chat:user-disabled", 0, 1_500)).resolves.toEqual({
+      limited: true,
+      retryAfter: 2,
+    });
+    expect(redisEvalMock).not.toHaveBeenCalled();
+  });
+
+  it("allows a request after the Redis sliding window expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T00:00:00Z"));
+    redisEvalMock.mockResolvedValueOnce([1, 1]).mockResolvedValueOnce([0, 0]);
+
+    await expect(checkRateLimit("chat:user-3", 1, 1_000)).resolves.toMatchObject({
+      limited: true,
+    });
+    vi.advanceTimersByTime(1_000);
+    await expect(checkRateLimit("chat:user-3", 1, 1_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+    });
+  });
+
+  it("gives same-millisecond requests unique sorted-set members", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T00:00:00Z"));
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await Promise.all([
+      checkRateLimit("chat:user-4", 2, 60_000),
+      checkRateLimit("chat:user-4", 2, 60_000),
+    ]);
+
+    const firstMember = redisEvalMock.mock.calls[0]?.[6];
+    const secondMember = redisEvalMock.mock.calls[1]?.[6];
+    expect(firstMember).not.toBe(secondMember);
+  });
+
+  it("does not overshoot the limit across parallel Redis decisions", async () => {
+    let accepted = 0;
+    redisEvalMock.mockImplementation(async () => {
+      if (accepted >= 2) return [1, 60];
+      accepted += 1;
+      return [0, 0];
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => checkRateLimit("chat:user-5", 2, 60_000))
+    );
+
+    expect(results.filter((result) => !result.limited)).toHaveLength(2);
+    expect(results.filter((result) => result.limited)).toHaveLength(4);
+  });
+
+  it("falls back to the bounded memory limiter when Redis errors", async () => {
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+
+    await expect(checkRateLimit("chat:user-6", 1, 60_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+    });
+    await expect(checkRateLimit("chat:user-6", 1, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 60,
+    });
+  });
+
+  it("falls back when Redis returns a malformed response", async () => {
+    redisEvalMock.mockResolvedValueOnce("invalid").mockResolvedValueOnce([1, "not-a-number"]);
+
+    await expect(checkRateLimit("chat:user-malformed", 1, 60_000)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+    });
+    await expect(checkRateLimit("chat:user-malformed", 1, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 60,
+    });
+  });
+
+  it("calculates memory fallback retryAfter from the oldest active hit", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T00:00:00Z"));
+    redisEvalMock.mockRejectedValue(new Error("redis unavailable"));
+
+    await checkRateLimit("chat:user-retry-after", 1, 60_000);
+    vi.advanceTimersByTime(10_001);
+
+    await expect(checkRateLimit("chat:user-retry-after", 1, 60_000)).resolves.toEqual({
+      limited: true,
+      retryAfter: 50,
+    });
+  });
+
+  it("clears the fallback timer after a fast Redis response", async () => {
+    vi.useFakeTimers();
+    redisEvalMock.mockResolvedValue([0, 0]);
+
+    await checkRateLimit("chat:user-fast", 1, 60_000);
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("falls back instead of hanging when the Redis operation times out", async () => {
+    vi.useFakeTimers();
+    redisEvalMock.mockReturnValue(new Promise(() => {}));
+
+    const resultPromise = checkRateLimit("chat:user-7", 1, 60_000);
+    await vi.advanceTimersByTimeAsync(301);
+
+    await expect(resultPromise).resolves.toEqual({ limited: false, retryAfter: 0 });
   });
 });
 
