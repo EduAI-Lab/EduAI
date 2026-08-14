@@ -15,6 +15,13 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
+  classifyProviderError,
+  createProviderFailure,
+  providerFailureBody,
+  providerFailureHeaders,
+  type ProviderFailure,
+} from "~/lib/ai/provider-errors.server";
+import {
   activeRouterVersion,
   parseRouterMode,
   resolveRoutedModel,
@@ -124,7 +131,11 @@ import {
   requireServiceKey,
 } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
-import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
+import {
+  checkRateLimit,
+  getChatRateLimitConfig,
+  parseEnvInt,
+} from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import {
   getActorContext,
@@ -537,6 +548,29 @@ function logStreamError(error: unknown, trace: Record<string, unknown>): void {
   });
 }
 
+function rejectProviderFailure(
+  failure: ProviderFailure,
+  trace: Record<string, unknown>,
+): Response {
+  return chatApiReject(
+    failure.status,
+    providerFailureBody(failure),
+    trace,
+    providerFailureHeaders(failure),
+  );
+}
+
+function providerStreamErrorMessage(
+  provider: string,
+  error: unknown,
+  trace: Record<string, unknown>,
+): string {
+  logStreamError(error, trace);
+  return JSON.stringify(
+    providerFailureBody(classifyProviderError(provider, error)),
+  );
+}
+
 function isClientAbort(error: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true;
   return error instanceof Error && error.name === "AbortError";
@@ -762,36 +796,34 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // #987: cap LLM completion requests per real end-user. Keyed by
-    // actingUser.id (post-proxy-resolution) so AI Tutor's proxied traffic is
-    // metered per underlying student, not lumped under the shared "service"
-    // caller id. Pure server-to-server calls with no proxyUser stay
-    // unmetered here — they're already gated by the EDUAI_API_KEY secret.
-    if (actingUser.id !== "service") {
-      const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
-      const chatRateWindowMs = parseEnvInt(
-        process.env.CHAT_RATE_WINDOW_MS,
-        60_000,
+    // #987/#1113: meter every authenticated caller before provider work. The
+    // acting user is final here, so approved proxy traffic remains per-user
+    // while direct service-key traffic shares a stable non-secret bucket.
+    const { limit: chatRateLimit, windowMs: chatRateWindowMs } =
+      getChatRateLimitConfig();
+    const rateLimit = await checkRateLimit(
+      `chat:${actingUser.id}`,
+      chatRateLimit,
+      chatRateWindowMs,
+    );
+    if (rateLimit.limited) {
+      const requestContext = getRequestContext(request);
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+          ...requestContext,
+          actionCode: "RATE_LIMIT_EXCEEDED",
+          outcome: "DENIED",
+          entityType: "Chat",
+          details: { userId: actingUser.id },
+        }),
       );
-      if (
-        isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)
-      ) {
-        const requestContext = getRequestContext(request);
-        fireAndForget(
-          logSecurityEvent({
-            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
-            ...requestContext,
-            actionCode: "RATE_LIMIT_EXCEEDED",
-            outcome: "DENIED",
-            entityType: "Chat",
-            details: { userId: actingUser.id },
-          }),
-        );
-        return new Response(JSON.stringify({ error: "Too Many Requests" }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+      return chatApiReject(
+        429,
+        { error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter },
+        { chatMode, userId: actingUser.id },
+        { "Retry-After": String(rateLimit.retryAfter) },
+      );
     }
 
     const normalizedIncomingMessages = filterIncomingClientMessages(
@@ -1472,14 +1504,16 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       } catch (err) {
         if (err instanceof FleetUnavailableError) {
-          return new Response(
-            JSON.stringify({
-              error: "No healthy vLLM fleet server available",
-              details: err.message,
-            }),
+          return rejectProviderFailure(
+            createProviderFailure(
+              parsedModel.providerId,
+              "MODEL_UNAVAILABLE",
+            ),
             {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
+              chatMode,
+              userId: actingUser.id,
+              model: resolvedModelId,
+              stage: "fleet-resolution",
             },
           );
         }
@@ -1539,19 +1573,21 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
-      const envHint =
-        parsedModel.providerId === "vllm"
-          ? "VLLM_BASE_URL"
-          : parsedModel.providerId === "ollama"
-            ? "OLLAMA_BASE_URL"
-            : "provider API key";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
-        }),
+      const isServerManagedProvider =
+        parsedModel.providerId === "vllm" ||
+        parsedModel.providerId === "ollama";
+      return rejectProviderFailure(
+        createProviderFailure(
+          parsedModel.providerId,
+          isServerManagedProvider
+            ? "PROVIDER_UNAVAILABLE"
+            : "INVALID_PROVIDER_CONFIG",
+        ),
         {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          userId: actingUser.id,
+          model: resolvedModelId,
+          stage: "provider-configuration",
         },
       );
     }
@@ -1603,15 +1639,21 @@ export async function action({ request }: ActionFunctionArgs) {
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
-      const envVar =
-        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
-        }),
+      const isServerManagedProvider =
+        parsedModel.providerId === "vllm" ||
+        parsedModel.providerId === "ollama";
+      return rejectProviderFailure(
+        createProviderFailure(
+          parsedModel.providerId,
+          isServerManagedProvider
+            ? "PROVIDER_UNAVAILABLE"
+            : "INVALID_PROVIDER_CONFIG",
+        ),
         {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          userId: actingUser.id,
+          model: resolvedModelId,
+          stage: "provider-registry",
         },
       );
     }
@@ -1704,24 +1746,13 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       aiModel = registry.languageModel(resolvedModelId);
     } catch (err: unknown) {
-      const available =
-        typeof err === "object" &&
-        err !== null &&
-        "availableProviders" in err &&
-        Array.isArray(
-          (err as { availableProviders?: string[] }).availableProviders,
-        )
-          ? (err as { availableProviders: string[] }).availableProviders.join(
-              ", ",
-            )
-          : enabledProviders.join(", ");
-      return new Response(
-        JSON.stringify({
-          error: `Model "${resolvedModelId}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
-        }),
+      return rejectProviderFailure(
+        classifyProviderError(parsedModel.providerId, err),
         {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          userId: actingUser.id,
+          model: resolvedModelId,
+          stage: "model-resolution",
         },
       );
     }
@@ -2578,42 +2609,19 @@ ${buildEmptyCourseRagBlock()}`;
           if (isClientAbort(retryError, request.signal)) {
             return clientAbortResponse();
           }
-          if (chatMode === "admin") {
-            logStreamError(retryError, streamTrace);
-            const hint =
-              parsedModel.providerId === "vllm"
-                ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-                : "";
-            return chatApiReject(
-              502,
-              {
-                error: `LLM stream failed: ${formatStreamError(retryError)}.${hint}`,
-                code: "LLM_STREAM_FAILED",
-                fleetRetry,
-              },
-              streamTrace,
-            );
-          }
-          throw retryError;
+          logStreamError(retryError, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, retryError),
+            { ...streamTrace, stage: "stream-startup", fleetRetry },
+          );
         }
       } else {
         releaseAdmission();
-        if (chatMode === "admin") {
-          logStreamError(error, streamTrace);
-          const hint =
-            parsedModel.providerId === "vllm"
-              ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-              : "";
-          return chatApiReject(
-            502,
-            {
-              error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
-              code: "LLM_STREAM_FAILED",
-            },
-            streamTrace,
-          );
-        }
-        throw error;
+        logStreamError(error, streamTrace);
+        return rejectProviderFailure(
+          classifyProviderError(parsedModel.providerId, error),
+          { ...streamTrace, stage: "stream-startup" },
+        );
       }
     }
 
@@ -2625,6 +2633,7 @@ ${buildEmptyCourseRagBlock()}`;
       let sources: Awaited<typeof result.sources> | undefined;
       let reasoning: Awaited<typeof result.reasoning> | undefined;
       let response: Awaited<typeof result.response> | undefined;
+      let oversightStage: "provider" | "application" = "provider";
 
       try {
         // `consumeStream` is an SDK convenience, not part of every compatible
@@ -2660,6 +2669,7 @@ ${buildEmptyCourseRagBlock()}`;
               onlyDeterministic: isAdhdOversightDeterministicOnly(),
             })
           : emptyOversightAuditResult();
+        oversightStage = "application";
 
         finalText = audited.text || draft;
         const normalizedOversightUsage = coalesceTokenUsage(
@@ -2790,6 +2800,13 @@ ${buildEmptyCourseRagBlock()}`;
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }
+        if (oversightStage === "provider") {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, error),
+            { ...streamTrace, stage: "oversight-provider" },
+          );
+        }
         console.error("Error in ADHD oversight response:", error);
         return new Response(
           JSON.stringify({
@@ -2831,22 +2848,20 @@ ${buildEmptyCourseRagBlock()}`;
         result.toDataStreamResponse({
           headers,
           ...(liveStreamData ? { data: liveStreamData } : {}),
-          ...(chatMode === "admin"
-            ? {
-                getErrorMessage: (error: unknown) => {
-                  logStreamError(error, streamTrace);
-                  const base = formatStreamError(error);
-                  if (parsedModel.providerId === "vllm") {
-                    return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
-                  }
-                  return base;
-                },
-              }
-            : {}),
+          // HTTP status/headers are immutable after this 200 stream begins.
+          // Publish the same stable provider body through the AI SDK's stream
+          // error channel instead of pretending a late failure can be a 502.
+          getErrorMessage: (error) =>
+            providerStreamErrorMessage(
+              parsedModel.providerId,
+              error,
+              streamTrace,
+            ),
         }),
         release,
       );
     } else {
+      let providerResultResolved = false;
       try {
         // Some compatible providers expose only the result promises and omit
         // this optional SDK convenience method.
@@ -2861,6 +2876,7 @@ ${buildEmptyCourseRagBlock()}`;
             result.reasoning,
             result.response,
           ]);
+        providerResultResolved = true;
 
         if (response?.messages?.length) {
           const assistantMessages: GenericMessage[] = response.messages
@@ -2948,6 +2964,13 @@ ${buildEmptyCourseRagBlock()}`;
         releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
+        }
+        if (!providerResultResolved) {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, error),
+            { ...streamTrace, stage: "non-streaming-provider" },
+          );
         }
         console.error("Error in non-streaming response:", error);
         return new Response(

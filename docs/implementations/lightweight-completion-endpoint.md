@@ -2,8 +2,7 @@
 
 **Issue:** [#858 — AI assist QM / AI tutor](https://github.com/EduAI-Lab/EduAICore/issues/858)  
 **Epic:** [#61 — RAG/AI](https://github.com/EduAI-Lab/EduAICore/issues/61)  
-**Branch:** `feat/858-ai-assist-lightweight-endpoint`  
-**Status:** Sketch (worktree `feat-858-ai-assist-lightweight`)
+**Status:** Implemented on the monorepo `development` branch; hardening continued in #1113.
 
 ## Problem
 
@@ -98,6 +97,53 @@ Same envelope as `/api/chat` non-streaming for drop-in replacement:
 
 No `chatId`. No `sources`.
 
+### Rate limiting
+
+`/api/completion` shares Core's Redis-backed sliding-window configuration with
+`/api/chat`: `CHAT_RATE_LIMIT` requests per `CHAT_RATE_LIMIT_WINDOW_MS`. A
+session or admin API-key request is keyed by its Core user id. A direct service-key
+request uses the stable, non-secret `service` bucket. A denial occurs before
+provider work and returns:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 42
+Content-Type: application/json
+
+{"error":"RATE_LIMITED","retryAfter":42}
+```
+
+Redis is authoritative across Core instances. If Redis is unavailable, Core
+switches quickly to a bounded process-local fallback; requests remain protected,
+but decisions are not shared between instances until Redis recovers.
+
+### Provider failures
+
+Provider-owned failures use a sanitized stable body; validation errors such as a
+missing model or malformed prompt keep their ordinary `{ "error": "..." }` 400
+shape.
+
+```json
+{
+  "error": "Provider is temporarily unavailable",
+  "code": "PROVIDER_UNAVAILABLE",
+  "retryable": true,
+  "provider": "openai"
+}
+```
+
+Codes are `INVALID_PROVIDER_CONFIG` (400), `PROVIDER_UNAVAILABLE` (503),
+`MODEL_UNAVAILABLE` (503), `PROVIDER_REQUEST_FAILED` (502), and
+`PROVIDER_TIMEOUT` (502). A positive integer upstream `Retry-After` is forwarded
+only when the provider supplied a reliable hint. Core's own application limiter
+is the only `RATE_LIMITED` 429 contract; upstream provider throttling is a
+retryable provider availability failure.
+
+After a 200 stream has begun, HTTP status and headers are immutable, so a late
+provider error is serialized as the same `{ error, code, retryable, provider }`
+JSON object through the AI SDK stream error channel instead of a non-200
+response. A successful stream carries no provider error envelope.
+
 ### What Core still adds
 
 | Layer | Include? | Rationale |
@@ -161,7 +207,7 @@ On `apps/core` layout (main development branch), paths become `apps/core/app/rou
 ### Phase 3 — Hardening
 
 - [ ] Metrics: `completion.request` with `caller` header or `X-EduAI-Caller: question-maker|ai-tutor`
-- [ ] Rate limits per service key
+- [x] Redis-backed limits for service-key and session identities (#1113)
 - [ ] Document in `docs/chat-history.md` cross-link (“use `/api/completion` for stateless assist”)
 
 ## Comparison with `/api/chat`
