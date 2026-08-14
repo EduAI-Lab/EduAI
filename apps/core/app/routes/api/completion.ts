@@ -7,7 +7,7 @@ import {
 } from "~/lib/ai/provider-errors.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * POST /api/completion — stateless LLM completion for extension AI assist (#858).
@@ -27,7 +27,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   let rateLimitIdentity = apiKeySession?.user?.id ?? null;
   if (!apiKeySession?.user) {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (session?.user) {
       rateLimitIdentity = session.user.id;
     } else {

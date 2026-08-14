@@ -7,7 +7,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/policy.server", () => ({
@@ -28,7 +28,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import { action } from "~/routes/api/courses.id.response-style";
@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "INSTRUCTOR" },
   } as never);
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: { id: "c1" },
     access: { level: "instructor", rank: 2 },
   } as never);
@@ -97,7 +97,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
   });
 
   it("returns 403 for a student (rank < 2)", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "student", rank: 1 },
     } as never);
@@ -109,7 +109,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
   });
 
   it("returns 403 for a TA when tas.canSetAiInstructions is off", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "ta", rank: 2 },
     } as never);
@@ -123,7 +123,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
   });
 
   it("allows a TA when tas.canSetAiInstructions is on", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "ta", rank: 2 },
     } as never);
@@ -150,7 +150,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
   });
 
   it("returns 404 when the course is missing", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: null,
       access: null,
     } as never);

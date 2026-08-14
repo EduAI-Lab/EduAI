@@ -15,7 +15,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
   getAuthorizedUnits: vi.fn(),
 }));
 
@@ -37,7 +37,7 @@ import { loader as chatDetailLoader } from "~/routes/api/chats.$chatId";
 import { loader as chatMessagesLoader } from "~/routes/api/chats.$chatId.messages";
 import { auth } from "~/lib/auth/server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   getAuthorizedUnits,
 } from "~/lib/auth/course-access.server";
 import { getPolicy } from "~/lib/policy.server";
@@ -49,7 +49,7 @@ function session(role: string, id = "u1") {
 }
 
 function access(level: string | null, rank = 0) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: level === null ? null : ({ id: "c1", department: "COSC" } as never),
     access: level === null ? null : ({ level, rank } as never),
   });

@@ -6,10 +6,10 @@
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -37,7 +37,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const session =
     apiKeyGate.session ??
-    (await auth.api.getSession({ headers: request.headers }));
+    (await getRequestSession(request));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
@@ -64,7 +64,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const session =
     apiKeyGate.session ??
-    (await auth.api.getSession({ headers: request.headers }));
+    (await getRequestSession(request));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

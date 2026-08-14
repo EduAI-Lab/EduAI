@@ -1,14 +1,14 @@
-import { auth } from "~/lib/auth/server";
 import type { LoaderFunctionArgs } from "react-router";
 import {
   InvalidOllamaBaseUrlError,
   ollamaTagsUrl,
   resolveAllowedOllamaBaseUrl,
 } from "~/lib/ai/ollama-url.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Check admin authorization
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response("Forbidden: Admins only", { status: 403 });
   }
