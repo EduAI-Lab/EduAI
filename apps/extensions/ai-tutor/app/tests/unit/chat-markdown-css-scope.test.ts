@@ -49,7 +49,7 @@ describe("AI Tutor chat markdown CSS scoping", () => {
     // StudentAiChat is AI Tutor's single `MessageContent markdown` caller.
     const chat = read("components/StudentAiChat.tsx");
 
-    expect(chat).toContain("import '~/styles/chat-markdown.css';");
+    expect(chat).toMatch(/import\s+['"]~\/styles\/chat-markdown\.css['"];/);
   });
 
   it("loads katex on demand rather than statically (#1342)", () => {
@@ -58,7 +58,7 @@ describe("AI Tutor chat markdown CSS scoping", () => {
     expect(imports.some((line) => line.includes("katex"))).toBe(false);
 
     const chat = read("components/StudentAiChat.tsx");
-    expect(chat).toContain("loadKatexStyles: () => import('katex/dist/katex.min.css')");
+    expect(chat).toMatch(/loadKatexStyles: \(\) => import\(['"]katex\/dist\/katex\.min\.css['"]\)/);
   });
 
   it("normalizes assistant markdown before rendering it (#1401)", () => {
@@ -67,7 +67,9 @@ describe("AI Tutor chat markdown CSS scoping", () => {
     // the normalized body, would never fire.
     const chat = read("components/StudentAiChat.tsx");
 
-    expect(chat).toContain("import { normalizeMathMarkdown } from '@eduai/ui/math-markdown';");
+    expect(chat).toMatch(
+      /import \{ normalizeMathMarkdown \} from ['"]@eduai\/ui\/math-markdown['"];/,
+    );
     expect(chat).toContain("{normalizeMathMarkdown(msg.content)}");
   });
 });
