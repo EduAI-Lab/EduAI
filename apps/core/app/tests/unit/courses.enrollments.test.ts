@@ -9,7 +9,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/courses/server", () => ({
@@ -47,7 +47,7 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
 import { loader, action } from "~/routes/api/courses.enrollments";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
 import { getCourseEnrollments, getCourseEnrollmentsPage, addEnrollment } from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
@@ -93,7 +93,7 @@ const MOCK_COURSE = {
 type Access = { level: string; rank: number } | null;
 
 function mockAccess(access: Access, course: object | null = MOCK_COURSE) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
@@ -216,7 +216,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     const body = await res.json();
     expect(body.enrollments).toHaveLength(3);
     expect(auth.api.getSession).not.toHaveBeenCalled();
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   // --- 200 user auth (TA and up) ---

@@ -188,6 +188,8 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 
 AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and AI-assist LLM calls (Question Maker question generation and AI Tutor tutor/supervisor loops proxied to Core's stateless `/api/completion`; the interactive course chat UI continues to use `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
 
+Core applies the same Redis-backed sliding-window limit to `/api/chat` and `/api/completion`; see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for configuration, identity, response, and Redis-fallback semantics.
+
 You must set the **same value** in all three services:
 
 | File | Variable |

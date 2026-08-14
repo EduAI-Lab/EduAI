@@ -7,7 +7,7 @@
  */
 import type { ActionFunctionArgs } from "react-router";
 
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { UpdateCourseResponseStyleSchema } from "~/lib/courses/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
@@ -56,7 +56,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const user = session.user;
-  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
+  const { course, access } = await resolveCourseAccessGate(user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,

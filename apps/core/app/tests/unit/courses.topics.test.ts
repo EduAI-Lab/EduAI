@@ -18,7 +18,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth/course-access.server")>()),
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/courses/server", () => ({
@@ -42,7 +42,7 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
 import { loader, action } from "~/routes/api/courses.topics.$";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import {
   getCourseTopics,
   getCourseTopic,
@@ -76,7 +76,7 @@ const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 type Access = { level: string; rank: number } | null;
 
 function mockAccess(access: Access, course: object | null = COURSE) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });
@@ -173,7 +173,7 @@ describe("courses.topics loader", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.topics).toHaveLength(1);
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   it("returns 404 COURSE_NOT_FOUND when resolver finds no course (#299)", async () => {

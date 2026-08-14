@@ -10,7 +10,7 @@ import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
@@ -103,7 +103,7 @@ async function resolveMaterialsAccess(
     return { response: json(401, { error: 'Unauthorized' }) };
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
     return { response: json(404, { error: 'COURSE_NOT_FOUND' }) };
   }

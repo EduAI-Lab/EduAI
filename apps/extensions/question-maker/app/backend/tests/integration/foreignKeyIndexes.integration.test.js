@@ -37,6 +37,7 @@ const describeDb = hasTestDb ? describe : describe.skip;
 const EXPECTED_INDEXED_FKS = [
   'assessment_sections.assessment_id',
   'assessments.course_id',
+  'canvas_bank_question_mappings.local_question_metadata_id',
   'course_access.course_id',
   'courses.user_id',
   'question_metadata.course_id',
@@ -57,6 +58,8 @@ const EXPECTED_INDEXED_FKS = [
  * fails loudly here instead of quietly costing a seq scan.
  */
 const COVERED_BY_EXISTING_UNIQUE = [
+  'canvas_bank_mappings.user_id',
+  'canvas_bank_question_mappings.user_id',
   'canvas_course_mappings.local_course_id',
   'canvas_course_mappings.user_id',
   'canvas_integrations.user_id',

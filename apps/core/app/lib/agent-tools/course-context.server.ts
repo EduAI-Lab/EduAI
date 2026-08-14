@@ -1,7 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import {
   buildCourseListFilter,
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   type RbacUser,
 } from "~/lib/auth/course-access.server";
 import { getCourseTopics, getCourseTopic } from "~/lib/courses/server";
@@ -45,8 +45,8 @@ type ToolError = { error: string };
 async function requireCourseAccess(
   user: RbacUser,
   courseId: string,
-): Promise<{ course: NonNullable<Awaited<ReturnType<typeof resolveCourseAccessWithCourse>>["course"]> } | ToolError> {
-  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
+): Promise<{ course: NonNullable<Awaited<ReturnType<typeof resolveCourseAccessGate>>["course"]> } | ToolError> {
+  const { course, access } = await resolveCourseAccessGate(user, courseId);
   if (!course) {
     return { error: "COURSE_NOT_FOUND" };
   }

@@ -21,7 +21,7 @@ import {
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
@@ -29,6 +29,7 @@ import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
+import { ensureDefaultBank } from "~/lib/question-banks/server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -434,6 +435,8 @@ export async function createCourse(request: Request) {
       })),
     });
 
+    await ensureDefaultBank(created.id, tx);
+
     return created;
   });
 
@@ -462,7 +465,7 @@ export async function updateCourse(request: Request, courseId: string) {
     return validationErrorFromZod(result.error);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     user,
     courseId,
   );
@@ -592,7 +595,7 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     session.user,
     courseId,
   );
@@ -700,7 +703,7 @@ export async function setPublishState(
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     session.user,
     courseId,
   );

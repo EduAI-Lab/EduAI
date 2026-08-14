@@ -143,6 +143,7 @@ export const questionService = {
   /** Fetches one page of questions with pagination metadata (#1040). */
   async getQuestionsPage(options: {
     courseId?: number;
+    questionBankId?: string;
     search?: string;
     types?: string[];
     difficulties?: string[];
@@ -155,6 +156,7 @@ export const questionService = {
   } = {}): Promise<PaginatedList<Question>> {
     const params: Record<string, unknown> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
+    if (options.questionBankId !== undefined) params.questionBankId = options.questionBankId;
     if (options.search !== undefined) params.search = options.search;
     if (options.types?.length) params.types = options.types.join(',');
     if (options.difficulties?.length) params.difficulties = options.difficulties.join(',');
@@ -183,6 +185,7 @@ export const questionService = {
    */
   async getQuestions(options: {
     courseId?: number;
+    questionBankId?: string;
     search?: string;
     types?: string[];
     difficulties?: string[];

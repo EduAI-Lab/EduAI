@@ -21,6 +21,11 @@ const CAN_MANAGE_MATERIALS_LEVELS = new Set(["admin", "unit", "instructor"]);
  * else `resolveCourseAccess` gates a course. The resolver's course lookup
  * already filters `deletedAt: null` (#225 AUTH-11), so a soft-deleted course
  * can never be re-embedded through this helper.
+ *
+ * Uses the WIDE resolver on purpose: this helper hands the course row back to
+ * its callers, which read the embedding columns (`embeddingProvider`,
+ * `embeddingModel`, `embeddedWith*`, `lastEmbeddedAt`) — all outside
+ * `GATE_COURSE_SELECT`.
  */
 export async function getCourseIfCanManageMaterials(
   user: SessionUser,

@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   type AccessLevel,
   type RbacUser,
 } from "~/lib/auth/course-access.server";
@@ -44,7 +44,7 @@ async function resolveInstructorCanvasMaterialsAccess(
     authorizedUnits: session.user.authorizedUnits ?? undefined,
   };
 
-  const { course, access } = await resolveCourseAccessWithCourse(rbacUser, courseId);
+  const { course, access } = await resolveCourseAccessGate(rbacUser, courseId);
   if (!course) {
     return { response: json(404, { success: false, error: "Course not found" }) };
   }

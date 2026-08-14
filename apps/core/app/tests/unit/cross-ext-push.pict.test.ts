@@ -33,7 +33,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
   stripAnswerForStudents: vi.fn((q) => q),
   wantsIncludeDeleted: vi.fn(() => false),
 }));
@@ -45,7 +45,7 @@ vi.mock("~/lib/questions/server", () => ({
 
 import { action } from "~/routes/api/questions";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { createQuestion } from "~/lib/questions/server";
 import {
   bodyForIdempotencyHash,
@@ -152,7 +152,7 @@ async function runCore(row: CrossExtPushRow): Promise<{ outcome: string }> {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: USER } as never);
   }
 
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue(accessFor(row) as never);
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue(accessFor(row) as never);
 
   if (row.Session === "present" && row.CourseAccess === "allowed") {
     setupIdempotency(row);

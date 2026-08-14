@@ -66,6 +66,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // §5: viewing course details requires a course relationship; students
   // additionally require the course to be published.
+  //
+  // Wide row on purpose: the success path serializes the whole course to the
+  // client, so a narrow projection would silently drop response fields.
   const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
 
   if (!course) {

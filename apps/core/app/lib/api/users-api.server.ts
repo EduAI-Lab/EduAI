@@ -16,7 +16,7 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import {
   paginatedResponse,
@@ -90,7 +90,7 @@ export async function handleUsersApiRequest(request: Request) {
       const courseId = url.searchParams.get("courseId")?.trim() || null;
       let isCourseManager = false;
       if (courseId && session.user.role !== "ADMIN") {
-        const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+        const { course, access } = await resolveCourseAccessGate(session.user, courseId);
         isCourseManager = Boolean(course && access && access.rank >= 2);
       }
       if (session.user.role !== "ADMIN" && !isCourseManager) {
