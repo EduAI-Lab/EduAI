@@ -1039,6 +1039,12 @@ describe("Admin routes", () => {
     });
 
     it("calls Core DELETE and removes the local mirror row on success", async () => {
+      deleteCoreEnrollment.mockImplementation(async () => {
+        const rowBeforeLocalDelete = await prisma.courseEnrollment.findUnique({
+          where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+        });
+        expect(rowBeforeLocalDelete).not.toBeNull();
+      });
       const res = await request(adminApp).delete(
         `/api/admin/courses/${externalCourse.id}/enrollments/${student.id}`,
       );
