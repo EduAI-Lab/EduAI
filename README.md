@@ -285,6 +285,16 @@ A few things worth knowing before you touch the setup:
 - **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
   the root `prepare` script. Use `git commit --no-verify` to bypass it, or
   `npx lefthook run pre-commit` to run it by hand.
+- **oxfmt is scoped to JavaScript and TypeScript on purpose.** It also formats
+  Markdown, JSON, YAML, CSS and HTML, which is more than this repo wants it to
+  own: a bare `oxfmt .` reflows all 151 tracked Markdown files (including
+  `CHANGELOG.md`, which merges under a union driver — reflowing it would break
+  that), rewrites the nine GitHub Actions workflows, and rewrites data JSON such
+  as `apps/core/data/routing-knn-exemplars.json`. It also reflowed a
+  `--font-sans` declaration in `packages/ui/src/styles/base.css` across lines,
+  which is valid CSS but fails `self-hosted-font.test.ts`. Those extensions are
+  therefore in `ignorePatterns`. Removing them from that list is a decision, not
+  a cleanup.
 - **The two tools exclude paths differently, and the mismatch is deliberate.**
   Where a workspace contains a nested workspace — ai-tutor over `server/`,
   question-maker over `app/` — the lint scripts use `oxlint . --ignore-pattern
