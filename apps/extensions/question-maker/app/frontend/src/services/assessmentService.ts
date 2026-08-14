@@ -225,6 +225,14 @@ export const assessmentService = {
     await api.delete(`/api/assessments/${assessmentId}/sections/${sectionId}`);
   },
 
+  /** Bulk-rewrite section positions (1..n) for the assessment. */
+  async reorderSections(assessmentId: number, sectionIds: number[]): Promise<AssessmentSection[]> {
+    const response = await api.put(`/api/assessments/${assessmentId}/sections/reorder`, {
+      sectionIds,
+    });
+    return response.data.data;
+  },
+
   /** Deletes an assessment. */
   async deleteAssessment(assessmentId: number): Promise<void> {
     await api.delete(`/api/assessments/${assessmentId}`);

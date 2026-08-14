@@ -25,6 +25,7 @@ const { svc, sectionSvc, mockCourseFindOne, mockAssessmentFindOne, mockQuestionF
   sectionSvc: {
     getSectionsForAssessment: vi.fn(),
     createAssessmentSection: vi.fn(),
+    reorderAssessmentSections: vi.fn(),
     updateAssessmentSection: vi.fn(),
     deleteAssessmentSection: vi.fn(),
     addVariantToSection: vi.fn(),
@@ -234,6 +235,58 @@ describe('GET /api/assessments/:id/sections', () => {
       pageSize: 200,
     });
     expect(sectionSvc.getSectionsForAssessment).toHaveBeenCalledWith('5', COURSE.userId);
+  });
+});
+
+describe('PUT /api/assessments/:assessmentId/sections/reorder', () => {
+  it('returns 400 when sectionIds validation fails', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    sectionSvc.reorderAssessmentSections.mockRejectedValue(
+      new Error('sectionIds must be a non-empty array'),
+    );
+
+    const res = await request(app)
+      .put('/api/assessments/5/sections/reorder')
+      .set('Cookie', 'session=v')
+      .send({ sectionIds: [] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/sectionIds/i);
+    expect(sectionSvc.reorderAssessmentSections).toHaveBeenCalledWith(
+      '5',
+      COURSE.userId,
+      [],
+      COURSE.id,
+    );
+  });
+
+  it('reorders sections on success', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    sectionSvc.reorderAssessmentSections.mockResolvedValue([
+      { id: 2, position: 1 },
+      { id: 1, position: 2 },
+    ]);
+
+    const res = await request(app)
+      .put('/api/assessments/5/sections/reorder')
+      .set('Cookie', 'session=v')
+      .send({ sectionIds: [2, 1] });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      message: 'Sections reordered successfully',
+      data: [
+        { id: 2, position: 1 },
+        { id: 1, position: 2 },
+      ],
+    });
+    expect(sectionSvc.reorderAssessmentSections).toHaveBeenCalledWith(
+      '5',
+      COURSE.userId,
+      [2, 1],
+      COURSE.id,
+    );
   });
 });
 

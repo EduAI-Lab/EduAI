@@ -1,11 +1,11 @@
 import type { ActionFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
 import { serializeReEmbedJob, startReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function readIdempotencyKey(request: Request): Promise<string | undefined> {
   const headerKey = request.headers.get("Idempotency-Key")?.trim();
@@ -30,7 +30,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }

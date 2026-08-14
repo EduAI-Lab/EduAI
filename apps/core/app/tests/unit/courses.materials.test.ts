@@ -8,7 +8,7 @@ vi.mock("~/lib/auth/guards.server", () => ({}));
 
 vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth/course-access.server")>()),
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -46,7 +46,7 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
 
 import { loader, action } from "~/routes/api/courses.materials.$";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { processUploadedFile } from "~/lib/ai/file-processing";
@@ -58,7 +58,7 @@ const COURSE = { id: COURSE_ID, isPublished: true, department: null };
 type Access = { level: string; rank: number } | null;
 
 function mockAccess(access: Access, course: object | null = COURSE) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });

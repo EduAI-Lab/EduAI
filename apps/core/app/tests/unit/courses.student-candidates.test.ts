@@ -13,12 +13,12 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 import { loader } from "~/routes/api/courses.student-candidates.$";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 
 const COURSE = { id: "c1" };
 
@@ -27,7 +27,7 @@ function session(role = "INSTRUCTOR", id = "u1") {
 }
 
 function mockAccess(access: { level: string; rank: number } | null, course: object | null = COURSE) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });

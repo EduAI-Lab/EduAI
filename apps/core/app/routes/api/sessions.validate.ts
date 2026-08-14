@@ -1,10 +1,10 @@
 import type { ActionFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { isRateLimited } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -37,7 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {

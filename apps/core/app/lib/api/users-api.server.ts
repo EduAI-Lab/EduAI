@@ -1,6 +1,5 @@
 import prisma from "~/lib/prisma.server";
 import type { Prisma, UserRole } from "@prisma/client";
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
@@ -17,7 +16,7 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import {
   paginatedResponse,
@@ -27,6 +26,7 @@ import {
   unpagedResponse,
   type Pagination,
 } from "~/lib/pagination.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const USER_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
 
@@ -78,7 +78,7 @@ export async function handleUsersApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user) {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -90,7 +90,7 @@ export async function handleUsersApiRequest(request: Request) {
       const courseId = url.searchParams.get("courseId")?.trim() || null;
       let isCourseManager = false;
       if (courseId && session.user.role !== "ADMIN") {
-        const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+        const { course, access } = await resolveCourseAccessGate(session.user, courseId);
         isCourseManager = Boolean(course && access && access.rank >= 2);
       }
       if (session.user.role !== "ADMIN" && !isCourseManager) {
@@ -285,7 +285,7 @@ export async function handleUsersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -305,7 +305,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -590,7 +590,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

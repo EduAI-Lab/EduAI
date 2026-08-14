@@ -3,7 +3,6 @@ import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import type { LoaderFunctionArgs } from 'react-router'
 
-import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesView, type CoursesRole } from '~/components/courses/courses-view'
@@ -18,9 +17,10 @@ import {
   BreadcrumbSeparator,
   ConfirmDialog,
 } from '@eduai/ui'
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request)
   if (!session?.user) return redirect('/auth/login')
 
   // These three reads are independent — run them in parallel instead of serially.

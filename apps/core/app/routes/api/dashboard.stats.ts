@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { computeDashboardStats } from "~/lib/dashboard/dashboard-data.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * GET /api/dashboard/stats — role-scoped dashboard statistics.
@@ -10,7 +10,7 @@ import { computeDashboardStats } from "~/lib/dashboard/dashboard-data.server";
  * `lib/dashboard/dashboard-data.server.ts` so both paths share one source.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

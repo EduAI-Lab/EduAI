@@ -24,6 +24,15 @@ import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesServ
 import { ensureCourseAnchor } from '../services/ensureCourseAnchor.js';
 import { logger } from '../utils/logger.js';
 import { parsePaginationParams, paginated } from '../utils/pagination.js';
+import {
+  listBanks,
+  createBank,
+  updateBank,
+  deleteBank,
+  addQuestionToBank,
+  removeQuestionFromBank,
+  ensureDefaultBank,
+} from '../services/questionBankService.js';
 
 const router = express.Router();
 
@@ -517,5 +526,110 @@ router.post(
     next(error);
   }
 });
+
+/**
+ * Question banks are owned by EduAI Core; these routes proxy via questionBankService
+ * using the local course's `coreCourseId`.
+ */
+const bankAccess = requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam });
+
+/** GET /api/course/:id/banks */
+router.get('/:id/banks', authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    await ensureDefaultBank(req.qmCourse.id, req.user.id).catch(() => null);
+    const banks = await listBanks(req.qmCourse.id, req.user.id);
+    res.json({ success: true, data: banks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** POST /api/course/:id/banks */
+router.post('/:id/banks', authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    const bank = await createBank(req.qmCourse.id, req.user.id, {
+      name: req.body?.name,
+      description: req.body?.description ?? null,
+    });
+    res.status(201).json({ success: true, data: bank });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** PUT /api/course/:id/banks/:bankId */
+router.put('/:id/banks/:bankId', authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    const bank = await updateBank(req.qmCourse.id, req.user.id, req.params.bankId, {
+      name: req.body?.name,
+      description: req.body?.description,
+    });
+    res.json({ success: true, data: bank });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** DELETE /api/course/:id/banks/:bankId */
+router.delete('/:id/banks/:bankId', authenticateToken, bankAccess, async (req, res, next) => {
+  try {
+    const result = await deleteBank(req.qmCourse.id, req.user.id, req.params.bankId, {
+      moveMembershipsToBankId: req.body?.moveMembershipsToBankId
+        ? String(req.body.moveMembershipsToBankId)
+        : undefined,
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** POST /api/course/:id/banks/:bankId/questions */
+router.post(
+  '/:id/banks/:bankId/questions',
+  authenticateToken,
+  bankAccess,
+  async (req, res, next) => {
+    try {
+      const questionMetadataId = Number(req.body?.questionMetadataId);
+      if (!Number.isInteger(questionMetadataId)) {
+        return res.status(400).json({ success: false, error: 'questionMetadataId is required' });
+      }
+      const result = await addQuestionToBank(
+        req.qmCourse.id,
+        req.user.id,
+        req.params.bankId,
+        questionMetadataId,
+      );
+      res.status(201).json({
+        success: true,
+        data: result.membership,
+        message: 'Question added to bank',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/** DELETE /api/course/:id/banks/:bankId/questions/:questionMetadataId */
+router.delete(
+  '/:id/banks/:bankId/questions/:questionMetadataId',
+  authenticateToken,
+  bankAccess,
+  async (req, res, next) => {
+    try {
+      const result = await removeQuestionFromBank(
+        req.qmCourse.id,
+        req.user.id,
+        req.params.bankId,
+        req.params.questionMetadataId,
+      );
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;
