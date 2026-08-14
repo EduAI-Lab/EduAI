@@ -156,52 +156,12 @@ describe("useCourseMaterials.loadMore", () => {
   });
 });
 
-describe("useCourseMaterials.uploadMaterial", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
-
-  it("POSTs the file as FormData, refetches, and resolves with the created row", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(materialsResponse([]))
-      .mockResolvedValueOnce(new Response(JSON.stringify(material), { status: 201 }))
-      .mockResolvedValueOnce(materialsResponse([material]));
-
-    const { result } = renderHook(() => useCourseMaterials("course-1"));
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    const file = new File(["content"], "slides.pdf", { type: "application/pdf" });
-    let uploaded: unknown;
-    await act(async () => {
-      uploaded = await result.current.uploadMaterial(file);
-    });
-
-    const [url, init] = vi.mocked(fetch).mock.calls[1];
-    expect(url).toBe("/api/courses/course-1/materials");
-    expect((init as RequestInit).method).toBe("POST");
-    expect((init as RequestInit).body).toBeInstanceOf(FormData);
-    expect(uploaded).toEqual(material);
-    expect(result.current.materials).toEqual([material]);
-  });
-
-  it("throws the server error text and does not refetch on failure", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(materialsResponse([]))
-      .mockResolvedValueOnce(new Response("File too large", { status: 413 }));
-
-    const { result } = renderHook(() => useCourseMaterials("course-1"));
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    const file = new File(["content"], "slides.pdf", { type: "application/pdf" });
-    await expect(result.current.uploadMaterial(file)).rejects.toThrow("File too large");
-    expect(fetch).toHaveBeenCalledTimes(2);
-  });
-});
+// The pre-#949 synchronous upload tests that lived here (a 201 resolving to the
+// created row, and a 413 whose raw body text was rethrown) are gone with the
+// contract they pinned: the POST now returns 202 and every outcome comes from
+// polling. Their replacements — request shape, both rejection shapes, and each
+// `UploadOutcome` branch — are in the `#949 async contract` block below, which
+// drives fake timers instead of waiting out real poll intervals.
 
 describe("useCourseMaterials.deleteMaterial", () => {
   beforeEach(() => {
