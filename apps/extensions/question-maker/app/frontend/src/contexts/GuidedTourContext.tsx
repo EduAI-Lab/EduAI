@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { markMainTourSeen } from '../tour/mainTourStorage';
 import { TourId, TourStep } from '../tour/tourTypes';
 import { tourSteps } from '../tour/tourSteps';
 import { cn } from '../lib/utils';
@@ -271,6 +272,8 @@ const GuidedTourOverlay = ({
 export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<TourState>({ steps: [], currentIndex: 0, isActive: false });
   const [activeTourId, setActiveTourId] = useState<TourId | null>(null);
+  const activeTourIdRef = useRef(activeTourId);
+  activeTourIdRef.current = activeTourId;
   const onTourEndRef = useRef<(() => void) | null>(null);
   const stepActionOverridesRef = useRef<Map<string, () => void | Promise<void>>>(new Map());
   const advancingRef = useRef(false);
@@ -305,6 +308,9 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const stopTour = useCallback(() => {
+    if (activeTourIdRef.current === 'main') {
+      markMainTourSeen();
+    }
     const onEnd = onTourEndRef.current;
     onTourEndRef.current = null;
     stepActionOverridesRef.current.clear();

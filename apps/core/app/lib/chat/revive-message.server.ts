@@ -97,22 +97,31 @@ export function reviveStoredMessage(record: {
   const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
   const resolvedModelId =
     role === "assistant" ? resolvedModelIdFromMessage(parsed) : null;
+  const wasAutoRouted =
+    role === "assistant" && wasAutoRoutedFromMessage(parsed);
   const courseScopeRedirect =
     role === "assistant" ? courseScopeRedirectFromMessage(parsed) : false;
-  const wasAutoRouted = role === "assistant" && wasAutoRoutedFromMessage(parsed);
-
+  const hitLongOutputCap =
+    role === "assistant" &&
+    parsed.metadata !== null &&
+    typeof parsed.metadata === "object" &&
+    !Array.isArray(parsed.metadata) &&
+    (parsed.metadata as Record<string, unknown>).hitLongOutputCap === true;
+  const metadata = {
+    ...(resolvedModelId
+      ? {
+          resolvedModelId,
+          wasAutoRouted,
+        }
+      : {}),
+    ...(hitLongOutputCap ? { hitLongOutputCap: true } : {}),
+    ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
+  };
   return {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
     role,
     content: text,
     parts: [{ type: "text", text }],
-    ...(resolvedModelId || courseScopeRedirect
-      ? {
-          metadata: {
-            ...(resolvedModelId ? { resolvedModelId, wasAutoRouted } : {}),
-            ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
-          },
-        }
-      : {}),
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
 }

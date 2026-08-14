@@ -60,6 +60,21 @@ export interface CanvasImportResult {
   sectionId: number;
 }
 
+export interface CanvasQuestionBank {
+  id: number;
+  title?: string;
+  name?: string;
+  question_count?: number;
+}
+
+export interface CanvasBankSyncResult {
+  bankId: string;
+  created: number;
+  updated: number;
+  skipped: number;
+  lastSyncedAt?: string;
+}
+
 export const canvasService = {
   /** True when local dev should prefer Canvas test mode (set VITE_CANVAS_TEST_MODE=true). */
   prefersTestMode(): boolean {
@@ -184,7 +199,39 @@ export const canvasService = {
       ...options
     });
     return response.data.data;
-  }
+  },
+
+  async getQuestionBanks(canvasCourseId: number): Promise<CanvasQuestionBank[]> {
+    const response = await api.get(`/api/canvas/courses/${canvasCourseId}/banks`);
+    return response.data.data || [];
+  },
+
+  async getQuestionBankQuestions(
+    canvasCourseId: number,
+    canvasBankId: number,
+  ): Promise<CanvasQuestion[]> {
+    const response = await api.get(
+      `/api/canvas/courses/${canvasCourseId}/banks/${canvasBankId}/questions`,
+    );
+    return response.data.data || [];
+  },
+
+  async importQuestionBank(
+    canvasCourseId: number,
+    canvasBankId: number,
+    localCourseId: number,
+    options: { primaryTopicId: string; targetBankId?: string },
+  ): Promise<CanvasBankSyncResult> {
+    const response = await api.post(
+      `/api/canvas/import/${canvasCourseId}/banks/${canvasBankId}`,
+      {
+        localCourseId,
+        primaryTopicId: options.primaryTopicId,
+        targetBankId: options.targetBankId,
+      },
+    );
+    return response.data.data;
+  },
 };
 
 export default canvasService;

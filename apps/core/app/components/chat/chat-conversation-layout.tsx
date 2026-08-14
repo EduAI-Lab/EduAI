@@ -59,6 +59,8 @@ export function ChatConversationLayout({
   disabledReason,
   routedModelByMessageId = {},
   streamingRoutedRegistryId = null,
+  cappedMessageIds,
+  onContinue,
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
@@ -176,6 +178,15 @@ export function ChatConversationLayout({
                         )}
                         webToolsEnabled={webToolsEnabled}
                         assistiveDisplay={adhdAssist}
+                        showContinue={
+                          cappedMessageIds?.has(message.id) ?? false
+                        }
+                        onContinue={
+                          onContinue
+                            ? () => onContinue(message.id)
+                            : undefined
+                        }
+                        continueDisabled={isLoading}
                       />
                     );
                   })}

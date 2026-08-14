@@ -24,6 +24,12 @@ const mapVariant = (variant: any): QuestionVariant => ({
   reasoningLevel: variant.reasoningLevel ?? variant.reasoning_level ?? undefined,
   answer: variant.answer ?? null,
   choices: Array.isArray(variant.choices) ? variant.choices : (variant.choices ? [variant.choices] : null),
+  selectAllThatApply: Boolean(variant.selectAllThatApply ?? variant.select_all_that_apply),
+  correctAnswers: Array.isArray(variant.correctAnswers)
+    ? variant.correctAnswers
+    : Array.isArray(variant.correct_answers)
+      ? variant.correct_answers
+      : null,
   questionMetadataId: variant.questionMetadataId ?? variant.question_metadata_id ?? undefined,
   assessmentId: variant.assessmentId ?? null,
   secondaryTopicsId: Array.isArray(variant.secondaryTopicsId)
@@ -137,6 +143,7 @@ export const questionService = {
   /** Fetches one page of questions with pagination metadata (#1040). */
   async getQuestionsPage(options: {
     courseId?: number;
+    questionBankId?: string;
     search?: string;
     types?: string[];
     difficulties?: string[];
@@ -149,6 +156,7 @@ export const questionService = {
   } = {}): Promise<PaginatedList<Question>> {
     const params: Record<string, unknown> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
+    if (options.questionBankId !== undefined) params.questionBankId = options.questionBankId;
     if (options.search !== undefined) params.search = options.search;
     if (options.types?.length) params.types = options.types.join(',');
     if (options.difficulties?.length) params.difficulties = options.difficulties.join(',');
@@ -177,6 +185,7 @@ export const questionService = {
    */
   async getQuestions(options: {
     courseId?: number;
+    questionBankId?: string;
     search?: string;
     types?: string[];
     difficulties?: string[];
@@ -248,6 +257,8 @@ export const questionService = {
     secondaryTopicsId?: string[];
     answer?: string | null;
     choices?: MCQChoice[] | null;
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[] | null;
     referenceId?: number;
     isAiGenerated?: boolean;
     isDraft?: boolean;
@@ -265,6 +276,8 @@ export const questionService = {
     secondaryTopicsId?: string[];
     answer?: string | null;
     choices?: MCQChoice[] | null;
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[] | null;
     referenceId?: number;
     isAiGenerated?: boolean;
     isDraft?: boolean;

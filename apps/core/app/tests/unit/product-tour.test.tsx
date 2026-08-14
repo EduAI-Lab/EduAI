@@ -57,6 +57,93 @@ describe("ProductTour", () => {
     expect(screen.queryByText("Welcome")).not.toBeInTheDocument();
   });
 
+  it("navigates back and forth with the Next/Back buttons", async () => {
+    renderTour("/?tour=1");
+    await screen.findByText("Welcome");
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+
+    // Next skips the absent-target step and lands on "Finish".
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Finish");
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+
+    // Back skips the same absent-target step in reverse and returns to "Welcome".
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByText("Welcome");
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+  });
+
+  it("navigates with ArrowRight/ArrowLeft and closes on Escape", async () => {
+    renderTour("/?tour=1");
+    await screen.findByText("Welcome");
+
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    await screen.findByText("Finish");
+
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    await screen.findByText("Welcome");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("Welcome")).not.toBeInTheDocument());
+  });
+
+  it("advances the tour when the backdrop click-catcher is clicked", async () => {
+    renderTour("/?tour=1");
+    await screen.findByText("Welcome");
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue tour" }));
+    await screen.findByText("Finish");
+  });
+
+  it("closes the tour via the Skip button", async () => {
+    renderTour("/?tour=1");
+    await screen.findByText("Welcome");
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    await waitFor(() => expect(screen.queryByText("Welcome")).not.toBeInTheDocument());
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("1");
+  });
+
+  it("auto-starts after the idle/timeout fallback when unseen", async () => {
+    renderTour("/");
+    expect(await screen.findByText("Welcome", {}, { timeout: 2000 })).toBeInTheDocument();
+  });
+
+  it("renders a centered card for a step with no target", async () => {
+    renderTour("/?tour=1");
+    const heading = await screen.findByText("Welcome");
+    // Centered (non-anchored) steps use fixed 50%/50% + translate positioning.
+    const card = heading.closest("div")?.parentElement as HTMLElement;
+    expect(card.style.top).toBe("50%");
+    expect(card.style.left).toBe("50%");
+  });
+
+  it("spotlights an anchored step whose target is present and visible", async () => {
+    const target = document.createElement("div");
+    target.setAttribute("data-tour", "present");
+    document.body.appendChild(target);
+    target.getBoundingClientRect = () =>
+      ({ top: 10, left: 20, width: 30, height: 40 }) as DOMRect;
+    target.getClientRects = (() => [{}] as unknown as DOMRectList) as HTMLElement["getClientRects"];
+    Object.defineProperty(target, "offsetParent", {
+      configurable: true,
+      get: () => document.body,
+    });
+
+    const stepsWithTarget: TourStep[] = [
+      { target: '[data-tour="present"]', title: "Anchored", body: "Has a target." },
+      { title: "Finish", body: "All done." },
+    ];
+    const router = createMemoryRouter(
+      [{ path: "/", element: <ProductTour steps={stepsWithTarget} storageKey={STORAGE_KEY} /> }],
+      { initialEntries: ["/?tour=1"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText("Anchored")).toBeInTheDocument();
+    target.remove();
+  });
+
   it("moves focus into the dialog on open and restores it on close", async () => {
     const trigger = document.createElement("button");
     trigger.textContent = "opener";

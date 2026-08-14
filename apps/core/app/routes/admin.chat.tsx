@@ -15,13 +15,13 @@ import {
   BreadcrumbSeparator,
 } from "@eduai/ui";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return redirect("/auth/login");

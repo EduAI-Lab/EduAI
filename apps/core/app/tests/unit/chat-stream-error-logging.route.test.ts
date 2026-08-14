@@ -85,13 +85,14 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
-import { streamText } from "ai";
+import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
+let lateStreamErrorMessage: ((error: unknown) => string) | undefined;
 
 function makeRequest(body: object) {
   return {
@@ -126,6 +127,7 @@ function lastOnError(): ((args: { error: unknown }) => void) | undefined {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  lateStreamErrorMessage = undefined;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -157,6 +159,12 @@ beforeEach(() => {
       id: "resp-1",
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
+    toDataStreamResponse: vi.fn(
+      ({ getErrorMessage }: { getErrorMessage?: (error: unknown) => string }) => {
+        lateStreamErrorMessage = getErrorMessage;
+        return new Response("stream", { status: 200 });
+      },
+    ),
   } as never);
 });
 
@@ -181,6 +189,36 @@ describe("Learning-chat stream error logging (#989)", () => {
       expect.objectContaining({ error: "provider blew up mid-stream" }),
     );
 
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("serializes the stable provider body through the late stream error channel", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+    expect(res.status).toBe(200);
+
+    const message = lateStreamErrorMessage?.(
+      new APICallError({
+        message: "upstream error containing sk-do-not-leak",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-do-not-leak" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "20" },
+        responseBody: "private body",
+        isRetryable: true,
+      }),
+    );
+
+    expect(message).toBe(
+      JSON.stringify({
+        error: "Provider is temporarily unavailable",
+        code: "PROVIDER_UNAVAILABLE",
+        retryable: true,
+        provider: "vllm",
+      }),
+    );
+    expect(message).not.toContain("sk-do-not-leak");
     consoleErrorSpy.mockRestore();
   });
 });

@@ -42,7 +42,7 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 import { loader } from "~/routes/api/courses.materials.$";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
 import { seedMaterial, seedMaterialChunkWithEmbedding } from "../helpers/materials";
 import { seedTestDisciplines } from "../helpers/disciplines";
@@ -183,7 +183,7 @@ async function observeRest(row: MaterialVisibilityRow, seeded: SeededRow): Promi
 /**
  * RAG adapter for both `rag-hybrid` and `rag-sql`: `RAG_HYBRID_BM25` selects
  * the branch inside `findRelevantContent`. The caller-side course-access gate
- * is resolved via the same production `resolveCourseAccessWithCourse` used by
+ * is resolved via the same production `resolveCourseAccessGate` used by
  * chat.ts and asserted unconditionally, for every row — that alone is enough
  * to catch a regression in access resolution for an unenrolled/anonymous
  * caller, which is the scenario worth guarding.
@@ -206,7 +206,7 @@ async function observeRag(row: MaterialVisibilityRow, seeded: SeededRow, path: P
   process.env.RAG_HYBRID_BM25 = path === "rag-hybrid" ? "1" : "";
 
   const access = seeded.user
-    ? (await resolveCourseAccessWithCourse(seeded.user, seeded.courseId)).access
+    ? (await resolveCourseAccessGate(seeded.user, seeded.courseId)).access
     : null;
 
   const hasAccess = access !== null;

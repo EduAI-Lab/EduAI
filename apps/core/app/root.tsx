@@ -11,7 +11,6 @@ import type { LoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/root";
 import "./app.css";
 
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicies } from "~/lib/policy.server";
 import {
@@ -30,6 +29,7 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Root middleware — the single request chokepoint that every route matches.
@@ -82,7 +82,7 @@ export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
-      const session = await auth.api.getSession({ headers: request.headers });
+      const session = await getRequestSession(request);
       if (session?.user && (await isPasswordExpiredForUser(session.user.id))) {
         return new Response(
           JSON.stringify({ error: "PASSWORD_EXPIRED", redirectTo: "/settings?expired=1" }),
@@ -115,13 +115,15 @@ const GUEST_ROOT_PREFERENCES = {
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
 
-  // getSession and getPolicies are independent — run them in parallel so a policy
-  // cache-miss does not serialize behind the session lookup on every navigation.
+  // getRequestSession and getPolicies are independent — run them in parallel so a
+  // policy cache-miss does not serialize behind the session lookup on every
+  // navigation. The session itself resolves once per inbound request (#946):
+  // this loader and every matched route loader share the same memo entry.
   // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
   const [session, policies] = await Promise.all([
-    auth.api.getSession({ headers: request.headers }),
+    getRequestSession(request),
     getPolicies(),
   ]);
 

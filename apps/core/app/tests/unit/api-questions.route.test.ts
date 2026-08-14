@@ -13,7 +13,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
   stripAnswerForStudents: vi.fn((q: unknown) => q),
   wantsIncludeDeleted: vi.fn().mockReturnValue(false),
 }));
@@ -31,7 +31,7 @@ import { loader, action } from "~/routes/api/questions";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
@@ -83,7 +83,7 @@ describe("GET /api/questions", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({ course: null, access: null });
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({ course: null, access: null });
     const res = await loader(makeLoaderArgs("?courseId=course-1"));
     expect(res.status).toBe(404);
   });
@@ -92,7 +92,7 @@ describe("GET /api/questions", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "student", rank: 0 },
     } as never);
@@ -104,7 +104,7 @@ describe("GET /api/questions", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -124,7 +124,7 @@ describe("GET /api/questions", () => {
     const res = await loader(makeLoaderArgs("?courseId=course-1", { Authorization: "Bearer svc-key" }));
     expect(res.status).toBe(200);
     expect(requireServiceKey).toHaveBeenCalled();
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   it("returns whatever requireServiceKey's guard response is when the key is invalid", async () => {
@@ -150,7 +150,7 @@ describe("POST /api/questions (action)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "student", rank: 0 },
     } as never);
@@ -163,7 +163,7 @@ describe("POST /api/questions (action)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -179,7 +179,7 @@ describe("POST /api/questions (action)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "instructor", rank: 2 },
     } as never);

@@ -2,7 +2,6 @@ import { data } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import cron from "node-cron";
 
-import { auth } from "~/lib/auth/server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
@@ -13,9 +12,10 @@ import {
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function requireAdmin(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return null;
   }

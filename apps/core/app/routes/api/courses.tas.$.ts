@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
@@ -8,9 +7,10 @@ import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -79,7 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

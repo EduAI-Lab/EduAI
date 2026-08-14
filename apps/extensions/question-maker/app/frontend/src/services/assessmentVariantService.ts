@@ -53,6 +53,8 @@ export interface GeneratedVariantPreview {
   reasoningLevel: string | null;
   answer: string | null;
   choices: Array<{ letter?: string; text?: string }> | null;
+  selectAllThatApply?: boolean;
+  correctAnswers?: string[] | null;
   isAiGenerated: boolean;
   isDraft: boolean;
 }

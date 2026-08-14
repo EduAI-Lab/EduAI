@@ -22,8 +22,8 @@ import {
   AlertTitle,
 } from '@eduai/ui'
 import { usePolicies } from '~/hooks/api/use-policies'
-import { auth } from '~/lib/auth/server'
 import { getEnvironmentHealth } from '~/lib/environment-health.server'
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Permission groups for the admin settings UI, in display order. Each policy
@@ -70,7 +70,7 @@ const PERMISSION_GROUPS: {
 ]
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request)
 
   if (!session?.user) {
     return redirect('/auth/login')

@@ -10,7 +10,7 @@ vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   buildCourseListFilter: vi.fn(),
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/courses/server", () => ({
@@ -18,7 +18,7 @@ vi.mock("~/lib/courses/server", () => ({
   getCourseTopic: vi.fn(),
 }));
 
-import { buildCourseListFilter, resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { buildCourseListFilter, resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getCourseTopics, getCourseTopic } from "~/lib/courses/server";
 import {
   getAccessibleCourse,
@@ -47,7 +47,7 @@ describe("listAccessibleCourses", () => {
 
 describe("getAccessibleCourse", () => {
   it("returns 403-shaped error when access is denied", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: COURSE as never,
       access: null,
     });
@@ -56,7 +56,7 @@ describe("getAccessibleCourse", () => {
   });
 
   it("returns course detail when access is granted", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: COURSE as never,
       access: { level: "student", rank: 0 },
     });
@@ -75,7 +75,7 @@ describe("getAccessibleCourse", () => {
 
 describe("listAccessibleCourseTopics", () => {
   it("returns topics when user has course access", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: COURSE as never,
       access: { level: "student", rank: 0 },
     });
@@ -94,7 +94,7 @@ describe("listAccessibleCourseTopics", () => {
 
 describe("getAccessibleCourseTopic", () => {
   it("returns TOPIC_NOT_FOUND when missing", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: COURSE as never,
       access: { level: "student", rank: 0 },
     });
