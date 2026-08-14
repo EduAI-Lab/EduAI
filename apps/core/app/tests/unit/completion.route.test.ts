@@ -46,12 +46,15 @@ vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
   };
 });
 
-import { streamText } from "ai";
+import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import { resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
 
 function makeRequest(
   body: object,
@@ -128,8 +131,8 @@ describe("POST /api/completion review regressions", () => {
     });
   });
 
-  it("returns JSON 502 when languageModel() throws before streamText", async () => {
-    const setupError = new Error("AI_NoSuchProviderError: No such provider: vllm");
+  it("returns a sanitized provider contract when languageModel() throws", async () => {
+    const setupError = new Error("AI_NoSuchProviderError: key sk-do-not-leak");
     setupError.name = "AI_NoSuchProviderError";
 
     vi.mocked(createAIProviderRegistry).mockReturnValue({
@@ -139,14 +142,81 @@ describe("POST /api/completion review regressions", () => {
     } as never);
 
     const res = await action(makeRequest(baseBody()));
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(400);
 
     const body = await res.json();
     expect(body).toEqual({
-      error: expect.stringContaining("LLM provider setup failed"),
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "vllm",
     });
-    expect(body.error).toContain("AI_NoSuchProviderError");
+    expect(JSON.stringify(body)).not.toContain("sk-do-not-leak");
     expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("treats a missing client API key as invalid provider configuration", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          model: "openai:gpt-4o",
+          apiKeys: { openai: { isEnabled: true } },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(createAIProviderRegistry).not.toHaveBeenCalled();
+  });
+
+  it("maps fleet model unavailability to the stable 503 contract", async () => {
+    vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
+    vi.mocked(resolveFleetHost).mockRejectedValue(
+      new FleetUnavailableError("internal fleet host details"),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({
+      error: "Requested model is unavailable",
+      code: "MODEL_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+  });
+
+  it("normalizes a transient upstream failure and valid retry hint", async () => {
+    vi.mocked(streamText).mockRejectedValue(
+      new APICallError({
+        message: "upstream said sk-sensitive-value",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-sensitive-value" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "12" },
+        responseBody: "private upstream body",
+        isRetryable: true,
+      }),
+    );
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("12");
+    const body = await res.json();
+    expect(body).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+    expect(JSON.stringify(body)).not.toContain("sk-sensitive-value");
   });
 
   it("returns the selected fleet host for extension observability", async () => {

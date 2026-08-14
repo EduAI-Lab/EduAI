@@ -191,6 +191,7 @@ Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThresh
 - **`streamText(streamConfig)`** — provider from registry (OpenAI, Google, Ollama, vLLM, etc.). Local models on **cmps01**: `ollama:…` (:11434), `vllm:…` (:8001, OpenAI-compatible — see [VLLM.md](VLLM.md))
 - **Streaming:** `toDataStreamResponse` with `X-Chat-Id` when known
 - **Non-streaming:** `consumeStream`, read text/usage/finishReason, `appendMessages` for assistant (from `response.messages` or fallback text), JSON body
+- **Provider failures:** before streaming starts (and on non-streaming requests), Core returns the same sanitized `error`/`code`/`retryable`/`provider` JSON contract as `/api/completion`. After a 200 stream has begun, HTTP status and headers are immutable, so the same JSON object is serialized as the AI SDK stream-error message instead. Client aborts remain 499 and are never classified as provider failures.
 
 Resolved system prompt order: request `systemPrompt` → stored `chat.systemPrompt` → route default (tool or hybrid template with optional `courseCode` line).
 

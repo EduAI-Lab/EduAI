@@ -20,14 +20,14 @@ import { DASHBOARD_TOUR_STEPS, DASHBOARD_TOUR_STORAGE_KEY } from "~/components/t
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { getDashboardCanvasIntegration } from "~/lib/canvas/integration.server";
 import type { CanvasIntegrationPublic } from "~/lib/canvas/schemas";
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { loadDashboardData, type DashboardData } from "~/lib/dashboard/dashboard-data.server";
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import type { User } from "~/lib/auth/types";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     return redirect("/auth/login");

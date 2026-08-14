@@ -12,7 +12,7 @@ const prismaMock = vi.hoisted(() => ({
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/policy.server", () => ({
@@ -25,7 +25,7 @@ import {
   listChats,
   getChatMessages,
 } from "~/lib/chat-history/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getPolicy } from "~/lib/policy.server";
 
 beforeEach(() => {
@@ -69,7 +69,7 @@ describe("resolveChatReadAccess", () => {
     const result = await resolveChatReadAccess({ id: "u1", role: "STUDENT" }, "missing");
 
     expect(result).toBeNull();
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   it("grants the owner access without consulting course access", async () => {
@@ -78,7 +78,7 @@ describe("resolveChatReadAccess", () => {
     const result = await resolveChatReadAccess({ id: "owner-1", role: "STUDENT" }, "chat-1");
 
     expect(result).toEqual({ chat: BASE_CHAT_ROW, isOwner: true, canEdit: true });
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   it("grants ADMIN access without consulting course access", async () => {
@@ -87,7 +87,7 @@ describe("resolveChatReadAccess", () => {
     const result = await resolveChatReadAccess({ id: "other-1", role: "ADMIN" }, "chat-1");
 
     expect(result).toEqual({ chat: BASE_CHAT_ROW, isOwner: false, canEdit: false });
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   it("denies a non-owner, non-admin viewer when the chat has no course", async () => {
@@ -96,12 +96,12 @@ describe("resolveChatReadAccess", () => {
     const result = await resolveChatReadAccess({ id: "other-1", role: "INSTRUCTOR" }, "chat-1");
 
     expect(result).toBeNull();
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
   });
 
   it("denies a course viewer whose access level gates to 'never' (e.g. TA)", async () => {
     prismaMock.chat.findFirst.mockResolvedValue({ ...BASE_CHAT_ROW, courseId: "c1" });
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" } as never,
       access: { level: "ta", rank: 1 },
     });
@@ -115,7 +115,7 @@ describe("resolveChatReadAccess", () => {
 
   it("denies an instructor when the course-chat-view policy flag is off", async () => {
     prismaMock.chat.findFirst.mockResolvedValue({ ...BASE_CHAT_ROW, courseId: "c1" });
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" } as never,
       access: { level: "instructor", rank: 2 },
     });
@@ -130,7 +130,7 @@ describe("resolveChatReadAccess", () => {
 
   it("denies an instructor when the policy is on but the chat owner is not an active student", async () => {
     prismaMock.chat.findFirst.mockResolvedValue({ ...BASE_CHAT_ROW, courseId: "c1" });
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" } as never,
       access: { level: "instructor", rank: 2 },
     });
@@ -145,7 +145,7 @@ describe("resolveChatReadAccess", () => {
   it("grants a unit admin non-editable oversight access when policy is on and owner is an active student", async () => {
     const chatRow = { ...BASE_CHAT_ROW, courseId: "c1" };
     prismaMock.chat.findFirst.mockResolvedValue(chatRow);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" } as never,
       access: { level: "unit", rank: 3 },
     });
@@ -167,7 +167,7 @@ describe("resolveChatReadAccess", () => {
     prismaMock.chat.findFirst.mockResolvedValue(chatRow);
     // Contrived but exercises the 'always' branch of the course-oversight gate
     // (courseChatViewPolicyKey('admin') === 'always') independent of viewer.role.
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" } as never,
       access: { level: "admin", rank: 4 },
     });
