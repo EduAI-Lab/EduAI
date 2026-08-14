@@ -543,7 +543,7 @@ const MIN_METADATA_SCORE = 75;
 /**
  * Picks the best bank `question_metadata` row for a baseline slot (excluding already-used base ids).
  */
-function loadBankMetadataWithVariants({ courseId, client }) {
+export function loadBankMetadataWithVariants({ courseId, client }) {
   return client.questionMetadata.findMany({
     where: { courseId, variants: { some: {} } },
     // Only one representative variant is scored, and only two of its columns are read, so there
@@ -568,7 +568,7 @@ function loadBankMetadataWithVariants({ courseId, client }) {
  * Pure scoring pass over an already-loaded bank, so a multi-slot assembly can fetch the bank once
  * instead of once per slot per exam.
  */
-function selectBestBankMetadata(slotVariant, bankRows, usedBankMetadataIds) {
+export function selectBestBankMetadata(slotVariant, bankRows, usedBankMetadataIds) {
   const slotMeta = slotVariant.questionMetadata;
   if (!slotMeta) return null;
 

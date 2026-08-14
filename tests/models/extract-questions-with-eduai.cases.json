@@ -1,0 +1,79 @@
+[
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "retry-fails",
+    "Chunk2Outcome": "retry-fails",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "no"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "success",
+    "Chunk2Outcome": "retry-fails",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "yes"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "retry-succeeds",
+    "Chunk2Outcome": "retry-fails",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "no"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "success",
+    "Chunk2Outcome": "success",
+    "DuplicateBetweenChunks": "yes",
+    "TopicsPresent": "no"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "retry-succeeds",
+    "Chunk2Outcome": "success",
+    "DuplicateBetweenChunks": "yes",
+    "TopicsPresent": "yes"
+  },
+  {
+    "ChunkCount": "one",
+    "Chunk1Outcome": "retry-fails",
+    "Chunk2Outcome": "success",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "yes"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "success",
+    "Chunk2Outcome": "retry-succeeds",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "no"
+  },
+  {
+    "ChunkCount": "one",
+    "Chunk1Outcome": "retry-succeeds",
+    "Chunk2Outcome": "success",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "no"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "retry-succeeds",
+    "Chunk2Outcome": "retry-succeeds",
+    "DuplicateBetweenChunks": "yes",
+    "TopicsPresent": "yes"
+  },
+  {
+    "ChunkCount": "one",
+    "Chunk1Outcome": "success",
+    "Chunk2Outcome": "success",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "no"
+  },
+  {
+    "ChunkCount": "two",
+    "Chunk1Outcome": "retry-fails",
+    "Chunk2Outcome": "retry-succeeds",
+    "DuplicateBetweenChunks": "no",
+    "TopicsPresent": "yes"
+  }
+]
