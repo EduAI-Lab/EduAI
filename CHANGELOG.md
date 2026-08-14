@@ -2,6 +2,9 @@
 
 ## [Week 15 — August 10–16, 2026]
 
+### Fixed
+
+- [core] fix: `addAdminCourseTA` wrapped `addCourseTA`'s already-shaped `{ ta: {...} }` result a second time, producing a double-nested `{ ok: true, ta: { ta: {...} } }` instead of a flat `ta` — any consumer reading `response.ta.<field>` got `undefined`. Separately, `convertHtmlToMarkdown`'s `<ol>` handler used a function replacer that referenced `$1` (only meaningful in string replacers), so every ordered-list item in DOCX/HTML uploads rendered as the literal text `"$1"` instead of its content. Closes #1447, #1449. (@evanbones, 2026-08-12) — #PR
 
 - [core] fix: Protect authenticated `/api/chat` and `/api/completion` LLM traffic with an atomic Redis sliding-window limit (100 requests per 60 seconds by default), a bounded process-local fallback for Redis outages, per-user and non-secret service identities, and an exact `RATE_LIMITED` 429/positive `Retry-After` contract before provider work. Provider setup, model availability, upstream, timeout, non-streaming, and late-stream failures now share a sanitized `{ error, code, retryable, provider }` contract; AI Tutor recognizes Core application limits without retrying them. Adds Redis integration, route, classification, stream, caller-compatibility, and mutation coverage, plus environment/API documentation. Closes #1113. (@gwan-kib, 2026-08-12) — [#1499](https://github.com/EduAI-Lab/EduAI/pull/1499)
 - [ai-tutor] fix: `/teach` and `/guide` never checked `activity.enableTeachMode`/`enableGuideMode`, so disabling a mode for an activity only hid it client-side — an enrolled student calling the endpoint directly still got a working AI tutoring response. Both routes now 400 when their mode is disabled, mirroring `/custom`'s existing `enableCustomMode` check. Closes #1411. (@evanbones, 2026-08-10) — [#1456](https://github.com/EduAI-Lab/EduAI/pull/1456)
