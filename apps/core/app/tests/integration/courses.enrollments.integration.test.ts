@@ -457,4 +457,73 @@ describe("enrollment management lifecycle (#305)", () => {
       });
     }
   });
+
+  it("INSTRUCTOR add/update denied when instructors.canManageEnrollments is off; ADMIN still ok (#813)", async () => {
+    const { setPolicy, invalidatePolicyCache } = await import("~/lib/policy.server");
+    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } = await import(
+      "../helpers/rbac"
+    );
+    const { action: enrollmentsAction } = await import("~/routes/api/courses.enrollments");
+    const { action: enrollmentIdAction } = await import(
+      "~/routes/api/courses.enrollments.$enrollmentId"
+    );
+
+    const admin = await seedUser({ role: "ADMIN" });
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const student = await seedUser({ role: "STUDENT" });
+    const student2 = await seedUser({ role: "STUDENT" });
+    const course = await seedCourse();
+    await enroll(course.id, instructor.id, "INSTRUCTOR");
+    const existing = await enroll(course.id, student.id, "STUDENT");
+
+    await setPolicy("instructors.canManageEnrollments", false, admin.id);
+
+    try {
+      mockSession(instructor);
+      const deniedAdd = await enrollmentsAction({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: student2.id, role: "STUDENT" }),
+        }),
+        params: { id: course.id },
+        context: {} as never,
+      } as any);
+      expect(deniedAdd.status).toBe(403);
+
+      mockSession(instructor);
+      const deniedPatch = await enrollmentIdAction({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments/${existing.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "TA" }),
+          },
+        ),
+        params: { id: course.id, enrollmentId: existing.id },
+        context: {} as never,
+      } as any);
+      expect(deniedPatch.status).toBe(403);
+
+      mockSession(admin);
+      const adminAdd = await enrollmentsAction({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: student2.id, role: "STUDENT" }),
+        }),
+        params: { id: course.id },
+        context: {} as never,
+      } as any);
+      expect(adminAdd.status).toBe(201);
+    } finally {
+      await setPolicy("instructors.canManageEnrollments", true, admin.id);
+      invalidatePolicyCache();
+      await cleanupRbac({
+        userIds: [admin.id, instructor.id, student.id, student2.id],
+        courseIds: [course.id],
+      });
+    }
+  });
 });
