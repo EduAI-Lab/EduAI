@@ -2,6 +2,22 @@
  * Pure validation and normalization helpers for bulk question approval.
  */
 
+/**
+ * Resolve a course id from its canonical (`courseId`) and legacy (`classId`)
+ * aliases. When both are present they must agree, otherwise the client could
+ * smuggle a course override through the unused alias.
+ */
+function resolveCourseId(courseId, classId) {
+  const hasCourseId = courseId !== undefined && courseId !== null;
+  const hasClassId = classId !== undefined && classId !== null;
+
+  if (hasCourseId && hasClassId && Number(courseId) !== Number(classId)) {
+    return { conflicting: true };
+  }
+
+  return { conflicting: false, value: hasCourseId ? courseId : classId };
+}
+
 /** Validate the request shape and normalize its single top-level course target. */
 export function parseApprovalTarget(body = {}) {
   const { questions, courseId, classId } = body;
@@ -10,7 +26,12 @@ export function parseApprovalTarget(body = {}) {
     return { error: 'Questions array is required' };
   }
 
-  const targetCourseId = Number(courseId ?? classId);
+  const resolved = resolveCourseId(courseId, classId);
+  if (resolved.conflicting) {
+    return { error: 'courseId and classId must match when both are provided' };
+  }
+
+  const targetCourseId = Number(resolved.value);
   if (!Number.isInteger(targetCourseId) || targetCourseId <= 0) {
     return { error: 'Valid courseId is required' };
   }
@@ -27,9 +48,15 @@ export function prepareApprovalQuestions(
   { targetCourseId, createdBy, normalizeTopicId },
 ) {
   for (const question of questions) {
-    const suppliedCourseId = question.courseId ?? question.classId;
-    if (suppliedCourseId !== undefined) {
-      const parsedCourseId = Number(suppliedCourseId);
+    const resolved = resolveCourseId(question.courseId, question.classId);
+    if (resolved.conflicting) {
+      return {
+        error: 'Each question courseId and classId must match when both are provided',
+      };
+    }
+
+    if (resolved.value !== undefined) {
+      const parsedCourseId = Number(resolved.value);
       if (
         !Number.isInteger(parsedCourseId) ||
         parsedCourseId <= 0 ||

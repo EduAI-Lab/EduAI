@@ -53,6 +53,23 @@ describe('parseApprovalTarget', () => {
       targetCourseId: 7,
     });
   });
+
+  it('rejects conflicting courseId and classId targets', () => {
+    const questions = [{ primaryTopicId: 'topic-1' }];
+
+    expect(parseApprovalTarget({ courseId: 12, classId: 13, questions })).toEqual({
+      error: 'courseId and classId must match when both are provided',
+    });
+  });
+
+  it('accepts matching courseId and classId targets', () => {
+    const questions = [{ primaryTopicId: 'topic-1' }];
+
+    expect(parseApprovalTarget({ courseId: '12', classId: 12, questions })).toEqual({
+      questions,
+      targetCourseId: 12,
+    });
+  });
 });
 
 describe('prepareApprovalQuestions', () => {
@@ -150,6 +167,48 @@ describe('prepareApprovalQuestions', () => {
       ),
     ).toEqual({
       error: 'Each question must include a valid primaryTopicId',
+    });
+  });
+
+  it('rejects a question whose courseId and classId conflict', () => {
+    const normalizeTopicIdSpy = vi.fn(normalizeTopicId);
+
+    expect(
+      prepareApprovalQuestions(
+        [{ courseId: 12, classId: 13, primaryTopicId: 'topic-1' }],
+        {
+          targetCourseId: 12,
+          createdBy: 'caller-1',
+          normalizeTopicId: normalizeTopicIdSpy,
+        },
+      ),
+    ).toEqual({
+      error: 'Each question courseId and classId must match when both are provided',
+    });
+    expect(normalizeTopicIdSpy).not.toHaveBeenCalled();
+  });
+
+  it('accepts a question whose courseId and classId match the target', () => {
+    expect(
+      prepareApprovalQuestions(
+        [{ courseId: '12', classId: 12, primaryTopicId: 'topic-1' }],
+        {
+          targetCourseId: 12,
+          createdBy: 'caller-1',
+          normalizeTopicId,
+        },
+      ),
+    ).toEqual({
+      questions: [
+        {
+          description: null,
+          courseId: 12,
+          primaryTopicId: 'topic-1',
+          type: undefined,
+          questionOrder: undefined,
+          createdBy: 'caller-1',
+        },
+      ],
     });
   });
 });
