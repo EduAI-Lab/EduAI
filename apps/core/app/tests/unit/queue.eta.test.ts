@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 describe("getQueueEtaSeconds", () => {
-  it("multiplies the live position by the recent pool mean", async () => {
+  it("uses one worker-sized wave for an idle pool", async () => {
     findMany.mockResolvedValue([
       {
         startedAt: new Date("2026-08-12T00:00:00.000Z"),
@@ -33,7 +33,7 @@ describe("getQueueEtaSeconds", () => {
       },
     ]);
 
-    await expect(getQueueEtaSeconds(job, 2)).resolves.toBe(19);
+    await expect(getQueueEtaSeconds(job, 2)).resolves.toBe(75);
     expect(findMany).toHaveBeenCalledWith({
       where: {
         queueName: "ai-jobs-chat",
@@ -50,7 +50,19 @@ describe("getQueueEtaSeconds", () => {
     });
   });
 
-  it("includes active pool workers in the estimate", async () => {
+  it("uses one worker-sized wave for a partially utilized pool", async () => {
+    findMany.mockResolvedValue([
+      {
+        startedAt: new Date("2026-08-12T00:00:00.000Z"),
+        completedAt: new Date("2026-08-12T00:01:00.000Z"),
+      },
+    ]);
+    count.mockResolvedValue(2);
+
+    await expect(getQueueEtaSeconds(job, 1)).resolves.toBe(60);
+  });
+
+  it("adds another wave when the active pool is saturated", async () => {
     findMany.mockResolvedValue([
       {
         startedAt: new Date("2026-08-12T00:00:00.000Z"),
@@ -59,7 +71,7 @@ describe("getQueueEtaSeconds", () => {
     ]);
     count.mockResolvedValue(8);
 
-    await expect(getQueueEtaSeconds(job, 1)).resolves.toBe(68);
+    await expect(getQueueEtaSeconds(job, 1)).resolves.toBe(120);
   });
 
   it("returns null before the pool has a usable completion sample", async () => {

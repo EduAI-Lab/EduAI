@@ -393,12 +393,13 @@ confirm the id exists.
 ```
 
 **ETA (#917)** is derived, not stored: `etaSeconds ≈ queuePosition × rollingMeanJobDuration(pool) /
-poolConcurrency`.
+worker-sized waves, `ceil((runningCount + queuePosition) / poolConcurrency) × rollingMeanJobDuration(pool)`.
 The rolling mean uses the most recent completed jobs with both `startedAt` and `completedAt` in the
 same persisted pool. The estimate also counts currently `RUNNING` jobs in that pool so a saturated
 worker set is not treated as idle. It is advisory and returns `null` until that pool has a usable
 sample. Position is recomputed from the queue at read time so it decreases as the worker drains the
-pool.
+pool. The duration lookup is backed by the `(queueName, status, completedAt)` index and capped to
+the most recent sample window.
 
 ---
 

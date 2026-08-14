@@ -32,9 +32,11 @@ function meanDurationMs(rows: readonly DurationRow[]): number | null {
 }
 
 /**
- * Estimate the remaining wait in seconds from the queue position and the
- * recent service time of the same persisted pool. This intentionally returns
- * null until the pool has usable observations instead of inventing an ETA.
+ * Estimate time-to-completion in seconds for a pending job. The estimate uses
+ * worker-sized waves: each wave can complete at most `concurrency` jobs, and
+ * every currently running job is conservatively treated as occupying one slot
+ * for the full rolling mean duration. This intentionally returns null until
+ * the pool has usable observations instead of inventing an ETA.
  */
 export async function getQueueEtaSeconds(
   job: EtaJobInput,
@@ -69,11 +71,11 @@ export async function getQueueEtaSeconds(
     if (job.queueName !== QUEUE_CHAT && job.queueName !== QUEUE_HEAVY)
       return null;
     const concurrency = workerConcurrency(job.queueName);
-    // queuePosition includes the pending job itself. Add active jobs so a
-    // saturated pool is not treated as if all workers were idle.
-    return Math.ceil(
-      ((runningCount + queuePosition) * durationMs) / (concurrency * 1000),
-    );
+    // queuePosition includes the pending job itself. Add active jobs so idle,
+    // partially utilized, and saturated pools all use whole worker-sized waves
+    // rather than dividing one job's service time across all workers.
+    const waves = Math.ceil((runningCount + queuePosition) / concurrency);
+    return Math.ceil((waves * durationMs) / 1000);
   } catch (error) {
     // ETA is advisory. A stats read must not make an otherwise valid status
     // response fail when the aggregation query is temporarily unavailable.

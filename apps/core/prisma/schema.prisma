@@ -229,6 +229,7 @@ model AiJob {
   @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
+  @@index([queueName, status, completedAt])
   @@map("ai_jobs")
 }
 
