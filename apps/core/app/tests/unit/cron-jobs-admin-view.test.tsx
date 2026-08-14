@@ -186,11 +186,11 @@ describe("CronJobsAdminView", () => {
       // triggerJob POST
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-1" }) })
       // fetchStatuses GET after trigger
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          headers: { get: () => "application/json" },
-          json: () =>
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: () =>
           Promise.resolve({
             jobs: [
               job({
