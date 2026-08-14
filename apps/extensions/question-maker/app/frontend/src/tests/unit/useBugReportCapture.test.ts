@@ -48,6 +48,22 @@ describe('useBugReportCapture', () => {
     expect(result.current.getCapturedData().screenshot).toBe('data:image/jpeg;base64,MOCK');
   });
 
+  it('starts html2canvas synchronously before the caller can mount the dialog', async () => {
+    let started = false;
+    html2canvas.mockImplementationOnce(async () => {
+      started = true;
+      return { toDataURL };
+    });
+
+    const { result } = renderHook(() => useBugReportCapture(true));
+    const capture = result.current.captureScreenshot();
+
+    expect(started).toBe(true);
+    await act(async () => {
+      await capture;
+    });
+  });
+
   it('is a no-op while disabled', async () => {
     const { result } = renderHook(() => useBugReportCapture(false));
 
@@ -75,8 +91,7 @@ describe('useBugReportCapture', () => {
     await act(async () => {
       first = result.current.captureScreenshot();
       second = result.current.captureScreenshot();
-      // Let both calls run past the `await import('html2canvas')` microtask
-      // so the second sees capturePromiseRef already set, before we resolve it.
+      // Let both calls reach the shared in-flight promise before resolving it.
       await Promise.resolve();
       await Promise.resolve();
     });

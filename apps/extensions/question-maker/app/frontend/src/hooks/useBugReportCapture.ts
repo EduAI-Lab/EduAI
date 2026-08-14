@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import html2canvas from 'html2canvas';
 
 interface ConsoleEntry {
   level: string;
@@ -146,7 +147,6 @@ export function useBugReportCapture(enabled: boolean) {
     let capturePromise!: Promise<void>;
     capturePromise = (async () => {
       try {
-        const html2canvas = (await import('html2canvas')).default;
         const canvas = await html2canvas(document.body, {
           logging: false,
           useCORS: true,
