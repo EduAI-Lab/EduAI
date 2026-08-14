@@ -179,14 +179,18 @@ describe("CronJobsAdminView", () => {
       // Initial shared cron-status refresh on mount.
       .mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
         json: () => Promise.resolve({ jobs: [] }),
       })
       // triggerJob POST
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-1" }) })
       // fetchStatuses GET after trigger
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () =>
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: { get: () => "application/json" },
+          json: () =>
           Promise.resolve({
             jobs: [
               job({
