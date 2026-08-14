@@ -80,6 +80,7 @@ const COURSE: CourseDetail = {
   instructor: { id: "user-instructor", name: "Dr. Instructor", email: "inst@test.com" },
   ragTopK: 4,
   ragSimilarityThreshold: 0.5,
+  courseScopeGuardrailEnabled: false,
 };
 
 const MATERIAL: CourseMaterial = {
@@ -560,6 +561,27 @@ describe("CourseDetailManagerView — staff tab", () => {
 });
 
 describe("CourseDetailManagerView — settings (RAG) tab", () => {
+  it("shows the course-scope toggle off by default and persists it when enabled", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    renderView();
+    clickTab(/settings/i);
+
+    const toggle = screen.getByRole("switch", {
+      name: /restrict course chat to this course/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const [, request] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      courseScopeGuardrailEnabled: true,
+    });
+  });
+
   it("saves RAG search-tuning settings", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();
