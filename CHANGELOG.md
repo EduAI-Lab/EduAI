@@ -10,6 +10,15 @@
 
 - [core] perf: Move the AI-service status poller into a shared `useAiStatus` store that pauses while the tab is hidden and refreshes once on becoming visible, so a backgrounded tab stops issuing provider probes every 60s. Closes #1454. (@abdullahmoh21, 2026-08-18) — [#1562](https://github.com/EduAI-Lab/EduAI/pull/1562)
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
+## [Week 16 — August 17–23, 2026]
+
+### Fixed
+
+- [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-14) — #PR
+
+### Tests
+
+- [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure with a default-off fallback for the course detail route. (@saadtab01, 2026-08-14) — #PR
 
 ## [Week 15 — August 10–16, 2026]
 
