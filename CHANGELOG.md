@@ -14,11 +14,11 @@
 
 ### Fixed
 
-- [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-14) — #PR
+- [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-14) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ### Tests
 
-- [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure with a default-off fallback for the course detail route. (@saadtab01, 2026-08-14) — #PR
+- [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure with a default-off fallback for the course detail route. (@saadtab01, 2026-08-14) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ## [Week 15 — August 10–16, 2026]
 
