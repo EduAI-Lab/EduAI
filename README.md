@@ -280,8 +280,9 @@ A few things worth knowing before you touch the setup:
   the repo has never been swept with `oxfmt --write`, so it currently fails. The
   sweep is a separate PR, landing as one isolated commit recorded in
   `.git-blame-ignore-revs`, once the open-PR queue has drained. Until then
-  `format:check` is deliberately absent from CI. 1579 of 2001 source files
-  would change; `#1276` stays open to hold that sweep and the CI flip.
+  `format:check` is deliberately absent from CI. 1415 of 1768 JavaScript and
+  TypeScript files would change. The sweep and the CI flip are tracked in
+  `#1512`.
 - **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
   the root `prepare` script. Use `git commit --no-verify` to bypass it, or
   `npx lefthook run pre-commit` to run it by hand.
