@@ -405,4 +405,56 @@ describe("enrollment management lifecycle (#305)", () => {
       });
     }
   });
+
+  it("DELETE soft-deactivates a student and hides them from the session roster (#813)", async () => {
+    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } = await import(
+      "../helpers/rbac"
+    );
+    const { action: enrollmentIdAction } = await import(
+      "~/routes/api/courses.enrollments.$enrollmentId"
+    );
+
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const student = await seedUser({ role: "STUDENT" });
+    const course = await seedCourse();
+    await enroll(course.id, instructor.id, "INSTRUCTOR");
+    const studentEnrollment = await enroll(course.id, student.id, "STUDENT");
+
+    try {
+      mockSession(instructor);
+      const deleted = await enrollmentIdAction({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments/${studentEnrollment.id}`,
+          { method: "DELETE" },
+        ),
+        params: { id: course.id, enrollmentId: studentEnrollment.id },
+        context: {} as never,
+      } as any);
+      expect(deleted.status).toBe(204);
+
+      const row = await prisma.enrollment.findUnique({
+        where: { id: studentEnrollment.id },
+      });
+      expect(row).not.toBeNull();
+      expect(row?.isActive).toBe(false);
+
+      mockSession(instructor);
+      const list = await loader({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`),
+        params: { id: course.id },
+        context: {} as never,
+      } as any);
+      expect(list.status).toBe(200);
+      const body = await list.json();
+      expect(body.enrollments.every((e: { studentId: string }) => e.studentId !== student.id)).toBe(
+        true,
+      );
+      expect(body.total).toBe(0);
+    } finally {
+      await cleanupRbac({
+        userIds: [instructor.id, student.id],
+        courseIds: [course.id],
+      });
+    }
+  });
 });
