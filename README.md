@@ -278,13 +278,25 @@ A few things worth knowing before you touch the setup:
   silently skips those three workspaces.
 - **`no-console` is off on purpose.** The server-path policy is `#1277`'s to
   set, via `overrides` in the shared config.
-- **Formatting is not enforced yet.** `format:check` is wired and runnable, but
-  the repo has never been swept with `oxfmt --write`, so it currently fails. The
-  sweep is a separate PR, landing as one isolated commit recorded in
-  `.git-blame-ignore-revs`, once the open-PR queue has drained. Until then
-  `format:check` is deliberately absent from CI. 1441 of 1798 JavaScript and
-  TypeScript files would change. The sweep and the CI flip are tracked in
-  `#1512`.
+- **Formatting is enforced.** The repo was swept with `oxfmt --write` in one
+  isolated commit (1482 files), and `format:check` runs in the
+  `Lint & Typecheck` CI job. The sweep commit is listed in
+  [`.git-blame-ignore-revs`](.git-blame-ignore-revs) so `git blame` skips it;
+  run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once to get the
+  same behaviour locally. GitHub applies the file automatically.
+- **oxfmt is pinned exactly, not with a caret.** It is pre-1.0, so a minor bump
+  can change its output, and a floating range would let a fresh install reformat
+  files the swept tree considers clean — putting CI at odds with what you get
+  locally. Bumping it is a deliberate commit that re-runs the sweep.
+- **oxfmt is not idempotent in a single pass.** During the sweep, some files
+  under `question-maker-backend` still failed `--check` after the first
+  `--write`. If you re-run it wholesale, loop until `--check` is clean rather
+  than trusting one pass.
+- **Do not assert on quote characters in source-text tests.** A few tests read a
+  source file and assert on its literal text; three in
+  `ai-tutor/app/tests/unit/chat-markdown-css-scope.test.ts` pinned single quotes
+  around import specifiers and went red in the sweep. Match with a regex that
+  accepts either quote so the assertion tests the import, not the formatter.
 - **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
   the root `prepare` script. Use `git commit --no-verify` to bypass it, or
   `npx lefthook run pre-commit` to run it by hand.

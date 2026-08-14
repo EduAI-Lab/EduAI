@@ -334,6 +334,11 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
+      # Enforceable only now that the repo has actually been swept (#1512).
+      # oxfmt is pinned to an exact version, so a transitive bump cannot change
+      # the expected output out from under this gate.
+      - name: Format check
+        run: npm run format:check
 
   test:
     name: Unit & Integration Tests
