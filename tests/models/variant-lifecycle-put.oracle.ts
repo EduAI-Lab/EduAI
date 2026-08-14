@@ -17,11 +17,7 @@
  *     own-only edit" invariant (rbac-matrix.md §19, #312), this SAME
  *     ownership check applies to the aiTagOnly path on an already-approved
  *     variant too — a TA who does not own an approved variant must not be
- *     able to retag it either. The handler's aiTagOnly branch does not
- *     actually check ownership (#1413), so the row exercising a non-owner
- *     TA's aiTagOnly request on an approved variant is a known, expected
- *     failure against this oracle until #1413 is fixed (see the test
- *     file's `isKnownDrift`).
+ *     able to retag it either (fixed in #1413/f8779e022).
  */
 
 export type AccessLevel = "ta" | "instructor_plus";

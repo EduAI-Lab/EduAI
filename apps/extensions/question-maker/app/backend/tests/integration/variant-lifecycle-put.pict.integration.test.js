@@ -116,23 +116,6 @@ function buildBody(row) {
   return body;
 }
 
-/**
- * #1413: the aiTagOnly path on an approved variant doesn't check ownership,
- * so a non-owner TA's aiTagOnly request currently succeeds (200) instead of
- * the spec's 403. Not fixed here — asserted as a known, expected failure so
- * a real fix surfaces as a newly-passing (and thus newly-failing `it.fails`)
- * row instead of silently going unnoticed.
- */
-function isKnownDrift(row) {
-  return (
-    row.CurrentIsDraft === 'approved' &&
-    row.FieldChangeKind === 'onlyAiTag' &&
-    row.RequestedIsDraft === 'absent' &&
-    row.AccessLevel === 'ta' &&
-    row.Ownership === 'other'
-  );
-}
-
 function setupRow(row) {
   const isDraft = row.CurrentIsDraft === 'draft';
   const createdBy = row.AccessLevel === 'ta' ? (row.Ownership === 'own' ? TA_USER.id : 'someone-else') : 'anyone';
@@ -153,7 +136,7 @@ function setupRow(row) {
   if (row.AccessLevel === 'ta') {
     authAs(TA_USER, 'TA');
   } else {
-    authAs(INSTRUCTOR_PLUS_USER, null);
+    authAs(INSTRUCTOR_PLUS_USER, 'INSTRUCTOR');
   }
 
   return buildBody(row);
@@ -172,7 +155,6 @@ describePictRoute('variant-lifecycle-put', {
   path: '/api/questions/variants/42',
   setupRow,
   oracle: variantLifecyclePutOracle,
-  isKnownDrift,
   verify,
   label: (row) => `${row.AccessLevel}/${row.CurrentIsDraft}/${row.Ownership}/${row.RequestedIsDraft}/${row.FieldChangeKind}`,
 });
