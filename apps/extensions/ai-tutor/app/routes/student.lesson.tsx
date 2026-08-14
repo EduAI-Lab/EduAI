@@ -29,6 +29,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconSparkles } from '@tabler/icons-react';
+import { toast } from 'sonner';
 import {
   Button,
   Dialog,
@@ -58,6 +59,16 @@ import { splitTitle } from '~/lib/course-title';
 import { accentForCourse } from '~/lib/course-display';
 import { KNOWLEDGE_LEVELS } from '~/lib/knowledge-levels';
 import { cn } from '~/lib/utils';
+
+/**
+ * Activities the player holds at once (#1207). Comfortably larger than any
+ * realistic lesson, so the append path is a correctness backstop rather than
+ * something a normal student ever triggers — while still bounding the read.
+ */
+const PLAYER_ACTIVITY_PAGE_SIZE = 50;
+
+/** Fetch the next page once the student is this close to the loaded end. */
+const PLAYER_PREFETCH_MARGIN = 5;
 
 type StudentFeedbackState = {
   rating: number | null;
@@ -104,38 +115,44 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid lesson id', { status: 400 });
   }
 
-  const [lesson, activities] = await Promise.all([
+  const [lesson, activitiesPage] = await Promise.all([
     api.lessonById(lessonId) as Promise<Lesson>,
-    // #1043: activities endpoint returns the pagination envelope. The lesson
-    // player index-walks this array, so it must be the complete ordered set —
-    // unwrap the bounded page (client default 200, well above any lesson's
-    // activity count).
-    api.activitiesForLesson(lessonId).then((r) => r.data),
+    // #1207: the player index-walks this array, so it needs the rows in order —
+    // but not all of them up front. It loads the first page and appends the
+    // next as the student approaches the end (see `ensureActivitiesLoaded`),
+    // which is correct at any lesson size instead of merely "usually enough".
+    api.activitiesForLesson(lessonId, { page: 1, pageSize: PLAYER_ACTIVITY_PAGE_SIZE }),
   ]);
 
   let module: ModuleDetail | null = null;
   let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3") from sibling positions, so
-  // lessons whose titles carry no number still follow the decimal system.
+  // Structural "module.lesson" order (e.g. "1.3"), so lessons whose titles
+  // carry no number still follow the decimal system.
+  //
+  // #1207: served by the server now. This used to be two `findIndex` walks over
+  // the full sibling module and lesson lists — which quietly produced no order
+  // text at all once either list exceeded one page.
   let orderText: string | undefined;
   if (lesson.moduleId) {
     module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
     if (module?.courseOfferingId) {
-      const [courseData, siblingModules, siblingLessons] = await Promise.all([
+      const [courseData, context] = await Promise.all([
         api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
-        api.lessonsForModule(lesson.moduleId).then((r) => r.data),
+        api.lessonContext(lessonId),
       ]);
       course = courseData;
-      const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
-      const lessonIndex = siblingLessons.findIndex((l) => l.id === lesson.id) + 1;
-      if (moduleOrder > 0 && lessonIndex > 0) {
-        orderText = `${moduleOrder}.${lessonIndex}`;
-      }
+      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
     }
   }
 
-  return { course, module, lesson, activities, orderText };
+  return {
+    course,
+    module,
+    lesson,
+    activities: activitiesPage.data,
+    activitiesTotal: activitiesPage.total,
+    orderText,
+  };
 }
 
 /**
@@ -148,9 +165,11 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const { user } = useLocalUser();
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
-  const { course, module, lesson, activities, orderText } = loaderData;
+  const { course, module, lesson, activities, activitiesTotal, orderText } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [orderedActivities, setOrderedActivities] = useState<Activity[]>(activities ?? []);
+  // Highest activity page appended so far (#1207); the loader supplies page 1.
+  const [loadedPage, setLoadedPage] = useState(1);
   const [idx, setIdx] = useState(0);
   const [mcq, setMcq] = useState<number | null>(null);
   const [text, setText] = useState('');
@@ -169,6 +188,27 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   >({});
   const chatRef = useRef<StudentAiChatHandle>(null);
 
+  /**
+   * Append the next page of activities as the student approaches the end of
+   * what's loaded (#1207).
+   *
+   * The player walks by index, so the array only has to stay ahead of `idx` —
+   * not hold the entire lesson. Prefetching a page ahead of the boundary keeps
+   * the "Next" button from ever stalling on a network round trip. Concurrent
+   * calls are guarded by a ref because two rapid Next presses can both cross
+   * the threshold before the first fetch resolves.
+   */
+  const loadingMoreRef = useRef(false);
+  const [activitiesLoadFailed, setActivitiesLoadFailed] = useState(false);
+  /**
+   * Which lesson the buffer above belongs to. The prev/next lesson links
+   * navigate without unmounting this route, so a page fetch can still be in
+   * flight when the loader swaps in another lesson's activities — and its
+   * response would otherwise append foreign rows onto the new lesson (the
+   * id-dedupe below can't catch them, the ids don't collide).
+   */
+  const lessonIdRef = useRef(lesson.id);
+
   // React 19 derived-state-during-render pattern: when the loader returns a
   // new activities array (e.g. on navigation back to this route), reset the
   // local mutable copy used for completion-status overlays. This avoids the
@@ -177,10 +217,63 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   if (activities !== prevActivities) {
     setPrevActivities(activities);
     setOrderedActivities(activities ?? []);
+    setLoadedPage(1);
+    // Orphan any in-flight fetch and release its latch, so the new lesson can
+    // prefetch immediately instead of waiting on a response it will discard.
+    lessonIdRef.current = lesson.id;
+    loadingMoreRef.current = false;
+    setActivitiesLoadFailed(false);
   }
 
+  const ensureActivitiesLoaded = async (targetIdx: number) => {
+    if (loadingMoreRef.current) return;
+    if (orderedActivities.length >= activitiesTotal) return;
+    if (targetIdx < orderedActivities.length - PLAYER_PREFETCH_MARGIN) return;
+
+    const lessonId = lesson.id;
+    loadingMoreRef.current = true;
+    try {
+      const nextPage = loadedPage + 1;
+      const result = await api.activitiesForLesson(lessonId, {
+        page: nextPage,
+        pageSize: PLAYER_ACTIVITY_PAGE_SIZE,
+      });
+      if (lessonIdRef.current !== lessonId) return;
+      setOrderedActivities((prev) => {
+        // Guard against a double-append if this resolved twice for one page.
+        const seen = new Set(prev.map((a) => a.id));
+        return [...prev, ...result.data.filter((a) => !seen.has(a.id))];
+      });
+      setLoadedPage(nextPage);
+      setActivitiesLoadFailed(false);
+    } catch (error) {
+      if (lessonIdRef.current !== lessonId) return;
+      console.error('Failed to load more activities', error);
+      // Surface it: without this the student just hits an invisible wall at the
+      // page boundary. `canNext` stops at the loaded edge while this is set, and
+      // the next move (Prev, then Next) re-runs the effect and retries.
+      setActivitiesLoadFailed(true);
+      toast.error("Couldn't load the rest of this lesson. Check your connection and try again.");
+    } finally {
+      // Only the fetch that still owns the latch may release it — an orphaned
+      // one would otherwise clear the latch the new lesson's fetch is holding.
+      if (lessonIdRef.current === lessonId) loadingMoreRef.current = false;
+    }
+  };
+
+  // Keep the buffer topped up whenever the student moves.
+  useEffect(() => {
+    void ensureActivitiesLoaded(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, orderedActivities.length, activitiesTotal]);
+
   const activity = orderedActivities[idx];
-  const canNext = idx < orderedActivities.length - 1;
+  // `total`, not the loaded length — otherwise "Next" would grey out at the
+  // page boundary as if the lesson had ended. But never step past what's loaded
+  // once an append has failed: `orderedActivities[idx]` would be undefined and
+  // the player would render a blank question card with no way out.
+  const canNext =
+    idx < activitiesTotal - 1 && (idx < orderedActivities.length - 1 || !activitiesLoadFailed);
   const canPrev = idx > 0;
 
   const questionChunks = useMemo(
@@ -461,17 +554,19 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     resetForNavigation();
   }, [resetForNavigation]);
 
+  // Clamped to the lesson's true length, not the loaded slice — the next page
+  // is fetched as the index approaches the boundary (#1207).
   const goNext = useCallback(() => {
-    setIdx((i) => Math.min(orderedActivities.length - 1, i + 1));
+    setIdx((i) => Math.min(activitiesTotal - 1, i + 1));
     resetForNavigation();
-  }, [orderedActivities.length, resetForNavigation]);
+  }, [activitiesTotal, resetForNavigation]);
 
   const activityView = (
     <LessonActivityView
       activity={activity}
       questionChunks={questionChunks}
       questionNumber={idx + 1}
-      questionCount={orderedActivities.length}
+      questionCount={activitiesTotal}
       accentColor={accentColor}
       mcq={mcq}
       onSelectMcq={setMcq}
@@ -526,12 +621,13 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           }
           accentColor={accentColor}
           stats={
-            orderedActivities.length > 0
+            activitiesTotal > 0
               ? [
                   {
-                    label: `of ${orderedActivities.length} question${
-                      orderedActivities.length === 1 ? '' : 's'
-                    }`,
+                    // The lesson total, matching the "Question N of M" counter
+                    // on the card below — the loaded slice would disagree with
+                    // it, and its denominator would grow as pages append.
+                    label: `of ${activitiesTotal} question${activitiesTotal === 1 ? '' : 's'}`,
                     value: idx + 1,
                     accent: true,
                   },
@@ -539,12 +635,12 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
               : undefined
           }
           progress={
-            orderedActivities.length > 0
+            activitiesTotal > 0
               ? {
                   completed: orderedActivities.filter(
                     (a) => a.completionStatus === 'correct',
                   ).length,
-                  total: orderedActivities.length,
+                  total: activitiesTotal,
                 }
               : null
           }

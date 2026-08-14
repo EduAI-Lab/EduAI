@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  UBC_STUDENT_NUMBER_PATTERN,
+  UBC_STUDENT_NUMBER_MESSAGE,
+} from "./student-number";
 
 function normalizeCanvasUrl(url: string): string {
   return url.replace(/\/+$/, "");
@@ -59,14 +63,6 @@ export type SyncCanvasCoursesResult = {
   unsynced: UnsyncCanvasCourseResult[];
   errors: Array<{ canvasId: string; message: string }>;
 };
-
-/** UBC student numbers are exactly 8 numeric digits (#818). */
-export const UBC_STUDENT_NUMBER_PATTERN = /^\d{8}$/;
-export const UBC_STUDENT_NUMBER_MESSAGE = "Student number must be 8 digits";
-
-export function isValidUbcStudentNumber(value: string): boolean {
-  return UBC_STUDENT_NUMBER_PATTERN.test(value.trim());
-}
 
 export const LinkRosterSchema = z.object({
   studentNumber: z

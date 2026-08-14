@@ -123,6 +123,22 @@ describe('progressCalculation service', () => {
       expect(result).toEqual({ completed: 1, total: 1, percentage: 100 });
     });
 
+    // #1187: completion is sticky — a correct submission that is later
+    // overwritten by an incorrect re-attempt must still count as completed,
+    // so progress percentage is monotonically non-decreasing.
+    it('stays completed after a later incorrect re-attempt (sticky completion)', async () => {
+      const a1 = await createActivity(seed.lesson.id);
+      const a2 = await createActivity(seed.lesson.id);
+
+      await submitAnswer(a1.id, studentId, 1, true);
+      await submitAnswer(a1.id, studentId, 2, false);
+      await submitAnswer(a2.id, studentId, 1, false);
+
+      const result = await calculateCourseProgress(seed.course.id, studentId);
+
+      expect(result).toEqual({ completed: 1, total: 2, percentage: 50 });
+    });
+
     it('returns zeroes for null/undefined courseId or userId', async () => {
       const r1 = await calculateCourseProgress(null, studentId);
       expect(r1).toEqual({ completed: 0, total: 0, percentage: 0 });
@@ -162,6 +178,25 @@ describe('progressCalculation service', () => {
 
       expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
     });
+
+    // #1187: previously calculateModuleProgress never checked its own
+    // module's isPublished flag, so an unpublished module's progress was
+    // still computed with a nonzero denominator even though
+    // calculateCourseProgress excludes that same module entirely.
+    it('excludes activities when the module itself is unpublished', async () => {
+      const unpubModule = await prisma.module.create({
+        data: { title: 'Draft Module', position: 1, isPublished: false, courseOfferingId: seed.course.id },
+      });
+      const lesson = await prisma.lesson.create({
+        data: { title: 'Lesson', position: 0, isPublished: true, moduleId: unpubModule.id },
+      });
+      const a1 = await createActivity(lesson.id);
+      await submitAnswer(a1.id, studentId, 1, true);
+
+      const result = await calculateModuleProgress(unpubModule.id, studentId);
+
+      expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -169,7 +204,7 @@ describe('progressCalculation service', () => {
   // ══════════════════════════════════════════════════════════════════════
 
   describe('calculateLessonProgress', () => {
-    it('counts all activities in the lesson (no published filter)', async () => {
+    it('counts all activities in a published lesson', async () => {
       const a1 = await createActivity(seed.lesson.id);
       const a2 = await createActivity(seed.lesson.id);
 
@@ -191,6 +226,39 @@ describe('progressCalculation service', () => {
 
       // 1/3 = 0.3333... -> Math.round(33.33) = 33
       expect(result).toEqual({ completed: 1, total: 3, percentage: 33 });
+    });
+
+    // #1187: calculateLessonProgress previously had no publish filter at
+    // all, so an unpublished lesson (or a lesson whose module was
+    // unpublished) still contributed a nonzero denominator here even
+    // though the same activity is excluded from calculateCourseProgress
+    // and calculateModuleProgress. All three now share one predicate:
+    // lesson.isPublished AND lesson.module.isPublished.
+    it('excludes activities when the lesson itself is unpublished', async () => {
+      const unpubLesson = await prisma.lesson.create({
+        data: { title: 'Draft Lesson', position: 1, isPublished: false, moduleId: seed.module.id },
+      });
+      const a1 = await createActivity(unpubLesson.id);
+      await submitAnswer(a1.id, studentId, 1, true);
+
+      const result = await calculateLessonProgress(unpubLesson.id, studentId);
+
+      expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
+    });
+
+    it('excludes activities when the containing module is unpublished', async () => {
+      const unpubModule = await prisma.module.create({
+        data: { title: 'Draft Module', position: 1, isPublished: false, courseOfferingId: seed.course.id },
+      });
+      const publishedLessonInUnpubModule = await prisma.lesson.create({
+        data: { title: 'Lesson', position: 0, isPublished: true, moduleId: unpubModule.id },
+      });
+      const a1 = await createActivity(publishedLessonInUnpubModule.id);
+      await submitAnswer(a1.id, studentId, 1, true);
+
+      const result = await calculateLessonProgress(publishedLessonInUnpubModule.id, studentId);
+
+      expect(result).toEqual({ completed: 0, total: 0, percentage: 0 });
     });
 
     it('returns zeroes for null lessonId', async () => {
@@ -222,13 +290,28 @@ describe('progressCalculation service', () => {
       expect(statuses.get(a3.id)).toBe('not_attempted');
     });
 
-    it('uses the latest submission (highest attemptNumber)', async () => {
+    it('is correct once any attempt is correct, incorrect-then-correct', async () => {
       const activity = await createActivity(seed.lesson.id);
 
       // First attempt: incorrect
       await submitAnswer(activity.id, studentId, 1, false);
       // Second attempt: correct
       await submitAnswer(activity.id, studentId, 2, true);
+
+      const statuses = await getActivityCompletionStatuses([activity.id], studentId);
+
+      expect(statuses.get(activity.id)).toBe('correct');
+    });
+
+    // #1187: completion is sticky, not latest-attempt — once an activity has
+    // ever been answered correctly, a later wrong re-attempt must not undo
+    // it. This is the behavior change from #1187 (previously this returned
+    // 'incorrect', since only the latest submission mattered).
+    it('stays correct once any attempt is correct, correct-then-incorrect', async () => {
+      const activity = await createActivity(seed.lesson.id);
+
+      await submitAnswer(activity.id, studentId, 1, true);
+      await submitAnswer(activity.id, studentId, 2, false);
 
       const statuses = await getActivityCompletionStatuses([activity.id], studentId);
 

@@ -33,4 +33,7 @@ export type SyncCanvasMaterialsResult = {
         message: string;
     }>;
 };
+export declare const MODEL_SIZE_RANK_PATTERNS: ReadonlyArray<readonly [RegExp, number]>;
+/** Rank a model id/label string by parameter-size token (higher = larger). */
+export declare function modelSizeRankFromText(text: string | null | undefined): number;
 //# sourceMappingURL=index.d.ts.map

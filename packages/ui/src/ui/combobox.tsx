@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { IconCheck, IconChevronDown } from "@tabler/icons-react"
 import { Button } from "./button"
 import {
@@ -33,6 +34,27 @@ export interface ComboboxProps {
   emptyText?: string
   disabled?: boolean
   className?: string
+  /**
+   * Controlled search term (#1207). Supply this together with `filter={false}`
+   * to drive a SERVER-side search: the consumer owns the term, debounces it,
+   * refetches, and passes the results back as `options`.
+   *
+   * Leave both unset for the default behaviour — an internal term filtering the
+   * `options` already in memory, which is correct only when `options` is the
+   * complete candidate set.
+   */
+  searchValue?: string
+  onSearchChange?: (search: string) => void
+  /**
+   * Whether to filter `options` in-memory by the search term. Defaults to true.
+   * Set false when the options are already a server-filtered page — filtering
+   * again would hide rows the server deliberately returned.
+   */
+  filter?: boolean
+  /** Show a loading row instead of `emptyText` while results are in flight. */
+  loading?: boolean
+  /** Rendered under the list — used for a "showing N of M" truncation note. */
+  footer?: ReactNode
 }
 
 export function Combobox({
@@ -44,15 +66,29 @@ export function Combobox({
   emptyText = "No option found.",
   disabled = false,
   className,
+  searchValue,
+  onSearchChange,
+  filter = true,
+  loading = false,
+  footer,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
+  const [internalSearch, setInternalSearch] = useState("")
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Controlled when the consumer supplies a term (server-side search);
+  // uncontrolled otherwise, preserving the original in-memory behaviour.
+  const controlled = searchValue !== undefined
+  const search = controlled ? searchValue : internalSearch
+  const setSearch = (next: string) => {
+    if (!controlled) setInternalSearch(next)
+    onSearchChange?.(next)
+  }
 
   const selected = options.find((o) => o.value === value)
 
   const filtered =
-    search.trim() === ""
+    !filter || search.trim() === ""
       ? options
       : options.filter((o) => {
           const q = search.toLowerCase()
@@ -66,7 +102,10 @@ export function Combobox({
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue === value ? null : selectedValue)
     setOpen(false)
-    setSearch("")
+    // Only the internal term is reset. Clearing a CONTROLLED term would make
+    // the consumer refetch an unfiltered page that may not contain the row just
+    // selected, leaving the trigger with no label to render for its own value.
+    setInternalSearch("")
   }
 
   // Close on outside click / Escape. A plain positioned panel (not a Radix
@@ -78,13 +117,13 @@ export function Combobox({
     const handleMouse = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false)
-        setSearch("")
+        setInternalSearch("")
       }
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false)
-        setSearch("")
+        setInternalSearch("")
       }
     }
     document.addEventListener("mousedown", handleMouse)
@@ -123,7 +162,13 @@ export function Combobox({
               autoFocus
             />
             <CommandList>
-              <CommandEmpty>{emptyText}</CommandEmpty>
+              {loading ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  Searching…
+                </div>
+              ) : (
+                <CommandEmpty>{emptyText}</CommandEmpty>
+              )}
               <CommandGroup>
                 {filtered.map((o) => (
                   <CommandItem
@@ -154,6 +199,9 @@ export function Combobox({
                 ))}
               </CommandGroup>
             </CommandList>
+            {footer ? (
+              <div className="border-t px-3 py-2 text-xs text-muted-foreground">{footer}</div>
+            ) : null}
           </Command>
         </div>
       )}

@@ -21,7 +21,7 @@ import {
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
@@ -29,6 +29,7 @@ import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
+import { ensureDefaultBank } from "~/lib/question-banks/server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -39,6 +40,7 @@ import {
   type UpdateCourseTopicInput,
   type DeleteCourseTopicInput,
 } from "./schemas";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function parseCreateCourseBody(
   request: Request,
@@ -248,7 +250,7 @@ export async function getCourses(request: Request) {
     if (serviceKeyGuard) return serviceKeyGuard;
     caller = { kind: "serviceKey" };
   } else {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -350,7 +352,7 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
@@ -433,6 +435,8 @@ export async function createCourse(request: Request) {
       })),
     });
 
+    await ensureDefaultBank(created.id, tx);
+
     return created;
   });
 
@@ -444,7 +448,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -461,7 +465,7 @@ export async function updateCourse(request: Request, courseId: string) {
     return validationErrorFromZod(result.error);
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     user,
     courseId,
   );
@@ -583,7 +587,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -591,7 +595,7 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     session.user,
     courseId,
   );
@@ -691,7 +695,7 @@ export async function setPublishState(
   }
 
   // User session path (admin UI / direct API access)
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -699,7 +703,7 @@ export async function setPublishState(
     });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
+  const { course, access } = await resolveCourseAccessGate(
     session.user,
     courseId,
   );
@@ -771,6 +775,74 @@ export async function getAccessibleCourseCodes(user: {
     select: { code: true },
   });
   return courses.map((course) => course.code);
+}
+
+/** A course row plus the caller's enrollment role on it, as `listCoursesForUser` returns. */
+type CourseWithCallerRole = Prisma.CourseGetPayload<object> & {
+  callerEnrollmentRole: Prisma.EnrollmentGetPayload<object>["role"] | null;
+};
+
+/**
+ * Data-only course listing for in-process server callers (the dashboard loader)
+ * that already hold the session user and need the same access-scoped page +
+ * `total` GET /api/courses returns, without an HTTP round trip.
+ *
+ * Mirrors the session path of {@link getCourses}: `buildCourseListFilter` access
+ * scoping, an optional `isActive` narrowing, and the per-row caller-enrollment
+ * annotation. It deliberately omits the `?ids=`/`?search=`/`includeDeleted`
+ * lookup surfaces and the service-key path — those are HTTP-only concerns the
+ * dashboard never uses. Pass `countOnly: true` for a `total`-only read: it skips
+ * the page fetch and the enrollment annotation entirely and returns `courses: []`.
+ */
+export async function listCoursesForUser(
+  // Same access-scoping input `buildCourseListFilter` takes (a session user
+  // satisfies it) — deliberately its loose `RbacUser`, not `rbac/types`'.
+  user: Parameters<typeof buildCourseListFilter>[0],
+  opts: { page?: number; pageSize?: number; isActive?: boolean; countOnly?: boolean } = {},
+) {
+  const { page = 1, pageSize = 25, isActive, countOnly = false } = opts;
+
+  const base = await buildCourseListFilter(user);
+  const where: Prisma.CourseWhereInput =
+    isActive === undefined ? base : { AND: [base, { isActive }] };
+
+  if (countOnly) {
+    return { courses: [] as CourseWithCallerRole[], total: await prisma.course.count({ where }) };
+  }
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.course.count({ where }),
+    prisma.course.findMany({
+      where,
+      orderBy: { code: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  // No rows means no enrollment annotation to build — an `in: []` lookup would
+  // round-trip to Postgres only to return nothing.
+  if (rows.length === 0) {
+    return { courses: rows.map((course) => ({ ...course, callerEnrollmentRole: null })), total };
+  }
+
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: {
+      userId: user.id,
+      isActive: true,
+      courseId: { in: rows.map((course) => course.id) },
+    },
+    select: { courseId: true, role: true },
+  });
+  const roleByCourseId = new Map(
+    enrollmentRows.map((row) => [row.courseId, row.role]),
+  );
+  const courses = rows.map((course) => ({
+    ...course,
+    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
+  }));
+
+  return { courses, total };
 }
 
 /**

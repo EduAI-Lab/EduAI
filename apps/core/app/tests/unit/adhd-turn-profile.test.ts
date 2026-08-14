@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   getProfileRequirements,
   resolveAdhdTurnProfile,
+  userRequestedStepRecall,
   ADHD_GREETING_WORD_CAP,
 } from "~/lib/ai/adhd-turn-profile";
 import {
@@ -156,5 +157,36 @@ describe("getProfileRequirements", () => {
 
   it("uses a tighter cap for greetings", () => {
     expect(getProfileRequirements("greeting").wordCap).toBe(ADHD_GREETING_WORD_CAP);
+  });
+});
+
+describe("userRequestedStepRecall", () => {
+  it("detects the AI-2 facilitator-sheet turn 3 (#1245)", () => {
+    expect(
+      userRequestedStepRecall({
+        userText:
+          "Go back to step 2 of the dish-washing procedure only—ignore the tax topic for this reply.",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe(true);
+  });
+
+  it("detects other step-number phrasings with prior context", () => {
+    expect(
+      userRequestedStepRecall({ userText: "Can you expand step 3?", priorAssistantText: PRIOR_TUTOR }),
+    ).toBe(true);
+    expect(
+      userRequestedStepRecall({ userText: "What about step 2?", priorAssistantText: PRIOR_TUTOR }),
+    ).toBe(true);
+  });
+
+  it("is false without a prior assistant turn", () => {
+    expect(userRequestedStepRecall({ userText: "Go back to step 2" })).toBe(false);
+  });
+
+  it("is false when the message does not reference a numbered step", () => {
+    expect(
+      userRequestedStepRecall({ userText: "Go back to the plan", priorAssistantText: PRIOR_TUTOR }),
+    ).toBe(false);
   });
 });

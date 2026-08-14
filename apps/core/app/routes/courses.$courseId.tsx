@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import { Link, redirect, useLoaderData, useRevalidator } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
-import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CourseDetailManagerView } from '~/components/courses/course-detail-manager-view'
@@ -25,9 +24,10 @@ import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import type { RbacUser } from '~/lib/rbac'
 import { courseHasAiConfig } from '~/lib/ai/response-style-tags'
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request)
   if (!session?.user) return redirect('/auth/login')
 
   const courseId = params.courseId
@@ -75,7 +75,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // TA/student candidates are no longer preloaded here (#1042) — the platform-wide
   // STUDENT list used to grow unbounded with total user count. The manager view's
-  // pickers now search on demand via /api/courses/:id/student-candidates.
+  // Candidates are searched on demand through the bounded, paginated users
+  // API; do not preload the platform-wide STUDENT list here.
   const instructors = canManageStaff
     ? await prisma.user.findMany({
         where: { role: 'INSTRUCTOR', isActive: true },

@@ -208,6 +208,7 @@ describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
     const policy = deferred<boolean>();
     const capabilities = deferred<{
       supportsTools: boolean;
+      supportsImages: boolean;
       maxTokens: null;
       name: null;
     }>();
@@ -239,7 +240,7 @@ describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
     });
 
     policy.resolve(false);
-    capabilities.resolve({ supportsTools: false, maxTokens: null, name: null });
+    capabilities.resolve({ supportsTools: false, supportsImages: false, maxTokens: null, name: null });
     rag.resolve([
       { content: "Late work loses 10%.", similarity: 0.72, materialTitle: "Syllabus" },
     ]);

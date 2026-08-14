@@ -129,10 +129,92 @@ describe("createQuestion", () => {
     expect(createData.courseId).toBe(COURSE_ID);
     expect(createData.topicId).toBe(TOPIC_ID);
     expect(createData.content).toBe("What is X?");
+    expect(createData.selectAllThatApply).toBe(false);
+    expect(createData.correctAnswers).toBe(Prisma.JsonNull);
 
     expect(db.questionSecondaryTopic.createMany).toHaveBeenCalledWith({
       data: [{ questionId: QUESTION_ID, topicId: SEC_TOPIC_ID }],
     });
+  });
+
+  it("accepts selectAllThatApply and correctAnswers and passes them to question.create", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+      db.question.create.mockResolvedValue({ id: QUESTION_ID });
+      return fn(db);
+    });
+
+    const result = await createQuestion(
+      {
+        ...baseBody,
+        choices: [
+          { letter: "A", text: "One" },
+          { letter: "B", text: "Two" },
+          { letter: "C", text: "Three" },
+        ],
+        selectAllThatApply: true,
+        correctAnswers: ["C", "A"],
+        answer: "Z",
+      },
+      CREATOR,
+    );
+
+    expect(result).toEqual({ id: QUESTION_ID });
+    const createData = db.question.create.mock.calls[0][0].data;
+    expect(createData.selectAllThatApply).toBe(true);
+    expect(createData.correctAnswers).toEqual(["A", "C"]);
+    expect(createData.answer).toBe("A");
+  });
+
+  it("returns VALIDATION_ERROR when correctAnswers contains an empty string", async () => {
+    const result = await createQuestion(
+      { ...baseBody, selectAllThatApply: true, correctAnswers: ["A", ""] },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields).toHaveProperty("correctAnswers");
+    expect(db.course.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns VALIDATION_ERROR when selectAllThatApply has no correctAnswers", async () => {
+    const result = await createQuestion(
+      { ...baseBody, selectAllThatApply: true, correctAnswers: [] },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields).toHaveProperty("correctAnswers");
+  });
+
+  it("returns VALIDATION_ERROR when correctAnswers letters are not in choices", async () => {
+    const result = await createQuestion(
+      {
+        ...baseBody,
+        selectAllThatApply: true,
+        correctAnswers: ["A", "Z"],
+      },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields.correctAnswers).toMatch(/not in choices/i);
+  });
+
+  it("returns VALIDATION_ERROR when selectAllThatApply is set on a non-MCQ type", async () => {
+    const result = await createQuestion(
+      {
+        ...baseBody,
+        type: "SA",
+        selectAllThatApply: true,
+        correctAnswers: ["A"],
+      },
+      CREATOR,
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields).toHaveProperty("selectAllThatApply");
   });
 
   it("returns VALIDATION_ERROR for a malformed body (missing content, bad enum)", async () => {

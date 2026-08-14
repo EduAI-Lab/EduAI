@@ -15,6 +15,7 @@ import suggestedPromptRoutes from './routes/suggested-prompts.js';
 import bugReportRoutes from './routes/bug-reports.js';
 import aiStatusRoutes from './routes/ai-status.js';
 import internalRoutes from './routes/internal.js';
+import { corsOptions } from './config/cors.js';
 import { prisma } from './config/database.js';
 
 function isAllowedAdminPath(path) {
@@ -50,7 +51,7 @@ function isAllowedAdminPath(path) {
 export async function createApp(options = {}) {
   const app = express();
 
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(cors(corsOptions));
 
   // JSON parser for our own routes
   app.use(express.json());

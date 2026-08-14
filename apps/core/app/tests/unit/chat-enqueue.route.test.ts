@@ -207,13 +207,30 @@ describe("/api/chat enqueue branch (#914/#915)", () => {
     expect(streamText).not.toHaveBeenCalled();
   });
 
-  it("maps a queue/Redis outage to 502, never to 429 or a client error", async () => {
+  it("maps a queue/Redis outage to 503, never to 429 or a client error (#1112)", async () => {
+    // "Redis" match in the error message is what httpStatusForEnqueueError's
+    // isInfrastructureError() keys off — this must never fall through to a
+    // generic 500/502 that masks a retryable infra outage as an app failure.
     vi.mocked(enqueueQuestionGeneration).mockRejectedValue(new Error("redis down"));
 
     const res = await action(makeRequest(enqueueBody()));
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(503);
     expect(res.headers.get("Retry-After")).toBeNull();
+    await expect(res.json()).resolves.toEqual(
+      expect.objectContaining({ error: "Queue unavailable" }),
+    );
+  });
+
+  it("maps a non-infra enqueue failure to 500, not 503", async () => {
+    // A bug in job construction (not an outage) must not be reported as a
+    // retryable infra failure — that would mislead a client into retrying
+    // something that will fail identically every time.
+    vi.mocked(enqueueQuestionGeneration).mockRejectedValue(new Error("unexpected null payload"));
+
+    const res = await action(makeRequest(enqueueBody()));
+
+    expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual(
       expect.objectContaining({ error: "Failed to enqueue AI job" }),
     );

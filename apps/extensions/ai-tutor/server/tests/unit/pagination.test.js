@@ -4,6 +4,8 @@ import {
   parseSearchParam,
   parseFilterParam,
   paginated,
+  searchWhere,
+  activitySearchWhere,
   PaginationError,
   MAX_PAGE_SIZE,
   MAX_PAGE,
@@ -173,20 +175,27 @@ describe('paginated', () => {
 });
 
 describe('parseSearchParam', () => {
-  it('returns undefined when the param is absent', () => {
+  it('returns undefined when the param is absent, so callers omit the filter entirely', () => {
     expect(parseSearchParam(reqWith({}))).toBeUndefined();
   });
 
-  it('treats an empty or whitespace-only value as absent', () => {
+  it('treats an empty or whitespace-only term as absent', () => {
     expect(parseSearchParam(reqWith({ search: '' }))).toBeUndefined();
     expect(parseSearchParam(reqWith({ search: '   ' }))).toBeUndefined();
+    expect(parseSearchParam(reqWith({ search: '\t\n ' }))).toBeUndefined();
   });
 
-  it('trims the query', () => {
-    expect(parseSearchParam(reqWith({ search: '  cosc 111  ' }))).toBe('cosc 111');
+  it('trims surrounding whitespace', () => {
+    expect(parseSearchParam(reqWith({ search: '  graphs  ' }))).toBe('graphs');
   });
 
-  it('preserves inner whitespace and case', () => {
+  it('collapses internal whitespace so spacing variants are one query (#1207)', () => {
+    expect(parseSearchParam(reqWith({ search: 'binary   search   trees' }))).toBe(
+      'binary search trees',
+    );
+  });
+
+  it('preserves single-spaced inner whitespace and case', () => {
     expect(parseSearchParam(reqWith({ search: 'Intro To Computing' }))).toBe('Intro To Computing');
   });
 
@@ -212,12 +221,20 @@ describe('parseSearchParam', () => {
     } catch (e) {
       expect(e).toBeInstanceOf(PaginationError);
       expect(e.code).toBe('SEARCH_TOO_LONG');
+      expect(e.status).toBe(400);
     }
   });
 
   it('accepts a query exactly at the limit', () => {
     const atLimit = 'x'.repeat(MAX_SEARCH_LENGTH);
     expect(parseSearchParam(reqWith({ search: atLimit }))).toBe(atLimit);
+  });
+
+  it('honours a caller-supplied maxLength', () => {
+    expect(() => parseSearchParam(reqWith({ search: 'abcdef' }), { maxLength: 3 })).toThrow(
+      PaginationError,
+    );
+    expect(parseSearchParam(reqWith({ search: 'abc' }), { maxLength: 3 })).toBe('abc');
   });
 });
 
@@ -277,5 +294,93 @@ describe('parseFilterParam', () => {
       expect(e).toBeInstanceOf(PaginationError);
       expect(e.code).toBe('FILTER_INVALID');
     }
+  });
+});
+
+describe('searchWhere (#1207)', () => {
+  it('returns null with no term, so the caller skips the AND entirely', () => {
+    expect(searchWhere(undefined, ['title'])).toBeNull();
+    expect(searchWhere(null, ['title'])).toBeNull();
+    expect(searchWhere('', ['title'])).toBeNull();
+  });
+
+  it('returns null when no fields are searchable', () => {
+    expect(searchWhere('graphs', [])).toBeNull();
+  });
+
+  it('builds a case-insensitive contains across each field', () => {
+    expect(searchWhere('graphs', ['title', 'description'])).toEqual({
+      OR: [
+        { title: { contains: 'graphs', mode: 'insensitive' } },
+        { description: { contains: 'graphs', mode: 'insensitive' } },
+      ],
+    });
+  });
+
+  it('expands a dotted path into a nested relation filter', () => {
+    expect(searchWhere('week 1', ['lesson.module.title'])).toEqual({
+      OR: [
+        {
+          lesson: {
+            module: { title: { contains: 'week 1', mode: 'insensitive' } },
+          },
+        },
+      ],
+    });
+  });
+
+  it('mixes plain fields and relation paths in one OR', () => {
+    const where = searchWhere('x', ['title', 'lesson.title']);
+    expect(where.OR).toHaveLength(2);
+    expect(where.OR[0]).toEqual({ title: { contains: 'x', mode: 'insensitive' } });
+    expect(where.OR[1]).toEqual({ lesson: { title: { contains: 'x', mode: 'insensitive' } } });
+  });
+});
+
+/** Every JSON-path clause in an activity fragment, as `[path, term]` pairs. */
+const jsonClauses = (where, unnest = (clause) => clause) =>
+  where.OR.map(unnest)
+    .filter((clause) => clause.config)
+    .map((clause) => [clause.config.path.join('.'), clause.config.string_contains]);
+
+describe('activitySearchWhere (#1207)', () => {
+  it('returns null with no term', () => {
+    expect(activitySearchWhere(undefined)).toBeNull();
+    expect(activitySearchWhere(null)).toBeNull();
+    expect(activitySearchWhere('')).toBeNull();
+  });
+
+  it('searches the legacy config.prompt as well as config.question', () => {
+    // `mapActivity` reads `config.question ?? config.prompt ?? instructionsMd`,
+    // so a row that only has `prompt` displays question text. Omitting the
+    // clause made that text permanently unsearchable.
+    const paths = new Set(jsonClauses(activitySearchWhere('heap')).map(([path]) => path));
+    expect(paths).toEqual(new Set(['question', 'prompt']));
+  });
+
+  it('tries the same casing set against both JSON fields', () => {
+    const clauses = jsonClauses(activitySearchWhere('spanning tree'));
+    const byPath = (path) => clauses.filter(([p]) => p === path).map(([, term]) => term);
+    // `string_contains` has no `mode`, so casing is brute-forced; both fields
+    // have to get the same treatment or `prompt` matches strictly less.
+    expect(byPath('prompt')).toEqual(byPath('question'));
+    expect(byPath('question')).toEqual(
+      expect.arrayContaining(['spanning tree', 'SPANNING TREE', 'Spanning tree', 'Spanning Tree']),
+    );
+  });
+
+  it('still matches the real columns case-insensitively', () => {
+    const where = activitySearchWhere('graphs');
+    expect(where.OR).toContainEqual({ title: { contains: 'graphs', mode: 'insensitive' } });
+    expect(where.OR).toContainEqual({
+      instructionsMd: { contains: 'graphs', mode: 'insensitive' },
+    });
+  });
+
+  it('nests every clause under the relation prefix', () => {
+    const where = activitySearchWhere('heap', ['activity']);
+    expect(where.OR.every((clause) => 'activity' in clause)).toBe(true);
+    const paths = new Set(jsonClauses(where, (clause) => clause.activity).map(([path]) => path));
+    expect(paths).toEqual(new Set(['question', 'prompt']));
   });
 });

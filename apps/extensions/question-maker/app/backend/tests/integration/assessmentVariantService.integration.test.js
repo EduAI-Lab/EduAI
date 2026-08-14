@@ -548,8 +548,8 @@ describeDb('assessmentVariantService (integration)', () => {
 
     it('ROLLBACK: rolls back all created assessments when variant selection fails for a matched slot', async () => {
       // Reference: 1 slot with only a DRAFT variant placed in the section.
-      // findBestBankMetadataForSlot will find this question as a bank candidate (same topic/type → high score),
-      // but pickVariantForSlot with includeDrafts=false will return null since the only variant is a draft.
+      // selectBestBankMetadata will find this question as a bank candidate (same topic/type → high score),
+      // but pickFromPool with includeDrafts=false will return null since the only variant is a draft.
       // This triggers the "No variant available" throw → the entire transaction must roll back.
       const assessment = await makeAssessment('Draft Only Ref');
       const section = await prisma.assessmentSections.create({ data: { assessmentId: assessment.id, name: 'Main', position: 0 } });

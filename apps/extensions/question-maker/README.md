@@ -75,6 +75,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 | `OPENAI_API_KEY` | No | Same |
 | `DEEPSEEK_API_KEY` | No | Same |
 | `DEFAULT_NUM_QUESTIONS`, `MAX_QUESTIONS` | No | AI batch limits |
+| `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
 | `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
 | `VITE_API_URL` | No | Default `http://localhost:8000` |

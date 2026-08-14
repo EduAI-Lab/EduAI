@@ -30,6 +30,8 @@ export type AdhdResponseMetrics = {
   noUrgency: boolean;
   /** True when the reply ends with a Sources footer (citation presence). */
   hasSources: boolean;
+  /** True when a real "### Step ladder" section (heading + numbered steps) is present. */
+  stepLadder: boolean;
 };
 
 /**
@@ -70,6 +72,40 @@ export function detectUrgencyTerms(text: string): string[] {
 
 const SOURCES_MARKER_RE = /^\s*(?:\*\*sources\*?\*?|#{1,6}\s*sources\b|sources:)/i;
 const NEXT_LINE_PARAGRAPH_RE = /^\s*\*\*next\?\*\*/i;
+
+const STEP_LADDER_HEADING_RE = /(?:^|\n)\s*(?:#{1,3}\s*)?\*{0,2}step ladder\*{0,2}\s*(?:\n|$)/i;
+const NUMBERED_LIST_ITEM_RE = /^\s*\d+\.\s+\S/m;
+// The next markdown heading or policy anchor (Next?/Sources) after the Step
+// ladder heading — marks where the Step ladder section ends, so a numbered
+// item elsewhere in the reply can't be credited to an empty section (#1245).
+const NEXT_SECTION_BOUNDARY_RE = /\n\s*(?:#{1,3}\s*\S|\*\*(?:Next\?|Sources)\*\*)/i;
+
+/**
+ * Return the body of the "Step ladder" section (everything between the
+ * heading and the next heading/policy anchor), or null when there is no
+ * Step ladder heading at all. Shared by `hasStepLadderSection` and the
+ * step-recall copy-paste check in adhd-oversight.ts (#1245).
+ */
+export function extractStepLadderSection(text: string): string | null {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return null;
+  const headingMatch = STEP_LADDER_HEADING_RE.exec(trimmed);
+  if (!headingMatch) return null;
+  const rest = trimmed.slice(headingMatch.index + headingMatch[0].length);
+  const boundaryMatch = NEXT_SECTION_BOUNDARY_RE.exec(rest);
+  return (boundaryMatch ? rest.slice(0, boundaryMatch.index) : rest).trim();
+}
+
+/**
+ * Detect a real "Step ladder" section: the heading plus at least one
+ * numbered step INSIDE that section — not just the bare words "step ladder"
+ * mentioned in prose, and not a numbered item that happens to live elsewhere
+ * in the reply while the Step ladder section itself is empty (#1245).
+ */
+export function hasStepLadderSection(text: string): boolean {
+  const section = extractStepLadderSection(text);
+  return section !== null && NUMBERED_LIST_ITEM_RE.test(section);
+}
 
 /**
  * Detect a Sources footer (e.g. "**Sources**", "### Sources", "Sources:").
@@ -120,8 +156,18 @@ export function computeAdhdResponseMetrics(
 
   const noUrgency = detectUrgencyTerms(trimmed).length === 0;
   const hasSources = hasSourcesFooter(trimmed);
+  const stepLadder = hasStepLadderSection(trimmed);
 
-  return { wordCount, topSummary, nextLine, underCap, oneTopic: null, noUrgency, hasSources };
+  return {
+    wordCount,
+    topSummary,
+    nextLine,
+    underCap,
+    oneTopic: null,
+    noUrgency,
+    hasSources,
+    stepLadder,
+  };
 }
 
 export function isStructuralCompliancePass(metrics: AdhdResponseMetrics): boolean {
@@ -146,6 +192,44 @@ export function resolveAdhdResponseWordCap(userText?: string): number {
     : ADHD_TUTORING_WORD_CAP;
 }
 
+/**
+ * A proper redirect is a short acknowledge-and-offer, e.g. "That's a
+ * separate question from dishwashing. My goal is to keep explanations
+ * clear and focused on one topic at a time. Want to come back to the
+ * dishwashing steps first, or switch now?" (3 sentences). Cap sentence
+ * count so a reply that still has the required cue/offer phrasing but
+ * also slips in an explanation of the off-topic ask (#1313 scenario
+ * topic bleed) gets rejected instead of accepted on phrase-match alone.
+ */
+export const MAX_REDIRECT_SENTENCES = 3;
+
+export function countSentences(text: string): number {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return 0;
+  const matches = trimmed.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g);
+  return matches ? matches.filter((s) => s.trim().length > 0).length : 0;
+}
+
+/**
+ * Phrasing that states/defines a fact rather than just naming a topic, e.g.
+ * "marginal tax brackets mean ..." or "... taxed at 10%". A reply can name
+ * the second topic once (in the ack or the offer question) and still stay
+ * at or under MAX_REDIRECT_SENTENCES — the sentence cap alone does not
+ * catch a short reply that answers the off-topic ask in a single sentence
+ * (#1421 review: "a three-sentence reply can still answer the second
+ * topic and pass this check"). Intentionally blunt, matching
+ * ADHD_URGENCY_TERMS above — stating a fact in English almost always uses
+ * a defining/causal connector or a percentage, so this catches the
+ * concrete bleed case without needing to know what the second topic is.
+ */
+const REDIRECT_BLEED_MARKERS_RE =
+  /\b(?:means?|mean that|refers? to|works? by|because|due to|results? in|leads? to|causes?|defined? as|such as|for example|for instance|e\.g\.|i\.e\.|in other words|which means)\b|\d+%/i;
+
+/** Return true when the text states/defines a fact rather than just naming a topic. */
+export function hasRedirectBleedContent(text: string): boolean {
+  return REDIRECT_BLEED_MARKERS_RE.test((text ?? "").trim());
+}
+
 /** §5 drift redirect: one-topic boundary without Top summary scaffolding. */
 export function isRedirectTemplatePass(
   metrics: AdhdResponseMetrics,
@@ -159,7 +243,9 @@ export function isRedirectTemplatePass(
   const hasForwardOffer =
     trimmed.endsWith("?") &&
     /want to|would you like|or switch|come back|ready to/i.test(trimmed);
-  return hasRedirectCue || hasForwardOffer;
+  if (!(hasRedirectCue || hasForwardOffer)) return false;
+  if (countSentences(trimmed) > MAX_REDIRECT_SENTENCES) return false;
+  return !hasRedirectBleedContent(trimmed);
 }
 
 /** Profile-conditional structural pass (Approach A). */

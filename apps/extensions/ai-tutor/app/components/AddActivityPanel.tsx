@@ -77,7 +77,14 @@ export default function AddActivityPanel({
   onActivityCreated,
   onCancel,
 }: AddActivityPanelProps) {
-  const { topics, loading: loadingTopics, error: topicsError } = useCourseTopicsContext();
+  const {
+    topics,
+    total: topicsTotal,
+    loading: loadingTopics,
+    error: topicsError,
+    loadMore: loadMoreTopics,
+    loadingMore: loadingMoreTopics,
+  } = useCourseTopicsContext();
   const [type, setType] = useState<'MCQ' | 'SHORT_TEXT'>('MCQ');
   const [question, setQuestion] = useState('');
   const [choices, setChoices] = useState<string[]>(['', '', '', '']);
@@ -372,6 +379,21 @@ export default function AddActivityPanel({
               </SelectContent>
             </Select>
             {topicSelectionError && <p className="text-xs text-destructive">{topicSelectionError}</p>}
+            {/* #1207: the topic list is paged. Without this the tail of a large
+                course's topics would be unreachable and unmentioned. */}
+            {topics.length < topicsTotal && (
+              <p className="text-xs text-muted-foreground">
+                Showing {topics.length} of {topicsTotal} topics.{' '}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline underline-offset-2 disabled:opacity-60"
+                  onClick={() => void loadMoreTopics()}
+                  disabled={loadingMoreTopics}
+                >
+                  {loadingMoreTopics ? 'Loading…' : 'Load more'}
+                </button>
+              </p>
+            )}
             {!loadingTopics && !topicsError && topics.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 No topics on this course yet. Open the course page and use{' '}

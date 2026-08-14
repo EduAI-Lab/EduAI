@@ -6,6 +6,14 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   resolve: {
     alias: {
+      // Subpath exports must precede the barrel: vite's alias matcher treats
+      // '@eduai/ui' as also matching '@eduai/ui/<anything>', so the barrel alias
+      // would rewrite subpaths to `.../src/index.ts/<subpath>`. Insertion order
+      // is what keeps that from happening.
+      '@eduai/ui/math-markdown': path.resolve(
+        __dirname,
+        '../../../packages/ui/src/lib/math-markdown.ts',
+      ),
       '@eduai/ui': path.resolve(__dirname, '../../../packages/ui/src/index.ts'),
     },
   },

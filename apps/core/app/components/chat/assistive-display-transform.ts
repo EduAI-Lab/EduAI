@@ -41,7 +41,8 @@ export function transformAssistiveDisplayCopy(content: string): string {
   return relabelAssistiveHeadings(reordered);
 }
 
-function relabelAssistiveHeadings(content: string): string {
+/** Progressive mid-stream heading relabel — safe without full section reorder. */
+export function relabelAssistiveHeadings(content: string): string {
   return content
     .replace(/\*\*Top summary\*\*/gi, "**TLDR**")
     .replace(/\*\*Next\?\*\*/g, "**Continue**")

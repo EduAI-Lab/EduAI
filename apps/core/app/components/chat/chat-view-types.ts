@@ -14,6 +14,25 @@ export type ChatCourseOption = {
   code: string;
 };
 
+/** Minimal message shape for live chat + in-flight tool/progress detection. */
+export type ChatViewMessage = {
+  id: string;
+  role: string;
+  content: string | { text?: string } | Array<{ type?: string; text?: string }>;
+  parts?: Array<{
+    type?: string;
+    text?: string;
+    toolInvocation?: {
+      toolName?: string;
+      state?: string;
+      toolCallId?: string;
+      args?: unknown;
+    };
+    toolName?: string;
+    state?: string;
+  } | null>;
+};
+
 export type ChatViewSharedProps = {
   chatModels: ChatModelOption[];
   selectedModel: string;
@@ -22,12 +41,14 @@ export type ChatViewSharedProps = {
   selectedCourseCode: string | null;
   setSelectedCourseCode: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
-  messages: Array<{ id: string; role: string; content: string }>;
+  messages: ChatViewMessage[];
   input: string;
   isLoading: boolean;
   adhdAssist: boolean;
   assistive: boolean;
   onAssistiveChange: (value: boolean) => void;
+  /** True while the latest response is being re-generated for the toggled Assist mode (#1246). */
+  assistBusy?: boolean;
   focusMode: boolean;
   onFocusModeChange: (value: boolean) => void;
   systemPrompt: string | null;
@@ -39,6 +60,9 @@ export type ChatViewSharedProps = {
   onSelectPrompt: (prompt: string) => void;
   isStudentWithCourseChat?: boolean;
   disabledReason?: string;
+  cappedMessageIds?: Set<string>;
+  onContinue?: (messageId: string) => void;
+
   /** Registry ids from X-Routed-Model, keyed by assistant message id. */
   routedModelByMessageId?: Record<string, string>;
   /** In-flight assistant bubble before onFinish assigns message id. */

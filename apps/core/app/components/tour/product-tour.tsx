@@ -122,10 +122,22 @@ export function ProductTour({
       seen = true; // If we can't read storage, don't nag.
     }
     if (!seen) {
-      const t = setTimeout(() => {
+      // Start on the first idle tick so the auto-tour never competes with the
+      // page's initial content paint (LCP) — the dashboard now SSRs its data
+      // (#1220), so the stat cards should win LCP, not this popover. Fall back
+      // to a short timeout where requestIdleCallback is unavailable.
+      const start = () => {
         startedRef.current = true;
         setActive(true);
-      }, 600);
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        // Call on `window` (not a detached reference) — a bare `ric(start)`
+        // invokes the native method with no receiver and throws
+        // "Illegal invocation" in Chromium/Firefox.
+        const id = window.requestIdleCallback(start, { timeout: 2000 });
+        return () => window.cancelIdleCallback?.(id);
+      }
+      const t = setTimeout(start, 600);
       return () => clearTimeout(t);
     }
   }, [searchParams, navigate, storageKey]);

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { ChatMessage, coerceMessageContent } from "~/components/chat/chat-message";
+import { fireEvent, render, screen} from "@testing-library/react";
+import {
+  ChatMessage,
+  coerceMessageContent,
+} from "~/components/chat/chat-message";
 import type { Message } from "ai";
 
 beforeAll(() => {
@@ -67,7 +70,10 @@ describe("ChatMessage — AI message", () => {
 
   it("renders a copy button", () => {
     render(<ChatMessage message={aiMessage} />);
-    expect(screen.getByRole("button")).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: /copy/i }),
+    ).toBeInTheDocument();
   });
 
   it("marks AI message content as a reading surface", () => {
@@ -254,6 +260,51 @@ describe("ChatMessage — streaming", () => {
     render(<ChatMessage message={streamingMessage} isStreaming={true} />);
     expect(screen.getByText("Partial response...")).toBeInTheDocument();
   });
+
+  it("progressively relabels Assist headings mid-stream without waiting for Next? (#1171)", () => {
+    const partialAssist: Message = {
+      ...aiMessage,
+      content: "**Top summary**\n- Only half so far",
+    };
+    render(
+      <ChatMessage
+        message={partialAssist}
+        isStreaming
+        assistiveDisplay
+      />,
+    );
+    // Progressive relabel — no final-frame snap waiting for Next?.
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Top summary/i)).not.toBeInTheDocument();
+  });
+
+  it("relabels Next?-only redirect turns mid-stream (#1171)", () => {
+    const redirect: Message = {
+      ...aiMessage,
+      content: "**Next?** Want to try a different angle?",
+    };
+    render(
+      <ChatMessage message={redirect} isStreaming assistiveDisplay />,
+    );
+    expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*Next\?/i)).not.toBeInTheDocument();
+  });
+
+  it("applies full Assist reorder when a complete dump arrives while streaming", () => {
+    const completeAssist: Message = {
+      ...aiMessage,
+      content: "**Top summary**\n- Point\n\n**Next?** Want to continue?",
+    };
+    render(
+      <ChatMessage
+        message={completeAssist}
+        isStreaming
+        assistiveDisplay
+      />,
+    );
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+    expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -282,6 +333,7 @@ describe("coerceMessageContent", () => {
       { type: "text", text: "Hello" },
       { type: "text", text: "World" },
     ];
+
     expect(coerceMessageContent(parts)).toBe("Hello\nWorld");
   });
 
@@ -290,17 +342,83 @@ describe("coerceMessageContent", () => {
       { type: "tool-invocation", toolInvocation: {} },
       { type: "text", text: "Only this" },
     ];
+
     expect(coerceMessageContent(parts)).toBe("Only this");
   });
 
   it("falls back to JSON.stringify for an unrecognised object", () => {
     const obj = { someField: 42 };
+
     expect(coerceMessageContent(obj)).toBe(JSON.stringify(obj));
   });
 
   it("never returns a value that would render as [object Object]", () => {
     const result = coerceMessageContent({ role: "assistant" });
+
     expect(typeof result).toBe("string");
     expect(result).not.toBe("[object Object]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Continue affordance
+// ---------------------------------------------------------------------------
+
+describe("ChatMessage — Continue affordance", () => {
+  it("shows Continue when requested", () => {
+    const onContinue = vi.fn();
+
+    render(
+      <ChatMessage
+        message={aiMessage}
+        showContinue
+        onContinue={onContinue}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Continue" }),
+    ).toBeInTheDocument();
+  });
+
+  it("calls onContinue when clicked", () => {
+    const onContinue = vi.fn();
+
+    render(
+      <ChatMessage
+        message={aiMessage}
+        showContinue
+        onContinue={onContinue}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue" }),
+    );
+
+    expect(onContinue).toHaveBeenCalledOnce();
+  });
+
+  it("does not show Continue by default", () => {
+    render(<ChatMessage message={aiMessage} />);
+
+    expect(
+      screen.queryByRole("button", { name: "Continue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables Continue while loading", () => {
+    render(
+      <ChatMessage
+        message={aiMessage}
+        showContinue
+        onContinue={vi.fn()}
+        continueDisabled
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Continue" }),
+    ).toBeDisabled();
   });
 });

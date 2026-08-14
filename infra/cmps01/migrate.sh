@@ -10,6 +10,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# shellcheck source=lib/check-example-secrets.sh
+source "${SCRIPT_DIR}/lib/check-example-secrets.sh"
+
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+# Reject unset/empty/example secrets before any docker stop/run (#1115).
+# Otherwise a bad CMPS01_INTERNAL_KEY still tears down and recreates vLLM before
+# deploy-edge-proxy.sh fails closed. CMPS01_INTERNAL_ALLOW_IPS gets the same
+# early check — it used to only be validated inside deploy-edge-proxy.sh at
+# Step 3, well after Step 1/2 had already stopped and recreated containers.
+check_cmps01_internal_key || exit 1
+check_cmps01_allow_ips || exit 1
+
 echo "=== Step 1: stop old containers ==="
 docker stop eduai-vllm eduai-vllm-t3 2>/dev/null || true
 docker rm eduai-vllm eduai-vllm-t3 2>/dev/null || true
@@ -59,27 +77,13 @@ wait_for_model() {
 wait_for_model "http://127.0.0.1:18001" "eduai-vllm"
 wait_for_model "http://127.0.0.1:18002" "eduai-vllm-t3"
 
-echo "=== Step 3: start LiteLLM proxy on :8001 ==="
-docker compose up -d
-
-echo "Waiting for proxy ..."
-for i in $(seq 1 20); do
-  if curl -sf http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 3
-done
-
-echo "=== Step 4: verify ==="
-echo "Backends:"
-curl -s http://127.0.0.1:18001/v1/models | jq -r '.data[].id' | sed 's/^/  7B: /'
-curl -s http://127.0.0.1:18002/v1/models | jq -r '.data[].id' | sed 's/^/  32B: /'
-
-echo "Proxy (both models):"
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq -r '.data[].id' | sed 's/^/  /'
+echo "=== Step 3: start LiteLLM + nginx edge via deploy-edge-proxy.sh ==="
+# Renders LiteLLM master_key from CMPS01_INTERNAL_KEY and rejects example secrets (#1115).
+./deploy-edge-proxy.sh
 
 echo ""
 echo "Done. Next on s378:"
 echo '  VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"'
-echo '  VLLM_API_KEY="vllm-local"'
+echo '  CMPS01_INTERNAL_KEY=<same as cmps01 .env>'
+echo '  VLLM_API_KEY=<same as CMPS01_INTERNAL_KEY>'
 echo "  restart dev server, npm run vllm:smoke, register models in Admin → AI Models"

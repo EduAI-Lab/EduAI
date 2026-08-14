@@ -8,6 +8,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { resolveSmokeApiKey } from "./lib/vllm-api-key.mjs";
 
 function loadEnvFile() {
   const envPath = resolve(process.cwd(), ".env");
@@ -48,7 +49,7 @@ function serverIdFromUrl(url) {
 
 loadEnvFile();
 
-const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+const apiKey = resolveSmokeApiKey();
 const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
 const expectedModels = parseCommaList(
   process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen2.5-7b-instruct,qwen2.5-32b-instruct",
@@ -104,8 +105,18 @@ async function main() {
     console.error(
       "VLLM_FLEET_CHAT_URLS not set. Add to apps/core/.env:\n" +
         '  VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"\n' +
-        '  VLLM_API_KEY="vllm-local"\n' +
-        '  VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"',
+        '  VLLM_API_KEY="<same as CMPS01_INTERNAL_KEY on cmps01>"\n' +
+        '  VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"\n' +
+        "  # local/dev only may omit VLLM_API_KEY (defaults to vllm-local);" +
+        " production requires an explicit key",
+    );
+    process.exit(1);
+  }
+
+  if (!apiKey) {
+    console.error(
+      "VLLM_API_KEY is required in production (no vllm-local fallback).\n" +
+        "Set it to the same value as CMPS01_INTERNAL_KEY / LiteLLM master_key.",
     );
     process.exit(1);
   }

@@ -61,6 +61,7 @@ echo "  Starting infrastructure..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 docker compose -f "$COMPOSE_FILE" up -d \
   eduai-test-db \
+  eduai-test-redis \
   ai-tutor-server-test-db \
   ai-tutor-frontend-test-db \
   question-maker-test-db

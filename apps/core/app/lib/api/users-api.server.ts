@@ -1,6 +1,5 @@
 import prisma from "~/lib/prisma.server";
 import type { Prisma, UserRole } from "@prisma/client";
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
@@ -17,6 +16,7 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import {
   paginatedResponse,
@@ -26,6 +26,7 @@ import {
   unpagedResponse,
   type Pagination,
 } from "~/lib/pagination.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const USER_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
 
@@ -77,9 +78,23 @@ export async function handleUsersApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
-      if (!session?.user || session.user.role !== "ADMIN") {
+      const session = apiKeySession ?? (await getRequestSession(request));
+      if (!session?.user) {
         logAdminDenied(session?.user ?? null);
+        return apiError(403, "Forbidden");
+      }
+
+      // The enrollment picker reuses this paginated endpoint, but only within
+      // a course the caller can manage. Ordinary user-list reads remain ADMIN
+      // only; `courseId` enables a narrowly scoped candidate search.
+      const courseId = url.searchParams.get("courseId")?.trim() || null;
+      let isCourseManager = false;
+      if (courseId && session.user.role !== "ADMIN") {
+        const { course, access } = await resolveCourseAccessGate(session.user, courseId);
+        isCourseManager = Boolean(course && access && access.rank >= 2);
+      }
+      if (session.user.role !== "ADMIN" && !isCourseManager) {
+        logAdminDenied(session.user);
         return apiError(403, "Forbidden");
       }
 
@@ -126,11 +141,62 @@ export async function handleUsersApiRequest(request: Request) {
         where.isActive = isActiveParam === "true";
       }
 
+      if (courseId) {
+        // This mode is constrained to the picker contract so course managers
+        // cannot turn it into a platform-wide user directory.
+        if (
+          roleFilter.length !== 1 ||
+          roleFilter[0] !== "STUDENT" ||
+          isActiveParam !== "true"
+        ) {
+          return apiError(400, "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
+        }
+
+        const exclude = url.searchParams.get("exclude");
+        if (exclude !== "enrolled" && exclude !== "ta") {
+          return apiError(400, "COURSE_CANDIDATES_EXCLUDE_REQUIRED");
+        }
+        where.enrollments = {
+          none:
+            exclude === "ta"
+              ? { courseId, role: "TA", isActive: true }
+              : { courseId, isActive: true },
+        };
+      }
+
       let pagination: Pagination | null = null;
       if (!idsResult.ids) {
         const paginationResult = parsePaginationParams(url.searchParams);
         if ("response" in paginationResult) return paginationResult.response;
         pagination = paginationResult.pagination;
+      }
+
+      // `courseId` requests are the enrollment-picker candidate search, not the
+      // admin directory: they must never run the admin-shaped query (platform
+      // counts, taCourseIds, authorizedUnits, relation counts) at all, even to
+      // discard it afterward. Branch here, before any Prisma call is built.
+      if (courseId) {
+        const candidateSelect = {
+          select: { id: true, name: true, email: true },
+        } satisfies Prisma.UserFindManyArgs;
+
+        const [total, users] = pagination
+          ? await prisma.$transaction([
+              prisma.user.count({ where }),
+              prisma.user.findMany({
+                ...candidateSelect,
+                where,
+                orderBy,
+                skip: pagination.skip,
+                take: pagination.take,
+              }),
+            ])
+          : await (async () => {
+              const rows = await prisma.user.findMany({ ...candidateSelect, where, orderBy });
+              return [rows.length, rows] as const;
+            })();
+
+        return pagination ? paginatedResponse(users, total, pagination) : unpagedResponse(users);
       }
 
       const userSelect = {
@@ -219,7 +285,7 @@ export async function handleUsersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -239,7 +305,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -524,7 +590,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

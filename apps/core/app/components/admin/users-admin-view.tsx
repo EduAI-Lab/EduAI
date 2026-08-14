@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
-import { UserChatHistoryDialog } from "~/components/admin/user-chat-history-dialog";
 import { UsersTable } from "~/components/admin/users-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
 import type {
@@ -11,6 +10,15 @@ import type {
 } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
 import type { UsersQuery, UserStats } from "~/hooks/api/use-users";
+
+// Only mounted when an admin opens a user's chat history, and it pulls the heavy
+// chat-message chunk (streamdown + shiki). Load it on open so the users admin
+// page's initial bundle doesn't carry it (#1223).
+const UserChatHistoryDialog = lazy(() =>
+  import("~/components/admin/user-chat-history-dialog").then((m) => ({
+    default: m.UserChatHistoryDialog,
+  })),
+);
 
 /** Upper bound on the course picker's page; matches the API's max pageSize. */
 const COURSE_PICKER_PAGE_SIZE = 200;
@@ -168,12 +176,14 @@ export function UsersAdminView({
       />
 
       {historyUser && (
-        <UserChatHistoryDialog
-          open={!!historyUser}
-          onOpenChange={(open) => !open && setHistoryUser(null)}
-          userId={historyUser.id}
-          userName={historyUser.name}
-        />
+        <Suspense fallback={null}>
+          <UserChatHistoryDialog
+            open={!!historyUser}
+            onOpenChange={(open) => !open && setHistoryUser(null)}
+            userId={historyUser.id}
+            userName={historyUser.name}
+          />
+        </Suspense>
       )}
     </div>
   );

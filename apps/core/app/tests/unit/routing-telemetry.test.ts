@@ -169,4 +169,44 @@ describe("persistAiInteractionTelemetry", () => {
 
     await expect(persistAiInteractionTelemetry(baseParams)).resolves.toBeUndefined();
   });
+
+  it("persists the fleet serverId when provided", async () => {
+    await persistAiInteractionTelemetry({ ...baseParams, serverId: "cmps01" });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serverId: "cmps01" }),
+      }),
+    );
+  });
+
+  it("persists a null serverId when the turn was not fleet-routed", async () => {
+    await persistAiInteractionTelemetry(baseParams);
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serverId: null }),
+      }),
+    );
+  });
+
+  it("persists the owning chatId when provided (#1351 — distinct chat counts)", async () => {
+    await persistAiInteractionTelemetry({ ...baseParams, chatId: "chat_1" });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ chatId: "chat_1" }),
+      }),
+    );
+  });
+
+  it("persists a null chatId when the turn has no owning chat (e.g. a worker/background completion)", async () => {
+    await persistAiInteractionTelemetry(baseParams);
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ chatId: null }),
+      }),
+    );
+  });
 });

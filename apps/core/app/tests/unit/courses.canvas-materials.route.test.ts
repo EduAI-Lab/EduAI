@@ -5,7 +5,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/materials.server", () => ({
@@ -21,7 +21,7 @@ vi.mock("~/lib/canvas/materials.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { CanvasStoredCredentialsError } from "~/lib/canvas/integration.server";
 import { discoverCanvasMaterialsForCourse } from "~/lib/canvas/materials.server";
 import { loader } from "~/routes/api/courses.canvas-materials.$";
@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "INSTRUCTOR" },
   } as never);
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: { id: "core-course-1" },
     access: { level: "instructor", rank: 2 },
   } as never);

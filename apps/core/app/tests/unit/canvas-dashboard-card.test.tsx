@@ -10,10 +10,13 @@ vi.mock("~/lib/canvas/client", () => ({
   listCanvasCourses: vi.fn().mockResolvedValue([]),
 }));
 
-function renderCard(disabled = false) {
+function renderCard(
+  disabled = false,
+  props: Partial<React.ComponentProps<typeof CanvasDashboardCard>> = {},
+) {
   const router = createMemoryRouter(
     [
-      { path: "/", element: <CanvasDashboardCard disabled={disabled} /> },
+      { path: "/", element: <CanvasDashboardCard disabled={disabled} {...props} /> },
       { path: "/settings", element: <div>Settings page</div> },
       { path: "/courses/:id", element: <div>Course page</div> },
     ],
@@ -77,5 +80,29 @@ describe("CanvasDashboardCard", () => {
     // Skips the Canvas API entirely, so no "Forbidden: instructors only" error.
     expect(getCanvasIntegration).not.toHaveBeenCalled();
     expect(screen.queryByText(/forbidden/i)).not.toBeInTheDocument();
+  });
+
+  // #1220: the dashboard loader resolves the integration, so the card must
+  // render it on first paint rather than mounting a spinner and fetching.
+  it("renders loader-supplied integration without fetching", async () => {
+    renderCard(false, {
+      initialIntegration: {
+        canvasUrl: "https://canvas.ubc.ca",
+        isTestMode: false,
+        isConnected: true,
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Fetch from Canvas" })).toBeInTheDocument();
+    expect(screen.queryByText(/checking canvas connection/i)).not.toBeInTheDocument();
+    expect(getCanvasIntegration).not.toHaveBeenCalled();
+  });
+
+  it("treats a null loader value as not-connected without fetching", async () => {
+    renderCard(false, { initialIntegration: null });
+
+    expect(screen.getByText(/canvas is not connected yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/checking canvas connection/i)).not.toBeInTheDocument();
+    expect(getCanvasIntegration).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,16 @@ import { prisma } from '../config/database.js';
 const EMPTY_PROGRESS = { completed: 0, total: 0, percentage: 0 };
 
 /**
+ * Prisma `where` fragment for "activity's lesson AND that lesson's module are
+ * both published" — the denominator predicate for course/module/lesson
+ * progress. Centralized so the three `findMany` calls below can't drift apart
+ * the way they did before #1187. The raw SQL in `calculateCourseProgressBatch`
+ * can't spread this (it's a different query engine) — if you change this
+ * fragment, update that JOIN's ON clauses too.
+ */
+const PUBLISHED_LESSON_WHERE = { isPublished: true, module: { isPublished: true } };
+
+/**
  * Bucket a progress record the way the course-list Progress filter does.
  *
  * Why here: `PROGRESS_FILTER` in `app/routes/student.tsx` is the definition of
@@ -38,8 +48,9 @@ export function progressBucket(progress) {
  * Semantics are identical to `calculateCourseProgress`, which the unit tests
  * assert directly against this function on shared fixtures:
  *   total     = activities in published lessons in published modules
- *   completed = of those, the ones whose LATEST submission (highest
- *               attemptNumber) by this user is `isCorrect = true`
+ *   completed = of those, the ones with ANY submission by this user ever
+ *               `isCorrect = true` (sticky — #1187 — a later wrong
+ *               re-attempt does not undo completion)
  *   total 0   → { completed: 0, total: 0, percentage: 0 }
  *
  * @param {number[]} courseIds CourseOffering ids.
@@ -57,6 +68,8 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
 
     // Published activities per course. COUNT(*)::int keeps this a JS number —
     // an un-cast COUNT comes back as BigInt and breaks the arithmetic below.
+    // The two `AND ... "isPublished" = true` clauses are PUBLISHED_LESSON_WHERE's
+    // predicate, hand-written for raw SQL — keep them in sync with that fragment.
     const totals = await prisma.$queryRaw`
       SELECT m."courseOfferingId" AS "courseId", COUNT(*)::int AS "count"
       FROM "Activity" a
@@ -66,12 +79,10 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
       GROUP BY m."courseOfferingId"
     `;
 
-    // Of those, the ones whose latest attempt is correct. DISTINCT ON collapses
-    // to one row per activity, ordered by attemptNumber DESC — the set-based
-    // equivalent of the "first row wins after ordering" loop in
-    // `countCompletedActivities`. The trailing `s.id DESC` only breaks ties
-    // between two submissions sharing an attemptNumber, making the result
-    // deterministic where the row-by-row version was arbitrary.
+    // Of those, the ones with ANY submission by this user ever correct —
+    // sticky (#1187), the set-based equivalent of `countCompletedActivities`'s
+    // `distinct: ['activityId']` over `isCorrect: true` submissions. A later
+    // incorrect re-attempt must not undo completion.
     const completed = await prisma.$queryRaw`
       WITH scoped AS (
         SELECT a.id AS "activityId", m."courseOfferingId" AS "courseId"
@@ -79,18 +90,12 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
         JOIN "Lesson" l ON l.id = a."lessonId" AND l."isPublished" = true
         JOIN "Module" m ON m.id = l."moduleId" AND m."isPublished" = true
         WHERE m."courseOfferingId" IN (${idList})
-      ),
-      latest AS (
-        SELECT DISTINCT ON (s."activityId") s."activityId", s."isCorrect"
-        FROM "Submission" s
-        JOIN scoped ON scoped."activityId" = s."activityId"
-        WHERE s."userId" = ${userId}
-        ORDER BY s."activityId", s."attemptNumber" DESC, s.id DESC
       )
-      SELECT scoped."courseId" AS "courseId", COUNT(*)::int AS "count"
-      FROM latest
-      JOIN scoped ON scoped."activityId" = latest."activityId"
-      WHERE latest."isCorrect" = true
+      SELECT scoped."courseId" AS "courseId", COUNT(DISTINCT scoped."activityId")::int AS "count"
+      FROM scoped
+      JOIN "Submission" s ON s."activityId" = scoped."activityId"
+        AND s."userId" = ${userId}
+        AND s."isCorrect" = true
       GROUP BY scoped."courseId"
     `;
 
@@ -114,7 +119,7 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
 
 /**
  * Calculate progress for a course based on correct submissions
- * Progress = (# activities with correct latest submission) / (# published activities)
+ * Progress = (# activities with any correct submission, sticky (#1187)) / (# published activities)
  * Only counts activities in published lessons in published modules
  */
 export async function calculateCourseProgress(courseId, userId) {
@@ -127,11 +132,8 @@ export async function calculateCourseProgress(courseId, userId) {
     const activities = await prisma.activity.findMany({
       where: {
         lesson: {
-          isPublished: true,
-          module: {
-            isPublished: true,
-            courseOfferingId: courseId,
-          },
+          ...PUBLISHED_LESSON_WHERE,
+          module: { ...PUBLISHED_LESSON_WHERE.module, courseOfferingId: courseId },
         },
       },
       select: { id: true },
@@ -160,7 +162,9 @@ export async function calculateCourseProgress(courseId, userId) {
 
 /**
  * Calculate progress for a module based on correct submissions
- * Only counts activities in published lessons
+ * Only counts activities in published lessons, in this module if it is
+ * itself published — matches the course-scope filter (#1187) so the same
+ * activity is never counted at module scope but excluded at course scope.
  */
 export async function calculateModuleProgress(moduleId, userId) {
   if (!moduleId || !userId) {
@@ -171,10 +175,7 @@ export async function calculateModuleProgress(moduleId, userId) {
     // Find all published activity IDs in this module
     const activities = await prisma.activity.findMany({
       where: {
-        lesson: {
-          isPublished: true,
-          moduleId,
-        },
+        lesson: { ...PUBLISHED_LESSON_WHERE, moduleId },
       },
       select: { id: true },
     });
@@ -202,7 +203,10 @@ export async function calculateModuleProgress(moduleId, userId) {
 
 /**
  * Calculate progress for a lesson based on correct submissions
- * Counts all activities (no published filter at activity level)
+ * Only counts activities if this lesson and its module are published —
+ * matches the course/module-scope filter (#1187) so an unpublished lesson
+ * (or a lesson in an unpublished module) isn't given a nonzero denominator
+ * here while contributing nothing at course/module scope.
  */
 export async function calculateLessonProgress(lessonId, userId) {
   if (!lessonId || !userId) {
@@ -212,7 +216,10 @@ export async function calculateLessonProgress(lessonId, userId) {
   try {
     // Find all activity IDs in this lesson
     const activities = await prisma.activity.findMany({
-      where: { lessonId },
+      where: {
+        lessonId,
+        lesson: PUBLISHED_LESSON_WHERE,
+      },
       select: { id: true },
     });
 
@@ -240,6 +247,11 @@ export async function calculateLessonProgress(lessonId, userId) {
 /**
  * Get completion status for each activity
  * Returns map of activityId => 'correct' | 'incorrect' | 'not_attempted'
+ *
+ * Completion is sticky (#1187): an activity is 'correct' if ANY submission
+ * was ever correct, even if a later attempt was wrong. This matches
+ * countCompletedActivities's counterpart below and the platform's mental
+ * model of progress as monotonically non-decreasing.
  */
 export async function getActivityCompletionStatuses(activityIds, userId) {
   if (!activityIds || activityIds.length === 0 || !userId) {
@@ -247,39 +259,32 @@ export async function getActivityCompletionStatuses(activityIds, userId) {
   }
 
   try {
-    // Fetch all submissions for these activities by this user
-    // Order by attemptNumber descending to get latest first
     const submissions = await prisma.submission.findMany({
       where: {
         userId,
         activityId: { in: activityIds },
       },
-      orderBy: [{ activityId: 'asc' }, { attemptNumber: 'desc' }],
       select: {
         activityId: true,
         isCorrect: true,
-        attemptNumber: true,
       },
     });
 
-    // Group by activityId and take first (latest due to ordering)
-    const latestByActivity = new Map();
+    const everCorrect = new Set();
+    const everAttempted = new Set();
     for (const sub of submissions) {
-      if (!latestByActivity.has(sub.activityId)) {
-        latestByActivity.set(sub.activityId, sub);
-      }
+      everAttempted.add(sub.activityId);
+      if (sub.isCorrect === true) everCorrect.add(sub.activityId);
     }
 
-    // Build status map
     const statusMap = new Map();
     for (const activityId of activityIds) {
-      const latestSubmission = latestByActivity.get(activityId);
-      if (!latestSubmission) {
-        statusMap.set(activityId, 'not_attempted');
-      } else if (latestSubmission.isCorrect === true) {
+      if (everCorrect.has(activityId)) {
         statusMap.set(activityId, 'correct');
-      } else {
+      } else if (everAttempted.has(activityId)) {
         statusMap.set(activityId, 'incorrect');
+      } else {
+        statusMap.set(activityId, 'not_attempted');
       }
     }
 
@@ -291,7 +296,8 @@ export async function getActivityCompletionStatuses(activityIds, userId) {
 }
 
 /**
- * Helper: Count how many activities have correct latest submissions
+ * Helper: Count how many activities have ever had a correct submission.
+ * Sticky (#1187): a later incorrect re-attempt does not undo completion.
  * @private
  */
 async function countCompletedActivities(activityIds, userId) {
@@ -300,33 +306,17 @@ async function countCompletedActivities(activityIds, userId) {
   }
 
   try {
-    // Fetch all submissions for these activities by this user
-    const submissions = await prisma.submission.findMany({
+    const completedActivities = await prisma.submission.findMany({
       where: {
         userId,
         activityId: { in: activityIds },
-      },
-      orderBy: [{ activityId: 'asc' }, { attemptNumber: 'desc' }],
-      select: {
-        activityId: true,
         isCorrect: true,
       },
+      select: { activityId: true },
+      distinct: ['activityId'],
     });
 
-    // Group by activityId and take first (latest due to ordering)
-    const latestByActivity = new Map();
-    for (const sub of submissions) {
-      if (!latestByActivity.has(sub.activityId)) {
-        latestByActivity.set(sub.activityId, sub);
-      }
-    }
-
-    // Count correct ones
-    const completedCount = Array.from(latestByActivity.values()).filter(
-      (sub) => sub.isCorrect === true,
-    ).length;
-
-    return completedCount;
+    return completedActivities.length;
   } catch (error) {
     console.error('Error counting completed activities:', error);
     return 0;

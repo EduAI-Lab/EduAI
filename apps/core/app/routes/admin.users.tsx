@@ -12,10 +12,10 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@eduai/ui'
-import { auth } from '~/lib/auth/server'
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers })
+  const session = await getRequestSession(request)
 
   if (!session?.user) {
     return redirect('/auth/login')

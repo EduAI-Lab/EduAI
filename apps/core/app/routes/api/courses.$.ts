@@ -1,8 +1,8 @@
 import { createCourse, getCourses } from "~/lib/courses/server";
-import { auth } from "~/lib/auth/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   return getCourses(request);
@@ -15,7 +15,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Emit on the success path only; the service owns auth/validation responses.
     if (response.status === 201) {
-      const session = await auth.api.getSession({ headers: request.headers });
+      const session = await getRequestSession(request);
       const created = await response
         .clone()
         .json()

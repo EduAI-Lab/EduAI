@@ -1,9 +1,7 @@
 /**
  * Campus-model size ranking for QM frontend pickers/probes.
- * Single source of truth: question-maker-backend utils (see modelSizeRanks.js).
+ * Single source of truth: @eduai/types (shared with question-maker-backend's
+ * utils/modelSizeRanks.js, which re-exports the same implementation).
  */
 
-export {
-  MODEL_SIZE_RANK_PATTERNS,
-  modelSizeRankFromText,
-} from 'question-maker-backend/src/utils/modelSizeRanks.js';
+export { MODEL_SIZE_RANK_PATTERNS, modelSizeRankFromText } from '@eduai/types';

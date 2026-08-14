@@ -25,6 +25,8 @@ const IDEMPOTENCY_HASH_FIELDS = [
   'reasoningLevel',
   'choices',
   'answer',
+  'selectAllThatApply',
+  'correctAnswers',
   'testable',
   'secondaryTopicIds',
 ];
@@ -113,6 +115,8 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
     reasoningLevel: reasoningLevel.toUpperCase(),
     choices: variant.choices ?? undefined,
     answer: variant.answer ?? undefined,
+    selectAllThatApply: variant.selectAllThatApply ?? false,
+    correctAnswers: variant.correctAnswers ?? undefined,
     testable: false,
     secondaryTopicIds: coreSecondaryTopicIds,
   };

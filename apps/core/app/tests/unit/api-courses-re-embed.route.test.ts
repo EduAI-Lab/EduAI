@@ -28,11 +28,7 @@ import { action as startAction } from "~/routes/api/courses.re-embed.$";
 import { loader as pollLoader } from "~/routes/api/courses.re-embed.$jobId";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
-import {
-  findActiveReEmbedJob,
-  startReEmbedJob,
-  getReEmbedJobForCourse,
-} from "~/lib/ai/re-embed-job.server";
+import { startReEmbedJob, getReEmbedJobForCourse } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
 
 function makeStartArgs(method = "POST") {
@@ -81,8 +77,10 @@ describe("POST /api/courses/:courseId/re-embed", () => {
   });
 
   it("starts a new job (202) and logs creation when none is active", async () => {
-    vi.mocked(findActiveReEmbedJob).mockResolvedValue(null);
-    vi.mocked(startReEmbedJob).mockResolvedValue({ id: "job-1" } as never);
+    // The route always delegates to startReEmbedJob (#1112) — active-job
+    // dedup happens inside it, not via a separate findActiveReEmbedJob call
+    // from the route.
+    vi.mocked(startReEmbedJob).mockResolvedValue({ job: { id: "job-1" }, created: true } as never);
 
     const res = await startAction(makeStartArgs());
     expect(res.status).toBe(202);
@@ -94,18 +92,20 @@ describe("POST /api/courses/:courseId/re-embed", () => {
   });
 
   it("reuses an active job (200) without re-logging creation", async () => {
-    vi.mocked(findActiveReEmbedJob).mockResolvedValue({ id: "job-existing" } as never);
+    vi.mocked(startReEmbedJob).mockResolvedValue({
+      job: { id: "job-existing" },
+      created: false,
+    } as never);
 
     const res = await startAction(makeStartArgs());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ reusedExistingJob: true });
-    expect(startReEmbedJob).not.toHaveBeenCalled();
     expect(logAuditAction).not.toHaveBeenCalled();
   });
 
   it("maps an unexpected error to a 500", async () => {
-    vi.mocked(findActiveReEmbedJob).mockRejectedValue(new Error("db down"));
+    vi.mocked(startReEmbedJob).mockRejectedValue(new Error("db down"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await startAction(makeStartArgs());
     expect(res.status).toBe(500);

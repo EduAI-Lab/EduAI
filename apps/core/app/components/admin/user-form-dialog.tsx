@@ -7,15 +7,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@eduai/ui";
 import { MultiSelect } from "@eduai/ui";
 import { useForm, useWatch } from "react-hook-form";
-import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+// Type-only: the create/update *schemas* are validated server-side
+// (users-api.server.ts). Importing them as values here pulled zod into the
+// client bundle (#1223); the types are erased, so this import is free.
+import type { CreateUserInput, UpdateUserInput } from "~/lib/auth/schemas";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
-import type { z } from "zod";
 
 import type { User } from "~/components/admin/users-table";
 import type { Course } from "~/hooks/api/use-courses";
 
-type CreateUserFormData = z.infer<typeof createUserSchema>;
-type UpdateUserFormData = z.infer<typeof updateUserSchema>;
+type CreateUserFormData = CreateUserInput;
+type UpdateUserFormData = UpdateUserInput;
 
 type FormData = {
   name: string;
@@ -32,6 +34,26 @@ export interface UserFormDialogProps {
   courses?: Pick<Course, "id" | "code" | "name" | "term" | "year">[];
   coursesLoading?: boolean;
   onSubmit: (data: CreateUserFormData | UpdateUserFormData) => Promise<void>;
+}
+
+/**
+ * Client-side field checks mirroring the create/update schema's messages
+ * (#1223 — kept zod-free so it doesn't ship to the browser). Only the two
+ * free-text fields can be wrong; role/isActive/emailVerified come from a Select
+ * and Switches, and the arrays are managed by MultiSelect. Returns the first
+ * error message, or null when the payload passes. The server schema
+ * re-validates authoritatively regardless.
+ */
+function validateUserForm(payload: { name?: string; email?: string }): string | null {
+  if ((payload.name ?? "").length < 2) {
+    return "Name must be at least 2 characters";
+  }
+  // Same shape react-hook-form/zod accept for an email: non-space local + domain
+  // with a dot. Deliberately lenient — the server schema is the real gate.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email ?? "")) {
+    return "Please enter a valid email address";
+  }
+  return null;
 }
 
 // TA is a course-level Enrollment role assigned from a course's staff tab, not a
@@ -124,11 +146,13 @@ export function UserFormDialog({
         : {}),
     };
 
-    const schema = isEditing ? updateUserSchema : createUserSchema;
-    const result = schema.safeParse(payload);
-
-    if (!result.success) {
-      setSubmitError(result.error.issues[0]?.message ?? "Please check the form and try again.");
+    // Lightweight pre-submit checks so the admin gets an inline message without
+    // a round trip. These mirror the create/update schema's field messages; the
+    // schema itself stays server-side (users-api.server.ts), which remains the
+    // authoritative validator and strips any fields not in the mode's schema.
+    const validationError = validateUserForm(payload);
+    if (validationError) {
+      setSubmitError(validationError);
       return;
     }
 
@@ -137,7 +161,7 @@ export function UserFormDialog({
     setSubmitError(null);
 
     try {
-      await onSubmit(result.data);
+      await onSubmit(payload as CreateUserFormData | UpdateUserFormData);
       form.reset();
       setSelectedUnits([]);
       setSelectedTACourseIds([]);

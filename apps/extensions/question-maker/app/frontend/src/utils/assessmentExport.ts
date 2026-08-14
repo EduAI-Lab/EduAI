@@ -8,7 +8,6 @@ import type { Paragraph as DocxParagraph } from 'docx';
 import type { Assessment, QuestionVariant } from '../types/question';
 
 export type AssessmentExportBlock = {
-    order: number;
     stem: string;
     choiceLines: string[];
     answerLine: string | null;
@@ -31,11 +30,16 @@ export function collectAssessmentExportBlocks(
     assessment: Assessment,
     resolveVariant?: (variantId: number) => QuestionVariant | undefined
 ): AssessmentExportBlock[] {
-    const aid = assessment.id;
     const blocks: AssessmentExportBlock[] = [];
 
-    (assessment.sections ?? []).forEach((section) => {
-        (section.sectionVariants ?? []).forEach((link) => {
+    const sections = [...(assessment.sections ?? [])].sort(
+        (a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id,
+    );
+    sections.forEach((section) => {
+        const links = [...(section.sectionVariants ?? [])].sort(
+            (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.id - b.id,
+        );
+        links.forEach((link) => {
             const variant = link.variant ?? resolveVariant?.(link.variantId);
             if (!variant) return;
 
@@ -48,17 +52,18 @@ export function collectAssessmentExportBlocks(
             const choices = variant.choices && Array.isArray(variant.choices) ? variant.choices : [];
             const choiceLines = choices.map((c) => `${c.letter}. ${(c.text || '').trim()}`);
             const rawAnswer = variant.answer?.trim();
-            const answerLine = rawAnswer ? `Correct answer: ${rawAnswer}` : null;
+            const { selectAllThatApply, correctAnswers } = variant;
+            const answerLine =
+                selectAllThatApply && Array.isArray(correctAnswers) && correctAnswers.length > 0
+                    ? `Correct answers: ${correctAnswers.join(', ')}`
+                    : rawAnswer
+                      ? `Correct answer: ${rawAnswer}`
+                      : null;
 
-            const orderValue =
-                link.displayOrder ?? variant.questionMetadata?.questionOrder?.[aid];
-            const order = typeof orderValue === 'number' ? orderValue : Number.MAX_SAFE_INTEGER;
-
-            blocks.push({ order, stem, choiceLines, answerLine });
+            blocks.push({ stem, choiceLines, answerLine });
         });
     });
 
-    blocks.sort((a, b) => a.order - b.order);
     return blocks;
 }
 

@@ -93,4 +93,55 @@ export async function setup() {
     env: { ...process.env, DATABASE_URL: dbUrl },
     stdio: 'pipe',
   });
+
+  // `content_tsv` is a `GENERATED ALWAYS ... STORED` tsvector column that
+  // Prisma has no first-class type for (Unsupported("tsvector") in
+  // schema.prisma). `db push` above still provisions *some* column for it —
+  // a plain, non-generated one, since it can't express STORED/GENERATED —
+  // and the raw migration's `ADD COLUMN IF NOT EXISTS` then silently no-ops
+  // against that pre-existing plain column, leaving every row's content_tsv
+  // NULL with no generation expression (#1354 CI: `is_generated` reads
+  // 'NEVER' instead of 'ALWAYS', and inserts 23502 on a stray NOT NULL).
+  // Drop whatever db push created first so the migration's ADD COLUMN is the
+  // one that actually runs.
+  try {
+    execSync(
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+      { env: pgEnv, stdio: 'pipe' },
+    );
+  } catch {
+    execSync(
+      `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "ALTER TABLE material_chunks DROP COLUMN IF EXISTS content_tsv;"`,
+      { stdio: 'pipe' },
+    );
+  }
+
+  // db push provisions only schema.prisma, so apply the idempotent raw migration
+  // afterward to keep integration databases aligned with deployed databases.
+  const contentTsvMigration = resolve(
+    appRoot,
+    'prisma',
+    'migrations',
+    '20260804180000_material_chunks_content_tsv_gin',
+    'migration.sql',
+  );
+  execBin(
+    prismaBin,
+    ['db', 'execute', '--file', contentTsvMigration, '--schema', resolve(appRoot, 'prisma', 'schema.prisma')],
+    { cwd: appRoot, env: { ...process.env, DATABASE_URL: dbUrl }, stdio: 'pipe' },
+  );
+
+  // Prisma cannot represent an ivfflat index on Unsupported(vector), and
+  // db push intentionally ignores the raw-SQL migration. Recreate it for the
+  // integration database after every schema sync so ANN tests exercise the
+  // same plan as development/production.
+  try {
+    execSync(
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE INDEX IF NOT EXISTS \\\"material_embeddings_embedding_ivfflat_idx\\\" ON \\\"material_embeddings\\\" USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);"`,
+      { env: pgEnv, stdio: 'pipe' },
+    );
+  } catch {
+    // The integration database may not have material_embeddings yet; the
+    // migration/test setup will report a real schema error when retrieval runs.
+  }
 }

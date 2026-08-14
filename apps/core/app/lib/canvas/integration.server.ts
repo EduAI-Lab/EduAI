@@ -13,9 +13,12 @@ import {
   verifyCanvasCredentials,
 } from "~/lib/canvas/client.server";
 
+import { canManageCanvasIntegration } from "~/lib/canvas/guards.server";
+import { getPolicy } from "~/lib/policy.server";
+
 const TEST_MODE_API_KEY_PLACEHOLDER = "test-key";
 
-export { canManageCanvasIntegration } from "~/lib/canvas/guards.server";
+export { canManageCanvasIntegration };
 
 /** Raised when stored Canvas credentials cannot be decrypted (e.g. after key rotation). */
 export class CanvasStoredCredentialsError extends Error {
@@ -51,6 +54,30 @@ export async function getCanvasIntegrationPublic(
   });
 
   return integration ? toCanvasIntegrationPublic(integration) : null;
+}
+
+/**
+ * Dashboard SSR (#1220): resolve the Canvas card's integration in the loader so
+ * the card paints connected/not-connected on first byte instead of mounting a
+ * spinner and then fetching `GET /api/canvas/integration`.
+ *
+ * Mirrors that route's two gates — the role guard and the INSTRUCTOR-only
+ * policy check — because reading the row through this in-process path skips the
+ * route's middleware. A caller who would have received `403` gets `null`, which
+ * is what the card renders for "not connected" anyway.
+ */
+export async function getDashboardCanvasIntegration(user: {
+  id: string;
+  role?: string | null;
+}): Promise<CanvasIntegrationPublic | null> {
+  if (!canManageCanvasIntegration(user.role)) return null;
+  if (
+    user.role === "INSTRUCTOR" &&
+    !(await getPolicy("instructors.canManageCanvasIntegration"))
+  ) {
+    return null;
+  }
+  return getCanvasIntegrationPublic(user.id);
 }
 
 /** Internal use: returns decrypted API key for Canvas REST calls. */

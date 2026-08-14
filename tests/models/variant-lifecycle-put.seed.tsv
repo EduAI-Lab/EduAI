@@ -1,0 +1,5 @@
+AccessLevel	CurrentIsDraft	Ownership	RequestedIsDraft	FieldChangeKind
+instructor_plus	draft	own	false	content
+instructor_plus	approved	own	true	none
+ta	draft	own	absent	content
+ta	approved	other	absent	onlyAiTag

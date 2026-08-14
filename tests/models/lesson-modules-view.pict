@@ -1,0 +1,18 @@
+# S8 — lesson-modules-view (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# See tests/models/lesson-modules-view.oracle.ts for the oracle spec.
+#
+# Drift contract: `hasElevatedAccess = isAdmin || isInstructor || isTa || isUnitAdmin`
+# is written independently in routes/activities.js (GET /lessons/:id/activities)
+# and routes/modules.js (GET /courses/:id/modules) — same formula today, but
+# nothing stops it drifting. `Role` collapses the five underlying booleans
+# (isAdmin/isInstructor/isTa/isUnitAdmin/isStudent) into one dimension since
+# they are mutually exclusive in the world-builder (one seeded user has
+# exactly one relationship to the course). Both routes are exercised for
+# every row in the world-builder (apps/extensions/ai-tutor/server/tests/integration/lesson-modules-view.pict.test.js)
+# rather than making the route a PICT factor — same reasoning as `Path` in
+# tests/models/material-visibility.pict.
+Role:       ADMIN, INSTRUCTOR, TA, UNIT_ADMIN, STUDENT, NONE, ANON
+Published:  yes, no
+Found:      yes, no
+
+IF [Role] = "ANON" THEN [Found] = "yes";

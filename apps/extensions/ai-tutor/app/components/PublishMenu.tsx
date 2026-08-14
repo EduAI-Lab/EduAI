@@ -1,4 +1,11 @@
-import { IconDotsVertical, IconEdit, IconTrash, IconWorldOff, IconWorldUpload } from '@tabler/icons-react';
+import {
+  IconArrowsSort,
+  IconDotsVertical,
+  IconEdit,
+  IconTrash,
+  IconWorldOff,
+  IconWorldUpload,
+} from '@tabler/icons-react';
 import {
   Button,
   DropdownMenu,
@@ -21,6 +28,13 @@ type PublishMenuProps = {
   onEdit?: () => void;
   /** Delete handler. When set, renders a destructive "Delete {itemLabel}" item. */
   onDelete?: () => void;
+  /**
+   * Move handler (#1207). When set, renders a "Move {itemLabel}…" item that
+   * opens the move-to-position prompt. This is the only way to move a row to a
+   * different page — drag-and-drop can only express a move among the rows
+   * currently on screen.
+   */
+  onMove?: () => void;
   /** Noun for the menu copy, e.g. "module" / "lesson". */
   itemLabel?: string;
   className?: string;
@@ -45,6 +59,7 @@ export function PublishMenu({
   onToggle,
   onEdit,
   onDelete,
+  onMove,
   itemLabel = 'item',
   className,
 }: PublishMenuProps) {
@@ -52,6 +67,7 @@ export function PublishMenu({
   const showPublish = Boolean(onToggle);
   const showEdit = Boolean(onEdit);
   const showDelete = Boolean(onDelete);
+  const showMove = Boolean(onMove);
 
   return (
     <DropdownMenu>
@@ -99,7 +115,13 @@ export function PublishMenu({
             Edit {itemLabel}
           </DropdownMenuItem>
         )}
-        {(showPublish || showEdit) && showDelete && <DropdownMenuSeparator />}
+        {showMove && (
+          <DropdownMenuItem onSelect={() => onMove?.()}>
+            <IconArrowsSort className="size-4 text-muted-foreground" aria-hidden="true" />
+            Move {itemLabel}…
+          </DropdownMenuItem>
+        )}
+        {(showPublish || showEdit || showMove) && showDelete && <DropdownMenuSeparator />}
         {showDelete && (
           <DropdownMenuItem
             variant="destructive"

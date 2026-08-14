@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy } from "~/lib/policy.server";
 
@@ -152,7 +152,7 @@ export async function resolveChatReadAccess(
   let authorized = isOwner || viewer.role === "ADMIN";
 
   if (!authorized && chat.courseId) {
-    const { access } = await resolveCourseAccessWithCourse(viewer, chat.courseId);
+    const { access } = await resolveCourseAccessGate(viewer, chat.courseId);
     const gate = courseChatViewPolicyKey(access?.level ?? null);
     const gateOpen = gate === "always" || (gate !== "never" && (await getPolicy(gate)));
     if (gateOpen) {

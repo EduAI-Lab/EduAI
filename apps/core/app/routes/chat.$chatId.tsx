@@ -4,27 +4,33 @@ import type { LoaderFunctionArgs } from "react-router";
 import { ChatScreen } from "~/components/chat/chat-screen";
 import {
   chatPreferencesAction,
-  loadChatBaseData,
+  loadChatBaseDataForUser,
   loadChatTranscript,
+  requireChatSessionUser,
 } from "~/lib/chat/chat-route.server";
 
 /**
  * `/chat/:chatId` — resume a conversation. The transcript is loaded from the DB
  * here (the route, not sessionStorage, is the source of truth). A missing chat
  * or one the viewer may not read redirects to `/chat` (no existence leak).
+ *
+ * The transcript read only needs the viewer's id + role, so it runs alongside
+ * the base-data reads rather than after them — that serialization was the bulk
+ * of this route's TTFB over `/chat`.
  */
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const base = await loadChatBaseData(request);
-
   const chatId = params.chatId;
   if (!chatId) {
     throw redirect("/chat");
   }
 
-  const transcript = await loadChatTranscript(
-    { id: base.user.id, role: base.user.role },
-    chatId,
-  );
+  const user = await requireChatSessionUser(request);
+
+  const [base, transcript] = await Promise.all([
+    loadChatBaseDataForUser(user),
+    loadChatTranscript({ id: user.id, role: user.role }, chatId),
+  ]);
+
   if (!transcript) {
     throw redirect("/chat");
   }

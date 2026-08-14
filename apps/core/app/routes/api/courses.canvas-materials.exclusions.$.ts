@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import {
-  resolveCourseAccessWithCourse,
+  resolveCourseAccessGate,
   type AccessLevel,
   type RbacUser,
 } from "~/lib/auth/course-access.server";
@@ -12,6 +11,7 @@ import {
 } from "~/lib/canvas/materials.server";
 import { ExcludeCanvasMaterialSchema } from "~/lib/canvas/schemas";
 import type { Session } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -27,7 +27,7 @@ async function resolveInstructorAccess(
   | { response: Response; user?: never }
   | { response?: never; user: Session["user"]; access: AccessLevel }
 > {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return { response: json(401, { success: false, error: "Unauthorized" }) };
   }
@@ -38,7 +38,7 @@ async function resolveInstructorAccess(
     authorizedUnits: session.user.authorizedUnits ?? undefined,
   };
 
-  const { course, access } = await resolveCourseAccessWithCourse(rbacUser, courseId);
+  const { course, access } = await resolveCourseAccessGate(rbacUser, courseId);
   if (!course) {
     return { response: json(404, { success: false, error: "Course not found" }) };
   }
