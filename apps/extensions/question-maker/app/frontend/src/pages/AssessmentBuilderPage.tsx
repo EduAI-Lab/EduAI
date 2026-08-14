@@ -799,6 +799,24 @@ const AssessmentBuilderPage = () => {
                             });
                         }
                     }}
+                    onReorderSections={async (sectionIds) => {
+                        if (!assessment) return;
+                        try {
+                            const sections = await assessmentService.reorderSections(assessment.id, sectionIds);
+                            setAssessment((prev) =>
+                                prev
+                                    ? {
+                                          ...prev,
+                                          sections: [...sections].sort((a, b) => a.position - b.position),
+                                      }
+                                    : prev,
+                            );
+                        } catch (reorderError: any) {
+                            toast.error('Failed to reorder sections', {
+                                description: reorderError?.response?.data?.error || 'Please try again.',
+                            });
+                        }
+                    }}
                                 onAddQuestionsToSection={async (sectionId, variantIds) => {
                         if (!assessment) return;
                         try {
