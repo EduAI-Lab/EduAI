@@ -13,6 +13,7 @@ import {
   inferUbcTermStartFromEndDate,
 } from "~/lib/canvas/term.server";
 import prisma from "~/lib/prisma.server";
+import { ensureDefaultBank } from "~/lib/question-banks/server";
 
 export class CanvasNotConnectedError extends Error {
   constructor() {
@@ -189,7 +190,9 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
     });
   }
 
-  return prisma.course.create({ data: fields });
+  const created = await prisma.course.create({ data: fields });
+  await ensureDefaultBank(created.id);
+  return created;
 }
 
 /** Ensures the syncing instructor has an active INSTRUCTOR enrollment on the course. */
