@@ -38,7 +38,16 @@
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts",
     "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
-    "eval:rag": "tsx scripts/eval-rag.ts"
+    "eval:rag": "tsx scripts/eval-rag.ts",
+    "loadtest:setup": "bash loadtest/scripts/setup-loadtest-env.sh",
+    "loadtest:mock-llm": "node loadtest/mock-llm/server.mjs",
+    "loadtest:instance": "bash loadtest/scripts/start-instance.sh",
+    "loadtest:monitoring:up": "docker compose -f loadtest/monitoring/docker-compose.yml up -d",
+    "loadtest:monitoring:down": "docker compose -f loadtest/monitoring/docker-compose.yml down",
+    "loadtest:smoke": "k6 run loadtest/k6/smoke.js",
+    "loadtest:stress": "k6 run loadtest/k6/stress-500.js",
+    "loadtest:stress:grafana": "k6 run --out influxdb=http://localhost:8086/k6 loadtest/k6/stress-500.js",
+    "loadtest:browser": "k6 run loadtest/k6/browser-flow.js"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",

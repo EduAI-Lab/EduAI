@@ -23,3 +23,11 @@ ecosystem.config.cjs
 # Stryker Generated Files
 .stryker-tmp/
 /reports/
+
+# Load test run output (#919) — most runs are point-in-time and not source,
+# but FINDINGS.md and the two baseline run summaries are kept as evidence.
+/loadtest/results/*
+!/loadtest/results/.gitkeep
+!/loadtest/results/FINDINGS.md
+!/loadtest/results/run-a-default-admission.json
+!/loadtest/results/run-b-connection-pool.json
