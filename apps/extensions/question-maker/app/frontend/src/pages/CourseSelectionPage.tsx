@@ -11,6 +11,7 @@ import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-vi
 import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { Course } from '../types/question';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
+import { useAutoStartMainTour } from '../tour/useAutoStartMainTour';
 
 const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
 
@@ -89,29 +90,19 @@ export const CourseSelectionPage = () => {
     }
   }, [displayCourses, isStartingTour, startTour, openProfile]);
 
-  // Auto-start guided tour for new users (just registered and landed on /courses).
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem('newUserTourPending') !== '1') return;
-      if (isCoursesLoading) return;
-      const tourCourseId = resolveTourCourseId();
-      if (tourCourseId != null) {
-        setTourHighlightCourseId(tourCourseId);
-        writeTourCourseId(tourCourseId);
-      }
-      const t = window.setTimeout(() => {
-        try {
-          sessionStorage.removeItem('newUserTourPending');
-          startTour('main');
-        } catch {
-          // ignore
-        }
-      }, 400);
-      return () => window.clearTimeout(t);
-    } catch {
-      // ignore
+  const handleAutoStartMainTour = useCallback(() => {
+    const tourCourseId = resolveTourCourseId();
+    if (tourCourseId != null) {
+      setTourHighlightCourseId(tourCourseId);
+      writeTourCourseId(tourCourseId);
     }
-  }, [startTour, isCoursesLoading, resolveTourCourseId]);
+    startTour('main');
+  }, [resolveTourCourseId, startTour]);
+
+  useAutoStartMainTour({
+    enabled: !isCoursesLoading,
+    onStart: handleAutoStartMainTour,
+  });
 
   // When arriving from homepage guided tour, start here and remember which course to reopen.
   useEffect(() => {

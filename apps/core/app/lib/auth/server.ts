@@ -92,7 +92,8 @@ export const auth = betterAuth({
       // #339: enforce strength policy + no-reuse-of-last-10 on every
       // password-setting path. Runs before Zod schemas (which only guard the
       // app's own forms) so the raw /api/auth/* entry point is also covered.
-      const candidatePassword = extractPolicyPassword(ctx.path, ctx.body);
+      const operationId = (ctx as { operationId?: string }).operationId;
+      const candidatePassword = extractPolicyPassword(ctx.path, operationId, ctx.body);
       if (candidatePassword !== null) {
         if (!isStrongPassword(candidatePassword)) {
           throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });

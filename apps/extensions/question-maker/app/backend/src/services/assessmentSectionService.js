@@ -119,6 +119,56 @@ export const updateAssessmentSection = async (sectionId, userId, updates, course
   return updated;
 };
 
+/**
+ * Rewrite section positions to 0..n-1 for the given ordered id list.
+ * `sectionIds` must be exactly the set of sections on the assessment (no missing/extra/dupes).
+ * Uses the same 0-based convention as `createAssessmentSection` (count-based default).
+ */
+export const reorderAssessmentSections = async (assessmentId, userId, sectionIds, courseId = null) => {
+  assessmentId = Number(assessmentId);
+  const assessment = await findAssessmentForUser(assessmentId, userId);
+
+  if (courseId != null && assessment.courseId !== courseId) {
+    throw new Error('Section not found');
+  }
+
+  if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
+    throw new Error('sectionIds must be a non-empty array');
+  }
+
+  const normalizedIds = sectionIds.map((id) => Number(id));
+  if (normalizedIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new Error('sectionIds must be positive integers');
+  }
+  if (new Set(normalizedIds).size !== normalizedIds.length) {
+    throw new Error('sectionIds must not contain duplicates');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.assessmentSections.findMany({
+      where: { assessmentId },
+      select: { id: true },
+    });
+
+    const existingIds = new Set(existing.map((s) => s.id));
+    if (
+      normalizedIds.length !== existingIds.size ||
+      normalizedIds.some((id) => !existingIds.has(id))
+    ) {
+      throw new Error('sectionIds must list every section on the assessment exactly once');
+    }
+
+    for (const [index, id] of normalizedIds.entries()) {
+      await tx.assessmentSections.update({
+        where: { id },
+        data: { position: index },
+      });
+    }
+  });
+
+  return getSectionsForAssessment(assessmentId, userId);
+};
+
 /** Deletes a section and clears variant assessment links if they are no longer referenced. */
 export const deleteAssessmentSection = async (sectionId, userId, courseId = null) => {
   sectionId = Number(sectionId);

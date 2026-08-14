@@ -1,6 +1,6 @@
 /**
  * Course Detail page: a single course identified by the `:courseId` URL param,
- * presented as tabs (Overview, Questions, Assessments, Topics). The course is
+ * presented as tabs (Overview, Questions, Banks, Assessments, Canvas). The course is
  * resolved entirely from the URL — there is no course dropdown or persisted
  * selection. The active tab is synced to the `?tab=` query param so every view
  * is linkable and reload-safe.
@@ -36,6 +36,7 @@ import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { questionService } from '../services/questionService';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
+import { questionBankService, QuestionBank as QuestionBankModel } from '../services/questionBankService';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import {
@@ -44,6 +45,7 @@ import {
 } from '../components/shared/ListPaginationBar';
 import { QuestionModal } from '../components/questions/QuestionModal';
 import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
+import { CourseBanksTab } from './course-detail/CourseBanksTab';
 import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
 import { CourseCanvasTab } from './course-detail/CourseCanvasTab';
 import type { QuestionAnalyticsProps } from '@eduai/ui';
@@ -60,6 +62,7 @@ import { Topic } from '../types/topic';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
+import { CanvasBankSyncDialog } from '../components/canvas/CanvasBankSyncDialog';
 import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
 import {
   assessmentBlocksToDocxBlob,
@@ -68,9 +71,9 @@ import {
   slugifyAssessmentBasename,
 } from '../utils/assessmentExport';
 
-type ActiveTab = 'overview' | 'questions' | 'assessments' | 'canvas';
+type ActiveTab = 'overview' | 'questions' | 'banks' | 'assessments' | 'canvas';
 
-const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'assessments', 'canvas'];
+const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'banks', 'assessments', 'canvas'];
 
 const TYPE_COLORS: Record<string, string> = {
   MCQ: 'var(--color-series-3)',
@@ -139,6 +142,10 @@ export const CourseDetailPage = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
+  const [banks, setBanks] = useState<QuestionBankModel[]>([]);
+  const [isBanksLoading, setIsBanksLoading] = useState(false);
+  const [banksError, setBanksError] = useState<string | null>(null);
+  const [isBankSyncOpen, setIsBankSyncOpen] = useState(false);
   const questionsPageSize = DEFAULT_LIST_PAGE_SIZE;
 
   // ── Assessment state ────────────────────────────────────────────────────────
@@ -177,7 +184,7 @@ export const CourseDetailPage = () => {
     [topicsByCourse],
   );
 
-  // Load questions whenever the route course or page offset changes.
+  // Load questions whenever the route course, bank filter, or page offset changes.
   useEffect(() => {
     let cancelled = false;
     const fetchQuestions = async () => {
@@ -212,6 +219,40 @@ export const CourseDetailPage = () => {
     void fetchQuestions();
     return () => { cancelled = true; };
   }, [courseId, questionsOffset, questionsPageSize]);
+
+  // Load question banks when the route course changes.
+  useEffect(() => {
+    let cancelled = false;
+    const fetchBanks = async () => {
+      if (!courseId) {
+        setBanks([]);
+        setBanksError(null);
+        return;
+      }
+      setIsBanksLoading(true);
+      setBanksError(null);
+      try {
+        const bankList = await questionBankService.listBanks(courseId);
+        if (!cancelled) {
+          setBanks(bankList);
+        }
+      } catch (error: any) {
+        console.error('Failed to load question banks', error);
+        if (!cancelled) {
+          setBanks([]);
+          setBanksError(
+            error?.response?.data?.error ||
+              error?.message ||
+              'Failed to load question banks',
+          );
+        }
+      } finally {
+        if (!cancelled) setIsBanksLoading(false);
+      }
+    };
+    void fetchBanks();
+    return () => { cancelled = true; };
+  }, [courseId]);
 
   // Course-wide aggregates for Overview meters (independent of the questions page).
   useEffect(() => {
@@ -263,6 +304,36 @@ export const CourseDetailPage = () => {
     setCourseQuestionStats(null);
     setCourseQuestionStatsUnavailable(false);
   }, [courseId]);
+
+  const handleCreateBank = useCallback(
+    async (name: string) => {
+      if (!courseId) return;
+      const bank = await questionBankService.createBank(courseId, { name });
+      setBanks((prev) => [...prev, bank]);
+      setBanksError(null);
+      navigate(`/courses/${courseId}/banks/${bank.id}`);
+    },
+    [courseId, navigate],
+  );
+
+  const handleOpenBank = useCallback(
+    (bankId: string) => {
+      if (!courseId) return;
+      navigate(`/courses/${courseId}/banks/${bankId}`);
+    },
+    [courseId, navigate],
+  );
+
+  const handleBankSyncSuccess = useCallback(
+    async (result: { bankId: string; created: number; updated: number; skipped: number }) => {
+      if (!courseId) return;
+      const bankList = await questionBankService.listBanks(courseId);
+      setBanks(bankList);
+      setBanksError(null);
+      navigate(`/courses/${courseId}/banks/${result.bankId}`);
+    },
+    [courseId, navigate],
+  );
 
   // Load assessments for the route course. Ignore stale responses from rapid
   // paging / course switches (same generation pattern as questions).
@@ -858,6 +929,7 @@ export const CourseDetailPage = () => {
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
+          <PageTabsTrigger value="banks">Banks</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
           <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
         </PageTabsList>
@@ -901,6 +973,18 @@ export const CourseDetailPage = () => {
             offset={questionsOffset}
             onPageChange={setQuestionsOffset}
             itemLabel="questions"
+          />
+        </PageTabsContent>
+
+        <PageTabsContent value="banks" className="space-y-6">
+          <CourseBanksTab
+            banks={banks}
+            canWrite={!writesDisabled}
+            isLoading={isBanksLoading}
+            loadError={banksError}
+            onCreateBank={handleCreateBank}
+            onSyncFromCanvas={() => setIsBankSyncOpen(true)}
+            onOpenBank={handleOpenBank}
           />
         </PageTabsContent>
 
@@ -994,6 +1078,14 @@ export const CourseDetailPage = () => {
               await fetchAssessments();
               toast('Import successful', { description: 'Assessment imported from Canvas.' });
             }}
+          />
+
+          <CanvasBankSyncDialog
+            open={isBankSyncOpen}
+            onClose={() => setIsBankSyncOpen(false)}
+            localCourseId={courseId}
+            selectedLocalBankId={null}
+            onSyncSuccess={handleBankSyncSuccess}
           />
         </>
       )}

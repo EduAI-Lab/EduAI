@@ -202,4 +202,56 @@ describeDb('assessmentSectionService (integration)', () => {
       await expect(svc.removeQuestionFromAllSections(qm.id, STRANGER.id)).rejects.toThrow(/Question not found/);
     });
   });
+
+  describe('reorderAssessmentSections', () => {
+    it('rewrites positions to 0..n-1 in the given order', async () => {
+      const a = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'A' });
+      const b = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'B' });
+      const c = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'C' });
+
+      const reordered = await svc.reorderAssessmentSections(
+        assessmentId,
+        USER.id,
+        [c.id, a.id, b.id],
+      );
+
+      expect(reordered.map((s) => ({ id: s.id, position: s.position }))).toEqual([
+        { id: c.id, position: 0 },
+        { id: a.id, position: 1 },
+        { id: b.id, position: 2 },
+      ]);
+    });
+
+    it('keeps createAssessmentSection append-after-reorder (0-based shared base)', async () => {
+      const a = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'A' });
+      const b = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'B' });
+      const c = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'C' });
+
+      await svc.reorderAssessmentSections(assessmentId, USER.id, [a.id, b.id, c.id]);
+      await svc.deleteAssessmentSection(b.id, USER.id);
+
+      const d = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'D' });
+      const sections = await svc.getSectionsForAssessment(assessmentId, USER.id);
+      expect(sections.map((s) => s.id)).toEqual([a.id, c.id, d.id]);
+      expect(d.position).toBe(2);
+    });
+
+    it('rejects incomplete, duplicate, or foreign section ids', async () => {
+      const a = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'A' });
+      const b = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'B' });
+
+      await expect(svc.reorderAssessmentSections(assessmentId, USER.id, [a.id]))
+        .rejects.toThrow(/sectionIds/i);
+      await expect(svc.reorderAssessmentSections(assessmentId, USER.id, [a.id, a.id]))
+        .rejects.toThrow(/sectionIds/i);
+      await expect(svc.reorderAssessmentSections(assessmentId, USER.id, [a.id, b.id, 999999]))
+        .rejects.toThrow(/sectionIds/i);
+    });
+
+    it('throws when the assessment does not belong to the user', async () => {
+      const a = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'A' });
+      await expect(svc.reorderAssessmentSections(assessmentId, STRANGER.id, [a.id]))
+        .rejects.toThrow(/Assessment not found/);
+    });
+  });
 });

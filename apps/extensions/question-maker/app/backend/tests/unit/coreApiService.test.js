@@ -22,6 +22,10 @@ const {
   listCoursesFromCore,
   getMyProfileFromCore,
   isCoreCourseInScopedList,
+  listQuestionBanksFromCore,
+  createQuestionBankOnCore,
+  addQuestionBankMembershipOnCore,
+  removeQuestionBankMembershipOnCore,
 } = await import('../../src/services/coreApiService.js');
 
 const ok = (data, status = 200) => ({
@@ -375,5 +379,73 @@ describe('isCoreCourseInScopedList', () => {
     );
 
     await expect(isCoreCourseInScopedList('cuid-missing', 'session=abc')).resolves.toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Question banks (#845)
+// ---------------------------------------------------------------------------
+describe('listQuestionBanksFromCore', () => {
+  it('GETs course banks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ banks: [] })));
+
+    await expect(listQuestionBanksFromCore('cuid-course-1')).resolves.toEqual({ banks: [] });
+    expect(fetch.mock.calls[0][0]).toBe('http://core.test/api/courses/cuid-course-1/banks');
+  });
+});
+
+describe('createQuestionBankOnCore', () => {
+  it('POSTs bank create payload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(ok({ id: 'bank_1', name: 'Midterm' }, 201)),
+    );
+
+    await expect(
+      createQuestionBankOnCore('cuid-course-1', { name: 'Midterm' }),
+    ).resolves.toEqual({ id: 'bank_1', name: 'Midterm' });
+
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/courses/cuid-course-1/banks');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ name: 'Midterm' });
+  });
+});
+
+describe('addQuestionBankMembershipOnCore', () => {
+  it('POSTs membership payload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ id: 'mem_1' }, 201)));
+
+    await addQuestionBankMembershipOnCore('cuid-course-1', 'bank_1', {
+      externalQuestionId: '42',
+      source: 'question-maker',
+    });
+
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/courses/cuid-course-1/banks/bank_1/questions');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({
+      externalQuestionId: '42',
+      source: 'question-maker',
+    });
+  });
+});
+
+describe('removeQuestionBankMembershipOnCore', () => {
+  it('DELETEs membership with source query', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ removed: true })));
+
+    await removeQuestionBankMembershipOnCore(
+      'cuid-course-1',
+      'bank_1',
+      '42',
+      'question-maker',
+    );
+
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe(
+      'http://core.test/api/courses/cuid-course-1/banks/bank_1/questions/42?source=question-maker',
+    );
+    expect(opts.method).toBe('DELETE');
   });
 });
