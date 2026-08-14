@@ -176,6 +176,11 @@ describe("CronJobsAdminView", () => {
   it("triggers a job via POST and refetches statuses on success", async () => {
     const fetchMock = vi
       .fn()
+      // Initial shared cron-status refresh on mount.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ jobs: [] }),
+      })
       // triggerJob POST
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-1" }) })
       // fetchStatuses GET after trigger
@@ -204,19 +209,21 @@ describe("CronJobsAdminView", () => {
 
     render(<CronJobsAdminView jobs={[job()]} />);
 
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
     fireEvent.click(screen.getByRole("button", { name: /run now/i }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
+      2,
       "/api/admin/cron-jobs",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ intent: "trigger", jobName: "backup-nightly" }),
       }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/cron-jobs");
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/admin/cron-jobs");
 
     await waitFor(() => expect(screen.getByText("Success")).toBeInTheDocument());
   });
@@ -331,6 +338,8 @@ describe("CronJobsAdminView", () => {
 
     render(<CronJobsAdminView jobs={[job()]} />);
 
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
     fireEvent.click(screen.getByText("Edit"));
 
     const exprInput = await screen.findByLabelText("Cron expression");
@@ -375,7 +384,7 @@ describe("CronJobsAdminView", () => {
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByText(/Invalid cron expression/)).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a server error message returned from the update-schedule call", async () => {
