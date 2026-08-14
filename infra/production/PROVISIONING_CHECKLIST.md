@@ -19,7 +19,12 @@ sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/releases
 sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/shared
 sudo install -d -o ssaada08 -g eduai -m 0750 /var/log/eduai
 sudo install -d -o root -g eduai -m 0750 /etc/eduai
+sudo install -d -o root -g root -m 0750 /etc/eduai/production-templates
 ```
+
+Install the reviewed environment, systemd unit, and Apache vhost templates in
+that directory as `root:root` (0640 for the environment file, 0644 for the
+unit and vhost). It must not be writable by `ssaada08` or the `eduai` group.
 
 ## 3. Provision PostgreSQL
 

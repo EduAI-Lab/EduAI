@@ -9,10 +9,10 @@ readonly REDIS_VOLUME="eduai-redis-data"
 readonly CORE_ENV="/etc/eduai/eduai-core.env"
 readonly CORE_UNIT="/etc/systemd/system/eduai-core.service"
 readonly APACHE_VHOST="/etc/apache2/sites-available/my.eduai.ok.ubc.ca.conf"
-readonly STAGED_DIR="/srv/www/eduai-production/shared/staged"
-readonly ENV_SOURCE="$STAGED_DIR/eduai-core.env"
-readonly CORE_UNIT_SOURCE="$STAGED_DIR/eduai-core.service"
-readonly APACHE_SOURCE="$STAGED_DIR/my.eduai.ok.ubc.ca.conf"
+readonly TEMPLATE_DIR="/etc/eduai/production-templates"
+readonly ENV_SOURCE="$TEMPLATE_DIR/eduai-core.env"
+readonly CORE_UNIT_SOURCE="$TEMPLATE_DIR/eduai-core.service"
+readonly APACHE_SOURCE="$TEMPLATE_DIR/my.eduai.ok.ubc.ca.conf"
 die() { echo "ERROR: $*" >&2; exit 1; }
 no_extra_args() { [ "$#" -eq 1 ] || die "$1 does not accept arguments"; }
 case "${1:-}" in
@@ -42,14 +42,14 @@ case "${1:-}" in
     ;;
   install-core-unit)
     no_extra_args "$@"
-    [ -f "$CORE_UNIT_SOURCE" ] || die "staged Core unit does not exist: $CORE_UNIT_SOURCE"
+    [ -f "$CORE_UNIT_SOURCE" ] || die "root-owned Core unit template does not exist: $CORE_UNIT_SOURCE"
     install -o root -g root -m 0644 "$CORE_UNIT_SOURCE" "$CORE_UNIT"
     systemctl daemon-reload
     echo "Installed $CORE_UNIT"
     ;;
   install-apache-vhost)
     no_extra_args "$@"
-    [ -f "$APACHE_SOURCE" ] || die "staged Apache vhost does not exist: $APACHE_SOURCE"
+    [ -f "$APACHE_SOURCE" ] || die "root-owned Apache vhost template does not exist: $APACHE_SOURCE"
     install -o root -g root -m 0644 "$APACHE_SOURCE" "$APACHE_VHOST"
     a2ensite my.eduai.ok.ubc.ca.conf >/dev/null
     apache2ctl configtest

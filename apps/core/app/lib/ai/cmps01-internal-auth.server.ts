@@ -16,14 +16,14 @@ function normalizeEdgeBaseUrl(raw: string): string | null {
   }
 }
 
-/** True when the URL is the server-managed cmps01 edge (not user-supplied arbitrary hosts). */
+/** True when the URL matches an independently configured CMPS edge allowlist. */
 export function isTrustedCmps01EdgeUrl(baseUrl: string): boolean {
   const normalized = normalizeEdgeBaseUrl(baseUrl);
   if (!normalized) return false;
 
   const trustedBases = [
     process.env.OLLAMA_BASE_URL,
-    process.env.VLLM_EMBEDDING_BASE_URL,
+    process.env.CMPS01_INTERNAL_BASE_URL,
   ]
     .map((v) => (v ? normalizeEdgeBaseUrl(v) : null))
     .filter((v): v is string => Boolean(v));

@@ -135,6 +135,7 @@ EMBEDDING_PROVIDER=local
 EMBEDDING_DIMENSION=1024
 VLLM_EMBEDDING_BASE_URL="http://cmps01.ok.ubc.ca:8001/v1"
 VLLM_EMBEDDING_MODEL=mxbai-embed-large
+CMPS01_INTERNAL_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 ```
 
 **Laptop without Ollama (cloud fallback):**

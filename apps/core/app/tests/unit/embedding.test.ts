@@ -98,6 +98,7 @@ describe("generateEmbeddings", () => {
   const originalBatchSize = process.env.EMBED_MANY_BATCH_SIZE;
   const originalVllmEmbeddingUrl = process.env.VLLM_EMBEDDING_BASE_URL;
   const originalVllmApiKey = process.env.VLLM_API_KEY;
+  const originalCmpsBaseUrl = process.env.CMPS01_INTERNAL_BASE_URL;
 
   let generateEmbeddings: typeof import("~/lib/ai/embedding").generateEmbeddings;
   let embedManyMock: Mock;
@@ -136,6 +137,8 @@ describe("generateEmbeddings", () => {
     else process.env.VLLM_EMBEDDING_BASE_URL = originalVllmEmbeddingUrl;
     if (originalVllmApiKey === undefined) delete process.env.VLLM_API_KEY;
     else process.env.VLLM_API_KEY = originalVllmApiKey;
+    if (originalCmpsBaseUrl === undefined) delete process.env.CMPS01_INTERNAL_BASE_URL;
+    else process.env.CMPS01_INTERNAL_BASE_URL = originalCmpsBaseUrl;
   });
 
   it("returns an empty array for no chunks", async () => {
@@ -182,6 +185,7 @@ describe("generateEmbeddings", () => {
   it("uses the configured CMPS OpenAI-compatible endpoint for local embeddings", async () => {
     process.env.EMBEDDING_PROVIDER = "local";
     process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+    process.env.CMPS01_INTERNAL_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     process.env.VLLM_API_KEY = "cmps-test-key";
     await reloadEmbeddingModule();
 
@@ -193,6 +197,7 @@ describe("generateEmbeddings", () => {
   it("fails closed when the configured CMPS endpoint has no API key", async () => {
     process.env.EMBEDDING_PROVIDER = "local";
     process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+    process.env.CMPS01_INTERNAL_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     delete process.env.VLLM_API_KEY;
     await reloadEmbeddingModule();
 

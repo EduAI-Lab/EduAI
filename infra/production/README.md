@@ -51,7 +51,12 @@ sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/releases
 sudo install -d -o ssaada08 -g eduai -m 2775 /srv/www/eduai-production/shared
 sudo install -d -o root -g eduai -m 0750 /etc/eduai
 sudo install -d -o ssaada08 -g eduai -m 0750 /var/log/eduai
+sudo install -d -o root -g root -m 0750 /etc/eduai/production-templates
 ```
+
+Privileged templates consumed by the passwordless helper must be installed by
+an administrator into `/etc/eduai/production-templates` and remain root-owned;
+do not place them under the deployment account's group-writable `shared/` tree.
 
 Install the environment file from [`core.env.example`](./core.env.example) as `/etc/eduai/eduai-core.env`, replace every placeholder, then apply:
 
