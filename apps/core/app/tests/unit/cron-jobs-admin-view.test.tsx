@@ -223,7 +223,9 @@ describe("CronJobsAdminView", () => {
         body: JSON.stringify({ intent: "trigger", jobName: "backup-nightly" }),
       }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/admin/cron-jobs");
+    // apiFetch adds a Headers object to the refresh request, so assert the
+    // endpoint independently of wrapper implementation details.
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/admin/cron-jobs");
 
     await waitFor(() => expect(screen.getByText("Success")).toBeInTheDocument());
   });
