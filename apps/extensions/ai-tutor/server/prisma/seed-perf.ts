@@ -8,9 +8,9 @@
  * (Module/Lesson/Activity ids are autoincrement → not guessable).
  *
  * Key design points (from the endpoint spec):
- *  - A NATIVE course (externalId/coreOfferingId = null) is required: publish/
- *    unpublish stay purely local (a linked course writes through to Core), and
- *    topic-create is allowed (external courses 403).
+ *  - The pool CourseOffering is a pure anchor row (#1072) keyed by a synthetic
+ *    `coreOfferingId` sentinel — it holds no title/description/publish state
+ *    (the old "native course" no longer exists).
  *  - Destructive endpoints (DELETE module/lesson/activity, DELETE enrollment)
  *    consume victims → a perf run may deplete them; re-run this seed between runs.
  *
@@ -27,7 +27,10 @@ const prisma = new PrismaClient();
 const CORE_INSTRUCTOR = 'seed_user_instructor_cs'; // mirrors apps/core SEED_IDS
 const CORE_STUDENT = 'seed_user_student_01';
 const POOL = Number(process.env.PERF_POOL_SIZE ?? 15);
-const NATIVE_TITLE = 'PERF-POOL Native Course';
+// Synthetic Core course id for the pool's anchor CourseOffering row. #1072 made
+// every offering Core-linked, so the perf pool uses a disposable sentinel instead
+// of the old "native course" (which no longer exists).
+const POOL_OFFERING_CORE_ID = 'seed_perf_pool_course';
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 function poolDir(): string {
@@ -64,12 +67,13 @@ function readCoreChatId(): string | null {
 }
 
 async function resetPool() {
-  // Native course cascades to modules/lessons/activities/enrollments/topics/chats,
-  // BUT Activity.mainTopicId → Topic is Restrict (no onDelete) while Topic cascades
-  // from the course: the DB can't drop a Topic while an Activity still references it.
-  // Delete the activities first (cascades their chats/metrics), then the course.
+  // The pool offering cascades to modules/lessons/activities/enrollments/topics/
+  // chats, BUT Activity.mainTopicId → Topic is Restrict (no onDelete) while Topic
+  // cascades from the course: the DB can't drop a Topic while an Activity still
+  // references it. Delete the activities first (cascades their chats/metrics),
+  // then the course.
   const ids = (await prisma.courseOffering.findMany({
-    where: { title: NATIVE_TITLE }, select: { id: true },
+    where: { coreOfferingId: POOL_OFFERING_CORE_ID }, select: { id: true },
   })).map((c) => c.id);
   if (ids.length) {
     await prisma.activity.deleteMany({
@@ -83,11 +87,9 @@ async function main() {
   console.log(`▶ ai-tutor perf pool: ${POOL} victims/endpoint`);
   await resetPool();
 
-  // --- native course + instructor + topic ---
-  // Published: module/lesson publish endpoints reject when the parent course is
-  // unpublished ("Cannot publish module: parent course is not published").
+  // --- anchor course offering + instructor + topic ---
   const course = await prisma.courseOffering.create({
-    data: { title: NATIVE_TITLE, description: 'perf', isPublished: true },
+    data: { coreOfferingId: POOL_OFFERING_CORE_ID },
   });
   await prisma.courseInstructor.create({
     data: { userId: CORE_INSTRUCTOR, courseOfferingId: course.id, role: 'LEAD' },
@@ -164,7 +166,7 @@ async function main() {
     poolActivitiesDrop,
     enrollDropUserIds,
     enrollRoleUserIds,
-    // reads reuse the pool entities (all exist under the native course):
+    // reads reuse the pool entities (all exist under the pool offering):
     seededModuleId: poolModulesReuse[0],
     seededLessonId: poolLessonsReuse[0],
     seededActivityId: poolActivitiesReuse[0],
