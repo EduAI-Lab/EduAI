@@ -1595,7 +1595,12 @@ export const importQuestionBankFromCanvas = async (
 ) => {
   // Dynamic import avoids a static cycle: questionService → questionBankService
   // and this module → questionBankService (and createQuestion from questionService).
-  const { listBanks, createBank, addQuestionsToBank } = await import("./questionBankService.js");
+  const {
+    listBanks,
+    createBank,
+    addQuestionsToBank,
+  } = await import('./questionBankService.js');
+  const { createQuestion } = await import('./questionService.js');
 
   const integration = await getCanvasIntegration(userId);
   if (!integration) {

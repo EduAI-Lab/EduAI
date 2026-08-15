@@ -239,7 +239,13 @@ describe("validateProviderConfig", () => {
 describe("getAvailableProviders / getProviderConfig", () => {
   it("returns all known provider configs", () => {
     const configs = getAvailableProviders();
-    expect(configs.map((c) => c.id).sort()).toEqual(["google", "ollama", "openai", "vllm"]);
+    expect(configs.map((c) => c.id).sort()).toEqual([
+      "google",
+      "ollama",
+      "openai",
+      "opencode",
+      "vllm",
+    ]);
   });
 
   it("returns the config for a known provider id", () => {

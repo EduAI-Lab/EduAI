@@ -25,10 +25,17 @@ import { setSystemSetting, SYSTEM_SETTING_KEYS } from "../../src/services/system
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+  return {
+    ...actual,
+    fetchCoreCourseSafe: vi.fn(),
+    listEduAiCourseEnrollmentsServiceKey: vi.fn(),
+  };
 });
 
-import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import {
+  fetchCoreCourseSafe,
+  listEduAiCourseEnrollmentsServiceKey,
+} from '../../src/services/eduaiClient.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
@@ -60,8 +67,20 @@ const MODE_PAYLOAD = {
   custom: { message: "Custom question", knowledgeLevel: "beginner", apiKey: "test-key" },
 };
 
+function coreEnrollment(userId, role = 'STUDENT') {
+  return {
+    studentId: userId,
+    studentEmail: `${userId}@test.com`,
+    studentName: userId,
+    enrolledAt: new Date().toISOString(),
+    isActive: true,
+    role,
+  };
+}
+
 beforeEach(async () => {
   await truncateAll();
+  vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -119,6 +138,9 @@ async function buildRow(row) {
   switch (row.Access) {
     case "NON_STUDENT":
       mockUser = owner; // platform role INSTRUCTOR
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(mockUser.id, 'INSTRUCTOR'),
+      ]);
       break;
     case "STUDENT_NOT_ENROLLED":
       mockUser = makeStudent();
@@ -129,6 +151,9 @@ async function buildRow(row) {
         data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
       });
       mockUser = student;
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(mockUser.id),
+      ]);
       break;
     }
   }

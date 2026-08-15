@@ -489,9 +489,9 @@ describe("POST /api/questions/extract/save", () => {
   });
 });
 
-describe("POST /api/questions/approve", () => {
-  it("requires authentication before validating the request target", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+describe('POST /api/questions/approve', () => {
+  it('requires authentication before validating the request target', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
 
     const res = await request(app).post("/api/questions/approve").send({ questions: [] });
 

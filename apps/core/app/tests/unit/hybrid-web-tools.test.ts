@@ -104,8 +104,10 @@ describe("buildHybridWebToolContext", () => {
 
     const result = await buildHybridWebToolContext("Fetch the page at https://example.com please.");
 
-    expect(result.context).toContain("Failed to fetch https://example.com (timeout)");
-    expect(result.context).toContain("could not be loaded");
+    expect(result.context).toBe(
+      "The requested page could not be loaded. Answer from general knowledge if needed and say the page could not be loaded.",
+    );
+    expect(result.context).not.toContain("timeout");
   });
 
   it("runs a web search and formats results in webSearch mode", async () => {

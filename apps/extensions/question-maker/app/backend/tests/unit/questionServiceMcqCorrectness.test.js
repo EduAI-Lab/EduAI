@@ -4,16 +4,26 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockMetaFindFirst, mockVariantCreate, mockVariantFindFirst, mockVariantUpdate } =
-  vi.hoisted(() => ({
-    mockMetaFindFirst: vi.fn(),
-    mockVariantCreate: vi.fn(),
-    mockVariantFindFirst: vi.fn(),
-    mockVariantUpdate: vi.fn(),
-  }));
+const {
+  mockMetaFindFirst,
+  mockExecuteRaw,
+  mockTransaction,
+  mockVariantCreate,
+  mockVariantFindFirst,
+  mockVariantUpdate,
+} = vi.hoisted(() => ({
+  mockMetaFindFirst: vi.fn(),
+  mockExecuteRaw: vi.fn(),
+  mockTransaction: vi.fn(),
+  mockVariantCreate: vi.fn(),
+  mockVariantFindFirst: vi.fn(),
+  mockVariantUpdate: vi.fn(),
+}));
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
+    $transaction: mockTransaction,
+    $executeRaw: mockExecuteRaw,
     questionMetadata: { findFirst: mockMetaFindFirst },
     variants: {
       create: mockVariantCreate,
@@ -41,6 +51,13 @@ const CHOICES = [
 describe("questionService MCQ multi-correct persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation(async (operation) => operation({
+      $executeRaw: mockExecuteRaw,
+      variants: {
+        findFirst: mockVariantFindFirst,
+        update: mockVariantUpdate,
+      },
+    }));
   });
 
   describe("createVariant", () => {
@@ -127,12 +144,18 @@ describe("questionService MCQ multi-correct persistence", () => {
     it("multi-correct update normalizes and persists both fields", async () => {
       mockVariantFindFirst.mockResolvedValue({
         id: 5,
+        questionMetadataId: 10,
         isDraft: true,
         answer: "A",
         choices: CHOICES,
         selectAllThatApply: false,
         correctAnswers: null,
-        questionMetadata: { id: 10, type: "MCQ" },
+        questionMetadata: {
+          id: 10,
+          type: 'MCQ',
+          courseId: 1,
+          course: { id: 1, coreCourseId: null },
+        },
       });
       mockVariantUpdate.mockResolvedValue({ id: 5 });
 
@@ -159,12 +182,18 @@ describe("questionService MCQ multi-correct persistence", () => {
     it("choices-only edit does not re-normalize stored answer", async () => {
       mockVariantFindFirst.mockResolvedValue({
         id: 6,
+        questionMetadataId: 10,
         isDraft: true,
         answer: null,
         choices: CHOICES,
         selectAllThatApply: false,
         correctAnswers: null,
-        questionMetadata: { id: 10, type: "MCQ" },
+        questionMetadata: {
+          id: 10,
+          type: 'MCQ',
+          courseId: 1,
+          course: { id: 1, coreCourseId: null },
+        },
       });
       mockVariantUpdate.mockResolvedValue({ id: 6 });
 
@@ -200,12 +229,18 @@ describe("questionService MCQ multi-correct persistence", () => {
     it("non-MCQ update forces selectAllThatApply false and correctAnswers null", async () => {
       mockVariantFindFirst.mockResolvedValue({
         id: 7,
+        questionMetadataId: 11,
         isDraft: true,
         answer: "text",
         choices: null,
         selectAllThatApply: false,
         correctAnswers: null,
-        questionMetadata: { id: 11, type: "SA" },
+        questionMetadata: {
+          id: 11,
+          type: 'SA',
+          courseId: 1,
+          course: { id: 1, coreCourseId: null },
+        },
       });
       mockVariantUpdate.mockResolvedValue({ id: 7 });
 
