@@ -53,6 +53,9 @@ const {
 
 const INSTRUCTOR = { id: 'user-cuid-inst', email: 'inst@test.com', role: 'INSTRUCTOR', name: 'Instructor' };
 const STUDENT = { id: 'user-cuid-student', email: 'student@test.com', role: 'STUDENT', name: 'Student' };
+// ADMIN short-circuits resolveAccessForCourse before the coreCourseId check
+// (#1114), the only caller that can reach a course unlinked from Core.
+const ADMIN = { id: 'user-cuid-admin', email: 'admin@test.com', role: 'ADMIN', name: 'Admin' };
 
 function sessionOk(user) {
   return { ok: true, json: () => Promise.resolve({ user }) };
@@ -111,6 +114,9 @@ describe('GET /api/topics/sync-status/:courseId', () => {
       { id: 't1', courseId: 1, coreTopicId: 'core-t-1', updatedAt: '2026-01-01T00:00:00.000Z' },
       { id: 't2', courseId: 1, coreTopicId: 'core-t-2', updatedAt: '2026-01-02T00:00:00.000Z' },
     ]);
+    getCourseEnrollmentsFromCore.mockResolvedValue({
+      enrollments: [{ studentId: INSTRUCTOR.id, isActive: true, role: 'INSTRUCTOR' }],
+    });
     getCourseTopicsFromCore.mockResolvedValue({
       topics: [{ id: 'core-t-1', name: 'A' }, { id: 'core-t-2', name: 'B' }],
     });
@@ -139,6 +145,9 @@ describe('GET /api/topics/sync-status/:courseId', () => {
       { id: 't1', courseId: 1, coreTopicId: 'core-t-1', updatedAt: '2026-01-01T00:00:00.000Z' },
       { id: 't2', courseId: 1, coreTopicId: null, updatedAt: '2026-01-02T00:00:00.000Z' },
     ]);
+    getCourseEnrollmentsFromCore.mockResolvedValue({
+      enrollments: [{ studentId: INSTRUCTOR.id, isActive: true, role: 'INSTRUCTOR' }],
+    });
     // Bare-array Core response shape (not wrapped in { topics }).
     getCourseTopicsFromCore.mockResolvedValue([{ id: 'core-t-1', name: 'A' }]);
 
@@ -154,7 +163,8 @@ describe('GET /api/topics/sync-status/:courseId', () => {
   });
 
   it('reports zero core topics and a null lastSyncedAt when the course has no local topics and is unlinked from Core', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk(INSTRUCTOR)));
+    // Unlinked course: ADMIN is the only caller that can reach it (#1114).
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk(ADMIN)));
     prisma.course.findUnique.mockResolvedValue({
       id: 2,
       userId: INSTRUCTOR.id,
@@ -186,6 +196,9 @@ describe('GET /api/topics/sync-status/:courseId', () => {
     prisma.topics.findMany.mockResolvedValue([
       { id: 't1', courseId: 1, coreTopicId: 'core-t-1', updatedAt: '2026-01-01T00:00:00.000Z' },
     ]);
+    getCourseEnrollmentsFromCore.mockResolvedValue({
+      enrollments: [{ studentId: INSTRUCTOR.id, isActive: true, role: 'INSTRUCTOR' }],
+    });
     getCourseTopicsFromCore.mockResolvedValue({ unexpected: 'shape' });
 
     const res = await request(app)

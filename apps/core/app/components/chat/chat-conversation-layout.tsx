@@ -44,6 +44,7 @@ export function ChatConversationLayout({
   adhdAssist,
   assistive,
   onAssistiveChange,
+  assistBusy,
   focusMode,
   onFocusModeChange,
   webToolsEnabled,
@@ -58,6 +59,8 @@ export function ChatConversationLayout({
   disabledReason,
   routedModelByMessageId = {},
   streamingRoutedRegistryId = null,
+  cappedMessageIds,
+  onContinue,
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
@@ -181,6 +184,15 @@ export function ChatConversationLayout({
                         )}
                         webToolsEnabled={webToolsEnabled}
                         assistiveDisplay={adhdAssist}
+                        showContinue={
+                          cappedMessageIds?.has(message.id) ?? false
+                        }
+                        onContinue={
+                          onContinue
+                            ? () => onContinue(message.id)
+                            : undefined
+                        }
+                        continueDisabled={isLoading}
                       />
                     );
                   })}
@@ -221,6 +233,7 @@ export function ChatConversationLayout({
         showCourseSelector={showCourseSelector}
         adhdAssist={adhdAssist}
         onAdhdAssistChange={onAssistiveChange}
+        assistBusy={assistBusy}
         focusMode={focusMode}
         onFocusModeChange={onFocusModeChange}
         assistiveHighlight={assistive}

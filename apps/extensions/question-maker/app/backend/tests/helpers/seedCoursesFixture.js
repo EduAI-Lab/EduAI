@@ -10,9 +10,10 @@
  *
  * Every seeded course gets a deterministic, fake `coreCourseId` so it satisfies
  * the "every QM Course row is Core-linked at creation" invariant, same as the
- * `cuid-*` fixture ids used in coreWiringDb.integration.test.js. Tests that
- * stub Core enrollment/course lookups via a catch-all `fetch` mock are
- * unaffected — see resolveAccessForCourse's owner-fallback path.
+ * `cuid-*` fixture ids used in coreWiringDb.integration.test.js. After #1114,
+ * tests that exercise per-course gates must stub Core enrollment (or the
+ * cookie-scoped list) — ownership alone no longer grants access. Prefer
+ * `teachingInstructorFetch` from `tests/helpers/teachingInstructorFetch.js`.
  */
 import { createId } from '@paralleldrive/cuid2';
 import { prisma } from '../../src/config/database.js';

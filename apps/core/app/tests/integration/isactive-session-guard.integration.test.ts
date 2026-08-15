@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 
 const PASSWORD = "SuperSecret1!";
@@ -93,6 +94,31 @@ describe("#971 — isActive enforcement at sign-in and session guard", () => {
     expect(sessionAfter).toBeNull();
 
     // The orphaned session row is revoked too, not just masked at read time.
+    expect(await prisma.session.findUnique({ where: { token: sessionToken } })).toBeNull();
+  });
+
+  // #946: the per-request memo must not widen that window. It dedupes within
+  // one inbound Request only, so the first resolution of the *next* request is
+  // still a live DB read and the after-hook still fires.
+  it("still invalidates on the next request when sessions are resolved through the request memo", async () => {
+    const email = uniqueEmail();
+    const signUpRes = await signUp(email);
+    const cookie = cookieHeaderFrom(signUpRes);
+    expect(cookie).toBeTruthy();
+
+    const requestOne = new Request("http://localhost/dashboard", { headers: { cookie } });
+    const sessionBefore = await getRequestSession(requestOne);
+    expect(sessionBefore?.user?.email).toBe(email);
+    const sessionToken = sessionBefore!.session.token;
+
+    // Repeat calls inside the same request are served from the memo.
+    expect(await getRequestSession(requestOne)).toBe(sessionBefore);
+
+    await prisma.user.update({ where: { email }, data: { isActive: false } });
+
+    // A new inbound request — new Request object, same cookie.
+    const requestTwo = new Request("http://localhost/dashboard", { headers: { cookie } });
+    expect(await getRequestSession(requestTwo)).toBeNull();
     expect(await prisma.session.findUnique({ where: { token: sessionToken } })).toBeNull();
   });
 });

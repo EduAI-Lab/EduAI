@@ -1,0 +1,248 @@
+[
+  {
+    "Access": "unit",
+    "Capability": "staff-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "delete-material",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "none",
+    "Capability": "delete-material",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "manage-students",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "chat-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "staff-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "staff-tab",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "delete-material",
+    "PolicyOn": "yes",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "manage-students",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "chat-tab",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "manage-instructors",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "manage-rag",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "manage-topics",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "manage-topics",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "chat-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "manage-instructors",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "manage-instructors",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "manage-students",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "manage-instructors",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "manage-rag",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "chat-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "unit",
+    "Capability": "manage-students",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "manage-rag",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "delete-material",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "ta",
+    "Capability": "staff-tab",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "manage-students",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "manage-rag",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "manage-instructors",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "staff-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "manage-topics",
+    "PolicyOn": "yes",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "manage-instructors",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "delete-material",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  },
+  {
+    "Access": "none",
+    "Capability": "chat-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "instructor",
+    "Capability": "manage-rag",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "manage-topics",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "manage-students",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "staff-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "ta",
+    "Capability": "manage-rag",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "admin",
+    "Capability": "manage-topics",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "student",
+    "Capability": "chat-tab",
+    "PolicyOn": "no",
+    "MaterialOwn": "yes"
+  },
+  {
+    "Access": "none",
+    "Capability": "delete-material",
+    "PolicyOn": "no",
+    "MaterialOwn": "no"
+  }
+]

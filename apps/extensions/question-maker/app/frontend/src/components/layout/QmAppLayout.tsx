@@ -59,7 +59,7 @@ function resolveTitle(pathname: string): string {
  * course switcher) and a single page label everywhere else. Deep routes (composer,
  * builder, variants) add a third crumb; on a workspace tab the tab bar shows it.
  */
-function WorkspaceBreadcrumb({ pathname, tab }: { pathname: string; tab: string | null }) {
+function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
 
@@ -75,12 +75,15 @@ function WorkspaceBreadcrumb({ pathname, tab }: { pathname: string; tab: string 
     );
   }
 
+  // Deep routes add one current-page crumb (same pattern as assessment builder).
+  // Return to the workspace tab via the page's "Back to …" control, not a Banks/Assessments crumb.
   let sub: string | null = null;
   if (/\/questions\/new$/.test(pathname)) sub = 'New question';
   else if (/\/questions\/[^/]+\/edit$/.test(pathname)) sub = 'Edit question';
   else if (/\/questions\/[^/]+\/variant$/.test(pathname)) sub = 'New variant';
   else if (/\/assessments\/[^/]+\/variants$/.test(pathname)) sub = 'Variants';
   else if (/\/assessments\/[^/]+$/.test(pathname)) sub = 'Assessment builder';
+  else if (/\/banks\/[^/]+$/.test(pathname)) sub = 'Question bank';
 
   return (
     <Breadcrumb>
@@ -204,7 +207,7 @@ function QmAppLayoutInner() {
           : undefined,
       }}
       title={resolveTitle(pathname)}
-      breadcrumbs={<WorkspaceBreadcrumb pathname={pathname} tab={searchParams.get('tab')} />}
+      breadcrumbs={<WorkspaceBreadcrumb pathname={pathname} />}
       headerActions={
         <>
           <CommandSearchButton eventName="qm:open-command" />

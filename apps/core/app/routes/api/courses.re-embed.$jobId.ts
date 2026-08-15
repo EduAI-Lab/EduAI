@@ -1,14 +1,14 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
 import {
   getReEmbedJobForCourse,
   serializeReEmbedJob,
 } from "~/lib/ai/re-embed-job.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }

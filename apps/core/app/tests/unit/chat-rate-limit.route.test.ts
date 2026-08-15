@@ -3,6 +3,13 @@
 // so an authenticated user can't submit unbounded requests to the model.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+const checkRateLimitMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/auth/rate-limit.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/rate-limit.server")>();
+  return { ...actual, checkRateLimit: checkRateLimitMock };
+});
+
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
@@ -92,6 +99,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { logSecurityEvent } from "~/lib/logging.server";
@@ -100,6 +108,7 @@ import prisma from "~/lib/prisma.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 const originalChatRateLimit = process.env.CHAT_RATE_LIMIT;
+const originalChatRateLimitWindow = process.env.CHAT_RATE_LIMIT_WINDOW_MS;
 const originalChatRateWindow = process.env.CHAT_RATE_WINDOW_MS;
 
 function makeRequest(body: object) {
@@ -144,9 +153,17 @@ function mockStream() {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  checkRateLimitMock.mockResolvedValue({ limited: false, retryAfter: 0 });
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   process.env.CHAT_RATE_LIMIT = "2";
+  process.env.CHAT_RATE_LIMIT_WINDOW_MS = "60000";
   process.env.CHAT_RATE_WINDOW_MS = "60000";
+  vi.mocked(requireServiceKey).mockResolvedValue(
+    new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -171,6 +188,8 @@ beforeEach(() => {
 afterEach(() => {
   if (originalChatRateLimit === undefined) delete process.env.CHAT_RATE_LIMIT;
   else process.env.CHAT_RATE_LIMIT = originalChatRateLimit;
+  if (originalChatRateLimitWindow === undefined) delete process.env.CHAT_RATE_LIMIT_WINDOW_MS;
+  else process.env.CHAT_RATE_LIMIT_WINDOW_MS = originalChatRateLimitWindow;
   if (originalChatRateWindow === undefined) delete process.env.CHAT_RATE_WINDOW_MS;
   else process.env.CHAT_RATE_WINDOW_MS = originalChatRateWindow;
 });
@@ -181,21 +200,22 @@ describe("POST /api/chat — per-user rate limit (#987)", () => {
     const res2 = await action(makeRequest(baseBody()));
     expect(res1.status).not.toBe(429);
     expect(res2.status).not.toBe(429);
+    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:user-1", 2, 60_000);
   });
 
-  it("returns 429 once a user exceeds CHAT_RATE_LIMIT within the window", async () => {
-    await action(makeRequest(baseBody()));
-    await action(makeRequest(baseBody()));
-    const res3 = await action(makeRequest(baseBody()));
+  it("returns the stable 429 contract before calling the provider", async () => {
+    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 17 });
 
-    expect(res3.status).toBe(429);
-    expect(await res3.json()).toEqual({ error: "Too Many Requests" });
-    expect(streamText).toHaveBeenCalledTimes(2);
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "RATE_LIMITED", retryAfter: 17 });
+    expect(res.headers.get("Retry-After")).toBe("17");
+    expect(streamText).not.toHaveBeenCalled();
   });
 
   it("logs a RATE_LIMIT_EXCEEDED security event when throttled", async () => {
-    await action(makeRequest(baseBody()));
-    await action(makeRequest(baseBody()));
+    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 17 });
     await action(makeRequest(baseBody()));
 
     expect(logSecurityEvent).toHaveBeenCalledWith(
@@ -209,7 +229,6 @@ describe("POST /api/chat — per-user rate limit (#987)", () => {
 
   it("tracks each user independently", async () => {
     await action(makeRequest(baseBody()));
-    await action(makeRequest(baseBody()));
 
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "user-2", role: "STUDENT" },
@@ -217,26 +236,48 @@ describe("POST /api/chat — per-user rate limit (#987)", () => {
 
     const res = await action(makeRequest(baseBody()));
     expect(res.status).not.toBe(429);
+    expect(checkRateLimitMock).toHaveBeenNthCalledWith(1, "chat:user-1", 2, 60_000);
+    expect(checkRateLimitMock).toHaveBeenNthCalledWith(2, "chat:user-2", 2, 60_000);
   });
 
-  it("does not rate-limit the unauthenticated service-key caller", async () => {
+  it("rate-limits direct service-key callers with a stable non-secret identity", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
-    const { requireServiceKey } = await import("~/lib/auth/guards.server");
     vi.mocked(requireServiceKey).mockResolvedValue(null);
+    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 9 });
 
-    for (let i = 0; i < 5; i++) {
-      const res = await action(makeRequest({ messages: [] }));
-      expect(res.status).not.toBe(429);
-    }
+    const res = await action(
+      makeRequest({ messages: [], model: "vllm:test-model" }),
+    );
+
+    expect(res.status).toBe(429);
+    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:service", 2, 60_000);
   });
 
-  it("falls back to the default limit/window when CHAT_RATE_LIMIT/CHAT_RATE_WINDOW_MS are empty strings", async () => {
-    // A blank env value (e.g. a templated config resolving to "") must not
-    // parse to 0 and throttle every request.
-    process.env.CHAT_RATE_LIMIT = "";
-    process.env.CHAT_RATE_WINDOW_MS = "";
+  it("returns authentication failures before checking the limiter", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
 
     const res = await action(makeRequest(baseBody()));
-    expect(res.status).not.toBe(429);
+
+    expect(res.status).toBe(401);
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the documented defaults when rate-limit env values are blank", async () => {
+    process.env.CHAT_RATE_LIMIT = "";
+    process.env.CHAT_RATE_LIMIT_WINDOW_MS = "";
+    process.env.CHAT_RATE_WINDOW_MS = "";
+
+    await action(makeRequest(baseBody()));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:user-1", 100, 60_000);
+  });
+
+  it("keeps CHAT_RATE_WINDOW_MS as a fallback alias", async () => {
+    process.env.CHAT_RATE_LIMIT_WINDOW_MS = "";
+    process.env.CHAT_RATE_WINDOW_MS = "45000";
+
+    await action(makeRequest(baseBody()));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:user-1", 2, 45_000);
   });
 });

@@ -2,13 +2,25 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { ZodError } from "zod";
-import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
+import {
+  createDataStreamResponse,
+  formatDataStreamPart,
+  StreamData,
+  streamText,
+} from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
+import {
+  classifyProviderError,
+  createProviderFailure,
+  providerFailureBody,
+  providerFailureHeaders,
+  type ProviderFailure,
+} from "~/lib/ai/provider-errors.server";
 import {
   activeRouterVersion,
   parseRouterMode,
@@ -60,6 +72,10 @@ import {
 } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
+  capTokensForLongOutputIntent,
+  didHitAppliedLongOutputCap,
+} from "~/lib/ai/long-output-cap";
+import {
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
   courseScopeGuardrailEnabled,
@@ -87,6 +103,7 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
+  isAdhdOversightDeterministicOnly,
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
@@ -96,7 +113,10 @@ import {
   computeAdhdResponseMetrics,
 } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { classifyRagRetrievalError, findRelevantContent } from "~/lib/ai/embedding";
+import {
+  classifyRagRetrievalError,
+  findRelevantContent,
+} from "~/lib/ai/embedding";
 import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
@@ -111,8 +131,11 @@ import {
   requireServiceKey,
 } from "~/lib/auth/guards.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
-import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
-import { auth } from "~/lib/auth/server";
+import {
+  checkRateLimit,
+  getChatRateLimitConfig,
+  parseEnvInt,
+} from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import {
   getActorContext,
@@ -130,6 +153,7 @@ import {
   enqueueQuestionGeneration,
   isEnqueueRequested,
 } from "~/lib/queue/chat-producer.server";
+import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import {
@@ -162,6 +186,7 @@ import {
   withResolvedModelMetadata,
   withCourseScopeRedirectMetadata,
 } from "~/lib/chat/chat-message-metadata";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -338,7 +363,9 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
  * the plain course-mode RAG path (courseRagHits, every course-scoped
  * request) so both surface the same field with the same formula.
  */
-export function ragContextTokenEstimateForCourseRagHits(hits: HybridRagHit[]): number {
+export function ragContextTokenEstimateForCourseRagHits(
+  hits: HybridRagHit[],
+): number {
   return hits.reduce((acc, hit) => acc + Math.ceil(hit.content.length / 4), 0);
 }
 
@@ -521,6 +548,29 @@ function logStreamError(error: unknown, trace: Record<string, unknown>): void {
   });
 }
 
+function rejectProviderFailure(
+  failure: ProviderFailure,
+  trace: Record<string, unknown>,
+): Response {
+  return chatApiReject(
+    failure.status,
+    providerFailureBody(failure),
+    trace,
+    providerFailureHeaders(failure),
+  );
+}
+
+function providerStreamErrorMessage(
+  provider: string,
+  error: unknown,
+  trace: Record<string, unknown>,
+): string {
+  logStreamError(error, trace);
+  return JSON.stringify(
+    providerFailureBody(classifyProviderError(provider, error)),
+  );
+}
+
 function isClientAbort(error: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true;
   return error instanceof Error && error.name === "AbortError";
@@ -552,7 +602,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let session =
       apiKeySession ??
-      (await auth.api.getSession({ headers: request.headers }));
+      (await getRequestSession(request));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
@@ -642,13 +692,29 @@ export async function action({ request }: ActionFunctionArgs) {
       typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode =
       typeof body.courseCode === "string" ? body.courseCode : undefined;
-    const streaming =
-      body.streaming === undefined ? true : Boolean(body.streaming);
+    // #1246: re-generate the last turn's response under a different ADHD Assist
+    // policy for in-place preview (toggling Assist swaps content, not just
+    // styling). Always non-streaming and never persists anything — it requires
+    // an existing owned chatId (validated below) and reuses that chat's normal
+    // course/RAG/model context, just with `adhdAssist` overridden for this call.
+    const regenerateOnly = body.regenerateOnly === true;
+    const streaming = regenerateOnly
+      ? false
+      : body.streaming === undefined
+        ? true
+        : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
+
+    if (regenerateOnly && !chatId) {
+      return new Response(
+        JSON.stringify({ error: "regenerateOnly requires an existing chatId" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     chatApiTrace("request received", {
       chatMode,
@@ -730,36 +796,34 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // #987: cap LLM completion requests per real end-user. Keyed by
-    // actingUser.id (post-proxy-resolution) so AI Tutor's proxied traffic is
-    // metered per underlying student, not lumped under the shared "service"
-    // caller id. Pure server-to-server calls with no proxyUser stay
-    // unmetered here — they're already gated by the EDUAI_API_KEY secret.
-    if (actingUser.id !== "service") {
-      const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
-      const chatRateWindowMs = parseEnvInt(
-        process.env.CHAT_RATE_WINDOW_MS,
-        60_000,
+    // #987/#1113: meter every authenticated caller before provider work. The
+    // acting user is final here, so approved proxy traffic remains per-user
+    // while direct service-key traffic shares a stable non-secret bucket.
+    const { limit: chatRateLimit, windowMs: chatRateWindowMs } =
+      getChatRateLimitConfig();
+    const rateLimit = await checkRateLimit(
+      `chat:${actingUser.id}`,
+      chatRateLimit,
+      chatRateWindowMs,
+    );
+    if (rateLimit.limited) {
+      const requestContext = getRequestContext(request);
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+          ...requestContext,
+          actionCode: "RATE_LIMIT_EXCEEDED",
+          outcome: "DENIED",
+          entityType: "Chat",
+          details: { userId: actingUser.id },
+        }),
       );
-      if (
-        isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)
-      ) {
-        const requestContext = getRequestContext(request);
-        fireAndForget(
-          logSecurityEvent({
-            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
-            ...requestContext,
-            actionCode: "RATE_LIMIT_EXCEEDED",
-            outcome: "DENIED",
-            entityType: "Chat",
-            details: { userId: actingUser.id },
-          }),
-        );
-        return new Response(JSON.stringify({ error: "Too Many Requests" }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+      return chatApiReject(
+        429,
+        { error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter },
+        { chatMode, userId: actingUser.id },
+        { "Retry-After": String(rateLimit.retryAfter) },
+      );
     }
 
     const normalizedIncomingMessages = filterIncomingClientMessages(
@@ -886,6 +950,9 @@ export async function action({ request }: ActionFunctionArgs) {
       courseScopeGuardrailEnabled: boolean;
     } | null = null;
     if (effectiveCourseId) {
+      // Wide row on purpose: the prompt context below reads `name`, `code`,
+      // `description`, `responseStyleTags`, `aiInstructions` and
+      // `courseScopeGuardrailEnabled` — all outside GATE_COURSE_SELECT.
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
         effectiveCourseId,
@@ -922,7 +989,8 @@ export async function action({ request }: ActionFunctionArgs) {
         aiInstructions: course.aiInstructions ?? null,
         courseTopics,
         // Defaulted off (was on) for easier testing
-        courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? false,
+        courseScopeGuardrailEnabled:
+          course.courseScopeGuardrailEnabled ?? false,
       };
     }
 
@@ -933,19 +1001,23 @@ export async function action({ request }: ActionFunctionArgs) {
     // skips this entirely; the dispatch worker (#168) drains it later.
     if (isEnqueueRequested(body)) {
       try {
-        const { jobId, queuePosition, queueDepth } = await enqueueQuestionGeneration({
-          body,
-          messages: rawMessages,
-          userId: actingUser.id,
-          courseId: effectiveCourseId ?? undefined,
-          requestedModel: model,
-        });
+        const { jobId, queuePosition, queueDepth } =
+          await enqueueQuestionGeneration({
+            body,
+            messages: rawMessages,
+            userId: actingUser.id,
+            courseId: effectiveCourseId ?? undefined,
+            requestedModel: model,
+          });
         // 202 carries a live position/depth snapshot (#915); the client polls
         // the status endpoint (#917) for fresher values.
-        return new Response(JSON.stringify({ jobId, queuePosition, queueDepth }), {
-          status: 202,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ jobId, queuePosition, queueDepth }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       } catch (error) {
         // Queue saturated (#915): an honest rate signal, not a failure — 429
         // with Retry-After so the client backs off and retries.
@@ -961,15 +1033,18 @@ export async function action({ request }: ActionFunctionArgs) {
             { "Retry-After": String(error.retryAfterSeconds) },
           );
         }
-        // Invalid payload is the caller's fault (400); a queue/Redis failure is
-        // ours (502) — never mask an infra outage as a client error.
+        // Invalid payload is the caller's fault (400); Redis/DB outages are 503
+        // (#1112) — never mask an infra outage as a client error.
+        const status = httpStatusForEnqueueError(error);
         const isValidationError = error instanceof ZodError;
         return chatApiReject(
-          isValidationError ? 400 : 502,
+          status,
           {
             error: isValidationError
               ? "Invalid AI job payload"
-              : "Failed to enqueue AI job",
+              : status === 503
+                ? "Queue unavailable"
+                : "Failed to enqueue AI job",
             details: error instanceof Error ? error.message : "Unknown error",
           },
           { chatMode, userId: actingUser.id },
@@ -989,7 +1064,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const ephemeral = isServiceKeyCaller;
 
     // Persist any system-prompt change onto the chat loaded above.
-    if (hasSystemPromptField && !ephemeral) {
+    // regenerateOnly is a read-only content preview (#1246) — must never write
+    // any field onto the chat, not just adhdAssist (review on #1365).
+    if (hasSystemPromptField && !ephemeral && !regenerateOnly) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
           chat = await prisma.chat.update({
@@ -1014,6 +1091,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // course was selected (e.g. user picked the course mid-conversation).
     if (
       !ephemeral &&
+      !regenerateOnly &&
       chat &&
       effectiveCourseId &&
       chat.courseId !== effectiveCourseId &&
@@ -1025,8 +1103,11 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    // regenerateOnly always sets adhdAssist to request a one-off override — must
+    // never persist it as the chat's new stored default (#1246).
     if (
       !ephemeral &&
+      !regenerateOnly &&
       hasAdhdAssistField &&
       chat &&
       chat.adhdAssist !== adhdAssist
@@ -1291,7 +1372,8 @@ export async function action({ request }: ActionFunctionArgs) {
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
-        ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
+        ragContextTokenEstimate =
+          ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err });
       }
@@ -1422,14 +1504,16 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       } catch (err) {
         if (err instanceof FleetUnavailableError) {
-          return new Response(
-            JSON.stringify({
-              error: "No healthy vLLM fleet server available",
-              details: err.message,
-            }),
+          return rejectProviderFailure(
+            createProviderFailure(
+              parsedModel.providerId,
+              "MODEL_UNAVAILABLE",
+            ),
             {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
+              chatMode,
+              userId: actingUser.id,
+              model: resolvedModelId,
+              stage: "fleet-resolution",
             },
           );
         }
@@ -1489,19 +1573,21 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
-      const envHint =
-        parsedModel.providerId === "vllm"
-          ? "VLLM_BASE_URL"
-          : parsedModel.providerId === "ollama"
-            ? "OLLAMA_BASE_URL"
-            : "provider API key";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
-        }),
+      const isServerManagedProvider =
+        parsedModel.providerId === "vllm" ||
+        parsedModel.providerId === "ollama";
+      return rejectProviderFailure(
+        createProviderFailure(
+          parsedModel.providerId,
+          isServerManagedProvider
+            ? "PROVIDER_UNAVAILABLE"
+            : "INVALID_PROVIDER_CONFIG",
+        ),
         {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          userId: actingUser.id,
+          model: resolvedModelId,
+          stage: "provider-configuration",
         },
       );
     }
@@ -1511,7 +1597,8 @@ export async function action({ request }: ActionFunctionArgs) {
     );
     const appendMessages = async (messages: GenericMessage[]) => {
       // Stateless callers never persist messages (no chat row / no real user).
-      if (ephemeral || !chat?.id) return;
+      // regenerateOnly is a read-only content preview (#1246) — never persists.
+      if (ephemeral || regenerateOnly || !chat?.id) return;
       if (!messages.length) return;
 
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
@@ -1552,15 +1639,21 @@ export async function action({ request }: ActionFunctionArgs) {
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
-      const envVar =
-        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
-        }),
+      const isServerManagedProvider =
+        parsedModel.providerId === "vllm" ||
+        parsedModel.providerId === "ollama";
+      return rejectProviderFailure(
+        createProviderFailure(
+          parsedModel.providerId,
+          isServerManagedProvider
+            ? "PROVIDER_UNAVAILABLE"
+            : "INVALID_PROVIDER_CONFIG",
+        ),
         {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          userId: actingUser.id,
+          model: resolvedModelId,
+          stage: "provider-registry",
         },
       );
     }
@@ -1653,24 +1746,13 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       aiModel = registry.languageModel(resolvedModelId);
     } catch (err: unknown) {
-      const available =
-        typeof err === "object" &&
-        err !== null &&
-        "availableProviders" in err &&
-        Array.isArray(
-          (err as { availableProviders?: string[] }).availableProviders,
-        )
-          ? (err as { availableProviders: string[] }).availableProviders.join(
-              ", ",
-            )
-          : enabledProviders.join(", ");
-      return new Response(
-        JSON.stringify({
-          error: `Model "${resolvedModelId}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
-        }),
+      return rejectProviderFailure(
+        classifyProviderError(parsedModel.providerId, err),
         {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          userId: actingUser.id,
+          model: resolvedModelId,
+          stage: "model-resolution",
         },
       );
     }
@@ -1853,13 +1935,17 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       })();
 
-      let modelCapabilities: Awaited<ReturnType<typeof getChatModelCapabilities>>;
+      let modelCapabilities: Awaited<
+        ReturnType<typeof getChatModelCapabilities>
+      >;
       let courseRagResult: Awaited<typeof courseRagPromise>;
-      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all([
-        webToolsEnabledPromise,
-        getChatModelCapabilities(model),
-        courseRagPromise,
-      ]);
+      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all(
+        [
+          webToolsEnabledPromise,
+          getChatModelCapabilities(model),
+          courseRagPromise,
+        ],
+      );
 
       const tools = buildChatToolRegistry({
         effectiveCourseId,
@@ -2033,6 +2119,31 @@ ${buildEmptyCourseRagBlock()}`;
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
+
+    const maxTokensBeforeLongOutputCap = streamConfig.maxTokens;
+    const longOutputCap = capTokensForLongOutputIntent({
+      prompt: lastUserText,
+      currentMaxTokens: streamConfig.maxTokens,
+      adhdAssist: effectiveAdhdAssist,
+    });
+
+    streamConfig.maxTokens = longOutputCap.maxTokens;
+
+    let longOutputCapApplied =
+      longOutputCap.isLongOutputIntent &&
+      longOutputCap.maxTokens < maxTokensBeforeLongOutputCap;
+    const didHitLongOutputCap = (usage: unknown): boolean => {
+      const completionTokens = coalesceTokenUsage(
+        usage as Record<string, unknown> | undefined,
+      ).completionTokens;
+
+      return didHitAppliedLongOutputCap({
+        capApplied: longOutputCapApplied,
+        maxTokens: streamConfig.maxTokens,
+        completionTokens,
+      });
+    };
+
     const priorAssistantText = extractMessageText(
       [...trimmedMessages]
         .reverse()
@@ -2094,6 +2205,15 @@ ${buildEmptyCourseRagBlock()}`;
         minOutput: 256,
       });
 
+      if (longOutputCap.isLongOutputIntent) {
+        const adminContextMaxTokens = streamConfig.maxTokens;
+        streamConfig.maxTokens = Math.min(
+          adminContextMaxTokens,
+          longOutputCap.maxTokens,
+        );
+        longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
+      }
+      
       chatApiTrace("max output tokens capped", {
         contextWindow: adminContextWindow,
         estimatedInputTokens,
@@ -2159,6 +2279,9 @@ ${buildEmptyCourseRagBlock()}`;
         profileStructuralPass?: boolean;
       },
     ) => {
+      // regenerateOnly is a read-only content preview (#1246) — never logs
+      // compliance telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
       const metrics = computeAdhdResponseMetrics(trimmed, {
@@ -2208,6 +2331,8 @@ ${buildEmptyCourseRagBlock()}`;
       forceHybridRag: effectiveForceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
+      longOutputIntent: longOutputCap.isLongOutputIntent,
+      effectiveMaxTokens: streamConfig.maxTokens,
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
@@ -2270,6 +2395,9 @@ ${buildEmptyCourseRagBlock()}`;
         | undefined;
       finishReason: string;
     }) => {
+      // regenerateOnly is a read-only content preview (#1246) — never
+      // persists routing/sustainability telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       await persistAiInteractionTelemetry({
         userId: actingUser.id,
         courseId: effectiveCourseId,
@@ -2283,6 +2411,8 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
+        serverId: fleetPick?.serverId ?? null,
+        chatId: chat?.id ?? null,
       });
     };
 
@@ -2300,8 +2430,13 @@ ${buildEmptyCourseRagBlock()}`;
       const probe = shouldProbeFleetStream
         ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
         : null;
+      const streamData = streaming && !needsOversight ? new StreamData() : null;
 
-      const result = streamText({
+      // The AI SDK returns synchronously, but several compatible adapters and
+      // long-standing route tests return a promise. Normalizing both shapes
+      // here also keeps rejected/aborted startup promises inside the existing
+      // retry and AbortError handling path.
+      const result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
@@ -2341,6 +2476,10 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
+              streamData?.appendMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              });
+              void streamData?.close();
               const assistantText =
                 text || extractAssistantText(response?.messages);
               if (assistantText) {
@@ -2349,6 +2488,10 @@ ${buildEmptyCourseRagBlock()}`;
                     id: randomUUID(),
                     role: "assistant",
                     content: assistantText,
+                    metadata: {
+                      finishReason,
+                      hitLongOutputCap: didHitLongOutputCap(usage),
+                    },
                   },
                 ]).catch((err) => {
                   console.error(
@@ -2361,6 +2504,7 @@ ${buildEmptyCourseRagBlock()}`;
         onError: ({ error }) => {
           logStreamError(error, streamTrace);
           probe?.hooks.signalError(error);
+          void streamData?.close();
         },
       });
 
@@ -2400,13 +2544,14 @@ ${buildEmptyCourseRagBlock()}`;
           void pump;
         }
       }
-      return result;
+      return { result, streamData };
     };
 
     let result;
+    let liveStreamData: StreamData | null = null;
     let fleetRetry = false;
     try {
-      result = await runStreamText();
+      ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
         releaseAdmission();
@@ -2443,7 +2588,7 @@ ${buildEmptyCourseRagBlock()}`;
               previousServerId: failedPick.serverId,
               fleetRetryAttempt: true,
             });
-            result = await runStreamText();
+            ({ result, streamData: liveStreamData } = await runStreamText());
             // #876 success marker — only after the alternate attempt succeeds.
             fleetRetry = true;
             routerContext = {
@@ -2464,42 +2609,19 @@ ${buildEmptyCourseRagBlock()}`;
           if (isClientAbort(retryError, request.signal)) {
             return clientAbortResponse();
           }
-          if (chatMode === "admin") {
-            logStreamError(retryError, streamTrace);
-            const hint =
-              parsedModel.providerId === "vllm"
-                ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-                : "";
-            return chatApiReject(
-              502,
-              {
-                error: `LLM stream failed: ${formatStreamError(retryError)}.${hint}`,
-                code: "LLM_STREAM_FAILED",
-                fleetRetry,
-              },
-              streamTrace,
-            );
-          }
-          throw retryError;
+          logStreamError(retryError, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, retryError),
+            { ...streamTrace, stage: "stream-startup", fleetRetry },
+          );
         }
       } else {
         releaseAdmission();
-        if (chatMode === "admin") {
-          logStreamError(error, streamTrace);
-          const hint =
-            parsedModel.providerId === "vllm"
-              ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-              : "";
-          return chatApiReject(
-            502,
-            {
-              error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
-              code: "LLM_STREAM_FAILED",
-            },
-            streamTrace,
-          );
-        }
-        throw error;
+        logStreamError(error, streamTrace);
+        return rejectProviderFailure(
+          classifyProviderError(parsedModel.providerId, error),
+          { ...streamTrace, stage: "stream-startup" },
+        );
       }
     }
 
@@ -2511,9 +2633,13 @@ ${buildEmptyCourseRagBlock()}`;
       let sources: Awaited<typeof result.sources> | undefined;
       let reasoning: Awaited<typeof result.reasoning> | undefined;
       let response: Awaited<typeof result.response> | undefined;
+      let oversightStage: "provider" | "application" = "provider";
 
       try {
-        await result.consumeStream();
+        // `consumeStream` is an SDK convenience, not part of every compatible
+        // provider result. The result promises below are sufficient when it is
+        // absent.
+        await result.consumeStream?.();
 
         const consumed = await Promise.all([
           result.text,
@@ -2540,13 +2666,17 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
               priorAssistantText,
               toolsUsed: adhdToolsUsed,
+              onlyDeterministic: isAdhdOversightDeterministicOnly(),
             })
           : emptyOversightAuditResult();
+        oversightStage = "application";
 
         finalText = audited.text || draft;
         const normalizedOversightUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
           responseText: finalText,
           usage: {
@@ -2574,8 +2704,19 @@ ${buildEmptyCourseRagBlock()}`;
             response?.messages,
             text,
           );
-          if (toPersist.length > 0) {
-            await appendMessages(toPersist);
+
+          const messagesWithMetadata: GenericMessage[] = toPersist.map(
+            (message) => ({
+              ...(message as GenericMessage),
+              metadata: {
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              },
+            }),
+          );
+
+          if (messagesWithMetadata.length > 0) {
+            await appendMessages(messagesWithMetadata);
           }
         };
 
@@ -2609,6 +2750,11 @@ ${buildEmptyCourseRagBlock()}`;
               if (finalText) {
                 dataStream.write(formatDataStreamPart("text", finalText));
               }
+
+              dataStream.writeMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              });
+
               dataStream.write(
                 formatDataStreamPart("finish_message", {
                   finishReason: finishReason ?? "stop",
@@ -2627,6 +2773,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(usage),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2634,7 +2781,8 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
@@ -2651,6 +2799,13 @@ ${buildEmptyCourseRagBlock()}`;
         releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
+        }
+        if (oversightStage === "provider") {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, error),
+            { ...streamTrace, stage: "oversight-provider" },
+          );
         }
         console.error("Error in ADHD oversight response:", error);
         return new Response(
@@ -2692,24 +2847,25 @@ ${buildEmptyCourseRagBlock()}`;
       return withAdmissionRelease(
         result.toDataStreamResponse({
           headers,
-          ...(chatMode === "admin"
-            ? {
-                getErrorMessage: (error) => {
-                  logStreamError(error, streamTrace);
-                  const base = formatStreamError(error);
-                  if (parsedModel.providerId === "vllm") {
-                    return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
-                  }
-                  return base;
-                },
-              }
-            : {}),
+          ...(liveStreamData ? { data: liveStreamData } : {}),
+          // HTTP status/headers are immutable after this 200 stream begins.
+          // Publish the same stable provider body through the AI SDK's stream
+          // error channel instead of pretending a late failure can be a 502.
+          getErrorMessage: (error) =>
+            providerStreamErrorMessage(
+              parsedModel.providerId,
+              error,
+              streamTrace,
+            ),
         }),
         release,
       );
     } else {
+      let providerResultResolved = false;
       try {
-        await result.consumeStream();
+        // Some compatible providers expose only the result promises and omit
+        // this optional SDK convenience method.
+        await result.consumeStream?.();
 
         const [text, usage, finishReason, sources, reasoning, response] =
           await Promise.all([
@@ -2720,11 +2876,19 @@ ${buildEmptyCourseRagBlock()}`;
             result.reasoning,
             result.response,
           ]);
+        providerResultResolved = true;
 
         if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter(
-            (message) => message.role === "assistant",
-          );
+          const assistantMessages: GenericMessage[] = response.messages
+            .filter((message) => message.role === "assistant")
+            .map((message) => ({
+              ...(message as GenericMessage),
+              metadata: {
+                finishReason,
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              },
+            }));
+
           await appendMessages(assistantMessages);
         } else {
           const assistantText =
@@ -2735,6 +2899,10 @@ ${buildEmptyCourseRagBlock()}`;
                 id: randomUUID(),
                 role: "assistant",
                 content: assistantText,
+                metadata: {
+                  finishReason,
+                  hitLongOutputCap: didHitLongOutputCap(usage),
+                },
               },
             ]);
           }
@@ -2743,6 +2911,8 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
         await persistTurnTelemetry({
           responseText: text ?? "",
           usage: {
@@ -2768,6 +2938,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(usage),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -2775,7 +2946,8 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
@@ -2792,6 +2964,13 @@ ${buildEmptyCourseRagBlock()}`;
         releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
+        }
+        if (!providerResultResolved) {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, error),
+            { ...streamTrace, stage: "non-streaming-provider" },
+          );
         }
         console.error("Error in non-streaming response:", error);
         return new Response(

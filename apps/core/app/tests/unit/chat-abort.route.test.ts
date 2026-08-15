@@ -83,7 +83,7 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
-import { streamText } from "ai";
+import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
@@ -208,4 +208,72 @@ describe("Chat API client abort (#267)", () => {
 
     expect(res.status).toBe(499);
   });
+
+  it("normalizes non-admin stream startup failures", async () => {
+    vi.mocked(streamText).mockImplementation(() => {
+      throw providerApiError(503, "15");
+    });
+
+    const res = await action(makeRequest(baseBody()));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("15");
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+  });
+
+  it("normalizes non-streaming provider result failures", async () => {
+    const providerError = providerApiError(503, "7");
+    vi.mocked(streamText).mockReturnValue({
+      consumeStream: vi.fn().mockRejectedValue(providerError),
+      text: Promise.resolve(""),
+      usage: Promise.resolve(undefined),
+      finishReason: Promise.resolve("error"),
+      sources: Promise.resolve([]),
+      reasoning: Promise.resolve(undefined),
+      response: Promise.resolve(undefined),
+    } as never);
+
+    const res = await action(makeRequest(baseBody({ streaming: false })));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("7");
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "vllm",
+    });
+  });
+
+  it("rejects a missing cloud-provider configuration before provider work", async () => {
+    const res = await action(
+      makeRequest(baseBody({ model: "openai:gpt-4o", apiKeys: {} })),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Provider configuration is invalid",
+      code: "INVALID_PROVIDER_CONFIG",
+      retryable: false,
+      provider: "openai",
+    });
+    expect(streamText).not.toHaveBeenCalled();
+  });
 });
+
+function providerApiError(statusCode: number, retryAfter: string) {
+  return new APICallError({
+    message: "provider failed with sk-do-not-leak",
+    url: "https://provider.test/v1/chat",
+    requestBodyValues: { apiKey: "sk-do-not-leak" },
+    statusCode,
+    responseHeaders: { "retry-after": retryAfter },
+    responseBody: "private provider response",
+    isRetryable: true,
+  });
+}

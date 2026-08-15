@@ -19,6 +19,7 @@ const prismaMock = vi.hoisted(() => ({
 const queueAdd = vi.hoisted(() => vi.fn());
 const getQueueMock = vi.hoisted(() => vi.fn(() => ({ add: queueAdd })));
 const runCompletionMock = vi.hoisted(() => vi.fn());
+const persistAiInteractionTelemetryMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 vi.mock("@prisma/client", () => ({
@@ -36,6 +37,9 @@ vi.mock("~/lib/queue/queues.server", async (importOriginal) => {
 });
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: runCompletionMock,
+}));
+vi.mock("~/lib/ai/routing/telemetry.server", () => ({
+  persistAiInteractionTelemetry: persistAiInteractionTelemetryMock,
 }));
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
@@ -88,6 +92,7 @@ beforeEach(() => {
   prismaMock.aiJob.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.aiJob.delete.mockResolvedValue({});
   queueAdd.mockResolvedValue({ id: "bull_1" });
+  persistAiInteractionTelemetryMock.mockResolvedValue(undefined);
 });
 
 describe("AI-job dequeue worker", () => {
@@ -375,6 +380,83 @@ describe("AI-job execution", () => {
         routingContext: { jobType: "background" },
         signal: expect.any(AbortSignal),
       }),
+    );
+  });
+
+  // Async Question Maker jobs (this seam) previously never wrote an
+  // AIInteraction row at all, so a completed job never showed up in the
+  // admin Servers tab's per-server/per-model totals — those totals only
+  // ever queried AIInteraction. This mirrors chat.ts's persistTurnTelemetry
+  // call so worker-executed completions become visible the same way.
+  it("persists AIInteraction telemetry for the fleet server that served the job", async () => {
+    runCompletionMock.mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: {
+        content: '[{"question":"What is binary search?"}]',
+        model: "vllm:qwen2.5-32b-instruct",
+        usage: { inputTokens: 12, outputTokens: 20 },
+        finishReason: "stop",
+      },
+      internal: {
+        fleetHost: "http://cmps03:8001",
+        fleetServerId: "cmps03",
+      },
+    });
+
+    await executeAiJobPayload(payload);
+
+    expect(persistAiInteractionTelemetryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user_1",
+        courseId: "course_1",
+        resolvedModelId: "vllm:qwen2.5-32b-instruct",
+        query: "Generate questions about binary search",
+        responseText: '[{"question":"What is binary search?"}]',
+        usage: { inputTokens: 12, outputTokens: 20 },
+        finishReason: "stop",
+        durationMs: expect.any(Number),
+        serverId: "cmps03",
+      }),
+    );
+  });
+
+  it("persists a null serverId when the completion was not fleet-routed", async () => {
+    runCompletionMock.mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: {
+        content: "[]",
+        model: "openai:gpt-4o",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        finishReason: "stop",
+      },
+      internal: { fleetHost: null, fleetServerId: null },
+    });
+
+    await executeAiJobPayload(payload);
+
+    expect(persistAiInteractionTelemetryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ serverId: null }),
+    );
+  });
+
+  it("does not let a telemetry write failure fail the job itself", async () => {
+    runCompletionMock.mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: {
+        content: "[]",
+        model: "vllm:qwen2.5-32b-instruct",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        finishReason: "stop",
+      },
+      internal: { fleetHost: "http://cmps03:8001", fleetServerId: "cmps03" },
+    });
+    persistAiInteractionTelemetryMock.mockRejectedValueOnce(new Error("db unavailable"));
+
+    await expect(executeAiJobPayload(payload)).resolves.toEqual(
+      expect.objectContaining({ kind: "question-generation" }),
     );
   });
 

@@ -6,6 +6,7 @@
  * the callerEnrollmentRole-vs-roster parity analysis.
  */
 import { prisma } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 import { LEVELS, getAuthorizedUnits } from '../middleware/courseAccess.js';
 import {
   getAllCoursesFromCore,
@@ -15,11 +16,26 @@ import {
   searchCoursesFromCore,
 } from './coreApiService.js';
 import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
+import { ensureCourseAnchor } from './ensureCourseAnchor.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
 const accessSyncedAtByUser = new Map();
 const coreCatalogCache = { courses: null, refreshedAt: 0 };
+
+/**
+ * Max concurrent `ensureCourseAnchor` calls when ADMIN's list backfills
+ * missing anchors (#1270) — each holds an advisory-lock transaction for its
+ * duration, so this bounds how many are open against the pool at once
+ * instead of fanning out one per Core course on a fresh deploy/import.
+ *
+ * Prisma's default `connection_limit` is `2 * num_cpus + 1` (~9-17 on typical
+ * hardware; `config/database.js` doesn't override it), and this request
+ * shares that pool with everything else the process is doing concurrently.
+ * 8 stays under the low end of that range with headroom, instead of the
+ * batch alone being able to exhaust the pool and hit `P2024` (#1270 review).
+ */
+const ADMIN_ANCHOR_BACKFILL_BATCH_SIZE = 8;
 
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
 const CORE_UNAVAILABLE_NAME = 'Course unavailable';
@@ -228,9 +244,10 @@ export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}
  */
 export async function listCoursesForUser(reqUser, { cookie } = {}) {
   // `id` breaks ties so the caller's offset slice is stable across requests:
-  // ADMIN anchor materialization below creates many rows in one statement,
-  // giving them an identical `createdAt` that would otherwise let a course show
-  // up on two pages while another never appears.
+  // ADMIN anchor materialization below can create several rows with an
+  // identical `createdAt` in the same request (the batched `ensureCourseAnchor`
+  // loop backfilling missing anchors, #1270), which would otherwise let a
+  // course show up on two pages while another never appears.
   const allCourses = await prisma.course.findMany({
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
   });
@@ -258,14 +275,11 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // rows — materialize an anchor for every Core course that doesn't have
     // one yet, so the client always has a real local id to route by (mirrors
     // ai-tutor's `ensureOfferingAnchors`, apps/extensions/ai-tutor/server/src/
-    // services/importTaughtCoursesService.js). Batched: `allCourses` above is
-    // already every local row unfiltered, so the "existing ids" read is free
-    // — no extra findMany. One createMany for the missing set, idempotent via
-    // `ignoreDuplicates` (Postgres ON CONFLICT DO NOTHING on the unique
-    // `core_course_id` index) so concurrent admin requests racing to
-    // materialize the same course never error. Core unreachable ⇒ coreById is
-    // empty ⇒ nothing to materialize ⇒ falls through to the existing local
-    // rows with placeholder projection (degrade, not error).
+    // services/importTaughtCoursesService.js). Batched across missing ids via
+    // shared `ensureCourseAnchor` (#1114 / #1270) so POST/import races serialize
+    // on the same advisory lock. Core unreachable ⇒ coreById is empty ⇒
+    // nothing to materialize ⇒ falls through to the existing local rows with
+    // placeholder projection (degrade, not error).
     const existingCoreCourseIds = new Set(
       allCourses.map((c) => c.coreCourseId).filter(Boolean),
     );
@@ -275,14 +289,40 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
 
     let adminCourses = allCourses;
     if (missingCoreCourseIds.length > 0) {
-      await prisma.course.createMany({
-        data: missingCoreCourseIds.map((coreCourseId) => ({ userId: reqUser.id, coreCourseId })),
-        skipDuplicates: true,
+      // Same locked ensure as POST /api/course and auto-import (#1114 / #1270).
+      // Parallel across distinct coreCourseIds, but batched — on a fresh
+      // deploy or after a catalog import, missingCoreCourseIds can be the
+      // entire Core catalog, and each ensure opens its own interactive
+      // transaction holding an advisory lock for its duration. Unbounded
+      // fan-out there means one ADMIN list request opening thousands of
+      // concurrent transactions against the pool at once.
+      // Backfill is opportunistic materialization, not the point of the
+      // request — one transient failure (P2024, a lock timeout, a dropped
+      // connection) on a single anchor must not 500 the whole ADMIN list.
+      // allSettled + warn-log instead of Promise.all (#1270 review); the
+      // re-fetch below just reads back whatever did land.
+      for (let i = 0; i < missingCoreCourseIds.length; i += ADMIN_ANCHOR_BACKFILL_BATCH_SIZE) {
+        const batch = missingCoreCourseIds.slice(i, i + ADMIN_ANCHOR_BACKFILL_BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map((coreCourseId) => ensureCourseAnchor(reqUser.id, coreCourseId)),
+        );
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'rejected') {
+            logger.warn(
+              { coreCourseId: batch[index], error: result.reason },
+              'ADMIN course-list anchor backfill failed for one course; continuing',
+            );
+          }
+        }
+      }
+      // Re-fetch: ensure does not return every row, and a racing request may
+      // have inserted some of these first — read back the ground truth.
+      // Same `id` tiebreak as the initial findMany above, so a fresh
+      // materialization here doesn't reintroduce the pagination instability
+      // that tiebreak exists to prevent.
+      adminCourses = await prisma.course.findMany({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       });
-      // Re-fetch: createMany doesn't return the created rows, and a racing
-      // request may have inserted some of these rows first — read back the
-      // ground truth.
-      adminCourses = await prisma.course.findMany({ orderBy: { createdAt: 'desc' } });
     }
 
     // Catalog-sourced dedupe: an existing local anchor and a freshly
@@ -306,8 +346,8 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     const scopedCourses = await listCoursesFromCore(cookie, { all: true });
     roleByCoreId = new Map(scopedCourses.map((c) => [c.id, c.callerEnrollmentRole ?? null]));
   } catch {
-    // Core unreachable — every row falls through to the owner-fallback below,
-    // same degrade as the old per-row path (§5 "Core-down" unchanged).
+    // Core unreachable — roleByCoreId stays empty; deriveListAccess fails closed
+    // (#1114). Ownership alone does not keep rows visible.
   }
 
   const authorizedUnits =
@@ -401,7 +441,13 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
             // (`coreCourseId: null`) get automatic visibility here. When the
             // mirror is healthy the fallback still applies to a linked course
             // that has no synced grant at all (never enrolled in Core, e.g. a
-            // freshly-linked course pending Core sync).
+            // freshly-linked course pending Core sync) — `importTaughtCoursesFromCore`
+            // creates the anchor and `syncCourseAccessMirror` writes the grant
+            // on separate throttles (routes/course.js), so a just-imported
+            // course would otherwise stay invisible until the next sync
+            // window. See #1270 review: narrowing this to unconditionally
+            // `coreCourseId: null` broke that auto-import path (cascade-delete
+            // E2E) and needs the import/grant timing gap closed first.
             ...(accessMirrorHealthy
               ? { OR: [{ coreCourseId: null }, { accessGrants: { none: { userId: reqUser.id } } }] }
               : { coreCourseId: null }),
@@ -485,18 +531,11 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
  * `isPublished: true` (an INSTRUCTOR/TA enrollment has no such gate), so a
  * caller who is a STUDENT on an unpublished course is OMITTED from the cookie
  * list entirely — `roleByCoreId.get(...)` is then `undefined` for that course,
- * same as "no enrollment". That's harmless here: this function's result is
- * only ever kept when `rank >= MIN_LIST_RANK` (instructor), and `student` is
- * rank 0 — a caller in that edge either isn't the local owner (excluded either
- * way) or is (owner-fallback below still grants instructor access), so the
- * omission never changes what `listCoursesForUser` returns.
+ * same as "no enrollment". Local ownership never elevates that miss (#1114).
  */
 function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnits }) {
-  const ownerFallback = () => (reqUser.id === row.userId ? LEVELS.instructor : null);
-
-  // Course not yet linked to Core: no enrollment data exists (mirrors
-  // resolveAccessForCourse's unlinked branch).
-  if (!row.coreCourseId) return ownerFallback();
+  // Course not yet linked to Core: no enrollment/unit data can authorize anyone.
+  if (!row.coreCourseId) return null;
 
   // UNIT_ADMIN unit lock (§19): checked first, short-circuits on a match — a
   // null department is never a match. Department is read from the already-
@@ -519,11 +558,8 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
     case 'STUDENT':
       return LEVELS.student;
     default:
-      // No cookie-scoped role for this course — either genuinely unenrolled,
-      // or the unpublished-student edge documented above. The QM course
-      // linker may also not appear in Core's roster yet right after a fresh
-      // link/sync (same edge `resolveAccessForCourse` handles).
-      return ownerFallback();
+      // No cookie-scoped role — fail closed (#1114). Ownership is not access.
+      return null;
   }
 }
 

@@ -123,7 +123,10 @@ describe("reviveStoredMessage", () => {
         id: "m8",
         role: "assistant",
         content: "answer",
-        metadata: { resolvedModelId: "vllm:qwen2.5-7b-instruct", wasAutoRouted: true },
+        metadata: {
+          resolvedModelId: "vllm:qwen2.5-7b-instruct",
+          wasAutoRouted: true,
+        },
       },
     });
 
@@ -133,9 +136,44 @@ describe("reviveStoredMessage", () => {
     });
   });
 
+  it("preserves durable long-output-cap metadata on assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m6",
+      role: "assistant",
+      content: {
+        id: "m6",
+        role: "assistant",
+        content: "truncated answer",
+        metadata: {
+          resolvedModelId: "openai:gpt-4o",
+          hitLongOutputCap: true,
+        },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
+      hitLongOutputCap: true,
+    });
+  });
+
+  it("preserves the long-output-cap flag without resolved-model metadata", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m7",
+      role: "assistant",
+      content: {
+        content: "truncated answer",
+        metadata: { hitLongOutputCap: true },
+      },
+    });
+
+    expect(revived.metadata).toEqual({ hitLongOutputCap: true });
+  });
+
   it("drops malformed or non-assistant resolved-model metadata", () => {
     const malformed = reviveStoredMessage({
-      messageId: "m6",
+      messageId: "m8",
       role: "assistant",
       content: {
         content: "answer",
@@ -143,7 +181,7 @@ describe("reviveStoredMessage", () => {
       },
     });
     const user = reviveStoredMessage({
-      messageId: "m7",
+      messageId: "m9",
       role: "user",
       content: {
         content: "question",

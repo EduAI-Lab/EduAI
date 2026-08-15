@@ -1,12 +1,12 @@
-import { auth } from "~/lib/auth/server";
 import { resolveChatReadAccess } from "~/lib/chat-history/server";
 import prisma from "~/lib/prisma.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -101,7 +101,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   try {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getRequestSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,

@@ -13,8 +13,19 @@ const prismaMock = vi.hoisted(() => {
   };
   return {
     user: { findUnique: vi.fn() },
-    enrollment: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    enrollment: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
+    // The mutation helpers pass a callback; `getCourseEnrollmentsPage` passes an array
+    // of promises. Support both so one mock serves every caller in this file.
+    $transaction: vi.fn(async (arg: unknown) =>
+      Array.isArray(arg) ? Promise.all(arg) : (arg as (t: typeof tx) => Promise<unknown>)(tx),
+    ),
     __tx: tx,
   };
 });
@@ -29,6 +40,9 @@ import {
   deactivateEnrollment,
   requiredRankForEnrollmentRole,
   canAddEnrollmentRole,
+  isEnrollmentRole,
+  getCourseEnrollments,
+  getCourseEnrollmentsPage,
 } from "~/lib/courses/enrollments.server";
 
 const tx = prismaMock.__tx;
@@ -216,5 +230,92 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
     const result = await deactivateEnrollment("c1", "e1");
     expect(result.status).toBe("204");
     expect(tx.enrollment.count).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #1369: these two readers switched from `include` to an explicit `select`. The shape they
+ * ask Prisma for IS the contract with `mapEnrollment`, so assert on the query argument
+ * rather than on a hand-written fixture that could drift from what the DB returns.
+ */
+const EXPECTED_SELECT = {
+  id: true,
+  userId: true,
+  role: true,
+  enrolledAt: true,
+  isActive: true,
+  user: { select: { email: true, name: true, studentId: true } },
+};
+
+describe("isEnrollmentRole", () => {
+  it("accepts the three enrollment roles and rejects anything else", () => {
+    expect(isEnrollmentRole("STUDENT")).toBe(true);
+    expect(isEnrollmentRole("TA")).toBe(true);
+    expect(isEnrollmentRole("INSTRUCTOR")).toBe(true);
+    expect(isEnrollmentRole("ADMIN")).toBe(false);
+    expect(isEnrollmentRole(null)).toBe(false);
+    expect(isEnrollmentRole(3)).toBe(false);
+  });
+});
+
+describe("getCourseEnrollments (#1369 select narrowing)", () => {
+  it("selects only the columns the mapper reads, unfiltered and ordered by enrolledAt", async () => {
+    const rows = [{ id: "e1" }, { id: "e2" }];
+    prismaMock.enrollment.findMany.mockResolvedValue(rows);
+
+    const result = await getCourseEnrollments("c1");
+
+    expect(result).toBe(rows);
+    const arg = prismaMock.enrollment.findMany.mock.calls[0]![0];
+    expect(arg).toEqual({
+      where: { courseId: "c1" },
+      select: EXPECTED_SELECT,
+      orderBy: { enrolledAt: "asc" },
+    });
+    // The AI Tutor full-sync contract: no `include`, no isActive filter, no limit.
+    expect(arg).not.toHaveProperty("include");
+    expect(arg).not.toHaveProperty("take");
+  });
+});
+
+describe("getCourseEnrollmentsPage (#1369 select narrowing)", () => {
+  it("takes limit + 1 without a cursor and reports nextCursor when a further page exists", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue([{ id: "e1" }, { id: "e2" }, { id: "e3" }]);
+    prismaMock.enrollment.count.mockResolvedValue(9);
+
+    const result = await getCourseEnrollmentsPage("c1", { cursor: null, limit: 2 });
+
+    expect(result.page).toEqual([{ id: "e1" }, { id: "e2" }]);
+    expect(result.nextCursor).toBe("e2");
+    expect(result.total).toBe(9);
+
+    const arg = prismaMock.enrollment.findMany.mock.calls[0]![0];
+    expect(arg.select).toEqual(EXPECTED_SELECT);
+    expect(arg).not.toHaveProperty("include");
+    expect(arg.where).toEqual({ courseId: "c1", role: "STUDENT", isActive: true });
+    expect(arg.orderBy).toEqual([{ enrolledAt: "asc" }, { id: "asc" }]);
+    expect(arg.take).toBe(3);
+    // No cursor passed, so Prisma must not receive a `cursor`/`skip` pair.
+    expect(arg).not.toHaveProperty("cursor");
+    expect(arg).not.toHaveProperty("skip");
+    expect(prismaMock.enrollment.count).toHaveBeenCalledWith({
+      where: { courseId: "c1", role: "STUDENT", isActive: true },
+    });
+  });
+
+  it("resumes after the cursor row and returns a null nextCursor on the last page", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue([{ id: "e4" }]);
+    prismaMock.enrollment.count.mockResolvedValue(4);
+
+    const result = await getCourseEnrollmentsPage("c1", { cursor: "e3", limit: 2 });
+
+    expect(result.page).toEqual([{ id: "e4" }]);
+    expect(result.nextCursor).toBeNull();
+    expect(result.total).toBe(4);
+
+    const arg = prismaMock.enrollment.findMany.mock.calls[0]![0];
+    expect(arg.select).toEqual(EXPECTED_SELECT);
+    expect(arg.cursor).toEqual({ id: "e3" });
+    expect(arg.skip).toBe(1);
   });
 });

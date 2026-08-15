@@ -1,0 +1,72 @@
+[
+  {
+    "Draft": "no",
+    "Session": "present",
+    "CourseAccess": "allowed",
+    "CoreReachable": "yes",
+    "Idempotency": "fresh"
+  },
+  {
+    "Draft": "no",
+    "Session": "present",
+    "CourseAccess": "allowed",
+    "CoreReachable": "yes",
+    "Idempotency": "adopt-p2002"
+  },
+  {
+    "Draft": "yes",
+    "Session": "missing",
+    "CourseAccess": "allowed",
+    "CoreReachable": "down-5xx",
+    "Idempotency": "in-progress"
+  },
+  {
+    "Draft": "no",
+    "Session": "missing",
+    "CourseAccess": "forbidden",
+    "CoreReachable": "down-5xx",
+    "Idempotency": "adopt-p2002"
+  },
+  {
+    "Draft": "yes",
+    "Session": "present",
+    "CourseAccess": "course-missing",
+    "CoreReachable": "down-5xx",
+    "Idempotency": "fresh"
+  },
+  {
+    "Draft": "yes",
+    "Session": "present",
+    "CourseAccess": "forbidden",
+    "CoreReachable": "yes",
+    "Idempotency": "in-progress"
+  },
+  {
+    "Draft": "no",
+    "Session": "missing",
+    "CourseAccess": "forbidden",
+    "CoreReachable": "yes",
+    "Idempotency": "fresh"
+  },
+  {
+    "Draft": "no",
+    "Session": "missing",
+    "CourseAccess": "course-missing",
+    "CoreReachable": "yes",
+    "Idempotency": "adopt-p2002"
+  },
+  {
+    "Draft": "no",
+    "Session": "present",
+    "CourseAccess": "course-missing",
+    "CoreReachable": "down-5xx",
+    "Idempotency": "in-progress"
+  },
+  {
+    "Draft": "yes",
+    "Session": "present",
+    "CourseAccess": "forbidden",
+    "CoreReachable": "yes",
+    "Idempotency": "adopt-p2002"
+  }
+]

@@ -2,6 +2,7 @@ import { Redis } from "ioredis";
 
 declare global {
   var __redis: Redis | undefined;
+  var __rateLimitRedis: Redis | undefined;
 }
 
 /**
@@ -35,5 +36,33 @@ function getRedis(): Redis {
 }
 
 const redis = getRedis();
+
+/**
+ * Rate-limit commands must fail quickly when Redis is unavailable. BullMQ's
+ * shared client intentionally retries queued commands forever, so use a
+ * duplicate with bounded per-command retries/timeouts instead of allowing an
+ * HTTP request to inherit the queue worker's blocking connection semantics.
+ */
+function getRateLimitRedis(): Redis {
+  const cached = globalThis.__rateLimitRedis;
+  if (cached) {
+    return cached;
+  }
+
+  const client = redis.duplicate({
+    commandTimeout: 250,
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+  });
+  client.on("error", (err) => {
+    console.error("[redis:rate-limit] connection error:", err.message);
+  });
+  if (process.env.NODE_ENV !== "production") {
+    globalThis.__rateLimitRedis = client;
+  }
+  return client;
+}
+
+export const rateLimitRedis = getRateLimitRedis();
 
 export default redis;

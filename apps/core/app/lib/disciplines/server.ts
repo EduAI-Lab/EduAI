@@ -1,5 +1,5 @@
 import prisma from "~/lib/prisma.server";
-import { auth } from "~/lib/auth/server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Disciplines ("units" / UBCO subject codes, §541).
@@ -71,7 +71,7 @@ export async function areValidDisciplineCodes(codes: string[]): Promise<boolean>
 
 /** GET /api/disciplines — full list (code + name), ordered by code. */
 export async function listDisciplines(request: Request): Promise<Response> {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return unauthorized();
 
   if (listCache && listCache.expiresAt > Date.now()) {

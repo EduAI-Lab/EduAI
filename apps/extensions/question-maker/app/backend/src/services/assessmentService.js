@@ -98,6 +98,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
           variants: {
             select: {
               id: true, questionText: true, difficulty: true, answer: true, choices: true,
+              selectAllThatApply: true, correctAnswers: true,
               questionMetadataId: true, isAiGenerated: true, isDraft: true,
               questionMetadata: {
                 select: {
@@ -115,6 +116,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
                   variant: {
                     select: {
                       id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
+                      selectAllThatApply: true, correctAnswers: true,
                       questionMetadataId: true, isAiGenerated: true, isDraft: true,
                       questionMetadata: {
                         select: {
@@ -159,6 +161,7 @@ export const getAssessmentById = async (assessmentId, userId) => {
         variants: {
           select: {
             id: true, questionText: true, difficulty: true, answer: true, choices: true,
+            selectAllThatApply: true, correctAnswers: true,
             questionMetadataId: true, isAiGenerated: true, isDraft: true,
             questionMetadata: {
               select: {
@@ -175,6 +178,7 @@ export const getAssessmentById = async (assessmentId, userId) => {
                 variant: {
                   select: {
                     id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
+                    selectAllThatApply: true, correctAnswers: true,
                     questionMetadataId: true, isAiGenerated: true, isDraft: true,
                     questionMetadata: {
                       select: {
@@ -416,7 +420,10 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
         course: { select: { id: true } },
         variants: {
           where: { assessmentId: Number(assessmentId) },
-          select: { id: true, questionText: true, difficulty: true, answer: true, choices: true }
+          select: {
+            id: true, questionText: true, difficulty: true, answer: true, choices: true,
+            selectAllThatApply: true, correctAnswers: true,
+          }
         }
       }
     });
