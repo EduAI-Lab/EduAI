@@ -181,7 +181,9 @@ describe("CronJobsAdminView", () => {
         ok: true,
         status: 200,
         headers: { get: () => "application/json" },
-        json: () => Promise.resolve({ jobs: [] }),
+        // Keep the supplied job visible after the shared initial refresh so
+        // the action button remains available for this interaction test.
+        json: () => Promise.resolve({ jobs: [job()] }),
       })
       // triggerJob POST
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-1" }) })
