@@ -2,7 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect, type Page } from "@playwright/test";
-import { DIAGRAM_FIXTURE_NAMES } from "~/tests/visual/diagram-payloads";
+import {
+  DIAGRAM_FIXTURE_NAMES,
+  processFlowPayload,
+  hierarchyPayload,
+  comparePayload,
+  gradientDescentPayload,
+} from "~/tests/visual/diagram-payloads";
+
+/** Expected stage count per catalog fixture, keyed the same as DIAGRAM_FIXTURE_NAMES. */
+const EXPECTED_STAGE_COUNT: Record<(typeof DIAGRAM_FIXTURE_NAMES)[number], number> = {
+  "process-flow": processFlowPayload.stages.length,
+  hierarchy: hierarchyPayload.stages.length,
+  compare: comparePayload.stages.length,
+  "gradient-descent": gradientDescentPayload.stages.length,
+};
 
 /**
  * #1320 real-browser regression, replacing the Happy DOM className-only
@@ -138,6 +152,24 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
    * using real component output for everything downstream of that forced
    * width, matching the bug report's own description of "an eduai-diagram
    * widget wider than its intended column".
+   *
+   * #1422 review, most recent round: the previous post-fix test only checked
+   * `overflow-x: hidden` on this deliberately-900px child and did not prove
+   * the forced content actually stays *visible* rather than *clipped* —
+   * correct, because it can't: a 900px-wide element inside a fixed
+   * ${COLUMN_WIDTH}px, `overflow-x: hidden` container is mathematically
+   * unable to show its full content either way. `overflow-x-hidden` alone
+   * does not make oversized content visible; it converts an *undiscoverable*
+   * failure (silently reachable only via an unprompted sideways scroll) into
+   * a *discoverable* one (visibly cut off at the column edge, no hidden
+   * content nothing in the UI points the user toward). Real content
+   * visibility for realistic diagram payloads comes from root cause 2's
+   * defensive classes plus payloads that (per the two describe blocks above)
+   * never actually reach this oversized state in production — not from this
+   * fix alone. Both tests below now assert that true, narrower claim
+   * directly: pre-fix, the last stage chip is reachable by scrolling right;
+   * post-fix, that same scroll gesture is disabled *and* the chip is
+   * explicitly asserted clipped, not visible.
    */
   function forcedWideDiagramHtml(withOverflowXHidden: boolean): string {
     const diagramHtml = fs.readFileSync(
@@ -188,9 +220,28 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     // do.
     expect(scrollWidth).toBeGreaterThan(clientWidth);
     expect(shellRight).toBeGreaterThan(COLUMN_WIDTH);
+
+    // Prove "reachable only via a sideways scroll" directly: the last stage
+    // chip starts clipped/off-pane, and scrolling the container right
+    // (nothing in the chat UI prompts a user to do this) brings it fully
+    // into view.
+    const lastChip = page.locator('[data-eduai-diagram] button[aria-pressed]').last();
+    await expect(lastChip).toHaveText("Wipe counter");
+    const beforeScroll = await lastChip.boundingBox();
+    expect(beforeScroll!.x + beforeScroll!.width, "clipped before scrolling").toBeGreaterThan(
+      COLUMN_WIDTH,
+    );
+    await page.evaluate(() => {
+      document.querySelector("#scroll")!.scrollLeft = 100_000;
+    });
+    const afterScroll = await lastChip.boundingBox();
+    expect(
+      afterScroll!.x + afterScroll!.width,
+      "reachable after scrolling right",
+    ).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
   });
 
-  test("with overflow-x-hidden, the oversized real diagram cannot open a horizontal scroll region (post-fix)", async ({
+  test("with overflow-x-hidden, the oversized real diagram cannot open a horizontal scroll region, but its overflow is clipped rather than visible (post-fix)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
@@ -201,6 +252,38 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     }));
     expect(overflowX).toBe("hidden");
     expect(docScrollWidth).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+
+    // Prove the escape hatch is closed for the gesture a real user actually
+    // has (a wheel/trackpad scroll) — not `element.scrollLeft = n`, which
+    // `overflow: hidden` does not block (it's still a valid scroll container
+    // for programmatic scrolling per spec; only user-driven scrollbar/wheel
+    // input is suppressed). Same wheel delta that would pan an
+    // `overflow-x: auto` container is a no-op here.
+    const box = (await page.locator("#scroll").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const scrollLeftAfterWheel = await page.evaluate(() => document.querySelector("#scroll")!.scrollLeft);
+    await page.mouse.wheel(600, 0);
+    await page.waitForTimeout(50);
+    const scrollLeftAfterWheelAttempt = await page.evaluate(
+      () => document.querySelector("#scroll")!.scrollLeft,
+    );
+    expect(scrollLeftAfterWheelAttempt, "a real wheel gesture cannot pan the hidden axis").toBe(
+      scrollLeftAfterWheel,
+    );
+
+    // And prove the honest, narrower claim this fix actually supports: the
+    // last stage chip remains clipped, not visible — overflow-x-hidden trades
+    // an undiscoverable failure for a discoverable one, it does not make
+    // arbitrarily oversized content fit. Full visibility for real payloads
+    // comes from those payloads never reaching this size (see the two
+    // describe blocks above), not from this CSS property alone.
+    const lastChip = page.locator('[data-eduai-diagram] button[aria-pressed]').last();
+    await expect(lastChip).toHaveText("Wipe counter");
+    const lastChipBox = await lastChip.boundingBox();
+    expect(
+      lastChipBox!.x + lastChipBox!.width,
+      "still clipped, not visible, after the fix",
+    ).toBeGreaterThan(COLUMN_WIDTH);
   });
 });
 
@@ -215,7 +298,7 @@ test.describe("diagram containment in a narrow chat column", () => {
    * still landing inside the column, and the column-only check would miss
    * that it's actually being clipped).
    */
-  async function assertContained(page: Page, bodyHtml: string) {
+  async function assertContained(page: Page, bodyHtml: string, expectedStageCount: number) {
     await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
     await page.setContent(pageHtml(bodyHtml));
 
@@ -233,26 +316,33 @@ test.describe("diagram containment in a narrow chat column", () => {
       columnBox!.x + columnBox!.width + 1,
     );
 
-    const elementBoxes = await page.evaluate(() => {
-      const shell = document.querySelector("[data-eduai-diagram]")!;
-      return Array.from(shell.querySelectorAll<HTMLElement | SVGElement>("*"))
-        .map((el) => {
-          const box = el.getBoundingClientRect();
-          return { tag: el.tagName.toLowerCase(), x: box.x, width: box.width, height: box.height };
-        })
-        .filter((box) => box.width > 0 && box.height > 0);
-    });
-    expect(elementBoxes.length).toBeGreaterThan(0);
-    for (const box of elementBoxes) {
+    // #1422 review: select the expected content explicitly (every catalog
+    // diagram's stage/node/pane is a `<button aria-pressed>`, per
+    // StageChipButton/HierarchyNode/ComparePane) instead of enumerating every
+    // descendant and filtering out zero-sized boxes — that filter let a
+    // clipped-to-nothing stage chip silently disappear from the assertion
+    // instead of failing it.
+    const expectedChips = page.locator('[data-eduai-diagram] button[aria-pressed]');
+    await expect(expectedChips).toHaveCount(expectedStageCount);
+
+    const chipBoxes = await expectedChips.evaluateAll((els) =>
+      els.map((el) => {
+        const box = el.getBoundingClientRect();
+        return { text: el.textContent, x: box.x, width: box.width, height: box.height };
+      }),
+    );
+    for (const box of chipBoxes) {
+      expect(box.width, `"${box.text}": non-zero width`).toBeGreaterThan(0);
+      expect(box.height, `"${box.text}": non-zero height`).toBeGreaterThan(0);
       // Inside the outer column...
-      expect(box.x, `${box.tag}: left edge vs column`).toBeGreaterThanOrEqual(columnBox!.x - 1);
-      expect(box.x + box.width, `${box.tag}: right edge vs column`).toBeLessThanOrEqual(
+      expect(box.x, `"${box.text}": left edge vs column`).toBeGreaterThanOrEqual(columnBox!.x - 1);
+      expect(box.x + box.width, `"${box.text}": right edge vs column`).toBeLessThanOrEqual(
         columnBox!.x + columnBox!.width + 1,
       );
       // ...and inside the shell's own clip rectangle, since the shell (not
       // the column) is what actually clips via overflow-hidden.
-      expect(box.x, `${box.tag}: left edge vs shell clip`).toBeGreaterThanOrEqual(shellBox!.x - 1);
-      expect(box.x + box.width, `${box.tag}: right edge vs shell clip`).toBeLessThanOrEqual(
+      expect(box.x, `"${box.text}": left edge vs shell clip`).toBeGreaterThanOrEqual(shellBox!.x - 1);
+      expect(box.x + box.width, `"${box.text}": right edge vs shell clip`).toBeLessThanOrEqual(
         shellBox!.x + shellBox!.width + 1,
       );
     }
@@ -262,29 +352,38 @@ test.describe("diagram containment in a narrow chat column", () => {
     test(`${name} diagram stays within the column`, async ({ page }) => {
       const fixturePath = path.resolve(__dirname, "fixtures", `${name}.html`);
       const html = fs.readFileSync(fixturePath, "utf8");
-      await assertContained(page, html);
+      await assertContained(page, html, EXPECTED_STAGE_COUNT[name]);
     });
   }
 });
 
-test.describe("diagram containment in the real chat-message ancestor chain (#1422 review)", () => {
+test.describe("diagram containment regression guard in the real chat-message ancestor chain (#1422 review)", () => {
   /**
-   * The base-vs-head reproduction requested in review: each catalog payload
-   * rendered through the actual Message row / content column / max-w-3xl /
-   * scroll-pane nesting (see generate-fixtures.tsx's chat-message
-   * fixtures), against both a genuine pre-#1320 component tree + pre-#1320
-   * scroll pane ("base") and the current tree + pane ("head"). Both are
-   * asserted to keep every element visible and unclipped: per the top-of-
-   * file comment, this ancestor chain does not reproduce root cause 2 for
-   * any catalog payload (the reviewer's own finding, confirmed here against
-   * the real DOM shape rather than an isolated diagram). This is still
-   * valuable coverage, not a no-op: it locks in that today's real payloads
-   * never actually reach the clipping/scrolling boundary the two describe
-   * blocks above exercise directly, and it will catch a future regression
-   * (e.g. a wider chip, or a flex class removed from the content column)
-   * that made that boundary reachable.
+   * #1422 review, most recent round: "the new catalog base/head cases all
+   * pass on the pre-fix component tree, so they do not demonstrate the
+   * reported regression." That's correct and no longer disputed — per the
+   * top-of-file comment, exhaustive investigation (a 7-stage/320px stress
+   * payload here, the reviewer's own independent Chrome check, and the CSS
+   * mechanics: `flex-1 min-w-0` on chat-message.tsx's content column already
+   * stretches/caps the shell's cross-axis width regardless of the shell's own
+   * min-width, and neither `AnimatedDiagramShell`'s outer div nor the
+   * flex-wrap stage row is itself a row-axis flex item anywhere in the app's
+   * two real call sites, `chat-conversation-layout.tsx` and
+   * `chat-message.tsx`, grepped exhaustively) found no real ancestor context
+   * where root cause 2 (the shell/row `w-full min-w-0 max-w-full` additions)
+   * changes observable behavior. These tests are NOT a base-vs-head bug
+   * reproduction — root cause 1 (below) is the only one of those that exists
+   * for #1320. They are a regression *guard*: both base and head are
+   * expected to pass today, and the guard's value is catching a *future*
+   * change (a wider chip, a `min-w-0` removed from the content column) that
+   * makes this boundary reachable when it currently isn't.
    */
-  async function assertVisibleAndUnclipped(page: Page, bodyHtml: string, withOverflowXHidden: boolean) {
+  async function assertVisibleAndUnclipped(
+    page: Page,
+    bodyHtml: string,
+    withOverflowXHidden: boolean,
+    expectedStageCount: number,
+  ) {
     await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
     await page.setContent(chatScrollPaneHtml(bodyHtml, withOverflowXHidden));
 
@@ -295,42 +394,49 @@ test.describe("diagram containment in the real chat-message ancestor chain (#142
     expect(shellBox).not.toBeNull();
     expect(shellBox!.x + shellBox!.width).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
 
-    const elementBoxes = await page.evaluate(() => {
-      const shell = document.querySelector("[data-eduai-diagram]")!;
-      return Array.from(shell.querySelectorAll<HTMLElement | SVGElement>("*"))
-        .map((el) => el.getBoundingClientRect())
-        .filter((box) => box.width > 0 && box.height > 0)
-        .map((box) => ({ left: box.x, right: box.x + box.width }));
-    });
-    expect(elementBoxes.length).toBeGreaterThan(0);
-    for (const box of elementBoxes) {
-      expect(box.left).toBeGreaterThanOrEqual(-1);
-      expect(box.right).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
-      expect(box.right, "element must not be clipped by the diagram shell's overflow-hidden").toBeLessThanOrEqual(
-        shellBox!.x + shellBox!.width + 1,
-      );
+    // #1422 review: select the expected content explicitly instead of
+    // enumerating every descendant and filtering out zero-sized boxes, which
+    // would let a clipped-to-nothing stage chip silently pass.
+    const expectedChips = page.locator('[data-eduai-diagram] button[aria-pressed]');
+    await expect(expectedChips).toHaveCount(expectedStageCount);
+
+    const chipBoxes = await expectedChips.evaluateAll((els) =>
+      els.map((el) => {
+        const box = el.getBoundingClientRect();
+        return { text: el.textContent, left: box.x, right: box.x + box.width, width: box.width, height: box.height };
+      }),
+    );
+    for (const box of chipBoxes) {
+      expect(box.width, `"${box.text}": non-zero width`).toBeGreaterThan(0);
+      expect(box.height, `"${box.text}": non-zero height`).toBeGreaterThan(0);
+      expect(box.left, `"${box.text}": left edge in viewport`).toBeGreaterThanOrEqual(-1);
+      expect(box.right, `"${box.text}": right edge in viewport`).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+      expect(
+        box.right,
+        `"${box.text}": must not be clipped by the diagram shell's overflow-hidden`,
+      ).toBeLessThanOrEqual(shellBox!.x + shellBox!.width + 1);
     }
   }
 
   for (const name of DIAGRAM_FIXTURE_NAMES) {
-    test(`${name}: base component tree + pre-#1320 scroll pane stays visible and unclipped`, async ({
+    test(`${name}: base component tree + pre-#1320 scroll pane (regression guard, not a reproduction — see block comment)`, async ({
       page,
     }) => {
       const html = fs.readFileSync(
         path.resolve(__dirname, "fixtures", "chat-message", `${name}-base.html`),
         "utf8",
       );
-      await assertVisibleAndUnclipped(page, html, false);
+      await assertVisibleAndUnclipped(page, html, false, EXPECTED_STAGE_COUNT[name]);
     });
 
-    test(`${name}: head component tree + post-#1320 scroll pane stays visible and unclipped`, async ({
+    test(`${name}: head component tree + post-#1320 scroll pane (regression guard, not a reproduction — see block comment)`, async ({
       page,
     }) => {
       const html = fs.readFileSync(
         path.resolve(__dirname, "fixtures", "chat-message", `${name}-head.html`),
         "utf8",
       );
-      await assertVisibleAndUnclipped(page, html, true);
+      await assertVisibleAndUnclipped(page, html, true, EXPECTED_STAGE_COUNT[name]);
     });
   }
 });
