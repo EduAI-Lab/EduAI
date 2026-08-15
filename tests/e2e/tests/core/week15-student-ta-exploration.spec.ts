@@ -166,11 +166,13 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       // 2. Enrollment list for a course student1 is not enrolled/staff in
       const enrRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.hist210}/enrollments`);
-      expect([401, 403, 404]).toContain(enrRes.status());
+      expect(enrRes.status()).toBe(403);
+      expect(await enrRes.json()).toMatchObject({ error: 'Forbidden' });
 
       // 3. Enrollment list for a course student1 IS enrolled in (as STUDENT, not staff)
       const enrOwnRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`);
       expect(enrOwnRes.status()).toBe(403);
+      expect(await enrOwnRes.json()).toMatchObject({ error: 'Forbidden' });
       test.info().annotations.push({
         type: 'finding',
         description: `GET enrollments for own enrolled course (cosc101) as STUDENT -> ${enrOwnRes.status()}`,
@@ -179,6 +181,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
       // 4. Questions endpoint is instructor/staff-only, even for an enrolled student
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
       expect(qRes.status()).toBe(403);
+      expect(await qRes.json()).toMatchObject({ error: 'Forbidden' });
       test.info().annotations.push({
         type: 'finding',
         description: `GET /api/questions?courseId=cosc101 as STUDENT (enrolled) -> ${qRes.status()}`,

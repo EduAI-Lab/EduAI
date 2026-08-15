@@ -1,9 +1,10 @@
 /**
- * Core student AI-chat happy path for end-user testing (#1429, #1459).
+ * Core student AI-chat UI smoke for end-user testing (#1429, #1459).
  *
- * This deliberately drives the browser UI with a deterministic stream fixture.
- * The real /api/chat route is also probed below for an unenrolled caller so the
- * success-path fixture cannot hide the course authorization boundary.
+ * The successful browser stream is a deterministic UI fixture, not a claim
+ * about the server/provider path. The real /api/chat route is probed below for
+ * an unenrolled caller so the fixture cannot hide the course authorization
+ * boundary.
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
@@ -82,6 +83,9 @@ test.describe('Core student AI chat happy path (#1429, #1459)', () => {
       expect(denied.status()).toBe(403);
 
       await injectSession(page, studentCtx);
+      // Keep the rendering assertion deterministic. The real route is tested
+      // above; this fixture intentionally does not bypass the authorization
+      // assertion or claim coverage of provider dispatch/persistence.
       await page.route('**/api/chat', async (route) => {
         if (route.request().method() !== 'POST') return route.continue();
         await route.fulfill({
