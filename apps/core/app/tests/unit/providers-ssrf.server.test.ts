@@ -100,6 +100,7 @@ describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
   it("allows the configured CMPS embedding endpoint host", () => {
     process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
+    process.env.VLLM_API_KEY = "test-key";
 
     createAIProviderRegistry({
       vllm: { isEnabled: true, baseUrl: "http://cmps01.ok.ubc.ca:8001/v1" },
