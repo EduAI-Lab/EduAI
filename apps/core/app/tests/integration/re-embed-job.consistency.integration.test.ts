@@ -83,8 +83,8 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
   });
 
   it("compensates (no orphan PENDING) when the claim boundary fails after create", async () => {
-    const realUpdate = prisma.courseReEmbedJob.update.bind(prisma.courseReEmbedJob);
-    const spy = vi.spyOn(prisma.courseReEmbedJob, "update").mockImplementation(((args: any) => {
+    const realUpdateMany = prisma.courseReEmbedJob.updateMany.bind(prisma.courseReEmbedJob);
+    const spy = vi.spyOn(prisma.courseReEmbedJob, "updateMany").mockImplementation(((args: any) => {
       if (args?.data?.status === "RUNNING") {
         return Promise.reject(
           new Prisma.PrismaClientKnownRequestError("operations timed out", {
@@ -93,8 +93,8 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
           }),
         );
       }
-      return realUpdate(args);
-    }) as unknown as typeof prisma.courseReEmbedJob.update);
+      return realUpdateMany(args);
+    }) as unknown as typeof prisma.courseReEmbedJob.updateMany);
 
     try {
       await expect(startReEmbedJob(courseAId)).rejects.toBeInstanceOf(QueueUnavailableError);
@@ -109,7 +109,7 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
     }
   });
 
-  it("reclaims a stale RUNNING row (no progress in 30+ minutes) and starts fresh (#1269 review)", async () => {
+  it("reclaims and recycles a stale RUNNING row in place (#1269 review)", async () => {
     const stuck = await prisma.courseReEmbedJob.create({
       data: {
         courseId: courseAId,
@@ -127,10 +127,19 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
     const result = await startReEmbedJob(courseAId);
 
     expect(result.created).toBe(true);
-    expect(result.job.id).not.toBe(stuck.id);
+    // Reclamation marks the stale row FAILED, then recycles that same row to
+    // PENDING before claiming it. A second row would violate the one-active
+    // job invariant and lose the durable row's identity.
+    expect(result.job.id).toBe(stuck.id);
+    expect(result.job.status).toBe("RUNNING");
 
     const reclaimed = await prisma.courseReEmbedJob.findUnique({ where: { id: stuck.id } });
-    expect(reclaimed?.status).toBe("FAILED");
+    expect(reclaimed?.id).toBe(stuck.id);
+    expect(reclaimed?.attemptCount).toBe(1);
+    expect(["RUNNING", "COMPLETED"]).toContain(reclaimed?.status);
+    await expect(
+      prisma.courseReEmbedJob.count({ where: { courseId: courseAId } }),
+    ).resolves.toBe(1);
   });
 
   it("does not reclaim a RUNNING row with recent progress", async () => {

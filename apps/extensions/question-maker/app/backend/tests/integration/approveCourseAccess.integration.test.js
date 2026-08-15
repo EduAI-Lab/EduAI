@@ -130,13 +130,14 @@ describeDb('POST /api/questions/approve course access (real DB)', () => {
     expect(await prisma.questionMetadata.count()).toBe(0);
   });
 
-  it('rejects a mixed-course batch before the Core access check or any write', async () => {
+  it('rejects a mixed-course batch before any write', async () => {
     stubCore({ enrolledCoreCourseIds: [courseA.coreCourseId] });
 
     const response = await request(app)
       .post('/api/questions/approve')
       .set('Cookie', 'session=approve')
       .send({
+        courseId: courseA.id,
         questions: [
           { courseId: courseA.id, primaryTopicId: topicA.id, description: 'course A' },
           { courseId: courseB.id, primaryTopicId: topicB.id, description: 'course B' },
@@ -144,7 +145,7 @@ describeDb('POST /api/questions/approve course access (real DB)', () => {
       });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/same course|one course|mixed/i);
+    expect(response.body.error).toMatch(/must match the authorized target course/i);
     expect(await prisma.questionMetadata.count()).toBe(0);
   });
 

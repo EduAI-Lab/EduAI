@@ -6,6 +6,8 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/rate-limit.server", () => ({
   isRateLimited: vi.fn().mockReturnValue(false),
+  // The route reads this at module evaluation time for its pre-auth limit.
+  parseEnvInt: vi.fn((_value: string | undefined, fallback: number) => fallback),
 }));
 
 import { action } from "~/routes/api/sessions.validate";
@@ -120,7 +122,7 @@ describe("POST /api/sessions/validate — contract tests", () => {
     // Apache appends the real socket peer last; the leftmost token is client-forgeable and ignored.
     await action(makeArgs("POST", { "x-forwarded-for": "10.0.0.1, 10.0.0.2" }));
 
-    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:10.0.0.2");
+    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:10.0.0.2", 1_200);
     expect(isRateLimited).toHaveBeenNthCalledWith(2, "session-validate:anonymous:10.0.0.2");
   });
 
@@ -129,7 +131,7 @@ describe("POST /api/sessions/validate — contract tests", () => {
 
     await action(makeArgs());
 
-    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:unknown");
+    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:unknown", 1_200);
     expect(isRateLimited).toHaveBeenNthCalledWith(2, "session-validate:anonymous:unknown");
   });
 
@@ -138,7 +140,7 @@ describe("POST /api/sessions/validate — contract tests", () => {
 
     await action(makeArgs("POST", { "x-forwarded-for": "10.0.0.2" }));
 
-    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:10.0.0.2");
+    expect(isRateLimited).toHaveBeenNthCalledWith(1, "session-validate:preauth:10.0.0.2", 1_200);
     expect(isRateLimited).toHaveBeenNthCalledWith(2, `session-validate:user:${MOCK_USER.id}`);
   });
 });
