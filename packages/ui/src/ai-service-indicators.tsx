@@ -8,26 +8,26 @@
  * onto the `cloud` / `ubc` props, so the look and behaviour are identical
  * everywhere while the data source stays app-specific.
  */
-import * as React from "react"
-import { IconCloud } from "@tabler/icons-react"
+import * as React from "react";
+import { IconCloud } from "@tabler/icons-react";
 
-import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip"
-import { cn } from "./utils"
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { cn } from "./utils";
 
-export type ServiceState = "online" | "offline" | "loading" | "unknown"
+export type ServiceState = "online" | "offline" | "loading" | "unknown";
 
 export interface ServiceStatus {
-  state: ServiceState
+  state: ServiceState;
   /** Tooltip text; a sensible default per state is used when omitted. */
-  detail?: string
+  detail?: string;
 }
 
 export interface AIServiceIndicatorsProps {
-  cloud: ServiceStatus
-  ubc: ServiceStatus
+  cloud: ServiceStatus;
+  ubc: ServiceStatus;
   /** Called when a chip is clicked — wire to a re-check. Omit for static display. */
-  onRefresh?: () => void
-  className?: string
+  onRefresh?: () => void;
+  className?: string;
 }
 
 const DOT_CLASS: Record<ServiceState, string> = {
@@ -35,14 +35,14 @@ const DOT_CLASS: Record<ServiceState, string> = {
   offline: "bg-red-500",
   loading: "bg-amber-400 animate-pulse",
   unknown: "bg-muted-foreground/40",
-}
+};
 
 const STATE_WORD: Record<ServiceState, string> = {
   online: "Online",
   offline: "Offline",
   loading: "Checking…",
   unknown: "Unknown",
-}
+};
 
 function Chip({
   label,
@@ -51,13 +51,13 @@ function Chip({
   onClick,
   children,
 }: {
-  label: string
-  status: ServiceStatus
-  active: boolean
-  onClick?: () => void
-  children: React.ReactNode
+  label: string;
+  status: ServiceStatus;
+  active: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
 }) {
-  const tip = status.detail ?? `${label} · ${STATE_WORD[status.state]}`
+  const tip = status.detail ?? `${label} · ${STATE_WORD[status.state]}`;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -82,7 +82,7 @@ function Chip({
       </TooltipTrigger>
       <TooltipContent side="bottom">{tip}</TooltipContent>
     </Tooltip>
-  )
+  );
 }
 
 export function AIServiceIndicators({
@@ -100,5 +100,5 @@ export function AIServiceIndicators({
         <IconCloud className="size-3.5" strokeWidth={1.75} />
       </Chip>
     </div>
-  )
+  );
 }

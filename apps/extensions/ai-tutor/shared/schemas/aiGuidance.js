@@ -1,6 +1,6 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const KnowledgeLevelSchema = z.enum(['beginner', 'intermediate', 'advanced']);
+export const KnowledgeLevelSchema = z.enum(["beginner", "intermediate", "advanced"]);
 
 export const TeachRequestSchema = z.object({
   knowledgeLevel: KnowledgeLevelSchema,
@@ -35,7 +35,7 @@ export const CustomRequestSchema = z.object({
 
 export const ActivityFeedbackRequestSchema = z.object({
   rating: z.number().int().min(1).max(5),
-  note: z.string().trim().max(500).optional().or(z.literal('')),
+  note: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
 export default {

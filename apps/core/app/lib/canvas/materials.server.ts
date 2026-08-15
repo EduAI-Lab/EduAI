@@ -120,11 +120,7 @@ export async function discoverCanvasMaterialsForCourse(
   const course = await assertCanvasLinkedCourse(courseId, userId);
   const credentials = await requireCanvasCredentials(userId);
 
-  const canvasFiles = await listImportableCanvasFiles(
-    credentials,
-    course.externalId!,
-    fetchImpl,
-  );
+  const canvasFiles = await listImportableCanvasFiles(credentials, course.externalId!, fetchImpl);
 
   const [imported, exclusions] = await Promise.all([
     prisma.courseMaterial.findMany({
@@ -243,7 +239,9 @@ export async function importSingleCanvasFile(
   credentials: CanvasIntegrationCredentials,
   fetchImpl: typeof fetch,
   excludedIds: Set<string>,
-): Promise<"imported" | "updated" | "skipped-not-modified" | "skipped-unpublished" | "skipped-excluded"> {
+): Promise<
+  "imported" | "updated" | "skipped-not-modified" | "skipped-unpublished" | "skipped-excluded"
+> {
   const mimeType = normalizeMimeType(file);
   if (!mimeType) {
     throw new Error("Unsupported file type");
@@ -291,11 +289,9 @@ export async function importSingleCanvasFile(
   }
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
-  const uploadFile = new File(
-    [new Uint8Array(bytes)],
-    file.filename || file.display_name,
-    { type: mimeType },
-  );
+  const uploadFile = new File([new Uint8Array(bytes)], file.filename || file.display_name, {
+    type: mimeType,
+  });
 
   // Persist PROCESSING *before* extraction so a killed PDF worker cannot leave an
   // existing Canvas material stuck at READY, and new imports still get a FAILED row (#1018).
@@ -448,9 +444,12 @@ export async function syncSelectedCanvasMaterials(
         result.updated += 1;
       } else {
         result.skipped += 1;
-        const reason = outcome === "skipped-unpublished" ? "unpublished"
-          : outcome === "skipped-excluded" ? "excluded"
-          : "not-modified";
+        const reason =
+          outcome === "skipped-unpublished"
+            ? "unpublished"
+            : outcome === "skipped-excluded"
+              ? "excluded"
+              : "not-modified";
         result.skippedItems.push({ canvasFileId, reason });
       }
     } catch (error) {

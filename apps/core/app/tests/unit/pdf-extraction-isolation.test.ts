@@ -4,8 +4,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const actualFsPromises = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
-const actualChildProcess = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+const actualFsPromises =
+  await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+const actualChildProcess =
+  await vi.importActual<typeof import("node:child_process")>("node:child_process");
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -138,9 +140,9 @@ describe("extractPdfTextIsolated", () => {
 
     const release = await holdPdfExtractionSlotForTests();
     try {
-      await expect(extractPdfTextIsolated(buildEmptyPdf(), { timeoutMs: 2_000 })).rejects.toBeInstanceOf(
-        PdfExtractionBusyError,
-      );
+      await expect(
+        extractPdfTextIsolated(buildEmptyPdf(), { timeoutMs: 2_000 }),
+      ).rejects.toBeInstanceOf(PdfExtractionBusyError);
       await expect(extractPdfTextIsolated(buildEmptyPdf(), { timeoutMs: 2_000 })).rejects.toThrow(
         /busy|capacity/i,
       );
@@ -235,7 +237,9 @@ describe("extractPdfTextIsolated", () => {
       return true;
     });
 
-    vi.mocked(childProcess.spawn).mockReturnValue(fakeChild as unknown as ReturnType<typeof childProcess.spawn>);
+    vi.mocked(childProcess.spawn).mockReturnValue(
+      fakeChild as unknown as ReturnType<typeof childProcess.spawn>,
+    );
 
     await expect(extractPdfTextIsolated(buildEmptyPdf())).rejects.toThrow(/stdin broke/i);
     expect(fakeChild.kill).toHaveBeenCalledWith("SIGKILL");

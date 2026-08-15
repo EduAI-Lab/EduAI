@@ -44,7 +44,5 @@ export default function ChatById() {
   const { transcript, ...data } = useLoaderData<typeof loader>();
   // Key by chat id so navigating between conversations remounts the screen,
   // giving each chat a fresh composer seeded from its own transcript.
-  return (
-    <ChatScreen key={transcript.chat.id} data={data} initialTranscript={transcript} />
-  );
+  return <ChatScreen key={transcript.chat.id} data={data} initialTranscript={transcript} />;
 }

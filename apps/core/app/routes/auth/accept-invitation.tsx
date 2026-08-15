@@ -1,14 +1,14 @@
-import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router"
-import { IconStack2 } from "@tabler/icons-react"
-import { useState } from "react"
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
+import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import { IconStack2 } from "@tabler/icons-react";
+import { useState } from "react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
-import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
-import { PasswordRequirements } from "~/components/password-requirements"
-import { fireAndForget, logAuditAction } from "~/lib/logging.server"
-import { getActorContext, getRequestContext } from "~/lib/request-context.server"
-import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server"
+import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas";
+import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server";
+import { PasswordRequirements } from "~/components/password-requirements";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
@@ -140,8 +140,8 @@ export default function AcceptInvitationPage() {
                   <h1 className="text-2xl font-bold">Accept your invitation</h1>
                   <p className="text-muted-foreground text-sm">
                     You've been invited to join EduAI as{" "}
-                    <strong>{ROLE_LABELS[data.role] ?? data.role}</strong>. Set a
-                    password to activate your account.
+                    <strong>{ROLE_LABELS[data.role] ?? data.role}</strong>. Set a password to
+                    activate your account.
                   </p>
                 </div>
 
@@ -247,5 +247,5 @@ export default function AcceptInvitationPage() {
         />
       </div>
     </div>
-  )
+  );
 }

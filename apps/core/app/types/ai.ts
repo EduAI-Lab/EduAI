@@ -31,5 +31,5 @@ export type AIModel = {
   createdAt: string;
   updatedAt: string;
   providerId: string;
-  provider: Omit<AIProvider, 'models' | '_count'>;
+  provider: Omit<AIProvider, "models" | "_count">;
 };

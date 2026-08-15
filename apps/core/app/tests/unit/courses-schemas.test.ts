@@ -113,23 +113,17 @@ describe("UpdateCourseRagSettingsSchema", () => {
   });
 
   it("rejects ragTopK below 1 or above 20", () => {
-    expect(
-      UpdateCourseRagSettingsSchema.safeParse({ ragTopK: 0 }).success,
-    ).toBe(false);
-    expect(
-      UpdateCourseRagSettingsSchema.safeParse({ ragTopK: 21 }).success,
-    ).toBe(false);
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragTopK: 0 }).success).toBe(false);
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragTopK: 21 }).success).toBe(false);
   });
 
   it("rejects ragSimilarityThreshold outside (0, 1)", () => {
-    expect(
-      UpdateCourseRagSettingsSchema.safeParse({ ragSimilarityThreshold: 0 })
-        .success,
-    ).toBe(false);
-    expect(
-      UpdateCourseRagSettingsSchema.safeParse({ ragSimilarityThreshold: 1 })
-        .success,
-    ).toBe(false);
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragSimilarityThreshold: 0 }).success).toBe(
+      false,
+    );
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragSimilarityThreshold: 1 }).success).toBe(
+      false,
+    );
   });
 
   it("rejects non-boolean scope guardrail values", () => {
@@ -144,9 +138,7 @@ describe("UpdateCourseRagSettingsSchema", () => {
 describe("CreateCourseTopicSchema", () => {
   it("requires a non-empty name", () => {
     expect(CreateCourseTopicSchema.safeParse({ name: "" }).success).toBe(false);
-    expect(CreateCourseTopicSchema.safeParse({ name: "Algebra" }).success).toBe(
-      true,
-    );
+    expect(CreateCourseTopicSchema.safeParse({ name: "Algebra" }).success).toBe(true);
   });
 });
 
@@ -156,21 +148,16 @@ describe("DeleteCourseTopicSchema", () => {
   });
 
   it("accepts topicId alone", () => {
-    expect(DeleteCourseTopicSchema.safeParse({ topicId: "t1" }).success).toBe(
-      true,
-    );
+    expect(DeleteCourseTopicSchema.safeParse({ topicId: "t1" }).success).toBe(true);
   });
 
   it("accepts name alone", () => {
-    expect(DeleteCourseTopicSchema.safeParse({ name: "Algebra" }).success).toBe(
-      true,
-    );
+    expect(DeleteCourseTopicSchema.safeParse({ name: "Algebra" }).success).toBe(true);
   });
 
   it("accepts both fields together", () => {
-    expect(
-      DeleteCourseTopicSchema.safeParse({ topicId: "t1", name: "Algebra" })
-        .success,
-    ).toBe(true);
+    expect(DeleteCourseTopicSchema.safeParse({ topicId: "t1", name: "Algebra" }).success).toBe(
+      true,
+    );
   });
 });

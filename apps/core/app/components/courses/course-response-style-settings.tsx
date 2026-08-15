@@ -33,15 +33,10 @@ export function CourseResponseStyleSettings({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  const previewTags = useMemo(
-    () => resolveResponseStyleTags(selectedTags),
-    [selectedTags],
-  );
+  const previewTags = useMemo(() => resolveResponseStyleTags(selectedTags), [selectedTags]);
 
   const toggleTag = (id: ResponseStyleTagId) => {
-    setSelectedTags((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id],
-    );
+    setSelectedTags((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   };
 
   const save = async () => {
@@ -80,9 +75,8 @@ export function CourseResponseStyleSettings({
               AI response style
             </CardTitle>
             <CardDescription>
-              Choose how the course chatbot should respond. These preferences shape
-              the AI&apos;s tone and structure — students see that AI is enabled, not
-              the underlying instructions.
+              Choose how the course chatbot should respond. These preferences shape the AI&apos;s
+              tone and structure — students see that AI is enabled, not the underlying instructions.
             </CardDescription>
           </CardHeader>
         )}
@@ -97,82 +91,77 @@ export function CourseResponseStyleSettings({
           </div>
         )}
         <CardContent className={embedded ? "p-0 flex flex-col gap-6" : "flex flex-col gap-6"}>
-        <div className="grid gap-3">
-          <Label>Style tags</Label>
-          <div className="flex flex-wrap gap-2">
-            {RESPONSE_STYLE_TAGS.map((tag) => {
-              const active = selectedTags.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => toggleTag(tag.id)}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-left text-sm transition-colors",
-                    active
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                  )}
-                  aria-pressed={active}
-                >
-                  <span className="font-medium">{tag.label}</span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Select one or more tags. They combine to shape how EduAI answers in
-            this course.
-          </p>
-        </div>
-
-        {previewTags.length > 0 && (
-          <div className="rounded-lg border border-border bg-muted/30 p-4 grid gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Preview
+          <div className="grid gap-3">
+            <Label>Style tags</Label>
+            <div className="flex flex-wrap gap-2">
+              {RESPONSE_STYLE_TAGS.map((tag) => {
+                const active = selectedTags.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.id)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-left text-sm transition-colors",
+                      active
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                    )}
+                    aria-pressed={active}
+                  >
+                    <span className="font-medium">{tag.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Select one or more tags. They combine to shape how EduAI answers in this course.
             </p>
-            {previewTags.map((tag) => (
-              <div key={tag.id} className="grid gap-1.5">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{tag.label}</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {tag.description}
-                  </span>
-                </div>
-                <p className="text-[13px] text-foreground/90 whitespace-pre-wrap leading-relaxed pl-0.5">
-                  {tag.exampleResponse}
-                </p>
-              </div>
-            ))}
           </div>
-        )}
 
-        <div className="grid gap-2 max-w-xl">
-          <Label htmlFor="course-ai-instructions">
-            Additional instructions{" "}
-            <span className="text-muted-foreground font-normal">(optional)</span>
-          </Label>
-          <Textarea
-            id="course-ai-instructions"
-            rows={3}
-            placeholder="e.g. Prefer diagrams when explaining algorithms."
-            value={aiInstructions}
-            onChange={(e) => setAiInstructions(e.target.value)}
-            maxLength={4000}
-          />
-          <p className="text-xs text-muted-foreground">
-            Course-specific notes appended to the AI style. Not shown to students.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save response style"}
-          </Button>
-          {saveMsg && (
-            <span className="text-sm text-muted-foreground">{saveMsg}</span>
+          {previewTags.length > 0 && (
+            <div className="rounded-lg border border-border bg-muted/30 p-4 grid gap-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Preview
+              </p>
+              {previewTags.map((tag) => (
+                <div key={tag.id} className="grid gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{tag.label}</Badge>
+                    <span className="text-xs text-muted-foreground">{tag.description}</span>
+                  </div>
+                  <p className="text-[13px] text-foreground/90 whitespace-pre-wrap leading-relaxed pl-0.5">
+                    {tag.exampleResponse}
+                  </p>
+                </div>
+              ))}
+            </div>
           )}
-        </div>
+
+          <div className="grid gap-2 max-w-xl">
+            <Label htmlFor="course-ai-instructions">
+              Additional instructions{" "}
+              <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Textarea
+              id="course-ai-instructions"
+              rows={3}
+              placeholder="e.g. Prefer diagrams when explaining algorithms."
+              value={aiInstructions}
+              onChange={(e) => setAiInstructions(e.target.value)}
+              maxLength={4000}
+            />
+            <p className="text-xs text-muted-foreground">
+              Course-specific notes appended to the AI style. Not shown to students.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save response style"}
+            </Button>
+            {saveMsg && <span className="text-sm text-muted-foreground">{saveMsg}</span>}
+          </div>
         </CardContent>
       </div>
     </>
@@ -196,9 +185,7 @@ export function CourseResponseStyleSummary({
   const tags = resolveResponseStyleTags(tagIds);
   if (tags.length === 0) {
     if (!showEmpty) return null;
-    return (
-      <p className="text-[13px] text-muted-foreground">No response style configured</p>
-    );
+    return <p className="text-[13px] text-muted-foreground">No response style configured</p>;
   }
   return (
     <div className="flex flex-wrap gap-1.5">

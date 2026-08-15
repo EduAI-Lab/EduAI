@@ -82,7 +82,7 @@ describe("normalizeTerm", () => {
     expect(normalizeTerm(null, "2026-09-01T00:00:00Z")).toBe("S2");
   });
 
-  it("reads a bare calendar date (e.g. from <input type=\"date\">) as-is, not as a UTC instant", () => {
+  it('reads a bare calendar date (e.g. from <input type="date">) as-is, not as a UTC instant', () => {
     // Unlike a full ISO instant, "2026-09-01" names a calendar day with no
     // attached time. Parsing it as UTC midnight and reprojecting through the
     // Vancouver offset would shift it back to Aug 31 (S2) — wrong for a date

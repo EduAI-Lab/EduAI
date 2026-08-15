@@ -99,7 +99,8 @@ function randomVector(dim = 1024): number[] {
 // ---------------------------------------------------------------------------
 const SEED_PASSWORD = "EduAI2026!"; // matches apps/core/prisma/seed.ts
 const POOL = num("PERF_POOL_SIZE", 15); // victims per destructive endpoint
-const POOL_EMAIL = (p: string, n: number) => `perf.pool-${p}-${String(n).padStart(3, "0")}@perf.local`;
+const POOL_EMAIL = (p: string, n: number) =>
+  `perf.pool-${p}-${String(n).padStart(3, "0")}@perf.local`;
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 // Resolve <repoRoot>/.perf-pool (or $PERF_POOL_DIR) — where all three app seeds
@@ -113,7 +114,9 @@ function poolDir(): string {
       try {
         const j = JSON.parse(readFileSync(pkg, "utf8"));
         if (j.workspaces) return path.join(d, ".perf-pool");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     d = path.dirname(d);
   }
@@ -156,7 +159,12 @@ async function seedPool(instructorId: string, deptCode: string) {
   // --- dedicated perf actor (STUDENT, password-backed → the script can sign in) ---
   const actor = await makeUser("perf.actor@perf.local", "Perf Actor");
   await prisma.account.create({
-    data: { providerId: "credential", accountId: actor.email, userId: actor.id, password: await hashPassword(SEED_PASSWORD) },
+    data: {
+      providerId: "credential",
+      accountId: actor.email,
+      userId: actor.id,
+      password: await hashPassword(SEED_PASSWORD),
+    },
   });
 
   // --- courses ---
@@ -167,9 +175,18 @@ async function seedPool(instructorId: string, deptCode: string) {
   const newCourse = async (code: string, name: string, published = true) => {
     const course = await prisma.course.create({
       data: {
-        code, name, section: "001", term: "Fall", year: 2026, isActive: true,
-        isPublished: published, startDate: now, department: deptCode,
-        instructorId, externalSource: "perf-volume", aiInstructions: "",
+        code,
+        name,
+        section: "001",
+        term: "Fall",
+        year: 2026,
+        isActive: true,
+        isPublished: published,
+        startDate: now,
+        department: deptCode,
+        instructorId,
+        externalSource: "perf-volume",
+        aiInstructions: "",
       },
     });
     await prisma.enrollment.create({
@@ -180,11 +197,14 @@ async function seedPool(instructorId: string, deptCode: string) {
   const sharedCourse = await newCourse(mk.code("MAIN"), "Perf Pool Main Course");
   const updateCourse = await newCourse(mk.code("UPD"), "Perf Pool Update Course", false);
   const deleteCoursePool = [];
-  for (const i of range(POOL)) deleteCoursePool.push((await newCourse(`${mk.code("DEL")}-${i}`, `Perf Del Course ${i}`)).id);
+  for (const i of range(POOL))
+    deleteCoursePool.push((await newCourse(`${mk.code("DEL")}-${i}`, `Perf Del Course ${i}`)).id);
 
   // --- topics in sharedCourse ---
   const newTopic = (name: string) =>
-    prisma.courseTopic.create({ data: { courseId: sharedCourse.id, name, createdBy: instructorId } });
+    prisma.courseTopic.create({
+      data: { courseId: sharedCourse.id, name, createdBy: instructorId },
+    });
   const readTopic = await newTopic("Perf Read Topic");
   const updateTopic = await newTopic("Perf Update Topic");
   const deleteTopicPool = [];
@@ -194,26 +214,43 @@ async function seedPool(instructorId: string, deptCode: string) {
   const newMaterial = (n: string, sum: string) =>
     prisma.courseMaterial.create({
       data: {
-        courseId: sharedCourse.id, title: n, mimeType: "text/plain", fileSize: 1024,
-        checksum: sum, rawText: "perf", status: "READY", externalSource: "perf-volume",
+        courseId: sharedCourse.id,
+        title: n,
+        mimeType: "text/plain",
+        fileSize: 1024,
+        checksum: sum,
+        rawText: "perf",
+        status: "READY",
+        externalSource: "perf-volume",
         uploadedBy: instructorId,
       },
     });
   const updateMaterial = await newMaterial("Perf Update Material", "perf-pool-upd-mat");
   const deleteMaterialPool = [];
-  for (const i of range(POOL)) deleteMaterialPool.push((await newMaterial(`Perf Del Material ${i}`, `perf-pool-del-mat-${i}`)).id);
+  for (const i of range(POOL))
+    deleteMaterialPool.push(
+      (await newMaterial(`Perf Del Material ${i}`, `perf-pool-del-mat-${i}`)).id,
+    );
 
   // --- questions in sharedCourse (need topicId + createdBy) ---
   const newQuestion = (content: string) =>
     prisma.question.create({
-      data: { courseId: sharedCourse.id, topicId: readTopic.id, createdBy: instructorId, content, type: "MCQ", answer: "A" },
+      data: {
+        courseId: sharedCourse.id,
+        topicId: readTopic.id,
+        createdBy: instructorId,
+        content,
+        type: "MCQ",
+        answer: "A",
+      },
     });
   const questionUpdate = await newQuestion("Perf update question?");
   const readQuestion = await newQuestion("Perf read question?");
 
   // --- enrollment users (fresh, unenrolled) for POST /enrollments ---
   const enrolleeUserPool = [];
-  for (const i of range(POOL)) enrolleeUserPool.push((await makeUser(POOL_EMAIL("enroll", i), `Perf Enrollee ${i}`)).id);
+  for (const i of range(POOL))
+    enrolleeUserPool.push((await makeUser(POOL_EMAIL("enroll", i), `Perf Enrollee ${i}`)).id);
   // dedicated STUDENT enrollment (disposable user) for PATCH enrollment role
   const enrUser = await makeUser("perf.pool-enrupd-000@perf.local", "Perf Enr Update");
   const updateEnrollment = await prisma.enrollment.create({
@@ -222,57 +259,108 @@ async function seedPool(instructorId: string, deptCode: string) {
 
   // --- TA add users (fresh STUDENT, unenrolled) for POST /tas ---
   const taAddUserPool = [];
-  for (const i of range(POOL)) taAddUserPool.push((await makeUser(POOL_EMAIL("taadd", i), `Perf TA Add ${i}`)).id);
+  for (const i of range(POOL))
+    taAddUserPool.push((await makeUser(POOL_EMAIL("taadd", i), `Perf TA Add ${i}`)).id);
   // --- TA remove: STUDENT users already TA of sharedCourse for DELETE /tas ---
   const taRemoveUserIds = [];
   for (const i of range(POOL)) {
     const u = await makeUser(POOL_EMAIL("tarm", i), `Perf TA Rm ${i}`);
-    await prisma.enrollment.create({ data: { courseId: sharedCourse.id, userId: u.id, role: "TA", isActive: true } });
+    await prisma.enrollment.create({
+      data: { courseId: sharedCourse.id, userId: u.id, role: "TA", isActive: true },
+    });
     taRemoveUserIds.push(u.id);
   }
 
   // --- chats owned by student1 (script reads chats as `student` role) in sharedCourse ---
-  const student1 = await prisma.user.findFirst({ where: { email: "student1@eduai.local" }, select: { id: true } });
+  const student1 = await prisma.user.findFirst({
+    where: { email: "student1@eduai.local" },
+    select: { id: true },
+  });
   const chatOwnerId = student1?.id ?? actor.id;
   const deleteChatPool = [];
   for (const i of range(POOL)) {
     const chat = await prisma.chat.create({
-      data: { userId: chatOwnerId, courseId: sharedCourse.id, chatbotType: "LEARNING", title: `perf-pool chat ${i}` },
+      data: {
+        userId: chatOwnerId,
+        courseId: sharedCourse.id,
+        chatbotType: "LEARNING",
+        title: `perf-pool chat ${i}`,
+      },
     });
-    await prisma.chatMessage.create({ data: { chatId: chat.id, messageId: `perf-pool-${i}-0`, role: "user", content: { text: "hi" } } });
+    await prisma.chatMessage.create({
+      data: {
+        chatId: chat.id,
+        messageId: `perf-pool-${i}-0`,
+        role: "user",
+        content: { text: "hi" },
+      },
+    });
     deleteChatPool.push(chat.id);
   }
   const readChatId = deleteChatPool[0]; // reused for GET chat/messages (not deleted first)
 
   // --- AI providers + models (no external call — pure CRUD) ---
   const newProvider = (name: string) =>
-    prisma.aIProvider.create({ data: { name, displayName: "Perf", description: "perf", requiresApiKey: false, isActive: true } });
+    prisma.aIProvider.create({
+      data: {
+        name,
+        displayName: "Perf",
+        description: "perf",
+        requiresApiKey: false,
+        isActive: true,
+      },
+    });
   const updateProvider = await newProvider("perf-pool-prov-upd");
   const deleteProviderPool = [];
-  for (const i of range(POOL)) deleteProviderPool.push((await newProvider(`perf-pool-prov-del-${i}`)).id);
+  for (const i of range(POOL))
+    deleteProviderPool.push((await newProvider(`perf-pool-prov-del-${i}`)).id);
   const newModel = (modelId: string) =>
-    prisma.aIModel.create({ data: { modelId, name: "Perf Model", description: "perf", type: "CHAT", providerId: updateProvider.id, isActive: true } });
+    prisma.aIModel.create({
+      data: {
+        modelId,
+        name: "Perf Model",
+        description: "perf",
+        type: "CHAT",
+        providerId: updateProvider.id,
+        isActive: true,
+      },
+    });
   const updateModel = await newModel("perf-pool-model-upd");
   const deleteModelPool = [];
-  for (const i of range(POOL)) deleteModelPool.push((await newModel(`perf-pool-model-del-${i}`)).id);
+  for (const i of range(POOL))
+    deleteModelPool.push((await newModel(`perf-pool-model-del-${i}`)).id);
 
   // --- users for admin user CRUD ---
   const updateUser = await makeUser("perf.pool-userupd-000@perf.local", "Perf User Update");
   const deleteUserPool = [];
-  for (const i of range(POOL)) deleteUserPool.push((await makeUser(POOL_EMAIL("userdel", i), `Perf User Del ${i}`)).id);
+  for (const i of range(POOL))
+    deleteUserPool.push((await makeUser(POOL_EMAIL("userdel", i), `Perf User Del ${i}`)).id);
 
   // --- invitations (PENDING) ---
   const newInvite = (email: string) =>
     prisma.invitation.create({
-      data: { email, role: "INSTRUCTOR", tokenHash: randomUUID(), status: "PENDING", invitedById: null, expiresAt: new Date(now.getTime() + 72 * 3600 * 1000) },
+      data: {
+        email,
+        role: "INSTRUCTOR",
+        tokenHash: randomUUID(),
+        status: "PENDING",
+        invitedById: null,
+        expiresAt: new Date(now.getTime() + 72 * 3600 * 1000),
+      },
     });
   const resendInvitation = await newInvite("perf.pool-invresend-000@perf.local");
   const deleteInvitationPool = [];
-  for (const i of range(POOL)) deleteInvitationPool.push((await newInvite(POOL_EMAIL("invdel", i))).id);
+  for (const i of range(POOL))
+    deleteInvitationPool.push((await newInvite(POOL_EMAIL("invdel", i))).id);
 
   // --- bug report for admin PATCH status ---
   const bugReport = await prisma.bugReport.create({
-    data: { source: "CORE", userId: actor.id, description: "PERF-POOL admin status target", status: "UNHANDLED" },
+    data: {
+      source: "CORE",
+      userId: actor.id,
+      description: "PERF-POOL admin status target",
+      status: "UNHANDLED",
+    },
   });
 
   const manifest = {
@@ -318,9 +406,13 @@ async function reset() {
   const delChats = await prisma.chat.deleteMany({ where: { title: { startsWith: CHAT_PREFIX } } });
   // Courses cascade → enrollments/materials/chunks/embeddings/topics/questions.
   const delCourses = await prisma.course.deleteMany({ where: { externalSource: MARKER } });
-  const delUsers = await prisma.user.deleteMany({ where: { email: { startsWith: STUDENT_PREFIX } } });
+  const delUsers = await prisma.user.deleteMany({
+    where: { email: { startsWith: STUDENT_PREFIX } },
+  });
   await resetPool();
-  console.log(`  chats=${delChats.count} courses=${delCourses.count} users=${delUsers.count} removed (+pool)`);
+  console.log(
+    `  chats=${delChats.count} courses=${delCourses.count} users=${delUsers.count} removed (+pool)`,
+  );
 }
 
 async function main() {
@@ -337,7 +429,8 @@ async function main() {
   const instructor =
     (await prisma.user.findFirst({ where: { email: "instructor.cs@eduai.local" } })) ??
     (await prisma.user.findFirst({ where: { role: "INSTRUCTOR" } }));
-  if (!instructor) throw new Error("No instructor found — run the main seed first (npm run db:seed).");
+  if (!instructor)
+    throw new Error("No instructor found — run the main seed first (npm run db:seed).");
   const disciplines = await prisma.discipline.findMany({ select: { code: true } });
   if (disciplines.length === 0) throw new Error("No disciplines found — run the main seed first.");
   const deptCodes = disciplines.map((d) => d.code);
@@ -448,8 +541,10 @@ async function main() {
       // #941: content_tsv is an Unsupported("tsvector") generated column on
       // MaterialChunk, so Prisma's client omits create/createMany for this
       // model — insert via raw SQL instead (mirrors app/lib/ai/embedding.ts).
-      const chunkRows = Array.from({ length: CFG.chunksPerMaterial }, (_, i) =>
-        Prisma.sql`(${randomUUID()}, ${material.id}, ${i}, ${`Chunk ${i} of material ${m}, course ${c}. Synthetic text for vector-scan latency.`}, NOW())`,
+      const chunkRows = Array.from(
+        { length: CFG.chunksPerMaterial },
+        (_, i) =>
+          Prisma.sql`(${randomUUID()}, ${material.id}, ${i}, ${`Chunk ${i} of material ${m}, course ${c}. Synthetic text for vector-scan latency.`}, NOW())`,
       );
       await prisma.$executeRaw`
         INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")
@@ -519,7 +614,9 @@ async function main() {
     }
 
     if ((c + 1) % 25 === 0 || c === CFG.courses - 1) {
-      console.log(`  … ${c + 1}/${CFG.courses} courses (q=${nQuestions} mat=${nMaterials} chunk=${nChunks} enr=${nEnroll} chat=${nChats})`);
+      console.log(
+        `  … ${c + 1}/${CFG.courses} courses (q=${nQuestions} mat=${nMaterials} chunk=${nChunks} enr=${nEnroll} chat=${nChats})`,
+      );
     }
   }
 

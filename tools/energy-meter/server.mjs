@@ -108,9 +108,7 @@ function readRaplZones() {
         if (!Number.isFinite(uj)) continue;
         let maxUj = null;
         try {
-          const maxRaw = Number(
-            readFileSync(`${base}/${name}/max_energy_range_uj`, "utf8").trim(),
-          );
+          const maxRaw = Number(readFileSync(`${base}/${name}/max_energy_range_uj`, "utf8").trim());
           if (Number.isFinite(maxRaw) && maxRaw > 0) maxUj = maxRaw;
         } catch {
           /* optional */
@@ -204,8 +202,7 @@ function finishSession(session) {
   else if (joulesGpu != null) source = "NVML_GPU";
   else if (joulesCpu != null) source = "RAPL_CPU";
 
-  const carbonGramsCO2 =
-    joulesTotal != null ? (joulesTotal * GRID) / 3_600_000 : null;
+  const carbonGramsCO2 = joulesTotal != null ? (joulesTotal * GRID) / 3_600_000 : null;
 
   return {
     durationMs,
@@ -295,10 +292,7 @@ const server = createServer(async (req, res) => {
     }
     // Drop indices that are not present on this host (avoids waiting forever).
     const visible = listVisibleGpuIndices();
-    const sampled =
-      visible.length > 0
-        ? gpuIndices.filter((i) => visible.includes(i))
-        : gpuIndices;
+    const sampled = visible.length > 0 ? gpuIndices.filter((i) => visible.includes(i)) : gpuIndices;
     if (!sampled.length) {
       sendJson(res, 400, {
         error: `requested GPUs ${gpuIndices.join(",")} not visible (have ${visible.join(",") || "none"})`,

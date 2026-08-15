@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Message as BasicMessage,
-  MessageAvatar,
-  Loader,
-  Progress,
-} from "@eduai/ui";
+import { Message as BasicMessage, MessageAvatar, Loader, Progress } from "@eduai/ui";
 
 import {
   computeTimedChatProgress,
@@ -103,8 +98,7 @@ export function ChatTypingIndicator({
         })
       : undefined);
 
-  const expectedMs =
-    typicalExpectedMs > 0 ? typicalExpectedMs : Math.max(deadlineMs, 1_000);
+  const expectedMs = typicalExpectedMs > 0 ? typicalExpectedMs : Math.max(deadlineMs, 1_000);
   const resolvedDeadline = deadlineMs > 0 ? deadlineMs : expectedMs;
 
   const timedComputed =
@@ -124,25 +118,20 @@ export function ChatTypingIndicator({
   }, [tickLocally, timedComputed?.percent]);
 
   const timed =
-    timedOverride ??
-    (timedComputed && (tickLocally || deadlineMs > 0) ? timedComputed : undefined);
+    timedOverride ?? (timedComputed && (tickLocally || deadlineMs > 0) ? timedComputed : undefined);
 
   const label = stage?.label ?? "EduAI is thinking";
   const elapsedLabel = formatChatProgressElapsed(resolvedElapsed);
   const percent = timed?.percent ?? stage?.progress ?? 18;
   const timingLabel = timed?.timingLabel ?? null;
-  const expectedLabel = timed
-    ? `Usually ~${formatChatProgressElapsed(timed.expectedMs)}`
-    : null;
+  const expectedLabel = timed ? `Usually ~${formatChatProgressElapsed(timed.expectedMs)}` : null;
 
   const valueText = timingLabel
     ? `${label}. ${timingLabel}. ${elapsedLabel} elapsed.`
     : `${label}. ${elapsedLabel} elapsed.`;
 
   // Announce stage (and discrete overrun) only — not the per-second countdown.
-  const liveAnnouncement = timed?.isOverExpected
-    ? `${label}. Taking longer than usual.`
-    : label;
+  const liveAnnouncement = timed?.isOverExpected ? `${label}. Taking longer than usual.` : label;
 
   if (compact) {
     return (
@@ -173,23 +162,14 @@ export function ChatTypingIndicator({
             )}
           </span>
         </div>
-        <TimedProgressBar
-          label={label}
-          percent={percent}
-          valueText={valueText}
-        />
+        <TimedProgressBar label={label} percent={percent} valueText={valueText} />
       </div>
     );
   }
 
   return (
     <BasicMessage>
-      <MessageAvatar
-        src=""
-        alt="EduAI"
-        fallback="AI"
-        className="h-8 w-8"
-      />
+      <MessageAvatar src="" alt="EduAI" fallback="AI" className="h-8 w-8" />
 
       <div className="flex flex-col gap-2 flex-1 min-w-0">
         <div
@@ -209,17 +189,13 @@ export function ChatTypingIndicator({
                 className="text-muted-foreground"
               />
               {expectedLabel ? (
-                <p className="mt-1 text-[11px] text-muted-foreground/90">
-                  {expectedLabel}
-                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground/90">{expectedLabel}</p>
               ) : null}
             </div>
             <span className="shrink-0 text-xs tabular-nums text-muted-foreground text-right">
               {timingLabel ? (
                 <>
-                  <span className="block font-medium text-foreground/80">
-                    {timingLabel}
-                  </span>
+                  <span className="block font-medium text-foreground/80">{timingLabel}</span>
                   <span className="block opacity-80">{elapsedLabel} elapsed</span>
                 </>
               ) : (

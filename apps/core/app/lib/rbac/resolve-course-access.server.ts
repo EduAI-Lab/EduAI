@@ -1,5 +1,5 @@
-import { resolveCourseAccessGate } from '~/lib/auth/course-access.server'
-import type { CourseAccess, RbacUser } from './types'
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
+import type { CourseAccess, RbacUser } from "./types";
 
 /**
  * UI/API RBAC wrapper — delegates to the canonical course-access resolver (#293).
@@ -9,8 +9,8 @@ export async function resolveCourseAccess(
   user: RbacUser,
   course: { id: string; instructorId: string | null; department: string | null },
 ): Promise<CourseAccess> {
-  void course.instructorId
-  void course.department
+  void course.instructorId;
+  void course.department;
   const { access } = await resolveCourseAccessGate(
     {
       id: user.id,
@@ -18,6 +18,6 @@ export async function resolveCourseAccess(
       authorizedUnits: user.authorizedUnits,
     },
     course.id,
-  )
-  return access?.level ?? null
+  );
+  return access?.level ?? null;
 }

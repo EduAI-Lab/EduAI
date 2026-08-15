@@ -6,7 +6,7 @@
  * Providers tab share one source of truth.
  */
 
-export type ProviderId = 'google' | 'openai';
+export type ProviderId = "google" | "openai";
 
 /** Providers a student can configure a key for, in display order. */
 export const PROVIDERS: ReadonlyArray<{
@@ -15,15 +15,15 @@ export const PROVIDERS: ReadonlyArray<{
   /** Where to get a key. */
   keyUrl: string;
 }> = [
-  { id: 'google', label: 'Gemini', keyUrl: 'https://aistudio.google.com/app/apikey' },
-  { id: 'openai', label: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys' },
+  { id: "google", label: "Gemini", keyUrl: "https://aistudio.google.com/app/apikey" },
+  { id: "openai", label: "OpenAI", keyUrl: "https://platform.openai.com/api-keys" },
 ];
 
-const PROVIDER_LABELS: Record<string, string> = { google: 'Gemini', openai: 'OpenAI' };
+const PROVIDER_LABELS: Record<string, string> = { google: "Gemini", openai: "OpenAI" };
 
 /** localStorage key — unchanged from the original chat implementation so any
  *  keys a student already saved keep working after this refactor. */
-export const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
+export const API_KEYS_STORAGE_KEY = "ai-provider-keys";
 
 export function getProviderLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
@@ -31,17 +31,17 @@ export function getProviderLabel(provider: string): string {
 
 /** The provider half of a namespaced model id ("google:gemini-2.5-flash"). */
 export function getProviderFromModelId(modelId: string): string {
-  return modelId.split(':')[0] || 'google';
+  return modelId.split(":")[0] || "google";
 }
 
 export function maskApiKey(key: string): string {
-  if (key.length <= 8) return '••••••••';
+  if (key.length <= 8) return "••••••••";
   return `••••••${key.slice(-4)}`;
 }
 
 // Read/write are wrapped to survive SSR-like envs and quota errors silently.
 export function loadApiKeysFromStorage(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
+  if (typeof window === "undefined") return {};
   try {
     const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
     return stored ? JSON.parse(stored) : {};
@@ -51,7 +51,7 @@ export function loadApiKeysFromStorage(): Record<string, string> {
 }
 
 export function saveApiKeysToStorage(keys: Record<string, string>) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
   } catch {

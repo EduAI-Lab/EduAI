@@ -22,9 +22,7 @@ export function normalizeMcqCorrectness({
   correctAnswers,
   choiceLetters,
 }: NormalizeMcqCorrectnessInput): NormalizeMcqCorrectnessResult {
-  const allowed = new Set(
-    choiceLetters.map((l) => String(l).trim().toUpperCase()).filter(Boolean)
-  );
+  const allowed = new Set(choiceLetters.map((l) => String(l).trim().toUpperCase()).filter(Boolean));
 
   /** Lenient: legacy `answer` may be a letter or full choice text. */
   const coerceLetter = (raw: string | null | undefined): string | null => {
@@ -49,14 +47,14 @@ export function normalizeMcqCorrectness({
 
   if (!selectAllThatApply) {
     const letter = coerceLetter(answer);
-    if (!letter) throw new Error('MCQ requires at least one correct answer');
+    if (!letter) throw new Error("MCQ requires at least one correct answer");
     if (!allowed.has(letter)) throw new Error(`Correct answer ${letter} is not in choices`);
     return { selectAllThatApply: false, answer: letter, correctAnswers: null };
   }
 
   const fromArray = Array.isArray(correctAnswers) ? correctAnswers : [];
   const unique = [...new Set(fromArray.map(strictLetter))].sort();
-  if (unique.length === 0) throw new Error('MCQ requires at least one correct answer');
+  if (unique.length === 0) throw new Error("MCQ requires at least one correct answer");
   for (const letter of unique) {
     if (!allowed.has(letter)) throw new Error(`Correct answer ${letter} is not in choices`);
   }

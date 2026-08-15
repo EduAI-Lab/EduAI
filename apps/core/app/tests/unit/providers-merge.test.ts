@@ -43,10 +43,7 @@ describe("mergeLocalInferenceFromEnv", () => {
 
   it("does not touch local providers when chat model is cloud-only", () => {
     process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
-    const merged = mergeLocalInferenceFromEnv(
-      { vllm: { isEnabled: false } },
-      "openai:gpt-4o",
-    );
+    const merged = mergeLocalInferenceFromEnv({ vllm: { isEnabled: false } }, "openai:gpt-4o");
     expect(merged.vllm?.isEnabled).toBe(false);
   });
 

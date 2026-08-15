@@ -1,4 +1,4 @@
-import { QuestionDifficulty } from '../types/question';
+import { QuestionDifficulty } from "../types/question";
 
 export type VariantMetadataUpdateInput = {
   isDraft: boolean;

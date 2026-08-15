@@ -107,11 +107,15 @@ function csvEscape(value) {
 }
 
 function markdownEscape(value) {
-  return String(value ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  return String(value ?? "")
+    .replace(/\|/g, "\\|")
+    .replace(/\n/g, " ");
 }
 
 function normalizeUsername(username) {
-  return String(username || "").trim().replace(/^@/, "");
+  return String(username || "")
+    .trim()
+    .replace(/^@/, "");
 }
 
 function createTeammate(summaryByUser, username) {
@@ -201,8 +205,12 @@ function collectPrAnalyticsByNumber(json) {
     }
 
     const number =
-      findFirstByKeys(value, [/^number$/, /pull.*request.*number/, /^pr.*number$/, /^pullnumber$/]) ||
-      (typeof value.url === "string" ? value.url.match(/\/pull\/(\d+)/)?.[1] : undefined);
+      findFirstByKeys(value, [
+        /^number$/,
+        /pull.*request.*number/,
+        /^pr.*number$/,
+        /^pullnumber$/,
+      ]) || (typeof value.url === "string" ? value.url.match(/\/pull\/(\d+)/)?.[1] : undefined);
 
     if (number && Number.isFinite(Number(number))) {
       const prNumber = Number(number);
@@ -247,7 +255,9 @@ function generateReports({ context, summaryByUser, issueRows, prRows, warnings }
     .map((summary) => ({
       ...summary,
       issue_implementation_hours: roundHours(summary.issue_implementation_hours),
-      pr_review_hours_or_estimated_pr_time: roundHours(summary.pr_review_hours_or_estimated_pr_time),
+      pr_review_hours_or_estimated_pr_time: roundHours(
+        summary.pr_review_hours_or_estimated_pr_time,
+      ),
       total_hours: roundHours(summary.base_hours + summary.issue_implementation_hours),
       issues_worked_on: summary.issuesWorkedOn.size,
       prs_authored: summary.prsAuthored.size,
@@ -315,7 +325,16 @@ function generateReports({ context, summaryByUser, issueRows, prRows, warnings }
   );
 
   const issueTable = makeMarkdownTable(
-    ["Issue number", "Issue title", "Assignee", "Parsed hours", "Parsed person", "Linked PRs", "Status", "Notes"],
+    [
+      "Issue number",
+      "Issue title",
+      "Assignee",
+      "Parsed hours",
+      "Parsed person",
+      "Linked PRs",
+      "Status",
+      "Notes",
+    ],
     issueRows.map((row) => [
       `#${row.issueNumber}`,
       row.issueTitle,
@@ -381,7 +400,11 @@ ${prTable}
 
 ${makeMarkdownTable(
   ["GitHub username", "Base hours", "Notes"],
-  summaries.map((summary) => [summary.github_username, summary.base_hours, summary.base_notes || ""]),
+  summaries.map((summary) => [
+    summary.github_username,
+    summary.base_hours,
+    summary.base_notes || "",
+  ]),
 )}
 
 ## Data Quality Warnings
@@ -406,7 +429,15 @@ function updateProjectFields({
   let project;
   let fieldsResult;
   try {
-    project = runGhJson(["project", "view", String(projectNumber), "--owner", projectOwner, "--format", "json"]);
+    project = runGhJson([
+      "project",
+      "view",
+      String(projectNumber),
+      "--owner",
+      projectOwner,
+      "--format",
+      "json",
+    ]);
     fieldsResult = runGhJson([
       "project",
       "field-list",
@@ -449,7 +480,9 @@ function updateProjectFields({
         String(value),
       ]);
     } catch (error) {
-      updateWarnings.push(`Project field update failed for issue #${issue.number} field "${fieldName}": ${error.message}`);
+      updateWarnings.push(
+        `Project field update failed for issue #${issue.number} field "${fieldName}": ${error.message}`,
+      );
     }
   }
 
@@ -463,10 +496,20 @@ function updateProjectFields({
       })
       .join("; ");
 
-    editField(issue, "Implementation Hours", "--number", issueImplementationHoursByNumber.get(issue.number) || 0);
+    editField(
+      issue,
+      "Implementation Hours",
+      "--number",
+      issueImplementationHoursByNumber.get(issue.number) || 0,
+    );
     editField(issue, "Linked PRs", "--text", linkedPrText);
     editField(issue, "PR Analytics Summary", "--text", analyticsSummary);
-    editField(issue, "Needs Manual Review", "--text", issueNeedsManualReviewByNumber.get(issue.number) ? "Yes" : "No");
+    editField(
+      issue,
+      "Needs Manual Review",
+      "--text",
+      issueNeedsManualReviewByNumber.get(issue.number) ? "Yes" : "No",
+    );
     editField(issue, "Last Report Updated", "--date", new Date().toISOString().slice(0, 10));
   });
 
@@ -480,13 +523,13 @@ async function buildReport(options) {
   const projectOwner = options.projectOwner || process.env.PROJECT_OWNER || owner;
   const projectNumber = options.projectNumber || process.env.PROJECT_NUMBER;
   const summerRoot = path.resolve(__dirname, "..");
-  const outputDir =
-    options.outputDir || process.env.OUTPUT_DIR || path.join(summerRoot, "reports");
+  const outputDir = options.outputDir || process.env.OUTPUT_DIR || path.join(summerRoot, "reports");
   const baseTimeFile =
     options.baseTimeFile || process.env.BASE_TIME_FILE || path.join(summerRoot, "base-time.csv");
   const prAnalyticsJsonPath = options.prAnalyticsJson || process.env.PR_ANALYTICS_JSON || "";
   const defaultRange = defaultReportRange();
-  const startDate = toDate(options.reportStartDate || process.env.REPORT_START_DATE) || defaultRange.start;
+  const startDate =
+    toDate(options.reportStartDate || process.env.REPORT_START_DATE) || defaultRange.start;
   const endDate = toDate(options.reportEndDate || process.env.REPORT_END_DATE) || defaultRange.end;
 
   if (!owner || !repo) {
@@ -527,7 +570,8 @@ async function buildReport(options) {
       isInRange(projectItem?.projectUpdatedAt, startDate, endDate) ||
       isInRange(projectItem?.projectClosedAt, startDate, endDate);
     const includedByIssueDate =
-      isInRange(issue.updatedAt, startDate, endDate) || isInRange(issue.closedAt, startDate, endDate);
+      isInRange(issue.updatedAt, startDate, endDate) ||
+      isInRange(issue.closedAt, startDate, endDate);
     const includedByMergedPr = linkedPrs.some((pr) => isInRange(pr.mergedAt, startDate, endDate));
     return (
       !issueIsBacklogOrDraft(issue, projectItem) &&
@@ -544,7 +588,11 @@ async function buildReport(options) {
   });
 
   const detailedPrs = Array.from(includedPrNumbers)
-    .map((number) => getPullRequestDetails(owner, repo, number) || allPullRequests.find((pr) => pr.number === number))
+    .map(
+      (number) =>
+        getPullRequestDetails(owner, repo, number) ||
+        allPullRequests.find((pr) => pr.number === number),
+    )
     .filter(Boolean);
 
   const issueRows = [];
@@ -563,9 +611,15 @@ async function buildReport(options) {
     parsed.entries.forEach((entry) => {
       const username = normalizeUsername(entry.username);
       const teammate = createTeammate(summaryByUser, username);
-      if (!DEFAULT_ROSTER.some((rosterName) => rosterName.toLowerCase() === username.toLowerCase())) {
-        teammate.needsManualReview.push(`Issue #${issue.number} has hours for a user outside the roster.`);
-        warnings.push(`Issue #${issue.number} has hours for ${username}, who is outside the screenshot roster.`);
+      if (
+        !DEFAULT_ROSTER.some((rosterName) => rosterName.toLowerCase() === username.toLowerCase())
+      ) {
+        teammate.needsManualReview.push(
+          `Issue #${issue.number} has hours for a user outside the roster.`,
+        );
+        warnings.push(
+          `Issue #${issue.number} has hours for ${username}, who is outside the screenshot roster.`,
+        );
       }
       teammate.issue_implementation_hours += entry.hours;
       teammate.issuesWorkedOn.add(issue.number);
@@ -646,7 +700,13 @@ async function buildReport(options) {
     const analytics = prAnalyticsByNumber.get(pr.number) || {};
     const timeToFirstReview =
       analytics.time_to_first_review ||
-      hoursBetween(pr.createdAt, reviews.map((review) => review.submittedAt).filter(Boolean).sort()[0]);
+      hoursBetween(
+        pr.createdAt,
+        reviews
+          .map((review) => review.submittedAt)
+          .filter(Boolean)
+          .sort()[0],
+      );
     const firstApproval = reviews
       .filter((review) => String(review.state || "").toUpperCase() === "APPROVED")
       .map((review) => review.submittedAt)
@@ -679,7 +739,9 @@ async function buildReport(options) {
     .filter((pr) => isInRange(pr.mergedAt || pr.updatedAt, startDate, endDate))
     .forEach((pr) => {
       if (!linkedIncludedPrNumbers.has(pr.number)) {
-        warnings.push(`PR #${pr.number} has no linked issue and was excluded from teammate metrics.`);
+        warnings.push(
+          `PR #${pr.number} has no linked issue and was excluded from teammate metrics.`,
+        );
       }
     });
 

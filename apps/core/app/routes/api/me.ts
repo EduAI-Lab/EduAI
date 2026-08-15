@@ -35,9 +35,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const apiKeyGate = await enforceAdminIfApiKey(request);
   if (apiKeyGate.response) return apiKeyGate.response;
 
-  const session =
-    apiKeyGate.session ??
-    (await getRequestSession(request));
+  const session = apiKeyGate.session ?? (await getRequestSession(request));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
@@ -62,9 +60,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const apiKeyGate = await enforceAdminIfApiKey(request);
   if (apiKeyGate.response) return apiKeyGate.response;
 
-  const session =
-    apiKeyGate.session ??
-    (await getRequestSession(request));
+  const session = apiKeyGate.session ?? (await getRequestSession(request));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

@@ -8,7 +8,7 @@ describe("SiteNavigation — rendering", () => {
     render(
       <MemoryRouter>
         <SiteNavigation currentPage="home" />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Team" })).toBeInTheDocument();
@@ -18,7 +18,7 @@ describe("SiteNavigation — rendering", () => {
     render(
       <MemoryRouter>
         <SiteNavigation currentPage="home" />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("button", { name: "Dashboard" })).toBeInTheDocument();
   });
@@ -27,7 +27,7 @@ describe("SiteNavigation — rendering", () => {
     render(
       <MemoryRouter>
         <SiteNavigation currentPage="team" />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "Team" })).toHaveClass("border-green-500");
   });
@@ -38,7 +38,7 @@ describe("SiteNavigation — missing data", () => {
     render(
       <MemoryRouter>
         <SiteNavigation currentPage="" />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
   });

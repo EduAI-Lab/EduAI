@@ -77,7 +77,9 @@ describe("GET /api/ai-models", () => {
   it("401s an anonymous caller with no bearer token", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
-    const response = await handleAiModelsApiRequest(request("GET", "/api/ai-models?page=1&pageSize=25"));
+    const response = await handleAiModelsApiRequest(
+      request("GET", "/api/ai-models?page=1&pageSize=25"),
+    );
     expect(response.status).toBe(401);
   });
 
@@ -88,7 +90,9 @@ describe("GET /api/ai-models", () => {
     );
 
     const response = await handleAiModelsApiRequest(
-      request("GET", "/api/ai-models?page=1&pageSize=25", undefined, { Authorization: "Bearer abc" }),
+      request("GET", "/api/ai-models?page=1&pageSize=25", undefined, {
+        Authorization: "Bearer abc",
+      }),
     );
     expect(response.status).toBe(401);
     expect(requireServiceKey).toHaveBeenCalled();
@@ -100,7 +104,9 @@ describe("GET /api/ai-models", () => {
     vi.mocked(prisma.$transaction).mockResolvedValue([1, [MODEL_ROW]] as never);
 
     const response = await handleAiModelsApiRequest(
-      request("GET", "/api/ai-models?page=1&pageSize=25", undefined, { Authorization: "Bearer abc" }),
+      request("GET", "/api/ai-models?page=1&pageSize=25", undefined, {
+        Authorization: "Bearer abc",
+      }),
     );
     expect(response.status).toBe(200);
   });
@@ -110,7 +116,9 @@ describe("GET /api/ai-models", () => {
       user: { id: "u1", role: "STUDENT" },
     } as never);
 
-    const response = await handleAiModelsApiRequest(request("GET", "/api/ai-models?page=1&pageSize=25"));
+    const response = await handleAiModelsApiRequest(
+      request("GET", "/api/ai-models?page=1&pageSize=25"),
+    );
     expect(response.status).toBe(403);
   });
 
@@ -142,14 +150,18 @@ describe("POST /api/ai-models", () => {
   };
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
     const response = await handleAiModelsApiRequest(request("POST", "/api/ai-models", validBody));
     expect(response.status).toBe(403);
   });
 
   it("422s an invalid body", async () => {
-    const response = await handleAiModelsApiRequest(request("POST", "/api/ai-models", { name: "" }));
+    const response = await handleAiModelsApiRequest(
+      request("POST", "/api/ai-models", { name: "" }),
+    );
     expect(response.status).toBe(422);
   });
 
@@ -201,7 +213,9 @@ describe("PATCH /api/ai-models/:id", () => {
   });
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
     const response = await handleAiModelsApiRequest(
       request("PATCH", "/api/ai-models/model-1", patchBody),
@@ -226,7 +240,11 @@ describe("PATCH /api/ai-models/:id", () => {
   });
 
   it("400s when the update would enable supportsTools on a non-CHAT model", async () => {
-    vi.mocked(prisma.aIModel.findUnique).mockResolvedValue({ ...MODEL_ROW, type: "EMBEDDING", supportsTools: false } as never);
+    vi.mocked(prisma.aIModel.findUnique).mockResolvedValue({
+      ...MODEL_ROW,
+      type: "EMBEDDING",
+      supportsTools: false,
+    } as never);
 
     const response = await handleAiModelsApiRequest(
       request("PATCH", "/api/ai-models/model-1", { supportsTools: true }),
@@ -293,7 +311,9 @@ describe("DELETE /api/ai-models/:id", () => {
   });
 
   it("403s a non-admin session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
 
     const response = await handleAiModelsApiRequest(request("DELETE", "/api/ai-models/model-1"));
     expect(response.status).toBe(403);

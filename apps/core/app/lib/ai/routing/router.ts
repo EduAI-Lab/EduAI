@@ -21,10 +21,7 @@ import {
   tierFromLlmClassification,
   type LlmRouteClassification,
 } from "./llm-classifier";
-import {
-  isLocalVllmRouting,
-  normalizePickForLocalVllm,
-} from "./local-vllm";
+import { isLocalVllmRouting, normalizePickForLocalVllm } from "./local-vllm";
 
 export const ROUTER_VERSION_RULES = "v1-rules";
 export const ROUTER_VERSION_KNN = "v2-knn";
@@ -102,13 +99,9 @@ export type RouterDecision = {
   features: Record<string, unknown>;
 };
 
-const carbonByCourse = () =>
-  parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
+const carbonByCourse = () => parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
 
-function buildPhase1Context(
-  prompt: string,
-  ctx: RouterInputContext,
-): Phase1RouterContext {
+function buildPhase1Context(prompt: string, ctx: RouterInputContext): Phase1RouterContext {
   return {
     prompt: prompt.trim(),
     courseId: ctx.courseId,
@@ -387,8 +380,7 @@ export async function resolveRoutedModelLlm(
       context,
       pickSource: "rules",
     });
-    decision.features.classifierError =
-      err instanceof Error ? err.message : String(err);
+    decision.features.classifierError = err instanceof Error ? err.message : String(err);
     return decision;
   }
 }

@@ -5,10 +5,7 @@ export { isLongOutputIntent };
 const DEFAULT_LONG_OUTPUT_MAX_TOKENS = 1200;
 const DEFAULT_ADHD_LONG_OUTPUT_MAX_TOKENS = 600;
 
-function resolvePositiveInteger(
-  value: string | undefined,
-  fallback: number,
-): number {
+function resolvePositiveInteger(value: string | undefined, fallback: number): number {
   if (!value || !/^[1-9]\d*$/.test(value)) {
     return fallback;
   }
@@ -76,9 +73,5 @@ export function didHitAppliedLongOutputCap({
   maxTokens: number;
   completionTokens: number | null | undefined;
 }): boolean {
-  return (
-    capApplied &&
-    typeof completionTokens === "number" &&
-    completionTokens >= maxTokens
-  );
+  return capApplied && typeof completionTokens === "number" && completionTokens >= maxTokens;
 }

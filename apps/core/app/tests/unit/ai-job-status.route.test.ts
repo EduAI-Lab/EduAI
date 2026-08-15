@@ -111,10 +111,9 @@ describe("GET /api/ai-jobs/:jobId", () => {
 
   it("returns the service-key guard response for an invalid service key", async () => {
     getSession.mockResolvedValue(null);
-    const guardResponse = new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403 },
-    );
+    const guardResponse = new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+    });
     requireServiceKey.mockResolvedValue(guardResponse);
 
     const response = await loader({
@@ -129,9 +128,7 @@ describe("GET /api/ai-jobs/:jobId", () => {
   it("does not expose internal errors from the status lookup", async () => {
     const internalMessage = "Prisma connection string leaked";
     findFirst.mockRejectedValue(new Error(internalMessage));
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       const response = await loader({

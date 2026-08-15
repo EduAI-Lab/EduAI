@@ -16,10 +16,10 @@
  * request + status assertion) comes from tests/helpers/pictRouteRunner.js
  * (#1188).
  */
-import { vi, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadPictModel } from '../helpers/pictModel.js';
-import { stubSessionUser } from '../helpers/pictRouteMocks.js';
-import { describePictRoute } from '../helpers/pictRouteRunner.js';
+import { vi, it, expect, beforeEach, afterEach } from "vitest";
+import { loadPictModel } from "../helpers/pictModel.js";
+import { stubSessionUser } from "../helpers/pictRouteMocks.js";
+import { describePictRoute } from "../helpers/pictRouteRunner.js";
 
 const { mockFindCoursesByProjectedCode, mockEnrollments, eduaiService } = vi.hoisted(() => ({
   mockFindCoursesByProjectedCode: vi.fn(),
@@ -30,30 +30,30 @@ const { mockFindCoursesByProjectedCode, mockEnrollments, eduaiService } = vi.hoi
 // Dynamic imports (rather than a static import used directly in the factory)
 // because vi.mock factories run before the module's own static imports are
 // wired up — see tests/helpers/pictRouteMocks.js.
-vi.mock('../../src/services/authService.js', async () => {
-  const { mockAuthService } = await import('../helpers/pictRouteMocks.js');
+vi.mock("../../src/services/authService.js", async () => {
+  const { mockAuthService } = await import("../helpers/pictRouteMocks.js");
   return mockAuthService();
 });
 
-vi.mock('../../src/config/settings.js', async () => {
-  const { mockSettings } = await import('../helpers/pictRouteMocks.js');
+vi.mock("../../src/config/settings.js", async () => {
+  const { mockSettings } = await import("../helpers/pictRouteMocks.js");
   return mockSettings({ maxQuestions: 50 });
 });
 
-vi.mock('../../src/services/courseListService.js', () => ({
+vi.mock("../../src/services/courseListService.js", () => ({
   findCoursesByProjectedCode: mockFindCoursesByProjectedCode,
 }));
 
-vi.mock('../../src/services/coreApiService.js', async () => {
-  const { mockCoreApiService } = await import('../helpers/pictRouteMocks.js');
+vi.mock("../../src/services/coreApiService.js", async () => {
+  const { mockCoreApiService } = await import("../helpers/pictRouteMocks.js");
   return mockCoreApiService(mockEnrollments);
 });
 
-vi.mock('../../src/services/eduaiService.js', () => ({ default: eduaiService }));
+vi.mock("../../src/services/eduaiService.js", () => ({ default: eduaiService }));
 
-const { default: app } = await import('../../src/app.js');
+const { default: app } = await import("../../src/app.js");
 
-const { rows, oracle } = await loadPictModel('generate-questions');
+const { rows, oracle } = await loadPictModel("generate-questions");
 const {
   generateQuestionsOracle,
   MAX_QUESTIONS,
@@ -64,17 +64,19 @@ const {
   PROVIDED_REASONING_DISTRIBUTION,
 } = oracle;
 
-const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
-const STUDENT = { id: 'stu-1', role: 'STUDENT', email: 's@t.co', name: 'S' };
+const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
 
 function authAs(user) {
   stubSessionUser(user);
 }
 
 function accessibleCourse() {
-  const course = { id: 1, userId: INSTRUCTOR.id, coreCourseId: 'cuid-core-course', code: null };
+  const course = { id: 1, userId: INSTRUCTOR.id, coreCourseId: "cuid-core-course", code: null };
   mockFindCoursesByProjectedCode.mockResolvedValue([course]);
-  mockEnrollments.mockResolvedValue({ enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }] });
+  mockEnrollments.mockResolvedValue({
+    enrollments: [{ studentId: INSTRUCTOR.id, role: "INSTRUCTOR", isActive: true }],
+  });
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -82,22 +84,24 @@ afterEach(() => vi.restoreAllMocks());
 
 function buildBody(row) {
   const body = {};
-  if (row.PromptPresent === 'yes') body.prompt = 'Write questions about recursion';
-  if (row.CourseCodePresent === 'yes') body.courseCode = 'COSC 101';
-  if (row.NumQuestions === 'valid') body.numQuestions = VALID_NUM_QUESTIONS;
-  if (row.NumQuestions === 'exceeds') body.numQuestions = EXCEEDING_NUM_QUESTIONS;
+  if (row.PromptPresent === "yes") body.prompt = "Write questions about recursion";
+  if (row.CourseCodePresent === "yes") body.courseCode = "COSC 101";
+  if (row.NumQuestions === "valid") body.numQuestions = VALID_NUM_QUESTIONS;
+  if (row.NumQuestions === "exceeds") body.numQuestions = EXCEEDING_NUM_QUESTIONS;
   const mcq = MCQ_INPUT[row.Mcq];
   if (mcq !== undefined) body.mcqRequiredChoiceCount = mcq;
-  if (row.DifficultyDistribution === 'provided') body.difficultyDistribution = PROVIDED_DIFFICULTY_DISTRIBUTION;
-  if (row.ReasoningDistribution === 'provided') body.reasoningDistribution = PROVIDED_REASONING_DISTRIBUTION;
+  if (row.DifficultyDistribution === "provided")
+    body.difficultyDistribution = PROVIDED_DIFFICULTY_DISTRIBUTION;
+  if (row.ReasoningDistribution === "provided")
+    body.reasoningDistribution = PROVIDED_REASONING_DISTRIBUTION;
   return body;
 }
 
 function setupRow(row) {
-  authAs(row.Authorized === 'yes' ? INSTRUCTOR : STUDENT);
-  if (row.CourseAccess === 'yes') accessibleCourse();
+  authAs(row.Authorized === "yes" ? INSTRUCTOR : STUDENT);
+  if (row.CourseAccess === "yes") accessibleCourse();
   else mockFindCoursesByProjectedCode.mockResolvedValue([]);
-  eduaiService.generateQuestions.mockResolvedValue([{ id: 'q1' }]);
+  eduaiService.generateQuestions.mockResolvedValue([{ id: "q1" }]);
   return buildBody(row);
 }
 
@@ -106,7 +110,7 @@ async function verify({ expected }) {
   const call = eduaiService.generateQuestions.mock.calls[0][0];
   expect(call.numQuestions).toBe(expected.forwarded.numQuestions);
   if (expected.forwarded.mcqRequiredChoiceCount === undefined) {
-    expect(call).not.toHaveProperty('mcqRequiredChoiceCount');
+    expect(call).not.toHaveProperty("mcqRequiredChoiceCount");
   } else {
     expect(call.mcqRequiredChoiceCount).toBe(expected.forwarded.mcqRequiredChoiceCount);
   }
@@ -114,16 +118,16 @@ async function verify({ expected }) {
   expect(call.reasoningDistribution).toEqual(expected.forwarded.reasoningDistribution);
 }
 
-describePictRoute('generate-questions', {
+describePictRoute("generate-questions", {
   app,
   rows,
-  method: 'post',
-  path: '/api/eduai/generate-questions',
+  method: "post",
+  path: "/api/eduai/generate-questions",
   setupRow,
   oracle: generateQuestionsOracle,
   verify,
 });
 
-it('sanity: MAX_QUESTIONS matches the mocked config.maxQuestions', () => {
+it("sanity: MAX_QUESTIONS matches the mocked config.maxQuestions", () => {
   expect(MAX_QUESTIONS).toBe(50);
 });

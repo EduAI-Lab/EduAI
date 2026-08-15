@@ -37,9 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const { response: adminGuard, session } = await requireAdmin(request);
   if (adminGuard) return adminGuard;
 
-  const parsed = UpdateRoutingModelSettingSchema.safeParse(
-    await request.json().catch(() => null),
-  );
+  const parsed = UpdateRoutingModelSettingSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return json({ error: "Invalid input", details: parsed.error.flatten() }, 400);
   }
@@ -47,11 +45,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Unknown routing model setting" }, 404);
   }
 
-  await setRoutingModelSetting(
-    parsed.data.key,
-    parsed.data.value,
-    session.user.id,
-  );
+  await setRoutingModelSetting(parsed.data.key, parsed.data.value, session.user.id);
 
   fireAndForget(
     logAuditAction({

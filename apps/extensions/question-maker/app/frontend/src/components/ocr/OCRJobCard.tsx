@@ -1,5 +1,5 @@
-import { Badge, Button } from '@eduai/ui';
-import { Tooltip } from '@/components/ui/tooltip';
+import { Badge, Button } from "@eduai/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   IconFileText,
   IconCircleCheck,
@@ -8,9 +8,9 @@ import {
   IconTrash,
   IconAlertCircle,
   IconLoader2,
-} from '@tabler/icons-react';
-import { cn } from '@/lib/utils';
-import type { OCRJob, OCRJobStatus } from '../../types/ocr';
+} from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
+import type { OCRJob, OCRJobStatus } from "../../types/ocr";
 
 function formatTimeAgo(iso: string): string {
   const d = new Date(iso);
@@ -18,7 +18,7 @@ function formatTimeAgo(iso: string): string {
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (mins < 1) return 'just now';
+  if (mins < 1) return "just now";
   if (mins < 60) return `${mins} min ago`;
   if (hours < 24) return `${hours} hr ago`;
   if (days < 7) return `${days} day ago`;
@@ -38,52 +38,47 @@ const statusConfig: Record<
     label: string;
     icon: typeof IconCircleCheck;
     className: string;
-    badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
+    badgeVariant: "default" | "secondary" | "destructive" | "outline";
   }
 > = {
   pending: {
-    label: 'Pending',
+    label: "Pending",
     icon: IconClock,
-    className: 'text-amber-500',
-    badgeVariant: 'outline',
+    className: "text-amber-500",
+    badgeVariant: "outline",
   },
   processing: {
-    label: 'Processing',
+    label: "Processing",
     icon: IconLoader2,
-    className: 'text-secondary animate-spin',
-    badgeVariant: 'secondary',
+    className: "text-secondary animate-spin",
+    badgeVariant: "secondary",
   },
   success: {
-    label: 'Complete',
+    label: "Complete",
     icon: IconCircleCheck,
-    className: 'text-emerald-500',
-    badgeVariant: 'default',
+    className: "text-emerald-500",
+    badgeVariant: "default",
   },
   error: {
-    label: 'Failed',
+    label: "Failed",
     icon: IconCircleX,
-    className: 'text-destructive',
-    badgeVariant: 'destructive',
+    className: "text-destructive",
+    badgeVariant: "destructive",
   },
   discarded: {
-    label: 'Discarded',
+    label: "Discarded",
     icon: IconAlertCircle,
-    className: 'text-muted-foreground',
-    badgeVariant: 'outline',
+    className: "text-muted-foreground",
+    badgeVariant: "outline",
   },
 };
 
-export function OCRJobCard({
-  job,
-  isCurrentCourse,
-  onSelect,
-  onRemove,
-}: OCRJobCardProps) {
+export function OCRJobCard({ job, isCurrentCourse, onSelect, onRemove }: OCRJobCardProps) {
   const config = statusConfig[job.status];
   const StatusIcon = config.icon;
 
   const isClickable =
-    (job.status === 'success' || job.status === 'discarded') &&
+    (job.status === "success" || job.status === "discarded") &&
     job.storedQuestions &&
     job.storedQuestions.length > 0;
 
@@ -102,19 +97,19 @@ export function OCRJobCard({
 
   return (
     <div
-      role={isClickable ? 'button' : undefined}
+      role={isClickable ? "button" : undefined}
       tabIndex={isClickable ? 0 : undefined}
       onClick={handleClick}
       onKeyDown={(e) => {
-        if (isClickable && (e.key === 'Enter' || e.key === ' ')) {
+        if (isClickable && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
           handleClick();
         }
       }}
       className={cn(
-        'group relative flex flex-col gap-2 rounded-lg border p-3 transition-colors',
-        isClickable && 'cursor-pointer hover:bg-accent/50',
-        !isCurrentCourse && 'opacity-60'
+        "group relative flex flex-col gap-2 rounded-lg border p-3 transition-colors",
+        isClickable && "cursor-pointer hover:bg-accent/50",
+        !isCurrentCourse && "opacity-60",
       )}
     >
       <div className="flex items-start gap-2">
@@ -145,20 +140,20 @@ export function OCRJobCard({
       <div className="flex items-center justify-between gap-2">
         <Tooltip
           content={
-            job.status === 'pending' || job.status === 'processing'
-              ? 'Upload in progress. Wait for it to complete before you can restore.'
-              : job.status === 'error'
-                ? 'This upload failed. Remove from history or try uploading again.'
+            job.status === "pending" || job.status === "processing"
+              ? "Upload in progress. Wait for it to complete before you can restore."
+              : job.status === "error"
+                ? "This upload failed. Remove from history or try uploading again."
                 : isClickable && isCurrentCourse
-                  ? 'Click to load these questions into the review area.'
+                  ? "Click to load these questions into the review area."
                   : isClickable && !isCurrentCourse
-                    ? 'This upload was for a different course. Switch course to restore.'
+                    ? "This upload was for a different course. Switch course to restore."
                     : `${config.label}.`
           }
           side="top"
         >
           <div className="flex items-center gap-1.5">
-            <StatusIcon className={cn('size-3.5', config.className)} />
+            <StatusIcon className={cn("size-3.5", config.className)} />
             <Badge variant={config.badgeVariant} className="text-[10px] px-1.5 py-0">
               {config.label}
             </Badge>
@@ -167,13 +162,13 @@ export function OCRJobCard({
         <span className="text-[10px] text-muted-foreground">{timeAgo}</span>
       </div>
 
-      {job.status === 'success' && job.questionsCount !== undefined && (
+      {job.status === "success" && job.questionsCount !== undefined && (
         <p className="text-xs text-muted-foreground">
-          {job.questionsCount} question{job.questionsCount !== 1 ? 's' : ''} extracted
+          {job.questionsCount} question{job.questionsCount !== 1 ? "s" : ""} extracted
         </p>
       )}
 
-      {job.status === 'error' && job.error && (
+      {job.status === "error" && job.error && (
         <Tooltip content={job.error} side="bottom">
           <p className="text-xs text-destructive truncate cursor-help">{job.error}</p>
         </Tooltip>

@@ -26,10 +26,7 @@ export type ManagerViewClientGates = {
   canDeleteMaterial: (uploadedBy: string | null | undefined) => boolean;
 };
 
-function gateAllows(
-  gate: ChatViewGate,
-  isEnabled: (key: PolicyKey) => boolean,
-): boolean {
+function gateAllows(gate: ChatViewGate, isEnabled: (key: PolicyKey) => boolean): boolean {
   if (gate === "always") return true;
   if (gate === "never") return false;
   return isEnabled(gate);

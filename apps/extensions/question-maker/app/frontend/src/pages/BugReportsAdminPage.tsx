@@ -10,17 +10,17 @@
  * and carry only `has*` flags, so `onLoadDetail` hands the shared view a
  * fetcher for the per-report detail endpoint.
  */
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router';
-import { BugReportsAdminView, PageHeading } from '@eduai/ui';
-import type { AdminBugReportRow, BugReportStatus } from '@eduai/ui';
-import { toast } from 'sonner';
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router";
+import { BugReportsAdminView, PageHeading } from "@eduai/ui";
+import type { AdminBugReportRow, BugReportStatus } from "@eduai/ui";
+import { toast } from "sonner";
 
-import { bugReportApi } from '../services/bugReportApi';
-import { useAuth } from '../contexts/AuthContext';
-import { canTriageBugReports } from '@/lib/rbac';
+import { bugReportApi } from "../services/bugReportApi";
+import { useAuth } from "../contexts/AuthContext";
+import { canTriageBugReports } from "@/lib/rbac";
 
-const QM_SOURCE = 'QUESTION_MAKER' as const;
+const QM_SOURCE = "QUESTION_MAKER" as const;
 
 export function BugReportsAdminPage() {
   const navigate = useNavigate();
@@ -35,8 +35,8 @@ export function BugReportsAdminPage() {
       // shape (reporter fields, flattened context, UI status casing).
       setRows(await bugReportApi.list({ source: QM_SOURCE }));
     } catch {
-      toast.error('Could not load bug reports', { description: 'You may not have admin access.' });
-      navigate('/home');
+      toast.error("Could not load bug reports", { description: "You may not have admin access." });
+      navigate("/home");
     } finally {
       setLoading(false);
     }
@@ -48,7 +48,7 @@ export function BugReportsAdminPage() {
       ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits }
       : null;
     if (!canTriageBugReports(qmUser)) {
-      navigate('/home', { replace: true });
+      navigate("/home", { replace: true });
       return;
     }
     void load();

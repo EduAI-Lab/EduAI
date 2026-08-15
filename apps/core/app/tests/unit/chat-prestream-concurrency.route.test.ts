@@ -24,7 +24,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -134,7 +138,9 @@ function makeRequest(body: object) {
 
 function baseBody(overrides: Record<string, unknown> = {}) {
   return {
-    messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
+    messages: [
+      { id: "msg-1", role: "user", content: "What does the syllabus say about late work?" },
+    ],
     model: "vllm:test-model",
     apiKeys: {},
     streaming: false,
@@ -176,16 +182,16 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) => ({
-      id: CHAT_ID,
-      userId: "user-1",
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-      ...args.data,
-    })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
+    data?: Record<string, unknown>;
+  }) => ({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
@@ -212,11 +218,13 @@ describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
       maxTokens: null;
       name: null;
     }>();
-    const rag = deferred<Array<{
-      content: string;
-      similarity: number;
-      materialTitle: string;
-    }>>();
+    const rag = deferred<
+      Array<{
+        content: string;
+        similarity: number;
+        materialTitle: string;
+      }>
+    >();
     const started = new Set<string>();
 
     vi.mocked(getPolicy).mockImplementation(() => {
@@ -240,10 +248,13 @@ describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
     });
 
     policy.resolve(false);
-    capabilities.resolve({ supportsTools: false, supportsImages: false, maxTokens: null, name: null });
-    rag.resolve([
-      { content: "Late work loses 10%.", similarity: 0.72, materialTitle: "Syllabus" },
-    ]);
+    capabilities.resolve({
+      supportsTools: false,
+      supportsImages: false,
+      maxTokens: null,
+      name: null,
+    });
+    rag.resolve([{ content: "Late work loses 10%.", similarity: 0.72, materialTitle: "Syllabus" }]);
     const res = await actionPromise;
 
     expect(res.status).toBe(200);

@@ -10,10 +10,7 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { buildInvitationEmail } from "~/lib/email/templates/invitation";
 import { generateInviteToken, hashToken } from "~/lib/invitations/token.server";
-import type {
-  AcceptInvitationInput,
-  CreateInvitationInput,
-} from "~/lib/invitations/schemas";
+import type { AcceptInvitationInput, CreateInvitationInput } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
 
@@ -182,9 +179,9 @@ const INVITATIONS_LIST_LIMIT = 500;
  * `invitedById` to scope the list to a single inviter (used so a UNIT_ADMIN only
  * sees the invitations they sent).
  */
-export async function listInvitations(
-  opts?: { invitedById?: string },
-): Promise<PublicInvitation[]> {
+export async function listInvitations(opts?: {
+  invitedById?: string;
+}): Promise<PublicInvitation[]> {
   // Fail closed: a scope object MUST carry a non-empty id. Otherwise a future
   // falsy value would silently collapse the filter to "all invitations".
   if (opts && !opts.invitedById) return [];
@@ -227,7 +224,9 @@ export async function revokeInvitation(
 /** Validate a raw token for the accept page; never reveals the token hash. */
 export async function getInvitationByToken(
   token: string,
-): Promise<{ ok: true; invitation: PublicInvitation } | { ok: false; status: number; error: string }> {
+): Promise<
+  { ok: true; invitation: PublicInvitation } | { ok: false; status: number; error: string }
+> {
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashToken(token) },
   });

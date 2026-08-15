@@ -123,7 +123,9 @@ describe("db.auditlog.server", () => {
     });
     expect(prisma.auditLog.deleteMany).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ where: expect.objectContaining({ createdAt: expect.any(Object) }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ createdAt: expect.any(Object) }),
+      }),
     );
     expect(explicit).toBe(5);
     expect(retention).toBe(5);

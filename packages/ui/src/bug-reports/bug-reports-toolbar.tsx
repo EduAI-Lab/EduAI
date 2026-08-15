@@ -6,11 +6,11 @@
  *   lives in `BugReportsTab`; this component only reads props and reports edits.
  */
 
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import type { BugReportType } from './types';
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { IconFilter, IconSearch, IconX } from "@tabler/icons-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import type { BugReportType } from "./types";
 import {
   BUG_TYPE_LABELS,
   STATUS_LABELS,
@@ -18,7 +18,7 @@ import {
   type ReporterFilter,
   type StatusFilter,
   type TypeFilter,
-} from './bug-reports-utils';
+} from "./bug-reports-utils";
 
 export function BugReportsToolbar({
   statusFilter,
@@ -55,33 +55,33 @@ export function BugReportsToolbar({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => onStatusFilterChange(v as StatusFilter)}
-        >
+        <Select value={statusFilter} onValueChange={(v) => onStatusFilterChange(v as StatusFilter)}>
           <SelectTrigger>
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+              <SelectItem key={s} value={s}>
+                {STATUS_LABELS[s]}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        <Select
-          value={typeFilter}
-          onValueChange={(v) => onTypeFilterChange(v as TypeFilter)}
-        >
+        <Select value={typeFilter} onValueChange={(v) => onTypeFilterChange(v as TypeFilter)}>
           <SelectTrigger>
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
-            {(Object.entries(BUG_TYPE_LABELS) as [BugReportType, string][]).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
+            {(Object.entries(BUG_TYPE_LABELS) as [BugReportType, string][]).map(
+              ([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ),
+            )}
           </SelectContent>
         </Select>
 

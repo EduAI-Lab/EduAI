@@ -2,7 +2,12 @@ import { Prisma } from "@prisma/client";
 import cron from "node-cron";
 
 import type { RbacUser } from "~/lib/auth/course-access.server";
-import { CreateAIProviderSchema, CreateAIModelSchema, UpdateAIProviderSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
+import {
+  CreateAIProviderSchema,
+  CreateAIModelSchema,
+  UpdateAIProviderSchema,
+  UpdateAIModelSchema,
+} from "~/lib/ai/schemas";
 import {
   isEmbeddingIndexStale,
   parseEmbeddingSettingsUpdate,
@@ -11,10 +16,7 @@ import {
 } from "~/lib/ai/embedding-config";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
-import {
-  InvalidOllamaBaseUrlError,
-  ollamaTagsUrl,
-} from "~/lib/ai/ollama-url.server";
+import { InvalidOllamaBaseUrlError, ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import {
   findActiveReEmbedJob,
@@ -28,21 +30,13 @@ import {
   UpdateCourseRagSettingsSchema,
   UpdateCourseSchema,
 } from "~/lib/courses/schemas";
-import {
-  getCourseRagSettings,
-  invalidateCourseRagSettingsCache,
-} from "~/lib/courses/server";
+import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { addCourseTA, getCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
-import {
-  getPolicies,
-  getPolicyDefinitions,
-  isPolicyKey,
-  setPolicy,
-} from "~/lib/policy.server";
+import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
@@ -497,7 +491,12 @@ export async function listAdminCourseTAs(
 
 export async function addAdminCourseTA(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -512,7 +511,12 @@ export async function addAdminCourseTA(
 
 export async function removeAdminCourseTA(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -527,7 +531,12 @@ export async function removeAdminCourseTA(
 
 export async function listAdminCourseChats(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; limit?: number },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    limit?: number;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -551,11 +560,7 @@ export async function listAdminCourseChats(
   return adminPayload({ chats, count: chats.length });
 }
 
-export async function listAdminUnitChats(
-  actor: RbacUser,
-  department: string,
-  limit = 50,
-) {
+export async function listAdminUnitChats(actor: RbacUser, department: string, limit = 50) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -800,16 +805,23 @@ export async function getAdminDashboardStats(actor: RbacUser) {
   const week = new Date();
   week.setDate(week.getDate() - 7);
 
-  const [chatCount, chatCountWeek, materialCount, studentCount, instructorCount, totalUsers, activeCourseCount] =
-    await Promise.all([
-      prisma.chat.count(),
-      prisma.chat.count({ where: { createdAt: { gte: week } } }),
-      prisma.courseMaterial.count({ where: { deletedAt: null } }),
-      prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
-      prisma.user.count({ where: { role: "INSTRUCTOR" } }),
-      prisma.user.count(),
-      prisma.course.count({ where: { isActive: true, deletedAt: null } }),
-    ]);
+  const [
+    chatCount,
+    chatCountWeek,
+    materialCount,
+    studentCount,
+    instructorCount,
+    totalUsers,
+    activeCourseCount,
+  ] = await Promise.all([
+    prisma.chat.count(),
+    prisma.chat.count({ where: { createdAt: { gte: week } } }),
+    prisma.courseMaterial.count({ where: { deletedAt: null } }),
+    prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
+    prisma.user.count({ where: { role: "INSTRUCTOR" } }),
+    prisma.user.count(),
+    prisma.course.count({ where: { isActive: true, deletedAt: null } }),
+  ]);
 
   return adminPayload({
     stats: {

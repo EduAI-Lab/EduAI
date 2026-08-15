@@ -39,7 +39,7 @@ const baseModel = {
 describe("AIModelsTable — empty state", () => {
   it("renders the empty state message when models is empty", () => {
     render(
-      <AIModelsTable models={[]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <AIModelsTable models={[]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />,
     );
     expect(screen.getByText("No models found.")).toBeInTheDocument();
   });
@@ -52,7 +52,12 @@ describe("AIModelsTable — empty state", () => {
 describe("AIModelsTable — rendering", () => {
   it("renders the model name and modelId", () => {
     render(
-      <AIModelsTable models={[baseModel]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("GPT-4o")).toBeInTheDocument();
     expect(screen.getByText("gpt-4o")).toBeInTheDocument();
@@ -60,7 +65,12 @@ describe("AIModelsTable — rendering", () => {
 
   it("renders the provider display name", () => {
     render(
-      <AIModelsTable models={[baseModel]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
   });
@@ -71,7 +81,12 @@ describe("AIModelsTable — rendering", () => {
       { ...baseModel, id: "m2", name: "GPT-3.5", modelId: "gpt-3.5-turbo" },
     ];
     render(
-      <AIModelsTable models={models} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <AIModelsTable
+        models={models}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("GPT-4o")).toBeInTheDocument();
     expect(screen.getByText("GPT-3.5")).toBeInTheDocument();
@@ -86,7 +101,12 @@ describe("AIModelsTable — callbacks", () => {
   it("calls onEdit with the model when the edit button is clicked", () => {
     const onEdit = vi.fn();
     render(
-      <AIModelsTable models={[baseModel]} onEdit={onEdit} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     const [editBtn] = screen.getAllByRole("button");
     fireEvent.click(editBtn);
@@ -96,7 +116,12 @@ describe("AIModelsTable — callbacks", () => {
   it("calls onDelete with the model id after confirming the delete dialog", () => {
     const onDelete = vi.fn();
     render(
-      <AIModelsTable models={[baseModel]} onEdit={vi.fn()} onDelete={onDelete} onToggleActive={vi.fn()} />
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+        onToggleActive={vi.fn()}
+      />,
     );
     const [, trashBtn] = screen.getAllByRole("button");
     fireEvent.click(trashBtn);
@@ -107,7 +132,12 @@ describe("AIModelsTable — callbacks", () => {
   it("does not call onDelete when the delete dialog is cancelled", () => {
     const onDelete = vi.fn();
     render(
-      <AIModelsTable models={[baseModel]} onEdit={vi.fn()} onDelete={onDelete} onToggleActive={vi.fn()} />
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+        onToggleActive={vi.fn()}
+      />,
     );
     const [, trashBtn] = screen.getAllByRole("button");
     fireEvent.click(trashBtn);
@@ -118,7 +148,12 @@ describe("AIModelsTable — callbacks", () => {
   it("calls onToggleActive with the model when the active switch is clicked", () => {
     const onToggleActive = vi.fn();
     render(
-      <AIModelsTable models={[baseModel]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={onToggleActive} />
+      <AIModelsTable
+        models={[baseModel]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={onToggleActive}
+      />,
     );
     fireEvent.click(screen.getByRole("switch"));
     expect(onToggleActive).toHaveBeenCalledWith(baseModel);

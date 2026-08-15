@@ -208,10 +208,7 @@ describe("resolveCourseAccessGate", () => {
     // The `deletedAt: null` WHERE clause makes a soft-deleted row invisible, so
     // the query resolves to null exactly as a missing course does.
     prismaMock.course.findFirst.mockResolvedValue(null);
-    const result = await resolveCourseAccessGate(
-      { id: "u1", role: "ADMIN" },
-      "soft-deleted",
-    );
+    const result = await resolveCourseAccessGate({ id: "u1", role: "ADMIN" }, "soft-deleted");
     expect(result).toEqual({ course: null, access: null });
     expect(prismaMock.course.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "soft-deleted", deletedAt: null } }),

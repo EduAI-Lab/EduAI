@@ -1,11 +1,11 @@
-import express from 'express';
-import { toPublicUser } from '../utils/mappers.js';
-import { listEduAiCourses } from '../services/eduaiClient.js';
+import express from "express";
+import { toPublicUser } from "../utils/mappers.js";
+import { listEduAiCourses } from "../services/eduaiClient.js";
 import {
   runCoreMirror,
   resetCoreMirrorThrottleForTests,
   userHasCoreTaEnrollment,
-} from '../services/importTaughtCoursesService.js';
+} from "../services/importTaughtCoursesService.js";
 
 const router = express.Router();
 
@@ -16,18 +16,18 @@ const router = express.Router();
 // the mirror's Core-fetch + DB-write waterfall.
 export { resetCoreMirrorThrottleForTests };
 
-router.get('/me', async (req, res) => {
+router.get("/me", async (req, res) => {
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!authUser) return res.status(401).json({ error: "Authentication required" });
 
-  const cookie = req.headers.cookie ?? '';
+  const cookie = req.headers.cookie ?? "";
   let coreCourses;
 
   try {
     // #1041: paged upstream; this flow reconciles against the caller's full set.
     coreCourses = await listEduAiCourses({ cookie, all: true });
   } catch (err) {
-    console.error('[eduai] Core course list failed on /me', err);
+    console.error("[eduai] Core course list failed on /me", err);
     coreCourses = null;
   }
 
@@ -39,13 +39,13 @@ router.get('/me', async (req, res) => {
   const publicUser = toPublicUser(authUser);
   let effectiveUser = publicUser;
 
-  if (publicUser && publicUser.role === 'STUDENT' && coreCourses != null) {
+  if (publicUser && publicUser.role === "STUDENT" && coreCourses != null) {
     try {
       if (await userHasCoreTaEnrollment(cookie, coreCourses)) {
-        effectiveUser = { ...publicUser, role: 'TA' };
+        effectiveUser = { ...publicUser, role: "TA" };
       }
     } catch (err) {
-      console.error('[eduai] Effective TA role resolution failed on /me', err);
+      console.error("[eduai] Effective TA role resolution failed on /me", err);
     }
   }
 
@@ -54,24 +54,24 @@ router.get('/me', async (req, res) => {
 
 // Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.
 // No requireAuth — signing out an invalid session is a no-op, not an error.
-router.post('/logout', async (req, res) => {
-  const coreUrl = process.env.CORE_URL || 'http://localhost:3000';
+router.post("/logout", async (req, res) => {
+  const coreUrl = process.env.CORE_URL || "http://localhost:3000";
   const corePublicOrigin = process.env.CORE_PUBLIC_ORIGIN || coreUrl;
   try {
     const coreRes = await fetch(`${coreUrl}/api/auth/sign-out`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        cookie: req.headers.cookie ?? '',
+        cookie: req.headers.cookie ?? "",
         origin: corePublicOrigin,
-        'content-type': 'application/json',
+        "content-type": "application/json",
       },
-      body: '{}',
+      body: "{}",
     });
     if (!coreRes.ok) {
-      console.error('[ai-tutor] Core sign-out failed', coreRes.status);
+      console.error("[ai-tutor] Core sign-out failed", coreRes.status);
     }
   } catch (err) {
-    console.error('[ai-tutor] Core sign-out request failed', err);
+    console.error("[ai-tutor] Core sign-out request failed", err);
     // Proceed even if Core is unreachable
   }
   res.json({ ok: true });

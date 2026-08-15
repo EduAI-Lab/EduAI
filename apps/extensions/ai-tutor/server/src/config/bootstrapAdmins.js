@@ -1,11 +1,11 @@
 const BOOTSTRAP_ADMIN_EMAILS = [
-  'abdallah.mohamed@ubc.ca',
-  'mostafa.mohamed@ubc.ca',
-  'stavan@student.ubc.ca',
+  "abdallah.mohamed@ubc.ca",
+  "mostafa.mohamed@ubc.ca",
+  "stavan@student.ubc.ca",
 ];
 
 export function normalizeEmail(email) {
-  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
 export function getBootstrapAdminEmails() {

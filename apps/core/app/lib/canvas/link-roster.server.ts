@@ -2,10 +2,7 @@ import {
   normalizeStudentId,
   resolveCanvasEnrollmentsForUser,
 } from "~/lib/canvas/enrollment-link.server";
-import {
-  isValidUbcStudentNumber,
-  UBC_STUDENT_NUMBER_MESSAGE,
-} from "~/lib/canvas/student-number";
+import { isValidUbcStudentNumber, UBC_STUDENT_NUMBER_MESSAGE } from "~/lib/canvas/student-number";
 import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
@@ -106,10 +103,7 @@ export async function linkCanvasRoster(
     );
   }
 
-  if (
-    currentStudentId !== normalized ||
-    isLegacyPlaintextStudentId(user.studentId)
-  ) {
+  if (currentStudentId !== normalized || isLegacyPlaintextStudentId(user.studentId)) {
     await prisma.user.update({
       where: { id: userId },
       data: prepareStudentIdStorage(normalized),

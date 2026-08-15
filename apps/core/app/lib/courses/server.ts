@@ -9,15 +9,8 @@ import {
   type Pagination,
 } from "~/lib/pagination.server";
 import { auth } from "~/lib/auth/server";
-import {
-  enforceAdminIfApiKey,
-  requireServiceKey,
-} from "~/lib/auth/guards.server";
-import {
-  apiError,
-  jsonResponse,
-  validationErrorFromZod,
-} from "~/lib/api-error.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
@@ -58,11 +51,7 @@ async function parseCreateCourseBody(
         response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }),
       };
     }
-    if (
-      opts?.forceInstructorUserIds?.length &&
-      body &&
-      typeof body === "object"
-    ) {
+    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
       body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);
@@ -147,10 +136,7 @@ const ragSettingsCache = new Map<string, RagSettingsCacheEntry>();
 
 const COURSE_RAG_SETTINGS_CACHE_TTL_MS = Math.min(
   7_200_000, // 2 h ceiling
-  Math.max(
-    5_000,
-    Number(process.env.COURSE_RAG_SETTINGS_CACHE_TTL_MS) || 3_600_000,
-  ),
+  Math.max(5_000, Number(process.env.COURSE_RAG_SETTINGS_CACHE_TTL_MS) || 3_600_000),
 );
 
 /** Remove all entries whose TTL has elapsed. */
@@ -200,9 +186,7 @@ export function invalidateCourseTopicNamesCache(courseId: string): void {
  * both are low-churn, read-heavy per-course settings) to avoid a DB
  * round-trip on every course-chat turn.
  */
-export async function getCourseTopicNamesCached(
-  courseId: string,
-): Promise<string[]> {
+export async function getCourseTopicNamesCached(courseId: string): Promise<string[]> {
   pruneCourseTopicNamesCache();
 
   const now = Date.now();
@@ -331,9 +315,7 @@ export async function getCourses(request: Request) {
     },
     select: { courseId: true, role: true },
   });
-  const roleByCourseId = new Map(
-    enrollmentRows.map((row) => [row.courseId, row.role]),
-  );
+  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
   const coursesWithCallerRole = courses.map((course) => ({
     ...course,
     callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
@@ -356,8 +338,7 @@ export async function createCourse(request: Request) {
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
-    (role === "INSTRUCTOR" &&
-      (await getPolicy("instructors.canCreateCourses")));
+    (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
   if (!session?.user || !canCreate) {
     if (session?.user && role === "INSTRUCTOR") {
       return denyByPolicy({
@@ -372,9 +353,7 @@ export async function createCourse(request: Request) {
 
   const parsedBody = await parseCreateCourseBody(
     request,
-    session.user.role === "INSTRUCTOR"
-      ? { forceInstructorUserIds: [session.user.id] }
-      : undefined,
+    session.user.role === "INSTRUCTOR" ? { forceInstructorUserIds: [session.user.id] } : undefined,
   );
   if (!parsedBody.ok) {
     return parsedBody.response;
@@ -465,10 +444,7 @@ export async function updateCourse(request: Request, courseId: string) {
     return validationErrorFromZod(result.error);
   }
 
-  const { course, access } = await resolveCourseAccessGate(
-    user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessGate(user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -484,8 +460,7 @@ export async function updateCourse(request: Request, courseId: string) {
   if (access && access.level === "ta") {
     const taCanSetAi = await getPolicy("tas.canSetAiInstructions");
     const keys = Object.keys(result.data);
-    const aiInstructionsOnly =
-      keys.length > 0 && keys.every((key) => key === "aiInstructions");
+    const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
     if (!taCanSetAi || !aiInstructionsOnly) {
       return denyByPolicy({
         request,
@@ -530,13 +505,10 @@ export async function updateCourse(request: Request, courseId: string) {
   ) {
     const units = await getAuthorizedUnits(user);
     if (!updateData.department || !units.includes(updateData.department)) {
-      return new Response(
-        JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }),
-        {
-          status: 403,
-          headers: { "Content-Type": "application/json" } as const,
-        },
-      );
+      return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" } as const,
+      });
     }
   }
 
@@ -546,8 +518,7 @@ export async function updateCourse(request: Request, courseId: string) {
     if (deptGuard) return deptGuard;
   }
 
-  const newInstructorId = (updateData as any).instructorId as
-    string | undefined;
+  const newInstructorId = (updateData as any).instructorId as string | undefined;
   const instructorChanging =
     newInstructorId !== undefined && newInstructorId !== course.instructorId;
 
@@ -595,10 +566,7 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
-  const { course, access } = await resolveCourseAccessGate(
-    session.user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -617,10 +585,7 @@ export async function deleteCourse(request: Request, courseId: string) {
   // Policy gate: INSTRUCTOR delete is conditional; ADMIN/UNIT_ADMIN unaffected
   // by this flag (the service-key/enforceAdminIfApiKey path never reaches here
   // as an instructor).
-  if (
-    access.level === "instructor" &&
-    !(await getPolicy("instructors.canDeleteCourses"))
-  ) {
+  if (access.level === "instructor" && !(await getPolicy("instructors.canDeleteCourses"))) {
     return denyByPolicy({
       request,
       policyKey: "instructors.canDeleteCourses",
@@ -631,10 +596,7 @@ export async function deleteCourse(request: Request, courseId: string) {
   }
 
   // Policy gate: UNIT_ADMIN delete is conditional; ADMIN is always allowed.
-  if (
-    access.level === "unit" &&
-    !(await getPolicy("unitAdmins.canDeleteCourses"))
-  ) {
+  if (access.level === "unit" && !(await getPolicy("unitAdmins.canDeleteCourses"))) {
     return denyByPolicy({
       request,
       policyKey: "unitAdmins.canDeleteCourses",
@@ -663,11 +625,7 @@ export async function deleteCourse(request: Request, courseId: string) {
  * Accepts service key (extensions) or user session (ADMIN / UNIT_ADMIN(D) /
  * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
  */
-export async function setPublishState(
-  request: Request,
-  courseId: string,
-  publish: boolean,
-) {
+export async function setPublishState(request: Request, courseId: string, publish: boolean) {
   // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
   if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
@@ -703,10 +661,7 @@ export async function setPublishState(
     });
   }
 
-  const { course, access } = await resolveCourseAccessGate(
-    session.user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
@@ -724,10 +679,7 @@ export async function setPublishState(
 
   // Policy gate: an INSTRUCTOR may publish only when the flag is on; higher
   // ranks (ADMIN / UNIT_ADMIN) are always allowed.
-  if (
-    access.level === "instructor" &&
-    !(await getPolicy("instructors.canPublishCourses"))
-  ) {
+  if (access.level === "instructor" && !(await getPolicy("instructors.canPublishCourses"))) {
     return denyByPolicy({
       request,
       policyKey: "instructors.canPublishCourses",
@@ -834,9 +786,7 @@ export async function listCoursesForUser(
     },
     select: { courseId: true, role: true },
   });
-  const roleByCourseId = new Map(
-    enrollmentRows.map((row) => [row.courseId, row.role]),
-  );
+  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
   const courses = rows.map((course) => ({
     ...course,
     callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
@@ -853,9 +803,7 @@ export async function listCoursesForUser(
  * to avoid a DB round-trip on every RAG query. Call invalidateCourseRagSettingsCache()
  * after any write to keep the cache consistent.
  */
-export async function getCourseRagSettings(
-  courseId: string,
-): Promise<{
+export async function getCourseRagSettings(courseId: string): Promise<{
   ragTopK: number | null;
   ragSimilarityThreshold: number | null;
 } | null> {
@@ -879,21 +827,14 @@ export async function getCourseRagSettings(
   return value;
 }
 
-export async function getCourseTopics(
-  courseId: string,
-  includeDeleted = false,
-) {
+export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     orderBy: { name: "asc" },
   });
 }
 
-export async function getCourseTopic(
-  courseId: string,
-  topicId: string,
-  includeDeleted = false,
-) {
+export async function getCourseTopic(courseId: string, topicId: string, includeDeleted = false) {
   return prisma.courseTopic.findFirst({
     where: {
       id: topicId,

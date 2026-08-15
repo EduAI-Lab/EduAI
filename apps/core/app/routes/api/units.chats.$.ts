@@ -116,9 +116,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           select: { courseId: true, userId: true },
         })
       : [];
-    const activeStudent = new Set(
-      activeStudentEnrollments.map((e) => `${e.courseId}:${e.userId}`),
-    );
+    const activeStudent = new Set(activeStudentEnrollments.map((e) => `${e.courseId}:${e.userId}`));
 
     for (const chat of rows) {
       if (chat.course && activeStudent.has(`${chat.course.id}:${chat.user.id}`)) {

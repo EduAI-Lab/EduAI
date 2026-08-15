@@ -318,7 +318,9 @@ describe("CronJobsAdminView", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/admin/cron-jobs?job=backup-nightly");
 
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(within(dialog).getByText("full stack trace here")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(dialog).getByText("full stack trace here")).toBeInTheDocument(),
+    );
 
     fireEvent.click(within(dialog).getByText("full stack trace here"));
 

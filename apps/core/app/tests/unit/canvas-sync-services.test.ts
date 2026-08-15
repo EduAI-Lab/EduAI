@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { listTeacherCanvasCourses } from "~/lib/canvas/client.server";
-import {
-  mapCanvasCourseToCoreFields,
-  resolveCanvasCourseDates,
-} from "~/lib/canvas/courses.server";
-import {
-  normalizeRosterEmail,
-  normalizeStudentId,
-} from "~/lib/canvas/enrollment-link.server";
+import { mapCanvasCourseToCoreFields, resolveCanvasCourseDates } from "~/lib/canvas/courses.server";
+import { normalizeRosterEmail, normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import { SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
 import {
   ubcTermFromDate,

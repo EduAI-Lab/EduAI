@@ -1,16 +1,13 @@
-import type { Route } from './+types/home';
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { useLocalUser } from '../hooks/useLocalUser';
-import { IconBrain } from '@tabler/icons-react';
-import { routeForRole } from '../lib/role-routing';
-import { getCoreLoginUrl } from '../lib/coreUrl';
+import type { Route } from "./+types/home";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { useLocalUser } from "../hooks/useLocalUser";
+import { IconBrain } from "@tabler/icons-react";
+import { routeForRole } from "../lib/role-routing";
+import { getCoreLoginUrl } from "../lib/coreUrl";
 
 export function meta(_args: Route.MetaArgs) {
-  return [
-    { title: 'AI Tutor' },
-    { name: 'description', content: 'AI Tutor — Loading' },
-  ];
+  return [{ title: "AI Tutor" }, { name: "description", content: "AI Tutor — Loading" }];
 }
 
 export default function Home() {
@@ -41,9 +38,7 @@ export default function Home() {
           <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" />
           <IconBrain className="absolute inset-0 m-auto h-6 w-6 animate-pulse text-primary-text" />
         </div>
-        <p className="text-sm font-medium text-muted-foreground">
-          Initializing your workspace...
-        </p>
+        <p className="text-sm font-medium text-muted-foreground">Initializing your workspace...</p>
       </div>
     </main>
   );

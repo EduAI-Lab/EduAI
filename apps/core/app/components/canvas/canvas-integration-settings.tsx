@@ -138,11 +138,7 @@ export function CanvasIntegrationSettings() {
                   className="text-red-600 hover:text-red-700 shrink-0"
                   aria-label="Disconnect Canvas"
                 >
-                  {disconnecting ? (
-                    <Spinner />
-                  ) : (
-                    <IconTrash className="h-4 w-4" />
-                  )}
+                  {disconnecting ? <Spinner /> : <IconTrash className="h-4 w-4" />}
                 </Button>
               </div>
             )}

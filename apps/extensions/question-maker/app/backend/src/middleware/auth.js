@@ -5,12 +5,12 @@
  * ensures a local user row exists for FK integrity (creating it on first login),
  * and populates `req.user` with the Core user shape.
  */
-import { findOrCreateUser } from '../services/authService.js';
-import { VALID_ROLES } from './roles.js';
-import { config } from '../config/settings.js';
+import { findOrCreateUser } from "../services/authService.js";
+import { VALID_ROLES } from "./roles.js";
+import { config } from "../config/settings.js";
 
 function normalizeRole(role) {
-  return VALID_ROLES.has(role) ? role : 'STUDENT';
+  return VALID_ROLES.has(role) ? role : "STUDENT";
 }
 
 /**
@@ -25,18 +25,18 @@ function normalizeRole(role) {
 export async function requireAuth(req, res, next) {
   try {
     const response = await fetch(`${config.coreUrl}/api/sessions/validate`, {
-      method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
+      method: "POST",
+      headers: { cookie: req.headers.cookie ?? "" },
     });
 
     if (response.status === 429) {
-      const retryAfter = response.headers?.get?.('retry-after') ?? null;
-      if (retryAfter != null) res.set('Retry-After', retryAfter);
-      return res.status(429).json({ success: false, error: 'Rate limited', retryAfter });
+      const retryAfter = response.headers?.get?.("retry-after") ?? null;
+      if (retryAfter != null) res.set("Retry-After", retryAfter);
+      return res.status(429).json({ success: false, error: "Rate limited", retryAfter });
     }
 
     if (!response.ok) {
-      return res.status(401).json({ success: false, error: 'Authentication required' });
+      return res.status(401).json({ success: false, error: "Authentication required" });
     }
 
     const { user: coreUser } = await response.json();
@@ -45,7 +45,7 @@ export async function requireAuth(req, res, next) {
     req.user = normalizedUser;
     next();
   } catch {
-    res.status(401).json({ success: false, error: 'Authentication required' });
+    res.status(401).json({ success: false, error: "Authentication required" });
   }
 }
 
@@ -57,12 +57,12 @@ export function requireRole(allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ success: false, error: 'Authentication required' });
+      return res.status(401).json({ success: false, error: "Authentication required" });
     }
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: `One of the following roles required: ${roles.join(', ')}`,
+        error: `One of the following roles required: ${roles.join(", ")}`,
       });
     }
     next();

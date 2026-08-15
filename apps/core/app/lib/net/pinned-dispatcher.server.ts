@@ -39,10 +39,7 @@ export function createPinnedLookup(): LookupFunction {
         else callback(null, address, family);
       },
       (error: unknown) => {
-        callback(
-          error instanceof Error ? error : new Error("Host resolution failed"),
-          "",
-        );
+        callback(error instanceof Error ? error : new Error("Host resolution failed"), "");
       },
     );
   };

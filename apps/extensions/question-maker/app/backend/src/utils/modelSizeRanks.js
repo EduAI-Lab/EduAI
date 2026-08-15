@@ -5,4 +5,4 @@
  * question-maker-backend/src internals (see PR #1296 review). This module
  * just re-exports the shared implementation for existing backend callers.
  */
-export { MODEL_SIZE_RANK_PATTERNS, modelSizeRankFromText } from '@eduai/types';
+export { MODEL_SIZE_RANK_PATTERNS, modelSizeRankFromText } from "@eduai/types";

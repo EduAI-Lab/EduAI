@@ -1,8 +1,8 @@
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 export const SYSTEM_SETTING_KEYS = {
-  EDUAI_API_KEY: 'EDUAI_API_KEY',
-  AI_MODEL_POLICY: 'AI_MODEL_POLICY',
+  EDUAI_API_KEY: "EDUAI_API_KEY",
+  AI_MODEL_POLICY: "AI_MODEL_POLICY",
 };
 
 export async function getSystemSetting(key) {
@@ -11,8 +11,8 @@ export async function getSystemSetting(key) {
 }
 
 export async function setSystemSetting(key, value) {
-  if (!key) throw new Error('System setting key is required');
-  if (typeof value !== 'string') throw new Error('System setting value must be a string');
+  if (!key) throw new Error("System setting key is required");
+  if (typeof value !== "string") throw new Error("System setting value must be a string");
   return prisma.systemSetting.upsert({
     where: { key },
     update: { value },
@@ -36,7 +36,7 @@ export async function getEduAiApiKeyStatus() {
   const envKey = process.env.EDUAI_API_KEY || null;
 
   const configured = Boolean(override?.value || envKey);
-  const source = override?.value ? 'ADMIN' : envKey ? 'ENV' : 'NONE';
+  const source = override?.value ? "ADMIN" : envKey ? "ENV" : "NONE";
 
   return {
     configured,

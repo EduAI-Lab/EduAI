@@ -43,7 +43,10 @@ const RETRIEVAL_TESTS = [
   { query: "What is UBCO-RAG-TEST-EQUATION-ALPHA? State Euler's identity.", expect: "e^{i" },
   { query: "What dose of Fictionalin is listed in the course materials?", expect: "200 mg" },
   { query: "Summarize the plan for TEST-PATIENT-ZEBRA.", expect: "Hydration" },
-  { query: "What unique phrase appears on slide 1 of the slide test deck?", expect: "UBCO-RAG-TEST-SLIDE-GAMMA" },
+  {
+    query: "What unique phrase appears on slide 1 of the slide test deck?",
+    expect: "UBCO-RAG-TEST-SLIDE-GAMMA",
+  },
 ];
 
 async function upsertMaterial(courseId: string, title: string, content: string) {
@@ -144,7 +147,9 @@ async function main() {
       console.log("  (no hits)");
     } else {
       for (const hit of hits.slice(0, 2)) {
-        console.log(`  sim=${hit.similarity.toFixed(3)} | ${hit.content.replace(/\s+/g, " ").slice(0, 120)}...`);
+        console.log(
+          `  sim=${hit.similarity.toFixed(3)} | ${hit.content.replace(/\s+/g, " ").slice(0, 120)}...`,
+        );
       }
     }
     console.log();

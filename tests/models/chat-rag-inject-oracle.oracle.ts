@@ -52,17 +52,13 @@ export type ChatRagInjectVerdict = {
 };
 
 /** Similarity bands that alone authorize injection (without always/intent). */
-const QUALITY_AUTHORIZED = new Set<ChatRagInjectRow["TopSimilarity"]>([
-  "strong",
-  "moderate",
-]);
+const QUALITY_AUTHORIZED = new Set<ChatRagInjectRow["TopSimilarity"]>(["strong", "moderate"]);
 
 export function chatRagInjectOracle(row: ChatRagInjectRow): ChatRagInjectVerdict {
   const courseInScope = row.HasCourse === "yes";
   const alwaysAuthorized = courseInScope && row.AlwaysWithCourse === "yes";
   const intentAuthorized = courseInScope && row.CourseRagNeeded === "yes";
-  const qualityAuthorized =
-    courseInScope && QUALITY_AUTHORIZED.has(row.TopSimilarity);
+  const qualityAuthorized = courseInScope && QUALITY_AUTHORIZED.has(row.TopSimilarity);
 
   const inject = alwaysAuthorized || intentAuthorized || qualityAuthorized;
 

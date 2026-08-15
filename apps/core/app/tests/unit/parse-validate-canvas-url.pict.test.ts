@@ -5,10 +5,7 @@
 // against the shared oracle + committed cases.
 
 import { describe, expect, it } from "vitest";
-import {
-  CanvasVerificationError,
-  parseAndValidateCanvasUrl,
-} from "~/lib/canvas/client.server";
+import { CanvasVerificationError, parseAndValidateCanvasUrl } from "~/lib/canvas/client.server";
 import parseValidateCases from "../../../../../tests/models/parse-validate-canvas-url.cases.json";
 import {
   canvasUrlStringForRow,

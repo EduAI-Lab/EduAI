@@ -96,10 +96,7 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
   it("passes image context to the classifier without overriding its tier", async () => {
     const decision = await resolveRoutedModelLlm("describe this image", imageContext);
 
-    expect(mocks.classifyPromptForTier).toHaveBeenCalledWith(
-      "describe this image",
-      imageContext,
-    );
+    expect(mocks.classifyPromptForTier).toHaveBeenCalledWith("describe this image", imageContext);
     expect(decision.tier).toBe(3);
     expect(decision.features).toMatchObject({
       rule: "llm_classifier",

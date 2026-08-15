@@ -19,9 +19,7 @@ export function resolvedModelIdFromMessage(message: unknown): string | null {
   if (typeof value !== "string") return null;
 
   const resolvedModelId = value.trim();
-  return /^[a-z0-9][a-z0-9._-]*:\S+$/i.test(resolvedModelId)
-    ? resolvedModelId
-    : null;
+  return /^[a-z0-9][a-z0-9._-]*:\S+$/i.test(resolvedModelId) ? resolvedModelId : null;
 }
 
 /**
@@ -62,9 +60,9 @@ export function withResolvedModelMetadata<T extends Record<string, unknown>>(
 }
 
 /** Tag a persisted assistant turn as a course-scope-guardrail redirect (analytics/UI). */
-export function withCourseScopeRedirectMetadata<
-  T extends Record<string, unknown>,
->(message: T): T & { metadata: Record<string, unknown> & ChatMessageMetadata } {
+export function withCourseScopeRedirectMetadata<T extends Record<string, unknown>>(
+  message: T,
+): T & { metadata: Record<string, unknown> & ChatMessageMetadata } {
   return {
     ...message,
     metadata: {

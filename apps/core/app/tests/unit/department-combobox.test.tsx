@@ -15,16 +15,12 @@ const departments = [
 
 describe("DepartmentCombobox", () => {
   it("shows the placeholder when no department is selected", () => {
-    render(
-      <DepartmentCombobox departments={departments} value="" onValueChange={vi.fn()} />,
-    );
+    render(<DepartmentCombobox departments={departments} value="" onValueChange={vi.fn()} />);
     expect(screen.getByText("Select course code")).toBeInTheDocument();
   });
 
   it("maps each department onto a combobox option with a code description", () => {
-    render(
-      <DepartmentCombobox departments={departments} value="" onValueChange={vi.fn()} />,
-    );
+    render(<DepartmentCombobox departments={departments} value="" onValueChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("combobox"));
 
     expect(screen.getByText("Computer Science")).toBeInTheDocument();
@@ -35,9 +31,7 @@ describe("DepartmentCombobox", () => {
 
   it("reports the selected department's code upward", () => {
     const onValueChange = vi.fn();
-    render(
-      <DepartmentCombobox departments={departments} value="" onValueChange={onValueChange} />,
-    );
+    render(<DepartmentCombobox departments={departments} value="" onValueChange={onValueChange} />);
     fireEvent.click(screen.getByRole("combobox"));
     fireEvent.mouseDown(screen.getByText("Mathematics"));
 

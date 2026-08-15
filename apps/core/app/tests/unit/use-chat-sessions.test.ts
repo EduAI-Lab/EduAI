@@ -86,10 +86,9 @@ describe("useChatSession", () => {
 
   it("clears session and error when chatId becomes null", async () => {
     mockFetch.mockResolvedValue(okJson(session));
-    const { result, rerender } = renderHook(
-      ({ id }: { id: string | null }) => useChatSession(id),
-      { initialProps: { id: "chat-1" as string | null } },
-    );
+    const { result, rerender } = renderHook(({ id }: { id: string | null }) => useChatSession(id), {
+      initialProps: { id: "chat-1" as string | null },
+    });
 
     await waitFor(() => expect(result.current.session).toEqual(session));
 
@@ -129,9 +128,7 @@ describe("useChatSession", () => {
 
     mockFetch.mockResolvedValueOnce(errResponse(409, "chat has dependents"));
 
-    await expect(result.current.deleteChatSession("chat-1")).rejects.toThrow(
-      "chat has dependents",
-    );
+    await expect(result.current.deleteChatSession("chat-1")).rejects.toThrow("chat has dependents");
   });
 });
 

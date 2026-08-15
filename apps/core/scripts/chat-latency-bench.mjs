@@ -100,7 +100,9 @@ async function main() {
     process.exit(1);
   }
   if (!xApiKey && !cookie) {
-    console.error("Need either CHAT_BENCH_X_API_KEY (admin API key) or CHAT_BENCH_COOKIE (browser session).");
+    console.error(
+      "Need either CHAT_BENCH_X_API_KEY (admin API key) or CHAT_BENCH_COOKIE (browser session).",
+    );
     process.exit(1);
   }
 
@@ -114,7 +116,9 @@ async function main() {
 
   const prompts = DEFAULT_PROMPTS.slice(0, count);
   if (prompts.length < count) {
-    console.error(`Default prompt list has ${DEFAULT_PROMPTS.length} entries; increase prompts or lower CHAT_BENCH_COUNT.`);
+    console.error(
+      `Default prompt list has ${DEFAULT_PROMPTS.length} entries; increase prompts or lower CHAT_BENCH_COUNT.`,
+    );
     process.exit(1);
   }
 
@@ -260,9 +264,7 @@ async function main() {
   console.log("");
   console.log("tsv (paste into spreadsheet)");
   console.log(["label", "run_index", "ttfb_ms", "total_ms", "http_status"].join("\t"));
-  rows.forEach((r) =>
-    console.log([label, r.i, r.ttfbMs, r.ms, r.status].join("\t")),
-  );
+  rows.forEach((r) => console.log([label, r.i, r.ttfbMs, r.ms, r.status].join("\t")));
 }
 
 function textSnippet(json) {
