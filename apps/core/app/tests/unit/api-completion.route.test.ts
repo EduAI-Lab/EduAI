@@ -125,7 +125,6 @@ describe("POST /api/completion", () => {
     expect(checkRateLimitMock).not.toHaveBeenCalled();
   });
 
-<<<<<<< HEAD
   it("uses the authenticated session user as the rate-limit identity", async () => {
     vi.mocked(runCompletion).mockResolvedValue({
       ok: true,
@@ -269,7 +268,6 @@ describe("POST /api/completion", () => {
     expect(res).toBe(streamResponse);
   });
 
-<<<<<<< HEAD
   it("routes a late streaming provider error through the stable contract", async () => {
     const toDataStreamResponse = vi.fn(
       (_options: { getErrorMessage?: (error: unknown) => string }) =>
