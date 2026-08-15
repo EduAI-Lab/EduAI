@@ -182,6 +182,7 @@ describe("runFetchPage - crawl fallback path", () => {
       title: "https://example.com/failed",
       markdown: "",
       error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
     });
   });
 
@@ -196,6 +197,7 @@ describe("runFetchPage - crawl fallback path", () => {
       title: "https://example.com/null-resp",
       markdown: "",
       error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
     });
   });
 
@@ -210,6 +212,7 @@ describe("runFetchPage - crawl fallback path", () => {
       title: "https://example.com/both-fail",
       markdown: "",
       error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
     });
   });
 });
@@ -228,7 +231,7 @@ describe("runFetchPage - client construction failure", () => {
         title: "https://example.com/no-key",
         markdown: "",
         error: "Failed to fetch page content",
-        details: "FIRECRAWL_API_KEY is not configured. Web fetch is unavailable.",
+        code: "FETCH_FAILED",
       });
     } finally {
       process.env.FIRECRAWL_API_KEY = original;

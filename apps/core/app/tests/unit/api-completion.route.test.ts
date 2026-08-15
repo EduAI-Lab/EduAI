@@ -57,7 +57,6 @@ import { action } from "~/routes/api/completion";
 import { runCompletion } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
-import { isRateLimited } from "~/lib/auth/rate-limit.server";
 import { acquireAiAdmission, withAdmissionRelease } from "~/lib/ai/admission.server";
 
 function makeArgs(body: unknown, method = "POST") {
@@ -83,7 +82,6 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
-  vi.mocked(isRateLimited).mockReturnValue(false);
   vi.mocked(acquireAiAdmission).mockResolvedValue({ release: vi.fn(), waitedMs: 0 });
 });
 
@@ -122,7 +120,7 @@ describe("POST /api/completion", () => {
       context: {} as never,
     } as never);
     expect(res.status).toBe(400);
-    expect(checkRateLimitMock).not.toHaveBeenCalled();
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:u1", 2, 60_000);
   });
 
   it("uses the authenticated session user as the rate-limit identity", async () => {
