@@ -284,16 +284,18 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (!outcome.ok) {
     releaseAdmission();
-    const isProviderFailure = "code" in outcome;
-    const responseBody = isProviderFailure
-      ? providerFailureBody(outcome)
-      : { error: outcome.error };
-    return new Response(JSON.stringify(responseBody), {
+    if ("code" in outcome && "retryable" in outcome) {
+      return new Response(JSON.stringify(providerFailureBody(outcome)), {
+        status: outcome.status,
+        headers: {
+          "Content-Type": "application/json",
+          ...providerFailureHeaders(outcome),
+        },
+      });
+    }
+    return new Response(JSON.stringify({ error: outcome.error }), {
       status: outcome.status,
-      headers: {
-        "Content-Type": "application/json",
-        ...(isProviderFailure ? providerFailureHeaders(outcome) : {}),
-      },
+      headers: { "Content-Type": "application/json" },
     });
   }
 

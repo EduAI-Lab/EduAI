@@ -184,7 +184,7 @@ describe("POST /api/questions (action)", () => {
     }));
     expect(res.status).toBe(422);
     expect(await res.json()).toMatchObject({ error: "VALIDATION_ERROR" });
-    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
     expect(createQuestion).not.toHaveBeenCalled();
   });
 

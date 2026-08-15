@@ -164,9 +164,11 @@ describe("re-embed lease fencing (real Postgres)", () => {
         status: "PROCESSING",
       },
     });
-    const oldChunk = await prisma.materialChunk.create({
-      data: { materialId: first.id, index: 0, content: "old vector content" },
-    });
+    const oldChunk = { id: randomUUID() };
+    await prisma.$executeRaw`
+      INSERT INTO material_chunks (id, "materialId", "index", content)
+      VALUES (${oldChunk.id}, ${first.id}, 0, ${"old vector content"})
+    `;
     const job = await prisma.courseReEmbedJob.create({
       data: {
         courseId,

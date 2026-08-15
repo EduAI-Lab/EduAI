@@ -202,7 +202,11 @@ describe("createQuestion", () => {
 
   it("accepts selectAllThatApply and correctAnswers and passes them to question.create", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);

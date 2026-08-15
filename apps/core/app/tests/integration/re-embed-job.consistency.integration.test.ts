@@ -114,6 +114,8 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
       data: {
         courseId: courseAId,
         status: "RUNNING",
+        embeddingProviderSnapshot: "local",
+        embeddingModelSnapshot: "mxbai-embed-large",
         startedAt: new Date(Date.now() - 45 * 60 * 1000),
       },
     });
@@ -133,7 +135,13 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
 
   it("does not reclaim a RUNNING row with recent progress", async () => {
     const active = await prisma.courseReEmbedJob.create({
-      data: { courseId: courseAId, status: "RUNNING", startedAt: new Date() },
+      data: {
+        courseId: courseAId,
+        status: "RUNNING",
+        embeddingProviderSnapshot: "local",
+        embeddingModelSnapshot: "mxbai-embed-large",
+        startedAt: new Date(),
+      },
     });
 
     const result = await startReEmbedJob(courseAId);
@@ -148,6 +156,8 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
       data: {
         courseId: courseAId,
         status: "COMPLETED",
+        embeddingProviderSnapshot: "local",
+        embeddingModelSnapshot: "mxbai-embed-large",
         idempotencyKey: key,
         completedAt: new Date(),
       },
@@ -169,6 +179,8 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
       data: {
         courseId: courseAId,
         status: "COMPLETED",
+        embeddingProviderSnapshot: "local",
+        embeddingModelSnapshot: "mxbai-embed-large",
         idempotencyKey: key,
         completedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
       },
@@ -191,7 +203,13 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
 
   it("attaches the caller's idempotencyKey to an active job found without a key match (#1269 review)", async () => {
     const active = await prisma.courseReEmbedJob.create({
-      data: { courseId: courseAId, status: "RUNNING", startedAt: new Date() },
+      data: {
+        courseId: courseAId,
+        status: "RUNNING",
+        embeddingProviderSnapshot: "local",
+        embeddingModelSnapshot: "mxbai-embed-large",
+        startedAt: new Date(),
+      },
     });
 
     const result = await startReEmbedJob(courseAId, { idempotencyKey: "attach-me" });
