@@ -283,7 +283,10 @@ A few things worth knowing before you touch the setup:
   `Lint & Typecheck` CI job. The sweep commit is listed in
   [`.git-blame-ignore-revs`](.git-blame-ignore-revs) so `git blame` skips it;
   run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once to get the
-  same behaviour locally. GitHub applies the file automatically.
+  same behaviour locally. GitHub applies the file automatically. Every SHA in
+  that file is checked for resolvability by the `Validate blame-ignore revs` CI
+  step, so a rebase that mints a new SHA fails loudly instead of quietly leaving
+  `git blame` pointed at the sweep forever.
 - **oxfmt is pinned exactly, not with a caret.** It is pre-1.0, so a minor bump
   can change its output, and a floating range would let a fresh install reformat
   files the swept tree considers clean — putting CI at odds with what you get
@@ -292,17 +295,26 @@ A few things worth knowing before you touch the setup:
   under `question-maker-backend` still failed `--check` after the first
   `--write`. If you re-run it wholesale, loop until `--check` is clean rather
   than trusting one pass.
-- **Do not assert on quote characters in source-text tests.** A few tests read a
+- **Do not assert on source formatting in source-text tests.** A few tests read a
   source file and assert on its literal text; three in
   `ai-tutor/app/tests/unit/chat-markdown-css-scope.test.ts` pinned single quotes
-  around import specifiers and went red in the sweep. Match with a regex that
-  accepts either quote so the assertion tests the import, not the formatter.
-- **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
-  the root `prepare` script. Use `git commit --no-verify` to bypass it, or
-  `npx lefthook run pre-commit` to run it by hand.
+  around import specifiers and went red in the sweep. Quotes are only the case
+  that bit us — spacing, line breaks and trailing commas are all the formatter's
+  to decide, and `printWidth` can move any of them. Assert on the thing you mean
+  (that the import exists) with a regex loose enough that reformatting the line
+  cannot change the answer.
+- **A pre-commit hook runs oxfmt and oxlint on staged files**, installed by
+  lefthook via the root `prepare` script. Use `git commit --no-verify` to bypass
+  it, or `npx lefthook run pre-commit` to run it by hand.
+- **The format scripts pass `.`, not a list of directories.** `ignorePatterns`
+  in `.oxfmtrc.json` already scopes oxfmt to JavaScript and TypeScript, so
+  checking the whole repo takes well under a second and cannot miss a new
+  top-level directory. A hand-maintained directory list would go stale the first
+  time someone adds one.
 - **oxfmt is scoped to JavaScript and TypeScript on purpose.** It also formats
   Markdown, JSON, YAML, CSS and HTML, which is more than this repo wants it to
-  own: a bare `oxfmt .` reflows all 151 tracked Markdown files (including
+  own. Without those entries in `ignorePatterns`, `oxfmt .` reflows all 151
+  tracked Markdown files (including
   `CHANGELOG.md`, which merges under a union driver — reflowing it would break
   that), rewrites the nine GitHub Actions workflows, and rewrites data JSON such
   as `apps/core/data/routing-knn-exemplars.json`. It also reflowed a

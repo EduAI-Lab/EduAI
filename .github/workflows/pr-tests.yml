@@ -57,7 +57,11 @@ jobs:
             ai_tutor=true
             question_maker=true
             shared=true
-          elif echo "$files" | grep -qvE '\.(md|txt)$|^docs/|^LICENSE'; then
+          # `docs/` holds executable JavaScript as well as prose (for example
+          # docs/ux/chat-progress-1171/capture.mjs), so it is skippable only for
+          # known documentation and asset extensions. Anything else under it —
+          # including code — counts as a code change and runs the gates.
+          elif echo "$files" | grep -qvE '\.(md|txt)$|^docs/.*\.(md|txt|png|jpe?g|gif|svg|webp|pdf|csv)$|^LICENSE$'; then
             code=true
 
             if echo "$files" | grep -qE '^apps/core/'; then
@@ -321,6 +325,34 @@ jobs:
         env:
           SKIP_PRISMA_GENERATE: "1"
         run: npm ci
+      # Runs first because it is purely syntactic and takes well under a second:
+      # a formatting failure reports in about the time `npm ci` takes rather than
+      # after Prisma generate, lint and tsc.
+      # Enforceable only now that the repo has actually been swept (#1512).
+      # oxfmt is pinned to an exact version, so a transitive bump cannot change
+      # the expected output out from under this gate.
+      - name: Format check
+        run: npm run format:check
+      # The sweep commit recorded in .git-blame-ignore-revs has to keep resolving
+      # — a rebase mints a new SHA and would silently strand the entry, leaving
+      # `git blame` pointing every line at the sweep forever.
+      - name: Validate blame-ignore revs
+        run: |
+          rc=0
+          while read -r sha; do
+            if git cat-file -e "$sha^{commit}" 2>/dev/null; then
+              continue
+            fi
+            # The checkout is shallow, so fetch the single object by SHA rather
+            # than deepening the whole clone.
+            if git fetch --no-tags --depth=1 origin "$sha" 2>/dev/null &&
+               git cat-file -e "$sha^{commit}" 2>/dev/null; then
+              continue
+            fi
+            echo "::error file=.git-blame-ignore-revs::stale or unresolvable SHA: $sha"
+            rc=1
+          done < <(grep -vE '^[[:space:]]*(#|$)' .git-blame-ignore-revs)
+          exit $rc
       # Core and ai-tutor-server typecheck against generated Prisma types, so
       # the clients have to exist before tsc runs. Linting does not need them.
       - name: Generate Prisma clients
@@ -334,11 +366,6 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      # Enforceable only now that the repo has actually been swept (#1512).
-      # oxfmt is pinned to an exact version, so a transitive bump cannot change
-      # the expected output out from under this gate.
-      - name: Format check
-        run: npm run format:check
 
   test:
     name: Unit & Integration Tests
