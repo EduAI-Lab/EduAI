@@ -5,6 +5,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
+import { normalizeMcqCorrectness } from '../lib/mcqCorrectness.js';
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
@@ -346,7 +347,8 @@ export const getQuestionsByUser = async (userId, options = {}) => {
           variants: {
             select: {
               id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true,
-              choices: true, assessmentId: true, secondaryTopicsId: true, referenceId: true,
+              choices: true, selectAllThatApply: true, correctAnswers: true,
+              assessmentId: true, secondaryTopicsId: true, referenceId: true,
               isAiGenerated: true, isDraft: true, createdAt: true, updatedAt: true,
               assessment: { select: { id: true, name: true, type: true } }
             }
@@ -386,7 +388,8 @@ export const getQuestionById = async (questionId, userId) => {
         variants: {
           select: {
             id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true,
-            choices: true, assessmentId: true, secondaryTopicsId: true, referenceId: true,
+            choices: true, selectAllThatApply: true, correctAnswers: true,
+            assessmentId: true, secondaryTopicsId: true, referenceId: true,
             isAiGenerated: true, isDraft: true, createdAt: true, updatedAt: true,
             assessment: { select: { id: true, name: true, type: true } }
           }
@@ -716,6 +719,8 @@ export const saveExtractedQuestions = async (userId, payload) => {
       // Handle choices for MCQ questions
       let choices = null;
       let answer = item.answer;
+      let selectAllThatApply = false;
+      let correctAnswers = null;
       
       if (questionType === 'MCQ') {
         // Validate choices if provided
@@ -726,6 +731,20 @@ export const saveExtractedQuestions = async (userId, payload) => {
         // Normalize answer to just letter for MCQ
         if (typeof answer === 'string' && answer.trim()) {
           answer = extractAnswerLetter(answer) || answer.trim();
+        }
+
+        // Only normalize correctness when choices validated — extract may save
+        // incomplete MCQs with null choices (existing lenient behavior).
+        if (choices) {
+          const normalized = normalizeMcqCorrectness({
+            selectAllThatApply: Boolean(item.selectAllThatApply),
+            answer,
+            correctAnswers: item.correctAnswers,
+            choiceLetters: choices.map((c) => c.letter),
+          });
+          answer = normalized.answer;
+          selectAllThatApply = normalized.selectAllThatApply;
+          correctAnswers = normalized.correctAnswers;
         }
       } else if (typeof answer === 'string' && answer.trim()) {
         answer = answer.trim();
@@ -740,6 +759,8 @@ export const saveExtractedQuestions = async (userId, payload) => {
           difficulty: ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium',
           answer,
           choices,
+          selectAllThatApply,
+          correctAnswers,
           assessmentId: createdAssessment ? createdAssessment.id : null,
           secondaryTopicsId: secondaryTopics,
           referenceId: null,
@@ -955,6 +976,8 @@ export const createVariant = async (questionId, variantData, userId) => {
     // Handle choices for MCQ questions
     let choices = null;
     let answer = variantData.answer;
+    let selectAllThatApply = false;
+    let correctAnswers = null;
     
     if (question.type === 'MCQ') {
       if (variantData.choices !== undefined) {
@@ -969,6 +992,16 @@ export const createVariant = async (questionId, variantData, userId) => {
       if (typeof answer === 'string' && answer.trim()) {
         answer = extractAnswerLetter(answer) || answer.trim();
       }
+
+      const normalized = normalizeMcqCorrectness({
+        selectAllThatApply: Boolean(variantData.selectAllThatApply),
+        answer,
+        correctAnswers: variantData.correctAnswers,
+        choiceLetters: (choices || []).map((c) => c.letter),
+      });
+      answer = normalized.answer;
+      selectAllThatApply = normalized.selectAllThatApply;
+      correctAnswers = normalized.correctAnswers;
     } else if (typeof answer === 'string' && answer.trim()) {
       answer = answer.trim();
     } else {
@@ -985,6 +1018,8 @@ export const createVariant = async (questionId, variantData, userId) => {
         secondaryTopicsId: secondaryTopics,
         answer,
         choices,
+        selectAllThatApply,
+        correctAnswers,
         referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
         isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
         isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
@@ -1016,8 +1051,16 @@ export const updateVariant = async (variantId, variantData, userId) => {
     // Handle choices and answer normalization for MCQ
     let normalizedChoices = variantData.choices;
     let normalizedAnswer = variantData.answer;
+    let normalizedSelectAllThatApply;
+    let normalizedCorrectAnswers;
+    const isMcq = variant.questionMetadata && variant.questionMetadata.type === 'MCQ';
+    const touchesCorrectness = isMcq && (
+      variantData.answer !== undefined
+      || variantData.correctAnswers !== undefined
+      || variantData.selectAllThatApply !== undefined
+    );
     
-    if (variant.questionMetadata && variant.questionMetadata.type === 'MCQ') {
+    if (isMcq) {
       if (variantData.choices !== undefined) {
         normalizedChoices = validateMCQChoices(variantData.choices, 'MCQ');
         // If choices are provided but invalid, throw error
@@ -1030,8 +1073,30 @@ export const updateVariant = async (variantId, variantData, userId) => {
       if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
         normalizedAnswer = extractAnswerLetter(variantData.answer) || variantData.answer.trim();
       }
-    } else if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
-      normalizedAnswer = variantData.answer.trim();
+
+      if (touchesCorrectness) {
+        const choiceSource = normalizedChoices !== undefined ? normalizedChoices : variant.choices;
+        const normalized = normalizeMcqCorrectness({
+          selectAllThatApply: variantData.selectAllThatApply !== undefined
+            ? Boolean(variantData.selectAllThatApply)
+            : Boolean(variant.selectAllThatApply),
+          answer: normalizedAnswer !== undefined ? normalizedAnswer : variant.answer,
+          correctAnswers: variantData.correctAnswers !== undefined
+            ? variantData.correctAnswers
+            : variant.correctAnswers,
+          choiceLetters: (choiceSource || []).map((c) => c.letter),
+        });
+        normalizedAnswer = normalized.answer;
+        normalizedSelectAllThatApply = normalized.selectAllThatApply;
+        normalizedCorrectAnswers = normalized.correctAnswers;
+      }
+    } else {
+      // Non-MCQ: never persist multi-correct fields from raw client payloads.
+      normalizedSelectAllThatApply = false;
+      normalizedCorrectAnswers = null;
+      if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
+        normalizedAnswer = variantData.answer.trim();
+      }
     }
 
     const nextIsDraft = variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : undefined;
@@ -1043,7 +1108,8 @@ export const updateVariant = async (variantId, variantData, userId) => {
 
     const ALLOWED_VARIANT_UPDATE_FIELDS = [
       'questionText', 'difficulty', 'reasoningLevel', 'assessmentId', 'secondaryTopicsId',
-      'answer', 'choices', 'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
+      'answer', 'choices', 'selectAllThatApply', 'correctAnswers',
+      'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
     ];
     const normalizedData = {
       ...Object.fromEntries(
@@ -1069,6 +1135,12 @@ export const updateVariant = async (variantId, variantData, userId) => {
       }),
       ...(normalizedAnswer !== undefined && {
         answer: normalizedAnswer
+      }),
+      ...(normalizedSelectAllThatApply !== undefined && {
+        selectAllThatApply: normalizedSelectAllThatApply
+      }),
+      ...(normalizedCorrectAnswers !== undefined && {
+        correctAnswers: normalizedCorrectAnswers
       }),
       ...(unreviewing && {
         coreQuestionId: null

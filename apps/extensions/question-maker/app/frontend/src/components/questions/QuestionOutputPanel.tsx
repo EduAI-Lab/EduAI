@@ -17,6 +17,10 @@ interface QuestionOutputPanelProps {
     onVariantTextChange: (value: string) => void;
     onVariantChoicesChange: (choices: MCQChoice[]) => void;
     onVariantAnswerChange: (value: string) => void;
+    selectAllThatApply?: boolean;
+    correctAnswers?: string[];
+    onSelectAllThatApplyChange?: (value: boolean) => void;
+    onCorrectAnswersChange?: (letters: string[]) => void;
     disabled?: boolean;
     isStreaming?: boolean;
     /** Optional: clear question text, choices, answer to defaults */
@@ -41,6 +45,10 @@ export function QuestionOutputPanel({
     onVariantTextChange,
     onVariantChoicesChange,
     onVariantAnswerChange,
+    selectAllThatApply = false,
+    correctAnswers = [],
+    onSelectAllThatApplyChange,
+    onCorrectAnswersChange,
     disabled = false,
     isStreaming = false,
     onClear,
@@ -121,6 +129,10 @@ export function QuestionOutputPanel({
                         answer={variantAnswer}
                         onChoicesChange={onVariantChoicesChange}
                         onAnswerChange={onVariantAnswerChange}
+                        selectAllThatApply={selectAllThatApply}
+                        correctAnswers={correctAnswers}
+                        onSelectAllThatApplyChange={onSelectAllThatApplyChange}
+                        onCorrectAnswersChange={onCorrectAnswersChange}
                         idPrefix={idPrefix}
                         disabled={disabled}
                     />

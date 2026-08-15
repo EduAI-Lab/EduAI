@@ -58,6 +58,7 @@ export const getSectionsForAssessment = async (assessmentId, userId) => {
             select: {
               id: true, questionText: true, difficulty: true, reasoningLevel: true,
               questionMetadataId: true, isAiGenerated: true, isDraft: true, answer: true, choices: true,
+              selectAllThatApply: true, correctAnswers: true,
               questionMetadata: {
                 select: {
                   id: true, description: true, type: true, questionOrder: true,
