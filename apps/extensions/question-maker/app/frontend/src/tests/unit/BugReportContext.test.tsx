@@ -42,10 +42,18 @@ describe('BugReportProvider', () => {
   });
 
   it('opens immediately while capturing and submits the cached screenshot', async () => {
+    let dialogWasMountedWhenCaptureStarted = false;
+    captureScreenshot.mockImplementationOnce(() => {
+      dialogWasMountedWhenCaptureStarted = Boolean(
+        screen.queryByRole('button', { name: 'submit report' }),
+      );
+      return Promise.resolve();
+    });
     renderProvider();
 
     fireEvent.click(screen.getByRole('button', { name: 'open report' }));
     expect(screen.getByRole('button', { name: 'submit report' })).toBeInTheDocument();
+    expect(dialogWasMountedWhenCaptureStarted).toBe(false);
 
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'submit report' }));
