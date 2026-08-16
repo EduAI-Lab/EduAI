@@ -37,10 +37,10 @@
 
 | Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
 |---|---|---|---|---|---|---|
-| | | Not started | | | | |
+| Attempt to open Question Maker with a TA course enrollment | Codex + human follow-up | Passed manual browser pass | The access-restricted page explicitly directs TAs to Core or AI Tutor. | TA stays outside Question Maker authoring despite course enrollment. | — | `tests/e2e/tests/question-maker/all-roles-workflows.spec.ts` |
 
 ## Student
 
 | Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
 |---|---|---|---|---|---|---|
-| _e.g. Confirm students cannot access the Question Maker answer-key / assessment-authoring views_ | | Not started | | | | _e.g. `tests/e2e/tests/question-maker/student-rbac-answer-key.spec.ts`_ |
+| Attempt to open Question Maker authoring | Codex + human follow-up | Passed manual browser pass | The access-restricted page explains that Question Maker is for instructors and administrators. | No Question Library or authoring navigation is exposed. | — | `tests/e2e/tests/question-maker/all-roles-workflows.spec.ts` |
