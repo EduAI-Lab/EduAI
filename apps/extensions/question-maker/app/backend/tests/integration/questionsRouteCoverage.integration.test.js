@@ -109,8 +109,12 @@ const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I
 // course access" branch (the owner-fallback in resolveAccessForCourse only
 // applies to the course's own userId).
 const OUTSIDER_INSTRUCTOR = { id: 'inst-2', role: 'INSTRUCTOR', email: 'i2@t.co', name: 'I2' };
+// Real course TA: platform role STUDENT + course enrollment TA (#225 AUTH-12).
+const TA = { id: 'ta-1', role: 'STUDENT', email: 't@t.co', name: 'TA' };
+const STUDENT = { id: 'stu-1', role: 'STUDENT', email: 's@t.co', name: 'S' };
 
 const COURSE = { id: 1, userId: 'inst-1', coreCourseId: 'cuid-core-course' };
+const OTHER_COURSE = { id: 2, userId: 'other-owner', coreCourseId: 'cuid-other-course' };
 
 function authAs(user, enrollRole) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }));
@@ -420,6 +424,15 @@ describe('POST /api/questions/extract/save', () => {
 });
 
 describe('POST /api/questions/approve', () => {
+  it('requires authentication before validating the request target', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+
+    const res = await request(app).post('/api/questions/approve').send({ questions: [] });
+
+    expect(res.status).toBe(401);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
   it('requires a non-empty questions array', async () => {
     authAs(INSTRUCTOR, 'INSTRUCTOR');
     const res = await request(app)
@@ -427,20 +440,175 @@ describe('POST /api/questions/approve', () => {
       .set('Cookie', 'session=v')
       .send({ questions: [] });
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Questions array is required');
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
   });
 
-  it('rejects when a question is missing courseId/primaryTopicId', async () => {
+  it.each([
+    ['missing', {}],
+    ['non-numeric', { courseId: 'not-a-number' }],
+    ['zero', { courseId: 0 }],
+    ['negative', { courseId: -1 }],
+    ['non-integer', { courseId: 1.5 }],
+  ])('rejects a %s top-level course target', async (_label, target) => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ ...target, questions: [{ courseId: 1, primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Valid courseId is required');
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('accepts a positive-integer classId as the legacy target alias', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    mockCreateMultiple.mockResolvedValue([{ id: 1 }]);
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ classId: '1', questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(201);
+    expect(mockCourseFindOne).toHaveBeenCalledWith({ where: { id: 1 } });
+  });
+
+  it('rejects when a question is missing primaryTopicId', async () => {
     authAs(INSTRUCTOR, 'INSTRUCTOR');
     const res = await request(app)
       .post('/api/questions/approve')
       .set('Cookie', 'session=v')
-      .send({ questions: [{ description: 'no course or topic' }] });
+      .send({ courseId: 1, questions: [{ description: 'no topic' }] });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/must include courseId and a valid primaryTopicId/);
+    expect(res.body.error).toMatch(/valid primaryTopicId/);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
   });
 
-  it('saves multiple approved questions on success', async () => {
+  it('returns 404 when the target course does not exist', async () => {
     authAs(INSTRUCTOR, 'INSTRUCTOR');
+    mockCourseFindOne.mockResolvedValue(null);
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 999, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(404);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('rejects a caller whose target-course access is below TA', async () => {
+    authAs(OUTSIDER_INSTRUCTOR, 'STUDENT');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('rejects a course STUDENT (platform STUDENT, no TA access)', async () => {
+    authAs(STUDENT, 'STUDENT');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: 1, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('prevents a caller authorized for course A from targeting course B', async () => {
+    authAs(OUTSIDER_INSTRUCTOR, 'INSTRUCTOR');
+    mockCourseFindOne.mockImplementation(({ where }) =>
+      Promise.resolve(where.id === COURSE.id ? COURSE : OTHER_COURSE),
+    );
+    mockEnrollments.mockImplementation((coreCourseId) =>
+      Promise.resolve({
+        enrollments: coreCourseId === COURSE.coreCourseId
+          ? [{ studentId: OUTSIDER_INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }]
+          : [],
+      }),
+    );
+
+    const courseAResponse = await request(app)
+      .get(`/api/questions/stats?courseId=${COURSE.id}`)
+      .set('Cookie', 'session=v');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: OTHER_COURSE.id, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(courseAResponse.status).toBe(200);
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('rejects a per-question course override before writing', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: COURSE.id, questions: [{ courseId: OTHER_COURSE.id, primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/must match the authorized target course/);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('rejects a per-question classId override before writing', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: COURSE.id, questions: [{ classId: OTHER_COURSE.id, primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(400);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for a same-owner target when Core access cannot be resolved', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    mockEnrollments.mockRejectedValue(new Error('Core unavailable'));
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: COURSE.id, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(403);
+    expect(mockCreateMultiple).not.toHaveBeenCalled();
+  });
+
+  it('authorizes a real course TA (platform STUDENT, TA enrollment) in their own course', async () => {
+    authAs(TA, 'TA');
+    mockCreateMultiple.mockResolvedValue([{ id: 1 }]);
+
+    const res = await request(app)
+      .post('/api/questions/approve')
+      .set('Cookie', 'session=v')
+      .send({ courseId: COURSE.id, questions: [{ primaryTopicId: 't1' }] });
+
+    expect(res.status).toBe(201);
+    expect(mockCreateMultiple).toHaveBeenCalledWith(
+      COURSE.userId,
+      expect.arrayContaining([expect.objectContaining({ courseId: COURSE.id, createdBy: TA.id })])
+    );
+  });
+
+  it('saves an authorized batch under the course owner while preserving caller authorship', async () => {
+    authAs(OUTSIDER_INSTRUCTOR, 'INSTRUCTOR');
     mockCreateMultiple.mockResolvedValue([{ id: 1 }, { id: 2 }]);
 
     const res = await request(app)
@@ -456,6 +624,10 @@ describe('POST /api/questions/approve', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data).toHaveLength(2);
+    expect(mockCreateMultiple).toHaveBeenCalledWith(COURSE.userId, [
+      expect.objectContaining({ courseId: COURSE.id, primaryTopicId: 't1', createdBy: OUTSIDER_INSTRUCTOR.id }),
+      expect.objectContaining({ courseId: COURSE.id, primaryTopicId: 't2', createdBy: OUTSIDER_INSTRUCTOR.id }),
+    ]);
   });
 });
 
