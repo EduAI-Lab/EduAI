@@ -17,6 +17,7 @@ participant, without that mapping itself ever being written to a
 git-tracked file.
 
 Usage:
+    export ADHD_EXCLUDE_RESPONSE_IDS="<id-1>,<id-2>"  # required for primary n=9
     python adhd_analysis.py \
         --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
         --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
@@ -76,15 +77,67 @@ BONFERRONI_ALPHA = 0.01  # 5 planned comparisons -> .05 / 5
 # eduai-summer-2026/reports/form-a/week13-1226-stats-one-pager.md for the
 # full rationale. The raw ResponseIds themselves are participant data and do
 # not belong in this public repo (per BREB H26-00906 / prior review on
-# #1415); set them locally via the ADHD_EXCLUDE_RESPONSE_IDS environment
-# variable (comma-separated) when running against the restricted-storage
-# export. Pass --include-excluded to run the full, uncurated sample instead
-# (used as a sensitivity check, not the primary reported number).
-DEFAULT_EXCLUDED_RESPONSE_IDS = {
-    rid.strip()
-    for rid in os.environ.get("ADHD_EXCLUDE_RESPONSE_IDS", "").split(",")
-    if rid.strip()
-}
+# #1415 / #1476); set them locally via ADHD_EXCLUDE_RESPONSE_IDS
+# (comma-separated, exactly PRIMARY_EXCLUSION_COUNT IDs that exist in the
+# finished+valid-group sample). A primary run refuses to start if that
+# variable is missing, the wrong length, or names IDs not in the export --
+# otherwise the documented Appendix command would silently produce N=11.
+# Pass --include-excluded to run the full, uncurated sample instead (used
+# as a sensitivity check, not the primary reported number); that path does
+# not require the env var.
+ADHD_EXCLUDE_RESPONSE_IDS_ENV = "ADHD_EXCLUDE_RESPONSE_IDS"
+PRIMARY_EXCLUSION_COUNT = 2
+
+
+class ExclusionConfigError(ValueError):
+    """Primary-run exclusion list is missing, the wrong length, or unknown."""
+
+
+def parse_exclusion_ids(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [rid.strip() for rid in raw.split(",") if rid.strip()]
+
+
+def resolve_primary_exclusion_ids(
+    *,
+    include_excluded: bool,
+    env_value: str | None,
+    available_ids: set[str],
+) -> set[str]:
+    """Return the data-quality exclusion set for this run.
+
+    Primary analysis (include_excluded=False) requires exactly
+    PRIMARY_EXCLUSION_COUNT unique IDs, all present in available_ids
+    (the finished+valid-group sample). --include-excluded skips the
+    requirement and returns an empty set.
+    """
+    if include_excluded:
+        return set()
+    ids = parse_exclusion_ids(env_value)
+    unique = list(dict.fromkeys(ids))
+    if not unique:
+        raise ExclusionConfigError(
+            f"Primary analysis requires {ADHD_EXCLUDE_RESPONSE_IDS_ENV} "
+            f"(comma-separated, exactly {PRIMARY_EXCLUSION_COUNT} ResponseIds "
+            "that exist in the finished+valid-group sample). Set it from the "
+            "restricted-storage notes, or pass --include-excluded for the "
+            "uncurated n=11 sensitivity check."
+        )
+    if len(unique) != PRIMARY_EXCLUSION_COUNT:
+        raise ExclusionConfigError(
+            f"{ADHD_EXCLUDE_RESPONSE_IDS_ENV} must contain exactly "
+            f"{PRIMARY_EXCLUSION_COUNT} unique ResponseIds for a primary run, "
+            f"got {len(unique)}."
+        )
+    unknown = [rid for rid in unique if rid not in available_ids]
+    if unknown:
+        raise ExclusionConfigError(
+            f"{ADHD_EXCLUDE_RESPONSE_IDS_ENV} contains {len(unknown)} "
+            "ResponseId(s) that are not in the finished+valid-group sample. "
+            "Check the restricted-storage notes against this export."
+        )
+    return set(unique)
 
 PREF_COLUMNS = {
     "Q23_Prefer": "Overall preference",
@@ -644,14 +697,23 @@ def main():
     )
     args = parser.parse_args()
 
+    finished_valid = load_and_filter(args.numeric_zip, exclude_ids=set())
+    try:
+        exclude_ids = resolve_primary_exclusion_ids(
+            include_excluded=args.include_excluded,
+            env_value=os.environ.get(ADHD_EXCLUDE_RESPONSE_IDS_ENV),
+            available_ids=set(finished_valid["ResponseId"]),
+        )
+    except ExclusionConfigError as err:
+        parser.error(str(err))
+
     outdir = args.outdir
     fig_dir = outdir / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    exclude_ids = set() if args.include_excluded else DEFAULT_EXCLUDED_RESPONSE_IDS
     numeric_df = load_and_filter(args.numeric_zip, exclude_ids)
     label_df = load_and_filter(args.label_zip, exclude_ids)
-    n_before_quality_exclusion = len(load_and_filter(args.numeric_zip))
+    n_before_quality_exclusion = len(finished_valid)
 
     n = len(numeric_df)
     scored = score_all_metrics(numeric_df)
@@ -670,7 +732,7 @@ def main():
     # N=11 finished+valid-group sample, independent of --include-excluded,
     # so it checks robustness against every respondent -- including the two
     # flagged for data quality -- not just the primary n=9.
-    loo_df = load_and_filter(args.numeric_zip, exclude_ids=set())
+    loo_df = finished_valid
     participant_labels = build_participant_labels(loo_df["ResponseId"])
     loo_results = run_leave_one_out(loo_df, METRIC_ORDER, participant_labels)
     loo_results.to_csv(outdir / "loo_sensitivity.csv", index=False)
@@ -698,11 +760,11 @@ def main():
         "n_raw_records": n_raw_records,
         "n_after_finished_and_group_filter": n_before_quality_exclusion,
         "n_dropped_incomplete_or_no_group": n_raw_records - n_before_quality_exclusion,
-        "n_dropped_data_quality": (0 if args.include_excluded else len(DEFAULT_EXCLUDED_RESPONSE_IDS)),
+        "n_dropped_data_quality": len(exclude_ids),
         "excluded_participants": (
             []
             if args.include_excluded
-            else sorted(participant_labels[rid] for rid in DEFAULT_EXCLUDED_RESPONSE_IDS)
+            else sorted(participant_labels[rid] for rid in exclude_ids)
         ),
         "metrics": stats_rows,
         "preferences": pref_summary,
@@ -720,8 +782,9 @@ def main():
     print(f"After Finished + valid-group filter               = {n_before_quality_exclusion} "
           f"(dropped {n_raw_records - n_before_quality_exclusion}: incomplete or no group assigned)")
     if not args.include_excluded:
+        dropped_labels = sorted(participant_labels[rid] for rid in exclude_ids)
         print(f"After data-quality exclusions                     = {n} "
-              f"(dropped {len(DEFAULT_EXCLUDED_RESPONSE_IDS)}: {sorted(DEFAULT_EXCLUDED_RESPONSE_IDS)})")
+              f"(dropped {len(exclude_ids)}: {dropped_labels})")
     else:
         print(f"Data-quality exclusions skipped (--include-excluded) = {n}")
     print(f"N (label export, same pipeline)                   = {len(label_df)}")

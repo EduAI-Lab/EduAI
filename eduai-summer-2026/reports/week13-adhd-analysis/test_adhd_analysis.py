@@ -21,19 +21,21 @@ import pandas as pd
 
 from adhd_analysis import (
     METRIC_ORDER,
+    PRIMARY_EXCLUSION_COUNT,
+    ExclusionConfigError,
     build_participant_labels,
     load_and_filter,
+    resolve_primary_exclusion_ids,
     run_leave_one_out,
 )
 
 HERE = Path(__file__).resolve().parent
 
-# adhd_analysis.py reads its default exclusion list from the
-# ADHD_EXCLUDE_RESPONSE_IDS environment variable (raw participant IDs don't
-# belong hardcoded in this public repo -- see the comment above
-# DEFAULT_EXCLUDED_RESPONSE_IDS in adhd_analysis.py). Tests use their own
-# obviously-fake IDs rather than depending on whatever real value that
-# variable happens to hold in the environment the tests run in.
+# adhd_analysis.py reads its exclusion list from ADHD_EXCLUDE_RESPONSE_IDS
+# (raw participant IDs don't belong hardcoded in this public repo -- see
+# resolve_primary_exclusion_ids()). Tests use their own obviously-fake IDs
+# rather than depending on whatever real value that variable happens to
+# hold in the environment the tests run in.
 SYNTHETIC_EXCLUDED_IDS = ["TEST_P10", "TEST_P11"]
 
 # Column schema score_all_metrics()/load_and_filter() require, mirrored from
@@ -234,6 +236,152 @@ class LoadAndFilterExclusionTests(unittest.TestCase):
         self.assertEqual(
             set(full["ResponseId"]) - set(curated["ResponseId"]), synthetic_excluded
         )
+
+
+class ResolvePrimaryExclusionIdsTests(unittest.TestCase):
+    def setUp(self):
+        self.available = set(SYNTHETIC_IDS)
+        self.env = ",".join(SYNTHETIC_EXCLUDED_IDS)
+
+    def test_include_excluded_returns_empty_without_reading_env(self):
+        self.assertEqual(
+            resolve_primary_exclusion_ids(
+                include_excluded=True,
+                env_value=None,
+                available_ids=self.available,
+            ),
+            set(),
+        )
+
+    def test_primary_run_returns_the_two_configured_ids(self):
+        self.assertEqual(
+            resolve_primary_exclusion_ids(
+                include_excluded=False,
+                env_value=self.env,
+                available_ids=self.available,
+            ),
+            set(SYNTHETIC_EXCLUDED_IDS),
+        )
+        self.assertEqual(PRIMARY_EXCLUSION_COUNT, 2)
+
+    def test_missing_env_raises(self):
+        with self.assertRaises(ExclusionConfigError) as ctx:
+            resolve_primary_exclusion_ids(
+                include_excluded=False,
+                env_value=None,
+                available_ids=self.available,
+            )
+        self.assertIn("requires ADHD_EXCLUDE_RESPONSE_IDS", str(ctx.exception))
+
+    def test_empty_env_raises(self):
+        with self.assertRaises(ExclusionConfigError):
+            resolve_primary_exclusion_ids(
+                include_excluded=False,
+                env_value="  ,  ",
+                available_ids=self.available,
+            )
+
+    def test_wrong_count_raises(self):
+        with self.assertRaises(ExclusionConfigError) as ctx:
+            resolve_primary_exclusion_ids(
+                include_excluded=False,
+                env_value=SYNTHETIC_EXCLUDED_IDS[0],
+                available_ids=self.available,
+            )
+        self.assertIn("exactly 2 unique ResponseIds", str(ctx.exception))
+
+    def test_duplicate_ids_raise(self):
+        with self.assertRaises(ExclusionConfigError):
+            resolve_primary_exclusion_ids(
+                include_excluded=False,
+                env_value=f"{SYNTHETIC_EXCLUDED_IDS[0]},{SYNTHETIC_EXCLUDED_IDS[0]}",
+                available_ids=self.available,
+            )
+
+    def test_unknown_id_raises(self):
+        with self.assertRaises(ExclusionConfigError) as ctx:
+            resolve_primary_exclusion_ids(
+                include_excluded=False,
+                env_value=f"{SYNTHETIC_EXCLUDED_IDS[0]},TEST_NOT_IN_SAMPLE",
+                available_ids=self.available,
+            )
+        self.assertIn("not in the finished+valid-group sample", str(ctx.exception))
+
+
+def _run_analysis(label_zip: Path, numeric_zip: Path, outdir: Path, extra_args=None, env=None):
+    run_env = os.environ.copy()
+    run_env.pop("ADHD_EXCLUDE_RESPONSE_IDS", None)
+    if env is not None:
+        run_env.update(env)
+    return subprocess.run(
+        [
+            sys.executable,
+            str(HERE / "adhd_analysis.py"),
+            "--label-zip",
+            str(label_zip),
+            "--numeric-zip",
+            str(numeric_zip),
+            "--outdir",
+            str(outdir),
+            *(extra_args or []),
+        ],
+        cwd=HERE,
+        capture_output=True,
+        text=True,
+        env=run_env,
+    )
+
+
+class PrimaryRunRequiresExclusionConfigTests(unittest.TestCase):
+    """CLI must refuse a primary run when ADHD_EXCLUDE_RESPONSE_IDS is
+    missing or names IDs that are not in the export, and --include-excluded
+    must still work with the env var unset."""
+
+    def _zips(self, tmp: Path):
+        label_zip = tmp / "label.zip"
+        numeric_zip = tmp / "numeric.zip"
+        _write_synthetic_zip(label_zip)
+        _write_synthetic_zip(numeric_zip)
+        return label_zip, numeric_zip
+
+    def test_missing_env_exits_nonzero_with_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            label_zip, numeric_zip = self._zips(tmp)
+            outdir = tmp / "out"
+            result = _run_analysis(label_zip, numeric_zip, outdir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("ADHD_EXCLUDE_RESPONSE_IDS", result.stderr)
+            self.assertFalse((outdir / "analysis_summary.csv").exists())
+
+    def test_unknown_id_exits_nonzero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            label_zip, numeric_zip = self._zips(tmp)
+            result = _run_analysis(
+                label_zip,
+                numeric_zip,
+                tmp / "out",
+                env={"ADHD_EXCLUDE_RESPONSE_IDS": f"{SYNTHETIC_EXCLUDED_IDS[0]},TEST_NOT_IN_SAMPLE"},
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not in the finished+valid-group sample", result.stderr)
+
+    def test_include_excluded_works_without_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            label_zip, numeric_zip = self._zips(tmp)
+            outdir = tmp / "out"
+            outdir.mkdir()
+            result = _run_analysis(
+                label_zip,
+                numeric_zip,
+                outdir,
+                extra_args=["--include-excluded"],
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            summary = pd.read_csv(outdir / "analysis_summary.csv")
+            self.assertTrue((summary["n"] == 11).all())
 
 
 if __name__ == "__main__":

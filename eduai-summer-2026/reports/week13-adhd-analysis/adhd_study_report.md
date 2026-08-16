@@ -150,13 +150,18 @@ repo — pull them from the approved restricted storage location first.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Primary analysis (n=9, data-quality exclusions applied — default)
+# Primary analysis (n=9, data-quality exclusions applied).
+# Requires the two exclusion ResponseIds from the restricted-storage notes.
+# The script refuses to run a primary analysis if this variable is missing,
+# the wrong length, or names IDs not in the finished+valid-group sample —
+# it will not silently fall back to N=11.
+export ADHD_EXCLUDE_RESPONSE_IDS="<id-1>,<id-2>"
 python adhd_analysis.py \
   --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
   --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
   --outdir .
 
-# Sensitivity check: full uncurated sample (n=11)
+# Sensitivity check: full uncurated sample (n=11). Does not require the env var.
 python adhd_analysis.py \
   --label-zip /path/to/restricted-storage/ADHD_participants_label.zip \
   --numeric-zip /path/to/restricted-storage/ADHD_participants_numeric.zip \
@@ -169,5 +174,14 @@ Participant identifiers in every output (`loo_sensitivity.csv`,
 deterministically by sorted `ResponseId` — re-running against the same
 restricted-storage export reproduces the same label for the same
 participant (see `build_participant_labels()` in `adhd_analysis.py`).
+
+### Ethics / de-identification (BREB H26-00906)
+
+Identified Qualtrics exports stay in the project's approved restricted
+storage and are not in this repository. Committed participant-level
+artifacts use sequential `P1..Pn` labels only. The ResponseId→P mapping is
+computed at runtime from the restricted export and is not a git-tracked
+file. That is the de-identification process used for public research
+artifacts under protocol H26-00906.
 
 Package versions used for this run: see `stats_dump.json["versions"]` (pandas 3.0.5, numpy 2.5.1, scipy 1.18.0, matplotlib 3.11.1).
