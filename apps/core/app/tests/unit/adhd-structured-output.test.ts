@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAdhdAssistStructuredResponseSchema,
   isStructuredAdhdAssistCandidate,
   parseAdhdStructuredResponse,
   renderAdhdStructuredResponse,
+  resolveRequestedAssistStageCount,
 } from "~/lib/ai/adhd-structured-output";
 
 const structured = JSON.stringify({
@@ -63,6 +65,22 @@ describe("structured Assist output", () => {
         toolsEnabled: false,
       }),
     ).toBe(true);
+  });
+
+  it("constrains an explicitly requested stage count", () => {
+    expect(
+      resolveRequestedAssistStageCount(
+        "Explain gradient descent visually with exactly five ordered stages.",
+      ),
+    ).toBe(5);
+    expect(resolveRequestedAssistStageCount("show the four steps")).toBe(4);
+    expect(
+      resolveRequestedAssistStageCount("explain this visually"),
+    ).toBeNull();
+
+    const schema = buildAdhdAssistStructuredResponseSchema(5);
+    expect(schema.properties.stages.minItems).toBe(5);
+    expect(schema.properties.stages.maxItems).toBe(5);
   });
 
   it("does not use structured output for images or tool turns", () => {

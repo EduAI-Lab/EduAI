@@ -104,9 +104,10 @@ import {
   type AdhdTurnProfile,
 } from "~/lib/ai/adhd-turn-profile";
 import {
-  ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA,
+  buildAdhdAssistStructuredResponseSchema,
   isStructuredAdhdAssistCandidate,
   renderAdhdStructuredResponse,
+  resolveRequestedAssistStageCount,
 } from "~/lib/ai/adhd-structured-output";
 import {
   auditAndMaybeRewrite,
@@ -2202,6 +2203,8 @@ ${buildEmptyCourseRagBlock()}`;
       profile: adhdProfile,
       toolsEnabled: useToolCalling,
     });
+    const requestedAssistStageCount =
+      resolveRequestedAssistStageCount(lastUserText);
 
     streamConfig.system = composeSecurityPrompt(
       composeSystemPrompt(streamConfig.system ?? "", {
@@ -2216,9 +2219,14 @@ ${buildEmptyCourseRagBlock()}`;
         name: "eduai_assist_response",
         description:
           "Complete Assist response plan. The application renders the Markdown structure and diagram from these stages.",
-        schema: ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA,
+        schema: buildAdhdAssistStructuredResponseSchema(
+          requestedAssistStageCount,
+        ),
       };
-      streamConfig.system = `${streamConfig.system}\n\nSTRUCTURED ASSIST OUTPUT:\nReturn only the requested JSON object. Put the complete explanation in answer. Supply 3-5 ordered stages; the application will render the Step ladder and diagram from those exact stages. Do not omit the final stage.`;
+      const stageInstruction = requestedAssistStageCount
+        ? `Supply exactly ${requestedAssistStageCount} ordered stages.`
+        : "Supply 3-5 ordered stages.";
+      streamConfig.system = `${streamConfig.system}\n\nSTRUCTURED ASSIST OUTPUT:\nReturn only the requested JSON object. Put the complete explanation in answer. ${stageInstruction} The application will render the Step ladder and diagram from those exact stages. Do not omit the final stage.`;
     }
 
     // Re-cap after composeSecurityPrompt so the security block is included, and

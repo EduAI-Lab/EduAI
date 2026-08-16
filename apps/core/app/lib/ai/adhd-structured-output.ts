@@ -14,31 +14,67 @@ import {
  * Markdown shape. vLLM applies this schema with constrained decoding, so small
  * models cannot omit the later stages or stop before the visual payload.
  */
-export const ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    title: { type: "string" },
-    answer: { type: "string" },
-    stages: {
-      type: "array",
-      minItems: 3,
-      maxItems: 5,
-      items: {
-        type: "object",
-        properties: {
-          label: { type: "string" },
-          detail: { type: "string" },
+const STAGE_COUNT_WORDS: Record<string, number> = {
+  three: 3,
+  four: 4,
+  five: 5,
+};
+
+/**
+ * Honor an explicit learner request such as "exactly five ordered stages".
+ * The value becomes part of the constrained schema, rather than relying on a
+ * small model to remember a stage-count instruction in its prompt.
+ */
+export function resolveRequestedAssistStageCount(
+  userText?: string,
+): number | null {
+  const match =
+    /\b(?:exactly\s+)?(3|4|5|three|four|five)(?:\s+(?:ordered|labeled|labelled|clear|simple))*\s+(?:stages?|steps?)\b/i.exec(
+      userText ?? "",
+    );
+  if (!match) return null;
+  const token = match[1].toLowerCase();
+  const count = Number(token) || STAGE_COUNT_WORDS[token];
+  return count >= 3 && count <= 5 ? count : null;
+}
+
+export function buildAdhdAssistStructuredResponseSchema(
+  exactStageCount?: number | null,
+) {
+  const stageCount =
+    exactStageCount != null && exactStageCount >= 3 && exactStageCount <= 5
+      ? exactStageCount
+      : null;
+
+  return {
+    type: "object" as const,
+    properties: {
+      title: { type: "string" as const },
+      answer: { type: "string" as const },
+      stages: {
+        type: "array" as const,
+        minItems: stageCount ?? 3,
+        maxItems: stageCount ?? 5,
+        items: {
+          type: "object" as const,
+          properties: {
+            label: { type: "string" as const },
+            detail: { type: "string" as const },
+          },
+          required: ["label", "detail"],
+          additionalProperties: false,
         },
-        required: ["label", "detail"],
-        additionalProperties: false,
       },
+      tldr: { type: "string" as const },
+      next: { type: "string" as const },
     },
-    tldr: { type: "string" },
-    next: { type: "string" },
-  },
-  required: ["title", "answer", "stages", "tldr", "next"],
-  additionalProperties: false,
-} as const;
+    required: ["title", "answer", "stages", "tldr", "next"],
+    additionalProperties: false,
+  };
+}
+
+export const ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA =
+  buildAdhdAssistStructuredResponseSchema();
 
 export type AdhdStructuredResponse = {
   title: string;
