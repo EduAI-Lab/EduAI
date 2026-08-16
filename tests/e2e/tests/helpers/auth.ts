@@ -28,8 +28,9 @@ export async function injectSessionIntoPage(
   const { cookies } = await request.storageState();
   await page.context().addCookies(
     cookies.map((cookie) => {
-      const { domain, ...browserCookie } = cookie;
+      const { domain, path, ...browserCookie } = cookie;
       void domain;
+      void path;
       return { ...browserCookie, url: QM_FRONTEND_URL };
     }),
   );
