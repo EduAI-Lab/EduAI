@@ -9,12 +9,24 @@ import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
 import { validateCanvasUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
+import { logger } from '../utils/logger.js';
 import net from 'node:net';
 
 /**
  * Canvas LMS API Service
  * Supports both real Canvas API integration and test mode for development
  */
+
+/** Positive integer Canvas / route ids — rejects query-injection / path-traversal payloads. */
+export function parseCanvasNumericId(value, label = 'id') {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    const err = new Error(`Invalid ${label}`);
+    err.status = 400;
+    throw err;
+  }
+  return n;
+}
 
 // Mock data for test mode
 const MOCK_CANVAS_COURSES = [
@@ -917,6 +929,359 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
   } catch (error) {
     throw new Error(`Failed to import quiz from Canvas: ${error.message}`);
   }
+};
+
+/** Lists Classic Canvas Assessment Question Banks for a course. */
+export const getCanvasQuestionBanks = async (userId, canvasCourseId) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const courseId = parseCanvasNumericId(canvasCourseId, 'canvasCourseId');
+  const response = await makeCanvasRequest(
+    integration,
+    'GET',
+    `/question_banks?context_type=Course&context_id=${encodeURIComponent(String(courseId))}&include_question_count=true`,
+  );
+  const banks = Array.isArray(response.data) ? response.data : [response.data];
+  return banks.filter(Boolean);
+};
+
+/** Fetches a single Canvas question bank. */
+export const getCanvasQuestionBank = async (userId, canvasBankId) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const bankId = parseCanvasNumericId(canvasBankId, 'canvasBankId');
+  const response = await makeCanvasRequest(
+    integration,
+    'GET',
+    `/question_banks/${encodeURIComponent(String(bankId))}?include_question_count=true`,
+  );
+  return response.data;
+};
+
+/**
+ * Lists assessment questions in a Canvas question bank (follows page query when provided).
+ * @returns {{ questions: object[], truncated: boolean }}
+ */
+export const getCanvasQuestionBankQuestions = async (userId, canvasBankId, opts = {}) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const bankId = parseCanvasNumericId(canvasBankId, 'canvasBankId');
+  const page = opts.page || 1;
+  const perPage = opts.perPage || 100;
+  const all = [];
+  let currentPage = page;
+  let truncated = false;
+
+  for (;;) {
+    const response = await makeCanvasRequest(
+      integration,
+      'GET',
+      `/question_banks/${encodeURIComponent(String(bankId))}/questions?per_page=${perPage}&page=${currentPage}`,
+    );
+    const batch = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
+    all.push(...batch);
+    if (integration.isTestMode || batch.length < perPage) {
+      break;
+    }
+    currentPage += 1;
+    if (currentPage > 50) {
+      truncated = true;
+      logger.warn(
+        { canvasBankId: bankId, fetched: all.length, pageCap: 50 },
+        'Canvas question bank fetch hit 50-page cap; results truncated',
+      );
+      break;
+    }
+  }
+
+  return { questions: all, truncated };
+};
+
+/**
+ * Imports / re-syncs a Canvas Assessment Question Bank into a Core-backed local course bank.
+ */
+export const importQuestionBankFromCanvas = async (
+  userId,
+  canvasCourseId,
+  canvasBankId,
+  localCourseId,
+  options = {},
+  ownerId = userId,
+) => {
+  // Dynamic import avoids a static cycle: questionService → questionBankService
+  // and this module → questionBankService (and createQuestion from questionService).
+  const {
+    listBanks,
+    createBank,
+    addQuestionsToBank,
+  } = await import('./questionBankService.js');
+
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const parsedCanvasCourseId = parseCanvasNumericId(canvasCourseId, 'canvasCourseId');
+  const parsedCanvasBankId = parseCanvasNumericId(canvasBankId, 'canvasBankId');
+  const parsedLocalCourseId = Number(localCourseId);
+  const course = await prisma.course.findFirst({
+    where: { id: parsedLocalCourseId, userId: ownerId },
+    select: { id: true, coreCourseId: true, userId: true },
+  });
+  if (!course) {
+    const err = new Error('Local course not found');
+    err.status = 404;
+    throw err;
+  }
+
+  // Banks may only sync into the local course that was linked from Canvas.
+  const courseCanvasMapping = await prisma.canvasCourseMapping.findUnique({
+    where: { localCourseId: parsedLocalCourseId },
+    select: { canvasCourseId: true, localCourseId: true },
+  });
+  if (!courseCanvasMapping) {
+    const err = new Error(
+      'Course is not linked to Canvas. Sync the course from Canvas before importing question banks.',
+    );
+    err.status = 400;
+    throw err;
+  }
+  if (Number(courseCanvasMapping.canvasCourseId) !== parsedCanvasCourseId) {
+    const err = new Error(
+      'canvasCourseId does not match the Canvas course linked to this local course',
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const primaryTopicId =
+    typeof options.primaryTopicId === 'string' && options.primaryTopicId.trim()
+      ? options.primaryTopicId.trim()
+      : null;
+  if (!primaryTopicId) {
+    throw new Error('Primary topic ID is required for importing questions. Please select a topic.');
+  }
+
+  // One Canvas bank → one local course per instructor.
+  const existingMapping = await prisma.canvasBankMapping.findUnique({
+    where: {
+      userId_canvasBankId: {
+        userId,
+        canvasBankId: parsedCanvasBankId,
+      },
+    },
+  });
+  if (existingMapping && Number(existingMapping.localCourseId) !== parsedLocalCourseId) {
+    const err = new Error(
+      'This Canvas question bank is already synced to another local course',
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const remoteBank = await getCanvasQuestionBank(userId, parsedCanvasBankId);
+  const { questions: remoteQuestions, truncated } = await getCanvasQuestionBankQuestions(
+    userId,
+    parsedCanvasBankId,
+  );
+
+  const banks = await listBanks(parsedLocalCourseId, userId);
+  let localBank = null;
+
+  if (options.targetBankId) {
+    const targetId = String(options.targetBankId);
+    localBank = banks.find((b) => b.id === targetId) || null;
+    if (!localBank) {
+      const err = new Error('Target bank not found in this course');
+      err.status = 400;
+      throw err;
+    }
+  } else if (existingMapping) {
+    localBank = banks.find((b) => b.id === String(existingMapping.localBankId)) || null;
+  }
+
+  if (!localBank) {
+    const title =
+      (remoteBank && (remoteBank.title || remoteBank.name)) ||
+      `Canvas bank ${parsedCanvasBankId}`;
+    localBank = await createBank(parsedLocalCourseId, userId, {
+      name: String(title).trim() || 'Imported bank',
+    });
+  }
+
+  const bankMapping = await prisma.canvasBankMapping.upsert({
+    where: {
+      userId_canvasBankId: {
+        userId,
+        canvasBankId: parsedCanvasBankId,
+      },
+    },
+    create: {
+      userId,
+      localCourseId: parsedLocalCourseId,
+      localBankId: String(localBank.id),
+      canvasCourseId: parsedCanvasCourseId,
+      canvasBankId: parsedCanvasBankId,
+      lastSyncedAt: null,
+    },
+    update: {
+      localBankId: String(localBank.id),
+      canvasCourseId: parsedCanvasCourseId,
+      localCourseId: parsedLocalCourseId,
+    },
+  });
+
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const membershipIds = [];
+
+  for (const remote of remoteQuestions) {
+    const canvasAssessmentQuestionId = remote?.id;
+    if (canvasAssessmentQuestionId == null) {
+      skipped += 1;
+      continue;
+    }
+
+    let converted;
+    try {
+      converted = convertCanvasQuestionToVariant(remote);
+    } catch {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const existingQMap = await prisma.canvasBankQuestionMapping.findUnique({
+        where: {
+          userId_canvasAssessmentQuestionId_localCourseId: {
+            userId,
+            canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
+            localCourseId: parsedLocalCourseId,
+          },
+        },
+      });
+
+      if (existingQMap) {
+        const metadata = await prisma.questionMetadata.findUnique({
+          where: { id: existingQMap.localQuestionMetadataId },
+        });
+        if (!metadata || Number(metadata.courseId) !== parsedLocalCourseId) {
+          skipped += 1;
+          continue;
+        }
+
+        await prisma.$transaction(async (tx) => {
+          await tx.questionMetadata.update({
+            where: { id: metadata.id },
+            data: {
+              description: converted.description || metadata.description,
+              type: converted.type || metadata.type,
+            },
+          });
+          const variants = await tx.variants.findMany({
+            where: { questionMetadataId: metadata.id },
+            orderBy: { createdAt: 'asc' },
+            take: 1,
+          });
+          if (variants[0]) {
+            await tx.variants.update({
+              where: { id: variants[0].id },
+              data: {
+                questionText: converted.questionText,
+                answer: converted.answer,
+                choices: converted.choices,
+              },
+            });
+          }
+          await tx.canvasBankQuestionMapping.update({
+            where: { id: existingQMap.id },
+            data: { localBankId: String(localBank.id) },
+          });
+        });
+        membershipIds.push(metadata.id);
+        updated += 1;
+        continue;
+      }
+
+      const question = await createQuestion(ownerId, {
+        description: converted.description,
+        courseId: parsedLocalCourseId,
+        primaryTopicId,
+        type: converted.type,
+        createdBy: userId,
+        skipBankAttach: true,
+      });
+
+      await prisma.$transaction(async (tx) => {
+        await tx.variants.create({
+          data: {
+            questionMetadataId: question.id,
+            questionText: converted.questionText,
+            difficulty: 'medium',
+            answer: converted.answer,
+            choices: converted.choices,
+            isDraft: false,
+            isAiGenerated: false,
+          },
+        });
+        await tx.canvasBankQuestionMapping.create({
+          data: {
+            userId,
+            localCourseId: parsedLocalCourseId,
+            localQuestionMetadataId: question.id,
+            canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
+            localBankId: String(localBank.id),
+          },
+        });
+      });
+      membershipIds.push(question.id);
+      created += 1;
+    } catch (error) {
+      skipped += 1;
+      logger.warn(
+        {
+          err: error,
+          canvasAssessmentQuestionId,
+          localCourseId: parsedLocalCourseId,
+          localBankId: localBank.id,
+        },
+        'Skipped Canvas bank question during import',
+      );
+    }
+  }
+
+  if (membershipIds.length > 0) {
+    await addQuestionsToBank(
+      parsedLocalCourseId,
+      userId,
+      localBank.id,
+      membershipIds,
+    );
+  }
+
+  const synced = await prisma.canvasBankMapping.update({
+    where: { id: bankMapping.id },
+    data: { lastSyncedAt: new Date() },
+  });
+
+  return {
+    bankId: localBank.id,
+    created,
+    updated,
+    skipped,
+    truncated,
+    lastSyncedAt: synced.lastSyncedAt,
+  };
 };
 
 export {

@@ -867,11 +867,7 @@ describe("extractDocxText", () => {
     expect(result.metadata?.isClientSide).toBe(true);
   });
 
-  // Documents a pre-existing bug in `convertHtmlToMarkdown`'s <ol> handling: the inner
-  // `content.replace(/<li.../, () => ...)` callback returns a literal "$1" (function
-  // replacers don't get $-pattern substitution) instead of the actual list item text,
-  // so ordered-list items are dropped and replaced with the literal string "$1".
-  it("documents that ordered-list items currently render as a literal '$1' placeholder", async () => {
+  it("renders ordered-list items with their actual text", async () => {
     vi.mocked(mammothMock.convertToHtml).mockResolvedValue({
       value: "<ol><li>One</li><li>Two</li></ol>",
       messages: [],
@@ -885,9 +881,9 @@ describe("extractDocxText", () => {
     };
 
     const result = await extractDocxText(file as any);
-    expect(result.content).toContain("1. $1");
-    expect(result.content).toContain("2. $1");
-    expect(result.content).not.toContain("One");
+    expect(result.content).toContain("1. One");
+    expect(result.content).toContain("2. Two");
+    expect(result.content).not.toContain("$1");
   });
 
   it("surfaces mammoth extraction warnings in metadata without throwing", async () => {

@@ -166,11 +166,7 @@ describe("addAdminCourseTA", () => {
     } as never);
 
     const result = await addAdminCourseTA(ADMIN, { ...COURSE_OPTS, userId: "u1" });
-    // NOTE: addCourseTA already resolves to { ta: {...} }, and this function wraps
-    // it again as `{ ok: true, ta: result }`, producing a double-nested `ta.ta`
-    // shape rather than a flat `ta`. Asserting the real (buggy) shape here rather
-    // than silently normalizing it away — see final report.
-    expect(result).toMatchObject({ ok: true, ta: { ta: { id: "e1" } } });
+    expect(result).toMatchObject({ ok: true, ta: { id: "e1" } });
     expect(addCourseTA).toHaveBeenCalledWith("c1", { userId: "u1" });
   });
 });

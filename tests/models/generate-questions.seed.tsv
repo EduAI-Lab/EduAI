@@ -1,0 +1,5 @@
+Authorized	PromptPresent	CourseCodePresent	NumQuestions	CourseAccess	Mcq	DifficultyDistribution	ReasoningDistribution
+yes	yes	yes	absent	yes	absent	absent	absent
+yes	yes	yes	valid	yes	valid	provided	provided
+yes	yes	yes	valid	yes	low	absent	provided
+yes	yes	yes	valid	yes	high	provided	absent

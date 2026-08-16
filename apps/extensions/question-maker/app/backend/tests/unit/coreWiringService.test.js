@@ -45,6 +45,8 @@ const baseVariant = {
   reasoningLevel: 'factual',
   choices: null,
   answer: null,
+  selectAllThatApply: false,
+  correctAnswers: null,
   secondaryTopicsId: [],
   questionMetadata: { type: 'SA', primaryTopicId: 'local-t1' },
 };
@@ -74,7 +76,34 @@ describe('pushVariantToCore', () => {
     expect(payload.reasoningLevel).toBe('FACTUAL');
     expect(payload.idempotencyKey).toMatch(/^qm-variant-42-[0-9a-f]{12}$/);
     expect(payload.secondaryTopicIds).toEqual([]);
+    expect(payload.selectAllThatApply).toBe(false);
+    expect(payload.correctAnswers).toBeUndefined();
     expect(cookie).toBe('session=abc');
+  });
+
+  it('push body includes selectAllThatApply and correctAnswers for multi-correct MCQ', async () => {
+    const topic = { ...mockPrimaryTopic, coreTopicId: 'cuid-t1' };
+    topicsFindUnique.mockResolvedValueOnce(topic);
+    pushQuestionToCore.mockResolvedValueOnce({ id: 'cuid-question-mcq' });
+
+    const mcqVariant = {
+      ...baseVariant,
+      questionText: 'Which are sorting algorithms?',
+      choices: ['A) Quicksort', 'B) Mergesort', 'C) Binary search', 'D) Heapsort'],
+      answer: 'A',
+      selectAllThatApply: true,
+      correctAnswers: ['A', 'B', 'D'],
+      questionMetadata: { type: 'MCQ', primaryTopicId: 'local-t1' },
+    };
+
+    await pushVariantToCore(mcqVariant, course, 'session=abc');
+
+    const [payload] = pushQuestionToCore.mock.calls[0];
+    expect(payload.selectAllThatApply).toBe(true);
+    expect(payload.correctAnswers).toEqual(['A', 'B', 'D']);
+    expect(payload.choices).toEqual(mcqVariant.choices);
+    expect(payload.answer).toBe('A');
+    expect(payload.type).toBe('MCQ');
   });
 
   it('idempotency key is stable across identical calls but changes when content changes (#1080 follow-up)', async () => {

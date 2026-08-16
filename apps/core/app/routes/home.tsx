@@ -1,7 +1,6 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/home";
 import { Link } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { IconBrain, IconBook, IconUsers, IconBulb, IconArrowRight, IconCode, IconTerminal, IconCpu } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent } from "@eduai/ui";
@@ -10,6 +9,7 @@ import { SiteFooter } from "~/components/site-footer";
 import { ProjectGoals } from "~/components/project-goals";
 import { projectInfo, siteConfig } from "~/config/site";
 import { SiteNavigation } from "~/components/site-navigation";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -19,7 +19,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (session?.user) {
     return redirect("/dashboard");

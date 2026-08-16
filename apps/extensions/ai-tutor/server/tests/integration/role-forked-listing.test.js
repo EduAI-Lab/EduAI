@@ -6,16 +6,14 @@
  * eduaiClient boundary) and checks whether the seeded course is included,
  * against tests/models/role-forked-listing.oracle.ts.
  *
- * Cross-app finding (filed as #1386, not fixed here): a PlatformRole
- * STUDENT holding an Enrollment=instructor row (a CourseInstructor row here)
- * is visible in Core's listing (enrollment-role keyed, rbac-matrix.md §3) but
- * NOT in ai-tutor's, whose INSTRUCTOR branch is platform-role gated instead.
- * That is ai-tutor's own correct, spec-derived behavior — courseVisibleAiTutor
- * predicts it accurately, so this row asserts normally like every other one.
- * The interesting fact is the cross-app inconsistency itself (visible on one
- * side, not the other, for the same underlying relationship), which the
- * model's Core-site counterpart row for this same (PlatformRole, Enrollment)
- * pair demonstrates by resolving to `true`.
+ * #1386: a PlatformRole STUDENT holding an Enrollment=instructor row (a
+ * CourseInstructor row here) used to be visible in Core's listing
+ * (enrollment-role keyed, rbac-matrix.md §3) but NOT in ai-tutor's, whose
+ * INSTRUCTOR branch was platform-role gated instead. Fixed by having
+ * ai-tutor's STUDENT fork also honor a CourseInstructor row (any publish
+ * state, TA-parity) — courseVisibleAiTutor now predicts `true` for this row
+ * too, matching Core's counterpart row for the same (PlatformRole,
+ * Enrollment) pair.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';

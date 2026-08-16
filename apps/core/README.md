@@ -38,6 +38,8 @@ Copy from `.env.example` (root `npm install` also auto-copies if missing). Criti
 | `BETTER_AUTH_URL` | `http://localhost:3000` in local dev |
 | `ENCRYPTION_KEY` | Required for Canvas token storage (AES-256-GCM) |
 | `EDUAI_API_KEY` | Same value as AI Tutor server + Question Maker |
+| `REDIS_URL` | Shared queue transport and cross-instance `/api/chat` + `/api/completion` rate-limit state |
+| `CHAT_RATE_LIMIT` / `CHAT_RATE_LIMIT_WINDOW_MS` | Completion sliding-window limit (defaults `100` requests / `60000` ms); full semantics in [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) |
 | `EMBEDDING_PROVIDER` / `OPENROUTER_API_KEY` / `OLLAMA_BASE_URL` | Embeddings path — see [`docs/rag-ai/EMBEDDINGS.md`](../../docs/rag-ai/EMBEDDINGS.md) |
 | `RAG_IVFFLAT_PROBES` | ANN index recall/latency tuning for `material_embeddings` (default `10`, clamped `[1, 100]`) — see [`docs/rag-ai/EMBEDDINGS.md#ann-index-940`](../../docs/rag-ai/EMBEDDINGS.md#ann-index-940) |
 

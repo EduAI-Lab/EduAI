@@ -1,0 +1,25 @@
+# S9 — validateContextAndAccess (ai-tutor), census docs/PICT_CENSUS.md § S9.
+# See tests/models/validate-context-and-access.oracle.ts for the oracle spec.
+#
+# `validateContextAndAccess` (apps/extensions/ai-tutor/server/src/services/bugReports.js:145),
+# called from `createBugReport`. Checks run in this order: hierarchy
+# existence (missing id -> 400), then internal consistency (a provided
+# parent id that doesn't match the DB-derived chain -> 400), then role
+# (only STUDENT/INSTRUCTOR may submit contextual reports -> 403), then
+# content-aware authorization (enrolled STUDENT / instructing INSTRUCTOR ->
+# 403 otherwise).
+ContextDepth:   none, course, module, lesson, activity
+Existence:      exists, missing
+Consistency:    consistent, inconsistent
+Role:           STUDENT, INSTRUCTOR, OTHER
+Authorized:     yes, no
+
+IF [ContextDepth] = "none" THEN [Existence] = "exists";
+IF [ContextDepth] = "none" THEN [Consistency] = "consistent";
+IF [ContextDepth] = "none" THEN [Role] = "STUDENT";
+IF [ContextDepth] = "none" THEN [Authorized] = "yes";
+IF [ContextDepth] = "course" THEN [Consistency] = "consistent";
+IF [Existence] = "missing" THEN [Consistency] = "consistent";
+IF [Existence] = "missing" THEN [Authorized] = "yes";
+IF [Consistency] = "inconsistent" THEN [Authorized] = "yes";
+IF [Role] = "OTHER" THEN [Authorized] = "yes";

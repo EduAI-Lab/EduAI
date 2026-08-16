@@ -37,6 +37,7 @@ const BugReportsAdminPage = lazy(() =>
 const AssessmentVariantPage = lazy(() =>
   import('./pages/AssessmentVariantPage').then((m) => ({ default: m.AssessmentVariantPage }))
 );
+const BankDetailPage = lazy(() => import('./pages/BankDetailPage'));
 
 /** Shown while a route chunk is in flight. Deliberately plain — it is visible for a few hundred ms at most. */
 function RouteFallback() {
@@ -136,6 +137,7 @@ function App() {
                       <Route path="/courses/:courseId" element={<CourseDetailPage />} />
                       <Route path="/courses/:courseId/questions/new" element={<QuestionComposerPage />} />
                       <Route path="/courses/:courseId/questions/:questionId/edit" element={<QuestionComposerPage />} />
+                      <Route path="/courses/:courseId/banks/:bankId" element={<BankDetailPage />} />
                       <Route path="/courses/:courseId/assessments/:assessmentId" element={<AssessmentBuilderPage />} />
                       <Route path="/courses/:courseId/assessments/:assessmentId/variants" element={<AssessmentVariantPage />} />
                       <Route path="/courses/:courseId/assessments/variants" element={<AssessmentVariantPage />} />

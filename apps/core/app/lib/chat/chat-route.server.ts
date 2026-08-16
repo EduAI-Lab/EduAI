@@ -1,7 +1,6 @@
 import { redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
@@ -13,6 +12,7 @@ import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import type { User } from "~/lib/auth/types";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Shared loader data for both chat routes (`/chat` and `/chat/:chatId`). The
@@ -42,7 +42,7 @@ export interface ChatBaseData {
 export async function requireChatSessionUser(
   request: LoaderFunctionArgs["request"],
 ): Promise<User> {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (!session?.user) {
     throw redirect("/auth/login");
@@ -158,7 +158,7 @@ export async function loadChatTranscript(
 
 /** Shared preference-save action for both chat routes (POST to the open route). */
 export async function chatPreferencesAction({ request }: ActionFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

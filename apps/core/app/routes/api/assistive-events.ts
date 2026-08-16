@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
-import { auth } from "~/lib/auth/server";
 import {
   ASSISTIVE_CLIENT_EVENT_TYPES,
   isAssistiveClientEventType,
@@ -8,6 +7,7 @@ import {
   sanitizeClientMetrics,
 } from "~/lib/assistive-events.server";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 const bodySchema = z.object({
   eventType: z.string().min(1).max(64),
@@ -24,7 +24,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

@@ -82,6 +82,8 @@ interface FormState {
   reasoningLevel: ReasoningLevel;
   answer: string;
   choices: MCQChoice[];
+  selectAllThatApply: boolean;
+  correctAnswers: string[];
   primaryTopicId: string;
   secondaryTopicIds: string[];
   description: string;
@@ -96,6 +98,8 @@ const createInitialForm = (): FormState => ({
   reasoningLevel: 'factual',
   answer: '',
   choices: DEFAULT_CHOICES.map((c) => ({ ...c })),
+  selectAllThatApply: false,
+  correctAnswers: [],
   primaryTopicId: '',
   secondaryTopicIds: [],
   description: '',
@@ -281,6 +285,10 @@ export function QuestionComposerPage() {
           reasoningLevel: variant?.reasoningLevel ?? 'factual',
           answer: variant?.answer ?? '',
           choices: question.type === 'MCQ' ? choices : DEFAULT_CHOICES.map((c) => ({ ...c })),
+          selectAllThatApply: Boolean(variant?.selectAllThatApply),
+          correctAnswers: Array.isArray(variant?.correctAnswers)
+            ? variant!.correctAnswers!.map((l) => String(l))
+            : [],
           // Variant inherits the source's primary topic (read-only). Edit keeps it editable.
           primaryTopicId: question.primaryTopicId ?? prev.primaryTopicId,
           secondaryTopicIds: (variant?.secondaryTopicsId ?? []).map(String),
@@ -357,7 +365,11 @@ export function QuestionComposerPage() {
       const validChoices = form.choices.filter((c) => c.text.trim().length > 0);
       if (validChoices.length < 2) {
         errors.choices = 'Add at least 2 choices with text.';
-      } else if (form.answer.trim() === '' || !validChoices.some((c) => c.letter === form.answer)) {
+      } else if (form.selectAllThatApply) {
+        if (!form.correctAnswers?.length) {
+          errors.choices = 'Mark at least one choice as correct.';
+        }
+      } else if (!form.answer) {
         errors.choices = 'Mark exactly one choice as correct.';
       }
     }
@@ -633,6 +645,11 @@ export function QuestionComposerPage() {
       setError(null);
       const choices = buildVariantChoices();
       const answer = form.answer.trim() || null;
+      const selectAllThatApply = form.questionType === 'MCQ' ? form.selectAllThatApply : false;
+      const correctAnswers =
+        form.questionType === 'MCQ' && form.selectAllThatApply
+          ? form.correctAnswers
+          : null;
 
       if (mode === 'edit') {
         if (sourceQuestionId == null || !sourceVariant) throw new Error('Source question is not loaded.');
@@ -654,6 +671,8 @@ export function QuestionComposerPage() {
           reasoningLevel: form.reasoningLevel,
           answer,
           choices,
+          selectAllThatApply,
+          correctAnswers,
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           isDraft: nextIsDraft,
         });
@@ -690,6 +709,8 @@ export function QuestionComposerPage() {
           reasoningLevel: form.reasoningLevel,
           answer,
           choices,
+          selectAllThatApply,
+          correctAnswers,
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           referenceId: referenceId != null ? Number(referenceId) : undefined,
           isAiGenerated,
@@ -714,6 +735,8 @@ export function QuestionComposerPage() {
         reasoningLevel: form.reasoningLevel,
         answer,
         choices,
+        selectAllThatApply,
+        correctAnswers,
         secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
         isAiGenerated,
         isDraft: !markAsReviewed,
@@ -878,6 +901,10 @@ export function QuestionComposerPage() {
                 onVariantTextChange={(v) => setField('questionText', v)}
                 onVariantChoicesChange={(c) => setField('choices', c)}
                 onVariantAnswerChange={(v) => setField('answer', v)}
+                selectAllThatApply={form.selectAllThatApply}
+                correctAnswers={form.correctAnswers}
+                onSelectAllThatApplyChange={(v) => setField('selectAllThatApply', v)}
+                onCorrectAnswersChange={(letters) => setField('correctAnswers', letters)}
                 disabled={isSubmitting}
                 isStreaming={isGenerating}
                 onClear={() =>
@@ -886,6 +913,8 @@ export function QuestionComposerPage() {
                     questionText: '',
                     choices: DEFAULT_CHOICES.map((c) => ({ ...c })),
                     answer: '',
+                    selectAllThatApply: false,
+                    correctAnswers: [],
                   }))
                 }
                 idPrefix="composer"

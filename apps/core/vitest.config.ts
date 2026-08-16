@@ -17,6 +17,10 @@ export default defineConfig({
     maxWorkers: process.env.CI ? 2 : undefined,
     env: {
       VITEST_SKIP_PRISMA_EAGER_CONNECT: "1",
+      // Route fixtures intentionally reuse identities such as `user-1`.
+      // Keep unrelated unit files from sharing a small Redis bucket; focused
+      // limiter suites override this with their own explicit thresholds.
+      CHAT_RATE_LIMIT: "1000000",
     },
   },
 });

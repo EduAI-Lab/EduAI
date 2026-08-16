@@ -7,11 +7,11 @@
  */
 import type { ActionFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { UpdateCourseResponseStyleSchema } from "~/lib/courses/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "PATCH") {
@@ -29,7 +29,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -56,7 +56,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const user = session.user;
-  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
+  const { course, access } = await resolveCourseAccessGate(user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,

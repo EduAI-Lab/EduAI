@@ -1,6 +1,13 @@
-import { useState } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { useState } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
@@ -11,9 +18,23 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
-const stopChat = vi.hoisted(() => vi.fn());
-const setChatMessages = vi.hoisted(() => vi.fn());
-const setChatInput = vi.hoisted(() => vi.fn());
+const {
+  handleSubmitMock,
+  handleInputChangeMock,
+  postAssistiveClientEventMock,
+  appendMock,
+  stopChat,
+  setChatMessages,
+  setChatInput,
+} = vi.hoisted(() => ({
+  handleSubmitMock: vi.fn(),
+  handleInputChangeMock: vi.fn(),
+  postAssistiveClientEventMock: vi.fn(),
+  appendMock: vi.fn(),
+  stopChat: vi.fn(),
+  setChatMessages: vi.fn(),
+  setChatInput: vi.fn(),
+}));
 
 vi.mock("@ai-sdk/react", () => ({
   useChat: (options: { initialMessages?: unknown[] }) => {
@@ -30,14 +51,19 @@ vi.mock("@ai-sdk/react", () => ({
     return {
       messages,
       input: "",
-      handleInputChange: vi.fn(),
-      handleSubmit: vi.fn(),
+      handleInputChange: handleInputChangeMock,
+      handleSubmit: handleSubmitMock,
       isLoading: false,
       stop: stopChat,
+      append: appendMock,
       setMessages,
       setInput: setChatInput,
     };
   },
+}));
+
+vi.mock("~/lib/assistive-events.client", () => ({
+  postAssistiveClientEvent: postAssistiveClientEventMock,
 }));
 
 vi.mock("~/hooks/api/use-courses", () => ({
@@ -77,9 +103,23 @@ vi.mock("~/components/assistive/assistive-ui-provider", () => ({
 }));
 
 vi.mock("~/components/chat/chat-course-scoped-view", () => ({
-  ChatCourseScopedView: (props: unknown) => {
+  ChatCourseScopedView: (props: {
+    onSelectPrompt?: (prompt: string) => void;
+    routedModelByMessageId?: Record<string, string>;
+    cappedMessageIds?: Set<string>;
+    onContinue?: (messageId: string) => Promise<void>;
+  }) => {
     captureCourseViewProps(props);
-    return <div data-testid="chat-course-scoped-view" />;
+
+    return (
+      <button
+        type="button"
+        aria-label="Select suggested prompt"
+        onClick={() => props.onSelectPrompt?.("Summarize this whole chat")}
+      >
+        Select suggested prompt
+      </button>
+    );
   },
 }));
 
@@ -105,7 +145,7 @@ const baseData: ChatBaseData = {
     updatedAt: new Date(),
   },
   assistDefault: false,
-  lastCourseCode: null,
+  lastCourseCode: "COSC 101",
   motionReduced: false,
   density: "comfortable",
   theme: "system",
@@ -127,11 +167,11 @@ const autoRoutingData: ChatBaseData = {
 };
 
 beforeEach(() => {
-  captureCourseViewProps.mockClear();
-  captureUseChatOptions.mockClear();
-  stopChat.mockClear();
-  setChatMessages.mockClear();
-  setChatInput.mockClear();
+  vi.clearAllMocks();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+  );
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -148,11 +188,9 @@ beforeEach(() => {
   });
 });
 
-// Explicit cleanup — a still-mounted ChatScreen instance from a prior test can
-// otherwise leave pending fetch/effect work that fires during a later test's
-// assertions (observed with the #1246 regenerate tests below).
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 function renderChatScreen(
@@ -274,17 +312,225 @@ describe("ChatScreen — header", () => {
       screen.getByRole("heading", { level: 1, name: "Course Chat" }),
     ).toBeInTheDocument();
   });
+  it("submits suggested prompts through the shared submit handler", async () => {
+    renderChatScreen();
 
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Select suggested prompt",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(handleInputChangeMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({
+            value: "Summarize this whole chat",
+          }),
+        }),
+      );
+
+      expect(postAssistiveClientEventMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "task_initiation",
+        }),
+      );
+
+      expect(handleSubmitMock).toHaveBeenCalledTimes(1);
+    });
+  });
   it("hydrates routed model ids from the stored transcript", () => {
     const transcript = makePersistedTranscript();
 
     renderChatScreen(transcript);
 
-    expect(captureCourseViewProps).toHaveBeenCalledWith(
-      expect.objectContaining({
-        routedModelByMessageId: { "assistant-1": "openai:gpt-4" },
-      }),
-    );
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+
+    expect(latestProps?.routedModelByMessageId).toEqual({
+      "assistant-1": "openai:gpt-4",
+    });
+  });
+
+  it("restores Continue from persisted capped-message metadata", () => {
+    const transcript: ChatTranscript = {
+      chat: {
+        id: "chat-1",
+        title: "Stored chat",
+        systemPrompt: null,
+        adhdAssist: false,
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        ownerId: "user-1",
+        ownerName: "Test User",
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Stored partial answer",
+          metadata: {
+            resolvedModelId: "openai:gpt-4",
+            finishReason: "length",
+            hitLongOutputCap: true,
+          },
+        },
+      ],
+      canEdit: true,
+    };
+
+    renderChatScreen(transcript);
+
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+
+    expect(latestProps?.cappedMessageIds).toEqual(new Set(["assistant-1"]));
+  });
+
+  it("shows Continue from the server's live-stream annotation", () => {
+    renderChatScreen();
+
+    const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
+      onFinish: (message: Record<string, unknown>) => void;
+    };
+
+    act(() => {
+      options.onFinish({
+        id: "assistant-live",
+        role: "assistant",
+        content: "Partial answer",
+        annotations: [{ hitLongOutputCap: true }],
+      });
+    });
+
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+    expect(latestProps?.cappedMessageIds).toEqual(new Set(["assistant-live"]));
+  });
+
+  it("shows Continue when the explicit cap signal is true even for a non-length finish", () => {
+    renderChatScreen();
+
+    const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
+      onFinish: (
+        message: Record<string, unknown>,
+        details?: { finishReason?: string },
+      ) => void;
+    };
+
+    act(() => {
+      options.onFinish(
+        {
+          id: "assistant-provider-stop",
+          role: "assistant",
+          content: "Capped answer",
+          annotations: [{ hitLongOutputCap: true }],
+        },
+        { finishReason: "stop" },
+      );
+    });
+
+    expect(
+      captureCourseViewProps.mock.calls.at(-1)?.[0]?.cappedMessageIds,
+    ).toEqual(new Set(["assistant-provider-stop"]));
+  });
+
+  it("does not show Continue from finishReason alone without the cap signal", () => {
+    renderChatScreen();
+
+    const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
+      onFinish: (
+        message: Record<string, unknown>,
+        details?: { finishReason?: string },
+      ) => void;
+    };
+
+    act(() => {
+      options.onFinish(
+        {
+          id: "assistant-unrelated-length",
+          role: "assistant",
+          content: "Provider-limited answer",
+          annotations: [{ hitLongOutputCap: false }],
+        },
+        { finishReason: "length" },
+      );
+    });
+
+    expect(
+      captureCourseViewProps.mock.calls.at(-1)?.[0]?.cappedMessageIds,
+    ).toEqual(new Set());
+  });
+
+  it("shows Continue again when a continuation also hits the server cap", async () => {
+    const transcript = makePersistedTranscript();
+    transcript.messages[0] = {
+      ...transcript.messages[0],
+      metadata: { hitLongOutputCap: true },
+    };
+    renderChatScreen(transcript);
+
+    let latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+    const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
+      onFinish: (message: Record<string, unknown>) => void;
+    };
+
+    await act(async () => {
+      await latestProps.onContinue("assistant-1");
+    });
+
+    act(() => {
+      options.onFinish({
+        id: "assistant-2",
+        role: "assistant",
+        content: "Another capped answer",
+        annotations: [{ hitLongOutputCap: true }],
+      });
+    });
+
+    latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+    expect(latestProps.cappedMessageIds).toEqual(new Set(["assistant-2"]));
+  });
+
+  it("submits a continuation for a persisted capped response", async () => {
+    const transcript: ChatTranscript = {
+      chat: {
+        id: "chat-1",
+        title: "Stored chat",
+        systemPrompt: null,
+        adhdAssist: false,
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        ownerId: "user-1",
+        ownerName: "Test User",
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Stored partial answer",
+          metadata: {
+            hitLongOutputCap: true,
+          },
+        },
+      ],
+      canEdit: true,
+    };
+
+    renderChatScreen(transcript);
+
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+
+    expect(latestProps?.onContinue).toBeDefined();
+
+    await latestProps?.onContinue?.("assistant-1");
+
+    expect(appendMock).toHaveBeenCalledWith({
+      role: "user",
+      content:
+        "Continue the previous response from where it stopped. Do not repeat content already provided.",
+    });
   });
 
   it("carries an explicit model selection into the created chat route", async () => {
@@ -359,9 +605,11 @@ describe("ChatScreen — header", () => {
 
   it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
     let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
-    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
-      resolveFetch = resolve;
-    });
+    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>(
+      (resolve) => {
+        resolveFetch = resolve;
+      },
+    );
     const fetchSpy = vi
       .spyOn(global, "fetch")
       .mockReturnValue(fetchPromise as unknown as Promise<Response>);
@@ -371,9 +619,10 @@ describe("ChatScreen — header", () => {
     // Save fires before Focus Mode is toggled on — mirrors
     // handleSystemPromptSave reading focusModeRef only after its in-flight
     // fetch resolves.
-    const savePromise = captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave(
-      "Be concise",
-    );
+    const savePromise =
+      captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave(
+        "Be concise",
+      );
 
     // User flips Focus Mode on while the save request is still in flight.
     act(() => {

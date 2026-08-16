@@ -1,0 +1,22 @@
+# S9 — extractQuestionsWithEduAI (QM), census docs/PICT_CENSUS.md § S9.
+# See tests/models/extract-questions-with-eduai.oracle.ts for the oracle spec.
+#
+# `extractQuestionsWithEduAI` (apps/extensions/question-maker/app/backend/src/services/aiService.js:292),
+# reached via the exported `extractQuestionsFromText`. Each chunk gets one
+# retry on an empty/failed extraction; if the retry ALSO comes up empty, the
+# error propagates out of the loop and ABORTS the whole call — any earlier
+# chunk's already-extracted questions are discarded, not returned partially.
+# `DuplicateBetweenChunks` and `Chunk2Outcome` are pinned irrelevant when
+# `ChunkCount` is "one" (no second chunk to interact with), and
+# `DuplicateBetweenChunks` is pinned irrelevant whenever either chunk fails
+# outright (there is no case where both chunks' output exists to compare).
+ChunkCount:              one, two
+Chunk1Outcome:           success, retry-succeeds, retry-fails
+Chunk2Outcome:           success, retry-succeeds, retry-fails
+DuplicateBetweenChunks:  yes, no
+TopicsPresent:           yes, no
+
+IF [ChunkCount] = "one" THEN [Chunk2Outcome] = "success";
+IF [ChunkCount] = "one" THEN [DuplicateBetweenChunks] = "no";
+IF [Chunk1Outcome] = "retry-fails" THEN [DuplicateBetweenChunks] = "no";
+IF [Chunk2Outcome] = "retry-fails" THEN [DuplicateBetweenChunks] = "no";

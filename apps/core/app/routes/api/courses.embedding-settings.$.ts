@@ -1,5 +1,4 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
@@ -15,9 +14,10 @@ import {
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { httpStatusForEnqueueError } from "~/lib/queue/errors.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function requireManageSession(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return { error: jsonResponse({ error: "Unauthorized" }, 401) };
   }

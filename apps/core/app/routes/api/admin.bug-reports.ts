@@ -12,7 +12,6 @@
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
 import {
   getBugReportById,
   isBugReportSource,
@@ -22,6 +21,7 @@ import {
 } from "~/lib/bug-reports/server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -45,7 +45,7 @@ async function requireAdmin(request: Request) {
       }),
     );
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     logAdminDenied(null);
     return { response: json(401, { error: "Unauthorized" }), session: null };

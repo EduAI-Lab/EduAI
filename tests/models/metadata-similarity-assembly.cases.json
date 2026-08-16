@@ -1,0 +1,58 @@
+[
+  {
+    "TopicMatch": "yes",
+    "TypeMatch": "no",
+    "DifficultyMatch": "no",
+    "ReasoningMatch": "no",
+    "AlreadyUsed": "yes",
+    "HasFallback": "no"
+  },
+  {
+    "TopicMatch": "no",
+    "TypeMatch": "yes",
+    "DifficultyMatch": "yes",
+    "ReasoningMatch": "yes",
+    "AlreadyUsed": "yes",
+    "HasFallback": "yes"
+  },
+  {
+    "TopicMatch": "no",
+    "TypeMatch": "yes",
+    "DifficultyMatch": "no",
+    "ReasoningMatch": "yes",
+    "AlreadyUsed": "no",
+    "HasFallback": "no"
+  },
+  {
+    "TopicMatch": "yes",
+    "TypeMatch": "yes",
+    "DifficultyMatch": "yes",
+    "ReasoningMatch": "no",
+    "AlreadyUsed": "yes",
+    "HasFallback": "yes"
+  },
+  {
+    "TopicMatch": "yes",
+    "TypeMatch": "no",
+    "DifficultyMatch": "no",
+    "ReasoningMatch": "yes",
+    "AlreadyUsed": "yes",
+    "HasFallback": "yes"
+  },
+  {
+    "TopicMatch": "yes",
+    "TypeMatch": "no",
+    "DifficultyMatch": "yes",
+    "ReasoningMatch": "no",
+    "AlreadyUsed": "no",
+    "HasFallback": "no"
+  },
+  {
+    "TopicMatch": "no",
+    "TypeMatch": "no",
+    "DifficultyMatch": "yes",
+    "ReasoningMatch": "no",
+    "AlreadyUsed": "yes",
+    "HasFallback": "no"
+  }
+]

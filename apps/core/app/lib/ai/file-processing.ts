@@ -507,8 +507,8 @@ function convertHtmlToMarkdown(html: string): string {
 
   markdown = markdown.replace(/<ol[^>]*>(.*?)<\/ol>/gis, (match, content) => {
     let counter = 1;
-    const items = content.replace(/<li[^>]*>(.*?)<\/li>/gis, () => {
-      return `${counter++}. $1\n`;
+    const items = content.replace(/<li[^>]*>(.*?)<\/li>/gis, (_match: string, itemText: string) => {
+      return `${counter++}. ${itemText}\n`;
     });
     return `\n${items}\n`;
   });

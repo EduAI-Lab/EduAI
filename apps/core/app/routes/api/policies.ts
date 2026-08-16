@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
-import { auth } from "~/lib/auth/server";
 import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
@@ -12,6 +11,7 @@ import {
   isPolicyKey,
   setPolicy,
 } from "~/lib/policy.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * GET /api/policies — read all configurable RBAC policy flags.
@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // otherwise 403). A real user request must NOT be diverted to the service-key
   // path just because a proxy/SDK attached a stray `Authorization: Bearer`
   // header — that header is only authoritative when there is no user session.
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (session?.user) {
     if (session.user.role !== "ADMIN") {
       return json({ policies: await getPolicies() });

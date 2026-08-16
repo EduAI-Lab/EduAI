@@ -17,7 +17,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/logging.server", () => ({
@@ -35,7 +35,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 
@@ -239,7 +239,7 @@ describe("GET /api/users course student candidates", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },
     } as never);
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -262,7 +262,7 @@ describe("GET /api/users course student candidates", () => {
   });
 
   it("returns only the candidate fields for a course-scoped search", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
@@ -280,7 +280,7 @@ describe("GET /api/users course student candidates", () => {
   });
 
   it("never runs the admin-shaped query for a courseId request — narrow select, no admin transaction", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "c1" },
       access: { level: "instructor", rank: 2 },
     } as never);
