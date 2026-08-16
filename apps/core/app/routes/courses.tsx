@@ -7,6 +7,7 @@ import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesView, type CoursesRole } from '~/components/courses/courses-view'
 import { useCourses } from '~/hooks/api/use-courses'
+import type { CourseFilterKey } from '~/hooks/api/use-courses'
 import { TablePagination } from '~/components/ui/table-pagination'
 import {
   Breadcrumb,
@@ -72,11 +73,26 @@ export default function CoursesPage() {
     total: courseTotal,
     pagination,
     setPagination,
+    search,
+    setSearch,
+    selectedFilters,
+    setFilter,
+    clearFilters,
+    availableValues,
     loading,
     createCourse,
     updateCourse,
     deleteCourse,
   } = useCourses()
+
+  const handleFilterChange = (groupId: string, values: string[]) => {
+    setFilter(groupId as CourseFilterKey, values)
+  }
+
+  const handleClearAll = () => {
+    setSearch('')
+    clearFilters()
+  }
 
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
@@ -147,6 +163,13 @@ export default function CoursesPage() {
             role="admin"
             courses={courses}
             instructors={instructors}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
@@ -162,6 +185,13 @@ export default function CoursesPage() {
             courses={courses}
             authorizedUnits={authorizedUnits}
             instructors={instructors}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
@@ -171,6 +201,13 @@ export default function CoursesPage() {
           <CoursesView
             role="instructor"
             courses={courses}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}

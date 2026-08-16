@@ -7,14 +7,38 @@ import type { Course } from '~/hooks/api/use-courses'
 
 // Thin per-role wrappers over the single role-gated `CoursesView` (#1087 Group A)
 // so the test bodies below (unchanged) exercise each role exactly as before.
-function CoursesAdminView(props: Omit<Extract<CoursesViewProps, { role: 'admin' }>, 'role'>) {
-  return <CoursesView role="admin" {...props} />
+// The controlled server-driven list props (#1263) default to inert values here;
+// individual tests override them (search, selectedFilters, onFilterChange, …)
+// via the same props object when the wiring is what matters.
+const CONTROLLED_DEFAULTS = {
+  search: '',
+  onSearchChange: () => {},
+  selectedFilters: { status: [], term: [], department: [] },
+  onFilterChange: () => {},
+  availableValues: {} as Record<string, string[]>,
+  total: 0,
+  onClearAll: () => {},
 }
-function CoursesUnitAdminView(props: Omit<Extract<CoursesViewProps, { role: 'unit-admin' }>, 'role'>) {
-  return <CoursesView role="unit-admin" {...props} />
+
+type ControlledKeys = keyof typeof CONTROLLED_DEFAULTS
+
+function CoursesAdminView(
+  props: Omit<Extract<CoursesViewProps, { role: 'admin' }>, 'role' | ControlledKeys> &
+    Partial<typeof CONTROLLED_DEFAULTS>,
+) {
+  return <CoursesView role="admin" {...CONTROLLED_DEFAULTS} {...props} />
 }
-function CoursesInstructorView(props: Omit<Extract<CoursesViewProps, { role: 'instructor' }>, 'role'>) {
-  return <CoursesView role="instructor" {...props} />
+function CoursesUnitAdminView(
+  props: Omit<Extract<CoursesViewProps, { role: 'unit-admin' }>, 'role' | ControlledKeys> &
+    Partial<typeof CONTROLLED_DEFAULTS>,
+) {
+  return <CoursesView role="unit-admin" {...CONTROLLED_DEFAULTS} {...props} />
+}
+function CoursesInstructorView(
+  props: Omit<Extract<CoursesViewProps, { role: 'instructor' }>, 'role' | ControlledKeys> &
+    Partial<typeof CONTROLLED_DEFAULTS>,
+) {
+  return <CoursesView role="instructor" {...CONTROLLED_DEFAULTS} {...props} />
 }
 function CoursesMixedView(props: Omit<Extract<CoursesViewProps, { role: 'mixed' }>, 'role'>) {
   return <CoursesView role="mixed" {...props} />
@@ -386,17 +410,17 @@ describe('CoursesAdminView — mutation flows', () => {
     expect(screen.getByText('Create new course')).toBeInTheDocument()
   })
 
-  it('shows the no-results state when the search text matches nothing', () => {
+  it('shows the no-results state when the controlled search returns no rows', () => {
     wrap(
       <CoursesAdminView
-        courses={[PUBLISHED_COURSE]}
+        courses={[]}
+        search="nonexistent xyz"
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
         onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
-    fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: 'nonexistent xyz' } })
     expect(screen.getByText('No courses match your search.')).toBeInTheDocument()
   })
 })
@@ -695,18 +719,18 @@ describe('CoursesUnitAdminView — mutation flows', () => {
     expect(screen.getByRole('heading', { name: 'Create course' })).toBeInTheDocument()
   })
 
-  it('shows the no-results state when the search text matches nothing', () => {
+  it('shows the no-results state when the controlled search returns no rows', () => {
     wrap(
       <CoursesUnitAdminView
-        courses={[PUBLISHED_COURSE]}
+        courses={[]}
         authorizedUnits={['COSC']}
+        search="nonexistent xyz"
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
         onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
-    fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: 'nonexistent xyz' } })
     expect(screen.getByText('No courses match your search.')).toBeInTheDocument()
   })
 })
@@ -951,5 +975,86 @@ describe('CoursesMixedView', () => {
     )
     expect(screen.queryByText(/previous term/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/upcoming term/i)).not.toBeInTheDocument()
+  })
+})
+
+// Controlled (server-driven) list wiring (#1263)
+describe('CoursesView — controlled list wiring', () => {
+  it('renders the search input from the controlled search value', () => {
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        search="algebra"
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByLabelText(/search courses/i)).toHaveValue('algebra')
+  })
+
+  it('forwards onSearchChange instead of filtering locally', () => {
+    const onSearchChange = vi.fn()
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        onSearchChange={onSearchChange}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: 'data' } })
+    expect(onSearchChange).toHaveBeenCalledWith('data')
+    // Controlled mode must not drop the row the server returned.
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+  })
+
+  it('reports the server total instead of the page length', () => {
+    wrap(
+      <CoursesAdminView
+        courses={[PUBLISHED_COURSE]}
+        search="cosc"
+        total={47}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText(/47 courses found/)).toBeInTheDocument()
+  })
+
+  it('keeps the toolbar visible when a controlled search returns zero rows', () => {
+    wrap(
+      <CoursesAdminView
+        courses={[]}
+        search="nonexistent"
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByLabelText(/search courses/i)).toBeInTheDocument()
+    expect(screen.getByText('No courses match your search.')).toBeInTheDocument()
+  })
+
+  it('offers the full availableValues to the filter dropdowns', () => {
+    // Only one course is loaded (one term), but the server reports three terms
+    // across the whole set — the Term dropdown must still render.
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        availableValues={{ term: ['W1::2026', 'W2::2026', 'W1::2025'], status: [], department: [] }}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText('Term')).toBeInTheDocument()
   })
 })

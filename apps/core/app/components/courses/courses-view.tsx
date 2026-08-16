@@ -20,7 +20,7 @@ import {
 import { TERM_CODES, termName, termFromDate, termInfoFromDate } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
-import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
+import type { Course, CreateCourseInput, UpdateCourseInput, CourseFilters } from '~/hooks/api/use-courses'
 import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
 import { useCourseCardPreferences } from '~/hooks/use-course-card-preferences'
 import {
@@ -44,7 +44,7 @@ interface Instructor {
 /** Effective role this view is rendered for — one config/branch per role (#1087 Group A). */
 export type CoursesRole = 'admin' | 'unit-admin' | 'instructor' | 'mixed'
 
-interface MutableRoleProps {
+interface MutableRoleProps extends ControlledListProps {
   courses: Course[]
   instructors?: Instructor[]
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
@@ -72,6 +72,17 @@ interface MixedViewProps {
   courses: Course[]
   taCourseIds: string[]
   enrolledCourseIds: string[]
+}
+
+/** Controlled (server-driven) list state threaded from `useCourses` (#1263). */
+interface ControlledListProps {
+  search: string
+  onSearchChange: (value: string) => void
+  selectedFilters: CourseFilters
+  onFilterChange: (groupId: string, values: string[]) => void
+  availableValues: Record<string, string[]>
+  total: number
+  onClearAll: () => void
 }
 
 export type CoursesViewProps = AdminViewProps | UnitAdminViewProps | InstructorViewProps | MixedViewProps
@@ -157,7 +168,7 @@ export function CoursesView(props: CoursesViewProps) {
 // Admin
 // ---------------------------------------------------------------------------
 
-function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: AdminViewProps) {
+function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle, search, onSearchChange, selectedFilters, onFilterChange, availableValues, total, onClearAll }: AdminViewProps) {
   const config = COURSES_ROLE_CONFIG.admin
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
@@ -331,6 +342,13 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
             optionLabel: getDepartmentLabel,
           }),
         ]}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        selectedFilters={selectedFilters}
+        onFilterChange={onFilterChange}
+        availableValues={availableValues}
+        totalCount={total}
+        onClearAll={onClearAll}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
@@ -449,6 +467,13 @@ function UnitAdminCoursesBody({
   onEditCourse,
   onDeleteCourse,
   onPublishToggle,
+  search,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  total,
+  onClearAll,
 }: UnitAdminViewProps) {
   const config = COURSES_ROLE_CONFIG['unit-admin']
   const [createOpen, setCreateOpen] = useState(false)
@@ -672,6 +697,13 @@ function UnitAdminCoursesBody({
             optionLabel: getDepartmentLabel,
           }),
         ]}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        selectedFilters={selectedFilters}
+        onFilterChange={onFilterChange}
+        availableValues={availableValues}
+        totalCount={total}
+        onClearAll={onClearAll}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
@@ -786,7 +818,7 @@ function UnitAdminCoursesBody({
 // Instructor
 // ---------------------------------------------------------------------------
 
-function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: InstructorViewProps) {
+function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle, search, onSearchChange, selectedFilters, onFilterChange, availableValues, total, onClearAll }: InstructorViewProps) {
   const config = COURSES_ROLE_CONFIG.instructor
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
@@ -960,6 +992,13 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
           buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
           buildDepartmentFilterGroup<Course>((c) => c.department),
         ]}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        selectedFilters={selectedFilters}
+        onFilterChange={onFilterChange}
+        availableValues={availableValues}
+        totalCount={total}
+        onClearAll={onClearAll}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
