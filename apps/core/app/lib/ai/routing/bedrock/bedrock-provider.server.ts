@@ -278,7 +278,9 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
 
     const stream = new ReadableStream<LanguageModelV1StreamPart>({
       start: async (controller) => {
-        let buffer = new Uint8Array(0);
+        // ReadableStream chunks and parse leftovers are Uint8Array<ArrayBufferLike>;
+        // `new Uint8Array(0)` infers the narrower Uint8Array<ArrayBuffer>.
+        let buffer: Uint8Array = new Uint8Array(0);
         let finishReason: LanguageModelV1FinishReason = "unknown";
         let usage = { promptTokens: 0, completionTokens: 0 };
 

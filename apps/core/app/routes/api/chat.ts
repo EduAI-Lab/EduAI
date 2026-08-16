@@ -2484,7 +2484,7 @@ ${buildEmptyCourseRagBlock()}`;
               serverId: overflow.serverId,
               previousServerId: failedPick.serverId,
             });
-            result = await runStreamText();
+            ({ result, streamData: liveStreamData } = await runStreamText());
           }
         } catch (retryError) {
           releaseAdmission();
