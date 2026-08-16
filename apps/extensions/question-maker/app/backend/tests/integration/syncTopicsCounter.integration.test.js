@@ -60,6 +60,8 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   getCourseEnrollmentsFromCore: vi.fn().mockResolvedValue({
     enrollments: [{ studentId: 'user-cuid-inst', role: 'INSTRUCTOR', isActive: true }],
   }),
+  getCourseFromCore: vi.fn().mockResolvedValue({ id: 'core-c-1', department: 'COSC' }),
+  getMyProfileFromCore: vi.fn().mockResolvedValue({ role: 'INSTRUCTOR', authorizedUnits: [] }),
 }));
 
 const { default: app } = await import('../../src/app.js');

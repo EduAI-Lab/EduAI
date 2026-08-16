@@ -1,13 +1,20 @@
 export type EvalCondition =
   | "baseline"
   | "assist-prompt-only"
-  | "assist-oversight";
+  | "assist-oversight"
+  | "assist-deterministic";
 
 export type EvalConditionConfig = {
   adhdAssist: boolean;
   label: string;
   dirName: string;
   requiresOversight: boolean | null;
+  /**
+   * Research ablation only (#1226): server must also have
+   * ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY=true for this condition —
+   * see isAdhdOversightDeterministicOnly() in adhd-oversight.ts.
+   */
+  requiresDeterministicOnly?: boolean;
 };
 
 export const CONDITIONS: Record<EvalCondition, EvalConditionConfig> = {
@@ -29,8 +36,18 @@ export const CONDITIONS: Record<EvalCondition, EvalConditionConfig> = {
     dirName: "assist-oversight",
     requiresOversight: true,
   },
+  "assist-deterministic": {
+    adhdAssist: true,
+    label: "ADHD Assist + deterministic-only oversight (ablation)",
+    dirName: "assist-deterministic",
+    requiresOversight: true,
+    requiresDeterministicOnly: true,
+  },
 };
 
+/** The three conditions "all-three" resolves to (Form A RQ3) — does not
+ * include assist-deterministic, which is a separate ablation selected
+ * explicitly via --mode assist-deterministic, not bundled into this mode. */
 export const ALL_CONDITIONS: EvalCondition[] = [
   "baseline",
   "assist-prompt-only",
@@ -77,7 +94,7 @@ export function resolveConditions(
   const mapped = LEGACY_MODE_ALIASES[rawMode] ?? rawMode;
   if (!(mapped in CONDITIONS)) {
     throw new EvalAdhdAssistModeError(
-      `--mode must be baseline|assist-prompt-only|assist-oversight|all-three ` +
+      `--mode must be baseline|assist-prompt-only|assist-oversight|assist-deterministic|all-three ` +
         `(legacy: off|on|both), got "${rawMode}"`,
     );
   }

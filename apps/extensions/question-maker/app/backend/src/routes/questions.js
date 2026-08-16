@@ -8,8 +8,11 @@
  *    requireQuestionAccess) and scope the service by the authorized course's
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
  *  - #312: TA may edit/delete only question_metadata they created.
- *  - List/aggregate routes (list, stats, generate, approve) carry the flat gate
- *    only and remain caller-scoped.
+ *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
+ *    remain caller-scoped.
+ *  - POST /approve is the exception: no flat role gate — a course TA (platform
+ *    STUDENT + TA enrollment) may create question_metadata shells, so the
+ *    per-course gate alone authorizes that route (see its inline comment).
  */
 import express from 'express';
 import {
@@ -35,6 +38,10 @@ import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
 import { parseLimitOffset } from '../utils/listPagination.js';
 import { parseQuestionListFilters } from '../utils/questionListQuery.js';
+import {
+  parseApprovalTarget,
+  prepareApprovalQuestions
+} from '../utils/questionApproval.js';
 
 const router = express.Router();
 
@@ -46,6 +53,20 @@ function denyTaNotOwner(req, res) {
     return true;
   }
   return false;
+}
+
+/** Validate and normalize the single target course for an approval batch. */
+function validateApprovalTarget(req, res, next) {
+  const { error, targetCourseId } = parseApprovalTarget(req.body);
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error
+    });
+  }
+
+  req.approvalCourseId = targetCourseId;
+  next();
 }
 
 /**
@@ -155,6 +176,7 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
     const listFilters = parseQuestionListFilters(req.query);
     const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
+      questionBankId: req.query.questionBankId,
       ...listFilters,
       limit,
       offset
@@ -554,55 +576,48 @@ router.post(
   }
 );
 
-/** POST /api/questions/approve – bulk saves approved generated questions into the question bank. */
-router.post('/approve', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
-  try {
-    const { questions, courseId, classId } = req.body;
-
-    if (!questions || !Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Questions array is required'
+/**
+ * POST /api/questions/approve – bulk saves approved questions into one authorized course.
+ *
+ * Unlike the other authoring routes, this endpoint has no flat platform-role gate:
+ * a course TA (platform STUDENT + TA enrollment) is authorized to create
+ * question_metadata shells (§16, issue #1106), and `requireCourseAccess({ min: 'ta' })`
+ * is the sole authorization gate — it admits ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) /
+ * TA(C) while rejecting everyone else with insufficient course access.
+ */
+router.post(
+  '/approve',
+  authenticateToken,
+  validateApprovalTarget,
+  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.approvalCourseId }),
+  async (req, res, next) => {
+    try {
+      const { questions } = req.body;
+      const targetCourseId = req.qmCourse.id;
+      const prepared = prepareApprovalQuestions(questions, {
+        targetCourseId,
+        createdBy: req.user.id,
+        normalizeTopicId: normalizePrimaryTopicId
       });
-    }
+      if (prepared.error) {
+        return res.status(400).json({
+          success: false,
+          error: prepared.error
+        });
+      }
 
-    const normalizedQuestions = questions.map((q) => {
-      const candidateCourseId = q.courseId ?? q.classId ?? courseId ?? classId;
-      const desc = q.description ?? q.content;
-      return {
-        description: typeof desc === 'string' && desc.trim() ? desc.trim() : null,
-        courseId: candidateCourseId === '' ? undefined : candidateCourseId,
-        // No default: topics use CUID string PKs with a real FK, so a fabricated id
-        // ("1") matches no topic and fails the insert. Require a valid one up front.
-        primaryTopicId: normalizePrimaryTopicId(q.primaryTopicId),
-        type: q.type,
-        questionOrder: q.questionOrder,
-        createdBy: req.user.id
-      };
-    });
+      const savedQuestions = await createMultipleQuestions(req.qmCourse.userId, prepared.questions);
 
-    const invalid = normalizedQuestions.find(
-      (q) => q.courseId === undefined || q.courseId === null || !q.primaryTopicId
-    );
-
-    if (invalid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Each question must include courseId and a valid primaryTopicId'
+      res.status(201).json({
+        success: true,
+        message: `${savedQuestions.length} questions saved successfully`,
+        data: savedQuestions
       });
+    } catch (error) {
+      next(error);
     }
-
-    const savedQuestions = await createMultipleQuestions(req.user.id, normalizedQuestions);
-
-    res.status(201).json({
-      success: true,
-      message: `${savedQuestions.length} questions saved successfully`,
-      data: savedQuestions
-    });
-  } catch (error) {
-    next(error);
   }
-});
+);
 
 /** PUT /api/questions/:id/order – updates an assessment-specific order value for the question (instructor-only, §17). */
 router.put(

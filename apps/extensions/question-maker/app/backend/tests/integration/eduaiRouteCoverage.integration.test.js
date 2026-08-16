@@ -53,6 +53,9 @@ vi.mock('../../src/services/eduaiService.js', () => ({ default: eduaiService }))
 const { default: app } = await import('../../src/app.js');
 
 const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
+// ADMIN short-circuits resolveAccessForCourse before the coreCourseId check
+// (#1114), the only caller that can reach a course unlinked from Core.
+const ADMIN = { id: 'admin-1', role: 'ADMIN', email: 'a@t.co', name: 'A' };
 
 function authAs(user) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }));
@@ -104,7 +107,8 @@ describe('POST /api/eduai/chat', () => {
   });
 
   it('omits courseId when the resolved course has no Core link', async () => {
-    authAs(INSTRUCTOR);
+    // Unlinked course: ADMIN is the only caller that can reach it (#1114).
+    authAs(ADMIN);
     accessibleCourse({ coreCourseId: null });
     eduaiService.chat.mockResolvedValue({ reply: 'hi' });
 

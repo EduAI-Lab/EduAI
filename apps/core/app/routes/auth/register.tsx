@@ -9,9 +9,10 @@ import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 import { getPolicy } from "~/lib/policy.server"
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   if (session?.user) {
     const onboardingRedirect = await redirectToStudentIdOnboardingIfNeeded(

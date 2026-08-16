@@ -1,6 +1,5 @@
 import prisma from "~/lib/prisma.server";
 import type { Prisma } from "@prisma/client";
-import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
@@ -12,6 +11,7 @@ import {
   parsePaginationParams,
   parseSearchParam,
 } from "~/lib/pagination.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -33,7 +33,7 @@ export async function handleAiModelsApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user) {
         if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
           const serviceKeyGuard = await requireServiceKey(request);
@@ -85,7 +85,7 @@ export async function handleAiModelsApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -149,7 +149,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         return apiError(400, "MODEL_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -225,7 +225,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         return apiError(400, "MODEL_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+      const session = apiKeySession ?? (await getRequestSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

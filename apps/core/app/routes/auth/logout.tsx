@@ -7,6 +7,7 @@ import { auth } from "~/lib/auth/server";
 import { clearUserPreference } from "~/lib/user-preferences.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /** GET /auth/logout → login page */
 export async function loader(_args: LoaderFunctionArgs) {
@@ -17,7 +18,7 @@ export async function loader(_args: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
   // Clear per-user chat prefs before the session is invalidated (#420).
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (session?.user) {
     try {
       await clearUserPreference(session.user.id);

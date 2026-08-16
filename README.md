@@ -86,6 +86,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
 | [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
+| [`end-to-end-user-workflows/README.md`](docs/end-to-end-user-workflows/README.md) | Epic #1429 pre-pilot testing — methodology and per-role/per-extension workflow tracking (Core, Question Maker, AI Tutor) |
 
 ## Changelog
 
@@ -116,6 +117,8 @@ CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
  ```
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
+
+**Long-output response caps** (`#152`): detected long-output requests default to `1200` output tokens, or `600` when ADHD Assist is enabled. Override these positive-integer limits with `CHAT_LONG_OUTPUT_MAX_TOKENS` and `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS` in `apps/core/.env`. The cap never increases the model/provider's existing output limit. If a response reaches this cap, chat shows a durable **Continue** action.
 
 ## Mobile responsiveness audit (`#805`)
 
@@ -184,6 +187,8 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 **Service API key (`EDUAI_API_KEY`)**
 
 AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and AI-assist LLM calls (Question Maker question generation and AI Tutor tutor/supervisor loops proxied to Core's stateless `/api/completion`; the interactive course chat UI continues to use `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+
+Core applies the same Redis-backed sliding-window limit to `/api/chat` and `/api/completion`; see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for configuration, identity, response, and Redis-fallback semantics.
 
 You must set the **same value** in all three services:
 

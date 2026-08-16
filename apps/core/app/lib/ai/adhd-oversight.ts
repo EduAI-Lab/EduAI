@@ -166,6 +166,17 @@ export function isAdhdOversightEnabled(): boolean {
   return true;
 }
 
+/**
+ * Research ablation only (#1226): deterministic-only oversight condition.
+ * When true (and oversight is otherwise enabled), auditAndMaybeRewrite never
+ * calls the LLM rewrite — see the `onlyDeterministic` argument there. Off by
+ * default; not part of the normal product surface.
+ */
+export function isAdhdOversightDeterministicOnly(): boolean {
+  const raw = process.env.ADHD_ASSIST_OVERSIGHT_DETERMINISTIC_ONLY?.trim().toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
+}
+
 /** Skip oversight when the model produced no readable assistant prose. */
 export function isOversightEligibleDraft(draft: string): boolean {
   const trimmed = (draft ?? "").trim();
@@ -904,6 +915,15 @@ export async function auditAndMaybeRewrite(args: {
   priorAssistantText?: string;
   /** When true, require a Sources footer (tools/RAG ran). Never invent page numbers. */
   toolsUsed?: boolean;
+  /**
+   * Research ablation only (#1226): when true, never call the LLM rewrite.
+   * If the cheap deterministic fix (tryDeterministicStructuralFix) doesn't
+   * clear the bar, fall through directly to the same forced_deterministic
+   * wrap normally reserved for LLM-rewrite failure, instead of calling
+   * generateText. Isolates how much of the oversight lift comes from
+   * marker/structure fixing alone vs. the LLM's semantic rewrite.
+   */
+  onlyDeterministic?: boolean;
 }): Promise<AuditAndMaybeRewriteResult> {
   const wordCap = args.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const profile = args.profile ?? "full_tutoring";
@@ -1025,6 +1045,30 @@ export async function auditAndMaybeRewrite(args: {
   }
 
   const oversightStartedAt = Date.now();
+
+  // Ablation mode: the cheap deterministic fix didn't clear the bar, and
+  // policy here is to never call the LLM — jump straight to the same
+  // forced_deterministic wrap used for LLM-rewrite failure, so this
+  // condition still always ships a structurally compliant reply, just
+  // without ever spending a second model call to get there.
+  if (args.onlyDeterministic) {
+    return finalizeForcedDeterministic({
+      draft: trimmed,
+      rawDraft,
+      wordCap,
+      profile,
+      requireDiagram,
+      expectSources,
+      requireStepLadder,
+      userText: args.userText,
+      priorAssistantText: args.priorAssistantText,
+      beforeMetrics,
+      oversightStartedAt,
+      oversightUsage: null,
+      gateOpts,
+    });
+  }
+
   let usageAcc: OversightUsage | null = null;
 
   // Accept only full contentOk compliance — never ship a rewrite that merely

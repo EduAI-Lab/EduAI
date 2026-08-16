@@ -8,7 +8,12 @@ import {
   createAIProviderRegistry,
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
+  PROVIDER_CONFIGS,
 } from "~/lib/ai/providers";
+import {
+  classifyProviderError,
+  createProviderFailure,
+} from "~/lib/ai/provider-errors.server";
 import {
   FleetUnavailableError,
   resolveFleetHost,
@@ -144,11 +149,7 @@ export async function runCompletion(request: CompletionRequest) {
       fleetServerId = fleetPick?.serverId;
     } catch (error) {
       if (error instanceof FleetUnavailableError) {
-        return {
-          ok: false as const,
-          status: 503,
-          error: "No healthy vLLM fleet server available",
-        };
+        return createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE");
       }
       throw error;
     }
@@ -160,12 +161,21 @@ export async function runCompletion(request: CompletionRequest) {
     fleetBaseUrl,
   );
 
-  if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
-    return {
-      ok: false as const,
-      status: 400,
-      error: `Provider "${parsedModel.providerId}" is not available`,
-    };
+  const providerSettings = validatedApiKeys[parsedModel.providerId];
+  if (!providerSettings?.isEnabled) {
+    return createProviderFailure(
+      parsedModel.providerId,
+      "INVALID_PROVIDER_CONFIG",
+    );
+  }
+  if (
+    PROVIDER_CONFIGS[parsedModel.providerId]?.requiresApiKey &&
+    !providerSettings.apiKey
+  ) {
+    return createProviderFailure(
+      parsedModel.providerId,
+      "INVALID_PROVIDER_CONFIG",
+    );
   }
 
   let aiModel;
@@ -173,13 +183,10 @@ export async function runCompletion(request: CompletionRequest) {
     const registry = createAIProviderRegistry(validatedApiKeys);
     aiModel = registry.languageModel(validatedModelId);
   } catch (error) {
-    // languageModel() can throw (e.g. AI_NoSuchProviderError) before streamText's
-    // 502 boundary when a provider is marked enabled but not registered.
-    return {
-      ok: false as const,
-      status: 502,
-      error: `LLM provider setup failed: ${formatCompletionStreamError(error)}`,
-    };
+    // languageModel() can throw before streamText when the selected provider
+    // was not registered. Normalize it so SDK details and credentials cannot
+    // escape through the public completion contract.
+    return classifyProviderError(parsedModel.providerId, error);
   }
 
   const streaming = request.streaming === true;
@@ -203,15 +210,19 @@ export async function runCompletion(request: CompletionRequest) {
       abortSignal: request.signal,
     });
   } catch (error) {
-    return {
-      ok: false as const,
-      status: 502,
-      error: `LLM stream failed: ${formatCompletionStreamError(error)}`,
-    };
+    return classifyProviderError(parsedModel.providerId, error);
   }
 
   if (streaming) {
-    return { ok: true as const, streaming: true as const, result, fleetServerId };
+    return {
+      ok: true as const,
+      streaming: true as const,
+      result,
+      fleetServerId,
+      // Exposed so the route can classify a late stream error without parsing
+      // the model identifier again.
+      provider: parsedModel.providerId,
+    };
   }
 
   try {
@@ -239,24 +250,6 @@ export async function runCompletion(request: CompletionRequest) {
       },
     };
   } catch (error) {
-    return {
-      ok: false as const,
-      status: 502,
-      error: `LLM stream failed: ${formatCompletionStreamError(error)}`,
-    };
-  }
-}
-
-function formatCompletionStreamError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message || error.name;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown stream error";
+    return classifyProviderError(parsedModel.providerId, error);
   }
 }

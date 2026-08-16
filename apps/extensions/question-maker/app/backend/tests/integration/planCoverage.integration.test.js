@@ -7,6 +7,7 @@
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import request from 'supertest';
+import { teachingInstructorFetch } from '../helpers/teachingInstructorFetch.js';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -22,18 +23,41 @@ const USER_B = { id: 'cuid-plan-user-b', email: 'userb@test.com', role: 'INSTRUC
 
 /** Persistent fetch stub that always returns the given user for session validation. */
 function sessionFetch(user) {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve({ user }),
+  return vi.fn().mockImplementation((url) => {
+    const path = String(url).split('?')[0];
+    if (path.endsWith('/api/sessions/validate')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+    }
+    if (/\/enrollments$/.test(path)) {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            enrollments: [{ studentId: user.id, role: 'INSTRUCTOR', isActive: true }],
+          }),
+      });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
 }
 
 /** Fetch stub that routes to USER_A or USER_B based on the cookie value. */
 function twoUserFetch() {
   return vi.fn().mockImplementation((url, opts) => {
+    const path = String(url).split('?')[0];
     const cookie = opts?.headers?.cookie ?? '';
     const user = cookie.includes('session=user-a') ? USER_A : USER_B;
-    return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+    if (path.endsWith('/api/sessions/validate')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+    }
+    if (/\/enrollments$/.test(path)) {
+      const enrollments =
+        user.id === USER_A.id
+          ? [{ studentId: USER_A.id, role: 'INSTRUCTOR', isActive: true }]
+          : [];
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ enrollments }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
 }
 

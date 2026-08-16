@@ -27,6 +27,10 @@ export async function persistAiInteractionTelemetry(params: {
   routingTier: 1 | 2 | 3 | null;
   routerVersion: string | null;
   routerFeatures: Record<string, unknown> | null;
+  /** Fleet server id (e.g. "cmps01") that served this turn; null when not fleet-routed. */
+  serverId?: string | null;
+  /** Owning chat, when this turn came from the interactive /chat UI; null for worker/background completions. */
+  chatId?: string | null;
 }): Promise<void> {
   try {
     const parsed = splitRegistryModelId(params.resolvedModelId);
@@ -67,6 +71,8 @@ export async function persistAiInteractionTelemetry(params: {
         courseId: params.courseId,
         modelId: modelRecord?.id ?? null,
         modelUsed: params.resolvedModelId,
+        serverId: params.serverId ?? null,
+        chatId: params.chatId ?? null,
         query: params.query,
         response: params.responseText,
         promptTokens,

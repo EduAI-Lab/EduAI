@@ -137,7 +137,19 @@ describe('callEduAI transient failure retry (#1001)', () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('does not retry Core application rate-limit responses', async () => {
+  it('does not retry the Core RATE_LIMITED application response', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(failedResponse(429, {}, JSON.stringify({ error: 'RATE_LIMITED' })));
+
+    await expect(generateResponse()).rejects.toMatchObject({
+      status: 429,
+      message: 'AI API returned status 429: RATE_LIMITED',
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the legacy Core Too Many Requests response non-retryable', async () => {
     global.fetch = vi
       .fn()
       .mockResolvedValueOnce(

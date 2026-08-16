@@ -1,0 +1,19 @@
+# S8 — trace-oversight-gate (ai-tutor), census docs/PICT_CENSUS.md § S8.
+# See tests/models/trace-oversight-gate.oracle.ts for the oracle spec.
+#
+# GET /admin/ai-traces (apps/extensions/ai-tutor/server/src/routes/admin.js).
+# The named-in-census concern is the asymmetric fail-soft on a Core catalog
+# outage: a UNIT_ADMIN's department scoping resolves through the (now empty)
+# Core catalog, so they see nothing — a deliberate, documented blackout
+# ("Fail-soft: a Core outage degrades UNIT_ADMIN's department scope to
+# empty, never a hard error or an unscoped leak"). An ADMIN with no explicit
+# `unit` filter is unaffected by the same outage, since their view has no
+# department filter to resolve. This model asserts that asymmetry
+# deliberately, per the census note, rather than leaving it undefined.
+Role:              ADMIN, UNIT_ADMIN
+AuthorizedUnits:   empty, nonempty
+UnitParam:         absent, own, foreign
+CoreAvailable:     yes, no
+CourseIdParam:     absent, valid, invalid
+
+IF [Role] = "ADMIN" THEN [AuthorizedUnits] = "nonempty";

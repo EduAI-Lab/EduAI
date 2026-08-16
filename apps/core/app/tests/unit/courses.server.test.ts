@@ -13,6 +13,11 @@ const prismaMock = vi.hoisted(() => ({
   },
   user: { findMany: vi.fn(), findUnique: vi.fn() },
   enrollment: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), createMany: vi.fn() },
+  // createCourse → ensureDefaultBank (#845)
+  questionBank: {
+    findFirst: vi.fn().mockResolvedValue(null),
+    create: vi.fn().mockResolvedValue({ id: "bank-default", name: "Default", courseId: "course-1" }),
+  },
   $transaction: vi.fn(),
 }));
 
