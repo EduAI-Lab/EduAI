@@ -16,9 +16,9 @@ The persisted browser workflows are in [`tests/e2e/tests/question-maker/all-role
 
 ## Five required findings
 
-1. **Does it make sense?** Students and TAs are given a direct explanation of where to go instead of seeing an empty authoring shell. The Instructor assessment/variant flow is course-centric and logical; Instructor question authoring and Canvas flows cannot yet be signed off because #1532 and #1533 block them.
+1. **Does it make sense?** Students and TAs are given a direct explanation of where to go instead of seeing an empty authoring shell. The Instructor assessment/variant flow is course-centric and logical; Instructor question authoring cannot yet be signed off because #1532 remains open, and Canvas needs a deployed re-test of the #1533 correction.
 2. **Is the UI clear?** The exercised labels are clear: `Access restricted`, `Generate question`, `Save question`, `Mark as reviewed`, and the role-specific navigation are understandable. The Student/TA boundary names the alternative products explicitly.
-3. **Bugs found/fixed.** #1532 blocks Instructor generation and question save despite visible assigned courses. #1533 blocks Canvas test-mode connection with HTTP 400. Both are filed; neither is fixed by this UAT PR. Existing automated API coverage protects the corresponding backend role gates; this PR adds browser-level checks.
+3. **Bugs found/fixed.** #1532 blocks Instructor generation and question save despite visible assigned courses and remains open. #1533 traced to the development UI pre-filling an HTTP URL that the backend correctly rejects; this PR changes the test-mode default to HTTPS and adds focused coverage. The fix still needs a deployed re-test. Existing automated API coverage protects the corresponding backend role gates; this PR adds browser-level checks.
 4. **Security.** Student and TA accounts do not enter the QM authoring UI. Unit Admins cannot see or directly navigate to Admin-only bug triage. The #1532 failure is fail-closed: no unauthorized Instructor question write occurred.
 5. **Documentation.** This file and `docs/end-to-end-user-workflows/qm-workflows.md` record the role matrix, findings, blockers, and remaining workflow gaps; the persisted tests are listed in `TESTS.md`.
 
