@@ -1,5 +1,6 @@
 import {
   buildEduaiDiagramFence,
+  extractStagesFromDraft,
   normalizeStagesForType,
   type EduaiDiagramStage,
 } from "~/lib/ai/eduai-diagram-payload";
@@ -227,4 +228,35 @@ export function renderAdhdStructuredResponse(args: {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Add the canonical visual after oversight when a provider fell back to Markdown. */
+export function ensureAdhdAssistDiagram(args: {
+  text: string;
+  userText?: string;
+}): string {
+  if (
+    !userRequestedDiagram(args.userText) ||
+    /```eduai-diagram\b/i.test(args.text)
+  ) {
+    return args.text;
+  }
+
+  const requestedStageCount = resolveRequestedAssistStageCount(args.userText);
+  const extracted = extractStagesFromDraft(args.text);
+  if (extracted.length < 3) return args.text;
+  const typeId =
+    requestedStageCount && requestedStageCount > 2
+      ? "process-flow"
+      : resolveEduaiDiagramTypeId({
+          userText: args.userText,
+          draftText: args.text,
+        });
+  const stages = normalizeStagesForType(typeId, extracted);
+  return `${args.text.trim()}\n\n${buildEduaiDiagramFence({
+    typeId,
+    title: "Steps",
+    stages,
+    userText: args.userText,
+  })}`;
 }

@@ -105,6 +105,7 @@ import {
 } from "~/lib/ai/adhd-turn-profile";
 import {
   buildAdhdAssistStructuredResponseSchema,
+  ensureAdhdAssistDiagram,
   isStructuredAdhdAssistCandidate,
   renderAdhdStructuredResponse,
   resolveRequestedAssistStageCount,
@@ -2744,7 +2745,12 @@ ${buildEmptyCourseRagBlock()}`;
           : emptyOversightAuditResult();
         oversightStage = "application";
 
-        finalText = audited.text || draft;
+        finalText = structuredAssistOutput
+          ? ensureAdhdAssistDiagram({
+              text: audited.text || draft,
+              userText: lastUserText,
+            })
+          : audited.text || draft;
         const normalizedOversightUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );

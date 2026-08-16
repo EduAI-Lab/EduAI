@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAdhdAssistStructuredResponseSchema,
+  ensureAdhdAssistDiagram,
   isStructuredAdhdAssistCandidate,
   parseAdhdStructuredResponse,
   renderAdhdStructuredResponse,
@@ -92,6 +93,16 @@ describe("structured Assist output", () => {
 
     expect(rendered?.match(/^\d+\./gm)).toHaveLength(4);
     expect(rendered).toContain("```eduai-diagram\nprocess-flow");
+  });
+
+  it("adds a canonical diagram when a provider falls back to a Markdown ladder", () => {
+    const markdown = `### Step ladder\n1. First — Do this\n2. Second — Then this\n3. Third — Finish here`;
+    const rendered = ensureAdhdAssistDiagram({
+      text: markdown,
+      userText: "Explain binary search visually with exactly three stages.",
+    });
+    expect(rendered).toContain("```eduai-diagram\nprocess-flow");
+    expect(rendered.match(/^\d+\./gm)).toHaveLength(3);
   });
 
   it("does not use structured output for images or tool turns", () => {
