@@ -83,6 +83,17 @@ describe("structured Assist output", () => {
     expect(schema.properties.stages.maxItems).toBe(5);
   });
 
+  it("does not truncate an explicitly requested flow as a two-sided comparison", () => {
+    const rendered = renderAdhdStructuredResponse({
+      text: structured,
+      userText:
+        "Explain binary search visually with exactly four ordered stages.",
+    });
+
+    expect(rendered?.match(/^\d+\./gm)).toHaveLength(4);
+    expect(rendered).toContain("```eduai-diagram\nprocess-flow");
+  });
+
   it("does not use structured output for images or tool turns", () => {
     const base = {
       modelIdentifier: "vllm:qwen3.5-9b-instruct",

@@ -181,10 +181,18 @@ export function renderAdhdStructuredResponse(args: {
   const parsed = parseAdhdStructuredResponse(args.text);
   if (!parsed) return null;
 
-  const typeId = resolveEduaiDiagramTypeId({
+  const resolvedTypeId = resolveEduaiDiagramTypeId({
     userText: args.userText,
     draftText: `${parsed.title}\n${parsed.answer}\n${parsed.stages.map((stage) => stage.label).join("\n")}`,
   });
+  // The comparison visual supports only two sides. An explicit request for
+  // three to five stages must remain a process flow even when a topic (for
+  // example, binary search) contains comparison-like wording.
+  const requestedStageCount = resolveRequestedAssistStageCount(args.userText);
+  const typeId =
+    requestedStageCount && requestedStageCount > 2
+      ? "process-flow"
+      : resolvedTypeId;
   const stages = normalizeStagesForType(typeId, parsed.stages);
   const summary = stages
     .map((stage) => `- **${stage.label}** — ${stage.detail}`)
