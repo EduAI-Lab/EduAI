@@ -221,6 +221,36 @@ export async function getCourseTopicNamesCached(
   return value;
 }
 
+// ---------------------------------------------------------------------------
+// Course-list search + filter parsing (#1263)
+//
+// Repeated `status`, `term`, and `department` query params narrow the WHOLE
+// accessible dataset before `count`/`skip`/`take`, so a match that sorts past
+// page 1 is found instead of being reported absent. Values use the same
+// `<term>::<year>` key shape `buildTermFilterGroup` emits in packages/ui.
+// ---------------------------------------------------------------------------
+
+/** The two values the Status dimension accepts (mirrors buildStatusFilterGroup). */
+const COURSE_STATUS_VALUES = ["published", "draft"] as const;
+
+/** Upper bound on how many values one repeatable filter param may carry. */
+const MAX_FILTER_VALUES = 25;
+
+/** Parse a `<term>::<year>` filter key into its parts, or null when malformed. */
+function parseTermKey(value: string): { term: string; year: number } | null {
+  const parts = value.split("::");
+  if (parts.length !== 2) return null;
+  const term = parts[0].trim();
+  const year = Number(parts[1].trim());
+  if (!term || !Number.isInteger(year) || year < 0) return null;
+  return { term, year };
+}
+
+/** Read a repeatable multi-select param, de-duped and blank-stripped. */
+function parseRepeatedValues(searchParams: URLSearchParams, key: string): string[] {
+  return [...new Set(searchParams.getAll(key).map((v) => v.trim()).filter(Boolean))];
+}
+
 /**
  * GET /api/courses — list active courses.
  *
@@ -276,7 +306,36 @@ export async function getCourses(request: Request) {
 
   const isActiveParam = searchParams.get("isActive");
 
-  /** Narrow an access-scoped filter with the caller's `ids`/`search` selectors. */
+  // #1263: parse repeatable filter params and validate before any query so a
+  // malformed value 400s instead of silently narrowing (or widening) the set.
+  const statusValues = parseRepeatedValues(searchParams, "status");
+  const termValues = parseRepeatedValues(searchParams, "term");
+  const departmentValues = parseRepeatedValues(searchParams, "department");
+
+  if (
+    statusValues.length > MAX_FILTER_VALUES ||
+    termValues.length > MAX_FILTER_VALUES ||
+    departmentValues.length > MAX_FILTER_VALUES
+  ) {
+    return apiError(400, "FILTER_TOO_MANY", {
+      filters: `At most ${MAX_FILTER_VALUES} values per filter`,
+    });
+  }
+  for (const value of statusValues) {
+    if (!(COURSE_STATUS_VALUES as readonly string[]).includes(value)) {
+      return apiError(400, "FILTER_INVALID", { status: `Unsupported value "${value}"` });
+    }
+  }
+  const termKeys: { term: string; year: number }[] = [];
+  for (const value of termValues) {
+    const key = parseTermKey(value);
+    if (!key) {
+      return apiError(400, "FILTER_INVALID", { term: 'Expected "<term>::<year>"' });
+    }
+    termKeys.push(key);
+  }
+
+  /** Narrow an access-scoped filter with the caller's `ids`/`search`/filter selectors. */
   const withSelectors = (base: Prisma.CourseWhereInput): Prisma.CourseWhereInput => {
     const and: Prisma.CourseWhereInput[] = [base];
     if (idsResult.ids) and.push({ id: { in: idsResult.ids } });
@@ -288,6 +347,16 @@ export async function getCourses(request: Request) {
           { name: { contains: search, mode: "insensitive" } },
         ],
       });
+    }
+    // #1263: OR within a group, AND across groups, AND with the auth scope.
+    if (statusValues.length > 0) {
+      and.push({ OR: statusValues.map((v) => ({ isPublished: v === "published" })) });
+    }
+    if (termKeys.length > 0) {
+      and.push({ OR: termKeys.map(({ term, year }) => ({ term, year })) });
+    }
+    if (departmentValues.length > 0) {
+      and.push({ department: { in: departmentValues } });
     }
     return and.length === 1 ? base : { AND: and };
   };
