@@ -99,6 +99,12 @@ COPY apps/extensions/question-maker/app/frontend \
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/frontend
+# The E2E browser reaches the frontend on localhost:5173 and the API on
+# localhost:8000.  Supplying the Vite values at image-build time keeps the
+# compiled SPA from falling back to `/api` while its service calls already
+# include the `/api/...` prefix (which otherwise produces `/api/api/...`).
+ENV VITE_API_URL=http://localhost:8000
+ENV VITE_CORE_URL=http://localhost:3000
 RUN npm run build
 
 # ── Target: serve ──────────────────────────────────────────────────────────
