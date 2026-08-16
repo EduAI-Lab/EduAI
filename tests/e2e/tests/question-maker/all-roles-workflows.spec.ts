@@ -10,19 +10,22 @@ import { CORE_URL, QM_FRONTEND_URL } from '../../playwright.config';
 import {
   createAdmin,
   createInstructor,
-  injectSessionIntoPage,
   promoteUser,
   registerUser,
   signIn,
+  signInThroughPage,
   signOut,
 } from '../helpers/auth';
 import { createQmCourseForInstructor } from '../helpers/qm-courses';
 
-async function createUnitAdmin(request: APIRequestContext): Promise<void> {
+async function createUnitAdmin(
+  request: APIRequestContext,
+): Promise<{ email: string; password: string; name: string }> {
   const user = await registerUser(request, { prefix: 'qm-unit-admin', name: 'E2E Unit Admin' });
   await promoteUser(request, user.email, 'UNIT_ADMIN');
   await signOut(request);
   await signIn(request, { email: user.email, password: user.password });
+  return user;
 }
 
 async function getMyId(request: APIRequestContext): Promise<string> {
@@ -33,10 +36,8 @@ async function getMyId(request: APIRequestContext): Promise<string> {
 
 test.describe('Question Maker role access', () => {
   test('STUDENT sees a clear access boundary instead of the authoring app', async ({ page, request }) => {
-    await registerUser(request, { prefix: 'qm-ui-student' });
-    await injectSessionIntoPage(page, request);
-
-    await page.goto(`${QM_FRONTEND_URL}/dashboard`);
+    const student = await registerUser(request, { prefix: 'qm-ui-student' });
+    await signInThroughPage(page, student, `${QM_FRONTEND_URL}/dashboard`);
 
     await expect(page.getByText('Access restricted', { exact: true })).toBeVisible();
     await expect(
@@ -56,7 +57,7 @@ test.describe('Question Maker role access', () => {
     try {
       await createAdmin(adminContext, { prefix: 'qm-ta-course-admin' });
       await createInstructor(instructorContext, { prefix: 'qm-ta-course-instructor' });
-      await registerUser(taContext, { prefix: 'qm-ui-ta' });
+      const ta = await registerUser(taContext, { prefix: 'qm-ui-ta' });
 
       const taId = await getMyId(taContext);
       const { coreCourseId } = await createQmCourseForInstructor(playwright, instructorContext, {
@@ -69,8 +70,7 @@ test.describe('Question Maker role access', () => {
       });
       expect(enrollment.status()).toBe(201);
 
-      await injectSessionIntoPage(page, taContext);
-      await page.goto(`${QM_FRONTEND_URL}/dashboard`);
+      await signInThroughPage(page, ta, `${QM_FRONTEND_URL}/dashboard`);
 
       await expect(page.getByText('Access restricted', { exact: true })).toBeVisible();
       await expect(page.getByText('teaching assistants should use EduAI Core or AI Tutor', { exact: false }))
@@ -91,13 +91,13 @@ test.describe('Question Maker authoring and AI workflows', () => {
     const instructorContext = await playwright.request.newContext();
 
     try {
-      await createInstructor(instructorContext, { prefix: 'qm-ui-instructor' });
+      const instructor = await createInstructor(instructorContext, { prefix: 'qm-ui-instructor' });
       const { qmCourseId } = await createQmCourseForInstructor(playwright, instructorContext, {
         name: 'QM Instructor AI Workflow',
         code: 'QM-INSTR-AI',
       });
 
-      await injectSessionIntoPage(page, instructorContext);
+      await signInThroughPage(page, instructor, `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`);
       await page.route('**/api/eduai/generate-questions', async (route) => {
         if (route.request().method() !== 'POST') return route.continue();
         await route.fulfill({
@@ -147,20 +147,16 @@ test.describe('Question Maker authoring and AI workflows', () => {
   });
 
   test('UNIT_ADMIN can enter the QM app but cannot triage platform bug reports', async ({ page, request }) => {
-    await createUnitAdmin(request);
-    await injectSessionIntoPage(page, request);
-
-    await page.goto(`${QM_FRONTEND_URL}/dashboard`);
+    const unitAdmin = await createUnitAdmin(request);
+    await signInThroughPage(page, unitAdmin, `${QM_FRONTEND_URL}/dashboard`);
     await expect(page.getByRole('link', { name: 'Courses' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Question Library' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bug reports' })).toHaveCount(0);
   });
 
   test('ADMIN sees the full authoring navigation including bug-report triage', async ({ page, request }) => {
-    await createAdmin(request, { prefix: 'qm-ui-admin' });
-    await injectSessionIntoPage(page, request);
-
-    await page.goto(`${QM_FRONTEND_URL}/dashboard`);
+    const admin = await createAdmin(request, { prefix: 'qm-ui-admin' });
+    await signInThroughPage(page, admin, `${QM_FRONTEND_URL}/dashboard`);
     await expect(page.getByRole('link', { name: 'Courses' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Question Library' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bug reports' })).toBeVisible();
