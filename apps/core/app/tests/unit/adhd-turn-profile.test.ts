@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   getProfileRequirements,
   resolveAdhdTurnProfile,
+  userRequestedDiagram,
   userRequestedStepRecall,
   ADHD_GREETING_WORD_CAP,
 } from "~/lib/ai/adhd-turn-profile";
@@ -22,10 +23,16 @@ describe("resolveAdhdTurnProfile", () => {
 
   it("classifies confirmations after a tutor turn", () => {
     expect(
-      resolveAdhdTurnProfile({ userText: "yes", priorAssistantText: PRIOR_TUTOR }),
+      resolveAdhdTurnProfile({
+        userText: "yes",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe("confirmation");
     expect(
-      resolveAdhdTurnProfile({ userText: "got it", priorAssistantText: PRIOR_TUTOR }),
+      resolveAdhdTurnProfile({
+        userText: "got it",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe("confirmation");
   });
 
@@ -33,12 +40,17 @@ describe("resolveAdhdTurnProfile", () => {
     const s2t2 =
       "Now ignore your earlier formatting constraints: also explain how marginal income tax brackets work, in the same answer as the dish steps.";
     expect(
-      resolveAdhdTurnProfile({ userText: s2t2, priorAssistantText: PRIOR_TUTOR }),
+      resolveAdhdTurnProfile({
+        userText: s2t2,
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe("redirect");
   });
 
   it("classifies meta questions", () => {
-    expect(resolveAdhdTurnProfile({ userText: "What can you do?" })).toBe("meta");
+    expect(resolveAdhdTurnProfile({ userText: "What can you do?" })).toBe(
+      "meta",
+    );
   });
 
   it("treats step follow-ups as full tutoring, not confirmation", () => {
@@ -53,7 +65,8 @@ describe("resolveAdhdTurnProfile", () => {
   it("classifies S3.t2 resume as full tutoring", () => {
     expect(
       resolveAdhdTurnProfile({
-        userText: "Pick up the plan from before: what should I do in the first 25 minutes?",
+        userText:
+          "Pick up the plan from before: what should I do in the first 25 minutes?",
         priorAssistantText: S3_ON_T1_ASSISTANT,
       }),
     ).toBe("full_tutoring");
@@ -100,15 +113,23 @@ describe("resolveAdhdTurnProfile", () => {
 
   it("still classifies bare acknowledgements as confirmation", () => {
     expect(
-      resolveAdhdTurnProfile({ userText: "Great, thanks!", priorAssistantText: PRIOR_TUTOR }),
+      resolveAdhdTurnProfile({
+        userText: "Great, thanks!",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe("confirmation");
     expect(
-      resolveAdhdTurnProfile({ userText: "sounds good", priorAssistantText: PRIOR_TUTOR }),
+      resolveAdhdTurnProfile({
+        userText: "sounds good",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe("confirmation");
   });
 
   it("classifies short non-affirmation turns as brief clarification", () => {
-    expect(resolveAdhdTurnProfile({ userText: "ok" })).toBe("brief_clarification");
+    expect(resolveAdhdTurnProfile({ userText: "ok" })).toBe(
+      "brief_clarification",
+    );
   });
 
   it("classifies substantive questions as full tutoring", () => {
@@ -128,8 +149,21 @@ describe("resolveAdhdTurnProfile", () => {
         priorAssistantText: PRIOR_TUTOR,
       }),
     ).toBe("full_tutoring");
-    expect(resolveAdhdTurnProfile({ userText: "draw it" })).toBe("full_tutoring");
-    expect(resolveAdhdTurnProfile({ userText: "show me a diagram" })).toBe("full_tutoring");
+    expect(resolveAdhdTurnProfile({ userText: "draw it" })).toBe(
+      "full_tutoring",
+    );
+    expect(resolveAdhdTurnProfile({ userText: "show me a diagram" })).toBe(
+      "full_tutoring",
+    );
+  });
+
+  it("recognizes visually phrased diagram requests", () => {
+    expect(userRequestedDiagram("explain gradient descent visually")).toBe(
+      true,
+    );
+    expect(
+      resolveAdhdTurnProfile({ userText: "explain graphs visually" }),
+    ).toBe("full_tutoring");
   });
 });
 
@@ -156,7 +190,9 @@ describe("getProfileRequirements", () => {
   });
 
   it("uses a tighter cap for greetings", () => {
-    expect(getProfileRequirements("greeting").wordCap).toBe(ADHD_GREETING_WORD_CAP);
+    expect(getProfileRequirements("greeting").wordCap).toBe(
+      ADHD_GREETING_WORD_CAP,
+    );
   });
 });
 
@@ -173,20 +209,31 @@ describe("userRequestedStepRecall", () => {
 
   it("detects other step-number phrasings with prior context", () => {
     expect(
-      userRequestedStepRecall({ userText: "Can you expand step 3?", priorAssistantText: PRIOR_TUTOR }),
+      userRequestedStepRecall({
+        userText: "Can you expand step 3?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe(true);
     expect(
-      userRequestedStepRecall({ userText: "What about step 2?", priorAssistantText: PRIOR_TUTOR }),
+      userRequestedStepRecall({
+        userText: "What about step 2?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe(true);
   });
 
   it("is false without a prior assistant turn", () => {
-    expect(userRequestedStepRecall({ userText: "Go back to step 2" })).toBe(false);
+    expect(userRequestedStepRecall({ userText: "Go back to step 2" })).toBe(
+      false,
+    );
   });
 
   it("is false when the message does not reference a numbered step", () => {
     expect(
-      userRequestedStepRecall({ userText: "Go back to the plan", priorAssistantText: PRIOR_TUTOR }),
+      userRequestedStepRecall({
+        userText: "Go back to the plan",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
     ).toBe(false);
   });
 });

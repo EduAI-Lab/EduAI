@@ -39,7 +39,7 @@ describe("structured Assist output", () => {
     );
   });
 
-  it("uses the structured path for explicit vLLM diagram turns", () => {
+  it("uses the structured path for full-tutoring vLLM Assist turns", () => {
     expect(
       isStructuredAdhdAssistCandidate({
         modelIdentifier: "vllm:qwen3.5-2b-instruct",
@@ -47,7 +47,19 @@ describe("structured Assist output", () => {
         imagesPresent: false,
         chatMode: "learning",
         profile: "full_tutoring",
-        diagramRequested: true,
+        toolsEnabled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps structure for explicit 2B/9B Assist even without a diagram", () => {
+    expect(
+      isStructuredAdhdAssistCandidate({
+        modelIdentifier: "vllm:qwen3.5-9b-instruct",
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        profile: "full_tutoring",
         toolsEnabled: false,
       }),
     ).toBe(true);
@@ -60,7 +72,6 @@ describe("structured Assist output", () => {
       imagesPresent: false,
       chatMode: "learning" as const,
       profile: "full_tutoring" as const,
-      diagramRequested: true,
     };
     expect(
       isStructuredAdhdAssistCandidate({ ...base, imagesPresent: true }),

@@ -106,7 +106,6 @@ import {
 import {
   ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA,
   isStructuredAdhdAssistCandidate,
-  isVllmStructuredAdhdAssistModel,
   renderAdhdStructuredResponse,
 } from "~/lib/ai/adhd-structured-output";
 import {
@@ -1469,17 +1468,10 @@ export async function action({ request }: ActionFunctionArgs) {
       adhdAssist: effectiveAdhdAssist,
       imagesPresent,
       chatMode,
+      routeWithAuto,
     });
     const retainedAssistModelId = resolveAdhdAssistAutoModelId();
-    const explicitStructuredAssistCandidate =
-      pinAssistModel &&
-      userRequestedDiagram(lastUserMessageTextForRouting) &&
-      isVllmStructuredAdhdAssistModel(requestedModelId);
-    if (
-      pinAssistModel &&
-      requestedModelId !== retainedAssistModelId &&
-      !explicitStructuredAssistCandidate
-    ) {
+    if (pinAssistModel && requestedModelId !== retainedAssistModelId) {
       model = retainedAssistModelId;
       wasAuto = true;
       routingTier = 3;
@@ -2208,7 +2200,6 @@ ${buildEmptyCourseRagBlock()}`;
       imagesPresent,
       chatMode,
       profile: adhdProfile,
-      diagramRequested: userRequestedDiagram(lastUserText),
       toolsEnabled: useToolCalling,
     });
 

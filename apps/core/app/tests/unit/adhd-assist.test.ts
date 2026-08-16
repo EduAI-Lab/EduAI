@@ -143,12 +143,13 @@ describe("Assist Auto model contract", () => {
     else process.env.ADHD_ASSIST_AUTO_MODEL = original;
   });
 
-  it("pins every non-image learning Assist turn, including explicit models", () => {
+  it("pins Assist only when the user chose Auto routing", () => {
     expect(
       shouldUseRetainedAdhdAssistModel({
         adhdAssist: true,
         imagesPresent: false,
         chatMode: "learning",
+        routeWithAuto: true,
       }),
     ).toBe(true);
     expect(
@@ -156,6 +157,7 @@ describe("Assist Auto model contract", () => {
         adhdAssist: true,
         imagesPresent: true,
         chatMode: "learning",
+        routeWithAuto: true,
       }),
     ).toBe(false);
     expect(
@@ -163,6 +165,15 @@ describe("Assist Auto model contract", () => {
         adhdAssist: true,
         imagesPresent: false,
         chatMode: "admin",
+        routeWithAuto: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseRetainedAdhdAssistModel({
+        adhdAssist: true,
+        imagesPresent: false,
+        chatMode: "learning",
+        routeWithAuto: false,
       }),
     ).toBe(false);
   });

@@ -60,7 +60,6 @@ export function isStructuredAdhdAssistCandidate(options: {
   imagesPresent: boolean;
   chatMode: "admin" | "learning";
   profile?: AdhdTurnProfile;
-  diagramRequested: boolean;
   toolsEnabled?: boolean;
 }): boolean {
   return (
@@ -68,7 +67,6 @@ export function isStructuredAdhdAssistCandidate(options: {
     options.imagesPresent !== true &&
     options.chatMode === "learning" &&
     options.profile === "full_tutoring" &&
-    options.diagramRequested === true &&
     options.toolsEnabled !== true &&
     isVllmStructuredAdhdAssistModel(options.modelIdentifier)
   );

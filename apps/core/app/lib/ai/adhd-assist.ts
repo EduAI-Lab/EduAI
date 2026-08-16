@@ -58,20 +58,21 @@ export function resolveAdhdAssistAutoModelId(): string {
 }
 
 /**
- * Assist mode requires the retained large model for reliable structure and
- * diagram generation. Images are excluded because image-capable routing has
- * its own model requirements, and admin chat does not use the learning-mode
- * Assist contract.
+ * Retain the large model only when the user chose Auto routing. An explicit
+ * model selection is a user choice, so Assist may shape that model's response
+ * but must not silently replace it.
  */
 export function shouldUseRetainedAdhdAssistModel(options: {
   adhdAssist: boolean;
   imagesPresent: boolean;
   chatMode: "admin" | "learning";
+  routeWithAuto: boolean;
 }): boolean {
   return (
     options.adhdAssist === true &&
     options.imagesPresent !== true &&
-    options.chatMode !== "admin"
+    options.chatMode !== "admin" &&
+    options.routeWithAuto === true
   );
 }
 
