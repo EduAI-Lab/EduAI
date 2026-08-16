@@ -69,8 +69,6 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 | `ENCRYPTION_KEY` | Prod / Canvas | Encrypts stored Canvas credentials |
 | `CORS_ORIGINS` | Yes | Allowed browser origins |
 | `EDUAI_IGNORED_COURSE_CODES` | No | Comma-separated codes hidden in the course list |
-| `EDUAI_PROBE_COURSE_ID` | No | Core course CUID for AI connectivity probes (preferred over code) |
-| `EDUAI_PROBE_COURSE_CODE` | No | Core course code for probes when `EDUAI_PROBE_COURSE_ID` is unset |
 | `GROQ_API_KEY` | No | Direct LLM provider for question generation |
 | `OPENAI_API_KEY` | No | Same |
 | `DEEPSEEK_API_KEY` | No | Same |
@@ -93,7 +91,7 @@ Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLL
 | Connectivity probes (status chips) | `vllm:qwen2.5-7b-instruct` | Prefer the smallest active campus model; 20s timeout |
 | Provider | `vllm` | Server-managed — no client API key. Legacy `forceProvider=ollama` still pins the campus path |
 
-**Probe course context:** `testApiKey` no longer hardcodes `COSC 121`. Set `EDUAI_PROBE_COURSE_ID` (preferred) or `EDUAI_PROBE_COURSE_CODE` for cookie/session probes. When unset, service-key probes omit course context (Core allows course-free chat for API keys).
+**Probe course context:** the `testApiKey` connectivity check uses Core's authenticated stateless `POST /api/completion` route and does not require a seeded or configured course. The probe never sends `courseId`/`courseCode`; a success/failure reflects only real auth/provider/connectivity state.
 
 ## Scripts
 
