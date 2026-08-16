@@ -10,6 +10,13 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 300
 
+/** Filter-group ids the Core course list exposes (matches `build*FilterGroup` in @eduai/ui). */
+export const COURSE_FILTER_KEYS = ["status", "term", "department"] as const
+export type CourseFilterKey = (typeof COURSE_FILTER_KEYS)[number]
+export type CourseFilters = Record<CourseFilterKey, string[]>
+
+const EMPTY_FILTERS: CourseFilters = { status: [], term: [], department: [] }
+
 export interface Course {
   id: string
   code: string
@@ -74,6 +81,8 @@ export function useCourses(options: UseCoursesOptions = {}) {
   const [pagination, setPagination] = useState<PaginationState>(initialPaginationState(pageSize))
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [selectedFilters, setSelectedFilters] = useState<CourseFilters>(EMPTY_FILTERS)
+  const [availableValues, setAvailableValues] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -82,7 +91,7 @@ export function useCourses(options: UseCoursesOptions = {}) {
     return () => clearTimeout(timer)
   }, [search])
 
-  // A new query invalidates the current offset.
+  // A new query (search or any filter) invalidates the current offset.
   const firstRender = useRef(true)
   useEffect(() => {
     if (firstRender.current) {
@@ -90,34 +99,79 @@ export function useCourses(options: UseCoursesOptions = {}) {
       return
     }
     setPagination((prev) => (prev.pageIndex === 0 ? prev : { ...prev, pageIndex: 0 }))
-  }, [debouncedSearch])
+  }, [debouncedSearch, selectedFilters])
+
+  // Monotonic request id so a slower, older response never overwrites the state
+  // a newer query already committed (rapid search/filter changes race otherwise).
+  const requestSeq = useRef(0)
 
   const fetchCourses = useCallback(async () => {
+    const seq = ++requestSeq.current
     setLoading(true)
     setError(null)
     try {
-      const query = paginationQuery(pagination, {
-        search: debouncedSearch,
-        isActive: isActive === undefined ? undefined : String(isActive),
-      })
-      const res = await fetch(`/api/courses?${query}`)
+      const params = new URLSearchParams(
+        paginationQuery(pagination, {
+          search: debouncedSearch,
+          isActive: isActive === undefined ? undefined : String(isActive),
+        }),
+      )
+      for (const key of COURSE_FILTER_KEYS) {
+        for (const value of selectedFilters[key]) params.append(key, value)
+      }
+      const res = await fetch(`/api/courses?${params.toString()}`)
       if (!res.ok) throw new Error(await res.text())
       const body: PaginatedResponse<Course> = await res.json()
+      if (seq !== requestSeq.current) return
       setCourses(body.data)
       setTotal(body.total)
+      // A shrink in the filtered total (search/filter/delete) can strand the
+      // current page past the end. Clamp to the last valid page; the changed
+      // `pagination` triggers one refetch, and the guard prevents loops.
+      setPagination((prev) => {
+        const lastPageIndex = Math.max(0, Math.ceil(body.total / prev.pageSize) - 1)
+        return prev.pageIndex > lastPageIndex ? { ...prev, pageIndex: lastPageIndex } : prev
+      })
     } catch (e) {
+      if (seq !== requestSeq.current) return
       setError(e instanceof Error ? e.message : 'Failed to fetch courses')
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
-  }, [pagination, debouncedSearch, isActive])
+  }, [pagination, debouncedSearch, isActive, selectedFilters])
+
+  // Facets are best-effort metadata for the dropdowns: a failure must never
+  // block the list, so errors are swallowed and the toolbar falls back to the
+  // values already present on the loaded rows.
+  const fetchFacets = useCallback(async () => {
+    try {
+      const res = await fetch('/api/courses/facets')
+      if (!res.ok) return
+      const body: CourseFilters = await res.json()
+      setAvailableValues(body)
+    } catch {
+      // ignore — dropdowns derive from the current page in the worst case
+    }
+  }, [])
 
   useEffect(() => {
     fetchCourses()
-    const onCoursesChanged = () => { void fetchCourses() }
+    fetchFacets()
+    const onCoursesChanged = () => {
+      void fetchCourses()
+      void fetchFacets()
+    }
     window.addEventListener('eduai:courses-changed', onCoursesChanged)
     return () => window.removeEventListener('eduai:courses-changed', onCoursesChanged)
-  }, [fetchCourses])
+  }, [fetchCourses, fetchFacets])
+
+  const setFilter = useCallback((key: CourseFilterKey, values: string[]) => {
+    setSelectedFilters((prev) => ({ ...prev, [key]: values }))
+  }, [])
+
+  const clearFilters = useCallback(() => {
+    setSelectedFilters(EMPTY_FILTERS)
+  }, [])
 
   const createCourse = useCallback(async (input: CreateCourseInput): Promise<Course> => {
     const formData = new FormData()
@@ -134,9 +188,11 @@ export function useCourses(options: UseCoursesOptions = {}) {
     if (!res.ok) throw new Error(await res.text())
     const course = await res.json()
     // Where the new row lands depends on the current sort/page, so refetch.
+    // A new course can also add a term/department the dropdowns haven't seen.
     await fetchCourses()
+    await fetchFacets()
     return course
-  }, [fetchCourses])
+  }, [fetchCourses, fetchFacets])
 
   const updateCourse = useCallback(async (id: string, input: UpdateCourseInput): Promise<Course> => {
     const res = await fetch(`/api/courses/${id}`, {
@@ -153,9 +209,11 @@ export function useCourses(options: UseCoursesOptions = {}) {
   const deleteCourse = useCallback(async (id: string): Promise<void> => {
     const res = await fetch(`/api/courses/${id}`, { method: 'DELETE' })
     if (!res.ok) throw new Error(await res.text())
-    // Removing a row pulls the next page's first row into this one.
+    // Removing a row pulls the next page's first row into this one, and can
+    // remove a facet value entirely.
     await fetchCourses()
-  }, [fetchCourses])
+    await fetchFacets()
+  }, [fetchCourses, fetchFacets])
 
   return {
     courses,
@@ -164,6 +222,10 @@ export function useCourses(options: UseCoursesOptions = {}) {
     setPagination,
     search,
     setSearch,
+    selectedFilters,
+    setFilter,
+    clearFilters,
+    availableValues,
     loading,
     error,
     createCourse,

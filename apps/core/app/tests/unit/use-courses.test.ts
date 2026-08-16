@@ -91,6 +91,8 @@ describe("useCourses", () => {
   });
 
   it("does not reset the offset on the first render", async () => {
+    mockFetch.mockResolvedValue(page([course], 512));
+
     const { result } = renderHook(() => useCourses());
 
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -104,6 +106,7 @@ describe("useCourses", () => {
   it("resets the offset once a new search lands, so page 4 of the old query isn't requested", async () => {
     vi.useFakeTimers();
     try {
+      mockFetch.mockResolvedValue(page([course], 512));
       const { result } = renderHook(() => useCourses());
       await vi.waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -237,5 +240,116 @@ describe("useCourses", () => {
     );
 
     await expect(result.current.deleteCourse("course-1")).rejects.toThrow("course has enrollments");
+  });
+
+  it("serializes selected filters as repeated query params", async () => {
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setFilter("status", ["published", "draft"]));
+
+    await waitFor(() => {
+      const urls = listUrls(mockFetch);
+      return expect(
+        urls.some((u) => u.includes("status=published") && u.includes("status=draft")),
+      ).toBe(true);
+    });
+  });
+
+  it("resets the page when a filter selection changes", async () => {
+    mockFetch.mockResolvedValue(page([course], 512));
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setPagination({ pageIndex: 3, pageSize: 25 }));
+    await waitFor(() => expect(result.current.pagination.pageIndex).toBe(3));
+
+    act(() => result.current.setFilter("term", ["W1::2026"]));
+    await waitFor(() => expect(result.current.pagination.pageIndex).toBe(0));
+  });
+
+  it("clearFilters empties every filter group", async () => {
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setFilter("status", ["draft"]));
+    expect(result.current.selectedFilters.status).toEqual(["draft"]);
+
+    act(() => result.current.clearFilters());
+    expect(result.current.selectedFilters).toEqual({ status: [], term: [], department: [] });
+  });
+
+  it("loads availableValues from /api/courses/facets", async () => {
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.startsWith("/api/courses/facets")
+          ? okJson({ status: ["published", "draft"], term: ["W1::2026"], department: ["COSC"] })
+          : page(),
+      ),
+    );
+
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() =>
+      expect(result.current.availableValues).toEqual({
+        status: ["published", "draft"],
+        term: ["W1::2026"],
+        department: ["COSC"],
+      }),
+    );
+  });
+
+  it("refreshes facets when another view broadcasts eduai:courses-changed", async () => {
+    let facetCalls = 0;
+    mockFetch.mockImplementation((url: string) => {
+      if (url.startsWith("/api/courses/facets")) {
+        facetCalls += 1;
+        return Promise.resolve(okJson({ status: [], term: [], department: [] }));
+      }
+      return Promise.resolve(page());
+    });
+
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = facetCalls;
+
+    await act(async () => {
+      window.dispatchEvent(new Event("eduai:courses-changed"));
+    });
+
+    await waitFor(() => expect(facetCalls).toBeGreaterThan(before));
+  });
+
+  it("clamps an out-of-range page when a refetch returns a smaller total", async () => {
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.startsWith("/api/courses/facets")
+          ? okJson({ status: [], term: [], department: [] })
+          : page([], 5),
+      ),
+    );
+
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setPagination({ pageIndex: 3, pageSize: 25 }));
+    await waitFor(() => expect(result.current.pagination.pageIndex).toBe(0));
+  });
+
+  it("clamps to page 0 when the filtered total is zero", async () => {
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.startsWith("/api/courses/facets")
+          ? okJson({ status: [], term: [], department: [] })
+          : page([], 0),
+      ),
+    );
+
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setPagination({ pageIndex: 2, pageSize: 25 }));
+    await waitFor(() => expect(result.current.pagination.pageIndex).toBe(0));
+    expect(result.current.total).toBe(0);
   });
 });
