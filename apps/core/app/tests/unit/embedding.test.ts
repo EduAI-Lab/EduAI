@@ -100,15 +100,22 @@ describe("generateEmbeddings", () => {
   const originalVllmEmbeddingUrl = process.env.VLLM_EMBEDDING_BASE_URL;
   const originalVllmApiKey = process.env.VLLM_API_KEY;
   const originalCmpsBaseUrl = process.env.CMPS01_INTERNAL_BASE_URL;
+  const originalCmpsInternalKey = process.env.CMPS01_INTERNAL_KEY;
 
   let generateEmbeddings: typeof import("~/lib/ai/embedding").generateEmbeddings;
   let embedManyMock: Mock;
+  let createOpenAiMock: Mock;
+  let createOllamaMock: Mock;
 
   async function reloadEmbeddingModule() {
     vi.resetModules();
     const aiMod = await import("ai");
+    const openAiMod = await import("@ai-sdk/openai");
+    const ollamaMod = await import("ollama-ai-provider");
     const embeddingMod = await import("~/lib/ai/embedding");
     embedManyMock = vi.mocked(aiMod.embedMany);
+    createOpenAiMock = vi.mocked(openAiMod.createOpenAI);
+    createOllamaMock = vi.mocked(ollamaMod.createOllama);
     generateEmbeddings = embeddingMod.generateEmbeddings;
     embedManyMock.mockImplementation(async ({ values }) => ({
       embeddings: mockIndexedEmbeddings(values as string[]),
@@ -140,6 +147,8 @@ describe("generateEmbeddings", () => {
     else process.env.VLLM_API_KEY = originalVllmApiKey;
     if (originalCmpsBaseUrl === undefined) delete process.env.CMPS01_INTERNAL_BASE_URL;
     else process.env.CMPS01_INTERNAL_BASE_URL = originalCmpsBaseUrl;
+    if (originalCmpsInternalKey === undefined) delete process.env.CMPS01_INTERNAL_KEY;
+    else process.env.CMPS01_INTERNAL_KEY = originalCmpsInternalKey;
   });
 
   it("returns an empty array for no chunks", async () => {
@@ -188,11 +197,18 @@ describe("generateEmbeddings", () => {
     process.env.VLLM_EMBEDDING_BASE_URL = "http://cmps01.ok.ubc.ca:8001/v1";
     process.env.CMPS01_INTERNAL_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     process.env.VLLM_API_KEY = "cmps-test-key";
+    process.env.CMPS01_INTERNAL_KEY = "cmps-internal-test-key";
     await reloadEmbeddingModule();
 
     await generateEmbeddings(["local CMPS chunk"]);
 
     expect(embedManyMock).toHaveBeenCalledTimes(1);
+    expect(createOpenAiMock).toHaveBeenCalledWith({
+      apiKey: "cmps-test-key",
+      baseURL: "http://cmps01.ok.ubc.ca:8001/v1",
+      headers: { "X-EduAI-Internal-Key": "cmps-internal-test-key" },
+    });
+    expect(createOllamaMock).not.toHaveBeenCalled();
   });
 
   it("fails closed when the configured CMPS endpoint has no API key", async () => {
