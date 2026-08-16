@@ -2,7 +2,7 @@
 //
 // PICT adapter (#1189, census docs/PICT_CENSUS.md § S10): course-detail-manager-view
 // One oracle against client predicate mirrors and backend permission gates.
-// Known TA delete-material drift uses it.fails (do not relax the oracle).
+// Known manage-rag unit drift uses it.fails (do not relax the oracle; #1406).
 
 import { describe, expect, it } from "vitest";
 import {

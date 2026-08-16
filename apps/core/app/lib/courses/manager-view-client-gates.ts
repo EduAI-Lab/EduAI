@@ -3,6 +3,7 @@
  * Kept pure so the PICT adapter (#1189) exercises the same gates the UI uses.
  */
 import {
+  canDeleteMaterial as rbacCanDeleteMaterial,
   canManageTopics,
   canManageInstructors,
   canManageStudents,
@@ -51,15 +52,9 @@ export function resolveManagerViewClientGates(
   const canManageStudentEnrollments = canManageStudents(access);
   const canManageRagSettings = access === "admin" || access === "instructor";
 
-  const canDeleteMaterial = (uploadedBy: string | null | undefined) => {
-    if (canManage) return true;
-    return (
-      access === "ta" &&
-      uploadedBy !== null &&
-      uploadedBy !== undefined &&
-      uploadedBy === currentUserId
-    );
-  };
+  // Own-upload for TA; admin/unit/instructor any — independent of topics policy (#1390).
+  const canDeleteMaterial = (uploadedBy: string | null | undefined) =>
+    rbacCanDeleteMaterial(access, currentUserId ?? "", uploadedBy ?? null);
 
   return {
     canManage,
