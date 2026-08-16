@@ -482,6 +482,36 @@ describe("GET /api/courses — search & filters before pagination (#1263)", () =
       });
     }
   });
+
+  it("ANDs filters with the UNIT_ADMIN authorized-unit scope", async () => {
+    const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
+    const coscDraft = await prisma.course.create({
+      data: { name: "COSC Draft", code: "ZZU 001", section: "001", term: "W1", year: 2026, startDate: new Date("2026-09-01"), department: "COSC", isPublished: false },
+    });
+    const coscPublished = await prisma.course.create({
+      data: { name: "COSC Published", code: "ZZU 002", section: "001", term: "W1", year: 2026, startDate: new Date("2026-09-01"), department: "COSC", isPublished: true },
+    });
+    const mathDraft = await prisma.course.create({
+      data: { name: "MATH Draft", code: "ZZU 003", section: "001", term: "W1", year: 2026, startDate: new Date("2026-09-01"), department: "MATH", isPublished: false },
+    });
+
+    try {
+      mockSession(unitAdmin);
+      // The status filter matches the MATH draft, but it sits outside the
+      // UNIT_ADMIN's authorized units — the OR-based unit scope must still AND
+      // with the filter so it can never widen what the caller may see.
+      const res = await getCourses(list("page=1&pageSize=10&status=draft"));
+      const ids = (await res.json()).data.map((c: { id: string }) => c.id);
+      expect(ids).toContain(coscDraft.id);
+      expect(ids).not.toContain(mathDraft.id);
+      expect(ids).not.toContain(coscPublished.id);
+    } finally {
+      await cleanupRbac({
+        userIds: [unitAdmin.id],
+        courseIds: [coscDraft.id, coscPublished.id, mathDraft.id],
+      });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
