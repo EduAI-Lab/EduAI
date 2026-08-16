@@ -1,13 +1,8 @@
 /** UI regression for the Instructor assessment-authoring happy path (#1429, #1530). */
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { QM_FRONTEND_URL } from '../../playwright.config';
-import { createInstructor } from '../helpers/auth';
+import { createInstructor, injectSessionIntoPage } from '../helpers/auth';
 import { createQmCourseForInstructor } from '../helpers/qm-courses';
-
-async function injectSession(page: Page, request: APIRequestContext): Promise<void> {
-  const { cookies } = await request.storageState();
-  await page.context().addCookies(cookies);
-}
 
 test('INSTRUCTOR creates an assessment blueprint through the Question Maker UI', async ({ page, playwright }) => {
   const instructor = await playwright.request.newContext();
@@ -17,7 +12,7 @@ test('INSTRUCTOR creates an assessment blueprint through the Question Maker UI',
       name: 'QM Assessment UI Workflow',
       code: 'QM-ASSESS-UI',
     });
-    await injectSession(page, instructor);
+    await injectSessionIntoPage(page, instructor);
 
     await page.goto(`${QM_FRONTEND_URL}/courses/${qmCourseId}?tab=assessments`);
     await page.getByRole('button', { name: 'New assessment' }).click();

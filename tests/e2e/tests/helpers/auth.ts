@@ -1,6 +1,6 @@
-import type { APIRequestContext, APIResponse } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
-import { CORE_URL } from "../../playwright.config";
+import { CORE_URL, QM_FRONTEND_URL } from "../../playwright.config";
 
 /**
  * Generate a collision-safe unique email address for each test invocation.
@@ -13,6 +13,27 @@ export function uniqueEmail(prefix = "user"): string {
 }
 
 export const DEFAULT_PASSWORD = "E2eTestPass1!";
+
+/**
+ * Copy an API-created Core session into the browser used by an extension UI.
+ *
+ * The E2E stack serves Core and extensions on different localhost ports. An
+ * explicit URL makes Playwright register the host cookie for the extension
+ * origin instead of relying on the API context's host-only metadata.
+ */
+export async function injectSessionIntoPage(
+  page: Page,
+  request: APIRequestContext,
+): Promise<void> {
+  const { cookies } = await request.storageState();
+  await page.context().addCookies(
+    cookies.map((cookie) => ({
+      ...cookie,
+      domain: undefined,
+      url: QM_FRONTEND_URL,
+    })),
+  );
+}
 
 /** Headers for direct calls to Core's extension-only session validation seam. */
 export function coreServiceHeaders(): Record<string, string> {
