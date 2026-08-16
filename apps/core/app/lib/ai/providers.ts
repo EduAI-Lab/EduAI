@@ -138,17 +138,34 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 
       const apiKey = userSettings.vllm?.apiKey || resolveVllmApiKey();
       if (apiKey) {
-        providers.vllm = createOpenAI({
+        const vllm = createOpenAI({
           apiKey,
           baseURL,
           // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
           compatibility: "strict",
-          // vLLM 0.26 exposes OpenAI JSON-schema response formats. Assist mode
-          // uses this for small-model diagram turns so the application can render
-          // a canonical Markdown structure from a complete stage object.
-          structuredOutputs: true,
           fetch: vllmThinkingDisabledFetch(),
         });
+        // `structuredOutputs` belongs to the language-model settings, not the
+        // createOpenAI provider settings. Without this wrapper the SDK silently
+        // downgrades a JSON-schema response format to ordinary Markdown, which
+        // lets 2B/9B omit Assist stages or the diagram payload.
+        providers.vllm = Object.assign(
+          (modelId: string, settings?: Record<string, unknown>) =>
+            vllm(modelId, { ...settings, structuredOutputs: true }),
+          vllm,
+          {
+            languageModel: (
+              modelId: string,
+              settings?: Record<string, unknown>,
+            ) =>
+              vllm.languageModel(modelId, {
+                ...settings,
+                structuredOutputs: true,
+              }),
+            chat: (modelId: string, settings?: Record<string, unknown>) =>
+              vllm.chat(modelId, { ...settings, structuredOutputs: true }),
+          },
+        );
       }
     }
   }

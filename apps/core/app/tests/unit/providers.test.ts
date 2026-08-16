@@ -12,9 +12,19 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { createOllamaMock, createOpenAIMock, createGoogleMock, resolveOllamaMock } = vi.hoisted(() => ({
+const {
+  createOllamaMock,
+  createOpenAIMock,
+  createGoogleMock,
+  resolveOllamaMock,
+} = vi.hoisted(() => ({
   createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) =>
+    Object.assign(vi.fn(), {
+      languageModel: vi.fn(),
+      chat: vi.fn(),
+    }),
+  ),
   createGoogleMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
   resolveOllamaMock: vi.fn(),
 }));
@@ -28,11 +38,14 @@ vi.mock("@ai-sdk/openai", () => ({
 }));
 
 vi.mock("@ai-sdk/google", () => ({
-  createGoogleGenerativeAI: (opts: Record<string, unknown>) => createGoogleMock(opts),
+  createGoogleGenerativeAI: (opts: Record<string, unknown>) =>
+    createGoogleMock(opts),
 }));
 
 vi.mock("ai", () => ({
-  createProviderRegistry: (providers: Record<string, unknown>) => ({ __providers: providers }),
+  createProviderRegistry: (providers: Record<string, unknown>) => ({
+    __providers: providers,
+  }),
 }));
 
 // Defaults to the real implementation; the "resolution fully fails" test below
@@ -40,7 +53,8 @@ vi.mock("ai", () => ({
 // resolveLocalInferenceBaseUrlOrLog (both the client-supplied and the
 // deployment-default resolution fail -> the provider is disabled).
 vi.mock("~/lib/ai/ollama-url.server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/ai/ollama-url.server")>();
+  const actual =
+    await importOriginal<typeof import("~/lib/ai/ollama-url.server")>();
   resolveOllamaMock.mockImplementation(actual.resolveAllowedOllamaBaseUrl);
   return { ...actual, resolveAllowedOllamaBaseUrl: resolveOllamaMock };
 });
@@ -54,7 +68,10 @@ import {
   listEnabledRegistryProviders,
   validateProviderConfig,
 } from "~/lib/ai/providers";
-import type { SupportedProvider, UserProviderSettings } from "~/lib/ai/providers";
+import type {
+  SupportedProvider,
+  UserProviderSettings,
+} from "~/lib/ai/providers";
 
 const ENV_KEYS = [
   "OLLAMA_BASE_URL",
@@ -104,7 +121,9 @@ describe("createAIProviderRegistry", () => {
   });
 
   it("does not create an OpenAI client when it has a key but is not enabled", () => {
-    createAIProviderRegistry({ openai: { isEnabled: false, apiKey: "sk-abc" } });
+    createAIProviderRegistry({
+      openai: { isEnabled: false, apiKey: "sk-abc" },
+    });
     expect(createOpenAIMock).not.toHaveBeenCalled();
   });
 
@@ -147,7 +166,9 @@ describe("createAIProviderRegistry", () => {
     process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     delete process.env.VLLM_API_KEY;
 
-    createAIProviderRegistry({ vllm: { isEnabled: true, apiKey: "user-supplied-key" } });
+    createAIProviderRegistry({
+      vllm: { isEnabled: true, apiKey: "user-supplied-key" },
+    });
 
     expect(createOpenAIMock).toHaveBeenCalledWith(
       expect.objectContaining({ apiKey: "user-supplied-key" }),
@@ -160,7 +181,32 @@ describe("createAIProviderRegistry", () => {
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
 
-    expect(createOpenAIMock).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "env-key" }));
+    expect(createOpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "env-key" }),
+    );
+  });
+
+  it("enables JSON-schema outputs on each vLLM model instance", () => {
+    process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
+    process.env.VLLM_API_KEY = "env-key";
+
+    const registry = createAIProviderRegistry({
+      vllm: { isEnabled: true },
+    }) as unknown as {
+      __providers: Record<
+        string,
+        { languageModel: (modelId: string) => unknown }
+      >;
+    };
+    registry.__providers.vllm.languageModel("qwen3.5-2b-instruct");
+
+    const vllmProvider = createOpenAIMock.mock.results.at(-1)?.value as {
+      languageModel: ReturnType<typeof vi.fn>;
+    };
+    expect(vllmProvider.languageModel).toHaveBeenCalledWith(
+      "qwen3.5-2b-instruct",
+      { structuredOutputs: true },
+    );
   });
 
   it("uses the 'vllm-local' default API key for a loopback vLLM instance", () => {
@@ -169,11 +215,15 @@ describe("createAIProviderRegistry", () => {
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
 
-    expect(createOpenAIMock).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "vllm-local" }));
+    expect(createOpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "vllm-local" }),
+    );
   });
 
   it("registers nothing when no provider settings are enabled", () => {
-    const registry = createAIProviderRegistry({}) as unknown as { __providers: Record<string, unknown> };
+    const registry = createAIProviderRegistry({}) as unknown as {
+      __providers: Record<string, unknown>;
+    };
 
     expect(createOpenAIMock).not.toHaveBeenCalled();
     expect(createGoogleMock).not.toHaveBeenCalled();
@@ -196,7 +246,9 @@ describe("createAIProviderRegistry — resolution fully fails", () => {
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const registry = createAIProviderRegistry({ ollama: { isEnabled: true } }) as unknown as {
+    const registry = createAIProviderRegistry({
+      ollama: { isEnabled: true },
+    }) as unknown as {
       __providers: Record<string, unknown>;
     };
 
@@ -222,7 +274,9 @@ describe("validateProviderConfig", () => {
   });
 
   it("is valid when a required API key is present", () => {
-    expect(validateProviderConfig("openai", { apiKey: "sk-x" })).toEqual({ isValid: true });
+    expect(validateProviderConfig("openai", { apiKey: "sk-x" })).toEqual({
+      isValid: true,
+    });
   });
 
   it("is valid for a provider that does not require an API key, even without one", () => {
@@ -233,7 +287,12 @@ describe("validateProviderConfig", () => {
 describe("getAvailableProviders / getProviderConfig", () => {
   it("returns all known provider configs", () => {
     const configs = getAvailableProviders();
-    expect(configs.map((c) => c.id).sort()).toEqual(["google", "ollama", "openai", "vllm"]);
+    expect(configs.map((c) => c.id).sort()).toEqual([
+      "google",
+      "ollama",
+      "openai",
+      "vllm",
+    ]);
   });
 
   it("returns the config for a known provider id", () => {
@@ -247,7 +306,9 @@ describe("getAvailableProviders / getProviderConfig", () => {
 
 describe("isProviderConfigured", () => {
   it("is false when the provider is not enabled", () => {
-    const settings: UserProviderSettings = { openai: { isEnabled: false, apiKey: "sk-x" } };
+    const settings: UserProviderSettings = {
+      openai: { isEnabled: false, apiKey: "sk-x" },
+    };
     expect(isProviderConfigured("openai", settings)).toBe(false);
   });
 
@@ -257,7 +318,9 @@ describe("isProviderConfigured", () => {
   });
 
   it("is true when enabled with a required API key", () => {
-    const settings: UserProviderSettings = { openai: { isEnabled: true, apiKey: "sk-x" } };
+    const settings: UserProviderSettings = {
+      openai: { isEnabled: true, apiKey: "sk-x" },
+    };
     expect(isProviderConfigured("openai", settings)).toBe(true);
   });
 
@@ -289,6 +352,10 @@ describe("listEnabledRegistryProviders", () => {
       ollama: { isEnabled: true },
       vllm: { isEnabled: true },
     };
-    expect(listEnabledRegistryProviders(settings).sort()).toEqual(["ollama", "openai", "vllm"]);
+    expect(listEnabledRegistryProviders(settings).sort()).toEqual([
+      "ollama",
+      "openai",
+      "vllm",
+    ]);
   });
 });
