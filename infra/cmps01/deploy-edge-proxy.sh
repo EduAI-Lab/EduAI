@@ -5,6 +5,9 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
+# shellcheck source=lib/check-example-secrets.sh
+source "${DIR}/lib/check-example-secrets.sh"
+
 if [ -f .env ]; then
   set -a
   # shellcheck disable=SC1091
@@ -12,12 +15,9 @@ if [ -f .env ]; then
   set +a
 fi
 
-: "${CMPS01_INTERNAL_KEY:?Set CMPS01_INTERNAL_KEY in infra/cmps01/.env (see .env.example)}"
-if [ "$CMPS01_INTERNAL_KEY" = "changeme-run-deploy-edge-proxy" ]; then
-  echo "ERROR: CMPS01_INTERNAL_KEY is still the placeholder — set a real secret in .env"
-  exit 1
-fi
-: "${CMPS01_INTERNAL_ALLOW_IPS:?Set CMPS01_INTERNAL_ALLOW_IPS to s378 only (e.g. 206.87.25.229) — do not add laptops}"
+# Reject unset/empty/example secrets before any docker compose / service start (#1115).
+check_cmps01_internal_key || exit 1
+check_cmps01_allow_ips || exit 1
 
 echo "=== render nginx configs ==="
 {
@@ -32,8 +32,14 @@ echo "=== render nginx configs ==="
 
 export CMPS01_INTERNAL_KEY
 envsubst '${CMPS01_INTERNAL_KEY}' < nginx.conf.template > nginx.conf
+chmod 600 nginx.conf
+
+# LiteLLM master_key must match CMPS01_INTERNAL_KEY (and s378 VLLM_API_KEY) — no vllm-local fallback.
+envsubst '${CMPS01_INTERNAL_KEY}' < litellm-config.yaml.template > litellm-config.runtime.yaml
+chmod 600 litellm-config.runtime.yaml
 
 AUTH_HEADER=(-H "X-EduAI-Internal-Key: ${CMPS01_INTERNAL_KEY}")
+VLLM_AUTH_HEADER=(-H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}")
 
 echo "=== ensure energy sidecar on :9100 ==="
 if ! curl -sf http://127.0.0.1:9100/health | grep -q canMeasure; then
@@ -43,12 +49,12 @@ fi
 echo "=== restart LiteLLM on 127.0.0.1:18091 ==="
 docker compose up -d eduai-vllm-proxy --force-recreate
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -sf http://127.0.0.1:18091/v1/models -H "Authorization: Bearer vllm-local" >/dev/null; then
+  if curl -sf http://127.0.0.1:18091/v1/models "${VLLM_AUTH_HEADER[@]}" >/dev/null; then
     break
   fi
   sleep 3
 done
-curl -sf http://127.0.0.1:18091/v1/models -H "Authorization: Bearer vllm-local" | head -c 200
+curl -sf http://127.0.0.1:18091/v1/models "${VLLM_AUTH_HEADER[@]}" | head -c 200
 echo ""
 
 echo "=== start nginx edge on :8001 ==="
@@ -56,7 +62,7 @@ docker compose up -d eduai-edge-proxy --force-recreate
 sleep 2
 
 echo "=== verify vLLM via edge ==="
-curl -sf http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | head -c 200
+curl -sf http://127.0.0.1:8001/v1/models "${VLLM_AUTH_HEADER[@]}" | head -c 200
 echo ""
 
 echo "=== verify energy via edge (auth required) ==="
@@ -81,3 +87,4 @@ echo "s378 apps/core/.env (dev server only — do not copy key to laptops):"
 echo "  ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy"
 echo "  OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama"
 echo "  CMPS01_INTERNAL_KEY=<same secret as cmps01 .env>"
+echo "  VLLM_API_KEY=<same secret as CMPS01_INTERNAL_KEY — LiteLLM master_key>"

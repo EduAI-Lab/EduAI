@@ -1,0 +1,21 @@
+# S9 — generate-questions (QM), census docs/PICT_CENSUS.md § S9.
+# See tests/models/generate-questions.oracle.ts for the oracle spec.
+#
+# POST /api/eduai/generate-questions
+# (apps/extensions/question-maker/app/backend/src/routes/eduai.js:97).
+# Checks run in this order: platform-role flat gate (QM_AUTHORIZED, router-
+# level) -> required-field validation (prompt, courseCode) -> numQuestions
+# vs config.maxQuestions -> content-aware course access
+# (resolveCourseCodeAccess, TA-rank+) -> proxy to eduaiService.generateQuestions.
+# `Mcq`/`DifficultyDistribution`/`ReasoningDistribution` don't gate the
+# response at all — they only change what gets forwarded downstream — so
+# this model also asserts the forwarded payload on every 200 row, not just
+# the status code.
+Authorized:              yes, no
+PromptPresent:           yes, no
+CourseCodePresent:       yes, no
+NumQuestions:            absent, valid, exceeds
+CourseAccess:            yes, no
+Mcq:                     absent, valid, low, high
+DifficultyDistribution:  provided, absent
+ReasoningDistribution:   provided, absent

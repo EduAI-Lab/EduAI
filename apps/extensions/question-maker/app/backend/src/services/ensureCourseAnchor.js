@@ -1,0 +1,89 @@
+/**
+ * Idempotent ensure of a QM Course anchor for a Core course id (#1114 / #1270).
+ *
+ * All anchor writers (POST /api/course, auto-import, ADMIN catalog
+ * materialization) share this helper so concurrent ensures serialize on the
+ * same per-`coreCourseId` Postgres advisory lock and agree on one persisted
+ * owner.
+ *
+ * Unique-conflict recovery re-reads in a NEW transaction, not the aborted
+ * one: a P2002 aborts the Postgres transaction, so a reread through the same
+ * `tx` would fail with "current transaction is aborted". The new transaction
+ * reacquires the same advisory lock before reading, so the recovery path
+ * can't race a concurrent delete of the conflicting row either (#1270 review).
+ */
+import { Prisma } from '@eduai/question-maker-prisma-client';
+import { prisma } from '../config/database.js';
+
+/** Advisory-lock namespace for QM course-anchor creation (#1114). */
+export const COURSE_ANCHOR_LOCK_NS = 1114;
+
+/** Largest value `| 0` can produce; `Math.abs` of this overflows int32. */
+const INT32_MIN = -2147483648;
+
+/** Stable positive int32 for pg_advisory_xact_lock's second key. */
+export function courseAnchorAdvisoryLockKey(coreCourseId) {
+  let h = 0;
+  for (let i = 0; i < coreCourseId.length; i++) {
+    h = (Math.imul(31, h) + coreCourseId.charCodeAt(i)) | 0;
+  }
+  if (h === 0) return 1;
+  // Math.abs(INT32_MIN) is 2147483648, one past int32's max — the positive
+  // counterpart isn't representable, so pg's `::int` cast throws. Clamp to
+  // int32 max instead of overflowing.
+  if (h === INT32_MIN) return 2147483647;
+  return Math.abs(h);
+}
+
+/**
+ * @param {string} userId
+ * @param {string} coreCourseId
+ * @returns {Promise<{ course: object, created: boolean }>}
+ */
+export async function ensureCourseAnchor(userId, coreCourseId) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Both args cast to int: pg_advisory_xact_lock only has bigint / (int, int)
+      // overloads, and Prisma raw binding can infer mismatched types.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${COURSE_ANCHOR_LOCK_NS}::int, ${courseAnchorAdvisoryLockKey(coreCourseId)}::int)`;
+
+      const existing = await tx.course.findUnique({ where: { coreCourseId } });
+      if (existing) {
+        return { course: existing, created: false };
+      }
+
+      const course = await tx.course.create({
+        data: { userId, coreCourseId },
+      });
+      return { course, created: true };
+    });
+  } catch (error) {
+    const isUniqueViolation =
+      error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+    if (!isUniqueViolation) throw error;
+
+    // Transaction already aborted/rolled back by the P2002 — an unlocked
+    // reread here has a window where the racing writer's row could be
+    // deleted between the conflict and this read, returning null and
+    // rethrowing a spurious error even though the conflict has cleared
+    // (#1270 review). Reacquire the same advisory lock in a fresh
+    // transaction instead: once held, no other `ensureCourseAnchor` call for
+    // this `coreCourseId` can be concurrently creating or racing a delete
+    // against it, so it's safe to read-or-create here as the single source
+    // of truth rather than just read-and-give-up.
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${COURSE_ANCHOR_LOCK_NS}::int, ${courseAnchorAdvisoryLockKey(coreCourseId)}::int)`;
+
+      const existing = await tx.course.findUnique({ where: { coreCourseId } });
+      if (existing) {
+        return { course: existing, created: false };
+      }
+
+      // The conflicting row is gone (deleted between the P2002 and here) —
+      // we hold the lock now, so it's safe to create rather than surface a
+      // 500 for a conflict that no longer exists.
+      const course = await tx.course.create({ data: { userId, coreCourseId } });
+      return { course, created: true };
+    });
+  }
+}

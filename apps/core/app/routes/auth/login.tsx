@@ -11,12 +11,13 @@ import { validateRedirectUrl } from "~/lib/auth/guards.server"
 import { getPolicy } from "~/lib/policy.server"
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
 import { getActorContext, getRequestContext } from "~/lib/request-context.server"
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const redirectTo = validateRedirectUrl(url.searchParams.get("redirect"));
   const forceReauth = url.searchParams.get("force") === "1";
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
 
   // Extensions redirect here with force=1 when Core has a host-only session cookie
   // that is not sent to other *.eduai.ok.ubc.ca subdomains. Skip auto-redirect so

@@ -10,7 +10,7 @@
  * an unrelated, out-of-scope reason (no session, bad reset token, wrong
  * current password, an OAuth-only account already having a credential),
  * exactly like the real hook lets those requests fall through to their own
- * downstream handling. See TESTS.md for the known-drift row.
+ * downstream handling.
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -86,17 +86,6 @@ async function expectBlockedWeak(res: Response) {
 async function expectBlockedReuse(res: Response) {
   expect(res.status).toBe(400);
   expect(await messageOf(res)).toBe(REUSE_MESSAGE);
-}
-
-/** Rows where observed behaviour diverges from the spec-derived oracle (filed as #1385, not fixed here). */
-function isKnownDrift(row: PasswordSetReuseGateRow): boolean {
-  // #1385: `setPassword` is a better-auth SERVER_ONLY endpoint
-  // (created via `createAuthEndpoint.serverOnly`, which "takes no path
-  // because it has no URL to be reached at"). The before-hook's
-  // `PASSWORD_SETTING_PATHS["/set-password"]` lookup keys off `ctx.path`,
-  // which is therefore never `"/set-password"` for a real `auth.api.setPassword()`
-  // call — the strength/reuse gate silently never runs on this path.
-  return row.Path === "set-password" && (row.Strength === "weak" || row.Reuse === "reused");
 }
 
 async function runRow(row: PasswordSetReuseGateRow) {
@@ -236,8 +225,7 @@ afterAll(async () => {
 describe.each(rows.map((row, index) => [index, row] as const))(
   "password-set-reuse-gate PICT row #%i",
   (index, row) => {
-    const run = isKnownDrift(row) ? it.fails : it;
-    run(
+    it(
       `${row.Path}/${row.Strength}/${row.ResetToken}/${row.Session}/${row.CurrentPassword}/${row.Reuse} matches oracle`,
       async () => {
         await runRow(row);

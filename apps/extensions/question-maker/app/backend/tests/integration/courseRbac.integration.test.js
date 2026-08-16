@@ -9,15 +9,14 @@
  *   - ADMIN reaches any course (not just ones they own); a non-owner without
  *     access gets 403, and a missing course gets 404.
  *
- * The seeded fixture courses are Core-linked (fake coreCourseId), but the shared
- * `multiUserFetch` stub below only answers session validation, so any Core
- * enrollment lookup resolves to an empty roster — access still resolves via the
- * owner-fallback / ADMIN rules in resolveAccessForCourse. Auth is stubbed via
- * global fetch (session validate).
+ * The seeded fixture courses are Core-linked (fake coreCourseId). After #1114,
+ * access requires Core enrollment/unit data (fail closed) — stubs answer with
+ * a teaching enrollment for the owner via `teachingInstructorFetch`.
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import request from 'supertest';
+import { teachingInstructorFetch } from '../helpers/teachingInstructorFetch.js';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -33,16 +32,30 @@ const STRANGER = { id: 'cuid-rbac-stranger', email: 'stranger@test.com', role: '
 const ADMIN = { id: 'cuid-rbac-admin', email: 'admin@test.com', role: 'ADMIN', name: 'Admin' };
 
 /** Routes the session-validate fetch to a user based on the cookie value. */
-function multiUserFetch() {
-  return vi.fn().mockImplementation((_url, opts) => {
+function multiUserHandlers(ownerFetch) {
+  return async (url, opts) => {
+    const target = String(url);
+    const path = target.split('?')[0];
     const cookie = opts?.headers?.cookie ?? '';
-    const user = cookie.includes('owner')
-      ? OWNER
-      : cookie.includes('admin')
-        ? ADMIN
-        : STRANGER;
-    return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
-  });
+
+    if (path.endsWith('/api/sessions/validate')) {
+      const user = cookie.includes('owner')
+        ? OWNER
+        : cookie.includes('admin')
+          ? ADMIN
+          : STRANGER;
+      return { ok: true, json: async () => ({ user }) };
+    }
+
+    // Stranger has no teaching enrollment on the owner's course.
+    if (cookie.includes('stranger') && /\/enrollments$/.test(path)) {
+      return { ok: true, json: async () => ({ enrollments: [] }) };
+    }
+
+    // ADMIN short-circuits in resolveAccessForCourse — enrollment unused.
+    // Owner uses the teaching stub.
+    return ownerFetch(url, opts);
+  };
 }
 
 const asOwner = () => ({ Cookie: 'session=owner' });
@@ -71,7 +84,8 @@ describeDb('course RBAC (integration)', () => {
     const course = await prisma.course.findFirst({ where: { userId: OWNER.id } });
     courseId = course.id;
 
-    vi.stubGlobal('fetch', multiUserFetch());
+    const ownerFetch = await teachingInstructorFetch(OWNER, prisma);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(multiUserHandlers(ownerFetch)));
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -134,6 +148,24 @@ describeDb('course RBAC (integration)', () => {
         .put(`/api/course/${courseId}`)
         .set(asStranger())
         .send({ name: 'Hijack' });
+      expect(res.status).toBe(403);
+    });
+
+    it('rejects the owner with 403 when Core enrollment fetch fails (#1114)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation((url, opts) => {
+          const path = String(url).split('?')[0];
+          if (path.endsWith('/api/sessions/validate')) {
+            return Promise.resolve({ ok: true, json: async () => ({ user: OWNER }) });
+          }
+          if (/\/enrollments$/.test(path)) {
+            return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'down' }) });
+          }
+          return Promise.resolve({ ok: true, json: async () => ({}) });
+        }),
+      );
+      const res = await request(app).get(`/api/course/${courseId}`).set(asOwner());
       expect(res.status).toBe(403);
     });
   });

@@ -14,8 +14,7 @@
  */
 import type { ActionFunctionArgs } from "react-router";
 
-import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import {
   deactivateEnrollment,
   getEnrollment,
@@ -23,6 +22,7 @@ import {
 } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -42,12 +42,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(400, { error: "COURSE_ID_AND_ENROLLMENT_ID_REQUIRED" });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
 
   if (!course) {
     return json(404, { error: "COURSE_NOT_FOUND" });

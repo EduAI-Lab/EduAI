@@ -566,6 +566,41 @@ ${longBody}`,
     expect(generateText).toHaveBeenCalledTimes(2);
   });
 
+  it("onlyDeterministic (#1226 ablation): never calls the LLM, falls through to forced_deterministic instead", async () => {
+    const urgent = `**Top summary**
+- Do this quickly before the exam.
+
+**Next?** Want to try step one?`;
+    const result = await auditAndMaybeRewrite({
+      draft: urgent,
+      model: mockModel,
+      profile: "full_tutoring",
+      onlyDeterministic: true,
+    });
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.rewritten).toBe(true);
+    expect(result.afterMetrics.noUrgency).toBe(true);
+    expect(result.afterMetrics.underCap).toBe(true);
+    expect(result.text).not.toMatch(/quickly/i);
+  });
+
+  it("onlyDeterministic (#1226 ablation): still takes the cheap deterministic-fix path first when it clears the bar", async () => {
+    const draft = `* Top summary
+- Gradient descent nudges parameters downhill.
+
+Want me to expand step 2?`;
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "full_tutoring",
+      onlyDeterministic: true,
+    });
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("deterministic");
+    expect(result.afterMetrics.structuralPass).toBe(true);
+  });
+
   it("includes learner message and policy slice in the Dean rewrite prompt", async () => {
     vi.mocked(generateText).mockResolvedValue({
       text: `**Top summary**

@@ -125,7 +125,9 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
   });
 
   test('POST /api/course without coreCourseId returns 400', async ({ request }) => {
-    await signUp(request, { email: uniqueEmail('qm-create-missing') });
+    // #1114: STUDENT is rejected by requireRole before body validation — use
+    // an instructor so we reach the coreCourseId required check.
+    await createInstructor(request, { prefix: 'qm-create-missing' });
 
     const res = await request.post(`${QM_BACKEND_URL}/api/course`, {
       data: { name: 'E2E Test Course', courseCode: 'E2E 101' },
@@ -136,7 +138,7 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
   });
 
   test('POST /api/course with an unscoped coreCourseId returns 403', async ({ request }) => {
-    await signUp(request, { email: uniqueEmail('qm-create-unscoped') });
+    await createInstructor(request, { prefix: 'qm-create-unscoped' });
 
     // A syntactically plausible Core course id the caller has no access to
     // (not enrolled/teaching, not ADMIN) — isCoreCourseInScopedList rejects it.

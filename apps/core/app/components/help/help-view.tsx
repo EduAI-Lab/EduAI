@@ -108,8 +108,15 @@ const TOPICS: HelpTopic[] = [
   },
 ];
 
-export function HelpView({ role }: { role?: string }) {
-  const topics = TOPICS.filter((t) => !t.roles || (role && t.roles.includes(role)));
+export function HelpView({ role, isTA = false }: { role?: string; isTA?: boolean }) {
+  // TAs are platform STUDENTs (Enrollment.role carries TA). They can upload
+  // and manage their own course materials (AUTH-08), so they need the
+  // materials topic even though session.user.role is not in STAFF.
+  const topics = TOPICS.filter((t) => {
+    if (!t.roles) return true;
+    if (role && t.roles.includes(role)) return true;
+    return isTA && t.id === "materials";
+  });
 
   return (
     <div className="flex flex-col gap-6 px-4 lg:px-6 pb-10">

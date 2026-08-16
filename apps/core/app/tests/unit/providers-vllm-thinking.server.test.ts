@@ -40,6 +40,7 @@ import { createAIProviderRegistry } from "~/lib/ai/providers";
 
 const originalVllmUrl = process.env.VLLM_BASE_URL;
 const originalDisableThinking = process.env.VLLM_DISABLE_THINKING;
+const originalVllmApiKey = process.env.VLLM_API_KEY;
 
 afterEach(() => {
   createOpenAIMock.mockClear();
@@ -47,6 +48,8 @@ afterEach(() => {
   else process.env.VLLM_BASE_URL = originalVllmUrl;
   if (originalDisableThinking === undefined) delete process.env.VLLM_DISABLE_THINKING;
   else process.env.VLLM_DISABLE_THINKING = originalDisableThinking;
+  if (originalVllmApiKey === undefined) delete process.env.VLLM_API_KEY;
+  else process.env.VLLM_API_KEY = originalVllmApiKey;
 });
 
 function capturedFetch(): typeof fetch {
@@ -58,6 +61,7 @@ function capturedFetch(): typeof fetch {
 describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => {
   it("injects chat_template_kwargs.enable_thinking: false into a /chat/completions POST", async () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     delete process.env.VLLM_DISABLE_THINKING;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
@@ -81,6 +85,7 @@ describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => 
 
   it("preserves any existing chat_template_kwargs while forcing enable_thinking: false", async () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     delete process.env.VLLM_DISABLE_THINKING;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
@@ -110,6 +115,7 @@ describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => 
 
   it("does not touch non-chat-completions requests", async () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     delete process.env.VLLM_DISABLE_THINKING;
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
@@ -132,6 +138,7 @@ describe("createAIProviderRegistry — vLLM thinking-mode fetch wrapper", () => 
 
   it("is bypassed entirely when VLLM_DISABLE_THINKING=0", () => {
     process.env.VLLM_BASE_URL = "http://vllm.internal.example.edu:8001";
+    process.env.VLLM_API_KEY = "test-key";
     process.env.VLLM_DISABLE_THINKING = "0";
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });

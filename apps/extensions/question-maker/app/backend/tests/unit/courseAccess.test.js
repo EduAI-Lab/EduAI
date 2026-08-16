@@ -60,9 +60,9 @@ describe('resolveCourseAccess', () => {
       mockCourseFindOne.mockResolvedValue({ id: 2, userId: 'owner-1', coreCourseId: null });
     });
 
-    it('grants the owner instructor access', async () => {
+    it('denies the owner — ownership alone is not access (#1114)', async () => {
       const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 2);
-      expect(access).toEqual(LEVELS.instructor);
+      expect(access).toBeNull();
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
@@ -108,6 +108,18 @@ describe('resolveCourseAccess', () => {
       const access = await resolveCourseAccess({ id: 'u1', role: 'STUDENT' }, 1);
       expect(access).toBeNull();
     });
+
+    it('fails closed for the owner when enrollment fetch throws (#1114)', async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 1);
+      expect(access).toBeNull();
+    });
+
+    it('fails closed for the owner when no matching enrollment exists (#1114)', async () => {
+      mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 1);
+      expect(access).toBeNull();
+    });
   });
 
   // Edge-case audit #225 (SEAM-02) / #1197 product decision: fail-CLOSED for
@@ -135,17 +147,20 @@ describe('resolveCourseAccess', () => {
       expect(access).toBeNull();
     });
 
-    // Distinguishable from the throw case above: Core answered successfully
-    // (empty roster is a real, known state — e.g. a fresh link/sync race),
-    // so the owner fallback still applies here. Only an unreachable/erroring
-    // Core fails closed.
-    it('grants the owner instructor when Core returns enrollments but the owner is not yet on the roster', async () => {
+    // Pre-#1114 this branch fell back to owner-only instructor access here
+    // ("linker not synced to the roster yet"). #1114 removes that fallback
+    // too: an empty roster is not distinguishable from "the owner never had
+    // real access" from the caller's side, and duplicating the
+    // #1114 fail-closed test above with the opposite expectation was the
+    // stale case this replaces — see 'fails closed for the owner when no
+    // matching enrollment exists (#1114)' above, same scenario.
+    it('denies the owner when Core answers with an empty roster, same as any other no-match (#1114)', async () => {
       mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
       const access = await resolveCourseAccess(
         { id: 'owner-1', role: 'INSTRUCTOR' },
         1,
       );
-      expect(access).toEqual(LEVELS.instructor);
+      expect(access).toBeNull();
     });
     it('denies a UNIT_ADMIN QM owner when getCourseFromCore and enrollments both throw', async () => {
       mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
@@ -195,6 +210,13 @@ describe('resolveCourseAccess', () => {
       );
       expect(access).toEqual(LEVELS.unit);
       expect(mockMe).not.toHaveBeenCalled();
+    });
+
+    it('fails closed for a UNIT_ADMIN owner when Core course fetch throws (#1114)', async () => {
+      mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'UNIT_ADMIN' }, 1);
+      expect(access).toBeNull();
     });
   });
 });
@@ -287,5 +309,18 @@ describe('requireCourseAccess', () => {
       },
     })(reqBase, makeRes(), next);
     expect(next).toHaveBeenCalledWith(boom);
+  });
+
+  it('403s the course owner when Core enrollment fetch fails (#1114)', async () => {
+    mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+    const res = makeRes();
+    const next = vi.fn();
+    await requireCourseAccess({ min: 'instructor', getCourseId: () => 1 })(
+      { user: { id: 'owner-1', role: 'INSTRUCTOR' }, headers: {} },
+      res,
+      next,
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });

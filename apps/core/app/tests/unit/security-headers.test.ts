@@ -146,7 +146,7 @@ describe("root middleware", () => {
     expect(res.headers.get("Content-Security-Policy")).toBe(nonceCsp);
   });
 
-  it("rejects direct document navigation to React Router .data URLs", async () => {
+  it("rejects direct navigation to React Router .data URLs", async () => {
     const request = new Request("https://eduai.example/dashboard.data", {
       headers: { Accept: "text/html", "Sec-Fetch-Dest": "document" },
     });
@@ -161,7 +161,7 @@ describe("root middleware", () => {
     expect(called).toBe(false);
   });
 
-  it("allows internal React Router .data fetches", async () => {
+  it("rejects .data URLs even when the request resembles an internal fetch", async () => {
     const request = new Request("https://eduai.example/dashboard.data", {
       headers: { Accept: "application/json", "Sec-Fetch-Dest": "empty" },
     });
@@ -173,7 +173,21 @@ describe("root middleware", () => {
       request,
     );
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects .data URLs without browser navigation headers", async () => {
+    const request = new Request("https://eduai.example/dashboard.data", {
+      headers: { Accept: "*/*" },
+    });
+    let called = false;
+
+    const res = await (middleware[0] as any)({ request }, async () => {
+      called = true;
+      return new Response("{}");
+    });
+
+    expect(res.status).toBe(404);
+    expect(called).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/canvas/client.server", async (importOriginal) => {
@@ -38,7 +38,7 @@ vi.mock("~/lib/canvas/materials.server", async (importOriginal) => {
 
 import { loader, action } from "~/routes/api/courses.canvas-materials.$";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { CanvasApiError } from "~/lib/canvas/client.server";
 import { InvalidCanvasCourseAccessError } from "~/lib/canvas/courses.server";
 import {
@@ -73,7 +73,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "instructor-1", role: "INSTRUCTOR" },
   } as never);
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: { id: "course-1" },
     access: { level: "instructor", rank: 2 },
   } as never);
@@ -92,13 +92,13 @@ describe("GET /api/courses/:courseId/canvas-materials", () => {
   });
 
   it("returns 404 when the course does not exist", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({ course: null, access: null });
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({ course: null, access: null });
     const res = await loader(makeLoaderArgs());
     expect(res.status).toBe(404);
   });
 
   it("returns 403 for a non-instructor (e.g. a TA)", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "ta", rank: 1 },
     } as never);
@@ -144,7 +144,7 @@ describe("POST /api/courses/:courseId/canvas-materials", () => {
   });
 
   it("returns 403 for a non-instructor before parsing the body", async () => {
-    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    vi.mocked(resolveCourseAccessGate).mockResolvedValue({
       course: { id: "course-1" },
       access: { level: "student", rank: 0 },
     } as never);

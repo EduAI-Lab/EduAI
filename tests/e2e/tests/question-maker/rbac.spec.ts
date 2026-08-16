@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 import { QM_BACKEND_URL } from '../../playwright.config';
 import { signUp, uniqueEmail, createInstructor } from '../helpers/auth';
-import { createQmCourseForInstructor, createQmCourseForStudent } from '../helpers/qm-courses';
+import { createQmCourseForInstructor } from '../helpers/qm-courses';
 
 // ---------------------------------------------------------------------------
 // Question routes — blocked for STUDENT (requires AUTHORS role)
@@ -98,27 +98,19 @@ test.describe('QM course routes accessible to all authenticated users', () => {
     expect(res.status()).toBe(200);
   });
 
-  test('STUDENT enrolled in a Core course can create the QM anchor for it (201)', async ({
+  test('STUDENT enrolled in a Core course cannot create a QM anchor for it (403)', async ({
     request,
-    playwright,
   }) => {
     await signUp(request, { email: uniqueEmail('qm-rbac-course-create') });
 
-    const { qmCourseId } = await createQmCourseForStudent(playwright, request, {
-      name: 'STUDENT Created Course',
-      code: 'RBAC 200',
+    // #1114: only ADMIN / UNIT_ADMIN / INSTRUCTOR may materialize anchors.
+    const res = await request.post(`${QM_BACKEND_URL}/api/course`, {
+      data: { coreCourseId: 'any-core-course-id' },
     });
-
-    expect(typeof qmCourseId).toBe('number');
-
-    // Not asserted in GET /api/course: that list is instructor-rank-and-up
-    // only (`MIN_LIST_RANK` in courseListService.js, pre-dating #1072) — a
-    // creator whose real Core enrollment is STUDENT resolves to student rank
-    // (0) for this course and is correctly omitted from their own list.
-    const accessRes = await request.get(`${QM_BACKEND_URL}/api/course/${qmCourseId}/access`);
-    expect(accessRes.status()).toBe(200);
-    const accessBody = await accessRes.json();
-    expect(accessBody.data).toMatchObject({ level: 'student', rank: 0 });
+    expect(res.status()).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(String(body.error)).toMatch(/ADMIN|UNIT_ADMIN|INSTRUCTOR/);
   });
 
   test('POST /api/course with an unscoped coreCourseId still 403s for STUDENT', async ({
@@ -131,7 +123,8 @@ test.describe('QM course routes accessible to all authenticated users', () => {
     });
     expect(res.status()).toBe(403);
     const body = await res.json();
-    expect(body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+    // Role gate fires before scoped-list / teaching checks (#1114).
+    expect(String(body.error)).toMatch(/ADMIN|UNIT_ADMIN|INSTRUCTOR/);
   });
 
   test('GET /api/course/:id for own course returns 200 for INSTRUCTOR', async ({
@@ -151,23 +144,26 @@ test.describe('QM course routes accessible to all authenticated users', () => {
     expect(body.data?.name ?? body.name).toBe('Own Course');
   });
 
-  test('GET /api/course/:id for own course returns 403 for STUDENT (student-rank access)', async ({
+  test('GET /api/course/:id returns 403 for STUDENT on an instructor-owned course', async ({
     request,
     playwright,
   }) => {
-    await signUp(request, { email: uniqueEmail('qm-rbac-course-own-student') });
+    // Instructor materializes the anchor; a separate STUDENT session cannot
+    // reach it (no teaching enrollment — #1114 fail-closed).
+    const instructorCtx = await playwright.request.newContext();
+    try {
+      await createInstructor(instructorCtx, { prefix: 'qm-rbac-course-own-inst' });
+      const { qmCourseId } = await createQmCourseForInstructor(playwright, instructorCtx, {
+        name: 'Instructor Course',
+        code: 'OWN 102',
+      });
 
-    const { qmCourseId } = await createQmCourseForStudent(playwright, request, {
-      name: 'Own Student Course',
-      code: 'OWN 102',
-    });
-
-    // #1072: access is resolved against the caller's real Core enrollment
-    // role, not QM ownership. A STUDENT enrollment resolves to student rank
-    // (0), below the `ta` minimum this route requires (rbac-matrix §5) — even
-    // though this STUDENT is the row's creator/owner.
-    const res = await request.get(`${QM_BACKEND_URL}/api/course/${qmCourseId}`);
-    expect(res.status()).toBe(403);
+      await signUp(request, { email: uniqueEmail('qm-rbac-course-own-student') });
+      const res = await request.get(`${QM_BACKEND_URL}/api/course/${qmCourseId}`);
+      expect(res.status()).toBe(403);
+    } finally {
+      await instructorCtx.dispose();
+    }
   });
 });
 

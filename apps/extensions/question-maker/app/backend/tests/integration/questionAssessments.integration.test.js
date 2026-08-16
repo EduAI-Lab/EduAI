@@ -6,11 +6,7 @@
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import request from 'supertest';
-
-/** #1041: Core's course list answers with `{ data, total, page, pageSize }`. */
-function coursePage(rows) {
-  return { data: rows, total: rows.length, page: 1, pageSize: 100 };
-}
+import { teachingInstructorFetch, coursePage } from '../helpers/teachingInstructorFetch.js';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -24,13 +20,6 @@ const describeDb = hasTestDb ? describe : describe.skip;
 const TEST_USER = { id: 'cuid-qna-user', email: 'qna@test.com', role: 'INSTRUCTOR', name: 'QnA User' };
 
 const cookie = () => ({ Cookie: 'session=valid' });
-
-function sessionFetch() {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve({ user: TEST_USER }),
-  });
-}
 
 describeDb('Questions & assessments (integration)', () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
@@ -58,7 +47,7 @@ describeDb('Questions & assessments (integration)', () => {
     const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
-    vi.stubGlobal('fetch', sessionFetch());
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(await teachingInstructorFetch(TEST_USER, prisma)));
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -133,6 +122,15 @@ describeDb('Questions & assessments (integration)', () => {
         if (target.endsWith('/api/sessions/validate')) {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
         }
+        if (path.endsWith(`/api/courses/${coreCourseId}/enrollments`)) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }],
+              }),
+          });
+        }
         if (path.endsWith(`/api/courses/${coreCourseId}`)) {
           return Promise.resolve({
             ok: true,
@@ -142,7 +140,17 @@ describeDb('Questions & assessments (integration)', () => {
         if (path.endsWith('/api/courses')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve(coursePage([{ id: coreCourseId, code: 'INT-999', name }])),
+            json: () =>
+              Promise.resolve(
+                coursePage([
+                  {
+                    id: coreCourseId,
+                    code: 'INT-999',
+                    name,
+                    callerEnrollmentRole: 'INSTRUCTOR',
+                  },
+                ]),
+              ),
           });
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });

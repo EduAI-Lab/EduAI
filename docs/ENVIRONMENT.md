@@ -81,7 +81,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `DATABASE_URL` | required | dev | Postgres connection string |
 | `BETTER_AUTH_SECRET` | required | dev | Auth session signing secret — generate with `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | required | dev | Base URL of the Core app |
-| `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) |
+| `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) and shared chat/completion sliding-window limits |
 | `QUEUE_ENQUEUE_ENABLED` | optional (default `false`) | dev/prod | Guarded #914 producer flag. When `true`, opted-in `/api/chat` requests (`enqueue: true`) enqueue an AI job instead of streaming. Keep off until the dispatch worker (#168) can drain the queue |
 | `QUEUE_MAX_DEPTH` | optional (default off) | dev/prod | Backpressure cap (#915): max PENDING jobs per queue before `enqueue()` rejects with 429 + `Retry-After`. Plain positive integer only — unset, `0`, or a non-integer value (e.g. `1e3`) disables the cap. See [Operating `QUEUE_MAX_DEPTH`](#operating-queue_max_depth) before enabling it |
 | `AI_JOB_DEFAULT_MODEL` | optional | dev/prod | Worker model override. When unset, the worker uses Auto routing and falls back to `vllm:qwen2.5-32b-instruct` if routing fails |
@@ -99,7 +99,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit. When enabled (default), Dean reject→retry→forced wrap ships structure-compliant text (policy v2.1+: Teacher requires literal `**Top summary**` / `**Next?**`; UI TLDR/Continue remapping is client-only). |
 | `EDUAI_API_KEY` | required for cross-service calls | dev/prod | Shared service key — **must match** AI Tutor server's and QM's `EDUAI_API_KEY` exactly |
 | `SESSION_VALIDATE_RATE_LIMIT` | optional (default 300) | dev/prod | Rate limit for `POST /api/sessions/validate` |
-| `CHAT_RATE_LIMIT`, `CHAT_RATE_WINDOW_MS` | optional (default 20 per 60000ms) | dev/prod | Per-user rate limit for `POST /api/chat` |
+| `CHAT_RATE_LIMIT`, `CHAT_RATE_LIMIT_WINDOW_MS` | optional (defaults `100` / `60000`) | dev/prod | Shared Redis sliding-window limit for `POST /api/chat` and `POST /api/completion`. Session/API-key callers are keyed by user; direct service-key callers use a stable shared service bucket. Denials return `429 {"error":"RATE_LIMITED","retryAfter":<seconds>}` plus `Retry-After`. `CHAT_RATE_WINDOW_MS` remains a legacy fallback only when the canonical window variable is unset. If Redis is unavailable, Core fails over quickly to a bounded per-process limiter; protection remains, but decisions are no longer shared across app instances until Redis recovers. |
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |

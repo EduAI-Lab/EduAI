@@ -1,11 +1,11 @@
 import { z } from "zod";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { auth } from "~/lib/auth/server";
 import {
   upsertUserProviderSetting,
   deleteUserProviderSetting,
 } from "~/lib/user-provider-settings.server";
 import prisma from "~/lib/prisma.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function unauthorized() {
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -16,7 +16,7 @@ function unauthorized() {
 
 /** GET — returns provider settings for the current user. Never exposes the raw key. */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return unauthorized();
 
   const rows = await prisma.userProviderSettings.findMany({
@@ -55,7 +55,7 @@ const DeleteSchema = z.object({
 
 /** POST to upsert, DELETE to remove. */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user) return unauthorized();
 
   if (request.method === "POST") {

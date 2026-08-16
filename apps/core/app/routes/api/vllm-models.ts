@@ -1,5 +1,6 @@
-import { auth } from "~/lib/auth/server";
 import type { LoaderFunctionArgs } from "react-router";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function resolveVllmBaseUrl(raw: string): string {
   let base = raw.replace(/\/$/, "");
@@ -30,7 +31,7 @@ function formatVllmFetchError(err: {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getRequestSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response("Forbidden: Admins only", { status: 403 });
   }
@@ -39,7 +40,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rawBase =
     process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+  const apiKey = resolveVllmApiKey();
+  if (!apiKey) {
+    return Response.json(
+      { error: "VLLM_API_KEY is not configured (required in production)" },
+      { status: 503 },
+    );
+  }
 
   try {
     const modelsUrl = `${baseUrl}/models`;

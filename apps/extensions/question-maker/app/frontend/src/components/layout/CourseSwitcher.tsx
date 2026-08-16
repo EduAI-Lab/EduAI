@@ -3,11 +3,19 @@
  * `@eduai/ui` CourseSwitcher (issue #764), so Core, QuestionMaker, and AI Tutor
  * share one switcher. Carries the active workspace tab across the switch.
  */
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from '@eduai/ui';
 import { useDisplayCourses } from '@/hooks/useDisplayCourses';
 
-const TAB_SAFE = new Set(['overview', 'questions', 'assessments', 'topics', 'canvas']);
+const TAB_SAFE = new Set(['overview', 'questions', 'banks', 'assessments', 'topics', 'canvas']);
+
+/** Infer workspace tab from deep routes that don't carry `?tab=`. */
+function tabFromPathname(pathname: string): string | null {
+  if (/\/banks(\/|$)/.test(pathname)) return 'banks';
+  if (/\/assessments(\/|$)/.test(pathname)) return 'assessments';
+  if (/\/questions(\/|$)/.test(pathname)) return 'questions';
+  return null;
+}
 
 interface CourseSwitcherProps {
   courseId: number;
@@ -15,12 +23,20 @@ interface CourseSwitcherProps {
 
 export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { displayCourses } = useDisplayCourses();
 
   // Carry the active tab across the switch when it's a real workspace tab.
+  // Deep routes (bank detail, assessment builder) have no `?tab=` — infer it.
   const tabParam = searchParams.get('tab');
-  const targetTab = tabParam && TAB_SAFE.has(tabParam) ? tabParam : 'overview';
+  const inferred = tabFromPathname(pathname);
+  const targetTab =
+    tabParam && TAB_SAFE.has(tabParam)
+      ? tabParam
+      : inferred && TAB_SAFE.has(inferred)
+        ? inferred
+        : 'overview';
 
   const options: CourseSwitcherOption[] = displayCourses.map((c) => ({
     id: c.id,
@@ -40,7 +56,7 @@ export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
       courses={options}
       currentId={courseId}
       onSelect={(id) => navigate(`/courses/${id}?tab=${targetTab}`)}
-      onOpenCurrent={() => navigate(`/courses/${courseId}?tab=overview`)}
+      onOpenCurrent={() => navigate(`/courses/${courseId}?tab=${targetTab}`)}
       onViewAll={() => navigate('/courses')}
     />
   );

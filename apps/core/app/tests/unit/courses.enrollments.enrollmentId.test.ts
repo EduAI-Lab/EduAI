@@ -5,7 +5,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
-  resolveCourseAccessWithCourse: vi.fn(),
+  resolveCourseAccessGate: vi.fn(),
 }));
 
 vi.mock("~/lib/courses/enrollments.server", () => ({
@@ -16,7 +16,7 @@ vi.mock("~/lib/courses/enrollments.server", () => ({
 
 import { action } from "~/routes/api/courses.enrollments.$enrollmentId";
 import { auth } from "~/lib/auth/server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import {
   getEnrollment,
   updateEnrollmentRole,
@@ -28,7 +28,7 @@ const COURSE = { id: "c1", isPublished: true };
 type Access = { level: string; rank: number } | null;
 
 function mockAccess(access: Access, course: object | null = COURSE) {
-  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+  vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,
     access: access as never,
   });

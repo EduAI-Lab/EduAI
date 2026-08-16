@@ -1,7 +1,14 @@
 // @vitest-environment node
 // #1213 — POST /api/completion: method gate, the api-key/session/service-key
 // auth chain, invalid JSON, and the streaming vs non-streaming response shape.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const checkRateLimitMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/auth/rate-limit.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/rate-limit.server")>();
+  return { ...actual, checkRateLimit: checkRateLimitMock };
+});
 
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: vi.fn(),
@@ -16,6 +23,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
+import { APICallError } from "ai";
 import { action } from "~/routes/api/completion";
 import { runCompletion } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
@@ -36,11 +44,18 @@ function makeArgs(body: unknown, method = "POST") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("CHAT_RATE_LIMIT", "2");
+  vi.stubEnv("CHAT_RATE_LIMIT_WINDOW_MS", "60000");
+  checkRateLimitMock.mockResolvedValue({ limited: false, retryAfter: 0 });
   vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null } as never);
   vi.mocked(requireServiceKey).mockResolvedValue(null);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("POST /api/completion", () => {
@@ -56,6 +71,7 @@ describe("POST /api/completion", () => {
     } as never);
     const res = await action(makeArgs({}));
     expect(res.status).toBe(403);
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
   });
 
   it("falls through to requireServiceKey when no session and no api-key session", async () => {
@@ -63,6 +79,7 @@ describe("POST /api/completion", () => {
     vi.mocked(requireServiceKey).mockResolvedValue(new Response(null, { status: 401 }) as never);
     const res = await action(makeArgs({}));
     expect(res.status).toBe(401);
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 for invalid JSON", async () => {
@@ -72,12 +89,99 @@ describe("POST /api/completion", () => {
       context: {} as never,
     } as never);
     expect(res.status).toBe(400);
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
   });
 
-  it("maps a runCompletion failure to its status", async () => {
-    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "MODEL_NOT_FOUND", status: 422 } as never);
+  it("uses the authenticated session user as the rate-limit identity", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:u1", 2, 60_000);
+  });
+
+  it("uses the admin API-key session user as the rate-limit identity", async () => {
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: null,
+      session: { user: { id: "admin-key-owner", role: "ADMIN" } },
+    } as never);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      "completion:admin-key-owner",
+      2,
+      60_000,
+    );
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("uses a stable non-secret identity for service-key-only callers", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:service", 2, 60_000);
+  });
+
+  it("returns the stable 429 contract before runCompletion", async () => {
+    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 11 });
+
+    const res = await action(makeArgs({ model: "gpt", messages: [] }));
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "RATE_LIMITED", retryAfter: 11 });
+    expect(res.headers.get("Retry-After")).toBe("11");
+    expect(runCompletion).not.toHaveBeenCalled();
+  });
+
+  it("preserves ordinary validation failures as their existing error shape", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "model is required", status: 400 } as never);
     const res = await action(makeArgs({ model: "bogus", messages: [] }));
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "model is required" });
+    expect(res.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("serializes the stable provider failure and a valid retry hint", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      status: 503,
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+      retryAfter: 9,
+    } as never);
+
+    const res = await action(makeArgs({ model: "openai:gpt-4o", messages: [] }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+    });
+    expect(res.headers.get("Retry-After")).toBe("9");
   });
 
   it("returns 200 JSON for a non-streaming success", async () => {
@@ -103,5 +207,47 @@ describe("POST /api/completion", () => {
     } as never);
     const res = await action(makeArgs({ model: "gpt", messages: [], streaming: true }));
     expect(res).toBe(streamResponse);
+  });
+
+  it("routes a late streaming provider error through the stable contract", async () => {
+    const toDataStreamResponse = vi.fn(
+      (_options: { getErrorMessage?: (error: unknown) => string }) =>
+        new Response("stream", { status: 200 }),
+    );
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: true,
+      fleetServerId: "fleet-1",
+      provider: "openai",
+      result: { toDataStreamResponse },
+    } as never);
+
+    await action(makeArgs({ model: "openai:gpt-4o", messages: [], streaming: true }));
+
+    expect(toDataStreamResponse).toHaveBeenCalledTimes(1);
+    const options = toDataStreamResponse.mock.calls[0][0];
+    expect(options.getErrorMessage).toBeTypeOf("function");
+
+    const serialized = options.getErrorMessage!(
+      new APICallError({
+        message: "upstream error containing sk-do-not-leak",
+        url: "https://provider.test/v1/chat",
+        requestBodyValues: { apiKey: "sk-do-not-leak" },
+        statusCode: 503,
+        responseHeaders: { "retry-after": "12" },
+        responseBody: "private upstream body",
+        isRetryable: true,
+      }),
+    );
+
+    expect(serialized).not.toBe("An error occurred.");
+    expect(JSON.parse(serialized)).toEqual({
+      error: "Provider is temporarily unavailable",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      provider: "openai",
+    });
+    expect(serialized).not.toContain("sk-do-not-leak");
+    expect(serialized).not.toContain("private upstream body");
   });
 });
