@@ -21,15 +21,14 @@ import {
   tierFromLlmClassification,
   type LlmRouteClassification,
 } from "./llm-classifier";
-import {
-  isLocalVllmRouting,
-  normalizePickForLocalVllm,
-} from "./local-vllm";
+import { isLocalVllmRouting, normalizePickForLocalVllm } from "./local-vllm";
+import { resolveAdhdAssistAutoModelId } from "~/lib/ai/adhd-assist";
 
 export const ROUTER_VERSION_RULES = "v1-rules";
 export const ROUTER_VERSION_KNN = "v2-knn";
 export const ROUTER_VERSION_HYBRID = "v2-hybrid";
 export const ROUTER_VERSION_LLM = "v2-llm";
+export const ROUTER_VERSION_ASSIST = "v1-assist-pinned";
 
 /** @deprecated Use `ROUTER_VERSION_RULES` — kept for chat telemetry compatibility */
 export const ROUTER_VERSION = ROUTER_VERSION_RULES;
@@ -94,6 +93,8 @@ export type RouterInputContext = {
    * rule directly).
    */
   toolsEffectivelyAvailable?: boolean;
+  /** Assist Auto is pinned to the retained large local model. */
+  adhdAssist?: boolean;
 };
 
 export type RouterDecision = {
@@ -179,7 +180,9 @@ async function finalizePick(
     // must still fail closed (or pick a genuinely tool-capable model) rather
     // than quietly landing on a model without tools.
     const requireTools =
-      normalizedPick.kind === "minTier" ? normalizedPick.requireTools : undefined;
+      normalizedPick.kind === "minTier"
+        ? normalizedPick.requireTools
+        : undefined;
     picked = await pickModelForSpec(
       normalizePickForLocalVllm({
         kind: "exactTier",
@@ -198,7 +201,11 @@ async function finalizePick(
     modelId = picked.registryId;
     tier = tierFromRow(
       picked,
-      normalizedPick.kind === "exactTier" ? normalizedPick.tier : isLocalVllmRouting() ? 3 : 2,
+      normalizedPick.kind === "exactTier"
+        ? normalizedPick.tier
+        : isLocalVllmRouting()
+          ? 3
+          : 2,
     );
   } else if (meta.context.imagesPresent) {
     throw new Error(
@@ -410,6 +417,25 @@ export async function resolveRoutedModel(
   context: RouterInputContext,
   options?: ResolveRouterOptions,
 ): Promise<RouterDecision> {
+  // Keep Assist Auto independent of the normal quality/energy tier rules. The
+  // Assist policy is model-agnostic, but its diagram and oversight paths need
+  // the retained large model for reliable context handling. Directly selected
+  // models still exercise the same policy and oversight contract.
+  if (context.adhdAssist && !context.imagesPresent) {
+    const modelId = resolveAdhdAssistAutoModelId();
+    return {
+      modelId,
+      tier: 3,
+      features: {
+        routerVersion: ROUTER_VERSION_ASSIST,
+        rule: "assist_auto_retained_model",
+        mode: "assist-pinned",
+        assistAutoPinned: true,
+        assistAutoModel: modelId,
+      },
+    };
+  }
+
   const mode = resolveMode(options);
   if (mode === "llm") {
     return resolveRoutedModelLlm(prompt, context);

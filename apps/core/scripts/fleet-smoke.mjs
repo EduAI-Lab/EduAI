@@ -52,7 +52,7 @@ loadEnvFile();
 const apiKey = resolveSmokeApiKey();
 const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
 const expectedModels = parseCommaList(
-  process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen2.5-7b-instruct,qwen2.5-32b-instruct",
+  process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen3.5-2b-instruct,qwen3.5-9b-instruct",
 );
 
 const chatUrls = parseCommaList(process.env.VLLM_FLEET_CHAT_URLS);
@@ -106,7 +106,7 @@ async function main() {
       "VLLM_FLEET_CHAT_URLS not set. Add to apps/core/.env:\n" +
         '  VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"\n' +
         '  VLLM_API_KEY="<same as CMPS01_INTERNAL_KEY on cmps01>"\n' +
-        '  VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"\n' +
+        '  VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b-instruct,qwen3.5-9b-instruct"\n' +
         "  # local/dev only may omit VLLM_API_KEY (defaults to vllm-local);" +
         " production requires an explicit key",
     );

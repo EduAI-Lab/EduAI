@@ -851,14 +851,21 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
+/** Research routing pool — vLLM Qwen3.5 2B/9B plus retained Qwen2.5 32B. */
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: 'vllm',
-    modelId: 'qwen2.5-7b-instruct',
+    modelId: 'qwen3.5-2b-instruct',
     routerTier: 'TIER_1' as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
+    estEnergyJoulesPerToken: 0.04,
+    averageCarbonGramsPerToken: 8.9e-7,
+  },
+  {
+    providerName: 'vllm',
+    modelId: 'qwen3.5-9b-instruct',
+    routerTier: 'TIER_2' as const,
+    estEnergyJoulesPerToken: 0.2,
+    averageCarbonGramsPerToken: 4.45e-6,
   },
   {
     providerName: 'vllm',
@@ -988,11 +995,18 @@ async function seedAIProvidersAndModels() {
 
   const vllmModels = [
     {
-      modelId: 'qwen2.5-7b-instruct',
-      name: 'Qwen 2.5 7B (vLLM)',
+      modelId: 'qwen3.5-2b-instruct',
+      name: 'Qwen3.5 2B Instruct (vLLM)',
       description: 'House chat — tier 1, hybrid RAG',
       maxTokens: 8192,
       supportsTools: false,
+    },
+    {
+      modelId: 'qwen3.5-9b-instruct',
+      name: 'Qwen3.5 9B Instruct (vLLM)',
+      description: 'Standard chat — tier 2, hybrid RAG',
+      maxTokens: 8192,
+      supportsTools: true,
     },
     {
       modelId: 'qwen2.5-32b-instruct',
@@ -1016,6 +1030,14 @@ async function seedAIProvidersAndModels() {
       },
     });
   }
+
+  await prisma.aIModel.updateMany({
+    where: {
+      providerId: vllm.id,
+      modelId: { in: ['qwen2.5-7b-instruct', 'qwen3.5-4b-instruct'] },
+    },
+    data: { isActive: false, routerTier: null },
+  });
 
   await applyRoutingTierAssignments();
 }

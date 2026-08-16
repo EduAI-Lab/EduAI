@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# cmps01 — migrate eduai-vllm + eduai-vllm-t3 behind LiteLLM on :8001
+# cmps01 — migrate eduai-vllm + eduai-vllm-t3 to Qwen3.5 2B + 9B behind LiteLLM on :8001
 # Run on cmps01 after copying this infra/cmps01 folder to the host.
 #
 # Downtime: both models offline until backends reload + proxy starts.
-# 32B AWQ may take 10–30+ minutes to become ready.
+# Qwen3.5 weights may take several minutes to become ready.
 
 set -euo pipefail
 
@@ -40,8 +40,8 @@ docker run -d --name eduai-vllm --gpus '"device=0"' \
   -p 127.0.0.1:18001:8000 \
   --restart unless-stopped \
   vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --served-model-name qwen2.5-7b-instruct \
+  --model Qwen/Qwen3.5-2B \
+  --served-model-name qwen3.5-2b-instruct \
   --host 0.0.0.0 \
   --port 8000
 
@@ -49,8 +49,8 @@ docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   -p 127.0.0.1:18002:8000 \
   --restart unless-stopped \
   vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-32B-Instruct-AWQ \
-  --served-model-name qwen2.5-32b-instruct \
+  --model Qwen/Qwen3.5-9B \
+  --served-model-name qwen3.5-9b-instruct \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \

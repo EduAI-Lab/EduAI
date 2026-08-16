@@ -5,8 +5,8 @@
 ```text
 dev (s378) ──HTTP :8001──► cmps01 eduai-edge-proxy (nginx)
                                 ├── /v1/*     → LiteLLM 127.0.0.1:18091
-                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, 7B)
-                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, 32B AWQ)
+                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, Qwen3.5 2B)
+                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, Qwen3.5 9B)
                                 └── /energy/* → energy-meter 127.0.0.1:9100
 Ollama :11434 — unchanged
 ```
@@ -45,8 +45,8 @@ Unit test for the denylist: `bash infra/cmps01/tests/check-example-secrets.test.
 
 | Docker name | Host bind | Served model (`/v1/models` → `id`) | Notes |
 | --- | --- | --- | --- |
-| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen2.5-7b-instruct` | GPU 0, Qwen 7B Instruct |
-| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen2.5-32b-instruct` | GPU 1, 32B AWQ + tool-call flags |
+| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen3.5-2b-instruct` | GPU 0, Qwen3.5 2B Instruct |
+| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen3.5-9b-instruct` | GPU 1, Qwen3.5 9B + tool-call flags |
 | **`eduai-vllm-proxy`** | `127.0.0.1:18091` (LiteLLM) | routes both ids | internal only |
 | **`eduai-edge-proxy`** | host `:8001` (nginx) | `/v1/*` → LiteLLM, `/energy/*` → sidecar | public |
 
@@ -118,30 +118,30 @@ chmod +x migrate.sh
 ./migrate.sh
 ```
 
-The script uses the **exact flags from `docker inspect`** (Mar 2026), including 32B tool-calling options.
+The script uses the **exact flags from `docker inspect`** (Mar 2026), including Qwen3.5 tool-calling options.
 
 ### Step 2 — Recreate backends (localhost only)
 
 Captured from `docker inspect` on cmps01:
 
 ```bash
-# GPU 0 — 7B (was eduai-vllm on :8001)
+# GPU 0 — Qwen3.5 2B (was eduai-vllm on :8001)
 docker run -d --name eduai-vllm --gpus '"device=0"' \
   -p 127.0.0.1:18001:8000 \
   --restart unless-stopped \
   vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --served-model-name qwen2.5-7b-instruct \
+  --model Qwen/Qwen3.5-2B \
+  --served-model-name qwen3.5-2b-instruct \
   --host 0.0.0.0 \
   --port 8000
 
-# GPU 1 — 32B AWQ + tool calling (was eduai-vllm-t3 on :8002)
+# GPU 1 — Qwen3.5 9B + tool calling (was eduai-vllm-t3 on :8002)
 docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   -p 127.0.0.1:18002:8000 \
   --restart unless-stopped \
   vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-32B-Instruct-AWQ \
-  --served-model-name qwen2.5-32b-instruct \
+  --model Qwen/Qwen3.5-9B \
+  --served-model-name qwen3.5-9b-instruct \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \
@@ -177,8 +177,8 @@ Verify **both** models through the proxy:
 
 ```bash
 curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
-# expect: qwen2.5-7b-instruct
-#         qwen2.5-32b-instruct
+# expect: qwen3.5-2b-instruct
+#         qwen3.5-9b-instruct
 ```
 
 From dev (after firewall):
@@ -204,8 +204,8 @@ npx prisma db seed   # registers vllm provider only (not individual models)
 
 ### Step 5 — App
 
-1. **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → register **`qwen2.5-7b-instruct`** and **`qwen2.5-32b-instruct`** (one save per model)
-2. Chat: **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (availability follows server `.env`, no Settings toggle)
+1. **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → register **`qwen3.5-2b-instruct`** and **`qwen3.5-9b-instruct`** (one save per model)
+2. Chat: **`vllm:qwen3.5-2b-instruct`** or **`vllm:qwen3.5-9b-instruct`** (availability follows server `.env`, no Settings toggle)
 3. Do **not** re-add the same `modelId` (409 Conflict). Use **Refresh list** only when registering a *new* served name from cmps01.
 
 ### Step 6 — IT / firewall
@@ -224,8 +224,8 @@ that the container actually reads. Backends:
 
 | `model_name` | Backend URL (proxy uses host network) |
 | --- | --- |
-| `qwen2.5-7b-instruct` | `http://127.0.0.1:18001/v1` |
-| `qwen2.5-32b-instruct` | `http://127.0.0.1:18002/v1` |
+| `qwen3.5-2b-instruct` | `http://127.0.0.1:18001/v1` |
+| `qwen3.5-9b-instruct` | `http://127.0.0.1:18002/v1` |
 
 After editing `litellm-config.yaml.template`: re-run `./deploy-edge-proxy.sh` in this
 directory to re-render `litellm-config.runtime.yaml` and restart the proxy — a bare
@@ -338,7 +338,7 @@ Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`)
 
 | Goal | Action |
 | --- | --- |
-| **Add** model (keep 7B + 32B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
+| **Add** model (keep Qwen3.5 2B + 9B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
 | **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI Admin |
 | **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml.template`; re-run `./deploy-edge-proxy.sh`; deactivate row in Admin |
 
@@ -346,8 +346,8 @@ Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`)
 
 | Port | Current use |
 | --- | --- |
-| `18001` | `eduai-vllm` — 7B |
-| `18002` | `eduai-vllm-t3` — 32B AWQ |
+| `18001` | `eduai-vllm` — Qwen3.5 2B |
+| `18002` | `eduai-vllm-t3` — Qwen3.5 9B |
 | `18003+` | Next backends |
 | `8001` | LiteLLM proxy (public) — **never** bind a raw vLLM backend here |
 

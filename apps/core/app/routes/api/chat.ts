@@ -26,6 +26,7 @@ import {
   parseRouterMode,
   resolveRoutedModel,
   resolveRoutedModelRules,
+  ROUTER_VERSION_ASSIST,
   type RouterDecision,
   type RouterMode,
 } from "~/lib/ai/routing/router";
@@ -64,7 +65,9 @@ import {
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import {
   composeSystemPrompt,
+  resolveAdhdAssistAutoModelId,
   resolveEffectiveAdhdAssist,
+  shouldUseRetainedAdhdAssistModel,
 } from "~/lib/ai/adhd-assist";
 import {
   buildCourseResponseStylePrompt,
@@ -97,8 +100,15 @@ import {
 import {
   getProfileRequirements,
   resolveAdhdTurnProfile,
+  userRequestedDiagram,
   type AdhdTurnProfile,
 } from "~/lib/ai/adhd-turn-profile";
+import {
+  ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA,
+  isStructuredAdhdAssistCandidate,
+  isVllmStructuredAdhdAssistModel,
+  renderAdhdStructuredResponse,
+} from "~/lib/ai/adhd-structured-output";
 import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
@@ -600,9 +610,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    let session =
-      apiKeySession ??
-      (await getRequestSession(request));
+    let session = apiKeySession ?? (await getRequestSession(request));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
@@ -1379,6 +1387,12 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
+      hasField: hasAdhdAssistField,
+      bodyValue: adhdAssist,
+      chatValue: chat.adhdAssist,
+    });
+
     let wasAuto = false;
     let routingTier: 1 | 2 | 3 | null = null;
     let routerContext: Record<string, unknown> | null = null;
@@ -1405,6 +1419,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ragContextTokenEstimate,
         courseRagNeeded,
         toolsEffectivelyAvailable,
+        adhdAssist: chatMode !== "admin" && effectiveAdhdAssist,
       };
       let decision: RouterDecision;
       try {
@@ -1449,13 +1464,47 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    const requestedModelId = model!;
+    const pinAssistModel = shouldUseRetainedAdhdAssistModel({
+      adhdAssist: effectiveAdhdAssist,
+      imagesPresent,
+      chatMode,
+    });
+    const retainedAssistModelId = resolveAdhdAssistAutoModelId();
+    const explicitStructuredAssistCandidate =
+      pinAssistModel &&
+      userRequestedDiagram(lastUserMessageTextForRouting) &&
+      isVllmStructuredAdhdAssistModel(requestedModelId);
+    if (
+      pinAssistModel &&
+      requestedModelId !== retainedAssistModelId &&
+      !explicitStructuredAssistCandidate
+    ) {
+      model = retainedAssistModelId;
+      wasAuto = true;
+      routingTier = 3;
+      routerContext = {
+        ...(routerContext ?? {}),
+        requestedModelId,
+        rule: "assist_explicit_retained_model",
+        mode: "assist-pinned",
+        assistAutoPinned: true,
+        assistAutoModel: model,
+      };
+      resolvedRouterVersion = ROUTER_VERSION_ASSIST;
+      chatApiDebug("Assist pinned explicit model to retained model", {
+        requestedModelId,
+        resolvedModelId: model,
+      });
+    }
+
     const resolvedModelId = model!;
     const parsedModel = parseModelIdentifier(resolvedModelId);
     if (!parsedModel) {
       return new Response(
         JSON.stringify({
           error:
-            "Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.",
+            "Invalid model id. Use provider:modelId (e.g. vllm:qwen3.5-2b-instruct). Check Admin → AI Models.",
         }),
         {
           status: 400,
@@ -1505,10 +1554,7 @@ export async function action({ request }: ActionFunctionArgs) {
       } catch (err) {
         if (err instanceof FleetUnavailableError) {
           return rejectProviderFailure(
-            createProviderFailure(
-              parsedModel.providerId,
-              "MODEL_UNAVAILABLE",
-            ),
+            createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE"),
             {
               chatMode,
               userId: actingUser.id,
@@ -2110,12 +2156,6 @@ ${buildEmptyCourseRagBlock()}`;
       }
     }
 
-    const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
-      hasField: hasAdhdAssistField,
-      bodyValue: adhdAssist,
-      chatValue: chat.adhdAssist,
-    });
-
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
@@ -2162,12 +2202,33 @@ ${buildEmptyCourseRagBlock()}`;
       adhdProfileRequirements = getProfileRequirements(adhdProfile);
     }
 
+    const structuredAssistOutput = isStructuredAdhdAssistCandidate({
+      modelIdentifier: resolvedModelId,
+      adhdAssist: effectiveAdhdAssist,
+      imagesPresent,
+      chatMode,
+      profile: adhdProfile,
+      diagramRequested: userRequestedDiagram(lastUserText),
+      toolsEnabled: useToolCalling,
+    });
+
     streamConfig.system = composeSecurityPrompt(
       composeSystemPrompt(streamConfig.system ?? "", {
         adhdAssist: effectiveAdhdAssist,
         profile: adhdProfile,
       }),
     );
+
+    if (structuredAssistOutput) {
+      streamConfig.responseFormat = {
+        type: "json",
+        name: "eduai_assist_response",
+        description:
+          "Complete Assist response plan. The application renders the Markdown structure and diagram from these stages.",
+        schema: ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA,
+      };
+      streamConfig.system = `${streamConfig.system}\n\nSTRUCTURED ASSIST OUTPUT:\nReturn only the requested JSON object. Put the complete explanation in answer. Supply 3-5 ordered stages; the application will render the Step ladder and diagram from those exact stages. Do not omit the final stage.`;
+    }
 
     // Re-cap after composeSecurityPrompt so the security block is included, and
     // reserve room for admin tool JSON schemas (the previous 512 flat allowance
@@ -2213,7 +2274,7 @@ ${buildEmptyCourseRagBlock()}`;
         );
         longOutputCapApplied = streamConfig.maxTokens < adminContextMaxTokens;
       }
-      
+
       chatApiTrace("max output tokens capped", {
         contextWindow: adminContextWindow,
         estimatedInputTokens,
@@ -2656,7 +2717,20 @@ ${buildEmptyCourseRagBlock()}`;
         reasoning = consumed[4];
         response = consumed[5];
 
-        draft = (text ?? "").trim();
+        const providerDraft = (text ?? "").trim();
+        const structuredDraft = structuredAssistOutput
+          ? renderAdhdStructuredResponse({
+              text: providerDraft,
+              userText: lastUserText,
+            })
+          : null;
+        draft = structuredDraft ?? providerDraft;
+        if (structuredDraft) {
+          chatApiDebug("Rendered constrained Assist response", {
+            model: resolvedModelId,
+            stageCount: (structuredDraft.match(/^\d+\./gm) ?? []).length,
+          });
+        }
         const audited = draft
           ? await auditAndMaybeRewrite({
               draft,
