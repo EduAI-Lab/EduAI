@@ -1,4 +1,5 @@
 import { UserRole, type Prisma } from "@prisma/client";
+import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
 import {
   paginatedResponse,
@@ -411,6 +412,61 @@ export async function getCourses(request: Request) {
   return pagination
     ? paginatedResponse(coursesWithCallerRole, total, pagination)
     : unpagedResponse(coursesWithCallerRole);
+}
+
+/**
+ * GET /api/courses/facets — filter option values for the course list (#1263).
+ *
+ * Returns `{ status: string[], term: string[], department: string[] }`, keyed by
+ * the filter-group ids `CourseListView` consumes. Values come from the caller's
+ * WHOLE accessible set (reusing `buildCourseListFilter`, never the current
+ * page) so a dropdown cannot offer — or leak — metadata from a course the
+ * caller cannot see. Scalar-only projection: no full Course rows are fetched.
+ */
+export async function getCourseFacets(request: Request) {
+  const session = await getRequestSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Same scope as the list response, so facets can never disagree with (or
+  // widen) what `getCourses` would return for this caller.
+  const where = await buildCourseListFilter(session.user, false);
+
+  const rows = await prisma.course.findMany({
+    where,
+    select: { isPublished: true, term: true, year: true, department: true },
+  });
+
+  const statuses = new Set<string>();
+  const termByKey = new Map<string, { term: string; year: number }>();
+  const departments = new Set<string>();
+
+  for (const row of rows) {
+    statuses.add(row.isPublished ? "published" : "draft");
+    if (row.term && row.year != null) {
+      // Key shape must byte-match `buildTermFilterGroup` (`${term}::${year}`).
+      const key = `${row.term}::${row.year}`;
+      if (!termByKey.has(key)) termByKey.set(key, { term: row.term, year: row.year });
+    }
+    if (row.department) departments.add(row.department);
+  }
+
+  // Most-recent-first terms (mirrors the list's term section order); the client
+  // still re-sorts via `optionSortKey`, so this only pins a stable order.
+  const term = [...termByKey.values()]
+    .sort(compareByTerm)
+    .map(({ term: t, year }) => `${t}::${year}`);
+  const department = [...departments].sort((a, b) => a.localeCompare(b));
+
+  return jsonResponse(200, {
+    status: COURSE_STATUS_VALUES.filter((value) => statuses.has(value)),
+    term,
+    department,
+  });
 }
 
 /**

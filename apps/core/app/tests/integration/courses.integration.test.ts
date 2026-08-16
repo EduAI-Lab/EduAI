@@ -10,7 +10,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-import { getCourses, createCourse } from "~/lib/courses/server";
+import { getCourses, createCourse, getCourseFacets } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
 import {
   seedUser,
@@ -480,6 +480,73 @@ describe("GET /api/courses — search & filters before pagination (#1263)", () =
         userIds: [student.id, instructor.id],
         courseIds: [ids["Filler One"], ids["Status Draft Course"], ...Object.values(ids)],
       });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/courses/facets (#1263)
+// ---------------------------------------------------------------------------
+
+describe("GET /api/courses/facets (#1263)", () => {
+  async function seedInstructorFixture() {
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const rows = [
+      { name: "Published CosC", code: "AAA 001", term: "W1", year: 2026, department: "COSC", isPublished: true },
+      { name: "Draft CosC", code: "ZZZ 001", term: "W2", year: 2026, department: "COSC", isPublished: false },
+      { name: "Math Course", code: "ZZZ 002", term: "W1", year: 2025, department: "MATH", isPublished: true },
+    ];
+    const ids: string[] = [];
+    for (const row of rows) {
+      const created = await prisma.course.create({
+        data: { ...row, section: "001", startDate: new Date("2026-01-01") },
+      });
+      await enroll(created.id, instructor.id, "INSTRUCTOR");
+      ids.push(created.id);
+    }
+    return { instructor, ids };
+  }
+
+  const facetsRequest = () =>
+    new Request("http://localhost/api/courses/facets", { method: "GET" });
+
+  it("returns status/term/department values from the whole accessible set, most-recent-first terms", async () => {
+    const { instructor, ids } = await seedInstructorFixture();
+    try {
+      mockSession(instructor);
+      const res = await getCourseFacets(facetsRequest());
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toEqual(["published", "draft"]);
+      // Deterministic most-recent-first ordering (W2::2026 > W1::2026 > W1::2025).
+      expect(body.term).toEqual(["W2::2026", "W1::2026", "W1::2025"]);
+      expect(body.department).toEqual(["COSC", "MATH"]);
+    } finally {
+      await cleanupRbac({ userIds: [instructor.id], courseIds: ids });
+    }
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    const res = await getCourseFacets(facetsRequest());
+    expect(res.status).toBe(401);
+  });
+
+  it("never leaks facet metadata from courses outside the caller's scope", async () => {
+    const { instructor, ids } = await seedInstructorFixture();
+    // ids[0] = published COSC W1/2026, ids[1] = draft W2/2026, ids[2] = MATH W1/2025.
+    const student = await seedUser({ role: "STUDENT" });
+    await enroll(ids[0], student.id, "STUDENT");
+
+    try {
+      mockSession(student);
+      const res = await getCourseFacets(facetsRequest());
+      const body = await res.json();
+      expect(body.status).toEqual(["published"]);
+      expect(body.term).toEqual(["W1::2026"]);
+      expect(body.department).toEqual(["COSC"]);
+    } finally {
+      await cleanupRbac({ userIds: [student.id, instructor.id], courseIds: ids });
     }
   });
 });
