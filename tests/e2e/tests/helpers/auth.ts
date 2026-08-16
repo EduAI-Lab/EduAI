@@ -27,11 +27,11 @@ export async function injectSessionIntoPage(
 ): Promise<void> {
   const { cookies } = await request.storageState();
   await page.context().addCookies(
-    cookies.map((cookie) => ({
-      ...cookie,
-      domain: undefined,
-      url: QM_FRONTEND_URL,
-    })),
+    cookies.map((cookie) => {
+      const { domain, ...browserCookie } = cookie;
+      void domain;
+      return { ...browserCookie, url: QM_FRONTEND_URL };
+    }),
   );
 }
 
