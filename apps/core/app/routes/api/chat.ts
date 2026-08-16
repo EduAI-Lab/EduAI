@@ -45,6 +45,12 @@ import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { buildFleetRouterFeatures, parseWorkloadFeature } from "~/lib/ai/routing/fleet/types";
 import { parseJobType, type FleetPick } from "~/lib/ai/routing/fleet/types";
 import {
+  enableBedrockOnSettings,
+  isClientRequestedBedrockModel,
+  tryActivateBedrockOverflow,
+  type BedrockOverflowActivation,
+} from "~/lib/ai/routing/bedrock/overflow.server";
+import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
   estimateToolDefinitionTokens,
@@ -575,6 +581,22 @@ export async function action({ request }: ActionFunctionArgs) {
     let model = typeof body.model === "string" ? body.model.trim() : undefined;
     if (model === "") {
       model = undefined;
+    }
+
+    // Bedrock is overflow-only (#1441). A client-supplied bedrock:* model
+    // would bypass both the local-capacity gate and the global cost cap.
+    if (isClientRequestedBedrockModel(model)) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Provider "bedrock" is not directly selectable. It is used only as an overflow target.',
+          code: "BEDROCK_NOT_SELECTABLE",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (model === "auto-hybrid") {
@@ -1327,9 +1349,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const resolvedModelId = model!;
-    const parsedModel = parseModelIdentifier(resolvedModelId);
-    if (!parsedModel) {
+    let resolvedModelId = model!;
+    const initialParsedModel = parseModelIdentifier(resolvedModelId);
+    if (!initialParsedModel) {
       return new Response(
         JSON.stringify({
           error:
@@ -1341,6 +1363,8 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
+    let parsedModel = initialParsedModel;
+    let telemetryServerId: string | null = null;
 
     // Auto routing already enforces `requireImages` centrally (finalizePick
     // in router.ts). An explicitly-chosen model (`routeWithAuto === false`,
@@ -2174,6 +2198,26 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
+    const applyBedrockOverflow = (overflow: BedrockOverflowActivation) => {
+      resolvedModelId = overflow.resolvedModelId;
+      const nextParsed = parseModelIdentifier(resolvedModelId);
+      if (!nextParsed) {
+        throw new Error(`Invalid Bedrock overflow model id: ${resolvedModelId}`);
+      }
+      parsedModel = nextParsed;
+      model = resolvedModelId;
+      telemetryServerId = overflow.serverId;
+      fleetPick = null;
+      validatedApiKeys = enableBedrockOnSettings(validatedApiKeys);
+      registry = createAIProviderRegistry(validatedApiKeys);
+      aiModel = registry.languageModel(resolvedModelId);
+      streamConfig.model = aiModel;
+      routerContext = {
+        ...(routerContext ?? {}),
+        bedrockOverflow: true,
+      };
+    };
+
     const needsAdmission = parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
     let admissionWaitedMs = 0;
@@ -2187,16 +2231,25 @@ ${buildEmptyCourseRagBlock()}`;
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
-          return new Response(
-            JSON.stringify({
-              error: "Server busy — too many concurrent AI requests. Try again shortly.",
-              code: "AI_ADMISSION_TIMEOUT",
-            }),
-            {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
+          const overflow = tryActivateBedrockOverflow();
+          if (overflow) {
+            applyBedrockOverflow(overflow);
+            chatApiTrace("bedrock overflow after admission timeout", {
+              resolvedModelId,
+              serverId: overflow.serverId,
+            });
+          } else {
+            return new Response(
+              JSON.stringify({
+                error: "Server busy — too many concurrent AI requests. Try again shortly.",
+                code: "AI_ADMISSION_TIMEOUT",
+              }),
+              {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
         }
         throw err;
       }
@@ -2237,7 +2290,7 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
-        serverId: fleetPick?.serverId ?? null,
+        serverId: telemetryServerId ?? fleetPick?.serverId ?? null,
         chatId: chat?.id ?? null,
       });
     };
@@ -2246,7 +2299,7 @@ ${buildEmptyCourseRagBlock()}`;
     // Probe every fleet vLLM turn (streaming, non-streaming, and oversight) so
     // connection/startup failures throw from runStreamText and Slice 2 can retry.
     // Mid-stream / post-soft-timeout failures after the probe settles are not retried.
-    const shouldProbeFleetStream = Boolean(fleetPick) && parsedModel.providerId === "vllm";
+    let shouldProbeFleetStream = Boolean(fleetPick) && parsedModel.providerId === "vllm";
 
     const runStreamText = async () => {
       const probe = shouldProbeFleetStream
@@ -2419,7 +2472,19 @@ ${buildEmptyCourseRagBlock()}`;
               model: resolvedModelId,
             });
           } else {
-            throw error;
+            const overflow = tryActivateBedrockOverflow();
+            if (!overflow) {
+              throw error;
+            }
+            applyBedrockOverflow(overflow);
+            shouldProbeFleetStream = false;
+            releaseAdmission();
+            chatApiTrace("bedrock overflow after fleet exhausted", {
+              resolvedModelId,
+              serverId: overflow.serverId,
+              previousServerId: failedPick.serverId,
+            });
+            result = await runStreamText();
           }
         } catch (retryError) {
           releaseAdmission();
@@ -2549,7 +2614,7 @@ ${buildEmptyCourseRagBlock()}`;
               routingTier,
               wasAuto,
               resolvedRouterVersion,
-              fleetPick?.serverId ?? null,
+              telemetryServerId ?? fleetPick?.serverId ?? null,
             ),
           );
 
@@ -2600,7 +2665,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+              ...(telemetryServerId ?? fleetPick?.serverId
+                ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
+                : {}),
             },
           },
         );
@@ -2648,7 +2715,7 @@ ${buildEmptyCourseRagBlock()}`;
           routingTier,
           wasAuto,
           resolvedRouterVersion,
-          fleetPick?.serverId ?? null,
+          telemetryServerId ?? fleetPick?.serverId ?? null,
         ),
       );
       const release = admissionRelease;
@@ -2754,7 +2821,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+              ...(telemetryServerId ?? fleetPick?.serverId
+                ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
+                : {}),
             },
           },
         );

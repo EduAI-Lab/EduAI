@@ -12,14 +12,19 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { createOllamaMock, createOpenAIMock, createGoogleMock, resolveOllamaMock } = vi.hoisted(
-  () => ({
-    createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-    createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-    createGoogleMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-    resolveOllamaMock: vi.fn(),
-  }),
-);
+const {
+  createOllamaMock,
+  createOpenAIMock,
+  createGoogleMock,
+  createBedrockMock,
+  resolveOllamaMock,
+} = vi.hoisted(() => ({
+  createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createGoogleMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+  createBedrockMock: vi.fn((opts: Record<string, unknown>) => ({ __bedrock: opts })),
+  resolveOllamaMock: vi.fn(),
+}));
 
 vi.mock("ollama-ai-provider", () => ({
   createOllama: (opts: Record<string, unknown>) => createOllamaMock(opts),
@@ -35,6 +40,10 @@ vi.mock("@ai-sdk/google", () => ({
 
 vi.mock("ai", () => ({
   createProviderRegistry: (providers: Record<string, unknown>) => ({ __providers: providers }),
+}));
+
+vi.mock("~/lib/ai/routing/bedrock/bedrock-provider.server", () => ({
+  createBedrockProvider: (opts: Record<string, unknown>) => createBedrockMock(opts),
 }));
 
 // Defaults to the real implementation; the "resolution fully fails" test below
@@ -64,6 +73,8 @@ const ENV_KEYS = [
   "VLLM_API_KEY",
   "VLLM_FLEET_HEAVY_URL",
   "VLLM_FLEET_CHAT_URLS",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "BEDROCK_REGION",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -84,6 +95,7 @@ describe("createAIProviderRegistry", () => {
     createOllamaMock.mockClear();
     createOpenAIMock.mockClear();
     createGoogleMock.mockClear();
+    createBedrockMock.mockClear();
     restoreEnv();
   });
 
@@ -185,6 +197,33 @@ describe("createAIProviderRegistry", () => {
     expect(createGoogleMock).not.toHaveBeenCalled();
     expect(createOllamaMock).not.toHaveBeenCalled();
     expect(Object.keys(registry.__providers)).toHaveLength(0);
+  });
+
+  it("creates a Bedrock client only when enabled and the env token is present", () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "env-token";
+    process.env.BEDROCK_REGION = "us-west-2";
+
+    const registry = createAIProviderRegistry({
+      bedrock: { isEnabled: true, apiKey: "client-key", baseUrl: "https://evil.example" },
+    }) as unknown as { __providers: Record<string, unknown> };
+
+    expect(createBedrockMock).toHaveBeenCalledWith({
+      apiKey: "env-token",
+      region: "us-west-2",
+    });
+    expect(registry.__providers.bedrock).toBeDefined();
+  });
+
+  it("does not create a Bedrock client when enabled but the env token is missing", () => {
+    delete process.env.AWS_BEARER_TOKEN_BEDROCK;
+    createAIProviderRegistry({ bedrock: { isEnabled: true } });
+    expect(createBedrockMock).not.toHaveBeenCalled();
+  });
+
+  it("does not create a Bedrock client when the env token is present but it is not enabled", () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "env-token";
+    createAIProviderRegistry({ bedrock: { isEnabled: false } });
+    expect(createBedrockMock).not.toHaveBeenCalled();
   });
 });
 
@@ -302,5 +341,17 @@ describe("listEnabledRegistryProviders", () => {
       vllm: { isEnabled: true },
     };
     expect(listEnabledRegistryProviders(settings).sort()).toEqual(["ollama", "openai", "vllm"]);
+  });
+
+  it("includes bedrock only when enabled and AWS_BEARER_TOKEN_BEDROCK is set", () => {
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "env-token";
+    expect(
+      listEnabledRegistryProviders({ bedrock: { isEnabled: true } }),
+    ).toEqual(["bedrock"]);
+
+    delete process.env.AWS_BEARER_TOKEN_BEDROCK;
+    expect(
+      listEnabledRegistryProviders({ bedrock: { isEnabled: true } }),
+    ).toEqual([]);
   });
 });
