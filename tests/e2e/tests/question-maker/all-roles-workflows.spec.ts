@@ -149,16 +149,18 @@ test.describe('Question Maker authoring and AI workflows', () => {
   test('UNIT_ADMIN can enter the QM app but cannot triage platform bug reports', async ({ page, request }) => {
     const unitAdmin = await createUnitAdmin(request);
     await signInThroughPage(page, unitAdmin, `${QM_FRONTEND_URL}/dashboard`);
-    await expect(page.getByRole('link', { name: 'Courses' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Question Library' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Bug reports' })).toHaveCount(0);
+    const sidebar = page.locator('#app-sidebar-content');
+    await expect(sidebar.getByRole('link', { name: 'Courses' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Question Library' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Bug reports' })).toHaveCount(0);
   });
 
   test('ADMIN sees the full authoring navigation including bug-report triage', async ({ page, request }) => {
     const admin = await createAdmin(request, { prefix: 'qm-ui-admin' });
     await signInThroughPage(page, admin, `${QM_FRONTEND_URL}/dashboard`);
-    await expect(page.getByRole('link', { name: 'Courses' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Question Library' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Bug reports' })).toBeVisible();
+    const sidebar = page.locator('#app-sidebar-content');
+    await expect(sidebar.getByRole('link', { name: 'Courses' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Question Library' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Bug reports' })).toBeVisible();
   });
 });
