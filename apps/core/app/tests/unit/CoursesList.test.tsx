@@ -40,8 +40,11 @@ function CoursesInstructorView(
 ) {
   return <CoursesView role="instructor" {...CONTROLLED_DEFAULTS} {...props} />
 }
-function CoursesMixedView(props: Omit<Extract<CoursesViewProps, { role: 'mixed' }>, 'role'>) {
-  return <CoursesView role="mixed" {...props} />
+function CoursesMixedView(
+  props: Omit<Extract<CoursesViewProps, { role: 'mixed' }>, 'role' | ControlledKeys> &
+    Partial<typeof CONTROLLED_DEFAULTS>,
+) {
+  return <CoursesView role="mixed" {...CONTROLLED_DEFAULTS} {...props} />
 }
 
 // §541: department labels/options now come from the DB-backed useDisciplines
@@ -930,51 +933,57 @@ describe('CoursesMixedView', () => {
     expect(screen.getByText(/no courses/i)).toBeInTheDocument()
   })
 
-  // #1087 Group A: mixed sections use the same term grouping as every other role.
-  it('labels older-term sections as "Previous term" in the assisting section', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2025-10-15'))
-    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', year: 2020, startDate: '2020-09-01', endDate: '2020-12-15' }
+  // #1263: the mixed view renders ONE controlled toolbar over both sections.
+  it('renders a single search toolbar, not one per section', () => {
     wrap(
       <CoursesMixedView
-        courses={[TA_COURSE, oldTa]}
-        taCourseIds={['ta1', 'ta-old']}
-        enrolledCourseIds={[]}
+        courses={[TA_COURSE, STUDENT_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={['stu1']}
       />
     )
-    expect(screen.getByText('COSC 301')).toBeInTheDocument()
-    expect(screen.getByText(/previous term/i)).toBeInTheDocument()
-    expect(screen.getByText('COSC 300')).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/search courses/i)).toHaveLength(1)
   })
 
-  it('labels future-term sections as "Upcoming term" in the assisting section', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2025-10-15'))
-    const futureTa = { ...TA_COURSE, id: 'ta-future', code: 'COSC 305', term: 'Winter', year: 2025, startDate: '2026-01-01', endDate: '2026-04-15' }
+  it('forwards onSearchChange from the mixed toolbar', () => {
+    const onSearchChange = vi.fn()
     wrap(
       <CoursesMixedView
-        courses={[TA_COURSE, futureTa]}
-        taCourseIds={['ta1', 'ta-future']}
-        enrolledCourseIds={[]}
+        courses={[TA_COURSE, STUDENT_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={['stu1']}
+        onSearchChange={onSearchChange}
       />
     )
-    expect(screen.getByText('COSC 301')).toBeInTheDocument()
-    expect(screen.getByText(/upcoming term/i)).toBeInTheDocument()
-    expect(screen.getByText('COSC 305')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/search courses/i), { target: { value: 'cosc' } })
+    expect(onSearchChange).toHaveBeenCalledWith('cosc')
   })
 
-  it('does not show a "Previous term" or "Upcoming term" subtitle when all courses are current', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2025-10-15'))
+  it('classifies a course held as both TA and student into the assisting section only', () => {
     wrap(
       <CoursesMixedView
         courses={[TA_COURSE]}
         taCourseIds={['ta1']}
-        enrolledCourseIds={[]}
+        enrolledCourseIds={['ta1']}
       />
     )
-    expect(screen.queryByText(/previous term/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/upcoming term/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /courses you are assisting in/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /courses you are enrolled in/i })).not.toBeInTheDocument()
+    expect(screen.getByText('TA')).toBeInTheDocument()
+    expect(screen.queryByText('Enrolled')).not.toBeInTheDocument()
+  })
+
+  it('keeps the toolbar visible when a controlled search returns zero rows', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[]}
+        taCourseIds={[]}
+        enrolledCourseIds={[]}
+        search="nonexistent"
+      />
+    )
+    expect(screen.getByLabelText(/search courses/i)).toBeInTheDocument()
+    expect(screen.getByText('No courses match your search.')).toBeInTheDocument()
   })
 })
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router'
 import { IconPlus, IconBook } from '@tabler/icons-react'
 import {
@@ -18,6 +18,7 @@ import {
   defaultColorIndexForCourse,
 } from '@eduai/ui'
 import { TERM_CODES, termName, termFromDate, termInfoFromDate } from '@eduai/ui'
+import type { CourseListSection } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput, CourseFilters } from '~/hooks/api/use-courses'
@@ -26,7 +27,6 @@ import { useCourseCardPreferences } from '~/hooks/use-course-card-preferences'
 import {
   getCourseDisplayName,
   resolveCourseAccentColor,
-  type CourseCardPreference,
 } from '~/lib/courses/course-card-preferences'
 import {
   PolicyTooltip,
@@ -67,7 +67,7 @@ interface InstructorViewProps extends MutableRoleProps {
   role: 'instructor'
 }
 
-interface MixedViewProps {
+interface MixedViewProps extends ControlledListProps {
   role: 'mixed'
   courses: Course[]
   taCourseIds: string[]
@@ -1102,118 +1102,120 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
 }
 
 // ---------------------------------------------------------------------------
-// Mixed (TA-assisting + enrolled) — read-only, dual-section
+// Mixed (TA-assisting + enrolled) — read-only, single controlled list (#1263)
 // ---------------------------------------------------------------------------
 
-function MixedCourseSection({
-  heading,
-  subheading,
+function MixedCoursesBody({
   courses,
-  extraBadges,
-  getCoursePreference,
-  setCoursePreference,
-}: {
-  heading: string
-  subheading: string
-  courses: Course[]
-  extraBadges: string[]
-  getCoursePreference: (courseId: string) => CourseCardPreference | undefined
-  setCoursePreference: (courseId: string, update: CourseCardPreference | null) => void
-}) {
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeading heading={heading} subheading={subheading} />
-      <CourseListView<Course>
-        courses={courses}
-        gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
-        getKey={(course) => course.id}
-        getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
-        getSearchText={(course) => `${course.name} ${course.code}`}
-        filterGroups={[
-          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
-          buildDepartmentFilterGroup<Course>((c) => c.department),
-          buildStatusFilterGroup<Course>((c) => c.isPublished),
-        ]}
-        noResultsState={<NoResultsCard />}
-        renderCard={(course) => {
-          const preference = getCoursePreference(course.id)
-          const accentColor = resolveCourseAccentColor(course.id, preference)
-          const displayName = getCourseDisplayName(course.name, preference)
-          return (
-            <CourseCard
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              displayName={displayName}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              extraBadges={extraBadges}
-              colorIndex={defaultColorIndexForCourse(course.id)}
-              accentColor={accentColor}
-              heroAction={
-                <CourseCardCustomizePopover
-                  courseName={course.name}
-                  courseCode={course.code}
-                  preference={preference}
-                  onApply={(update) => setCoursePreference(course.id, update)}
-                />
-              }
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-            />
-          )
-        }}
-      />
-    </div>
-  )
-}
-
-function MixedCoursesBody({ courses, taCourseIds, enrolledCourseIds }: MixedViewProps) {
+  taCourseIds,
+  enrolledCourseIds,
+  search,
+  onSearchChange,
+  selectedFilters,
+  onFilterChange,
+  availableValues,
+  total,
+  onClearAll,
+}: MixedViewProps) {
   const { getCoursePreference, setCoursePreference } = useCourseCardPreferences()
-  const assisting = courses.filter((c) => taCourseIds.includes(c.id))
-  const enrolled = courses.filter(
-    (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
+
+  // Presentation-only split: the backend already scoped `courses` to what the
+  // caller may see. A course held as both TA and student belongs to the
+  // "assisting" section (mirrors the old assisting-first ordering); a draft
+  // course is only ever shown when the caller holds it as TA, so the enrolled
+  // section still filters to published courses.
+  const groupSections = useCallback(
+    (list: Course[]): CourseListSection<Course>[] => {
+      const assisting = list.filter((c) => taCourseIds.includes(c.id))
+      const enrolled = list.filter(
+        (c) => !taCourseIds.includes(c.id) && enrolledCourseIds.includes(c.id) && c.isPublished,
+      )
+      const sections: CourseListSection<Course>[] = []
+      if (assisting.length > 0) {
+        sections.push({
+          key: 'assisting',
+          title: 'Courses You Are Assisting In',
+          headerVariant: 'simple',
+          items: assisting,
+        })
+      }
+      if (enrolled.length > 0) {
+        sections.push({
+          key: 'enrolled',
+          title: 'Courses You Are Enrolled In',
+          headerVariant: 'simple',
+          items: enrolled,
+        })
+      }
+      return sections
+    },
+    [taCourseIds, enrolledCourseIds],
   )
 
-  if (assisting.length === 0 && enrolled.length === 0) {
-    return (
-      <div className="flex flex-col gap-6">
-        <PageHeading heading="My Courses" subheading="Your courses" />
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">You have no courses yet.</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-6">
-      {assisting.length > 0 && (
-        <MixedCourseSection
-          heading="Courses You Are Assisting In"
-          subheading="Courses where you are a TA"
-          courses={assisting}
-          extraBadges={['TA']}
-          getCoursePreference={getCoursePreference}
-          setCoursePreference={setCoursePreference}
-        />
-      )}
-      {enrolled.length > 0 && (
-        <MixedCourseSection
-          heading="Courses You Are Enrolled In"
-          subheading="Courses you are taking as a student"
-          courses={enrolled}
-          extraBadges={['Enrolled']}
-          getCoursePreference={getCoursePreference}
-          setCoursePreference={setCoursePreference}
-        />
-      )}
-    </div>
+    <CourseListView<Course>
+      courses={courses}
+      gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+      getKey={(course) => course.id}
+      getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
+      getSearchText={(course) => `${course.name} ${course.code}`}
+      groupSections={groupSections}
+      filterGroups={[
+        buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+        buildDepartmentFilterGroup<Course>((c) => c.department),
+        buildStatusFilterGroup<Course>((c) => c.isPublished),
+      ]}
+      searchValue={search}
+      onSearchChange={onSearchChange}
+      selectedFilters={selectedFilters}
+      onFilterChange={onFilterChange}
+      availableValues={availableValues}
+      totalCount={total}
+      onClearAll={onClearAll}
+      emptyState={
+        <div className="flex flex-col gap-6">
+          <PageHeading heading="My Courses" subheading="Your courses" />
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">You have no courses yet.</p>
+            </CardContent>
+          </Card>
+        </div>
+      }
+      noResultsState={<NoResultsCard />}
+      renderCard={(course) => {
+        const preference = getCoursePreference(course.id)
+        const accentColor = resolveCourseAccentColor(course.id, preference)
+        const displayName = getCourseDisplayName(course.name, preference)
+        const extraBadges = taCourseIds.includes(course.id) ? ['TA'] : ['Enrolled']
+        return (
+          <CourseCard
+            id={course.id}
+            code={course.code}
+            name={course.name}
+            displayName={displayName}
+            description={course.description}
+            term={course.term}
+            year={course.year}
+            isPublished={course.isPublished}
+            department={course.department}
+            extraBadges={extraBadges}
+            colorIndex={defaultColorIndexForCourse(course.id)}
+            accentColor={accentColor}
+            heroAction={
+              <CourseCardCustomizePopover
+                courseName={course.name}
+                courseCode={course.code}
+                preference={preference}
+                onApply={(update) => setCoursePreference(course.id, update)}
+              />
+            }
+            href={`/courses/${course.id}`}
+            LinkComponent={Link}
+          />
+        )
+      }}
+    />
   )
 }

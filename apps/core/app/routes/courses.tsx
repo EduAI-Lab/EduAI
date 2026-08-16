@@ -219,6 +219,13 @@ export default function CoursesPage() {
             courses={courses}
             taCourseIds={taCourseIds}
             enrolledCourseIds={enrolledCourseIds}
+            search={search}
+            onSearchChange={setSearch}
+            selectedFilters={selectedFilters}
+            onFilterChange={handleFilterChange}
+            availableValues={availableValues}
+            total={courseTotal}
+            onClearAll={handleClearAll}
           />
         )}
         <div className="mt-4">
