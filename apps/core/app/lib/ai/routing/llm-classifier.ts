@@ -6,7 +6,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 import { isLocalVllmRouting } from "./local-vllm";
 import { createClassifierClient } from "./classifier-client";
-import { routingRagStrongSimilarity } from "./rules";
+import { hasStrongRagHit } from "./rules";
 
 export type LlmClassifierContext = {
   courseId: string | null;
@@ -150,16 +150,22 @@ export function tierFromLlmClassification(
     return 1;
   }
 
-  const top1 = ragContext?.ragTopSimilarity;
-  const chunks = ragContext?.ragChunkCount;
-  const strongRag =
-    top1 != null && chunks != null && chunks >= 1 && top1 >= routingRagStrongSimilarity();
+  // Delegates to the same predicate rule4_strong_rag_tier_1 uses, so the
+  // rule stack and the classifier path can't silently disagree on what
+  // "strong RAG" means (see hasStrongRagHit's doc comment).
+  const strongRag = hasStrongRagHit({
+    ragTopSimilarity: ragContext?.ragTopSimilarity ?? null,
+    ragChunkCount: ragContext?.ragChunkCount ?? null,
+  });
 
   if (classification.complexity === "medium") {
     // Strong course-RAG retrieval means the answer is largely present in
     // the supplied context, easing an otherwise coding/analysis-flavored
-    // prompt. Task label alone no longer forces escalation here.
-    return strongRag ? 1 : small;
+    // prompt. Task label alone no longer forces escalation here. Both
+    // outcomes route through `small` (not a literal tier) so this stays
+    // deployment-aware, same as the confidence gate above and the
+    // high-complexity branch below.
+    return small;
   }
 
   // complexity === "high"

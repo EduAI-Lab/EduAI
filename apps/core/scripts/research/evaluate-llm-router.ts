@@ -113,6 +113,20 @@ async function main() {
       // Production pre-gate (resolveRoutedModelLlm, router.ts): rules run
       // first, and a tier-3 rule wins outright without consulting the
       // classifier at all.
+      //
+      // courseId is always null here (the label pool has no real course
+      // session attached to each prompt), so rule3b_course_rag_tier_1
+      // (which fires on ctx.courseId && ctx.courseRagNeeded alone, no
+      // numeric RAG fields required) can never match in this harness even
+      // though courseRagNeeded is now true for "weak"/"strong" rows. In
+      // production that combination would short-circuit straight to tier
+      // 1; here it instead falls through to rule4/rule4b (numeric RAG
+      // check) or the classifier. Both paths converge on tier 1 for
+      // strong-RAG rows anyway, so the practical effect on these metrics
+      // is expected to be small, but this is a known, documented gap
+      // between this harness and production for course-scoped requests —
+      // fabricating a courseId would be worse, since the label pool
+      // doesn't record a real one.
       const ruleMatch = matchPhase1Rules({
         prompt,
         courseId: null,

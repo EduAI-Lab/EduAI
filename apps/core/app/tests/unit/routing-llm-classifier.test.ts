@@ -41,7 +41,7 @@ describe("tierFromLlmClassification", () => {
     ).toBe(1);
   });
 
-  it("escalates medium coding task to tier 3 when RAG context is weak/absent", () => {
+  it("maps medium complexity to the small tier regardless of RAG strength (task label alone never escalates)", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
     expect(
       tierFromLlmClassification(
@@ -51,7 +51,7 @@ describe("tierFromLlmClassification", () => {
     ).toBe(1);
   });
 
-  it("de-escalates medium complexity to tier 1 when RAG context is strong", () => {
+  it("stays on the small tier for medium complexity when RAG context is strong too (no separate strong-RAG path at this complexity)", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
     expect(
       tierFromLlmClassification(
