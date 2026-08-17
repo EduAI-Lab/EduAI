@@ -10,6 +10,7 @@ const mockExecuteRaw = vi.hoisted(() => vi.fn());
 const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
+const mockNotifyExpiringApiKeys = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -23,6 +24,10 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/cron-notify-api-key-expiry.server", () => ({
+  notifyExpiringApiKeys: mockNotifyExpiringApiKeys,
+}));
+
 const {
   listCronJobStatuses,
   updateCronSchedule,
@@ -31,6 +36,7 @@ const {
   startCronRun,
   finishCronRun,
   triggerCronJobAsync,
+  dispatchManualCronRuns,
   KNOWN_CRON_JOBS,
 } = await import("~/lib/db.cron-jobs.server");
 
@@ -41,6 +47,8 @@ beforeEach(() => {
   mockOverrideFindMany.mockResolvedValue([]);
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
+  mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 0 });
+  globalThis.__manualCronRunIds = undefined;
 });
 
 describe("listCronJobStatuses", () => {
@@ -239,6 +247,21 @@ describe("triggerCronJobAsync", () => {
     return child;
   }
 
+  it("runs a Core handler without spawning a shell process", async () => {
+    mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
+    triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "CORE");
+    // The CORE path resolves via a dynamic `import()` before calling the
+    // handler — under Vite's SSR transform that hop can take more than a
+    // couple of microtask ticks, so poll instead of a fixed tick count.
+    await vi.waitFor(() => {
+      expect(mockNotifyExpiringApiKeys).toHaveBeenCalledOnce();
+    });
+    expect(mockSpawn).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+    });
+  });
+
   it("spawns bash with the resolved script path", () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
@@ -308,5 +331,19 @@ describe("triggerCronJobAsync", () => {
     expect(persistedMessage).not.toContain("s3kr3t");
     expect(persistedMessage).toContain("[REDACTED]");
     expect(persistedMessage).toContain("done");
+  });
+
+  it("dispatches admin-triggered shell runs from the worker process", async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    mockQueryRaw.mockResolvedValueOnce([{ id: "run-manual", jobName: "backup-nightly" }]);
+
+    await dispatchManualCronRuns();
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "bash",
+      [expect.stringContaining("backup-nightly.sh")],
+      expect.any(Object),
+    );
   });
 });

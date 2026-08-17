@@ -33,4 +33,6 @@ log "API key expiry notifications: sent $NOTIFIED email(s)"
 
 log "=== API key expiry notifications complete ==="
 
-[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_finish
+if [[ -z "${CORE_CRON_RUN_ID:-}" ]]; then
+  cron_finish
+fi

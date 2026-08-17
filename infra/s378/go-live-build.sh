@@ -218,6 +218,19 @@ fi
 
 if [ "$DO_RESTART" = "1" ]; then
   step "restart"
+  if want core && ! systemctl cat eduai-cron-worker.service >/dev/null 2>&1; then
+    echo "ERROR: eduai-cron-worker.service is not installed on this host."
+    echo "       Run once: sudo bash infra/s378/go-live-systemd-install.sh"
+    echo "       This installs the dedicated worker and /opt/eduai/cron scripts."
+    exit 1
+  fi
+  if want core; then
+    # The worker executes the checked-in shell scripts from /opt/eduai/cron,
+    # not from the web checkout. Sync them on every Core deploy so a script
+    # change cannot remain stale after the worker restarts.
+    echo "  syncing cron scripts to /opt/eduai/cron"
+    sudo /usr/local/sbin/eduai-cron-sync
+  fi
   # No sudo: the polkit rule in systemd/49-eduai-dev.rules grants eduai-dev
   # members lifecycle control over every eduai-* unit individually, so this does
   # not have to go through eduai-dev.target. Core is skipped when it was already
@@ -227,6 +240,9 @@ if [ "$DO_RESTART" = "1" ]; then
   # whose bundle did not change is a pointless outage on a shared box.
   RESTART_UNITS=()
   if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
+  # The cron worker imports Core server code directly, so it must restart with
+  # every Core deployment even when Core itself was restarted after its build.
+  if want core; then RESTART_UNITS+=(eduai-cron-worker.service); fi
   if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
   if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
 
@@ -267,6 +283,10 @@ if [ "$DO_RESTART" = "1" ]; then
   # stopped would be a false alarm.
   UNHEALTHY=()
   if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
+  if want core && [ "$(systemctl is-active eduai-cron-worker.service 2>&1)" != "active" ]; then
+    echo "  eduai-cron-worker        NOT active"
+    UNHEALTHY+=(eduai-cron-worker)
+  fi
   if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
   if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
 
