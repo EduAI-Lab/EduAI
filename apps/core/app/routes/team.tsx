@@ -1,5 +1,4 @@
-import { Link } from "react-router";
-import { AnimatedBackground } from "~/components/animated-background";
+import { PageHeading } from "@eduai/ui";
 import { SiteNavigation } from "~/components/site-navigation";
 import { SiteFooter } from "~/components/site-footer";
 import { TeamMemberCard } from "~/components/team-member-card";
@@ -160,24 +159,23 @@ export const teamMembers: TeamMember[] = [
 
 export default function TeamPage() {
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      <AnimatedBackground />
+    <div className="min-h-screen bg-background">
       <SiteNavigation currentPage="team" />
 
       {/* Main Content */}
-      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Project Introduction */}
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-foreground mb-4">Meet our research team</h2>
-          <div className="w-24 h-1 bg-gradient-to-r from-green-400 to-blue-500 mx-auto rounded mb-6"></div>
+          <PageHeading
+            heading="Meet our research team"
+            className="mb-6 [&>div]:mx-auto"
+            headingClassName="text-4xl font-bold text-foreground"
+          />
           <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
             Our dedicated team of undergraduate and graduate students is working alongside faculty
             to advance the field of Educational Artificial Intelligence, creating innovative
             solutions that enhance learning experiences for students worldwide.
           </p>
-          <div className="mt-4 text-green-400 font-mono text-sm opacity-70">
-            {"// Building the future of education with code and AI"}
-          </div>
         </div>
 
         {/* Team Members */}

@@ -23,13 +23,23 @@ describe("SiteNavigation — rendering", () => {
     expect(screen.getByRole("button", { name: "Dashboard" })).toBeInTheDocument();
   });
 
+  it("renders the Log in and Sign up buttons", () => {
+    render(
+      <MemoryRouter>
+        <SiteNavigation currentPage="home" />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign up" })).toBeInTheDocument();
+  });
+
   it("marks the current page link as active", () => {
     render(
       <MemoryRouter>
         <SiteNavigation currentPage="team" />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "Team" })).toHaveClass("border-green-500");
+    expect(screen.getByRole("link", { name: "Team" })).toHaveClass("border-primary");
   });
 });
 
