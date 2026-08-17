@@ -35,12 +35,14 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   return {
     ...actual,
     fetchCoreCourseSafe: vi.fn(),
+    getEduAiCourseEnrollmentServiceKey: vi.fn(),
     listEduAiCourseEnrollmentsServiceKey: vi.fn(),
   };
 });
 
 import {
   fetchCoreCourseSafe,
+  getEduAiCourseEnrollmentServiceKey,
   listEduAiCourseEnrollmentsServiceKey,
 } from '../../src/services/eduaiClient.js';
 
@@ -68,6 +70,12 @@ function coreEnrollment(userId, role = 'STUDENT') {
 beforeEach(async () => {
   await truncateAll();
   vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
+  vi.mocked(getEduAiCourseEnrollmentServiceKey)
+    .mockReset()
+    .mockImplementation(async (_courseId, userId) => {
+      const enrollments = await listEduAiCourseEnrollmentsServiceKey();
+      return enrollments.find((enrollment) => enrollment.studentId === userId) ?? null;
+    });
   vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
     id: coreOfferingId,
     department: DEPARTMENT,
