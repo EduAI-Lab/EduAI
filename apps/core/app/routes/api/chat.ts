@@ -5,6 +5,8 @@ import { ZodError } from "zod";
 import {
   createDataStreamResponse,
   formatDataStreamPart,
+  jsonSchema,
+  Output,
   StreamData,
   streamText,
 } from "ai";
@@ -2206,6 +2208,15 @@ ${buildEmptyCourseRagBlock()}`;
     });
     const requestedAssistStageCount =
       resolveRequestedAssistStageCount(lastUserText);
+    const structuredOutput = structuredAssistOutput
+      ? Output.object({
+          schema: jsonSchema(
+            buildAdhdAssistStructuredResponseSchema(
+              requestedAssistStageCount,
+            ) as unknown as Parameters<typeof jsonSchema>[0],
+          ),
+        })
+      : undefined;
 
     streamConfig.system = composeSecurityPrompt(
       composeSystemPrompt(streamConfig.system ?? "", {
@@ -2215,15 +2226,6 @@ ${buildEmptyCourseRagBlock()}`;
     );
 
     if (structuredAssistOutput) {
-      streamConfig.responseFormat = {
-        type: "json",
-        name: "eduai_assist_response",
-        description:
-          "Complete Assist response plan. The application renders the Markdown structure and diagram from these stages.",
-        schema: buildAdhdAssistStructuredResponseSchema(
-          requestedAssistStageCount,
-        ),
-      };
       const stageInstruction = requestedAssistStageCount
         ? `Supply exactly ${requestedAssistStageCount} ordered stages.`
         : "Supply 3-5 ordered stages.";
@@ -2499,6 +2501,7 @@ ${buildEmptyCourseRagBlock()}`;
       // retry and AbortError handling path.
       const result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
+        experimental_output: structuredOutput,
         providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
         onChunk: probe
