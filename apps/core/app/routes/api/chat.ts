@@ -1480,7 +1480,7 @@ export async function action({ request }: ActionFunctionArgs) {
       wasAuto = true;
       routingTier = 3;
       routerContext = {
-        ...(routerContext ?? {}),
+        ...routerContext,
         requestedModelId,
         rule: "assist_explicit_retained_model",
         mode: "assist-pinned",
