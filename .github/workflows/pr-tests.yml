@@ -36,14 +36,24 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The file list is matched from a file rather than piped from `echo`.
+          # A large pull request (the oxfmt sweep changed 1482 files) overflows
+          # the pipe buffer, and `grep -q` exits on its first match before the
+          # write finishes, so `echo` dies of EPIPE and `pipefail` reports the
+          # whole pipeline as failed — turning a match into a false condition
+          # and silently skipping every gate below.
+          changed=$RUNNER_TEMP/changed-files.txt
+          all=false
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            files=$(gh api \
+            gh api \
               "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-              --paginate --jq '.[].filename')
+              --paginate --jq '.[].filename' > "$changed"
           else
-            files="__all__"
+            all=true
+            : > "$changed"
           fi
-          echo "$files"
+          echo "Changed files: $(wc -l < "$changed")"
 
           code=false
           core=false
@@ -51,7 +61,7 @@ jobs:
           question_maker=false
           shared=false
 
-          if [ "$files" = "__all__" ]; then
+          if [ "$all" = true ]; then
             code=true
             core=true
             ai_tutor=true
@@ -61,22 +71,23 @@ jobs:
           # docs/ux/chat-progress-1171/capture.mjs), so it is skippable only for
           # known documentation and asset extensions. Anything else under it —
           # including code — counts as a code change and runs the gates.
-          elif echo "$files" | grep -qvE '\.(md|txt)$|^docs/.*\.(md|txt|png|jpe?g|gif|svg|webp|pdf|csv)$|^LICENSE$'; then
+          elif grep -qvE '\.(md|txt)$|^docs/.*\.(md|txt|png|jpe?g|gif|svg|webp|pdf|csv)$|^LICENSE$' "$changed"; then
             code=true
 
-            if echo "$files" | grep -qE '^apps/core/'; then
+            if grep -qE '^apps/core/' "$changed"; then
               core=true
             fi
-            if echo "$files" | grep -qE '^apps/extensions/ai-tutor/'; then
+            if grep -qE '^apps/extensions/ai-tutor/' "$changed"; then
               ai_tutor=true
             fi
-            if echo "$files" | grep -qE '^apps/extensions/question-maker/'; then
+            if grep -qE '^apps/extensions/question-maker/' "$changed"; then
               question_maker=true
             fi
 
             # Root build/test infrastructure and shared packages can affect every app.
-            if echo "$files" | grep -qE \
-              '^packages/|^tests/|^scripts/|^docker/|^docker-compose|^package(-lock)?\.json$|^turbo\.json$|^\.github/workflows/pr-tests\.yml$'; then
+            if grep -qE \
+              '^packages/|^tests/|^scripts/|^docker/|^docker-compose|^package(-lock)?\.json$|^turbo\.json$|^\.github/workflows/pr-tests\.yml$' \
+              "$changed"; then
               shared=true
               core=true
               ai_tutor=true
