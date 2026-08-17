@@ -42,6 +42,7 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
+  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
