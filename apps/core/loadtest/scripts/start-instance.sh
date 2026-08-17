@@ -3,7 +3,8 @@
 # stress harness, both bound to loopback only. Run `npm run loadtest:setup`
 # first. Ctrl-C stops both.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
 
 ENV_FILE="../.env.loadtest"
 if [ ! -f "$ENV_FILE" ]; then

@@ -157,10 +157,10 @@ function fakeVector(seedText) {
   // are stable — content doesn't matter for a stress test, only shape/speed.
   let seed = 0;
   for (let i = 0; i < seedText.length; i++) seed = (seed * 31 + seedText.charCodeAt(i)) >>> 0;
-  const vec = new Array(EMBED_DIM);
+  const vec = [];
   for (let i = 0; i < EMBED_DIM; i++) {
     seed = (seed * 1103515245 + 12345) >>> 0;
-    vec[i] = (seed / 0xffffffff) * 2 - 1;
+    vec.push((seed / 0xffffffff) * 2 - 1);
   }
   return vec;
 }
@@ -182,6 +182,7 @@ async function handleEmbed(req, res) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    console.log(`[mock-llm] ${req.method} ${url.pathname}`);
     if (req.method === 'GET' && url.pathname === '/healthz') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('ok');

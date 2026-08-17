@@ -21,12 +21,18 @@ export const options = {
       executor: 'ramping-vus',
       exec: 'browserChatFlow',
       startVUs: 0,
-      stages: [
-        { duration: '20s', target: 5 },
-        { duration: '40s', target: Number(__ENV.BROWSER_VUS || 20) },
-        { duration: '1m', target: Number(__ENV.BROWSER_VUS || 20) },
-        { duration: '20s', target: 0 },
-      ],
+      stages: __ENV.BROWSER_SMOKE
+        ? [
+            { duration: '10s', target: Number(__ENV.BROWSER_VUS || 2) },
+            { duration: '40s', target: Number(__ENV.BROWSER_VUS || 2) },
+            { duration: '10s', target: 0 },
+          ]
+        : [
+            { duration: '20s', target: 5 },
+            { duration: '40s', target: Number(__ENV.BROWSER_VUS || 20) },
+            { duration: '1m', target: Number(__ENV.BROWSER_VUS || 20) },
+            { duration: '20s', target: 0 },
+          ],
       options: {
         browser: { type: 'chromium' },
       },
@@ -44,8 +50,11 @@ export async function browserChatFlow() {
   try {
     await page.goto(`${BASE_URL}/auth/login`, { waitUntil: 'networkidle' });
 
-    await page.locator('input[name="email"]').fill(email);
-    await page.locator('input[name="password"]').fill(DEMO_PASSWORD);
+    // `#email` / `#password` — the login form ids. `input[name="email"]` matches
+    // the real field AND the demo-login hidden inputs, which k6 rejects as a
+    // strict-mode violation (this is what the first 5-VU run actually hit).
+    await page.locator('input#email').fill(email);
+    await page.locator('input#password').fill(DEMO_PASSWORD);
     await Promise.all([
       page.waitForNavigation(),
       page.locator('button[type="submit"]').click(),
@@ -55,35 +64,62 @@ export async function browserChatFlow() {
       'left the login page after submit': (p) => !p.url().includes('/auth/login'),
     });
 
-    await page.goto(`${BASE_URL}/chat?courseCode=${encodeURIComponent(COURSE_CODE)}`, {
-      waitUntil: 'networkidle',
-    });
-
-    // First-visit disclaimer modal — not always present (already dismissed
-    // for this browser context), so don't fail the run if it's absent.
-    // k6 Locator has no Playwright-style count(); page.$ returns null if missing.
-    const understandBtn = await page.$('button:has-text("I understand")');
-    if (understandBtn) {
-      await understandBtn.click();
+    // Seeded loadtest VUs have no student number, so first login lands on
+    // /onboarding/student-id. Skip it the same way a TA without a number would.
+    if (page.url().includes('/onboarding/student-id')) {
+      await page.evaluate(() => {
+        const btn = document.querySelector('button[name="intent"][value="skip"]');
+        if (btn) btn.click();
+      });
+      await page.waitForNavigation().catch(() => {});
     }
 
-    const input = page.locator('#chat-message-input');
-    await input.waitFor({ state: 'visible', timeout: 10000 });
-    await input.fill('Can you summarize the last lecture in one paragraph?');
-    // Send is icon-only; "Send message" is the aria-label, not rendered text.
-    await page.locator('button[aria-label="Send message"]').click();
+    let appeared = false;
+    try {
+      await page.goto(`${BASE_URL}/chat?courseCode=${encodeURIComponent(COURSE_CODE)}`, {
+        waitUntil: 'networkidle',
+      });
 
-    // Wait for the mock LLM's known canned reply to render — proves the full
-    // round trip (client fetch -> /api/chat -> mock stream -> DOM update)
-    // works under concurrent browser load. Matching on real response text
-    // avoids depending on the chat UI's internal DOM structure/class names.
-    const appeared = await page
-      .locator('text=concise answer based on the course material')
-      .waitFor({ state: 'visible', timeout: 20000 })
-      .then(() => true)
-      .catch(() => false);
+      // page.$ is CSS-only; :has-text() is invalid there. Click by text in the
+      // page so a missing modal is a no-op instead of a thrown selector error.
+      await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find(
+          (b) => (b.textContent || '').trim() === 'I understand',
+        );
+        if (btn) btn.click();
+      });
+      await page.waitForTimeout(500);
 
-    check(page, { 'assistant response rendered': () => appeared });
+      const input = page.locator('#chat-message-input');
+      await input.waitFor({ state: 'visible', timeout: 15000 });
+      await input.click();
+      await input.type('Can you summarize the last lecture in one paragraph?');
+      await page.evaluate(() => {
+        const btn = document.querySelector('button[aria-label="Send message"]');
+        if (btn && !btn.disabled) btn.click();
+      });
+
+      // k6's locator engine is not Playwright — `text=…` never matches here.
+      // Poll the rendered page text for the mock's canned phrase.
+      for (let i = 0; i < 40; i++) {
+        appeared = await page.evaluate(
+          () => (document.body && document.body.innerText ? document.body.innerText : '').includes(
+            'concise answer based on the course material',
+          ),
+        );
+        if (appeared) break;
+        await page.waitForTimeout(500);
+      }
+      if (!appeared) {
+        const snippet = await page.evaluate(() =>
+          (document.body && document.body.innerText ? document.body.innerText : '').slice(0, 400),
+        );
+        console.error(`[browser] VU ${__VU} no assistant text. page snippet: ${snippet}`);
+      }
+    } catch (err) {
+      console.error(`[browser] VU ${__VU} chat flow failed: ${err}`);
+    }
+    check(null, { 'assistant response rendered': () => appeared });
   } finally {
     await page.close();
   }

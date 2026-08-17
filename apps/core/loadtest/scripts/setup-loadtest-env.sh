@@ -2,13 +2,16 @@
 # Provisions the isolated DB + demo dataset for the #919 stress harness.
 # Safe to re-run — migrate/seed are idempotent (seed.ts uses upsert).
 set -euo pipefail
-# This file lives at apps/core/loadtest/scripts/ — repo root is ../../..
-cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
+# This file lives at apps/core/loadtest/scripts/. npm invokes it with a relative
+# BASH_SOURCE, so resolve to an absolute path before cd'ing.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CORE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$CORE_DIR"
 
-ENV_FILE="apps/core/.env.loadtest"
+ENV_FILE=".env.loadtest"
 if [ ! -f "$ENV_FILE" ]; then
-  echo "Creating $ENV_FILE from example (fill in secrets)..."
-  cp apps/core/loadtest/.env.loadtest.example "$ENV_FILE"
+  echo "Creating apps/core/$ENV_FILE from example (fill in secrets)..."
+  cp loadtest/.env.loadtest.example "$ENV_FILE"
   sed -i.bak "s|BETTER_AUTH_SECRET=\"\"|BETTER_AUTH_SECRET=\"$(openssl rand -base64 32)\"|" "$ENV_FILE"
   sed -i.bak "s|ENCRYPTION_KEY=\"\"|ENCRYPTION_KEY=\"$(openssl rand -base64 32)\"|" "$ENV_FILE"
   rm -f "$ENV_FILE.bak"
@@ -26,8 +29,6 @@ echo "==> Ensuring database '$DB_NAME' exists in container '$DB_CONTAINER'..."
 if ! docker exec "$DB_CONTAINER" psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1; then
   docker exec "$DB_CONTAINER" psql -U postgres -c "CREATE DATABASE $DB_NAME"
 fi
-
-cd apps/core
 
 echo "==> Generating Prisma client..."
 npx prisma generate

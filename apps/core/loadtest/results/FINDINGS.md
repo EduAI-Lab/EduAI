@@ -109,3 +109,35 @@ finding.
    (live study traffic). A dedicated loadtest host, if ops provisions one,
    is the right place for "how EduAI handles load under real network
    conditions."
+
+## Browser run (2026-08-17) — `npm run loadtest:browser:smoke`
+
+Issue #919's actual deliverable. Isolated instance on `127.0.0.1:4100` +
+mock LLM on `:8801`. Summary: `browser-5vu.summary.json`.
+
+`BROWSER_SMOKE=1 BROWSER_VUS=2` against the production build. After the
+script/env fixes below:
+
+| Check | Result |
+|---|---|
+| Left the login page | **100%** |
+| Assistant reply rendered | **100%** (7/7 checks, threshold `rate>0.9` passed) |
+
+What running the script actually found (this is why the first attempts were 0%):
+
+1. `input[name="email"]` is not unique — demo-login hidden fields share it.
+   k6 strict mode throws. Fixed to `input#email` / `#password`.
+2. `page.$('button:has-text(...)')` is invalid CSS. `page.$` is
+   `querySelector`. Click by text via `page.evaluate`.
+3. Loadtest VUs have no student number, so login lands on
+   `/onboarding/student-id`. The script now clicks skip.
+4. k6's locator engine is not Playwright — `locator('text=…')` never
+   matches the assistant bubble. Poll `document.body.innerText` instead.
+5. The mock binds `127.0.0.1` only. `VLLM_BASE_URL=http://localhost:8801`
+   on macOS often hits `::1`, so Core's outbound chat hung and the mock
+   logged nothing. Example env now uses `http://127.0.0.1:8801` and sets
+   `VLLM_FLEET_CHAT_URLS` to the same mock.
+
+A one-shot `POST /api/chat` with a session cookie then streamed the canned
+mock reply in ~3s. The Chromium smoke is the same round trip through the
+real login form and chat UI.

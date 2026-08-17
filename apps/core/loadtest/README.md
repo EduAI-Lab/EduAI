@@ -99,12 +99,14 @@ run, if you want concurrent load *and* realistic data volume at once.
 
 ## Results so far
 
-Two full 500-VU runs are recorded in [`results/FINDINGS.md`](./results/FINDINGS.md)
-(raw k6 summaries alongside it). Headline: chat success rate was ~0.8%,
-dominated by `401 MISSING_SERVICE_KEY`. DB pool size is ruled out. The
-original harness had not yet ruled out cookie-jar / redirect artifacts, so
-that is **not** yet a confirmed `getSession()` capacity ceiling — see the
-doc. `npm run loadtest:stress` writes `loadtest/results/stress-500.summary.json`.
+Two full 500-VU HTTP runs plus a real-Chromium run are recorded in
+[`results/FINDINGS.md`](./results/FINDINGS.md). HTTP headline: chat success
+~0.8%, dominated by `401 MISSING_SERVICE_KEY`; DB pool size is ruled out;
+cookie-jar / redirect artifacts are not yet ruled out. Browser headline
+(`npm run loadtest:browser:smoke`, 2 VUs): login **and** assistant-reply
+checks are 100% once the mock is addressed as `127.0.0.1` (not `localhost`)
+and the script polls `document.body.innerText` instead of a Playwright
+`text=` locator.
 
 ## Interpreting results
 

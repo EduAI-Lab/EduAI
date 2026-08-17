@@ -31,3 +31,4 @@ ecosystem.config.cjs
 !/loadtest/results/FINDINGS.md
 !/loadtest/results/run-a-default-admission.json
 !/loadtest/results/run-b-connection-pool.json
+!/loadtest/results/browser-5vu.summary.json
