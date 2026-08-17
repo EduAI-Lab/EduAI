@@ -400,7 +400,8 @@ describe("POST /api/completion review regressions", () => {
     expect(await res.json()).toEqual({
       error: "Completion request body exceeds size limit",
     });
-    expect(cancel).toHaveBeenCalledTimes(1);
+    // Do not tear down the request socket before the adapter can flush the 413.
+    expect(cancel).not.toHaveBeenCalled();
     expect(acquireAiAdmission).not.toHaveBeenCalled();
   });
 

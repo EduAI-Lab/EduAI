@@ -6,6 +6,8 @@
  * database, provider, or admission work can start.
  */
 
+import { BoundedBodyError, readBoundedBody } from "~/lib/net/bounded-body.server";
+
 export const CHAT_MAX_BODY_BYTES_DEFAULT = 2 * 1024 * 1024;
 export const CHAT_MAX_MESSAGES_DEFAULT = 100;
 export const CHAT_MAX_MESSAGE_CHARS_DEFAULT = 32_768;
@@ -94,101 +96,16 @@ export async function readBoundedJson(
   maxBytes: number,
   sizeError: string,
 ): Promise<BoundedJsonReadResult> {
-  const contentLength = request.headers.get("content-length");
-  if (contentLength !== null) {
-    const normalized = contentLength.trim();
-    const declaredLength = Number(normalized);
-    if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(declaredLength) || declaredLength < 0) {
-      return invalidBody("Invalid Content-Length");
-    }
-    if (declaredLength > maxBytes) {
-      // Do not cancel an HTTP server's incoming request stream here. On browser
-      // uploads that are still in flight, canceling this wrapper can tear down
-      // the connection before the client receives the 413 response. The
-      // declared length is already sufficient for an early rejection; the
-      // streaming path below still cancels when a chunk actually crosses the
-      // cap.
-      return sizeExceeded(sizeError);
-    }
-  }
-
-  const body = request.body;
-  if (!body) {
-    return invalidBody();
-  }
-
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  let abortReject: ((reason: unknown) => void) | undefined;
-  const abortPromise = new Promise<never>((_, reject) => {
-    abortReject = reject;
-  });
-  const onAbort = () => {
-    void reader.cancel().catch(() => undefined);
-    abortReject?.({ status: 499, error: "Request aborted" });
-  };
-
-  if (request.signal.aborted) {
-    onAbort();
-  } else {
-    request.signal.addEventListener("abort", onAbort, { once: true });
-  }
-
   try {
-    while (true) {
-      let readResult: ReadableStreamReadResult<Uint8Array>;
-      try {
-        readResult = await Promise.race([reader.read(), abortPromise]);
-      } catch (error) {
-        if (request.signal.aborted) {
-          return { ok: false, status: 499, error: "Request aborted" };
-        }
-        if (
-          error &&
-          typeof error === "object" &&
-          "status" in error &&
-          (error as { status?: unknown }).status === 499
-        ) {
-          return { ok: false, status: 499, error: "Request aborted" };
-        }
-        return invalidBody();
-      }
-      if (readResult.done) break;
-
-      const chunk = readResult.value;
-      if (!(chunk instanceof Uint8Array)) {
-        return invalidBody();
-      }
-      totalBytes += chunk.byteLength;
-      if (totalBytes > maxBytes) {
-        void reader.cancel().catch(() => undefined);
-        return sizeExceeded(sizeError);
-      }
-      chunks.push(chunk);
-    }
-  } finally {
-    request.signal.removeEventListener("abort", onAbort);
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return invalidBody();
-  }
-
-  try {
+    const bytes = await readBoundedBody(request, maxBytes);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     return { ok: true, body: JSON.parse(text) as unknown };
-  } catch {
+  } catch (error) {
+    if (error instanceof BoundedBodyError) {
+      if (error.status === 413) return sizeExceeded(sizeError);
+      if (error.status === 499) return { ok: false, status: 499, error: "Request aborted" };
+      if (error.message === "Invalid Content-Length") return invalidBody(error.message);
+    }
     return invalidBody();
   }
 }

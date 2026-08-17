@@ -103,8 +103,7 @@ describe("readBoundedFormData", () => {
     await expect(readBoundedFormData(request, 96)).rejects.toBeInstanceOf(
       MultipartBodyTooLargeError,
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("cancels a body with a malformed declared length", async () => {
@@ -116,8 +115,7 @@ describe("readBoundedFormData", () => {
     await expect(readBoundedFormData(request, 96)).rejects.toBeInstanceOf(
       MultipartBodyInvalidError,
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("rejects chunked overflow and cancels the source stream", async () => {

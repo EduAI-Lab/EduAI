@@ -2125,19 +2125,15 @@ async function seedMaterials() {
   }
 }
 
-async function main() {
-  console.log("Seeding Core...");
-
-  // Validate before any fixture write so a missing local password cannot leave
-  // a partially seeded database behind.
-  const seedPassword = getLocalSeedPassword();
-
+export async function seedReferenceData() {
   const disciplineCount = await seedDisciplines();
   console.log(`  ${disciplineCount} disciplines seeded (Workday units registry)`);
 
   await seedAIProvidersAndModels();
-  console.log("  AI providers and models seeded");
+  console.log('  AI providers and models seeded');
+}
 
+async function seedLocalFixtures(seedPassword: string) {
   await seedUsers();
   await seedPasswords(seedPassword);
   console.log(
@@ -2188,19 +2184,35 @@ async function main() {
   console.log(`Cross-app links exported via SEED_IDS in apps/core/prisma/seed.ts`);
 }
 
+async function main() {
+  console.log('Seeding Core...');
+  const referenceOnly = process.argv.includes('--reference-only');
+  await seedReferenceData();
+  if (referenceOnly) {
+    console.log('Reference seed complete (no users or demo fixtures written)');
+    return;
+  }
+
+  // Validate before any fixture write so a missing local password cannot leave
+  // a partially seeded database behind.
+  await seedLocalFixtures(getLocalSeedPassword());
+}
+
 const isMainModule =
   process.argv[1] != null &&
   path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
-  try {
-    // This seed creates deterministic privileged accounts. Never permit it in
-    // shared/production/ambiguous modes or without an explicit local password.
-    assertLocalDemoEnvironment();
-    getLocalSeedPassword();
-  } catch (error) {
-    console.error('Seed refused:', error instanceof Error ? error.message : String(error));
-    process.exit(1);
+  if (!process.argv.includes('--reference-only')) {
+    try {
+      // Fixture mode creates deterministic privileged accounts. Reference-only
+      // mode contains idempotent catalog upserts and is safe on shared hosts.
+      assertLocalDemoEnvironment();
+      getLocalSeedPassword();
+    } catch (error) {
+      console.error('Seed refused:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
   }
 
   main()

@@ -141,6 +141,9 @@ else
   echo "           skipping the client-isolation check (expected before #1243 merges)."
 fi
 
+step "migration preflight"
+( cd apps/core && npm run db:migrate:preflight )
+
 step "migrate"
 # These live here rather than in the systemd units on purpose: the units use
 # Restart=always, which would re-run a migration on every crash-loop iteration.
@@ -152,11 +155,14 @@ step "migrate"
 # baseline script first.
 ( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
 
-step "seed extension data if empty"
+step "seed reference and extension data"
 # Core fixture seeding is intentionally disabled on s378. Core's seed contains
 # fixed demo identities, including an ADMIN account, and its local-only guard
 # must never be bypassed by a shared deployment. Bootstrap the first real Core
-# administrator through the documented invitation/operator flow instead.
+# administrator through the documented operator bootstrap flow instead.
+# Reference catalogs contain no identities and use idempotent upserts, so they
+# are safe and required on a freshly migrated shared database.
+( cd apps/core                                  && npm run db:seed:reference )
 #
 # The extension seeds contain only local application/catalog data and remain
 # no-ops when their databases already have rows.

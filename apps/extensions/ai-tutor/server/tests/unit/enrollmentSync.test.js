@@ -245,15 +245,13 @@ describe('syncCourseEnrollments', () => {
   });
 
   describe('delete path', () => {
-    it('prunes revoked CourseInstructor rows after a complete authoritative roster response', async () => {
+    it('does not mutate CourseInstructor rows as a side effect of roster synchronization', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseInstructor.findMany.mockResolvedValue([{ userId: 'revoked-instructor' }]);
 
       await syncCourseEnrollments(1);
 
-      expect(prisma.courseInstructor.deleteMany).toHaveBeenCalledWith({
-        where: { courseOfferingId: 1, userId: { in: ['revoked-instructor'] } },
-      });
+      expect(prisma.courseInstructor.deleteMany).not.toHaveBeenCalled();
     });
 
     it('does not prune CourseInstructor rows when the authoritative roster is unavailable', async () => {

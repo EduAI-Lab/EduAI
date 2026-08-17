@@ -60,7 +60,7 @@ export const EduAiEnrollmentSchema = z
     studentId: z.string(),
     studentEmail: z.string(),
     studentName: z.string(),
-    enrolledAt: z.string(),
+    enrolledAt: z.string().nullable(),
     isActive: z.boolean(),
   })
   .passthrough();

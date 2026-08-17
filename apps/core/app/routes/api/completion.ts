@@ -18,6 +18,7 @@ import {
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { checkRateLimit, getChatRateLimitConfig } from "~/lib/auth/rate-limit.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { readBoundedJson } from "~/lib/chat-input.server";
 
 type CompletionBodyResult =
   | { ok: true; body: unknown }
@@ -41,118 +42,7 @@ async function readBoundedCompletionJson(
   request: Request,
   maxBytes: number,
 ): Promise<CompletionBodyResult> {
-  const contentLength = request.headers.get("content-length");
-  if (contentLength !== null) {
-    const declaredLength = Number(contentLength.trim());
-    if (
-      !/^\d+$/.test(contentLength.trim()) ||
-      !Number.isSafeInteger(declaredLength) ||
-      declaredLength < 0
-    ) {
-      try {
-        await request.body?.cancel();
-      } catch {
-        // Preserve the stable header-validation response.
-      }
-      return { ok: false, status: 400, error: "Invalid Content-Length" };
-    }
-    if (declaredLength > maxBytes) {
-      try {
-        await request.body?.cancel();
-      } catch {
-        // The size rejection is stable even if the runtime already owns the stream.
-      }
-      return {
-        ok: false,
-        status: 413,
-        error: "Completion request body exceeds size limit",
-      };
-    }
-  }
-
-  const body = request.body;
-  if (!body) {
-    return { ok: false, status: 400, error: "Invalid JSON body" };
-  }
-
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  let abortReject: ((reason: unknown) => void) | undefined;
-  const abortPromise = new Promise<never>((_, reject) => {
-    abortReject = reject;
-  });
-  const onAbort = () => {
-    void reader.cancel().catch(() => undefined);
-    abortReject?.({ status: 499, error: "Request aborted" });
-  };
-
-  if (request.signal.aborted) {
-    onAbort();
-  } else {
-    request.signal.addEventListener("abort", onAbort, { once: true });
-  }
-
-  try {
-    while (true) {
-      let readResult: ReadableStreamReadResult<Uint8Array>;
-      try {
-        readResult = await Promise.race([reader.read(), abortPromise]);
-      } catch (error) {
-        if (request.signal.aborted) {
-          return { ok: false, status: 499, error: "Request aborted" };
-        }
-        if (
-          error &&
-          typeof error === "object" &&
-          "status" in error &&
-          (error as { status?: unknown }).status === 499
-        ) {
-          return { ok: false, status: 499, error: "Request aborted" };
-        }
-        return { ok: false, status: 400, error: "Invalid JSON body" };
-      }
-      if (readResult.done) break;
-
-      const chunk = readResult.value;
-      if (!(chunk instanceof Uint8Array)) {
-        return { ok: false, status: 400, error: "Invalid JSON body" };
-      }
-      totalBytes += chunk.byteLength;
-      if (totalBytes > maxBytes) {
-        void reader.cancel().catch(() => undefined);
-        return {
-          ok: false,
-          status: 413,
-          error: "Completion request body exceeds size limit",
-        };
-      }
-      chunks.push(chunk);
-    }
-  } finally {
-    request.signal.removeEventListener("abort", onAbort);
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return { ok: false, status: 400, error: "Invalid JSON body" };
-  }
-
-  try {
-    return { ok: true, body: JSON.parse(text) as unknown };
-  } catch {
-    return { ok: false, status: 400, error: "Invalid JSON body" };
-  }
+  return readBoundedJson(request, maxBytes, "Completion request body exceeds size limit");
 }
 
 /**

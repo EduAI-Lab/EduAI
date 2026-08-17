@@ -503,6 +503,27 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, opt
   }
 }
 
+export async function getEduAiCourseEnrollmentServiceKey(externalCourseId, userId, options = {}) {
+  if (!externalCourseId || !userId) return null;
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) throw new Error("EDUAI_API_KEY not configured");
+  const query = new URLSearchParams({ userId: String(userId) });
+  const data = await requestEduAi(`/courses/${externalCourseId}/enrollments?${query}`, {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+    signal: options.signal,
+  });
+  try {
+    return data?.enrollment == null
+      ? null
+      : EduAiEnrollmentListSchema.parse({ enrollments: [data.enrollment] }).enrollments[0];
+  } catch (e) {
+    const err = new Error("Invalid response when fetching EduAI course enrollment");
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
+}
+
 /**
  * Add an enrollment in Core using the acting user's session. The service key
  * proves server-to-server provenance to Core's CSRF boundary; Core still uses

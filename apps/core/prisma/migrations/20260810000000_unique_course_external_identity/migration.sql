@@ -6,8 +6,6 @@
 -- related enrollments, topics, materials, and questions when historical
 -- duplicates exist. Resolve every row returned by the query in the exception
 -- before retrying `prisma migrate deploy`.
-BEGIN;
-
 DO $$
 BEGIN
   IF EXISTS (
@@ -28,5 +26,3 @@ CREATE UNIQUE INDEX "courses_externalSource_externalId_key"
 ON "courses"("externalSource", "externalId");
 
 DROP INDEX "courses_externalSource_externalId_idx";
-
-COMMIT;

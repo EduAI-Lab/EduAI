@@ -107,7 +107,15 @@ is the entire point (the dev server shipped ~12MB of unbundled JS per page).
 
 Core fixture seeding is deliberately absent from this deploy path. The Core
 seed contains fixed demo identities and is restricted to local/test hosts; use
-the documented invitation/operator bootstrap for the first shared administrator.
+the [operator invitation bootstrap](../../apps/core/docs/DEPLOYMENT.md#first-administrator-on-a-shared-database)
+for the first shared administrator. Reference disciplines and model catalogs are
+seeded separately with `db:seed:reference`.
+
+Before Core migrations, the deploy runs `db:migrate:preflight`. If it lists
+legacy API keys that the one-year cap will expire, notify their named owners and
+rotate those keys, then rerun the deploy with `EDUAI_ACK_API_KEY_ROTATION=1`.
+The acknowledgement applies only to that command invocation and does not bypass
+duplicate course-identity or active re-embed-job checks.
 
 ## Shared `EDUAI_API_KEY` (required for extension APIs)
 

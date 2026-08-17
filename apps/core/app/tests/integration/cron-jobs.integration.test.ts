@@ -107,7 +107,7 @@ describe("durable cron run leases", () => {
     expect(history[0]).toMatchObject({
       id: staleId,
       status: "ERROR",
-      leaseOwner: null,
+      leaseOwner: staleOwner,
       message: expect.stringContaining("lease expired"),
     });
     expect(history[1]).toMatchObject({

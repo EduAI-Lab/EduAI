@@ -128,9 +128,11 @@ cd ../extensions/ai-tutor/server && npx prisma migrate deploy
 
 App development commands already migrate and seed-if-empty on startup, but explicit migration is
 useful before restarting the shared stack because it fails before traffic is sent to an incompatible
-schema. `go-live-build.sh` runs all three migrations. It seeds extension-local catalog data only;
-Core fixture seeding is intentionally forbidden on shared hosts because it provisions fixed demo
-identities. Bootstrap the first real Core administrator through the invitation/operator flow.
+schema. `go-live-build.sh` runs the Core migration preflight, all three migrations, the safe Core
+reference seed, and extension-local catalog seeds. Core fixture seeding is intentionally forbidden
+on shared hosts because it provisions fixed demo identities. Bootstrap the first real Core
+administrator with the operator invitation command in
+[`apps/core/docs/DEPLOYMENT.md`](../apps/core/docs/DEPLOYMENT.md).
 
 ### Deploying a branch
 
@@ -322,11 +324,12 @@ do not infer callback routes from the subdomain name.
 1. Back up each database and verify the restore procedure.
 2. Fetch the reviewed release commit into a clean checkout.
 3. Install locked dependencies with `npm ci`.
-4. Apply Core, AI Tutor, and Question Maker Prisma migrations.
-5. Build the frontend/server bundles required by the chosen process manager.
-6. Restart one service at a time and verify its local health endpoint.
-7. Verify Core login, cross-subdomain session validation, and shared-key calls from both extensions.
-8. Verify the three public URLs through TLS and the reverse proxy.
+4. Run Core's `npm run db:migrate:preflight`, notify/rotate any listed legacy API-key owners, and resolve any duplicate course/job rows.
+5. Apply Core, AI Tutor, and Question Maker Prisma migrations, then run Core's `npm run db:seed:reference`.
+6. Build the frontend/server bundles required by the chosen process manager.
+7. Restart one service at a time and verify its local health endpoint.
+8. Verify Core login, cross-subdomain session validation, and shared-key calls from both extensions.
+9. Verify the three public URLs through TLS and the reverse proxy.
 
 Store secrets outside Git, run services as an unprivileged account, and keep database and Node ports
 off the public interface. Production backup and lifecycle jobs are documented in

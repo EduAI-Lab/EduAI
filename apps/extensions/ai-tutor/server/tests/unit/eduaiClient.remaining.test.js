@@ -19,6 +19,7 @@ import {
   listEduAiCourses,
   listEduAiCourseTopics,
   listEduAiCourseEnrollmentsServiceKey,
+  getEduAiCourseEnrollmentServiceKey,
   createCoreEnrollment,
   patchCoreEnrollmentRole,
   deleteCoreEnrollment,
@@ -315,6 +316,39 @@ describe("listEduAiCourseEnrollmentsServiceKey", () => {
     await expect(listEduAiCourseEnrollmentsServiceKey("core-1")).rejects.toMatchObject({
       status: 500,
     });
+  });
+});
+
+describe("getEduAiCourseEnrollmentServiceKey", () => {
+  it("requests and validates one user's enrollment", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const enrollment = {
+      studentId: "student/1",
+      studentEmail: "student@example.com",
+      studentName: "Student",
+      enrolledAt: null,
+      isActive: true,
+      role: "STUDENT",
+    };
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ enrollment }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(getEduAiCourseEnrollmentServiceKey("course-1", "student/1")).resolves.toEqual(
+      enrollment,
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://eduai.test/api/courses/course-1/enrollments?userId=student%2F1",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer svc-key" }),
+      }),
+    );
+  });
+
+  it("returns null for an authoritative non-enrollment", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson({ enrollment: null })));
+
+    await expect(getEduAiCourseEnrollmentServiceKey("core-1", "missing")).resolves.toBeNull();
   });
 });
 

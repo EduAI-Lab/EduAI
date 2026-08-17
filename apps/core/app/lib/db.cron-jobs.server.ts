@@ -269,7 +269,6 @@ async function reapExpiredCronRunsWithDb(
           ELSE message || E'\nCron run lease expired; a later process may safely retry it'
         END,
         "exitCode" = COALESCE("exitCode", 1),
-        "leaseOwner" = NULL,
         "leaseHeartbeatAt" = NULL,
         "leaseExpiresAt" = NULL
     WHERE status = 'RUNNING'::"CronJobStatus"
@@ -360,7 +359,6 @@ export async function finishCronRun(
         "finishedAt" = statement_timestamp(),
         message    = ${safeMessage},
         "exitCode" = ${exitCode},
-        "leaseOwner" = NULL,
         "leaseHeartbeatAt" = NULL,
         "leaseExpiresAt" = NULL
     WHERE id = ${id}

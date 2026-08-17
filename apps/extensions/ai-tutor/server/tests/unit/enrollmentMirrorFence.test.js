@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const courseOfferingFindFirst = vi.fn();
 const courseOfferingFindUnique = vi.fn();
@@ -24,54 +24,54 @@ const prisma = {
   },
 };
 
-vi.mock('../../src/config/database.js', () => ({ prisma }));
+vi.mock("../../src/config/database.js", () => ({ prisma }));
 
 const listEduAiCourses = vi.fn();
 const listEduAiCourseEnrollmentsServiceKey = vi.fn();
+const getEduAiCourseEnrollmentServiceKey = vi.fn();
 
-vi.mock('../../src/services/eduaiClient.js', () => ({
+vi.mock("../../src/services/eduaiClient.js", () => ({
   listEduAiCourses,
   listEduAiCourseEnrollmentsServiceKey,
+  getEduAiCourseEnrollmentServiceKey,
 }));
 
-vi.mock('../../src/services/topicSync.js', () => ({
+vi.mock("../../src/services/topicSync.js", () => ({
   syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
 }));
 
-const { authorizeLiveStudentEnrollment } = await import(
-  '../../src/services/enrollmentSync.js'
-);
-const { importEnrolledCoursesFromCore } = await import(
-  '../../src/services/importTaughtCoursesService.js'
-);
+const { authorizeLiveStudentEnrollment, resetEnrollmentSyncThrottleForTests } =
+  await import("../../src/services/enrollmentSync.js");
+const { importEnrolledCoursesFromCore } =
+  await import("../../src/services/importTaughtCoursesService.js");
 
-const COURSE = { id: 1, coreOfferingId: 'core-course-1' };
+const COURSE = { id: 1, coreOfferingId: "core-course-1" };
 const CORE_STUDENT_COURSE = {
-  id: 'core-course-1',
-  callerEnrollmentRole: 'STUDENT',
+  id: "core-course-1",
+  callerEnrollmentRole: "STUDENT",
 };
 const ACTIVE_ROSTER_ENTRY = {
-  studentId: 'student-1',
-  studentEmail: 'student@example.com',
-  studentName: 'Student One',
-  enrolledAt: '2026-01-01T00:00:00.000Z',
+  studentId: "student-1",
+  studentEmail: "student@example.com",
+  studentName: "Student One",
+  enrolledAt: "2026-01-01T00:00:00.000Z",
   isActive: true,
-  role: 'STUDENT',
+  role: "STUDENT",
 };
 
-describe('CourseEnrollment mirror/live authorization fence', () => {
+describe("CourseEnrollment mirror/live authorization fence", () => {
   let rows;
 
   beforeEach(() => {
     vi.clearAllMocks();
     rows = [];
-    courseOfferingFindFirst.mockResolvedValue({ id: 1, coreOfferingId: 'core-course-1' });
+    courseOfferingFindFirst.mockResolvedValue({ id: 1, coreOfferingId: "core-course-1" });
     courseOfferingFindUnique.mockResolvedValue(COURSE);
     courseEnrollmentFindMany.mockImplementation(async (args) => {
       if (args?.include) {
         return rows.map((row) => ({
           ...row,
-          courseOffering: { coreOfferingId: 'core-course-1' },
+          courseOffering: { coreOfferingId: "core-course-1" },
         }));
       }
       return rows.map(({ userId, role }) => ({ userId, role }));
@@ -80,8 +80,7 @@ describe('CourseEnrollment mirror/live authorization fence', () => {
       const key = where?.courseOfferingId_userId;
       return (
         rows.find(
-          (row) =>
-            row.courseOfferingId === key?.courseOfferingId && row.userId === key?.userId,
+          (row) => row.courseOfferingId === key?.courseOfferingId && row.userId === key?.userId,
         ) ?? null
       );
     });
@@ -93,8 +92,7 @@ describe('CourseEnrollment mirror/live authorization fence', () => {
       const key = where.courseOfferingId_userId;
       const row = rows.find(
         (candidate) =>
-          candidate.courseOfferingId === key.courseOfferingId &&
-          candidate.userId === key.userId,
+          candidate.courseOfferingId === key.courseOfferingId && candidate.userId === key.userId,
       );
       if (row) Object.assign(row, data);
       return row;
@@ -104,7 +102,7 @@ describe('CourseEnrollment mirror/live authorization fence', () => {
       rows = rows.filter((row) => {
         if (row.courseOfferingId !== where.courseOfferingId) return true;
         if (where.userId?.in && !where.userId.in.includes(row.userId)) return true;
-        if (where.userId && typeof where.userId === 'string' && row.userId !== where.userId) {
+        if (where.userId && typeof where.userId === "string" && row.userId !== where.userId) {
           return true;
         }
         return false;
@@ -113,9 +111,11 @@ describe('CourseEnrollment mirror/live authorization fence', () => {
     });
     listEduAiCourses.mockResolvedValue([CORE_STUDENT_COURSE]);
     listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
+    getEduAiCourseEnrollmentServiceKey.mockResolvedValue(null);
+    resetEnrollmentSyncThrottleForTests();
   });
 
-  it('rechecks a stale course-list candidate after a live revocation before writing', async () => {
+  it("rechecks a stale course-list candidate after a live revocation before writing", async () => {
     let releaseOfferingLookup;
     let resolveOfferingLookupStarted;
     const offeringLookupStarted = new Promise((resolve) => {
@@ -127,37 +127,38 @@ describe('CourseEnrollment mirror/live authorization fence', () => {
     courseOfferingFindFirst.mockImplementation(async () => {
       resolveOfferingLookupStarted();
       await offeringLookupRelease;
-      return { id: 1, coreOfferingId: 'core-course-1' };
+      return { id: 1, coreOfferingId: "core-course-1" };
     });
 
     const staleMirror = importEnrolledCoursesFromCore(
-      { id: 'student-1', role: 'STUDENT' },
-      'session=stale',
+      { id: "student-1", role: "STUDENT" },
+      "session=stale",
       { coreCourses: [CORE_STUDENT_COURSE] },
     );
     // The broad Core course list is now stale, but the mirror has not yet
     // entered the per-course authoritative reconciliation.
     await offeringLookupStarted;
 
-    const liveAuthorization = authorizeLiveStudentEnrollment(1, 'student-1', {
+    const liveAuthorization = authorizeLiveStudentEnrollment(1, "student-1", {
       course: COURSE,
     });
 
     const authorizationResult = await liveAuthorization;
-    expect(authorizationResult).toEqual({ allowed: false, state: 'denied', role: null });
+    expect(authorizationResult).toEqual({ allowed: false, state: "denied", role: null });
 
     releaseOfferingLookup();
     const mirrorResult = await staleMirror;
 
     expect(mirrorResult).toMatchObject({ enrolled: 1, removed: 0 });
     expect(rows).toEqual([]);
-    // Live authorization and the mirror's per-course reconciliation each
-    // fetched the authoritative roster; the stale list never became a write.
-    expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(2);
+    // Authorization uses the single-row Core lookup; the background mirror
+    // remains independently responsible for its full-roster reconciliation.
+    expect(getEduAiCourseEnrollmentServiceKey).toHaveBeenCalledTimes(1);
+    expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(1);
     expect(courseEnrollmentUpsert).not.toHaveBeenCalled();
   });
 
-  it('serializes mirror and live authoritative fetches so revocation wins', async () => {
+  it("does not make live authorization wait for a full-roster mirror fetch", async () => {
     let releaseMirrorFetch;
     let resolveMirrorFetchStarted;
     const mirrorFetchStarted = new Promise((resolve) => {
@@ -166,50 +167,34 @@ describe('CourseEnrollment mirror/live authorization fence', () => {
     const mirrorFetchRelease = new Promise((resolve) => {
       releaseMirrorFetch = resolve;
     });
-    let fetchCount = 0;
-    let activeFetches = 0;
-    let maxActiveFetches = 0;
     listEduAiCourseEnrollmentsServiceKey.mockImplementation(async () => {
-      fetchCount++;
-      activeFetches++;
-      maxActiveFetches = Math.max(maxActiveFetches, activeFetches);
-      if (fetchCount === 1) {
-        resolveMirrorFetchStarted();
-        await mirrorFetchRelease;
-        activeFetches--;
-        return [ACTIVE_ROSTER_ENTRY];
-      }
-      activeFetches--;
-      return [];
+      resolveMirrorFetchStarted();
+      await mirrorFetchRelease;
+      return [ACTIVE_ROSTER_ENTRY];
     });
 
     const staleMirror = importEnrolledCoursesFromCore(
-      { id: 'student-1', role: 'STUDENT' },
-      'session=stale',
+      { id: "student-1", role: "STUDENT" },
+      "session=stale",
       { coreCourses: [CORE_STUDENT_COURSE] },
     );
     await mirrorFetchStarted;
 
-    const liveAuthorization = authorizeLiveStudentEnrollment(1, 'student-1', {
+    const liveAuthorization = authorizeLiveStudentEnrollment(1, "student-1", {
       course: COURSE,
     });
-    await new Promise((resolve) => setImmediate(resolve));
-
-    // The mirror owns the course lock while its authoritative fetch is
-    // pending, so live authorization cannot fetch/reconcile concurrently.
-    expect(fetchCount).toBe(1);
-    expect(maxActiveFetches).toBe(1);
+    await expect(liveAuthorization).resolves.toEqual({
+      allowed: false,
+      state: "denied",
+      role: null,
+    });
+    expect(getEduAiCourseEnrollmentServiceKey).toHaveBeenCalledTimes(1);
 
     releaseMirrorFetch();
-    const [mirrorResult, authorizationResult] = await Promise.all([
-      staleMirror,
-      liveAuthorization,
-    ]);
+    const mirrorResult = await staleMirror;
 
     expect(mirrorResult).toMatchObject({ enrolled: 1, removed: 0 });
-    expect(authorizationResult).toEqual({ allowed: false, state: 'denied', role: null });
-    expect(rows).toEqual([]);
-    expect(fetchCount).toBe(2);
-    expect(maxActiveFetches).toBe(1);
+    expect(rows).toEqual([{ courseOfferingId: 1, userId: "student-1", role: "STUDENT" }]);
+    expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(1);
   });
 });

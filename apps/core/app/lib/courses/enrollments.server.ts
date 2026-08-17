@@ -53,6 +53,14 @@ export async function getCourseEnrollments(courseId: string) {
   });
 }
 
+/** Service-key authorization lookup that avoids loading or reconciling a full roster. */
+export async function getCourseEnrollmentForUser(courseId: string, userId: string) {
+  return prisma.enrollment.findUnique({
+    where: { courseId_userId: { courseId, userId } },
+    select: ENROLLMENT_SELECT,
+  });
+}
+
 /**
  * Cursor-paginated student roster for the browser-facing course detail page
  * (#1042). Filters to active STUDENT rows — the same set the Students tab

@@ -29,7 +29,6 @@ ALTER TABLE "cron_job_runs"
     )
     OR (
       "status" <> 'RUNNING'::"CronJobStatus"
-      AND "leaseOwner" IS NULL
       AND "leaseHeartbeatAt" IS NULL
       AND "leaseExpiresAt" IS NULL
     )

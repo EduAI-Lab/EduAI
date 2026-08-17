@@ -1,5 +1,8 @@
-import { prisma } from "../config/database.js";
-import { listEduAiCourseEnrollmentsServiceKey } from "./eduaiClient.js";
+import { prisma } from '../config/database.js';
+import {
+  getEduAiCourseEnrollmentServiceKey,
+  listEduAiCourseEnrollmentsServiceKey,
+} from './eduaiClient.js';
 
 // AI Tutor local enrollments mirror STUDENT and TA access (#1065); INSTRUCTOR
 // access is tracked separately via CourseInstructor and never mirrored here.
@@ -26,16 +29,17 @@ export const AUTO_SYNC_TTL_MS = 30_000;
 export const AUTO_SYNC_TIMEOUT_MS = 3_000;
 
 /**
- * Live student operations must not rely on the read-path mirror throttle. A
- * revoked Core enrollment therefore gets one bounded roster check per
- * sensitive request; there is deliberately no TTL here because a cache window
- * would turn revocation into a privilege-lag window.
+ * Live student operations use Core's single-enrollment endpoint rather than
+ * the local roster mirror. A short TTL absorbs duplicate checks from one page
+ * action while keeping revocation lag bounded.
  */
 export const LIVE_ENROLLMENT_SYNC_TIMEOUT_MS = 3_000;
+export const LIVE_ENROLLMENT_CACHE_TTL_MS = 3_000;
 export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE = 'ENROLLMENT_AUTH_UNAVAILABLE';
 export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE = 'Enrollment authorization unavailable';
 
 const lastAutoSyncAt = new Map();
+const liveEnrollmentCache = new Map();
 const localCourseLockTails = new Map();
 const COURSE_ENROLLMENT_LOCK_PREFIX = 'ai-tutor:course-enrollment:';
 
@@ -79,14 +83,13 @@ export async function withCourseEnrollmentLock(courseOfferingId, operation) {
 }
 
 /**
- * Reconcile one caller's course enrollment against Core immediately before a
- * sensitive student operation. Core is authoritative: a local row is only
- * considered after an uncached, successful roster sync, and a missing/TA row
- * is denied even when a stale local STUDENT row existed beforehand.
+ * Check one caller's authoritative Core enrollment immediately before a
+ * sensitive student operation. This path never fetches the full roster, takes
+ * the reconciliation lock, or mutates the local mirror.
  *
- * A Core/network/timeout/malformed-response or local-write/read failure is a
- * stable, fail-closed `unavailable` result. Callers must return 503 and must
- * not perform their provider or resource write in that case.
+ * A Core/network/timeout/malformed-response failure is a stable, fail-closed
+ * `unavailable` result. Callers must return 503 and must not perform their
+ * provider or resource write in that case.
  *
  * @param {number} courseOfferingId Local CourseOffering primary key
  * @param {string} userId Authenticated Core user id
@@ -99,50 +102,30 @@ export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, o
   }
 
   try {
-    return await withCourseEnrollmentLock(courseOfferingId, async (db) => {
-      const course =
-        options.course ?? (await db.courseOffering.findUnique({ where: { id: courseOfferingId } }));
-      if (!course?.coreOfferingId) {
-        // Without a Core link there is no authoritative roster to consult. Do
-        // not fall back to a local row for a sensitive student operation.
-        return { allowed: false, state: 'denied', role: null };
-      }
+    const course =
+      options.course ?? (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+    if (!course?.coreOfferingId) return { allowed: false, state: 'denied', role: null };
 
+    const cacheKey = `${course.coreOfferingId}:${userId}`;
+    const cached = liveEnrollmentCache.get(cacheKey);
+    const ttlMs = options.ttlMs ?? LIVE_ENROLLMENT_CACHE_TTL_MS;
+    let enrollment = cached && Date.now() - cached.checkedAt < ttlMs ? cached.enrollment : undefined;
+    if (enrollment === undefined) {
       const signal =
         options.signal ?? AbortSignal.timeout(options.timeoutMs ?? LIVE_ENROLLMENT_SYNC_TIMEOUT_MS);
-      // Do not pass ttlMs: this is intentionally a live authorization check.
-      await syncCourseEnrollmentsLocked(courseOfferingId, { course, signal }, db);
-      const enrollment = await db.courseEnrollment.findUnique({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId,
-            userId,
-          },
-        },
-        select: { role: true },
-      });
-      let role = enrollment?.role ?? null;
-      const allowedRoles = new Set(
-        Array.isArray(options.allowedRoles) && options.allowedRoles.length > 0
-          ? options.allowedRoles
-          : ['STUDENT'],
-      );
-      if (allowedRoles.has('INSTRUCTOR') && db.courseInstructor) {
-        const instructor = await db.courseInstructor.findUnique({
-          where: {
-            userId_courseOfferingId: { courseOfferingId, userId },
-          },
-          select: { userId: true },
-        });
-        if (instructor) role = 'INSTRUCTOR';
-      }
-      const allowed = role !== null && allowedRoles.has(role);
-      return { allowed, state: allowed ? 'allowed' : 'denied', role };
-    });
+      enrollment = await getEduAiCourseEnrollmentServiceKey(course.coreOfferingId, userId, { signal });
+      liveEnrollmentCache.set(cacheKey, { checkedAt: Date.now(), enrollment });
+    }
+
+    const role = enrollment?.isActive === false ? null : (enrollment?.role ?? null);
+    const allowedRoles = new Set(
+      Array.isArray(options.allowedRoles) && options.allowedRoles.length > 0
+        ? options.allowedRoles
+        : ['STUDENT'],
+    );
+    const allowed = role !== null && allowedRoles.has(role);
+    return { allowed, state: allowed ? 'allowed' : 'denied', role };
   } catch {
-    // Keep upstream details out of the route contract. The route can log the
-    // error with its normal server-side policy, but callers see one stable 503
-    // shape and never proceed with a provider/write side effect.
     return {
       allowed: false,
       state: 'unavailable',
@@ -186,9 +169,8 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
 }
 
 /**
- * Reconcile one course while the caller holds the course lock. Keeping this
- * separate prevents `authorizeLiveStudentEnrollment` from releasing the lock
- * between reconciliation and its effective-role read.
+ * Reconcile one course while the background/read-side caller holds the course
+ * lock. Live authorization does not use this full-roster path.
  */
 async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
   const course =
@@ -220,10 +202,6 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
   );
 
   const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
-  const activeInstructorIds = new Set(
-    allEnrollments.filter((e) => e.isActive && e.role === 'INSTRUCTOR').map((e) => e.studentId),
-  );
-
   const existing = await db.courseEnrollment.findMany({
     where: { courseOfferingId },
     select: { userId: true, role: true },
@@ -238,20 +216,6 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
     const local = existingByUserId.get(e.studentId);
     return local && local.role !== (e.role ?? "STUDENT");
   });
-  const existingInstructors = db.courseInstructor
-    ? await db.courseInstructor.findMany({
-        where: { courseOfferingId },
-        select: { userId: true },
-      })
-    : [];
-  const revokedInstructorIds = existingInstructors
-    .map((row) => row.userId)
-    .filter((userId) => !activeInstructorIds.has(userId));
-  const existingInstructorIds = new Set(existingInstructors.map((row) => row.userId));
-  const newInstructorIds = [...activeInstructorIds].filter(
-    (userId) => !existingInstructorIds.has(userId),
-  );
-
   try {
     if (toCreate.length > 0) {
       await db.courseEnrollment.createMany({
@@ -279,17 +243,6 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
         },
       });
     }
-    if (revokedInstructorIds.length > 0 && db.courseInstructor) {
-      await db.courseInstructor.deleteMany({
-        where: { courseOfferingId, userId: { in: revokedInstructorIds } },
-      });
-    }
-    if (newInstructorIds.length > 0 && db.courseInstructor) {
-      await db.courseInstructor.createMany({
-        data: newInstructorIds.map((userId) => ({ courseOfferingId, userId, role: 'LEAD' })),
-        skipDuplicates: true,
-      });
-    }
   } catch (e) {
     e.phase = "write";
     throw e;
@@ -309,6 +262,7 @@ async function syncCourseEnrollmentsLocked(courseOfferingId, options, db) {
 /** Test-only: clears the per-course auto-sync TTL throttle so each test starts fresh. */
 export function resetEnrollmentSyncThrottleForTests() {
   lastAutoSyncAt.clear();
+  liveEnrollmentCache.clear();
 }
 
 /**
