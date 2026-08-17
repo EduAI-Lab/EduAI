@@ -9,6 +9,7 @@ import {
   comparePayload,
   gradientDescentPayload,
 } from "~/tests/visual/diagram-payloads";
+import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 
 /** Expected stage count per catalog fixture, keyed the same as DIAGRAM_FIXTURE_NAMES. */
 const EXPECTED_STAGE_COUNT: Record<(typeof DIAGRAM_FIXTURE_NAMES)[number], number> = {
@@ -90,6 +91,17 @@ function resolveRootCssPath(): string {
 
 const CSS = fs.readFileSync(resolveRootCssPath(), "utf8");
 
+if (!CHAT_SCROLL_PANE_CLASS.split(/\s+/).includes("overflow-x-hidden")) {
+  throw new Error(
+    "CHAT_SCROLL_PANE_CLASS lost overflow-x-hidden — the #1320 production class must keep it.",
+  );
+}
+
+const CHAT_SCROLL_PANE_CLASS_PRE_1320 = CHAT_SCROLL_PANE_CLASS.replace(
+  /\s*overflow-x-hidden\s*/g,
+  " ",
+).trim();
+
 // A narrow chat message column — the shape the #1320 bug report actually
 // hit (diagram wider than the surrounding chat panel on a normal-width
 // screen, not just on mobile).
@@ -119,6 +131,9 @@ function pageHtml(bodyHtml: string): string {
  * column markup — see generate-fixtures.tsx's chat-message fixtures).
  */
 function chatScrollPaneHtml(bodyHtml: string, withOverflowXHidden: boolean): string {
+  const paneClass = withOverflowXHidden
+    ? CHAT_SCROLL_PANE_CLASS
+    : CHAT_SCROLL_PANE_CLASS_PRE_1320;
   return `<!doctype html>
 <html>
   <head>
@@ -129,9 +144,7 @@ function chatScrollPaneHtml(bodyHtml: string, withOverflowXHidden: boolean): str
     </style>
   </head>
   <body>
-    <div style="width: ${COLUMN_WIDTH}px; height: 900px; overflow-y: auto; ${
-      withOverflowXHidden ? "overflow-x: hidden;" : ""
-    } overscroll-behavior: contain;">
+    <div class="${paneClass}" style="width: ${COLUMN_WIDTH}px; height: 900px;">
       <div class="px-4 md:px-6 py-4">
         <div class="mx-auto w-full max-w-3xl space-y-1">${bodyHtml}</div>
       </div>
@@ -176,6 +189,9 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
       path.resolve(__dirname, "fixtures", "process-flow.html"),
       "utf8",
     );
+    const paneClass = withOverflowXHidden
+      ? CHAT_SCROLL_PANE_CLASS
+      : CHAT_SCROLL_PANE_CLASS_PRE_1320;
     return `<!doctype html>
 <html>
   <head>
@@ -186,13 +202,11 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
       #scroll {
         width: ${COLUMN_WIDTH}px;
         height: 300px;
-        overflow-y: auto;
-        ${withOverflowXHidden ? "overflow-x: hidden;" : ""}
       }
       #force-wide { display: inline-block; min-width: 900px; }
     </style>
   </head>
-  <body><div id="scroll"><div id="force-wide">${diagramHtml}</div></div></body>
+  <body><div id="scroll" class="${paneClass}"><div id="force-wide">${diagramHtml}</div></div></body>
 </html>`;
   }
 
@@ -328,12 +342,22 @@ test.describe("diagram containment in a narrow chat column", () => {
     const chipBoxes = await expectedChips.evaluateAll((els) =>
       els.map((el) => {
         const box = el.getBoundingClientRect();
-        return { text: el.textContent, x: box.x, width: box.width, height: box.height };
+        const style = getComputedStyle(el);
+        return {
+          text: el.textContent,
+          x: box.x,
+          width: box.width,
+          height: box.height,
+          opacity: style.opacity,
+          visibility: style.visibility,
+        };
       }),
     );
     for (const box of chipBoxes) {
       expect(box.width, `"${box.text}": non-zero width`).toBeGreaterThan(0);
       expect(box.height, `"${box.text}": non-zero height`).toBeGreaterThan(0);
+      expect(Number(box.opacity), `"${box.text}": computed opacity`).toBe(1);
+      expect(box.visibility, `"${box.text}": computed visibility`).toBe("visible");
       // Inside the outer column...
       expect(box.x, `"${box.text}": left edge vs column`).toBeGreaterThanOrEqual(columnBox!.x - 1);
       expect(box.x + box.width, `"${box.text}": right edge vs column`).toBeLessThanOrEqual(
@@ -403,12 +427,23 @@ test.describe("diagram containment regression guard in the real chat-message anc
     const chipBoxes = await expectedChips.evaluateAll((els) =>
       els.map((el) => {
         const box = el.getBoundingClientRect();
-        return { text: el.textContent, left: box.x, right: box.x + box.width, width: box.width, height: box.height };
+        const style = getComputedStyle(el);
+        return {
+          text: el.textContent,
+          left: box.x,
+          right: box.x + box.width,
+          width: box.width,
+          height: box.height,
+          opacity: style.opacity,
+          visibility: style.visibility,
+        };
       }),
     );
     for (const box of chipBoxes) {
       expect(box.width, `"${box.text}": non-zero width`).toBeGreaterThan(0);
       expect(box.height, `"${box.text}": non-zero height`).toBeGreaterThan(0);
+      expect(Number(box.opacity), `"${box.text}": computed opacity`).toBe(1);
+      expect(box.visibility, `"${box.text}": computed visibility`).toBe("visible");
       expect(box.left, `"${box.text}": left edge in viewport`).toBeGreaterThanOrEqual(-1);
       expect(box.right, `"${box.text}": right edge in viewport`).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
       expect(

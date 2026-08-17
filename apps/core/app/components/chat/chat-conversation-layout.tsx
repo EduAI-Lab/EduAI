@@ -15,6 +15,7 @@ import {
   resolveMessageHighlightRole,
 } from "~/components/assistive/active-highlight";
 import { cn } from "~/lib/utils";
+import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 
 type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle?: string;
@@ -109,7 +110,7 @@ export function ChatConversationLayout({
             eduai-diagram widget wider than its intended max-w-3xl column)
             silently opened a horizontal scroll region here instead of
             wrapping/shrinking, effectively rendering it off-screen. */}
-        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain scrollbar-hover scroll-smooth">
+        <div className={CHAT_SCROLL_PANE_CLASS}>
           <div
             className={cn(
               "px-4 md:px-6",

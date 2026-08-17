@@ -26,6 +26,7 @@ import { AnimatedProcessFlow as BaseAnimatedProcessFlow } from "~/tests/visual/p
 import { AnimatedHierarchy as BaseAnimatedHierarchy } from "~/tests/visual/pre1320-components/animated-hierarchy";
 import { AnimatedCompare as BaseAnimatedCompare } from "~/tests/visual/pre1320-components/animated-compare";
 import { AnimatedGradientDescent as BaseAnimatedGradientDescent } from "~/tests/visual/pre1320-components/animated-gradient-descent";
+import { DiagramReducedMotionContext } from "~/components/chat/diagrams/animated-diagram-shell";
 import {
   processFlowPayload,
   hierarchyPayload,
@@ -39,11 +40,20 @@ const messageDir = path.join(outDir, "chat-message");
 fs.mkdirSync(outDir, { recursive: true });
 fs.mkdirSync(messageDir, { recursive: true });
 
+function renderVisible(node: ReactNode): string {
+  // Reduced-motion markup so HierarchyNode (and any sibling intro) ships
+  // opacity-100 in the static HTML — renderToStaticMarkup never runs effects,
+  // so the default opacity-0 intro would otherwise stay invisible in Chromium.
+  return renderToStaticMarkup(
+    <DiagramReducedMotionContext.Provider value={true}>{node}</DiagramReducedMotionContext.Provider>,
+  ).replaceAll("opacity-0 scale-95", "opacity-100 scale-100");
+}
+
 const fixtures: Record<string, string> = {
-  "process-flow": renderToStaticMarkup(<AnimatedProcessFlow payload={processFlowPayload} />),
-  hierarchy: renderToStaticMarkup(<AnimatedHierarchy payload={hierarchyPayload} />),
-  compare: renderToStaticMarkup(<AnimatedCompare payload={comparePayload} />),
-  "gradient-descent": renderToStaticMarkup(
+  "process-flow": renderVisible(<AnimatedProcessFlow payload={processFlowPayload} />),
+  hierarchy: renderVisible(<AnimatedHierarchy payload={hierarchyPayload} />),
+  compare: renderVisible(<AnimatedCompare payload={comparePayload} />),
+  "gradient-descent": renderVisible(
     <AnimatedGradientDescent payload={gradientDescentPayload} />,
   ),
 };
@@ -64,7 +74,7 @@ for (const [name, html] of Object.entries(fixtures)) {
  * described in the fix commit.
  */
 function chatMessageRow(diagram: ReactNode): string {
-  return renderToStaticMarkup(
+  return renderVisible(
     <div className="flex gap-3">
       <div className="h-8 w-8 shrink-0 rounded-full bg-muted" />
       <div className="flex flex-col gap-2 flex-1 min-w-0">{diagram}</div>

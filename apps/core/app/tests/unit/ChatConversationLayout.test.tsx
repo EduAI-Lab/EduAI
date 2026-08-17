@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
+import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
@@ -57,6 +58,13 @@ describe("ChatConversationLayout — empty state layout", () => {
     expect(root?.className).toMatch(/\bh-full\b/);
     expect(root?.className).toMatch(/\bmin-h-0\b/);
     expect(root?.className).not.toMatch(/100vh/);
+  });
+
+  it("uses the shared #1320 scroll-pane class including overflow-x-hidden", () => {
+    const { container } = render(<ChatConversationLayout {...baseProps} />);
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto");
+    expect(pane).not.toBeNull();
+    expect(pane?.className).toBe(CHAT_SCROLL_PANE_CLASS);
   });
 });
 
