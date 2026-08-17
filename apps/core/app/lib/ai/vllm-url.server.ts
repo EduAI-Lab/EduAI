@@ -17,6 +17,8 @@ function configuredVllmHostnames(): Set<string> {
   const hosts = new Set<string>();
   const rawUrls = [
     process.env.VLLM_BASE_URL,
+    process.env.CMPS01_INTERNAL_BASE_URL,
+    ...(process.env.VLLM_TRUSTED_BASE_URLS?.split(",") ?? []),
     process.env.VLLM_FLEET_HEAVY_URL,
     ...(process.env.VLLM_FLEET_CHAT_URLS?.split(",") ?? []),
   ];
@@ -34,8 +36,9 @@ function configuredVllmHostnames(): Set<string> {
 
 /**
  * Restricts user-supplied vLLM endpoints to loopback or a hostname explicitly
- * configured by the deployment (VLLM_BASE_URL / VLLM_FLEET_CHAT_URLS /
- * VLLM_FLEET_HEAVY_URL). Mirrors resolveAllowedOllamaBaseUrl's SSRF guard via
+ * configured by the deployment (VLLM_BASE_URL / CMPS01_INTERNAL_BASE_URL /
+ * VLLM_TRUSTED_BASE_URLS / VLLM_FLEET_CHAT_URLS / VLLM_FLEET_HEAVY_URL).
+ * Mirrors resolveAllowedOllamaBaseUrl's SSRF guard via
  * the shared resolveAllowedLocalInferenceBaseUrl helper.
  */
 export function resolveAllowedVllmBaseUrl(raw?: string | null): string {

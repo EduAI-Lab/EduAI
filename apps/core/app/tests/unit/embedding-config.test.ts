@@ -13,12 +13,15 @@ import {
 describe("resolveEffectiveEmbeddingSettings", () => {
   const originalProvider = process.env.EMBEDDING_PROVIDER;
   const originalModel = process.env.OLLAMA_EMBEDDING_MODEL;
+  const originalVllmModel = process.env.VLLM_EMBEDDING_MODEL;
 
   afterEach(() => {
     if (originalProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
     else process.env.EMBEDDING_PROVIDER = originalProvider;
     if (originalModel === undefined) delete process.env.OLLAMA_EMBEDDING_MODEL;
     else process.env.OLLAMA_EMBEDDING_MODEL = originalModel;
+    if (originalVllmModel === undefined) delete process.env.VLLM_EMBEDDING_MODEL;
+    else process.env.VLLM_EMBEDDING_MODEL = originalVllmModel;
   });
 
   it("uses server env when course overrides are null", () => {
@@ -55,6 +58,17 @@ describe("resolveEffectiveEmbeddingSettings", () => {
     expect(effective.wantsLocal).toBe(false);
     expect(effective.source.provider).toBe("course");
     expect(effective.source.model).toBe("course");
+  });
+
+  it("prefers the CMPS OpenAI-compatible embedding model env var", () => {
+    process.env.EMBEDDING_PROVIDER = "local";
+    process.env.VLLM_EMBEDDING_MODEL = "mxbai-embed-large";
+    process.env.OLLAMA_EMBEDDING_MODEL = "ollama-only-model";
+
+    const effective = resolveEffectiveEmbeddingSettings(null);
+
+    expect(effective.provider).toBe("local");
+    expect(effective.model).toBe("mxbai-embed-large");
   });
 });
 

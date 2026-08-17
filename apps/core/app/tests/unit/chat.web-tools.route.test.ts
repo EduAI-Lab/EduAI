@@ -106,7 +106,7 @@ beforeEach(() => {
   // chat.update; echo the patched row so the chat stays resolved on that path.
   vi.mocked(prisma.chat.update).mockImplementation(
     (async (args: { data?: Record<string, unknown> }) =>
-      ({ id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null, ...(args.data ?? {}) })) as never,
+      ({ id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null, ...args.data })) as never,
   );
 });
 

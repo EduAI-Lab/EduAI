@@ -219,10 +219,6 @@ jobs:
               ;;
           esac
 
-      - name: Typecheck Core
-        if: matrix.scope == 'core'
-        run: npm run typecheck -w edu-ai
-
       - name: Restore Turborepo cache
         id: turbo-cache
         # Restore before testing, then save in a separate post-test step so a
@@ -310,13 +306,42 @@ jobs:
           npm run db:generate -w question-maker-backend
       - run: npm run test:prisma-client-isolation
 
+  lint:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        env:
+          SKIP_PRISMA_GENERATE: "1"
+        run: npm ci
+      # Core and ai-tutor-server typecheck against generated Prisma types, so
+      # the clients have to exist before tsc runs. Linting does not need them.
+      - name: Generate Prisma clients
+        run: |
+          npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+      # Warnings do not fail this job — the repo still carries roughly 900 of
+      # them, and burning them down is the job of #1277, #1278 and #1279.
+      # oxlint exits non-zero on errors, which is what gates here.
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+
   test:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
     # The aggregate job must always run so required checks stay present on
     # docs-only pull requests and still propagate upstream failures.
     if: always()
-    needs: [changes, unit, prisma-isolation]
+    needs: [changes, unit, prisma-isolation, lint]
     steps:
       - name: Preserve required-check result
         env:
@@ -324,6 +349,7 @@ jobs:
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PRISMA_RESULT: ${{ needs.prisma-isolation.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
         run: |
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "Affected-application detection failed or was cancelled."
@@ -336,6 +362,10 @@ jobs:
           if [ "$UNIT_RESULT" != "success" ] || \
              { [ "$PRISMA_RESULT" != "success" ] && [ "$PRISMA_RESULT" != "skipped" ]; }; then
             echo "One or more unit-test jobs failed or were cancelled."
+            exit 1
+          fi
+          if [ "$LINT_RESULT" != "success" ] && [ "$LINT_RESULT" != "skipped" ]; then
+            echo "Lint or typecheck failed or was cancelled."
             exit 1
           fi
 

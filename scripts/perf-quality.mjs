@@ -21,6 +21,7 @@ for (const d of [`${OUT}/duplication`, `${OUT}/dead-code`, `${OUT}/dep-graph`]) 
   if (!existsSync(d)) mkdirSync(d, { recursive: true });
 }
 // Merge stdout+stderr (madge prints its result to stdout, progress to stderr) and strip ANSI.
+// eslint-disable-next-line no-control-regex -- ANSI escapes are control characters by definition
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 const sh = (cmd) => {
   try { return stripAnsi(execSync(cmd + " 2>&1", { stdio: ["ignore", "pipe", "ignore"] }).toString()); }

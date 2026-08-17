@@ -44,7 +44,7 @@ function makeArgs(method = "GET", body?: unknown) {
     request: new Request("http://localhost/api/routing-model-settings", {
       method,
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: {},
     context: {} as never,

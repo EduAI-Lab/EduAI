@@ -139,7 +139,7 @@ export default function AddActivityPanel({
       return prev.filter((_, i) => i !== index);
     });
     setCorrect((prevCorrect) => {
-      if (index < prevCorrect || index === prevCorrect) {
+      if (index <= prevCorrect) {
         return Math.max(0, prevCorrect - 1);
       }
       return prevCorrect;

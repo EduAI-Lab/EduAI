@@ -12,9 +12,9 @@ Group=eduai-dev
 UMask=0002
 
 WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/extensions/ai-tutor/server
-# Fallback, matching the other two units, so a missing (optional)
+# Fallback, matching the other web units, so a missing (optional)
 # /etc/eduai/eduai-dev.env cannot change behaviour. This server reads no
-# NODE_ENV gate of its own today; the line keeps all three units honest and
+# NODE_ENV gate of its own today; the line keeps all web units honest and
 # survives someone adding one. The EnvironmentFile below still wins.
 Environment=NODE_ENV=development
 EnvironmentFile=-/etc/eduai/eduai-dev.env

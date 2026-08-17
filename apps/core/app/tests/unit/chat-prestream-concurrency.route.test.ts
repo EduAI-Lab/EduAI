@@ -183,7 +183,7 @@ beforeEach(() => {
       courseId: COURSE_ID,
       adhdAssist: false,
       systemPrompt: null,
-      ...(args.data ?? {}),
+      ...args.data,
     })) as never,
   );
 

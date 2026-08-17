@@ -27,7 +27,7 @@ const { embedMany } = await import("ai");
 
 const embedManyMock = vi.mocked(embedMany);
 
-const SAMPLE_EMBEDDING = new Array(1024).fill(0.1);
+const SAMPLE_EMBEDDING = Array.from({ length: 1024 }, () => 0.1);
 
 type Material = { id: string; rawText: string | null; title: string };
 

@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "pedantic": "off",
+    "style": "off",
+    "nursery": "off"
+  },
+  "rules": {
+    "eqeqeq": "warn",
+    "no-console": "off",
+    "no-underscore-dangle": "off",
+    "no-unused-vars": "warn"
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/generated/**",
+    "**/.react-router/**",
+    "**/playwright-report/**",
+    "**/test-results/**",
+    "**/prisma/migrations/**",
+    "eduai-design-system/**"
+  ]
+}
