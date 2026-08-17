@@ -19,6 +19,12 @@ describe("StudentIdOnboardingForm", () => {
     expect(screen.getByRole("heading", { name: /link your ubc student number/i })).toBeInTheDocument();
     expect(screen.getByLabelText("UBC Student Number")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Link student number" })).toBeInTheDocument();
+    const skip = screen.getByRole("button", {
+      name: /I don't have a UBC student number/i,
+    });
+    expect(skip).toHaveAttribute("name", "intent");
+    expect(skip).toHaveAttribute("value", "skip");
+    expect((skip as HTMLButtonElement).formNoValidate).toBe(true);
   });
 
   it("shows a form error when provided", () => {

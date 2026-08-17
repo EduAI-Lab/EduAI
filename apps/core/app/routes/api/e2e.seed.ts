@@ -8,11 +8,24 @@
  * The E2E docker stack only runs `prisma migrate deploy` on boot, not the seed
  * script, so specs that need the deterministic demo accounts/enrollments from
  * prisma/seed.ts (e.g. student1@eduai.local, ta.cs@eduai.local) must trigger
- * this once before signing in. seed.ts's main() is upsert-based end to end, so
- * calling it repeatedly (or concurrently, across workers) is safe.
+ * this once before signing in. seed.ts's main() is upsert-based, so calling it
+ * repeatedly is fine — but several uniquely constrained records still go through
+ * delete-then-create, so concurrent callers (two Playwright files' beforeAll)
+ * can interleave and fail. Requests are serialized in-process.
  */
 import type { ActionFunctionArgs } from "react-router";
 import { main as runSeed } from "../../../prisma/seed";
+
+let seedChain: Promise<unknown> = Promise.resolve();
+
+function enqueueSeed<T>(fn: () => Promise<T>): Promise<T> {
+  const run = seedChain.then(fn, fn);
+  seedChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 export async function action({ request }: ActionFunctionArgs) {
   if (process.env.NODE_ENV !== 'test') {
@@ -45,7 +58,7 @@ export async function action({ request }: ActionFunctionArgs) {
   process.env.ENCRYPTION_KEY ??= "e2e-test-encryption-key-not-for-production";
 
   try {
-    await runSeed();
+    await enqueueSeed(() => runSeed());
   } catch (e) {
     return new Response(
       JSON.stringify({ error: "SEED_FAILED", message: e instanceof Error ? e.message : String(e) }),

@@ -158,10 +158,7 @@ test.describe('Student (student1) — UI walkthrough', () => {
           courseId: COURSES.hist210,
         },
       });
-      test.info().annotations.push({
-        type: 'finding',
-        description: `POST /api/chat with unenrolled courseId (hist210) as student1 -> ${chatRes.status()}`,
-      });
+      expect(chatRes.status(), 'POST /api/chat with unenrolled courseId (hist210) as student1').toBe(403);
 
       // 2. Enrollment list for a course student1 is not enrolled/staff in
       const enrRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.hist210}/enrollments`);
@@ -169,26 +166,11 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       // 3. Enrollment list for a course student1 IS enrolled in (as STUDENT, not staff)
       const enrOwnRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`);
-      test.info().annotations.push({
-        type: 'finding',
-        description: `GET enrollments for own enrolled course (cosc101) as STUDENT -> ${enrOwnRes.status()}`,
-      });
+      expect(enrOwnRes.status(), 'GET enrollments for own enrolled course as STUDENT').toBe(403);
 
       // 4. Questions endpoint for an enrolled course
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
-      test.info().annotations.push({
-        type: 'finding',
-        description: `GET /api/questions?courseId=cosc101 as STUDENT (enrolled) -> ${qRes.status()}`,
-      });
-      if (qRes.status() === 200) {
-        const body = await qRes.json();
-        const items = Array.isArray(body) ? body : (body.questions ?? body.data ?? []);
-        const anyAnswerLeaked = items.some((q: any) => q.answer !== undefined && q.answer !== null);
-        test.info().annotations.push({
-          type: 'finding',
-          description: `Questions payload includes ${items.length} items; answer field present on any = ${anyAnswerLeaked}`,
-        });
-      }
+      expect(qRes.status(), 'GET /api/questions as enrolled STUDENT').toBe(403);
 
       // 5. Admin-only route
       const usersRes = await ctx.get(`${CORE_URL}/api/users`);
@@ -202,17 +184,14 @@ test.describe('Student (student1) — UI walkthrough', () => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       const res = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/materials`);
-      test.info().annotations.push({
-        type: 'finding',
-        description: `GET materials for enrolled course (cosc101) as STUDENT -> ${res.status()}`,
-      });
-      if (res.ok()) {
-        const body = await res.json();
-        test.info().annotations.push({
-          type: 'finding',
-          description: `Materials payload: ${JSON.stringify(body).slice(0, 300)}`,
-        });
-      }
+      expect(res.status(), 'GET materials for enrolled course as STUDENT').toBe(200);
+      const body = await res.json();
+      const items = Array.isArray(body) ? body : (body.materials ?? body.data ?? []);
+      expect(Array.isArray(items), 'materials payload should be a list').toBeTruthy();
+      expect(
+        items.every((m: { visibleToStudents?: boolean }) => m.visibleToStudents !== false),
+        'student materials list must not include staff-only rows',
+      ).toBeTruthy();
     } finally {
       await ctx.dispose();
     }
@@ -227,15 +206,12 @@ test.describe('Student (student1) — UI walkthrough', () => {
       const reports = Array.isArray(adminList) ? adminList : (adminList.reports ?? adminList.data ?? []);
       const someoneElsesReport = reports.find((r: any) => r.userId && r.userId !== 'seed_user_student_01');
 
-      if (someoneElsesReport) {
-        const guessRes = await studentCtx.get(`${CORE_URL}/api/bug-reports/${someoneElsesReport.id}`);
-        test.info().annotations.push({
-          type: 'finding',
-          description: `Student fetching another user's bug report by id -> ${guessRes.status()}`,
-        });
-      } else {
-        test.info().annotations.push({ type: 'finding', description: 'No other-user bug report found to probe.' });
-      }
+      const targetId = someoneElsesReport?.id ?? 'does-not-exist-idor-probe';
+      const guessRes = await studentCtx.get(`${CORE_URL}/api/bug-reports/${targetId}`);
+      expect(
+        guessRes.status(),
+        "Student fetching another user's (or nonexistent) bug report by id",
+      ).toBe(404);
     } finally {
       await adminCtx.dispose();
       await studentCtx.dispose();
@@ -252,11 +228,9 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
     try {
       const meRes = await ctx.get(`${CORE_URL}/api/me`);
+      expect(meRes.status()).toBe(200);
       const me = await meRes.json();
-      test.info().annotations.push({
-        type: 'finding',
-        description: `GET /api/me for TA (ta.cs) -> platform role field = "${me.role}"`,
-      });
+      expect(me.role, 'TA platform role stays STUDENT; TA status is enrollment-scoped').toBe('STUDENT');
 
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/dashboard`);
@@ -278,12 +252,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
 
       await page.goto(`${CORE_URL}/courses/${COURSES.math200}`);
       await page.waitForLoadState('networkidle');
-      await page.screenshot({ path: 'test-results/week15/ta-cs-math200-not-ta.png', fullPage: true });
-      const bodyText = await page.locator('body').innerText();
-      test.info().annotations.push({
-        type: 'finding',
-        description: `TA (cosc only) navigating to math200 (not enrolled anywhere) -> url=${page.url()}, excerpt="${bodyText.slice(0, 200).replace(/\n/g, ' ')}"`,
-      });
+      await expect(page).toHaveURL(/\/courses\?access=denied/);
     } finally {
       await ctx.dispose();
     }
@@ -318,26 +287,16 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     try {
       // Can TA view questions (with answers) in their own course?
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
-      test.info().annotations.push({
-        type: 'finding',
-        description: `GET /api/questions?courseId=cosc101 as TA -> ${qRes.status()}`,
-      });
-      if (qRes.ok()) {
-        const body = await qRes.json();
-        const items = Array.isArray(body) ? body : (body.questions ?? body.data ?? []);
-        const anyAnswer = items.some((q: any) => q.answer !== undefined && q.answer !== null && q.answer !== '');
-        test.info().annotations.push({
-          type: 'finding',
-          description: `TA questions payload: ${items.length} items, answers visible = ${anyAnswer}`,
-        });
-      }
+      expect(qRes.status(), 'GET /api/questions as TA in own course').toBe(200);
+      const qBody = await qRes.json();
+      const items = Array.isArray(qBody) ? qBody : (qBody.questions ?? qBody.data ?? []);
+      expect(items.length, 'TA own-course question bank should not be empty').toBeGreaterThan(0);
+      const anyAnswer = items.some((q: { answer?: unknown }) => q.answer !== undefined && q.answer !== null && q.answer !== '');
+      expect(anyAnswer, 'TA should see answers in their own course bank').toBeTruthy();
 
       // TA in cosc101 querying questions for a course they have no relation to
       const qOtherRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.math200}`);
-      test.info().annotations.push({
-        type: 'finding',
-        description: `GET /api/questions?courseId=math200 (TA not related to this course) -> ${qOtherRes.status()}`,
-      });
+      expect(qOtherRes.status(), 'GET /api/questions for unrelated course as TA').toBe(403);
 
       // TA creating a question (should be instructor+ only)
       const createQRes = await ctx.post(`${CORE_URL}/api/questions`, {
@@ -357,10 +316,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       const enrollRes = await ctx.post(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`, {
         data: { userId: 'seed_user_student_05', role: 'STUDENT' },
       });
-      test.info().annotations.push({
-        type: 'finding',
-        description: `POST enrollments (add student) as TA in own course -> ${enrollRes.status()}`,
-      });
+      expect(enrollRes.status(), 'POST enrollments (add student) as TA in own course').toBe(403);
 
       // TA hitting admin-only routes
       const usersRes = await ctx.get(`${CORE_URL}/api/users`);
@@ -452,14 +408,11 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${COURSES.hist210}/enrollments`, {
         data: { userId: 'seed_user_student_01', role: 'TA' },
       });
-      test.info().annotations.push({
-        type: 'finding',
-        description: `Admin adding student1 as TA to hist210 -> ${enrollRes.status()}`,
-      });
-
-      if (enrollRes.ok()) {
-        const { id: enrollmentId } = await enrollRes.json();
-
+      expect([200, 201], `Admin adding student1 as TA to hist210 -> ${enrollRes.status()}`).toContain(
+        enrollRes.status(),
+      );
+      const { id: enrollmentId } = await enrollRes.json();
+      try {
         await injectSession(page, studentCtx);
         await page.goto(`${CORE_URL}/dashboard`);
         await page.waitForLoadState('networkidle');
@@ -475,7 +428,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
           path: 'test-results/week15/student1-mixed-role-cosc101-still-student.png',
           fullPage: true,
         });
-
+      } finally {
         // Clean up: this mutates real seed-account state, and other tests in this
         // file assert student1 has zero relation to hist210 — remove it so repeat
         // runs stay deterministic regardless of execution order.

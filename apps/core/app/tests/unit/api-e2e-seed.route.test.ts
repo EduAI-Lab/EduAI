@@ -77,4 +77,25 @@ describe("POST /api/e2e/seed", () => {
     expect(body).toEqual({ ok: true });
     expect(runSeed).toHaveBeenCalledTimes(1);
   });
+
+  it("serializes concurrent seed calls so runSeed does not overlap", async () => {
+    let running = 0;
+    let maxRunning = 0;
+    runSeed.mockImplementation(async () => {
+      running += 1;
+      maxRunning = Math.max(maxRunning, running);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      running -= 1;
+    });
+
+    const [first, second] = await Promise.all([
+      action(makeArgs("POST", { secret: "shhh" })),
+      action(makeArgs("POST", { secret: "shhh" })),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(runSeed).toHaveBeenCalledTimes(2);
+    expect(maxRunning).toBe(1);
+  });
 });

@@ -128,6 +128,43 @@ test.beforeAll(async ({ playwright }) => {
   }
 });
 
+test.describe('Student-ID onboarding skip button', () => {
+  test('clicking skip lands on dashboard and persists the skip cookie', async ({
+    page,
+    playwright,
+  }) => {
+    const ctx = await newAuthedContext(playwright, USERS.taCS);
+    try {
+      await injectSession(page, ctx);
+      await skipDashboardTour(page);
+      await page.goto(`${CORE_URL}/dashboard`);
+      await page.waitForURL(/\/onboarding\/student-id/, { timeout: 15_000 });
+
+      const skip = page.getByRole('button', {
+        name: /I don't have a UBC student number/i,
+      });
+      await expect(skip).toHaveAttribute('name', 'intent');
+      await expect(skip).toHaveAttribute('value', 'skip');
+      await expect(skip).toHaveAttribute('formnovalidate', '');
+
+      await skip.click();
+      await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+      await expect(page).not.toHaveURL(/\/onboarding\/student-id/);
+
+      const cookies = await page.context().cookies();
+      const skipCookie = cookies.find((c) => c.name === 'eduai_student_id_onboarding_skipped');
+      expect(skipCookie?.value).toBe('1');
+
+      await page.goto(`${CORE_URL}/dashboard`);
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/\/dashboard/);
+      await expect(page).not.toHaveURL(/\/onboarding\/student-id/);
+    } finally {
+      await ctx.dispose();
+    }
+  });
+});
+
 // ===========================================================================
 // canManageTopics (policy-gated TA permission) — #1429 known gap
 // ===========================================================================
@@ -504,7 +541,7 @@ test.describe('Bug report — UI submission', () => {
 // ===========================================================================
 
 test.describe('/help — role-based section filtering', () => {
-  test('TA: STAFF-gated and ADMIN-gated sections are hidden, despite TA having real material-upload rights', async ({
+  test('TA: Course materials help is visible; ADMIN-gated Administration stays hidden', async ({
     page,
     playwright,
   }) => {
@@ -518,21 +555,8 @@ test.describe('/help — role-based section filtering', () => {
       await expect(page.locator('#command-palette')).toBeVisible();
       await expect(page.locator('#courses')).toBeVisible();
       await expect(page.locator('#chat')).toBeVisible();
-      await expect(page.locator('#materials')).toHaveCount(0);
+      await expect(page.locator('#materials')).toBeVisible();
       await expect(page.locator('#administration')).toHaveCount(0);
-
-      test.info().annotations.push({
-        type: 'finding',
-        description:
-          'apps/core/app/components/help/help-view.tsx gates the "Course materials" topic to ' +
-          'STAFF = [ADMIN, UNIT_ADMIN, INSTRUCTOR] using session.user.role. A TA\'s platform role is ' +
-          'STUDENT (TA status lives in Enrollment.role, per the same design already flagged for the ' +
-          'dashboard identity badge and /settings student-number copy) — so a TA who genuinely has ' +
-          'material-upload/rename/delete permission (AUTH-08) never sees the help content that ' +
-          'explains how to use it. Same root cause as the existing dashboard-badge / #1464 rows, ' +
-          'a new surface it hadn\'t been checked on yet — worth folding into that product discussion ' +
-          'rather than filing as a fresh bug.',
-      });
     } finally {
       await ctx.dispose();
     }
