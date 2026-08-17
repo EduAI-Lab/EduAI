@@ -405,6 +405,41 @@ const AssessmentBuilderPage = () => {
         }
     };
 
+    const handleBulkToggleDraft = async (entries: QuestionVariantEntry[], nextDraft: boolean) => {
+        if (entries.length === 0) return;
+        try {
+            await Promise.all(entries.map((entry) => questionService.updateVariant(entry.variant.id, { isDraft: nextDraft })));
+            await refreshQuestionsAndAssessment();
+            toast(`${entries.length} question${entries.length === 1 ? '' : 's'} marked as ${nextDraft ? 'draft' : 'reviewed'}`);
+        } catch (toggleError: any) {
+            toast.error('Failed to update review status', {
+                description: toggleError?.response?.data?.error || toggleError?.message || 'Please try again.',
+            });
+        }
+    };
+
+    const handleReplaceQuestion = async (
+        sectionId: number,
+        link: import('../types/question').SectionVariantLink,
+        nextVariantId: number,
+    ) => {
+        if (!assessment || link.variantId === nextVariantId) return;
+        try {
+            await assessmentService.removeVariantFromSection(assessment.id, sectionId, link.variantId);
+            await assessmentService.addVariantToSection(assessment.id, sectionId, {
+                variantId: nextVariantId,
+                displayOrder: link.displayOrder,
+                metadata: link.metadata ?? undefined,
+            });
+            await refreshQuestionsAndAssessment();
+            toast('Assessment variant updated');
+        } catch (replaceError: any) {
+            toast.error('Failed to update assessment variant', {
+                description: replaceError?.response?.data?.error || replaceError?.message || 'Please try again.',
+            });
+        }
+    };
+
     const handleCreateVariant = (entry: QuestionVariantEntry) => {
         if (!assessment?.course?.id) {
             toast.error('Select a course first', {
@@ -845,7 +880,9 @@ const AssessmentBuilderPage = () => {
                     }}
                                 onViewQuestion={handleViewQuestion}
                                 onToggleDraft={handleToggleDraft}
+                                onBulkToggleDraft={handleBulkToggleDraft}
                                 onCreateVariant={handleCreateVariant}
+                                onReplaceQuestion={handleReplaceQuestion}
                                 readOnly={readOnly}
                             />
                 </div>

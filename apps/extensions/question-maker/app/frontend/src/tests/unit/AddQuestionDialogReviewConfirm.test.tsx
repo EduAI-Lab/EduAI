@@ -1,12 +1,9 @@
 /**
- * #1120 — the second surface that toggles review status. The view-mode footer's
- * "Mark as Reviewed" / "Mark as Draft" button must confirm before it writes:
- * cancelling issues no `updateVariant` request, confirming issues exactly one,
- * and the copy comes from the same shared helper as the assessment-card kebab
- * (see `AssessmentSectionCardReviewConfirm.test.tsx`) so the two cannot drift.
+ * The view-mode footer's "Mark as Reviewed" / "Mark as Draft" button writes
+ * immediately without a confirmation dialog.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { QuestionVariantEntry } from '@/types/question';
 
 const updateVariant = vi.fn();
@@ -115,28 +112,26 @@ function clickReviewToggle(label: string) {
   fireEvent.click(screen.getByRole('button', { name: label }));
 }
 
-describe('AddQuestionDialog review-status confirmation', () => {
+describe('AddQuestionDialog review-status actions', () => {
   beforeEach(() => {
     cleanup();
     updateVariant.mockReset();
     updateVariant.mockResolvedValue({ isDraft: false });
   });
 
-  it('does not write on the footer click alone', async () => {
+  it('writes immediately on the footer click', async () => {
     renderDialog(true);
 
     clickReviewToggle('Mark as Reviewed');
 
-    expect(updateVariant).not.toHaveBeenCalled();
-    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await waitFor(() => expect(updateVariant).toHaveBeenCalledTimes(1));
+    expect(updateVariant).toHaveBeenCalledWith(10, { isDraft: false });
   });
 
-  it('fires exactly one updateVariant request when confirmed', async () => {
+  it('fires exactly one updateVariant request', async () => {
     const { onUpdateVariant } = renderDialog(true);
 
     clickReviewToggle('Mark as Reviewed');
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark as reviewed' }));
 
     await waitFor(() => expect(updateVariant).toHaveBeenCalledTimes(1));
     // draft -> reviewed means isDraft: false on the wire
@@ -144,27 +139,11 @@ describe('AddQuestionDialog review-status confirmation', () => {
     await waitFor(() => expect(onUpdateVariant).toHaveBeenCalledWith(10, { isDraft: false }));
   });
 
-  it('fires no request when cancelled', async () => {
-    const { onUpdateVariant } = renderDialog(true);
-
-    clickReviewToggle('Mark as Reviewed');
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-
-    expect(updateVariant).not.toHaveBeenCalled();
-    expect(onUpdateVariant).not.toHaveBeenCalled();
-  });
-
-  it('uses the demotion copy and payload when moving a reviewed variant back to draft', async () => {
+  it('moves a reviewed variant back to draft directly', async () => {
     updateVariant.mockResolvedValue({ isDraft: true });
     renderDialog(false);
 
     clickReviewToggle('Mark as Draft');
-    const dialog = await screen.findByRole('alertdialog');
-    // Direction-specific copy from the shared `reviewStatusConfirm` helper.
-    expect(within(dialog).getByText(/excluded from export/i)).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Move to draft' }));
 
     await waitFor(() => expect(updateVariant).toHaveBeenCalledTimes(1));
     expect(updateVariant).toHaveBeenCalledWith(10, { isDraft: true });

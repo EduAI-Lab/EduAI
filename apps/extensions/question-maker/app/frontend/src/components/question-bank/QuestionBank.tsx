@@ -4,8 +4,8 @@
  * actions sit in the header; filtering is client-side. The cross-course Question
  * Library (pages/QuestionBankPage) shares the same toolbar for a consistent feel.
  */
-import { useMemo, useState } from 'react';
-import { Button, cn, EmptyState } from '@eduai/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, cn, EmptyState, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import {
   IconStack2,
   IconInfoCircle,
@@ -15,6 +15,7 @@ import {
   IconUpload,
   IconLayoutGrid,
   IconLayoutList,
+  IconCircleCheck,
 } from '@tabler/icons-react';
 import { QuestionVariantEntry } from '../../types/question';
 import { QuestionCard } from './QuestionCard';
@@ -33,6 +34,8 @@ interface QuestionBankProps {
   onAddQuestion: () => void;
   onUploadQuestions: () => void;
   onRemoveFromBank?: (entry: QuestionVariantEntry) => void;
+  /** Marks the supplied draft variants as reviewed. */
+  onSetReviewed?: (variantIds: number[]) => Promise<void> | void;
   isLoading?: boolean;
   courseName?: string;
   emptyMessage?: string;
@@ -60,11 +63,15 @@ export const QuestionBank = ({
   disableUpload = false,
   onOpenProfile,
   compact = false,
+  onSetReviewed,
 }: QuestionBankProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<QuestionSort>('newest');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
+  const [selectedVariantIds, setSelectedVariantIds] = useState<Record<number, number>>({});
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<number>>(new Set());
+  const [reviewingVariantIds, setReviewingVariantIds] = useState<Set<number>>(new Set());
 
   // Every variant shares its base question's id, so a card needs an ordinal — "Variant 2
   // of #4" — to be distinguishable. Number the non-base variants of each question (a base
@@ -133,6 +140,95 @@ export const QuestionBank = ({
     return filtered;
   }, [variants, searchTerm, sortBy, filters]);
 
+  const variantGroups = useMemo(() => {
+    const byQuestion = new Map<number, QuestionVariantEntry[]>();
+    for (const entry of variants) {
+      const list = byQuestion.get(entry.questionId);
+      if (list) list.push(entry);
+      else byQuestion.set(entry.questionId, [entry]);
+    }
+    for (const list of byQuestion.values()) {
+      list.sort((a, b) => timeValue(a) - timeValue(b) || a.variant.id - b.variant.id);
+    }
+
+    const seen = new Set<number>();
+    return filteredVariants.flatMap((entry) => {
+      if (seen.has(entry.questionId)) return [];
+      seen.add(entry.questionId);
+      const visibleVariants = filteredVariants.filter((candidate) => candidate.questionId === entry.questionId);
+      return [{
+        questionId: entry.questionId,
+        variants: byQuestion.get(entry.questionId) ?? [entry],
+        visibleVariantIds: new Set(visibleVariants.map((candidate) => candidate.variant.id)),
+      }];
+    });
+  }, [filteredVariants, variants]);
+
+  const activeEntryForGroup = (group: {
+    questionId: number;
+    variants: QuestionVariantEntry[];
+    visibleVariantIds: Set<number>;
+  }) => {
+    const selected = group.variants.find((entry) => entry.variant.id === selectedVariantIds[group.questionId]);
+    if (selected && group.visibleVariantIds.has(selected.variant.id)) return selected;
+    return group.variants.find((entry) => group.visibleVariantIds.has(entry.variant.id)) ?? group.variants[0];
+  };
+
+  useEffect(() => {
+    const visibleQuestionIds = new Set(variantGroups.map((group) => group.questionId));
+    setSelectedQuestionIds((previous) => {
+      const next = new Set(Array.from(previous).filter((id) => visibleQuestionIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [variantGroups]);
+
+  const setActiveVariant = (questionId: number, variantId: string) => {
+    setSelectedVariantIds((previous) => ({ ...previous, [questionId]: Number(variantId) }));
+  };
+
+  const setQuestionSelected = (questionId: number, selected: boolean) => {
+    setSelectedQuestionIds((previous) => {
+      const next = new Set(previous);
+      if (selected) next.add(questionId);
+      else next.delete(questionId);
+      return next;
+    });
+  };
+
+  const handleSetReviewed = async (variantIds: number[]) => {
+    if (!onSetReviewed) return;
+    const ids = Array.from(new Set(variantIds)).filter((id) => !reviewingVariantIds.has(id));
+    if (ids.length === 0) return;
+    setReviewingVariantIds((previous) => new Set([...previous, ...ids]));
+    try {
+      await onSetReviewed(ids);
+      setSelectedQuestionIds((previous) => {
+        const next = new Set(previous);
+        for (const group of variantGroups) {
+          const active = activeEntryForGroup(group);
+          if (active && ids.includes(active.variant.id)) next.delete(group.questionId);
+        }
+        return next;
+      });
+    } finally {
+      setReviewingVariantIds((previous) => {
+        const next = new Set(previous);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  };
+
+  const selectedEntries = variantGroups
+    .filter((group) => selectedQuestionIds.has(group.questionId))
+    .map(activeEntryForGroup)
+    .filter((entry): entry is QuestionVariantEntry => Boolean(entry));
+  const selectedDrafts = selectedEntries.filter((entry) => entry.isDraft);
+  const visibleDraftQuestionIds = variantGroups
+    .map(activeEntryForGroup)
+    .filter((entry): entry is QuestionVariantEntry => Boolean(entry && entry.isDraft))
+    .map((entry) => entry.questionId);
+
   const hasFilters =
     searchTerm.trim() !== '' ||
     filters.questionTypes.length > 0 ||
@@ -147,6 +243,7 @@ export const QuestionBank = ({
   };
 
   const dense = compact || view === 'grid';
+  const totalQuestionCount = new Set(variants.map((entry) => entry.questionId)).size;
 
   return (
     <div className="space-y-4">
@@ -158,8 +255,8 @@ export const QuestionBank = ({
             {variants.length === 0
               ? 'No questions yet'
               : hasFilters
-                ? `${filteredVariants.length} of ${variants.length} shown`
-                : `${variants.length} question${variants.length === 1 ? '' : 's'} in this course`}
+                ? `${variantGroups.length} of ${new Set(variants.map((entry) => entry.questionId)).size} questions shown`
+                : `${totalQuestionCount} question${totalQuestionCount === 1 ? '' : 's'} in this course`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -224,6 +321,38 @@ export const QuestionBank = ({
             </div>
           }
         />
+      )}
+
+      {onSetReviewed && variantGroups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            {selectedQuestionIds.size > 0 ? `${selectedQuestionIds.size} selected` : 'Select questions for bulk review'}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={visibleDraftQuestionIds.length === 0}
+            onClick={() => setSelectedQuestionIds(new Set(visibleDraftQuestionIds))}
+          >
+            <IconCircleCheck className="size-3.5" /> Select drafts
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            disabled={selectedDrafts.length === 0 || reviewingVariantIds.size > 0}
+            onClick={() => void handleSetReviewed(selectedDrafts.map((entry) => entry.variant.id))}
+          >
+            <IconCircleCheck className="size-3.5" /> Mark selected reviewed
+          </Button>
+          {selectedQuestionIds.size > 0 && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedQuestionIds(new Set())}>
+              Clear selection
+            </Button>
+          )}
+        </div>
       )}
 
       {isLoading ? (
@@ -291,18 +420,50 @@ export const QuestionBank = ({
           )}
           data-tour-id="question-list"
         >
-          {filteredVariants.map((entry, index) => (
-            <QuestionCard
-              key={`${entry.questionId}-${entry.variant.id}`}
-              entry={entry}
-              questionNumber={index + 1}
-              variantNumber={variantNumbers.get(entry.variant.id)}
-              onView={onViewVariant}
-              onCreateVariant={onCreateVariant}
-              onRemoveFromBank={onRemoveFromBank}
-              compact={dense}
-            />
-          ))}
+          {variantGroups.map((group, index) => {
+            const entry = activeEntryForGroup(group);
+            if (!entry) return null;
+            const variantOptions = group.variants;
+            return (
+              <div key={group.questionId} className="min-w-0">
+                {variantOptions.length > 1 && (
+                  <div className="mb-2 flex items-center justify-end gap-2">
+                    <span className="text-xs text-muted-foreground">Variant</span>
+                    <Select
+                      value={String(entry.variant.id)}
+                      onValueChange={(value) => setActiveVariant(group.questionId, value)}
+                    >
+                      <SelectTrigger className="h-8 w-36 text-xs" aria-label={`Select variant for question ${group.questionId}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {variantOptions.map((option) => (
+                          <SelectItem key={option.variant.id} value={String(option.variant.id)}>
+                            {option.variant.referenceId == null
+                              ? 'Original'
+                              : `Variant ${variantNumbers.get(option.variant.id) ?? ''}`.trim()}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <QuestionCard
+                  entry={entry}
+                  questionNumber={index + 1}
+                  variantNumber={variantNumbers.get(entry.variant.id)}
+                  onView={onViewVariant}
+                  onCreateVariant={onCreateVariant}
+                  onRemoveFromBank={onRemoveFromBank}
+                  onMarkReviewed={onSetReviewed && entry.isDraft ? () => void handleSetReviewed([entry.variant.id]) : undefined}
+                  markingReviewed={reviewingVariantIds.has(entry.variant.id)}
+                  selected={selectedQuestionIds.has(group.questionId)}
+                  onSelectedChange={onSetReviewed ? (selected) => setQuestionSelected(group.questionId, selected) : undefined}
+                  compact={dense}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

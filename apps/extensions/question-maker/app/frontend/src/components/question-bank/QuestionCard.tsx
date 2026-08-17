@@ -5,6 +5,7 @@
  */
 import {
   QuestionCard as QuestionPreviewCard,
+  Button,
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -14,7 +15,7 @@ import {
 } from '@eduai/ui';
 import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
 
-import { IconCopy, IconDots, IconTrash } from '@tabler/icons-react';
+import { IconCircleCheck, IconCopy, IconDots, IconLoader2, IconTrash } from '@tabler/icons-react';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
 import { markCorrectChoices } from '@/lib/mcq';
@@ -35,6 +36,12 @@ interface QuestionCardProps {
   variantNumber?: number;
   /** Dense single-column variant for the cross-course Question Bank page. */
   compact?: boolean;
+  /** Enables the explicit one-click review action for draft variants. */
+  onMarkReviewed?: () => void;
+  markingReviewed?: boolean;
+  /** Optional selection control used by bulk actions. */
+  selected?: boolean;
+  onSelectedChange?: (selected: boolean) => void;
 }
 
 const TYPE_LABELS: Record<QuestionType, string> = {
@@ -60,6 +67,10 @@ export const QuestionCard = ({
   onRemoveFromBank,
   variantNumber,
   compact = false,
+  onMarkReviewed,
+  markingReviewed = false,
+  selected = false,
+  onSelectedChange,
 }: QuestionCardProps) => {
   const { canCreateQuestion, access, accessLoading, hasCourseAccess } = useQmPermissionsForCourse(
     entry.courseId ?? null,
@@ -80,6 +91,34 @@ export const QuestionCard = ({
   if (access === 'ta') topics.push(`${formatCourseAccessLevel('ta')} · own edits only`);
 
   const isAi = Boolean(entry.isAiGenerated || variant.isAiGenerated);
+
+  const headerActions = (onMarkReviewed || onSelectedChange) ? (
+    <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+      {onSelectedChange && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(event) => onSelectedChange(event.target.checked)}
+          aria-label={`Select ${identity}`}
+          className="size-4 cursor-pointer rounded border-border accent-primary"
+        />
+      )}
+      {onMarkReviewed && entry.isDraft && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          title="Mark as reviewed"
+          aria-label={`Mark ${identity} as reviewed`}
+          disabled={markingReviewed}
+          onClick={onMarkReviewed}
+        >
+          {markingReviewed ? <IconLoader2 className="size-4 animate-spin" /> : <IconCircleCheck className="size-4" />}
+        </Button>
+      )}
+    </div>
+  ) : undefined;
 
   const choices: QuestionCardChoice[] | undefined =
     entry.questionType === 'MCQ' && variant.choices
@@ -136,6 +175,7 @@ export const QuestionCard = ({
       ai={isAi}
       identity={identity}
       status={questionStatus(!!entry.isDraft)}
+      headerActions={headerActions}
       question={variant.questionText}
       choices={choices}
       answer={choices ? undefined : variant.answer ?? undefined}

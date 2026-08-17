@@ -1,9 +1,9 @@
 /**
- * #1120 — the review-status toggle in the section kebab must confirm before it fires.
- * Cancelling has to leave status untouched and issue no callback at all.
+ * Review-status actions are immediate: both the kebab action and the quick action
+ * write without an intermediate confirmation dialog.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { AssessmentSectionCard } from '@/components/assessments/AssessmentSectionCard';
 import type {
   AssessmentSection,
@@ -54,54 +54,34 @@ async function openToggleItem(label: string) {
   fireEvent.click(item);
 }
 
-describe('AssessmentSectionCard review-status confirmation', () => {
+describe('AssessmentSectionCard review-status actions', () => {
   beforeEach(() => cleanup());
 
-  it('does not fire the toggle on menu click alone', async () => {
+  it('fires the toggle directly from the menu', async () => {
     const onToggleDraft = vi.fn();
     renderCard(true, onToggleDraft);
 
     await openToggleItem('Mark reviewed');
 
-    expect(onToggleDraft).not.toHaveBeenCalled();
-    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(onToggleDraft).toHaveBeenCalledWith(expect.anything(), false);
   });
 
-  it('fires exactly one toggle when confirmed', async () => {
+  it('fires the quick action directly', () => {
     const onToggleDraft = vi.fn();
     renderCard(true, onToggleDraft);
 
-    await openToggleItem('Mark reviewed');
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark as reviewed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark question 1 as reviewed' }));
 
     expect(onToggleDraft).toHaveBeenCalledTimes(1);
-    // draft -> reviewed means nextDraft === false
     expect(onToggleDraft.mock.calls[0][1]).toBe(false);
   });
 
-  it('fires nothing when cancelled', async () => {
-    const onToggleDraft = vi.fn();
-    renderCard(true, onToggleDraft);
-
-    await openToggleItem('Mark reviewed');
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-
-    expect(onToggleDraft).not.toHaveBeenCalled();
-  });
-
-  it('uses the demotion copy when moving a reviewed question back to draft', async () => {
+  it('moves a reviewed question back to draft directly', async () => {
     const onToggleDraft = vi.fn();
     renderCard(false, onToggleDraft);
 
     await openToggleItem('Mark as draft');
-    const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/excluded from export/i)).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Move to draft' }));
     expect(onToggleDraft).toHaveBeenCalledTimes(1);
-    // reviewed -> draft means nextDraft === true
     expect(onToggleDraft.mock.calls[0][1]).toBe(true);
   });
 });

@@ -16,7 +16,9 @@ interface AssessmentBuilderProps {
     onRemoveQuestionFromSection: (sectionId: number, variantId: number) => void;
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
+    onBulkToggleDraft?: (entries: QuestionVariantEntry[], nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
+    onReplaceQuestion?: (sectionId: number, link: import('../../types/question').SectionVariantLink, nextVariantId: number) => void;
     onReorderSections?: (sectionIds: number[]) => void | Promise<void>;
     readOnly?: boolean;
 }
@@ -32,7 +34,9 @@ export function AssessmentBuilder({
     onRemoveQuestionFromSection,
     onViewQuestion,
     onToggleDraft,
+    onBulkToggleDraft,
     onCreateVariant,
+    onReplaceQuestion,
     onReorderSections,
     readOnly = false,
 }: AssessmentBuilderProps) {
@@ -131,7 +135,9 @@ export function AssessmentBuilder({
                                 onDeleteSection={() => onDeleteSection(section.id)}
                                 onViewQuestion={onViewQuestion}
                                 onToggleDraft={onToggleDraft}
+                                onBulkToggleDraft={onBulkToggleDraft}
                                 onCreateVariant={onCreateVariant}
+                                onReplaceQuestion={(link, nextVariantId) => onReplaceQuestion?.(section.id, link, nextVariantId)}
                                 onAddQuestions={() => {
                                     setPickerSectionId(section.id);
                                     setPickerOpen(true);

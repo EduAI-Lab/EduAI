@@ -641,6 +641,17 @@ export const CourseDetailPage = () => {
     [selectedVariant?.questionId, selectedVariant?.variant.id, topicsByCourse],
   );
 
+  const handleSetReviewed = useCallback(
+    async (variantIds: number[]) => {
+      await Promise.all(
+        variantIds.map((variantId) => questionService.updateVariant(variantId, { isDraft: false })),
+      );
+      variantIds.forEach((variantId) => handleUpdateVariant(variantId, { isDraft: false }));
+      toast(`${variantIds.length} question${variantIds.length === 1 ? '' : 's'} marked as reviewed`);
+    },
+    [handleUpdateVariant],
+  );
+
   const handleDeleteVariant = useCallback((entry: QuestionVariantEntry) => {
     setVariantToDelete(entry);
     setDeleteVariantModalOpen(true);
@@ -960,6 +971,7 @@ export const CourseDetailPage = () => {
             onCreateVariant={handleCreateVariant}
             onAddQuestion={handleAddQuestion}
             onUploadQuestions={handleUploadQuestions}
+            onSetReviewed={writesDisabled ? undefined : handleSetReviewed}
             isLoading={isQuestionsLoading}
             courseName={course.name}
             emptyMessage={emptyStateMessage}

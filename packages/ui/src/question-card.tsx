@@ -58,6 +58,8 @@ export interface QuestionCardProps {
   onHistory?: () => void
   /** Rendered inside the kebab (⋮) slot — pass a DropdownMenu trigger or buttons */
   menu?: ReactNode
+  /** Small inline controls rendered beside status and before the kebab slot. */
+  headerActions?: ReactNode
   /** "default" full card, "compact" for dense lists (e.g. Question Bank) */
   size?: "default" | "compact"
   /** Makes the whole card clickable (e.g. to open the question). Controls in the header stop propagation. */
@@ -109,6 +111,7 @@ export function QuestionCard({
   updatedLabel,
   onHistory,
   menu,
+  headerActions,
   size = "default",
   onClick,
   className,
@@ -190,6 +193,7 @@ export function QuestionCard({
               {status.label}
             </Badge>
           )}
+          {headerActions}
           {onHistory && (
             <IconButton label="View history" onClick={onHistory}>
               <IconHistory className="size-[18px]" />

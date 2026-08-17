@@ -14,7 +14,11 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   questionStatus,
-  ConfirmDialog,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@eduai/ui';
 import type { QuestionCardChoice, QuestionDifficulty } from '@eduai/ui';
 import React, { useState, useEffect } from 'react';
@@ -31,7 +35,6 @@ import {
   IconChevronDown,
 } from '@tabler/icons-react';
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
-import { reviewStatusConfirm } from '../../lib/review-status';
 import { markCorrectChoices } from '@/lib/mcq';
 
 interface AssessmentSectionCardProps {
@@ -45,7 +48,9 @@ interface AssessmentSectionCardProps {
   onAddQuestions: () => void;
   onViewQuestion?: (entry: QuestionVariantEntry) => void;
   onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
+  onBulkToggleDraft?: (entries: QuestionVariantEntry[], nextDraft: boolean) => void;
   onCreateVariant?: (entry: QuestionVariantEntry) => void;
+  onReplaceQuestion?: (link: SectionVariantLink, nextVariantId: number) => void;
   readOnly?: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -85,7 +90,9 @@ export function AssessmentSectionCard({
   onAddQuestions,
   onViewQuestion,
   onToggleDraft,
+  onBulkToggleDraft,
   onCreateVariant,
+  onReplaceQuestion,
   readOnly = false,
   onMoveUp,
   onMoveDown,
@@ -93,16 +100,6 @@ export function AssessmentSectionCard({
   canMoveDown,
 }: AssessmentSectionCardProps) {
   const [localName, setLocalName] = useState(section.name);
-  /**
-   * Review-status toggle is confirmed before it fires (#1120). Held at card level rather
-   * than per-row because the dialog must live outside the DropdownMenu — Radix unmounts
-   * menu content on close, which would tear down a dialog nested inside it.
-   */
-  const [pendingDraftToggle, setPendingDraftToggle] = useState<{
-    entry: QuestionVariantEntry;
-    nextDraft: boolean;
-  } | null>(null);
-
   useEffect(() => {
     setLocalName(section.name);
   }, [section.name]);
@@ -125,6 +122,9 @@ export function AssessmentSectionCard({
         .filter(Boolean) as Array<{ link: SectionVariantLink; entry: QuestionVariantEntry }>,
     [questionLinks, questionBank],
   );
+  const draftEntries = questions
+    .map(({ entry }) => entry)
+    .filter((entry) => entry.isDraft ?? entry.variant.isDraft ?? false);
 
   return (
     <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
@@ -144,6 +144,18 @@ export function AssessmentSectionCard({
         <span className="shrink-0 text-xs text-muted-foreground">
           {questions.length} {questions.length === 1 ? 'question' : 'questions'}
         </span>
+        {!readOnly && onBulkToggleDraft && draftEntries.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 text-xs"
+            onClick={() => onBulkToggleDraft(draftEntries, false)}
+          >
+            <IconCircleCheck className="size-3.5" />
+            Review drafts ({draftEntries.length})
+          </Button>
+        )}
         {!readOnly && onMoveUp && (
           <Button
             type="button"
@@ -222,6 +234,13 @@ export function AssessmentSectionCard({
                   ...(entry.primaryTopicName ? [entry.primaryTopicName] : []),
                   ...(entry.secondaryTopicNames ?? []),
                 ];
+                const relatedVariants = questionBank
+                  .filter((candidate) => candidate.questionId === entry.questionId)
+                  .sort((a, b) => {
+                    if (a.variant.referenceId == null) return -1;
+                    if (b.variant.referenceId == null) return 1;
+                    return new Date(a.variant.createdAt ?? 0).getTime() - new Date(b.variant.createdAt ?? 0).getTime();
+                  });
 
                 const menu = (
                   <DropdownMenu>
@@ -239,7 +258,7 @@ export function AssessmentSectionCard({
                       )}
                       {onToggleDraft && !readOnly && (
                         <DropdownMenuItem
-                          onSelect={() => setPendingDraftToggle({ entry, nextDraft: !isDraft })}
+                          onSelect={() => onToggleDraft(entry, !isDraft)}
                         >
                           <IconCircleCheck className="size-4" /> {isDraft ? 'Mark reviewed' : 'Mark as draft'}
                         </DropdownMenuItem>
@@ -270,6 +289,27 @@ export function AssessmentSectionCard({
                       {idx + 1}
                     </span>
                     <div className="min-w-0 flex-1">
+                      {relatedVariants.length > 1 && (
+                        <div className="mb-2 flex items-center justify-end gap-2">
+                          <span className="text-xs text-muted-foreground">Variant</span>
+                          <Select
+                            value={String(entry.variant.id)}
+                            onValueChange={(value) => onReplaceQuestion?.(link, Number(value))}
+                            disabled={readOnly || !onReplaceQuestion}
+                          >
+                            <SelectTrigger className="h-8 w-36 text-xs" aria-label={`Select variant for question ${entry.questionId}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {relatedVariants.map((candidate, candidateIndex) => (
+                                <SelectItem key={candidate.variant.id} value={String(candidate.variant.id)}>
+                                  {candidate.variant.referenceId == null ? 'Original' : `Variant ${candidateIndex}`}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       <QuestionCard
                         size="compact"
                         type={entry.questionType}
@@ -289,6 +329,21 @@ export function AssessmentSectionCard({
                         }
                         topics={topics}
                         status={questionStatus(isDraft)}
+                        headerActions={
+                          onToggleDraft && !readOnly && isDraft ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              title="Mark as reviewed"
+                              aria-label={`Mark question ${idx + 1} as reviewed`}
+                              onClick={() => onToggleDraft(entry, false)}
+                            >
+                              <IconCircleCheck className="size-4" />
+                            </Button>
+                          ) : undefined
+                        }
                         menu={menu}
                       />
                       {isDraft && (
@@ -307,20 +362,6 @@ export function AssessmentSectionCard({
         )}
       </div>
 
-      {/* Rendered outside the kebab menu on purpose — see pendingDraftToggle above. */}
-      <ConfirmDialog
-        open={pendingDraftToggle !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDraftToggle(null);
-        }}
-        {...reviewStatusConfirm(!(pendingDraftToggle?.nextDraft ?? false))}
-        onConfirm={() => {
-          if (pendingDraftToggle) {
-            onToggleDraft?.(pendingDraftToggle.entry, pendingDraftToggle.nextDraft);
-          }
-          setPendingDraftToggle(null);
-        }}
-      />
     </div>
   );
 }
