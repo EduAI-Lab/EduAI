@@ -4,6 +4,24 @@
  *
  * Requires vLLM (ROUTING_LLM_CLASSIFIER_MODEL on tier 1).
  *
+ * Replicates production's rules-then-classifier pre-gate
+ * (resolveRoutedModelLlm in router.ts): rules run first, and a rule that
+ * escalates to tier 3 wins outright without ever calling the classifier.
+ * The classifier is only consulted for prompts rules left un-escalated, and
+ * its only reachable error direction in that position is over-serve. Prior
+ * to this fix the harness called the classifier standalone, bypassing the
+ * rules pre-gate entirely — its numbers did not describe deployed behavior
+ * (see the 2026-08 "auto-llm tier drift" investigation).
+ *
+ * rag_context in the label pool is a strength category ("strong" | "weak" |
+ * "none"), not the numeric rag_top_similarity / rag_chunk_count
+ * tierFromLlmClassification's RAG-aware branch expects. Rather than
+ * fabricate numeric values the label pool doesn't provide, "strong" is
+ * mapped to a representative strong-similarity point (see
+ * RAG_CONTEXT_PROXY below) and "weak"/"none" are left unset (no RAG
+ * de-escalation applied) — a documented approximation, not a claim of
+ * measured retrieval strength.
+ *
  * Env:
  *   RESEARCH_LABEL_IN
  *   RESEARCH_LLM_EVAL_SPLIT     dev (default) | test | all
@@ -14,7 +32,17 @@ import {
   classifyPromptForTier,
   tierFromLlmClassification,
 } from "~/lib/ai/routing/llm-classifier";
+import { matchPhase1Rules } from "~/lib/ai/routing/rules";
 import { DEFAULT_LABELS_OUT } from "./paths.mjs";
+
+/** Representative rag_top_similarity/rag_chunk_count for a "strong" rag_context
+ * label — matches the rule stack's own routingRagStrongSimilarity() default
+ * (0.8) with headroom, since the label pool doesn't record the real value. */
+const RAG_CONTEXT_PROXY: Record<string, { ragTopSimilarity: number; ragChunkCount: number } | null> = {
+  strong: { ragTopSimilarity: 0.85, ragChunkCount: 3 },
+  weak: null,
+  none: null,
+};
 
 function readEnv(name: string): string | undefined {
   const v = process.env[name];
@@ -58,11 +86,18 @@ async function main() {
   let underRoute = 0;
   let overRoute = 0;
   let errors = 0;
+  let rulesGated = 0; // rules escalated to tier 3 before the classifier ran
 
   console.log("=== LLM classifier evaluation (P3b) ===");
   console.log("labels:", labelsPath);
   console.log("split:", splitFilter);
   console.log("rows:", labels.length);
+  console.log(
+    "note: replicates production's rules-then-classifier pre-gate; rows the",
+  );
+  console.log(
+    "rule stack already escalates never reach the classifier (see header).",
+  );
   console.log("");
 
   for (const row of labels) {
@@ -70,19 +105,52 @@ async function main() {
     const oracle = normalizeOracleTier(row.min_adequate_tier);
     if (!prompt || oracle == null) continue;
 
-    try {
-      const classification = await classifyPromptForTier(prompt, {
-        courseId: null,
-        imagesPresent: false,
-        courseRagNeeded: row.rag_context === "course",
-        ragTopSimilarity: null,
-        ragChunkCount: null,
-        ragContextTokenEstimate: null,
-      });
-      const chosen = tierFromLlmClassification(classification);
-      const chosenNorm = chosen === 1 ? 1 : 3;
-      matched++;
+    const ragContextKey = typeof row.rag_context === "string" ? row.rag_context : "none";
+    const ragProxy = RAG_CONTEXT_PROXY[ragContextKey] ?? null;
+    const courseRagNeeded = ragContextKey !== "none";
 
+    try {
+      // Production pre-gate (resolveRoutedModelLlm, router.ts): rules run
+      // first, and a tier-3 rule wins outright without consulting the
+      // classifier at all.
+      const ruleMatch = matchPhase1Rules({
+        prompt,
+        courseId: null,
+        ragTopSimilarity: ragProxy?.ragTopSimilarity ?? null,
+        ragChunkCount: ragProxy?.ragChunkCount ?? null,
+        courseRagNeeded,
+      });
+      const rulePick = ruleMatch.pick;
+      const ruleEscalates =
+        (rulePick.kind === "exactTier" && rulePick.tier === 3) ||
+        (rulePick.kind === "minTier" && rulePick.minTier === 3);
+
+      let chosenNorm: 1 | 3;
+      let complexityLabel = "n/a (rules pre-gate)";
+      let confidenceLabel = "n/a";
+
+      if (ruleEscalates) {
+        rulesGated++;
+        chosenNorm = 3;
+      } else {
+        const classification = await classifyPromptForTier(prompt, {
+          courseId: null,
+          imagesPresent: false,
+          courseRagNeeded,
+          ragTopSimilarity: ragProxy?.ragTopSimilarity ?? null,
+          ragChunkCount: ragProxy?.ragChunkCount ?? null,
+          ragContextTokenEstimate: null,
+        });
+        const chosen = tierFromLlmClassification(classification, {
+          ragTopSimilarity: ragProxy?.ragTopSimilarity,
+          ragChunkCount: ragProxy?.ragChunkCount,
+        });
+        chosenNorm = chosen === 1 ? 1 : 3;
+        complexityLabel = classification.complexity;
+        confidenceLabel = String(classification.confidence);
+      }
+
+      matched++;
       if (chosenNorm === oracle) correct++;
       else if (chosenNorm < oracle) underRoute++;
       else overRoute++;
@@ -90,8 +158,9 @@ async function main() {
       if (row.tier_sensitive) {
         const mark = chosenNorm === oracle ? "OK" : "MISS";
         console.log(
-          `  [${mark}] ${row.prompt_id} oracle=${oracle} llm=${chosenNorm} ` +
-            `complexity=${classification.complexity} conf=${classification.confidence}`,
+          `  [${mark}] ${row.prompt_id} oracle=${oracle} chosen=${chosenNorm} ` +
+            `complexity=${complexityLabel} conf=${confidenceLabel} ` +
+            `rule=${ruleEscalates ? ruleMatch.rule : "(classifier)"}`,
         );
       }
     } catch (err) {
@@ -112,6 +181,11 @@ async function main() {
   console.log("under-routed (quality risk):", underRoute);
   console.log("over-routed (energy waste):", overRoute);
   console.log("classifier errors:", errors);
+  console.log(
+    "rules-gated (escalated before classifier ran):",
+    rulesGated,
+    `(${matched ? ((100 * rulesGated) / matched).toFixed(1) : 0}%)`,
+  );
 }
 
 main().catch((err) => {
