@@ -238,21 +238,26 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     // Prove "reachable only via a sideways scroll" directly: the last stage
     // chip starts clipped/off-pane, and scrolling the container right
     // (nothing in the chat UI prompts a user to do this) brings it fully
-    // into view.
+    // into view. Use behavior:"instant" — the production pane class includes
+    // scroll-smooth, so assigning scrollLeft animates and a same-tick
+    // boundingBox() still sees the un-scrolled 650px right edge (CI #1422).
     const lastChip = page.locator('[data-eduai-diagram] button[aria-pressed]').last();
     await expect(lastChip).toHaveText("Wipe counter");
-    const beforeScroll = await lastChip.boundingBox();
-    expect(beforeScroll!.x + beforeScroll!.width, "clipped before scrolling").toBeGreaterThan(
-      COLUMN_WIDTH,
-    );
-    await page.evaluate(() => {
-      document.querySelector("#scroll")!.scrollLeft = 100_000;
+    const { beforeRight, afterRight, scrollLeft } = await page.evaluate(() => {
+      const scroll = document.querySelector("#scroll")!;
+      const chips = document.querySelectorAll("[data-eduai-diagram] button[aria-pressed]");
+      const chip = chips[chips.length - 1]!;
+      const beforeRight = chip.getBoundingClientRect().right;
+      scroll.scrollTo({ left: 100_000, behavior: "instant" });
+      return {
+        beforeRight,
+        afterRight: chip.getBoundingClientRect().right,
+        scrollLeft: scroll.scrollLeft,
+      };
     });
-    const afterScroll = await lastChip.boundingBox();
-    expect(
-      afterScroll!.x + afterScroll!.width,
-      "reachable after scrolling right",
-    ).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+    expect(beforeRight, "clipped before scrolling").toBeGreaterThan(COLUMN_WIDTH);
+    expect(scrollLeft, "instant scroll actually moved the pane").toBeGreaterThan(0);
+    expect(afterRight, "reachable after scrolling right").toBeLessThanOrEqual(COLUMN_WIDTH + 1);
   });
 
   test("with overflow-x-hidden, the oversized real diagram cannot open a horizontal scroll region, but its overflow is clipped rather than visible (post-fix)", async ({
