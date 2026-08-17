@@ -2213,7 +2213,7 @@ ${buildEmptyCourseRagBlock()}`;
       aiModel = registry.languageModel(resolvedModelId);
       streamConfig.model = aiModel;
       routerContext = {
-        ...(routerContext ?? {}),
+        ...routerContext,
         bedrockOverflow: true,
       };
     };
