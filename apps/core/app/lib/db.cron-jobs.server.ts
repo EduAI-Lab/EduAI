@@ -16,6 +16,10 @@ const CRON_CHILD_KILL_GRACE_MS = 5_000;
 
 type CronRunDb = Pick<Prisma.TransactionClient, "$executeRaw" | "$queryRaw">;
 
+declare global {
+  var __manualCronRunIds: Set<string> | undefined;
+}
+
 export type StartCronRunResult =
   | { runId: string; created: true; leaseOwner: string }
   | { runId: string; created: false };
@@ -433,7 +437,23 @@ export function triggerCronJobAsync(
   script: string,
   runId: string,
   leaseOwner: string,
+  execution: CronJobExecution = "SCRIPT",
 ): void {
+  if (execution === "CORE") {
+    void import("~/lib/cron-notify-api-key-expiry.server")
+      .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
+      .then(({ notified }) =>
+        finishCronRun(runId, leaseOwner, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0),
+      )
+      .catch((err: unknown) =>
+        finishCronRun(runId, leaseOwner, "ERROR", `Core handler failed: ${redactErrorForConsole(err)}`, 1)
+          .catch((finishErr: unknown) =>
+            console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+          ),
+      );
+    return;
+  }
+
   const scriptDir = resolveScriptDir();
   let child: ReturnType<typeof spawn>;
 
@@ -565,10 +585,9 @@ export function triggerCronJobAsync(
  * the Core web process only records the requested run in Postgres.
  */
 export async function dispatchManualCronRuns(): Promise<void> {
-  const claimed =
-    globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
-  const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string }>>`
-    SELECT id, "jobName"
+  const claimed = globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
+  const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string; leaseOwner: string }>>`
+    SELECT id, "jobName", "leaseOwner"
     FROM cron_job_runs
     WHERE status = 'RUNNING'::"CronJobStatus"
       AND "triggerSource" IN ('ADMIN_UI'::"CronJobTriggerSource", 'ADMIN_CHAT'::"CronJobTriggerSource")
@@ -581,6 +600,6 @@ export async function dispatchManualCronRuns(): Promise<void> {
     const job = KNOWN_CRON_JOBS.find((candidate) => candidate.name === row.jobName);
     if (!job || job.triggerEnabled === false) continue;
     claimed.add(row.id);
-    triggerCronJobAsync(row.jobName, job.script, row.id, job.execution);
+    triggerCronJobAsync(row.jobName, job.script, row.id, row.leaseOwner, job.execution);
   }
 }

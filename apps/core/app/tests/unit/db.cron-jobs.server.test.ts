@@ -332,7 +332,7 @@ describe("triggerCronJobAsync", () => {
 
   it("runs a Core handler without spawning a shell process", async () => {
     mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
-    triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "CORE");
+    triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "owner-1", "CORE");
     // The CORE path resolves via a dynamic `import()` before calling the
     // handler — under Vite's SSR transform that hop can take more than a
     // couple of microtask ticks, so poll instead of a fixed tick count.

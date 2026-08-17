@@ -26,6 +26,7 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   listCronJobStatuses: vi.fn(),
   getRecentCronJobRuns: vi.fn(),
   startCronRun: vi.fn(),
+  triggerCronJobAsync: vi.fn(),
   updateCronSchedule: vi.fn(),
   resetCronSchedule: vi.fn(),
 }));
@@ -36,6 +37,7 @@ import {
   listCronJobStatuses,
   getRecentCronJobRuns,
   startCronRun,
+  triggerCronJobAsync,
   updateCronSchedule,
   resetCronSchedule,
 } from "~/lib/db.cron-jobs.server";

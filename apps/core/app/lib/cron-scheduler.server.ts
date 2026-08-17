@@ -1,6 +1,7 @@
 import type { ScheduledTask } from "node-cron";
 import cron from "node-cron";
 import {
+  dispatchManualCronRuns,
   KNOWN_CRON_JOBS,
   reapExpiredCronRuns,
   startCronRun,
@@ -11,6 +12,7 @@ import { redactErrorForConsole } from "~/lib/redact.server";
 
 declare global {
   var __cronTasks: Map<string, ScheduledTask> | undefined;
+  var __cronTaskSchedules: Map<string, string> | undefined;
   var __cronSchedulerInitPromise: Promise<void> | undefined;
 }
 
@@ -38,7 +40,7 @@ function scheduleOne(
       startCronRun(jobName)
         .then((result) => {
           if (result.created) {
-            triggerCronJobAsync(jobName, script, result.runId, result.leaseOwner);
+            triggerCronJobAsync(jobName, script, result.runId, result.leaseOwner, execution);
           }
         })
         .catch((err: unknown) =>
