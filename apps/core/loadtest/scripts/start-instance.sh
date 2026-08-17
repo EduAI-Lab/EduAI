@@ -30,14 +30,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "==> Starting mock LLM/embedding server on port 8801..."
-node mock-llm/server.mjs &
+echo "==> Starting mock LLM/embedding server on 127.0.0.1:8801..."
+HOST=127.0.0.1 node mock-llm/server.mjs &
 MOCK_PID=$!
 
 sleep 1
 
-echo "==> Starting app instance on port $PORT (production build)..."
-(cd .. && npx react-router-serve ./build/server/index.js) &
+echo "==> Starting app instance on 127.0.0.1:$PORT (production build)..."
+(cd .. && HOST=127.0.0.1 npx react-router-serve ./build/server/index.js) &
 APP_PID=$!
 
 echo "==> Ready: app on http://localhost:${PORT}, mock LLM on http://localhost:8801"

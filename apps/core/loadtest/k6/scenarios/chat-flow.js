@@ -1,6 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Trend, Rate } from 'k6/metrics';
+import { Trend, Rate, Counter } from 'k6/metrics';
 import { login } from '../lib/auth.js';
 import { BASE_URL, COURSE_CODE, MODEL_ID, CHAT_MESSAGES } from '../lib/config.js';
 
@@ -10,6 +10,7 @@ import { BASE_URL, COURSE_CODE, MODEL_ID, CHAT_MESSAGES } from '../lib/config.js
 export const pageLoadDuration = new Trend('eduai_page_load_duration', true);
 export const chatStreamDuration = new Trend('eduai_chat_stream_duration', true);
 export const chatSuccessRate = new Rate('eduai_chat_success');
+export const chatFailures = new Counter('eduai_chat_failures');
 
 function randomMessage() {
   return CHAT_MESSAGES[Math.floor(Math.random() * CHAT_MESSAGES.length)];
@@ -31,9 +32,15 @@ export function chatFlow() {
   }
 
   const dashboardStart = Date.now();
-  const dashboardRes = http.get(`${BASE_URL}/dashboard`, { tags: { name: 'dashboard' } });
+  // redirects: 0 so a bounced-to-login VU cannot look like a healthy dashboard.
+  const dashboardRes = http.get(`${BASE_URL}/dashboard`, {
+    redirects: 0,
+    tags: { name: 'dashboard' },
+  });
   pageLoadDuration.add(Date.now() - dashboardStart);
-  check(dashboardRes, { 'dashboard loaded': (r) => r.status === 200 });
+  check(dashboardRes, {
+    'dashboard loaded (not redirected to login)': (r) => r.status === 200,
+  });
 
   sleep(Math.random() * 1.5 + 0.5); // think time — a human reads before typing
 
@@ -59,13 +66,16 @@ export function chatFlow() {
       timeout: '60s',
     },
   );
-  chatStreamDuration.add(Date.now() - chatStart);
 
   const ok = check(chatRes, {
     'chat responded 200': (r) => r.status === 200,
     'chat body non-empty': (r) => (r.body || '').length > 0,
   });
   chatSuccessRate.add(ok);
+  // Only record stream latency on successes — otherwise a wall of 401s makes
+  // p95 look fine because the failures are sub-millisecond.
+  if (ok) chatStreamDuration.add(Date.now() - chatStart);
+  else chatFailures.add(1, { status: String(chatRes.status) });
   if (!ok) {
     console.error(`[chat] VU ${__VU} got ${chatRes.status}: ${(chatRes.body || '').slice(0, 200)}`);
   }

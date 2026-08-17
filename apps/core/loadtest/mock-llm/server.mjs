@@ -21,6 +21,7 @@
 import http from 'node:http';
 
 const PORT = Number(process.env.MOCK_LLM_PORT || 8801);
+const HOST = process.env.HOST || '127.0.0.1';
 const TOKEN_DELAY_MS = Number(process.env.MOCK_TOKEN_DELAY_MS || 15);
 const RESPONSE_WORDS = Number(process.env.MOCK_RESPONSE_WORDS || 60);
 const EMBED_DIM = Number(process.env.MOCK_EMBED_DIM || 1024);
@@ -207,7 +208,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[mock-llm] listening on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[mock-llm] listening on http://${HOST}:${PORT}`);
   console.log(`[mock-llm] token delay: ${TOKEN_DELAY_MS}ms, response words: ${RESPONSE_WORDS}, embed dim: ${EMBED_DIM}`);
 });

@@ -58,6 +58,8 @@ npm run db:seed
 
 Prefer root scripts for multi-app work: `npm run test:eduai`, etc. Inventory: [`TESTS.md`](../../TESTS.md).
 
+Browser-level load testing (k6 + Grafana, up to 500 concurrent users): `npm run loadtest:setup`, `npm run loadtest:stress`. See [`loadtest/README.md`](./loadtest/README.md).
+
 ## API discovery
 
 Route handlers under `app/routes/` (API under `app/routes/api/`). Auth guards: `app/lib/auth/`. Course access: `app/lib/auth/course-access.server.ts`.
@@ -75,3 +77,4 @@ Sustainability-aware tier routing lives under `app/lib/ai/routing/`. Administrat
 | [`docs/EXTENSION_ONBOARDING.md`](../../docs/EXTENSION_ONBOARDING.md) | Extension app integration and auth |
 | [`docs/CANVAS.md`](../../docs/CANVAS.md) | Canvas sync and instructor token setup |
 | [`docs/LOGGING.md`](../../docs/LOGGING.md) | Audit logs, system logs, admin viewer |
+| [`loadtest/README.md`](./loadtest/README.md) | Browser-level UI stress harness (k6 + Grafana), EPIC #63 |

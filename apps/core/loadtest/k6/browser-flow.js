@@ -61,15 +61,17 @@ export async function browserChatFlow() {
 
     // First-visit disclaimer modal — not always present (already dismissed
     // for this browser context), so don't fail the run if it's absent.
-    const understandBtn = page.locator('button:has-text("I understand")');
-    if (await understandBtn.count() > 0) {
+    // k6 Locator has no Playwright-style count(); page.$ returns null if missing.
+    const understandBtn = await page.$('button:has-text("I understand")');
+    if (understandBtn) {
       await understandBtn.click();
     }
 
     const input = page.locator('#chat-message-input');
     await input.waitFor({ state: 'visible', timeout: 10000 });
     await input.fill('Can you summarize the last lecture in one paragraph?');
-    await page.locator('button:has-text("Send message")').click();
+    // Send is icon-only; "Send message" is the aria-label, not rendered text.
+    await page.locator('button[aria-label="Send message"]').click();
 
     // Wait for the mock LLM's known canned reply to render — proves the full
     // round trip (client fetch -> /api/chat -> mock stream -> DOM update)

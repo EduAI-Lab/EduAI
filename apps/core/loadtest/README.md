@@ -3,6 +3,8 @@
 k6 + Grafana load-testing harness that simulates up to 500 concurrent users
 against Core, plus a smaller real-Chromium scenario for genuine
 browser-level coverage. Built for EPIC #63 (Performance & Stress Testing).
+Issue #919 asked for Locust; this ships k6 because `k6/browser` covers real
+Chromium *and* the protocol-level engine in one tool.
 
 ## Safety — read before running
 
@@ -28,10 +30,13 @@ npm run loadtest:setup          # creates eduai_loadtest DB, migrates, seeds dem
 npm run build                   # production build (loadtest measures prod perf, not dev-server HMR overhead)
 ```
 
-Seeded demo accounts (from `prisma/seed.ts`, password `EduAI2026!` for all):
-`student1@eduai.local` … `student5@eduai.local`, all enrolled in course
-`DATA 310`. k6 VUs log in as one of these five and reuse the session for the
-whole run — same as a real user would.
+By default each VU logs in as a distinct seeded account
+(`loadtest.vu-001@eduai.local` … `loadtest.vu-500@eduai.local`, password
+`EduAI2026!`, enrolled in `DATA 310`) so a 500-VU run is 500 sessions, not
+five loud users sharing `checkRateLimit`'s per-user bucket. `loadtest:setup`
+seeds those accounts. Set `LOADTEST_UNIQUE_USERS=0` to round-robin the five
+`prisma/seed.ts` demo students (`student1@eduai.local` … `student5`) for a
+tiny smoke without the extra seed.
 
 ## Running it
 
@@ -41,7 +46,7 @@ npm run loadtest:instance
 
 # Terminal 2 — optional live dashboards
 npm run loadtest:monitoring:up
-open http://localhost:3300        # Grafana, anonymous viewer access, dashboard auto-provisioned
+open http://127.0.0.1:3300        # Grafana, loopback-only, anonymous viewer, dashboard auto-provisioned
 
 # Terminal 3 — the test itself
 npm run loadtest:smoke            # ~40s, 10 VUs — run this first, always
@@ -95,12 +100,11 @@ run, if you want concurrent load *and* realistic data volume at once.
 ## Results so far
 
 Two full 500-VU runs are recorded in [`results/FINDINGS.md`](./results/FINDINGS.md)
-(raw k6 summaries alongside it). Headline: chat success rate was ~0.8% at 500
-concurrent users, dominated by `401 MISSING_SERVICE_KEY` (session lookups
-failing under concurrency) rather than the `AI_MAX_INFLIGHT` admission gate.
-Enlarging the DB connection pool did not fix it — that hypothesis is ruled
-out. See the doc for what's confirmed, what's ruled out, and the recommended
-next diagnostic.
+(raw k6 summaries alongside it). Headline: chat success rate was ~0.8%,
+dominated by `401 MISSING_SERVICE_KEY`. DB pool size is ruled out. The
+original harness had not yet ruled out cookie-jar / redirect artifacts, so
+that is **not** yet a confirmed `getSession()` capacity ceiling — see the
+doc. `npm run loadtest:stress` writes `loadtest/results/stress-500.summary.json`.
 
 ## Interpreting results
 

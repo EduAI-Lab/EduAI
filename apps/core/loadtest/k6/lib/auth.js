@@ -7,7 +7,13 @@ import { BASE_URL, DEMO_PASSWORD, studentForVU } from './config.js';
 // (login once, then many chat turns) instead of paying auth cost every turn.
 const loggedInVUs = new Set();
 
-/** Real better-auth email/password login — same endpoint the login page posts to. */
+/**
+ * Posts to better-auth's email/password JSON API (`/api/auth/sign-in/email`).
+ * This is NOT the login page's Remix `<Form method="post">` action, which also
+ * writes audit logs and handles `forceReauth`. We use the API because k6 VUs
+ * need a cookie jar, not an HTML round-trip; login cost is therefore slightly
+ * under-measured vs a real browser.
+ */
 export function login() {
   if (loggedInVUs.has(__VU)) return true;
 
@@ -18,8 +24,12 @@ export function login() {
     { headers: { 'Content-Type': 'application/json' }, tags: { name: 'login' } },
   );
 
+  const jar = http.cookieJar();
+  const cookies = jar.cookiesForURL(BASE_URL);
   const ok = check(res, {
     'login succeeded': (r) => r.status === 200,
+    'session cookie held after login': () =>
+      Object.keys(cookies).some((c) => c.includes('session_token')),
   });
 
   if (ok) loggedInVUs.add(__VU);

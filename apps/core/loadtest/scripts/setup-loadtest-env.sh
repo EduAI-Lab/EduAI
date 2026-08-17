@@ -2,7 +2,8 @@
 # Provisions the isolated DB + demo dataset for the #919 stress harness.
 # Safe to re-run — migrate/seed are idempotent (seed.ts uses upsert).
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+# This file lives at apps/core/loadtest/scripts/ — repo root is ../../..
+cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 
 ENV_FILE="apps/core/.env.loadtest"
 if [ ! -f "$ENV_FILE" ]; then
@@ -37,4 +38,9 @@ npx prisma migrate deploy
 echo "==> Seeding demo dataset (students 1-5, DATA 310, etc.)..."
 npx tsx prisma/seed.ts
 
-echo "==> Done. Demo login: student1@eduai.local / EduAI2026! (see loadtest/README.md)"
+echo "==> Seeding one password-backed student per VU (default 500)..."
+LOADTEST_VUS="${LOADTEST_VUS:-500}" npx tsx loadtest/scripts/seed-loadtest-users.ts
+
+echo "==> Done. Demo login: student1@eduai.local / EduAI2026!"
+echo "==> Unique VU logins: loadtest.vu-001@eduai.local … loadtest.vu-${LOADTEST_VUS:-500}@eduai.local / EduAI2026!"
+echo "==> See loadtest/README.md"

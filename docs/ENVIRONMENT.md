@@ -28,6 +28,7 @@ compose file, independent of any `.env.example`. The files below are for local (
 | `apps/extensions/question-maker/.env.example` | `apps/extensions/question-maker/.env` | QM backend (`app/backend/src/config/settings.js`) **and** QM frontend (Vite `VITE_*` vars) |
 | `infra/cron/cron.env.example` | `/etc/eduai/cron.env` (manual, production only) | Production cron scripts |
 | `infra/cron/cron.env.local.example` | `infra/cron/cron.env.local` (manual, gitignored) | `infra/cron/dry-run-local.sh` only |
+| `apps/core/loadtest/.env.loadtest.example` | `apps/core/.env.loadtest` (manual, gitignored) | Isolated #919 k6 harness (`npm run loadtest:*`) — never the shared study host |
 
 The AI Tutor **frontend** app (`apps/extensions/ai-tutor/`, distinct from its `server/`
 sibling) has no `.env` of its own — it does not inherit from `apps/core/.env` or
@@ -103,6 +104,11 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
+| `BETTER_AUTH_DISABLE_RATE_LIMIT` | optional | loadtest / integration tests | Set `1` to turn off Better Auth's per-IP sign-in limiter. Core integration tests set this in `app/tests/setup.env.ts`. The #919 harness sets it in `.env.loadtest` so 500 loopback VUs are not measuring "how fast does the auth limiter trip." |
+| `LOADTEST_BASE_URL` | optional (default `http://localhost:4100`) | loadtest | k6 target. Must stay on the isolated loopback instance — never `dev.eduai.ok.ubc.ca`. |
+| `LOADTEST_VUS` | optional (default `500`) | loadtest | How many `loadtest.vu-NNN@eduai.local` accounts `seed-loadtest-users.ts` creates. |
+| `LOADTEST_UNIQUE_USERS` | optional | loadtest | Set `0` to round-robin the five demo students instead of one account per VU. |
+| `HOST` | optional (loadtest default `127.0.0.1`) | loadtest | Bind address for the mock LLM and `react-router-serve` during a harness run. |
 
 ### Operating `QUEUE_MAX_DEPTH`
 

@@ -23,8 +23,20 @@ export const COURSE_CODE = 'DATA 310';
 // takes the simpler hybrid-RAG (non tool-calling) path.
 export const MODEL_ID = 'vllm:qwen2.5-7b-instruct';
 
+/**
+ * Default: one distinct account per VU (`loadtest.vu-00N@eduai.local`), seeded
+ * by `loadtest/scripts/seed-loadtest-users.ts`. That is what "500 concurrent
+ * users" actually means — otherwise 500 VUs collapse onto 5 demo accounts and
+ * `checkRateLimit` (`chat:${userId}`) caps throughput at 5× the per-user limit.
+ *
+ * Set LOADTEST_UNIQUE_USERS=0 to round-robin the five prisma/seed.ts demo
+ * students (useful for a tiny local smoke without the extra seed step).
+ */
 export function studentForVU(vu) {
-  return STUDENTS[(vu - 1) % STUDENTS.length];
+  if (__ENV.LOADTEST_UNIQUE_USERS === '0') {
+    return STUDENTS[(vu - 1) % STUDENTS.length];
+  }
+  return `loadtest.vu-${String(vu).padStart(3, '0')}@eduai.local`;
 }
 
 export const CHAT_MESSAGES = [

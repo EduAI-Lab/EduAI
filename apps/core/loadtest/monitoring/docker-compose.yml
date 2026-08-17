@@ -14,7 +14,7 @@ services:
     container_name: eduai-loadtest-influxdb
     restart: unless-stopped
     ports:
-      - "8086:8086"
+      - "127.0.0.1:8086:8086"
     environment:
       INFLUXDB_DB: k6
       INFLUXDB_HTTP_LOG_ENABLED: "false"
@@ -28,7 +28,7 @@ services:
     depends_on:
       - influxdb
     ports:
-      - "3300:3000"
+      - "127.0.0.1:3300:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
