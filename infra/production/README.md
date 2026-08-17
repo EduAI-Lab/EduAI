@@ -29,14 +29,16 @@ The replacement deployment uses a release layout:
 
 The application service runs from `current`. The old checkout remains available until the new deployment is accepted.
 
-## Initial Core-only production configuration
+## Production configuration
 
 - Public URL: `https://my.eduai.ok.ubc.ca`
 - Internal Core port: `127.0.0.1:3000`
 - PostgreSQL: private production database, not the legacy checkout's database
 - Redis: private production Redis instance for the optional BullMQ worker
 - Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; begin with cmps01 and add cmps02/cmps03 after firewall validation
-- Extension links: omit `VITE_AI_TUTOR_URL` and `VITE_QUESTION_MAKER_URL` until the new production aliases and authentication path are ready
+- AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
+- Shared auth: `COOKIE_DOMAIN=.eduai.ok.ubc.ca` is required across Core and AI Tutor
+- Question Maker remains disabled until its own production API and alias are approved
 
 ## One-time server preparation
 
@@ -67,6 +69,29 @@ sudo chmod 0640 /etc/eduai/eduai-core.env
 
 The production database must be provisioned and tested before migrations are applied. Take a backup before each schema-changing release.
 
+### AI Tutor production prerequisites
+
+Provision a dedicated PostgreSQL role and database before installing
+`ai-tutor.env.example`; do not reuse Core's `eduai_prod` database:
+
+```sql
+CREATE ROLE ai_tutor_prod LOGIN PASSWORD '<generated-password>';
+CREATE DATABASE ai_tutor_prod OWNER ai_tutor_prod;
+```
+
+Install the following reviewed templates as root-owned files:
+
+```text
+infra/production/ai-tutor.env.example                  -> /etc/eduai/eduai-aitutor.env
+infra/production/systemd/eduai-aitutor-server.service  -> /etc/systemd/system/
+infra/production/apache/aitutor.eduai.ok.ubc.ca.conf   -> /etc/apache2/sites-available/
+```
+
+The frontend uses the public-only values in
+`infra/production/ai-tutor-frontend.env` during the build. The API environment
+must contain the same `EDUAI_API_KEY` as Core, but that secret must never be
+committed or copied into the frontend bundle.
+
 ## First release procedure
 
 From a clean checkout of the approved `main` commit:
@@ -79,19 +104,36 @@ npm ci
 npm run db:generate -w edu-ai
 cd apps/core
 npx prisma migrate deploy
+set -a; . /etc/eduai/eduai-core.env; set +a
 npm run build
 cd ../..
 ln -sfn "/srv/www/eduai-production/releases/<commit>" /srv/www/eduai-production/current
+```
+
+For a release that includes AI Tutor, run its database migration and build
+before switching `current`:
+
+```bash
+cd "/srv/www/eduai-production/releases/<commit>"
+set -a; . /etc/eduai/eduai-aitutor.env; set +a
+(cd apps/extensions/ai-tutor/server && npx prisma generate)
+(cd apps/extensions/ai-tutor/server && npx prisma migrate deploy)
+cp infra/production/ai-tutor-frontend.env apps/extensions/ai-tutor/.env
+npm run build -w ai-tutor
 ```
 
 Restart only after the build and migration succeed:
 
 ```bash
 sudo systemctl daemon-reload
+sudo systemctl enable --now eduai-aitutor-server
 sudo systemctl restart eduai-core
 sudo systemctl is-active eduai-core
+sudo systemctl is-active eduai-aitutor-server
 curl -fsS http://127.0.0.1:3000/api/health >/dev/null
+curl -fsS http://127.0.0.1:4000/api/health >/dev/null
 curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
+curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
 ```
 
 Do not run `prisma db push` or automatic production seeding in this procedure.

@@ -94,6 +94,7 @@ Keep Node bound to `127.0.0.1:3000`; Apache is the only public application liste
 - Redis decision is documented; queue remains disabled if no worker exists.
 - cmps01 inference endpoint is reachable from production.
 - cmps02/03 are not configured until firewall access is confirmed.
-- No extension URL is configured until the new aliases and authentication flow are ready.
+- `VITE_AI_TUTOR_URL=https://aitutor.eduai.ok.ubc.ca` is configured before the Core browser build.
+- `COOKIE_DOMAIN=.eduai.ok.ubc.ca` and the AI Tutor `EDUAI_API_KEY` match across both services.
 - Apache config validates.
 - The legacy checkout and its data remain available for rollback/reference.
