@@ -18,6 +18,8 @@
 
 ### Fixed
 
+- [core] fix: Upgrade the fleet to Qwen 3.5 2B/9B while retaining Qwen 2.5 32B on cmps02 for Assist Auto. Explicit model selections now remain selected; Assist responses use schema-constrained stages and deterministic ladder-to-diagram rendering so small-model Markdown fallbacks cannot omit the visual or silently shorten an explicitly requested multi-stage flow. Closes #1521, #1523. (@superbolt08, 2026-08-16) — [#1529](https://github.com/EduAI-Lab/EduAI/pull/1529)
+
 - [core] fix: The root middleware's `.data` block only rejected requests that looked like a document navigation (`sec-fetch-dest: document` or an HTML `Accept` header), so a direct or API-style request without those headers could still read React Router loader payloads through the internal `.data` transport. This app doesn't enable single-fetch, so no legitimate client request needs that path — now every `.data` URL is rejected outright instead of trying to distinguish navigations from spoofable non-browser headers. Closes #1430. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
 ### Fixed
 ### Fixed
