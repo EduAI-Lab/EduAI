@@ -146,7 +146,10 @@ const RAG_REASONING_PATTERN =
 const DISTINCT_ENUMERATION_PATTERN =
   /\b(name|list|give|identify)\b.{0,40}\b(two|2|three|3)\b.{0,40}\bdistinct\b/i;
 
-function routingRagStrongSimilarity(): number {
+/** Exported so llm-classifier.ts can apply the same RAG-strength threshold
+ * the rule stack uses for `rule4_strong_rag_tier_1` — see
+ * `tierFromLlmClassification`'s RAG-aware de-escalation branch. */
+export function routingRagStrongSimilarity(): number {
   const raw = process.env.ROUTING_RAG_STRONG_SIM;
   if (raw === undefined || raw === "") return 0.8;
   const n = Number(raw);
