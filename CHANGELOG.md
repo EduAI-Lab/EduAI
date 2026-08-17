@@ -31,6 +31,7 @@
 - [question-maker] fix: Serve the self-hosted Outfit woff2 files in `npm run dev` by pointing Vite's `server.fs.allow` at the true repo root (it was one directory too shallow, so `/@fs` font requests hit "outside of Vite serving allow list" and QM rendered a fallback font). Closes #1575. (@yta3216, 2026-08-18) — [#1585](https://github.com/EduAI-Lab/EduAI/pull/1585)
 - [question-maker] fix: Return the user to the extension after logout by redirecting to Core login with a `redirect` back to QM (matching AI Tutor and the `api.ts` 401 interceptor) instead of a bare `/login` that stranded them on Core. Closes #1574. (@yta3216, 2026-08-18) — [#1585](https://github.com/EduAI-Lab/EduAI/pull/1585)
 - [ai-tutor] fix: Skip the guided tour's module/lesson steps immediately on a course with no content by racing each content gate against an empty-state sentinel, instead of stalling ~4s on the missing-target timeout and then silently dropping the dependent steps. Closes #1572. (@yta3216, 2026-08-18) — [#1585](https://github.com/EduAI-Lab/EduAI/pull/1585)
+- [core] fix: After a successful Bedrock overflow on admission timeout, `/api/chat` no longer rethrows `AdmissionTimeoutError`, so the request reaches `streamText` on Bedrock. Adds a route-level test for that path. (#1441, @Ayyhab, 2026-08-17) — [#1527](https://github.com/EduAI-Lab/EduAI/pull/1527)
 ## [Week 15 — August 10–16, 2026]
 
 ### Added

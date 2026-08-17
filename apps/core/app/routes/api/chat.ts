@@ -2250,8 +2250,9 @@ ${buildEmptyCourseRagBlock()}`;
               },
             );
           }
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
     const releaseAdmission = () => {
