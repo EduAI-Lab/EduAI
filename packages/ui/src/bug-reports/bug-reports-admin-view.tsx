@@ -207,7 +207,7 @@ export function BugReportsAdminView({
       const updated = await onUpdateStatus(reportId, status)
       setReports((current) =>
         current.map((report) =>
-          report.id === reportId ? { ...report, status, ...(updated ?? {}) } : report,
+          report.id === reportId ? { ...report, status, ...updated } : report,
         ),
       )
     } catch {

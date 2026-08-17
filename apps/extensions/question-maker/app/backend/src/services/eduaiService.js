@@ -195,7 +195,7 @@ class EduAIService {
 
   /** Fills in server-side provider keys when the client did not supply one (local dev). */
   mergeApiKeysForModel(model, clientApiKeys = {}) {
-    const merged = { ...(clientApiKeys || {}) };
+    const merged = { ...clientApiKeys };
     const provider = typeof model === "string" ? model.split(":")[0] : "";
     const googleKey = config.googleGenerativeAiApiKey?.trim();
 
@@ -253,7 +253,7 @@ class EduAIService {
         routingContext: {
           feature: "question-maker",
           jobType: "background",
-          ...(params.routingContext || {}),
+          ...params.routingContext,
         },
         ...(params.temperature != null ? { temperature: params.temperature } : {}),
         ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),

@@ -166,11 +166,7 @@ describe("addAdminCourseTA", () => {
     } as never);
 
     const result = await addAdminCourseTA(ADMIN, { ...COURSE_OPTS, userId: "u1" });
-    // NOTE: addCourseTA already resolves to { ta: {...} }, and this function wraps
-    // it again as `{ ok: true, ta: result }`, producing a double-nested `ta.ta`
-    // shape rather than a flat `ta`. Asserting the real (buggy) shape here rather
-    // than silently normalizing it away — see final report.
-    expect(result).toMatchObject({ ok: true, ta: { ta: { id: "e1" } } });
+    expect(result).toMatchObject({ ok: true, ta: { id: "e1" } });
     expect(addCourseTA).toHaveBeenCalledWith("c1", { userId: "u1" });
   });
 });
@@ -519,12 +515,12 @@ describe("triggerAdminCronJob", () => {
     expect(startCronRun).not.toHaveBeenCalled();
   });
 
-  it("starts a new run and triggers the cron script async", async () => {
+  it("starts a new run for the dedicated cron worker", async () => {
     vi.mocked(findRunningCronRun).mockResolvedValue(null);
     vi.mocked(startCronRun).mockResolvedValue({ runId: "run2", created: true });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run2", jobName: "backup-nightly", reused: false });
-    expect(triggerCronJobAsync).toHaveBeenCalledWith("backup-nightly", "backup-nightly.sh", "run2");
+    expect(triggerCronJobAsync).not.toHaveBeenCalled();
   });
 
   it("does not trigger the script when the run was reclaimed, not created", async () => {

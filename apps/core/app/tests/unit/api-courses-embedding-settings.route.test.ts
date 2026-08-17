@@ -69,7 +69,7 @@ function makeActionArgs(body: unknown, method = "PATCH") {
     request: new Request("http://localhost/api/courses/course-1/embedding-settings", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: { courseId: "course-1" },
     context: {} as never,

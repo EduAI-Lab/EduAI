@@ -53,6 +53,29 @@ describe("cmps01 internal auth", () => {
     );
   });
 
+  it("does not let an untrusted embedding candidate receive the CMPS key", () => {
+    process.env = {
+      ...env,
+      CMPS01_INTERNAL_KEY: "secret",
+      CMPS01_INTERNAL_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
+      VLLM_EMBEDDING_BASE_URL: "http://attacker.example.com/v1",
+      OLLAMA_BASE_URL: undefined,
+    };
+    expect(cmps01InternalAuthHeadersForUrl("http://attacker.example.com/v1")).toEqual({});
+  });
+
+  it("trusts the explicitly configured CMPS embedding edge", () => {
+    process.env = {
+      ...env,
+      CMPS01_INTERNAL_KEY: "secret",
+      CMPS01_INTERNAL_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
+    };
+    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/v1")).toBe(true);
+    expect(
+      cmps01InternalAuthHeadersForUrl("http://cmps01.ok.ubc.ca:8001/v1"),
+    ).toEqual(cmps01InternalAuthHeaders());
+  });
+
   it("does not treat the research energy URL as an application auth target", () => {
     process.env = {
       ...env,

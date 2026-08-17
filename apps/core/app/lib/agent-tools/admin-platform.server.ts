@@ -49,7 +49,6 @@ import {
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
@@ -508,7 +507,7 @@ export async function addAdminCourseTA(
 
   const result = await addCourseTA(courseId, { userId: opts.userId });
   if ("error" in result) return { error: result.error };
-  return { ok: true, ta: result };
+  return { ok: true, ta: result.ta };
 }
 
 export async function removeAdminCourseTA(
@@ -757,10 +756,12 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { ok: true, runId: alreadyRunning.id, jobName, reused: true };
   }
 
-  const { runId, created } = await startCronRun(jobName);
-  if (created) {
-    triggerCronJobAsync(jobName, job.script, runId);
-  }
+  const { runId, created } = await startCronRun(jobName, {
+    source: "ADMIN_CHAT",
+    triggeredByUserId: actor.id,
+  });
+  // The dedicated cron worker claims ADMIN_CHAT runs during reconciliation so
+  // shell jobs execute under eduai-cron instead of the Core web account.
   return { ok: true, runId, jobName, reused: !created };
 }
 

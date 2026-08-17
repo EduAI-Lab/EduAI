@@ -38,6 +38,7 @@ import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { IconHelpCircle, IconRobot, IconTrash, IconSparkles, IconFilePencil, IconPencil, IconExternalLink, IconListDetails, IconCircleCheckFilled, IconGitBranch, IconStar } from '@tabler/icons-react';
 import { normalizeCourseCode } from '../../utils/courseDisplay';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
+import { markCorrectChoices } from '@/lib/mcq';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
 import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
@@ -125,6 +126,8 @@ interface AddQuestionViewProps {
             difficulty?: QuestionDifficulty;
             choices?: MCQChoice[] | null;
             answer?: string | null;
+            selectAllThatApply?: boolean;
+            correctAnswers?: string[] | null;
             questionText?: string;
         }
     ) => void;
@@ -150,6 +153,8 @@ type FormState = {
     variantReasoningLevel: ReasoningLevel;
     variantAnswer: string;
     variantChoices: MCQChoice[];
+    selectAllThatApply: boolean;
+    correctAnswers: string[];
     variantSecondaryTopics: string[];
     variantAssessmentId: string;
     variantReferenceId: string;
@@ -168,6 +173,8 @@ const defaultForm: FormState = {
     variantReasoningLevel: 'factual',
     variantAnswer: '',
     variantChoices: [{ letter: 'A', text: '' }, { letter: 'B', text: '' }, { letter: 'C', text: '' }, { letter: 'D', text: '' }],
+    selectAllThatApply: false,
+    correctAnswers: [],
     variantSecondaryTopics: [],
     variantAssessmentId: 'none',
     variantReferenceId: '',
@@ -206,6 +213,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
     const [editingChoices, setEditingChoices] = useState(false);
     const [editChoices, setEditChoices] = useState<MCQChoice[]>([]);
     const [editAnswer, setEditAnswer] = useState('');
+    const [editSelectAllThatApply, setEditSelectAllThatApply] = useState(false);
+    const [editCorrectAnswers, setEditCorrectAnswers] = useState<string[]>([]);
     const [editingMetadata, setEditingMetadata] = useState(false);
     const [editDescription, setEditDescription] = useState('');
     const [editQuestionText, setEditQuestionText] = useState('');
@@ -540,6 +549,10 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 variantReasoningLevel: presetVariant.variant.reasoningLevel ?? 'factual',
                 variantAnswer: presetVariant.variant.answer ?? '',
                 variantChoices: copiedChoices,
+                selectAllThatApply: Boolean(presetVariant.variant.selectAllThatApply),
+                correctAnswers: Array.isArray(presetVariant.variant.correctAnswers)
+                    ? presetVariant.variant.correctAnswers.map((l) => String(l))
+                    : [],
                 variantSecondaryTopics: (presetVariant.variant.secondaryTopicsId || []).map(String),
                 variantAssessmentId: presetVariant.variant.assessmentId ? presetVariant.variant.assessmentId.toString() : 'none',
                 generationPrompt: ''
@@ -747,12 +760,20 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
         const isMcq = form.questionType === 'MCQ';
         if (isMcq) {
             const validChoices = form.variantChoices.filter((c) => c.text.trim().length > 0);
-            if (validChoices.length < 2) missing.push({ label: 'At least 2 MCQ choices with text', fieldId: 'field-mcq-choices' });
+            if (validChoices.length < 2) {
+                missing.push({ label: 'At least 2 MCQ choices with text', fieldId: 'field-mcq-choices' });
+            } else if (form.selectAllThatApply) {
+                if (!form.correctAnswers?.length) {
+                    missing.push({ label: 'At least one correct MCQ choice', fieldId: 'field-mcq-choices' });
+                }
+            } else if (!form.variantAnswer) {
+                missing.push({ label: 'Exactly one correct MCQ choice', fieldId: 'field-mcq-choices' });
+            }
         }
         const missingLabels = missing.map((m) => m.label);
         const firstWithField = missing.find((m) => m.fieldId != null);
         return { missingLabels, firstFieldId: firstWithField?.fieldId ?? null };
-    }, [isViewMode, createProps?.courseId, form.variantText, form.primaryTopicId, form.baseSelection, form.questionType, form.variantChoices, createMode]);
+    }, [isViewMode, createProps?.courseId, form.variantText, form.primaryTopicId, form.baseSelection, form.questionType, form.variantChoices, form.selectAllThatApply, form.correctAnswers, form.variantAnswer, createMode]);
 
     const isCreateDisabled = isSubmitting || requiredValidation.missingLabels.length > 0;
     const createButtonTooltip = requiredValidation.missingLabels.length > 0
@@ -935,6 +956,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                     reasoningLevel: form.variantReasoningLevel,
                     answer: form.variantAnswer.trim() || null,
                     choices: choices,
+                    selectAllThatApply: choices ? form.selectAllThatApply : false,
+                    correctAnswers: choices && form.selectAllThatApply ? form.correctAnswers : null,
                     assessmentId: form.variantAssessmentId === 'none' ? undefined : parseNumber(form.variantAssessmentId),
                     secondaryTopicsId: form.variantSecondaryTopics.length ? form.variantSecondaryTopics : undefined,
                     referenceId: parseNumber(form.variantReferenceId),
@@ -968,6 +991,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 reasoningLevel: form.variantReasoningLevel,
                 answer: form.variantAnswer.trim() || null,
                 choices: choices,
+                selectAllThatApply: form.questionType === 'MCQ' ? form.selectAllThatApply : false,
+                correctAnswers: form.questionType === 'MCQ' && form.selectAllThatApply ? form.correctAnswers : null,
                 assessmentId: form.variantAssessmentId === 'none' ? undefined : parseNumber(form.variantAssessmentId),
                 secondaryTopicsId: form.variantSecondaryTopics.length ? form.variantSecondaryTopics : undefined,
                 referenceId: parseNumber(form.variantReferenceId),
@@ -1083,19 +1108,42 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                 {viewEntry.questionType === 'MCQ' && (editingChoices ? (
                                     <section>
                                         <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Edit choices</p>
-                                        <MCQChoicesField choices={editChoices} answer={editAnswer} onChoicesChange={setEditChoices} onAnswerChange={setEditAnswer} idPrefix="detail-mcq" />
+                                        <MCQChoicesField
+                                            choices={editChoices}
+                                            answer={editAnswer}
+                                            onChoicesChange={setEditChoices}
+                                            onAnswerChange={setEditAnswer}
+                                            selectAllThatApply={editSelectAllThatApply}
+                                            correctAnswers={editCorrectAnswers}
+                                            onSelectAllThatApplyChange={setEditSelectAllThatApply}
+                                            onCorrectAnswersChange={setEditCorrectAnswers}
+                                            idPrefix="detail-mcq"
+                                        />
                                         <div className="mt-3 flex gap-2">
                                             <Button size="sm" onClick={async () => {
                                                 try {
                                                     const validChoices = editChoices.filter((c) => c.text.trim().length > 0);
-                                                    await questionService.updateVariant(viewVariant.id, { choices: validChoices, answer: editAnswer });
-                                                    const updatedVariantData = { ...viewEntry.variant, choices: validChoices, answer: editAnswer };
+                                                    const payload = {
+                                                        choices: validChoices,
+                                                        answer: editAnswer,
+                                                        selectAllThatApply: editSelectAllThatApply,
+                                                        correctAnswers: editSelectAllThatApply ? editCorrectAnswers : null,
+                                                    };
+                                                    const saved = await questionService.updateVariant(viewVariant.id, payload);
+                                                    const updatedVariantData = { ...viewEntry.variant, ...saved };
                                                     const updatedEntry: QuestionVariantEntry = { ...viewEntry, variant: updatedVariantData };
                                                     vp.onSelectVariant(updatedEntry);
-                                                    vp.onUpdateVariant?.(viewVariant.id, { choices: validChoices, answer: editAnswer });
+                                                    vp.onUpdateVariant?.(viewVariant.id, {
+                                                      choices: saved.choices ?? payload.choices,
+                                                      answer: saved.answer ?? payload.answer,
+                                                      selectAllThatApply: saved.selectAllThatApply,
+                                                      correctAnswers: saved.correctAnswers ?? null,
+                                                    });
                                                     setEditingChoices(false);
                                                     toast('Choices saved', {
-                                                        description: 'Variant choices and correct answer updated.',
+                                                        description: saved.selectAllThatApply
+                                                          ? 'Variant choices and correct answers updated.'
+                                                          : 'Variant choices and correct answer updated.',
                                                     });
                                                 } catch (err: any) {
                                                     toast.error('Failed to save choices', {
@@ -1111,56 +1159,118 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                         <div className="mb-3 flex items-center justify-between">
                                             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Choices</p>
                                             {canEditDraft && (
-                                                <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => { setEditChoices(viewVariant.choices!.map((c) => ({ ...c }))); setEditAnswer(viewVariant.answer?.trim().toUpperCase().charAt(0) ?? ''); setEditingChoices(true); }}>
+                                                <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => {
+                                                    setEditChoices(viewVariant.choices!.map((c) => ({ ...c })));
+                                                    setEditAnswer(viewVariant.answer?.trim().toUpperCase().charAt(0) ?? '');
+                                                    setEditSelectAllThatApply(Boolean(viewVariant.selectAllThatApply));
+                                                    setEditCorrectAnswers(
+                                                        Array.isArray(viewVariant.correctAnswers)
+                                                            ? viewVariant.correctAnswers.map((l) => String(l))
+                                                            : []
+                                                    );
+                                                    setEditingChoices(true);
+                                                }}>
                                                     <IconPencil className="size-3.5" /> Edit
                                                 </Button>
                                             )}
                                         </div>
                                         <div className="grid gap-3 sm:grid-cols-2">
-                                            {viewVariant.choices.map((choice, index) => {
-                                                const isCorrect = Boolean(viewVariant.answer && choice.letter === viewVariant.answer.trim().toUpperCase());
-                                                return (
-                                                    <div
-                                                        key={index}
-                                                        className={cn(
-                                                            'flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 transition-colors',
-                                                            isCorrect
-                                                                ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]'
-                                                                : 'border-border bg-muted/40',
-                                                        )}
-                                                    >
-                                                        <span
+                                            {(() => {
+                                                const correctFlags = markCorrectChoices(
+                                                    viewVariant.answer,
+                                                    viewVariant.choices ?? [],
+                                                    {
+                                                        selectAllThatApply: viewVariant.selectAllThatApply,
+                                                        correctAnswers: viewVariant.correctAnswers,
+                                                    }
+                                                );
+                                                return viewVariant.choices!.map((choice, index) => {
+                                                    const isCorrect = Boolean(correctFlags[index]);
+                                                    return (
+                                                        <div
+                                                            key={index}
                                                             className={cn(
-                                                                'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                                                                isCorrect ? 'bg-[var(--color-success-500)] text-white' : 'bg-muted text-muted-foreground',
+                                                                'flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 transition-colors',
+                                                                isCorrect
+                                                                    ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]'
+                                                                    : 'border-border bg-muted/40',
                                                             )}
                                                         >
-                                                            {choice.letter}
-                                                        </span>
-                                                        <span className="flex-1 text-sm text-foreground">{choice.text}</span>
-                                                        {isCorrect && <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />}
-                                                    </div>
-                                                );
-                                            })}
+                                                            <span
+                                                                className={cn(
+                                                                    'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                                                                    isCorrect ? 'bg-[var(--color-success-500)] text-white' : 'bg-muted text-muted-foreground',
+                                                                )}
+                                                            >
+                                                                {choice.letter}
+                                                            </span>
+                                                            <span className="flex-1 text-sm text-foreground">{choice.text}</span>
+                                                            {isCorrect && <IconCircleCheckFilled className="size-5 shrink-0 text-[var(--color-success-500)]" />}
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                         </div>
                                     </section>
                                 ) : (
                                     <section className="rounded-[var(--radius-lg)] border border-dashed border-border bg-muted/20 p-5 text-center">
                                         <p className="text-sm text-muted-foreground">No choices defined yet.</p>
                                         {canEditDraft && (
-                                            <Button variant="outline" size="sm" className="mt-3" onClick={() => { setEditChoices([{ letter: 'A', text: '' }, { letter: 'B', text: '' }, { letter: 'C', text: '' }, { letter: 'D', text: '' }]); setEditAnswer(''); setEditingChoices(true); }}>Add choices</Button>
+                                            <Button variant="outline" size="sm" className="mt-3" onClick={() => {
+                                                setEditChoices([{ letter: 'A', text: '' }, { letter: 'B', text: '' }, { letter: 'C', text: '' }, { letter: 'D', text: '' }]);
+                                                setEditAnswer('');
+                                                setEditSelectAllThatApply(false);
+                                                setEditCorrectAnswers([]);
+                                                setEditingChoices(true);
+                                            }}>Add choices</Button>
                                         )}
                                     </section>
                                 ))}
 
                                 {/* Answer — green-rail summary for SA/LA and the resolved MCQ key */}
-                                {viewVariant.answer && !(viewEntry.questionType === 'MCQ' && editingChoices) && (
+                                {(viewVariant.answer ||
+                                    (viewEntry.questionType === 'MCQ' &&
+                                        viewVariant.selectAllThatApply &&
+                                        Array.isArray(viewVariant.correctAnswers) &&
+                                        viewVariant.correctAnswers.length > 0)) &&
+                                    !(viewEntry.questionType === 'MCQ' && editingChoices) && (
                                     <section>
-                                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{viewEntry.questionType === 'MCQ' ? 'Correct answer' : 'Answer'}</p>
+                                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                            {viewEntry.questionType === 'MCQ'
+                                                ? viewVariant.selectAllThatApply &&
+                                                  Array.isArray(viewVariant.correctAnswers) &&
+                                                  viewVariant.correctAnswers.length > 0
+                                                    ? 'Correct answers'
+                                                    : 'Correct answer'
+                                                : 'Answer'}
+                                        </p>
                                         <div className="rounded-[var(--radius-lg)] border border-l-4 border-[var(--color-success-500)] border-l-[var(--color-success-500)] bg-[var(--color-success-100)] px-4 py-3">
                                             <p className="text-sm font-medium leading-relaxed text-foreground whitespace-pre-line">
                                                 {viewEntry.questionType === 'MCQ' && viewVariant.choices && viewVariant.choices.length > 0
-                                                    ? (() => { const letter = viewVariant.answer.trim().toUpperCase().charAt(0); const choice = viewVariant.choices.find((c) => c.letter === letter); return choice ? `${choice.letter}) ${choice.text}` : `Option ${viewVariant.answer.toUpperCase()}`; })()
+                                                    ? (() => {
+                                                        if (
+                                                            viewVariant.selectAllThatApply &&
+                                                            Array.isArray(viewVariant.correctAnswers) &&
+                                                            viewVariant.correctAnswers.length > 0
+                                                        ) {
+                                                            return viewVariant.correctAnswers
+                                                                .map((letter) => {
+                                                                    const l = String(letter).trim().toUpperCase();
+                                                                    const choice = viewVariant.choices!.find(
+                                                                        (c) => c.letter === l
+                                                                    );
+                                                                    return choice
+                                                                        ? `${choice.letter}) ${choice.text}`
+                                                                        : `Option ${l}`;
+                                                                })
+                                                                .join('\n');
+                                                        }
+                                                        const letter = (viewVariant.answer ?? '').trim().toUpperCase().charAt(0);
+                                                        const choice = viewVariant.choices.find((c) => c.letter === letter);
+                                                        return choice
+                                                            ? `${choice.letter}) ${choice.text}`
+                                                            : `Option ${(viewVariant.answer ?? '').toUpperCase()}`;
+                                                    })()
                                                     : viewVariant.answer}
                                             </p>
                                         </div>
@@ -1263,7 +1373,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                             const variantUpdates = buildVariantMetadataUpdates({ isDraft: !isApproved, currentQuestionText: viewVariant.questionText ?? '', editQuestionText, currentDifficulty: (viewVariant.difficulty as QuestionDifficulty) ?? 'medium', editDifficulty });
                                                             // Secondary topics diverge Core once pushed, same as the primary topic —
                                                             // locked together post-review (#1080). Locked in the UI above; guard here too.
-                                                            const currentSecondary = [...(viewVariant.secondaryTopicsId ?? []).map(String)].sort();
+                                                            const currentSecondary = (viewVariant.secondaryTopicsId ?? []).map(String).sort();
                                                             const nextSecondary = [...editSecondaryTopics].sort();
                                                             const secondaryChanged = !isApproved && currentSecondary.join('|') !== nextSecondary.join('|');
                                                             const variantPayload = { ...variantUpdates, ...(secondaryChanged ? { secondaryTopicsId: editSecondaryTopics } : {}) };
@@ -1577,9 +1687,20 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                 onVariantTextChange={(v) => handleFieldChange('variantText', v)}
                                 onVariantChoicesChange={(c) => handleFieldChange('variantChoices', c)}
                                 onVariantAnswerChange={(v) => handleFieldChange('variantAnswer', v)}
+                                selectAllThatApply={form.selectAllThatApply}
+                                correctAnswers={form.correctAnswers}
+                                onSelectAllThatApplyChange={(v) => handleFieldChange('selectAllThatApply', v)}
+                                onCorrectAnswersChange={(letters) => handleFieldChange('correctAnswers', letters)}
                                 disabled={isSubmitting}
                                 isStreaming={isGenerating}
-                                onClear={() => setForm((prev) => ({ ...prev, variantText: '', variantChoices: [...defaultForm.variantChoices], variantAnswer: '' }))}
+                                onClear={() => setForm((prev) => ({
+                                    ...prev,
+                                    variantText: '',
+                                    variantChoices: [...defaultForm.variantChoices],
+                                    variantAnswer: '',
+                                    selectAllThatApply: false,
+                                    correctAnswers: [],
+                                }))}
                                 idPrefix="aq"
                             />
                         </div>

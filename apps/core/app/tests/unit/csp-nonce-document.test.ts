@@ -35,10 +35,6 @@ vi.mock("~/lib/policy.server", () => ({ getPolicies: vi.fn() }));
 vi.mock("~/lib/auth/password-expiry.server", () => ({
   getExpiredPasswordRedirect: vi.fn(),
 }));
-vi.mock("~/lib/cron-scheduler.server", () => ({
-  ensureCronSchedulerRunning: vi.fn(),
-}));
-
 import handleRequest from "~/entry.server";
 import * as rootRouteModule from "~/root";
 

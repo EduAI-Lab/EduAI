@@ -275,7 +275,9 @@ export function MultiSelect({
   for (const o of options) {
     if (value.includes(o.value)) selectedOptionsCache.current.set(o.value, o)
   }
-  for (const key of [...selectedOptionsCache.current.keys()]) {
+  // Array.from, not a bare .keys() iterator: the loop body deletes from the
+  // same Map, so it has to walk a snapshot of the keys.
+  for (const key of Array.from(selectedOptionsCache.current.keys())) {
     if (!value.includes(key)) selectedOptionsCache.current.delete(key)
   }
   const selectedOptions = value

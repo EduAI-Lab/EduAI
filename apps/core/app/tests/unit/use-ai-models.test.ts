@@ -173,7 +173,8 @@ describe("useAiModels", () => {
     const patch = vi
       .mocked(apiFetch)
       .mock.calls.find(([url]) => url === "/api/ai-models/model-1");
-    expect(JSON.parse((patch?.[1] as RequestInit).body as string)).toEqual({ isActive: false });
+    expect(patch).toBeDefined();
+    expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({ isActive: false });
   });
 });
 

@@ -1,0 +1,93 @@
+[
+  {
+    "StudentCount": "one",
+    "HelpRequestCount": "zero",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "all",
+    "AverageRating": "null"
+  },
+  {
+    "StudentCount": "one",
+    "HelpRequestCount": "high",
+    "SubmissionCount": "zero",
+    "IncorrectRate": "zero",
+    "AverageRating": "worst"
+  },
+  {
+    "StudentCount": "zero",
+    "HelpRequestCount": "low",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "half",
+    "AverageRating": "mid"
+  },
+  {
+    "StudentCount": "many",
+    "HelpRequestCount": "low",
+    "SubmissionCount": "zero",
+    "IncorrectRate": "zero",
+    "AverageRating": "null"
+  },
+  {
+    "StudentCount": "many",
+    "HelpRequestCount": "high",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "all",
+    "AverageRating": "perfect"
+  },
+  {
+    "StudentCount": "one",
+    "HelpRequestCount": "low",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "half",
+    "AverageRating": "perfect"
+  },
+  {
+    "StudentCount": "zero",
+    "HelpRequestCount": "high",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "half",
+    "AverageRating": "null"
+  },
+  {
+    "StudentCount": "one",
+    "HelpRequestCount": "zero",
+    "SubmissionCount": "zero",
+    "IncorrectRate": "zero",
+    "AverageRating": "mid"
+  },
+  {
+    "StudentCount": "zero",
+    "HelpRequestCount": "low",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "all",
+    "AverageRating": "worst"
+  },
+  {
+    "StudentCount": "many",
+    "HelpRequestCount": "zero",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "half",
+    "AverageRating": "worst"
+  },
+  {
+    "StudentCount": "zero",
+    "HelpRequestCount": "zero",
+    "SubmissionCount": "zero",
+    "IncorrectRate": "zero",
+    "AverageRating": "perfect"
+  },
+  {
+    "StudentCount": "many",
+    "HelpRequestCount": "high",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "all",
+    "AverageRating": "mid"
+  },
+  {
+    "StudentCount": "one",
+    "HelpRequestCount": "low",
+    "SubmissionCount": "nonzero",
+    "IncorrectRate": "zero",
+    "AverageRating": "perfect"
+  }
+]

@@ -5,6 +5,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
 import pLimit from "p-limit";
 import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
+import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
 import prisma from "../prisma.server";
 import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
@@ -382,6 +383,7 @@ const QUERY_EMBED_CACHE_MAX = Math.min(
 
 export type EmbeddingProviderKind =
   | "ollama-local"
+  | "vllm-local"
   | "openrouter"
   | "google"
   | "openai";
@@ -617,6 +619,32 @@ function createOllamaEmbeddingClient() {
   });
 }
 
+function createVllmEmbeddingClient() {
+  const configuredBaseURL = process.env.VLLM_EMBEDDING_BASE_URL?.trim();
+  if (!configuredBaseURL) return null;
+
+  const apiKey = process.env.VLLM_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("VLLM_API_KEY is required for the configured local embedding endpoint");
+  }
+
+  let baseURL: string;
+  try {
+    baseURL = resolveAllowedVllmBaseUrl(configuredBaseURL).replace(/\/$/, "");
+  } catch (error) {
+    throw new Error(
+      `VLLM_EMBEDDING_BASE_URL is not allowed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+
+  return createOpenAI({
+    apiKey,
+    baseURL,
+    headers: cmps01InternalAuthHeadersForUrl(baseURL),
+  });
+}
+
 function createOpenRouterEmbeddingClient() {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) return null;
@@ -639,10 +667,21 @@ function createOpenRouterEmbeddingClient() {
 function getLocalEmbeddingModel(
   settings: EffectiveEmbeddingSettings,
 ): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
+  const vllm = createVllmEmbeddingClient();
+  if (vllm) {
+    const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
+    logEmbeddingProvider("vllm-local", settings, modelId);
+    return { model: vllm.embedding(modelId), kind: "vllm-local" };
+  }
+
   const ollama = createOllamaEmbeddingClient();
   const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
   logEmbeddingProvider("ollama-local", settings, modelId);
   return { model: ollama.embedding(modelId), kind: "ollama-local" };
+}
+
+function usesVllmEmbeddingEndpoint(): boolean {
+  return Boolean(process.env.VLLM_EMBEDDING_BASE_URL?.trim());
 }
 
 /** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
@@ -756,7 +795,7 @@ async function embedWithConfiguredProvider<T>(
   } catch (err) {
     if (settings.wantsLocal) {
       throw new Error(
-        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
+        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix the configured local embedding service or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
         { cause: err },
       );
     }
@@ -779,10 +818,15 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += batchSize) {
     const batch = chunks.slice(i, i + batchSize);
-    const embeddings = settings.wantsLocal
+    const embeddings = settings.wantsLocal && !usesVllmEmbeddingEndpoint()
       ? await embedManyOllamaNative(settings.model, batch).catch((err) => {
           throw wrapLocalEmbeddingError(settings.model, err);
         })
+      : settings.wantsLocal
+        ? await embedWithConfiguredProvider(async (model) => {
+            const result = await embedMany({ model, values: batch });
+            return result.embeddings;
+          }, courseId)
       : await embedWithConfiguredProvider(async (model) => {
           const result = await embedMany({ model, values: batch });
           return result.embeddings;
@@ -816,12 +860,16 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
     return hit.embedding;
   }
 
-  const embedding = settings.wantsLocal
+  const embedding = settings.wantsLocal && !usesVllmEmbeddingEndpoint()
     ? (
         await embedManyOllamaNative(settings.model, [query]).catch((err) => {
           throw wrapLocalEmbeddingError(settings.model, err);
         })
       )[0]
+    : settings.wantsLocal
+      ? (
+          await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId)
+        ).embedding
     : (
         await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId)
       ).embedding;

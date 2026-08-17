@@ -56,7 +56,11 @@ export function resolveEnvEmbeddingProvider(): EmbeddingProviderSetting {
 
 export function resolveEnvEmbeddingModel(provider: EmbeddingProviderSetting): string {
   if (provider === "local") {
-    return process.env.OLLAMA_EMBEDDING_MODEL?.trim() || DEFAULT_OLLAMA_EMBEDDING_MODEL;
+    return (
+      process.env.VLLM_EMBEDDING_MODEL?.trim() ||
+      process.env.OLLAMA_EMBEDDING_MODEL?.trim() ||
+      DEFAULT_OLLAMA_EMBEDDING_MODEL
+    );
   }
   return (
     process.env.OPENROUTER_EMBEDDING_MODEL?.trim() ||

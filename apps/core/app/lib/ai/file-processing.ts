@@ -451,6 +451,7 @@ export function sanitizeTextContent(content: string): string {
     // Remove null bytes (0x00) that cause PostgreSQL errors
     .replace(/\0/g, '')
     // Remove other control characters except newlines, tabs, and carriage returns
+    // eslint-disable-next-line no-control-regex -- matching control characters is the point here
     .replace(/[\x01-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '')
     // Normalize line endings
     .replace(/\r\n/g, '\n')
@@ -507,8 +508,8 @@ function convertHtmlToMarkdown(html: string): string {
 
   markdown = markdown.replace(/<ol[^>]*>(.*?)<\/ol>/gis, (match, content) => {
     let counter = 1;
-    const items = content.replace(/<li[^>]*>(.*?)<\/li>/gis, () => {
-      return `${counter++}. $1\n`;
+    const items = content.replace(/<li[^>]*>(.*?)<\/li>/gis, (_match: string, itemText: string) => {
+      return `${counter++}. ${itemText}\n`;
     });
     return `\n${items}\n`;
   });

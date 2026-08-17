@@ -107,7 +107,10 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
             <section className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Choices</p>
               <ul className="space-y-1.5">
-                {markCorrectChoices(variant?.answer ?? null, choices).map((correct, ci) => {
+                {markCorrectChoices(variant?.answer ?? null, choices, {
+                  selectAllThatApply: variant?.selectAllThatApply,
+                  correctAnswers: variant?.correctAnswers,
+                }).map((correct, ci) => {
                   const choice = choices[ci];
                   return (
                     <li

@@ -48,7 +48,7 @@ function multiUserHandlers(ownerFetch) {
     }
 
     // Stranger has no teaching enrollment on the owner's course.
-    if (cookie.includes('stranger') && /\/enrollments$/.test(path)) {
+    if (cookie.includes('stranger') && path.endsWith('/enrollments')) {
       return { ok: true, json: async () => ({ enrollments: [] }) };
     }
 
@@ -159,7 +159,7 @@ describeDb('course RBAC (integration)', () => {
           if (path.endsWith('/api/sessions/validate')) {
             return Promise.resolve({ ok: true, json: async () => ({ user: OWNER }) });
           }
-          if (/\/enrollments$/.test(path)) {
+          if (path.endsWith('/enrollments')) {
             return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'down' }) });
           }
           return Promise.resolve({ ok: true, json: async () => ({}) });

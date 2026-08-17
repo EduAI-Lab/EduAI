@@ -230,6 +230,7 @@ model AiJob {
   @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
+  @@index([queueName, status, completedAt])
   @@map("ai_jobs")
 }
 
@@ -474,9 +475,11 @@ model Question {
   type            QuestionType
   difficulty      QuestionDifficulty       @default(MEDIUM)
   reasoningLevel  ReasoningLevel           @default(FACTUAL)
-  choices         Json?
-  answer          String?
-  testable        Boolean                  @default(false)
+  choices            Json?
+  answer             String?
+  selectAllThatApply Boolean                  @default(false)
+  correctAnswers     Json?
+  testable           Boolean                  @default(false)
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
@@ -1018,6 +1021,13 @@ enum CronJobStatus {
   ERROR
 }
 
+enum CronJobTriggerSource {
+  SCHEDULE
+  ADMIN_UI
+  ADMIN_CHAT
+  UNKNOWN
+}
+
 model CronJobRun {
   id         String        @id @default(cuid())
   jobName    String
@@ -1026,6 +1036,8 @@ model CronJobRun {
   finishedAt DateTime?
   message    String?
   exitCode   Int?
+  triggerSource CronJobTriggerSource @default(UNKNOWN)
+  triggeredByUserId String?
   createdAt  DateTime      @default(now())
 
   @@index([jobName, startedAt])

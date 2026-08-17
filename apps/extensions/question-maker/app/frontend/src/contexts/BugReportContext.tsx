@@ -24,15 +24,17 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
   const [open, setOpen] = useState(false);
 
   const captureEnabled = !isLoading && isAuthenticated;
-  const { getCapturedData } = useBugReportCapture(captureEnabled);
+  const { captureScreenshot, getCapturedData } = useBugReportCapture(captureEnabled);
 
   const handleSubmit = async (data: BugReportSubmitData) => {
+    const capturedData = getCapturedData();
+
     await bugReportApi.submit({
       description: data.description,
       bugType: data.bugType,
-      consoleLogs: data.consoleLogs ?? '[]',
-      networkLogs: data.networkLogs ?? '[]',
-      screenshot: data.screenshot ?? null,
+      consoleLogs: capturedData.consoleLogs,
+      networkLogs: capturedData.networkLogs,
+      screenshot: capturedData.screenshot,
       pageUrl: data.pageUrl ?? window.location.href,
       userAgent: data.userAgent ?? navigator.userAgent,
       isAnonymous: data.isAnonymous,
@@ -41,9 +43,14 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
 
   const value = useMemo(
     () => ({
-      openBugReport: () => setOpen(true)
+      openBugReport: () => {
+        // Capture before mounting the dialog so html2canvas does not include
+        // its portal/backdrop in the report image.
+        void captureScreenshot();
+        setOpen(true);
+      }
     }),
-    []
+    [captureScreenshot]
   );
 
   return (

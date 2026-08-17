@@ -59,7 +59,7 @@ function mockFetchFor(row) {
       return jsonResponse(200, { id: 'topic-1', name: 'Week 1' });
     }
 
-    if (href.includes('/courses?') || /\/courses$/.test(href.replace(/\?.*$/, ''))) {
+    if (href.includes('/courses?') || href.replace(/\?.*$/, '').endsWith('/courses')) {
       // list
       if (row.CoreState === 'absent-404' || row.CoreState === 'soft-deleted') {
         return jsonResponse(200, { data: [], total: 0, page: 1, pageSize: 200 });

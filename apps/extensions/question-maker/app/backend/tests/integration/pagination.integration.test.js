@@ -45,7 +45,7 @@ function sessionFetch() {
     if (path.endsWith('/api/sessions/validate')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
     }
-    if (/\/enrollments$/.test(path)) {
+    if (path.endsWith('/enrollments')) {
       return Promise.resolve({
         ok: true,
         json: () =>

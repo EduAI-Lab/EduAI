@@ -77,7 +77,7 @@ const DIFFS = ["EASY", "MEDIUM", "HARD"] as const;
 const REASON = ["FACTUAL", "ANALYTICAL", "APPLICATION"] as const;
 
 function randomVector(dim = 1024): number[] {
-  const v = new Array(dim);
+  const v: number[] = Array.from({ length: dim });
   let norm = 0;
   for (let i = 0; i < dim; i++) {
     const x = rnd() * 2 - 1;
