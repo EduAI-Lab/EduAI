@@ -567,6 +567,7 @@ function resolveCanvasPaginationNextUrl(
   // header, so reject them before normalization makes the error ambiguous.
   if (
     rawUrl.length === 0 ||
+    // oxlint-disable-next-line no-control-regex -- URI controls are rejected deliberately.
     /[\u0000-\u0020<>]/.test(rawUrl) ||
     /%(?![0-9a-f]{2})/i.test(rawUrl)
   ) {

@@ -106,7 +106,7 @@ describeDb("course RBAC (integration)", () => {
         "fetch",
         vi.fn().mockImplementation(
           multiUserHandlers(async (url) => {
-            if (/\/enrollments$/.test(String(url).split("?")[0])) {
+            if (String(url).split("?")[0].endsWith('/enrollments')) {
               return { ok: true, json: async () => ({ enrollments: [] }) };
             }
             return { ok: false, status: 404, json: async () => ({}) };

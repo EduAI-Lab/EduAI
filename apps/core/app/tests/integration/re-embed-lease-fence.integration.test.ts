@@ -185,7 +185,7 @@ describe("re-embed lease fencing (real Postgres)", () => {
     });
 
     embedMany.mockImplementation(async ({ values }: { values: string[] }) => ({
-      embeddings: values.map(() => new Array(EMBEDDING_DIMENSION).fill(0.1)),
+      embeddings: values.map(() => Array.from({ length: EMBEDDING_DIMENSION }, () => 0.1)),
     }));
 
     const blocked = await holdMaterialChunk(oldChunk.id);

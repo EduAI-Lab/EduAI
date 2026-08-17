@@ -42,7 +42,7 @@ function makeStartArgs(method = "POST", options: { idempotencyKey?: string; head
     request: new Request("http://localhost/api/courses/course-1/re-embed", {
       method,
       headers,
-      body,
+      ...(method === "GET" ? {} : { body }),
     }),
     params: { courseId: "course-1" },
     context: {} as never,

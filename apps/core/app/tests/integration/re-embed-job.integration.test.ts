@@ -234,7 +234,7 @@ describe("durable course re-embed jobs", () => {
 
         return Promise.resolve(
           new Response(
-            JSON.stringify({ embeddings: [new Array(1024).fill(0.1)] }),
+            JSON.stringify({ embeddings: [Array.from({ length: 1024 }, () => 0.1)] }),
             { status: 200, headers: { "content-type": "application/json" } },
           ),
         );

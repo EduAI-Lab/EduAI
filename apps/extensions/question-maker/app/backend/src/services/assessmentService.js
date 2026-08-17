@@ -312,59 +312,6 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     });
 
     return withDerivedSemester(await enrichRowWithCourse(updated));
-  } catch (error) {
-    throw error;
-  }
-
-  if (updateData.courseId) {
-    const targetCourse = await prisma.course.findFirst({
-      where: { id: Number(updateData.courseId), userId },
-      select: { id: true },
-    });
-
-    if (!targetCourse) {
-      throw new Error("Course not found");
-    }
-  }
-
-  // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
-  // even if a legacy caller still sends one.
-  const ALLOWED_ASSESSMENT_UPDATE_FIELDS = [
-    "type",
-    "name",
-    "courseId",
-    "description",
-    "blueprintConfig",
-  ];
-  const { semester: _ignoredSemester, ...updateFields } = updateData;
-  const normalizedUpdates = {
-    ...Object.fromEntries(
-      Object.entries(updateFields).filter(([key]) =>
-        ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key),
-      ),
-    ),
-    ...(updateData.courseId !== undefined && { courseId: Number(updateData.courseId) }),
-    description:
-      updateData.description !== undefined
-        ? updateData.description?.trim() || null
-        : assessment.description,
-    blueprintConfig:
-      updateData.blueprintConfig !== undefined
-        ? updateData.blueprintConfig
-        : assessment.blueprintConfig,
-  };
-
-  // `include: { course: true }` returns the POST-update course relation — if
-  // the update moved the assessment to another course, the response's
-  // course/semester projection describes the NEW course (no separate reload
-  // needed, unlike Sequelize's `.update()` + `.reload()` two-step).
-  const updated = await prisma.assessments.update({
-    where: { id: assessment.id },
-    data: normalizedUpdates,
-    include: { course: true },
-  });
-
-  return withDerivedSemester(await enrichRowWithCourse(updated));
 };
 
 /**
@@ -395,8 +342,7 @@ export const deleteAssessment = async (assessmentId, userId) => {
 
 /** Adds a question to an assessment by updating its per-assessment `questionOrder`. */
 export const addQuestionToAssessment = async (assessmentId, questionId, orderNumber, userId) => {
-  try {
-    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
     const parsedOrderNumber = requirePositiveSafeInteger(orderNumber, 'Order number');
     const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
 
@@ -440,41 +386,12 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
       data: { questionOrder: currentOrder }
     });
 
-    return updated;
-  } catch (error) {
-    throw error;
-  }
-
-  // Verify assessment exists and belongs to user
-  const assessment = await prisma.assessments.findFirst({
-    where: { id: assessmentId, course: { userId } },
-  });
-  if (!assessment) {
-    throw new Error("Assessment not found");
-  }
-
-  // The question and assessment must live in the same course — owner scoping alone
-  // would let a question from another course the user owns be linked here (#1).
-  if (question.courseId !== assessment.courseId) {
-    throw new Error("Question not found");
-  }
-
-  // Update question order
-  const currentOrder = question.questionOrder || {};
-  currentOrder[assessmentId] = orderNumber;
-
-  const updated = await prisma.questionMetadata.update({
-    where: { id: question.id },
-    data: { questionOrder: currentOrder },
-  });
-
   return updated;
 };
 
 /** Removes a question from an assessment's ordering payload after verifying ownership. */
 export const removeQuestionFromAssessment = async (assessmentId, questionId, userId) => {
-  try {
-    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
     const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
     // Verify user owns the question
     const question = await prisma.questionMetadata.findFirst({
@@ -512,41 +429,12 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
       data: { questionOrder: currentOrder }
     });
 
-    return updated;
-  } catch (error) {
-    throw error;
-  }
-
-  // Verify assessment belongs to the user
-  const assessment = await prisma.assessments.findFirst({
-    where: { id: assessmentId, course: { userId } },
-  });
-
-  if (!assessment) {
-    throw new Error("Assessment not found");
-  }
-
-  // The question and assessment must live in the same course (#1).
-  if (question.courseId !== assessment.courseId) {
-    throw new Error("Question not found");
-  }
-
-  // Remove from question order
-  const currentOrder = question.questionOrder || {};
-  delete currentOrder[assessmentId];
-
-  const updated = await prisma.questionMetadata.update({
-    where: { id: question.id },
-    data: { questionOrder: currentOrder },
-  });
-
   return updated;
 };
 
 /** Returns questions scheduled for a given assessment ordered by their stored display order. */
 export const getQuestionsInAssessment = async (assessmentId, userId) => {
-  try {
-    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
     // Verify assessment exists and belongs to user
     const assessment = await prisma.assessments.findFirst({
       where: { id: parsedAssessmentId, course: { userId } }
@@ -601,8 +489,7 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
           }
         }
       }
-    }
-  });
+    });
 
   // `findMany({ where: { id: { in } } })` doesn't preserve `in`-list order —
   // re-sort to match the CAST(question_order->>...) ordering computed above.

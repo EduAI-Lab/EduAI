@@ -29,7 +29,6 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
-import { getRequestSession } from "~/lib/auth/request-session.server";
 import { hasValidServiceKey } from "~/lib/auth/guards.server";
 
 /**

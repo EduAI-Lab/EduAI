@@ -65,8 +65,8 @@ describe('importQuizFromCanvas cancellation', () => {
     let detailSignal;
     axiosRequest.mockImplementation((request) => {
       const url = request.url || '';
-      if (/\/quizzes\/1$/.test(url)) return Promise.resolve({ data: { id: 1, title: 'Imported quiz' } });
-      if (/\/questions$/.test(url)) {
+      if (url.endsWith('/quizzes/1')) return Promise.resolve({ data: { id: 1, title: 'Imported quiz' } });
+      if (url.endsWith('/questions')) {
         return Promise.resolve({
           data: [
             {
@@ -80,7 +80,7 @@ describe('importQuizFromCanvas cancellation', () => {
           ],
         });
       }
-      if (/\/questions\/2$/.test(url)) {
+      if (url.endsWith('/questions/2')) {
         detailSignal = request.signal;
         return new Promise((_, reject) => {
           request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true });
@@ -113,7 +113,7 @@ describe('importQuizFromCanvas cancellation', () => {
   it('imports every paginated question page and reports the complete count', async () => {
     axiosRequest.mockImplementation((request) => {
       const url = request.url || '';
-      if (/\/quizzes\/1$/.test(url)) {
+      if (url.endsWith('/quizzes/1')) {
         return Promise.resolve({ data: { id: 1, title: 'Imported quiz' } });
       }
       if (/\/questions(?:\?|$)/.test(url)) {
