@@ -1373,7 +1373,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                             const variantUpdates = buildVariantMetadataUpdates({ isDraft: !isApproved, currentQuestionText: viewVariant.questionText ?? '', editQuestionText, currentDifficulty: (viewVariant.difficulty as QuestionDifficulty) ?? 'medium', editDifficulty });
                                                             // Secondary topics diverge Core once pushed, same as the primary topic —
                                                             // locked together post-review (#1080). Locked in the UI above; guard here too.
-                                                            const currentSecondary = [...(viewVariant.secondaryTopicsId ?? []).map(String)].sort();
+                                                            const currentSecondary = (viewVariant.secondaryTopicsId ?? []).map(String).sort();
                                                             const nextSecondary = [...editSecondaryTopics].sort();
                                                             const secondaryChanged = !isApproved && currentSecondary.join('|') !== nextSecondary.join('|');
                                                             const variantPayload = { ...variantUpdates, ...(secondaryChanged ? { secondaryTopicsId: editSecondaryTopics } : {}) };

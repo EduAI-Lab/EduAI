@@ -17,7 +17,10 @@ function countMathNodes(markdown: string): number {
 
   let count = 0;
   visit(tree, (node) => {
-    if (node.type === "inlineMath" || node.type === "math") {
+    // remark-math contributes `inlineMath`/`math` nodes at runtime but does not
+    // augment mdast's node union, so `node.type` has to be widened to compare.
+    const type: string = node.type;
+    if (type === "inlineMath" || type === "math") {
       count++;
     }
   });

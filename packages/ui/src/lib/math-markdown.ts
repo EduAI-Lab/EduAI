@@ -178,7 +178,7 @@ function lineHasMathDelimiters(line: string): boolean {
 function looksLikeDisplayMathLine(line: string): boolean {
   const t = line.trim();
   if (!t || t.length > 800) return false;
-  if (/^\$\$/.test(t)) return false;
+  if (t.startsWith("$$")) return false;
   if (lineHasMathDelimiters(t)) return false;
   if (looksLikeProseWithInlineMath(t)) return false;
   if (hasFragmentedEquationMath(t)) return true;
@@ -191,7 +191,7 @@ function looksLikeDisplayMathLine(line: string): boolean {
   const hasEquation = /=/.test(outside);
 
   if (hasLatexCommand && (hasEquation || hasSupSub || /\\left/.test(t))) return true;
-  if (hasEquation && hasSupSub && /^[0-9a-zA-Z\s\\^_{}+\-*/().=,\[\]|]+$/.test(t)) {
+  if (hasEquation && hasSupSub && /^[0-9a-zA-Z\s\\^_{}+\-*/().=,[\]|]+$/.test(t)) {
     return true;
   }
 
@@ -228,7 +228,7 @@ function isWholeLineEquation(line: string): boolean {
 
 function normalizeFragmentedLine(line: string): string {
   const trimmed = line.trim();
-  if (!trimmed || /^\$\$/.test(trimmed)) return line;
+  if (!trimmed || trimmed.startsWith("$$")) return line;
 
   const indent = line.match(/^\s*/)?.[0] ?? "";
 
@@ -269,7 +269,7 @@ function wrapBareDisplayMathLines(text: string): string {
     .split("\n")
     .map((line) => {
       const trimmed = line.trim();
-      if (!trimmed || /^\$\$/.test(trimmed)) return line;
+      if (!trimmed || trimmed.startsWith("$$")) return line;
       if (!looksLikeDisplayMathLine(trimmed) || hasFragmentedEquationMath(trimmed)) return line;
       const indent = line.match(/^\s*/)?.[0] ?? "";
       return `${indent}${wrapDisplayMath(trimmed)}`;

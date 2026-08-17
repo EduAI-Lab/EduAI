@@ -141,7 +141,7 @@ function buildMarkdown({ baselineMeta, afterMeta, baselineTurns, afterTurns, bas
   lines.push("");
   lines.push("## Evidence links");
   lines.push("");
-  for (const id of [...new Set(afterOn.map((t) => t.scenarioId))]) {
+  for (const id of new Set(afterOn.map((t) => t.scenarioId))) {
     lines.push(`- ${id}: before \`${path.relative(REPO_ROOT, path.join(baselineDir, `${id}-on.md`))}\`, after \`${path.relative(REPO_ROOT, path.join(afterDir, `${id}-on.md`))}\``);
   }
   lines.push("");

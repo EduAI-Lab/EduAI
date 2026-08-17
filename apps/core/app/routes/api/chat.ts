@@ -1522,7 +1522,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     routerContext = {
-      ...(routerContext ?? {}),
+      ...routerContext,
       ...buildFleetRouterFeatures(workloadFeature, fleetPick),
     };
 
@@ -2592,7 +2592,7 @@ ${buildEmptyCourseRagBlock()}`;
             // #876 success marker — only after the alternate attempt succeeds.
             fleetRetry = true;
             routerContext = {
-              ...(routerContext ?? {}),
+              ...routerContext,
               ...buildFleetRouterFeatures(workloadFeature, fleetPick),
               fleetRetry: true,
             };

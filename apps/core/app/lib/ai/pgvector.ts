@@ -9,7 +9,7 @@ export function formatPgVectorLiteral(embedding: number[]): string {
     throw new Error("Embedding must be a non-empty number array");
   }
 
-  const parts: string[] = new Array(embedding.length);
+  const parts: string[] = Array.from({ length: embedding.length });
   for (let i = 0; i < embedding.length; i++) {
     const value = embedding[i];
     if (typeof value !== "number" || !Number.isFinite(value)) {

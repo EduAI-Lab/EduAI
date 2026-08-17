@@ -25,7 +25,7 @@ const {
 const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
 const { Prisma } = await import("@prisma/client");
 
-const sampleEmbedding = new Array(1024).fill(0);
+const sampleEmbedding = Array.from({ length: 1024 }, () => 0);
 
 function mockIndexedEmbeddings(values: string[]) {
   return values.map((value) => {

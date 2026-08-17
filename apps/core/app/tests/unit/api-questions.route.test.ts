@@ -50,7 +50,7 @@ function makeActionArgs(body: unknown, method = "POST") {
     request: new Request("http://localhost/api/questions", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: {},
     context: {} as never,

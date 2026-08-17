@@ -78,7 +78,7 @@ function WorkspaceBreadcrumb({ pathname }: { pathname: string }) {
   // Deep routes add one current-page crumb (same pattern as assessment builder).
   // Return to the workspace tab via the page's "Back to …" control, not a Banks/Assessments crumb.
   let sub: string | null = null;
-  if (/\/questions\/new$/.test(pathname)) sub = 'New question';
+  if (pathname.endsWith('/questions/new')) sub = 'New question';
   else if (/\/questions\/[^/]+\/edit$/.test(pathname)) sub = 'Edit question';
   else if (/\/questions\/[^/]+\/variant$/.test(pathname)) sub = 'New variant';
   else if (/\/assessments\/[^/]+\/variants$/.test(pathname)) sub = 'Variants';
