@@ -177,6 +177,21 @@ function isReclaimClaim(where: any): boolean {
   return Array.isArray(where?.OR) && where.OR.some((c: any) => c?.status?.not === 'PROCESSING');
 }
 
+/**
+ * Restore-claim `updateMany` calls — the conditional un-delete that takes the
+ * restore target's lease. Told apart from the reclaim claim by its
+ * soft-delete arm (#1494 review).
+ */
+function restoreClaims(): Array<{ where?: any; data?: any }> {
+  return vi
+    .mocked(prisma.courseMaterial.updateMany)
+    .mock.calls.map(([arg]) => arg as any)
+    .filter((arg) =>
+      Array.isArray(arg?.where?.OR) &&
+      arg.where.OR.some((c: any) => c?.deletedAt?.not === null),
+    );
+}
+
 /** Reclaim-claim `updateMany` calls only, in call order. */
 function reclaimClaims(): Array<{ where?: any; data?: any }> {
   return vi
@@ -747,7 +762,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
         }),
       }),
     );
-    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-ok", "extracted text");
+    // `replace: true` even on a first run: the embed commits before the READY
+    // update, so a resumed row must not append a second set of chunks.
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-ok", "extracted text", {
+      replace: true,
+    });
     expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "mat-ok" },
@@ -861,15 +880,16 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(202);
     await flushBackgroundWork();
 
-    // The soft-deleted original comes back...
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+    // The soft-deleted original comes back — as a conditional claim that takes a
+    // lease in the same write, so a crash mid-restore is recoverable rather than
+    // leaving the target PROCESSING with nothing owning it (#1494 review).
+    expect(restoreClaims()).toHaveLength(1);
+    expect(restoreClaims()[0].data).toEqual(
       expect.objectContaining({
-        where: { id: "existing-mat" },
-        data: expect.objectContaining({
-          deletedAt: null,
-          deletedBy: null,
-          status: "PROCESSING",
-        }),
+        deletedAt: null,
+        deletedBy: null,
+        status: "PROCESSING",
+        extractionLeaseUntil: expect.any(Date),
       }),
     );
     // ...and its stale chunks are replaced rather than appended (#685 review).
@@ -889,6 +909,63 @@ describe("POST /api/courses/:courseId/materials action", () => {
         data: expect.objectContaining({ duplicateOfId: "existing-mat" }),
       }),
     );
+  });
+
+  it("resumes a restore whose worker died instead of resolving the receipt (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    // A previous attempt un-deleted the target and then died: it is PROCESSING,
+    // no longer soft-deleted, and its lease has lapsed. Reading "not deleted" as
+    // "settled" would resolve the receipt and strand the target forever — the
+    // receipt is the only thing that can reach it, because the target carries a
+    // content checksum the sweeper's `pending:` scan cannot see.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: null,
+      status: "PROCESSING",
+      extractionLeaseUntil: new Date(Date.now() - 60_000),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    expect(restoreClaims()).toHaveLength(1);
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("existing-mat", "text", {
+      replace: true,
+    });
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing-mat" },
+        data: expect.objectContaining({ status: "READY" }),
+      }),
+    );
+    // Only now does the receipt resolve.
+    expect(receiptUpdates()).toHaveLength(1);
+  });
+
+  it("leaves the receipt open while another worker's restore is still live (#1494 review)", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    mockExtraction({ checksum: "abc123", content: "text" });
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-restore" } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: null,
+      status: "PROCESSING",
+      extractionLeaseUntil: new Date(Date.now() + 60_000),
+    } as never);
+
+    await action(stubUploadArgs());
+    await flushBackgroundWork();
+
+    // Pointing the receipt at a target that is still mid-flight would promise a
+    // settled winner that is not one. Wait; a later sweep sees the truth.
+    expect(restoreClaims()).toHaveLength(0);
+    expect(receiptUpdates()).toHaveLength(0);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
   it("keeps the receipt PROCESSING until a slow restore settles (#1494 review)", async () => {
@@ -1028,14 +1105,69 @@ describe("POST /api/courses/:courseId/materials action", () => {
 
     await action(stubUploadArgs());
 
-    // The "not already claimed" predicate must live in the UPDATE's WHERE, so
-    // the database — not a stale read — decides who gets the row.
+    // Every condition that made the row reclaimable must live in the UPDATE's
+    // WHERE, so the database — not a stale read — decides who gets the row.
     expect(reclaimClaims()[0].where).toEqual(
       expect.objectContaining({
         id: "stranded-mat",
-        OR: [{ status: { not: "PROCESSING" } }, { deletedAt: { not: null } }],
+        // Pins the row to the provisional state the lookup saw it in.
+        checksum: expect.stringMatching(/^pending:/),
+        OR: [
+          { status: { not: "PROCESSING" } },
+          { extractionLeaseUntil: { lt: expect.any(Date) } },
+        ],
       }),
     );
+  });
+
+  it("does not reclaim a row a worker finalized between the read and the write (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "finalized-mat",
+    } as never);
+    // The row's worker finalized it in the gap: its `pending:` checksum is now
+    // the real content hash, so the claim's checksum condition matches nothing.
+    // Without that condition the UPDATE would reset a READY row to PROCESSING
+    // with a null rawText.
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).materialId).toBe("finalized-mat");
+    expect(reclaimClaims()[0].where.checksum).toEqual(expect.stringMatching(/^pending:/));
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
+
+  it("does not hand a soft-deleted row to a second worker while the first still holds it (#1494 review)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "deleted-inflight-mat",
+    } as never);
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+
+    // A DELETE issued mid-processing used to make the row reclaimable on
+    // `deletedAt != null` alone, so a re-upload could start a second worker on a
+    // row the first was still writing to. Reclaim now requires the lease to have
+    // expired, soft-deleted or not — the live case is a 409.
+    expect(res.status).toBe(409);
+    expect(reclaimClaims()[0].where.OR).toEqual([
+      { status: { not: "PROCESSING" } },
+      { extractionLeaseUntil: { lt: expect.any(Date) } },
+    ]);
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
   });
 
   it("409s the loser when two identical retries race for the same stranded row (#1494 review)", async () => {

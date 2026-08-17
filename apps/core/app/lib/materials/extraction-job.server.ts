@@ -183,6 +183,82 @@ export async function claimExtraction(materialId: string): Promise<boolean> {
 }
 
 /**
+ * Take the restore lease for a soft-deleted duplicate that is coming back
+ * (#685), in the same statement that un-deletes it.
+ *
+ * The restore target keeps its *content* checksum, so the sweeper — which scans
+ * `pending:` rows — can never see it directly; recovery reaches it through the
+ * receipt instead (see `classifyRestoreTarget`). That only works if a restore in
+ * progress is distinguishable from one whose worker died, which is what the
+ * lease taken here provides: un-delete and lease are one write, so there is no
+ * window in which the target is PROCESSING with nothing claiming it.
+ *
+ * Reclaiming an already-PROCESSING target requires an *expired* lease, never a
+ * null one. `extractionLeaseUntil` is only ever written by this module, so a
+ * PROCESSING row that has never been leased belongs to something else — a Canvas
+ * import, which sits in PROCESSING for reasons this module knows nothing about —
+ * and must not be stomped.
+ */
+export async function claimRestoreTarget(
+  materialId: string,
+  userId: string,
+  rawText: string,
+): Promise<boolean> {
+  const now = new Date();
+  const claimed = await prisma.courseMaterial.updateMany({
+    where: {
+      id: materialId,
+      OR: [
+        { deletedAt: { not: null } },
+        { status: 'PROCESSING', extractionLeaseUntil: { lt: now } },
+      ],
+    },
+    data: {
+      deletedAt: null,
+      deletedBy: null,
+      status: 'PROCESSING',
+      uploadedBy: userId,
+      processedAt: null,
+      duplicateOfId: null,
+      rawText,
+      extractionLeaseUntil: new Date(now.getTime() + EXTRACTION_LEASE_MS),
+    },
+  });
+  return claimed.count === 1;
+}
+
+/**
+ * What a resumed run should do about the duplicate it just found.
+ *
+ * A crash mid-restore leaves the target PROCESSING, and the old code read that
+ * as "not soft-deleted, therefore settled" and resolved the receipt anyway —
+ * stranding the target forever with no recovery path, because the receipt was
+ * the only thing that would ever have looked at it (#1494 review).
+ *
+ *   - `restore` — soft-deleted (a fresh restore), or a restore whose worker died
+ *     and whose lease has since expired. Claim it and (re-)run the restore.
+ *   - `busy` — a live restore holds the lease. Resolving the receipt now would
+ *     promise the caller a settled winner that is still mid-flight, so leave the
+ *     receipt PROCESSING and let a later sweep see the settled truth.
+ *   - `settled` — READY, or FAILED, or PROCESSING for reasons unrelated to this
+ *     module (an unleased Canvas import). Point the receipt at it, as before.
+ */
+export function classifyRestoreTarget(
+  duplicate: {
+    status: string;
+    deletedAt: Date | null;
+    extractionLeaseUntil: Date | null;
+  },
+  now: Date = new Date(),
+): 'restore' | 'busy' | 'settled' {
+  if (duplicate.deletedAt) return 'restore';
+  if (duplicate.status !== 'PROCESSING' || !duplicate.extractionLeaseUntil) {
+    return 'settled';
+  }
+  return duplicate.extractionLeaseUntil < now ? 'restore' : 'busy';
+}
+
+/**
  * Rebuild the `File` the original request handed to the extractor. A resumed run
  * must see byte-for-byte what the first attempt saw, or the content checksum —
  * and therefore duplicate detection — would differ between attempts.
@@ -237,22 +313,26 @@ export async function runMaterialExtraction(
     });
 
     if (duplicate) {
-      if (duplicate.deletedAt) {
+      const targetState = classifyRestoreTarget(duplicate);
+
+      if (targetState === 'busy') {
+        // Another worker is mid-restore. Leave this receipt PROCESSING with its
+        // lease running: a sweep after that lease expires re-reads the target
+        // and finds it settled, which is the outcome the client should see.
+        return;
+      }
+
+      if (targetState === 'restore') {
         // Restore-on-re-upload (#685) — preserved from the old synchronous path,
         // just deferred: the soft-deleted original comes back and is re-embedded
         // with `replace: true`, and this upload's row becomes its receipt.
-        await prisma.courseMaterial.update({
-          where: { id: duplicate.id },
-          data: {
-            deletedAt: null,
-            deletedBy: null,
-            status: 'PROCESSING',
-            uploadedBy: userId,
-            processedAt: null,
-            duplicateOfId: null,
-            rawText: fileInfo.content,
-          },
-        });
+        //
+        // The un-delete carries its own lease so a crash mid-restore is
+        // recoverable rather than terminal; losing the claim means another
+        // worker got there first, so leave the receipt for a later sweep.
+        if (!(await claimRestoreTarget(duplicate.id, userId, fileInfo.content))) {
+          return;
+        }
         try {
           // Replace any stale chunks/embeddings from before the soft-delete so
           // restoring a material doesn't append duplicate RAG content (#685 review).
@@ -261,7 +341,7 @@ export async function runMaterialExtraction(
           });
           await prisma.courseMaterial.update({
             where: { id: duplicate.id },
-            data: { status: 'READY', processedAt: new Date() },
+            data: { status: 'READY', processedAt: new Date(), extractionLeaseUntil: null },
           });
         } catch (embeddingError) {
           await failMaterial(
@@ -324,7 +404,14 @@ export async function runMaterialExtraction(
   }
 
   try {
-    await processMaterialEmbeddings(materialId, fileInfo.content);
+    // `replace: true` even on the first attempt (#1494 review): the embedding
+    // transaction and the READY update below are separate writes, so a crash
+    // between them leaves a row that is PROCESSING *and* already embedded. The
+    // sweeper resumes it and lands right back here — with `replace: false` that
+    // second pass would append a duplicate set of chunks and vectors. Replacing
+    // makes the step idempotent, and on a genuine first run it deletes nothing
+    // because the row has no chunks yet.
+    await processMaterialEmbeddings(materialId, fileInfo.content, { replace: true });
     await prisma.courseMaterial.update({
       where: { id: materialId },
       data: { status: 'READY', processedAt: new Date(), extractionLeaseUntil: null },
@@ -388,6 +475,17 @@ export function startMaterialExtraction(
  * no blob (uploads that predate the durable-bytes migration) are left alone
  * rather than failed on a guess.
  *
+ * "Expired lease" is not the only abandoned shape (#1494 review). The row and
+ * its blob are committed *before* anything claims them, so a crash in that
+ * window — or a claim that simply fails — leaves a PROCESSING row whose lease is
+ * still null, which `{ lt: now }` can never match: it would be invisible to
+ * every future sweep, and re-uploading the same bytes answers 409. Null leases
+ * are therefore swept too, but only once the row is older than a full lease
+ * period, so a normal upload in the seconds between its INSERT and its claim is
+ * never mistaken for a dead one. Either way the resume goes through
+ * `claimExtraction`, so a row that turns out to be live is lost on the claim
+ * rather than run twice.
+ *
  * Returns a small summary so the caller — and the tests — can see what a pass
  * actually did.
  */
@@ -395,11 +493,15 @@ export async function sweepStrandedMaterialExtractions(
   requestContext: RequestContext,
 ): Promise<{ resumed: number; abandoned: number }> {
   const now = new Date();
+  const unclaimedSince = new Date(now.getTime() - EXTRACTION_LEASE_MS);
   const stranded = await prisma.courseMaterial.findMany({
     where: {
       status: 'PROCESSING',
       checksum: { startsWith: PENDING_CHECKSUM_PREFIX },
-      extractionLeaseUntil: { lt: now },
+      OR: [
+        { extractionLeaseUntil: { lt: now } },
+        { extractionLeaseUntil: null, updatedAt: { lt: unclaimedSince } },
+      ],
       uploadBlob: { isNot: null },
     },
     select: {
@@ -449,21 +551,47 @@ declare global {
 }
 
 /**
+ * Synthetic context for sweeps, which have no request behind them. Keeps
+ * `logSystemError` rows from a sweep distinguishable from ones raised on the
+ * upload path.
+ */
+const SWEEPER_CONTEXT: RequestContext = {
+  requestId: 'material-extraction-sweeper',
+  routePath: 'lib/materials/extraction-job.server',
+  httpMethod: 'SYSTEM',
+  ipAddress: null,
+  userAgent: null,
+};
+
+/**
  * Start the in-process sweeper once per process. Deliberately in-process rather
  * than an `infra/cron` entry: resuming an upload means re-running extraction,
  * which lives in this app, and every existing cron script is bash + psql. The
  * lease is what makes running it on every instance safe — a second instance's
  * claim simply loses.
  *
+ * Called from `entry.server.tsx` at process startup, not only from the upload
+ * path (#1494 review): rows stranded by the crash that just restarted this
+ * process must be recovered whether or not anyone uploads again, and an upload
+ * is exactly what a stranded row makes impossible — re-uploading the same bytes
+ * collides with it and answers 409.
+ *
  * The timer is unref'd so it never holds a CLI script or test process open.
  */
-export function ensureMaterialSweeperRunning(requestContext: RequestContext): void {
+export function ensureMaterialSweeperRunning(
+  requestContext: RequestContext = SWEEPER_CONTEXT,
+): void {
   if (globalThis.__materialSweeperTimer) return;
-  const timer = setInterval(() => {
+  const sweep = () => {
     sweepStrandedMaterialExtractions(requestContext).catch((error: unknown) => {
       console.error('Material extraction sweep failed:', error);
     });
-  }, SWEEP_INTERVAL_MS);
+  };
+  // One pass immediately: at startup the interesting rows are the ones the
+  // crash that caused this restart left behind, and waiting a full interval to
+  // look at them buys nothing.
+  sweep();
+  const timer = setInterval(sweep, SWEEP_INTERVAL_MS);
   timer.unref?.();
   globalThis.__materialSweeperTimer = timer;
 }

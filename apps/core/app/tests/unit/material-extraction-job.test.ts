@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -35,6 +35,9 @@ import {
   EXTRACTION_LEASE_MS,
   MAX_EXTRACTION_ATTEMPTS,
   claimExtraction,
+  claimRestoreTarget,
+  classifyRestoreTarget,
+  ensureMaterialSweeperRunning,
   persistUploadBlob,
   sweepStrandedMaterialExtractions,
   toBytesColumn,
@@ -135,7 +138,7 @@ describe("persistUploadBlob", () => {
 });
 
 describe("sweepStrandedMaterialExtractions", () => {
-  it("only looks at direct uploads that are PROCESSING, past their lease, and have bytes", async () => {
+  it("only looks at direct uploads that are PROCESSING, unclaimed, and have bytes", async () => {
     await sweepStrandedMaterialExtractions(CTX);
 
     const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
@@ -143,13 +146,33 @@ describe("sweepStrandedMaterialExtractions", () => {
       expect.objectContaining({
         status: "PROCESSING",
         checksum: { startsWith: "pending:" },
-        extractionLeaseUntil: { lt: expect.any(Date) },
         uploadBlob: { isNot: null },
       }),
     );
     // A Canvas import sitting in PROCESSING carries `canvas-pending:` and must
     // never be picked up by this sweeper.
     expect(args.where.checksum.startsWith).toBe("pending:");
+  });
+
+  it("sweeps rows that died before their lease was ever taken (#1494 review)", async () => {
+    // The row and its blob commit before anything claims them, so a crash in
+    // that window leaves a null lease. `{ lt: now }` cannot match null, which
+    // used to make such a row invisible to every future sweep — and re-uploading
+    // the same bytes answers 409, so nothing else would ever reach it either.
+    await sweepStrandedMaterialExtractions(CTX);
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.where.OR).toEqual([
+      { extractionLeaseUntil: { lt: expect.any(Date) } },
+      { extractionLeaseUntil: null, updatedAt: { lt: expect.any(Date) } },
+    ]);
+
+    // The null-lease arm is gated on age, so an upload still in the seconds
+    // between its INSERT and its claim is not mistaken for a dead one: the
+    // cutoff is a full lease period in the past, not "now".
+    const [expiredLease, unclaimed] = args.where.OR as [any, any];
+    const skew = expiredLease.extractionLeaseUntil.lt.getTime() - unclaimed.updatedAt.lt.getTime();
+    expect(skew).toBe(EXTRACTION_LEASE_MS);
   });
 
   it("resumes an abandoned row from the persisted bytes", async () => {
@@ -165,7 +188,26 @@ describe("sweepStrandedMaterialExtractions", () => {
     expect(file.type).toBe("application/pdf");
     expect(await file.text()).toBe("hello");
     // It ran the whole job, not just the claim.
-    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "text");
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "text", {
+      replace: true,
+    });
+  });
+
+  it("re-embeds with replace so a crash before READY cannot double the chunks", async () => {
+    // The embedding transaction commits before the READY update, so a crash
+    // between them leaves a PROCESSING row that is already embedded. The sweeper
+    // resumes it and lands back on the same call — with `replace: false` that
+    // second pass would append a duplicate set of chunks and vectors (#1494
+    // review).
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+
+    await sweepStrandedMaterialExtractions(CTX);
+    await sweepStrandedMaterialExtractions(CTX);
+
+    expect(processMaterialEmbeddings).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(processMaterialEmbeddings).mock.calls) {
+      expect(call[2]).toEqual({ replace: true });
+    }
   });
 
   it("skips a row whose lease another worker took first", async () => {
@@ -239,6 +281,129 @@ describe("sweepStrandedMaterialExtractions", () => {
         data: expect.objectContaining({ status: "FAILED" }),
       }),
     );
-    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-good", "text");
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-good", "text", {
+      replace: true,
+    });
+  });
+});
+
+describe("ensureMaterialSweeperRunning", () => {
+  beforeEach(() => {
+    globalThis.__materialSweeperTimer = undefined;
+  });
+
+  afterEach(() => {
+    if (globalThis.__materialSweeperTimer) clearInterval(globalThis.__materialSweeperTimer);
+    globalThis.__materialSweeperTimer = undefined;
+  });
+
+  it("recovers stranded rows at startup with no upload to trigger it (#1494 review)", async () => {
+    // The crash-before-claim case has no second actor: the row is invisible to
+    // the old sweep predicate, and re-uploading the same bytes collides with it
+    // and answers 409, so waiting for an upload to register the sweeper waits
+    // forever. Startup registration takes no request context and sweeps at once.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      blobRow({ id: "crashed-before-claim" }),
+    ] as never);
+
+    ensureMaterialSweeperRunning();
+    await vi.waitFor(() => expect(extractUploadedFileContent).toHaveBeenCalled());
+
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalled();
+  });
+
+  it("registers one timer per process", () => {
+    ensureMaterialSweeperRunning();
+    const first = globalThis.__materialSweeperTimer;
+    ensureMaterialSweeperRunning();
+
+    expect(globalThis.__materialSweeperTimer).toBe(first);
+    // Only the first registration sweeps; the second is a no-op.
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("classifyRestoreTarget", () => {
+  const NOW = new Date("2026-08-17T12:00:00Z");
+  const LIVE = new Date(NOW.getTime() + 60_000);
+  const EXPIRED = new Date(NOW.getTime() - 60_000);
+
+  it("restores a soft-deleted target", () => {
+    expect(
+      classifyRestoreTarget(
+        { status: "READY", deletedAt: new Date(), extractionLeaseUntil: null },
+        NOW,
+      ),
+    ).toBe("restore");
+  });
+
+  it("resumes a restore whose worker died mid-flight (#1494 review)", () => {
+    // The old code read "not soft-deleted" as "settled" and resolved the receipt
+    // anyway, stranding the half-restored target forever — the receipt was the
+    // only thing that would ever look at it, because the target keeps its
+    // content checksum and so the sweeper's `pending:` scan cannot see it.
+    expect(
+      classifyRestoreTarget(
+        { status: "PROCESSING", deletedAt: null, extractionLeaseUntil: EXPIRED },
+        NOW,
+      ),
+    ).toBe("restore");
+  });
+
+  it("waits rather than resolving the receipt while a restore is live", () => {
+    expect(
+      classifyRestoreTarget(
+        { status: "PROCESSING", deletedAt: null, extractionLeaseUntil: LIVE },
+        NOW,
+      ),
+    ).toBe("busy");
+  });
+
+  it("leaves an unleased PROCESSING row alone — that is a Canvas import", () => {
+    // `extractionLeaseUntil` is only ever written by this module, so a
+    // PROCESSING row that has never been leased belongs to something else.
+    expect(
+      classifyRestoreTarget(
+        { status: "PROCESSING", deletedAt: null, extractionLeaseUntil: null },
+        NOW,
+      ),
+    ).toBe("settled");
+  });
+
+  it("treats a live READY or FAILED target as settled", () => {
+    for (const status of ["READY", "FAILED"]) {
+      expect(
+        classifyRestoreTarget({ status, deletedAt: null, extractionLeaseUntil: null }, NOW),
+      ).toBe("settled");
+    }
+  });
+});
+
+describe("claimRestoreTarget", () => {
+  it("un-deletes and leases in one statement, never on a null lease", async () => {
+    await claimRestoreTarget("target-1", "user-1", "restored text");
+
+    const [args] = vi.mocked(prisma.courseMaterial.updateMany).mock.calls[0] as [any];
+    expect(args.where).toEqual({
+      id: "target-1",
+      OR: [
+        { deletedAt: { not: null } },
+        // An expired lease only — a PROCESSING row with a null lease is a
+        // Canvas import, not an abandoned restore.
+        { status: "PROCESSING", extractionLeaseUntil: { lt: expect.any(Date) } },
+      ],
+    });
+    // The un-delete and the lease are the same write, so there is no window in
+    // which the target is PROCESSING with nothing claiming it.
+    expect(args.data.deletedAt).toBeNull();
+    expect(args.data.status).toBe("PROCESSING");
+    expect(args.data.extractionLeaseUntil).toBeInstanceOf(Date);
+    expect(args.data.rawText).toBe("restored text");
+  });
+
+  it("reports the loss when another worker already holds the restore", async () => {
+    vi.mocked(prisma.courseMaterial.updateMany).mockResolvedValue({ count: 0 } as never);
+
+    expect(await claimRestoreTarget("target-1", "user-1", "restored text")).toBe(false);
   });
 });

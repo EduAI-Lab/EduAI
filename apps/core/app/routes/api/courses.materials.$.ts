@@ -393,12 +393,31 @@ async function reclaimProvisionalRow(
   });
   if (!existing) return null;
 
+  const now = new Date();
   const claimed = await prisma.courseMaterial.updateMany({
-    // Reclaimable is the negation of "live and mid-flight": anything that is
-    // not PROCESSING, plus soft-deleted rows regardless of their status.
+    // Every condition that made this row reclaimable is restated here, not just
+    // the status one (#1494 review) — the lookup above and this write are not
+    // atomic, so anything read outside the WHERE can change underneath us:
+    //
+    //   - `checksum` pins the row to the *provisional* state we found it in. A
+    //     worker that finalizes between the read and this update replaces the
+    //     `pending:` checksum with the real content hash, and without this the
+    //     UPDATE would happily match that now-READY row and reset it back to
+    //     PROCESSING with a null rawText.
+    //   - a PROCESSING row is reclaimable only once its extraction lease has
+    //     expired, soft-deleted or not. `deletedAt != null` alone used to be
+    //     enough, which let a DELETE issued during processing hand the row to a
+    //     second worker while the first was still writing to it.
+    //
+    // A row that fails these is either live or already finalized; both are the
+    // 409 below.
     where: {
       id: existing.id,
-      OR: [{ status: { not: 'PROCESSING' } }, { deletedAt: { not: null } }],
+      checksum: provisionalChecksum,
+      OR: [
+        { status: { not: 'PROCESSING' } },
+        { extractionLeaseUntil: { lt: now } },
+      ],
     },
     data: {
       status: 'PROCESSING',
