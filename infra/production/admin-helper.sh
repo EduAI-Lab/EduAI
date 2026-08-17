@@ -32,6 +32,25 @@ release_arg() {
   [ -d "$release" ] || die "release does not exist: $release"
   printf '%s' "$release"
 }
+read_env_value() {
+  local file="$1" key="$2" line value
+  line=$(grep "^${key}=" "$file" 2>/dev/null | head -1 || true)
+  [ -n "$line" ] || return 0
+  value="${line#*=}"
+  value="${value%\"}"
+  value="${value#\"}"
+  printf '%s' "$value"
+}
+set_env_value() {
+  local file="$1" key="$2" value="$3" escaped
+  touch "$file"
+  escaped=$(printf '%s' "$value" | sed -e 's/[&\\]/\\&/g')
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${escaped}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
 case "${1:-}" in
   redis-install)
     no_extra_args "$@"
@@ -132,6 +151,56 @@ case "${1:-}" in
     fi
     docker exec "$AI_TUTOR_DB_NAME" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
     ;;
+  provision-aitutor)
+    no_extra_args "$@"
+    [ -f "$CORE_ENV" ] || die "missing $CORE_ENV"
+    service_key=$(read_env_value "$CORE_ENV" EDUAI_API_KEY)
+    if [ -z "$service_key" ] || [[ "$service_key" == *"<"* || "$service_key" == *">"* ]]; then
+      service_key=$(openssl rand -hex 32)
+      set_env_value "$CORE_ENV" EDUAI_API_KEY "$service_key"
+    fi
+    set_env_value "$CORE_ENV" COOKIE_DOMAIN ".eduai.ok.ubc.ca"
+    set_env_value "$CORE_ENV" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
+    set_env_value "$CORE_ENV" VITE_EDUAI_URL "https://my.eduai.ok.ubc.ca"
+    set_env_value "$CORE_ENV" VITE_AI_TUTOR_URL "https://aitutor.eduai.ok.ubc.ca"
+    chown root:eduai "$CORE_ENV"
+    chmod 0640 "$CORE_ENV"
+
+    if [ -f "$AI_TUTOR_DB_ENV" ]; then
+      set -a
+      # shellcheck disable=SC1090
+      . "$AI_TUTOR_DB_ENV"
+      set +a
+    else
+      if docker inspect "$AI_TUTOR_DB_NAME" >/dev/null 2>&1; then
+        die "$AI_TUTOR_DB_ENV is missing but the AI Tutor database container already exists"
+      fi
+      POSTGRES_USER=ai_tutor_prod
+      POSTGRES_PASSWORD=$(openssl rand -hex 32)
+      POSTGRES_DB=ai_tutor_prod
+      umask 077
+      printf 'POSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\nPOSTGRES_DB=%s\n' \
+        "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB" > "$AI_TUTOR_DB_ENV"
+      chown root:root "$AI_TUTOR_DB_ENV"
+      chmod 0600 "$AI_TUTOR_DB_ENV"
+    fi
+    [ -n "${POSTGRES_USER:-}" ] || die "POSTGRES_USER is missing"
+    [ -n "${POSTGRES_PASSWORD:-}" ] || die "POSTGRES_PASSWORD is missing"
+    [ -n "${POSTGRES_DB:-}" ] || die "POSTGRES_DB is missing"
+
+    set_env_value "$AI_TUTOR_ENV" NODE_ENV production
+    set_env_value "$AI_TUTOR_ENV" PORT 4000
+    set_env_value "$AI_TUTOR_ENV" DATABASE_URL "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:54321/${POSTGRES_DB}?schema=public"
+    set_env_value "$AI_TUTOR_ENV" CORE_URL "https://my.eduai.ok.ubc.ca"
+    set_env_value "$AI_TUTOR_ENV" EDUAI_BASE_URL "https://my.eduai.ok.ubc.ca/api"
+    set_env_value "$AI_TUTOR_ENV" EDUAI_API_KEY "$service_key"
+    set_env_value "$AI_TUTOR_ENV" EDUAI_ENFORCE_URL_CONSISTENCY 1
+    set_env_value "$AI_TUTOR_ENV" CORS_ORIGINS "https://aitutor.eduai.ok.ubc.ca"
+    chown root:eduai "$AI_TUTOR_ENV"
+    chmod 0640 "$AI_TUTOR_ENV"
+    "$0" aitutor-db-install
+    echo "AI_TUTOR_CONFIGURED"
+    ;;
   activate-release)
     release=$(release_arg "$@")
     ln -sfn "$release" /srv/www/eduai-production/current
@@ -142,5 +211,5 @@ case "${1:-}" in
   enable-core) no_extra_args "$@"; systemctl enable eduai-core ;;
   restart-core) no_extra_args "$@"; systemctl restart eduai-core; systemctl --no-pager --full status eduai-core ;;
   reload-apache) no_extra_args "$@"; apache2ctl configtest; systemctl reload apache2 ;;
-  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, aitutor-db-install, activate-release, enable-aitutor, restart-aitutor, enable-core, restart-core, reload-apache" ;;
+  *) die "unknown action; allowed: redis-install, install-env, install-core-unit, install-apache-vhost, install-aitutor-db-env, install-aitutor-env, install-aitutor-unit, install-aitutor-apache, aitutor-db-install, provision-aitutor, activate-release, enable-aitutor, restart-aitutor, enable-core, restart-core, reload-apache" ;;
 esac
