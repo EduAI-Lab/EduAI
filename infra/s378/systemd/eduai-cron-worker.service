@@ -1,0 +1,27 @@
+[Unit]
+Description=EduAI Core cron scheduler worker (dev)
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/docs/CRON_JOBS.md
+After=network-online.target
+Wants=network-online.target
+PartOf=eduai-dev.target
+
+[Service]
+Type=simple
+User=eduai-cron
+Group=eduai-cron
+SupplementaryGroups=eduai-dev
+UMask=0002
+WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
+Environment=NODE_ENV=development
+EnvironmentFile=-/etc/eduai/eduai-dev.env
+Environment=HOME=/var/lib/eduai-cron
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=CRON_SCRIPT_DIR=/opt/eduai/cron
+ExecStart=/usr/local/bin/node /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/node_modules/tsx/dist/cli.mjs scripts/cron-worker.ts
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+KillMode=control-group
+
+[Install]
+WantedBy=eduai-dev.target

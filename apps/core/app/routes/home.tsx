@@ -11,7 +11,7 @@ import { projectInfo, siteConfig } from "~/config/site";
 import { SiteNavigation } from "~/components/site-navigation";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
     { title: "EduAI Core Learning" },
     { name: "description", content: "AI-powered learning platform" },

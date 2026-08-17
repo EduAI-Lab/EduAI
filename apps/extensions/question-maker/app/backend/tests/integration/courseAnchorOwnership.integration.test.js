@@ -70,7 +70,7 @@ function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = fa
       return Promise.resolve({ ok: true, json: async () => ({ user }) });
     }
 
-    if (/\/enrollments$/.test(path)) {
+    if (path.endsWith('/enrollments')) {
       if (enrollmentsFail) {
         return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'down' }) });
       }

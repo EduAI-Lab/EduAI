@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
+import { useCronJobStatuses } from "~/hooks/api/use-cron-job-status";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -151,6 +152,7 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Started</TableHead>
+                  <TableHead>Triggered by</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Message</TableHead>
@@ -160,6 +162,14 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
                 {runs.map((run) => (
                   <TableRow key={run.id}>
                     <TableCell className="text-sm">{formatDateTime(run.startedAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {run.triggerSource === "ADMIN_UI" ? "Admin panel" :
+                        run.triggerSource === "ADMIN_CHAT" ? "Admin chatbot" :
+                          run.triggerSource === "SCHEDULE" ? "Schedule" : "Unknown"}
+                      {run.triggeredByUserId && (
+                        <div className="font-mono text-[10px]">{run.triggeredByUserId}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDuration(run.startedAt, run.finishedAt)}
                     </TableCell>
@@ -390,39 +400,11 @@ export interface CronJobsAdminViewProps {
 }
 
 export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps) {
-  const [jobs, setJobs] = useState<CronJobEntry[]>(initialJobs);
+  const { jobs, refresh: fetchStatuses, setJobs } = useCronJobStatuses(true, initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<string | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const hasRunning = jobs.some((j) => j.lastRun?.status === "RUNNING");
-
-  const fetchStatuses = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/cron-jobs");
-      if (!res.ok) return;
-      const body = (await res.json()) as { jobs: CronJobEntry[] };
-      setJobs(body.jobs);
-    } catch {
-      // network blip — ignore
-    }
-  }, []);
-
-  // Poll every 3 s while any job is RUNNING, stop otherwise.
-  useEffect(() => {
-    if (hasRunning) {
-      pollRef.current = setInterval(fetchStatuses, 3000);
-    } else {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [hasRunning, fetchStatuses]);
+  const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
 
   async function triggerJob(jobName: string) {
     setTriggering((prev) => new Set(prev).add(jobName));

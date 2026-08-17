@@ -47,7 +47,7 @@ function coreFetchStub() {
     if (target.endsWith('/api/sessions/validate')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
     }
-    if (/\/enrollments$/.test(target.split('?')[0])) {
+    if (target.split('?')[0].endsWith('/enrollments')) {
       return Promise.resolve({
         ok: true,
         json: () =>

@@ -49,7 +49,7 @@ const WORKSPACES = [
     exclude: (p) =>
       /(^|\/)tests\//.test(p) ||
       /\.test\.(ts|tsx)$/.test(p) ||
-      /\.d\.ts$/.test(p) ||
+      p.endsWith('.d.ts') ||
       p === "apps/core/app/root.tsx" ||
       p === "apps/core/app/routes.ts",
   },
@@ -93,7 +93,7 @@ const WORKSPACES = [
     exclude: (p) =>
       /(^|\/)tests\//.test(p) ||
       /\.test\.(ts|tsx)$/.test(p) ||
-      /\.d\.ts$/.test(p) ||
+      p.endsWith('.d.ts') ||
       p === "apps/extensions/question-maker/app/frontend/src/main.tsx",
   },
 ];

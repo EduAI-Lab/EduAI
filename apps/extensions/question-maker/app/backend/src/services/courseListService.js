@@ -468,16 +468,14 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: pagination.offset,
       take: pagination.limit,
-      include: {
-        ...(accessMirrorHealthy
-          ? {
-              accessGrants: {
-                where: { userId: reqUser.id },
-                select: { role: true, department: true },
-              },
-            }
-          : {}),
-      },
+      include: accessMirrorHealthy
+        ? {
+            accessGrants: {
+              where: { userId: reqUser.id },
+              select: { role: true, department: true },
+            },
+          }
+        : {},
     }),
   ]);
 

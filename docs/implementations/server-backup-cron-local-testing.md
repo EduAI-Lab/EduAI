@@ -1,6 +1,6 @@
 # Server backup cron — local testing (Windows / WSL / macOS)
 
-Validate `infra/cron/` backup scripts against dev Docker databases before deploying them to production (`/opt/eduai/cron`).
+Validate `infra/cron/` backup scripts against dev Docker databases before deploying them to production (`/opt/eduai/cron`). Production scheduling is owned by `eduai-cron-worker.service`; the optional local crontab examples below are only for exercising the dry-run helper, never for production deployment.
 
 **Related:**
 - Spec: [`EduAI_CronJob_DataLifecycle_Spec.md`](./EduAI_CronJob_DataLifecycle_Spec.md)
@@ -17,7 +17,7 @@ Validate `infra/cron/` backup scripts against dev Docker databases before deploy
 | `backup-offsite.sh` | `dry-run-local.sh offsite` | Copy tonight’s dumps to a local “off-site” folder (or real S3) |
 | `backup-rotate.sh` | `dry-run-local.sh rotate` | Deletes local `.sql.gz` older than `BACKUP_RETAIN_DAYS` |
 
-Production scripts hard-code `source /opt/eduai/cron/lib.sh`. **`dry-run-local.sh`** reimplements the same logic with a repo-local env file so you do not need `sudo` or `/etc/eduai/cron.env`.
+Production scripts hard-code `source /opt/eduai/cron/lib.sh`. **`dry-run-local.sh`** reimplements the same logic with a repo-local env file so you do not need `sudo` or `/etc/eduai/cron.env`. On s378, the worker runs these scripts as `eduai-cron`; verify a deployment with `systemctl status eduai-cron-worker.service` and `journalctl -u eduai-cron-worker.service -n 50 --no-pager`.
 
 ---
 
@@ -94,7 +94,7 @@ gunzip -c .local-backup-test/dumps/eduai-core_*.sql.gz | head -30
 2. Ensure Docker Desktop is running; `docker ps` shows the three `eduai-*-db` containers.
 3. Run the quick start above.
 
-**Optional — exercise real cron scheduling (macOS):**
+**Optional — exercise a local dry-run schedule (macOS; not production):**
 
 ```bash
 # One-shot in 2 minutes (user crontab, not system-wide)
@@ -118,7 +118,7 @@ crontab -l
    sudo apt update && sudo apt install -y postgresql-client
    ```
 
-**WSL cron (optional):**
+**WSL local cron (optional; not production):**
 
 ```bash
 sudo apt install -y cron
@@ -273,5 +273,5 @@ When local dry-runs pass:
 
 1. Deploy scripts per [`infra/cron/README.md`](../../infra/cron/README.md)
 2. Use **one** `DB_PASS` in `/etc/eduai/cron.env` (production typically uses one credential for all DBs)
-3. Verify with `sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh` — scheduling is handled by the Core in-process scheduler
+3. Verify with `sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh` — production scheduling is handled by the dedicated `eduai-cron-worker.service`
 4. Retire per-app QM-only backup cron if the platform job covers all three databases

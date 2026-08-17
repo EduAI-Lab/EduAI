@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # infra/cron/lib.sh
 # Sourced by all EduAI cron scripts. Never executed directly.
-# Production: expects /etc/eduai/cron.env (chmod 600, root:root).
+# Production: expects /etc/eduai/cron.env (chmod 640, root:eduai-cron).
 # Dev: falls back to cron.env.local in the same directory as this file
 #      (copy from cron.env.local.example and fill in local values).
 

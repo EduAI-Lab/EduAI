@@ -152,6 +152,7 @@ describe("useAiProviders", () => {
     const patch = vi
       .mocked(apiFetch)
       .mock.calls.find(([url]) => url === "/api/ai-providers/prov-1");
-    expect(JSON.parse((patch?.[1] as RequestInit).body as string)).toEqual({ isActive: true });
+    expect(patch).toBeDefined();
+    expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({ isActive: true });
   });
 });

@@ -6,7 +6,7 @@ import { IconBrain } from '@tabler/icons-react';
 import { routeForRole } from '../lib/role-routing';
 import { getCoreLoginUrl } from '../lib/coreUrl';
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
     { title: 'AI Tutor' },
     { name: 'description', content: 'AI Tutor — Loading' },

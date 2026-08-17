@@ -309,7 +309,7 @@ export function normalizeAdhdStructuralAnchors(text: string): string {
     const line = raw.trim();
     if (!line) continue;
     const m = line.match(/^(?:\*{0,2})\s*Next\?\s*(?:\*{0,2})\s*(.*)$/i);
-    if (m && !/^\*\*Next\?\*\*/.test(line)) {
+    if (m && !line.startsWith("**Next?**")) {
       const prompt = (m[1] ?? "").trim();
       // Only promote forward offers — never bold a comprehension-check "Next?".
       if (prompt && isForwardContinuationOffer(`Next? ${prompt}`)) {
@@ -369,15 +369,15 @@ function clipBodyPreservingMarkdown(body: string, wordBudget: number): string {
 
   while (i < lines.length && used < wordBudget) {
     const line = lines[i];
-    if (/^```/.test(line.trim())) {
+    if (line.trim().startsWith("```")) {
       const fenceLines = [line];
       let j = i + 1;
       while (j < lines.length) {
         fenceLines.push(lines[j]);
-        if (/^```/.test(lines[j].trim())) break;
+        if (lines[j].trim().startsWith("```")) break;
         j += 1;
       }
-      const closed = j < lines.length && /^```/.test(lines[j].trim());
+      const closed = j < lines.length && lines[j].trim().startsWith("```");
       const fenceText = fenceLines.join("\n");
       const fenceWords = countWords(fenceText);
       // Incomplete fence (no closer): drop it rather than emit broken Markdown.

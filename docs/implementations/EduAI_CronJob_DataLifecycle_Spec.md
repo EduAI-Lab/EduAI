@@ -34,7 +34,9 @@ Two categories of automation are defined:
 
 ### 2.2 Shared Environment File
 
-All cron scripts source a single environment file at `/etc/eduai/cron.env`. This file must be root-readable only (`chmod 600`) and must never be committed to version control.
+All cron scripts source a single environment file at `/etc/eduai/cron.env`. This
+file must be readable only by root and the dedicated `eduai-cron` service account
+(`chmod 640`, `root:eduai-cron`) and must never be committed to version control.
 
 ```bash
 # /etc/eduai/cron.env
@@ -484,9 +486,12 @@ log "=== API key rotation check complete ==="
 
 ---
 
-## 6. Master Crontab
+## 6. Legacy Crontab Reference (Superseded)
 
-Install this crontab for the `eduai-cron` system user using `crontab -e` or by placing it at `/etc/cron.d/eduai`. All times are UTC.
+The schedule below is retained as a historical reference. Do **not** install it
+with `crontab -e` or `/etc/cron.d/eduai`: the dedicated
+`eduai-cron-worker.service` now owns scheduling and reconciles these jobs from
+the database. All times shown remain UTC.
 
 ```cron
 # /etc/cron.d/eduai
@@ -580,11 +585,19 @@ Every deletion event is appended to `$AUDIT_LOG` (`/var/log/eduai/data-lifecycle
    ```
 3. Create and populate `/etc/eduai/cron.env` with production values. Set permissions:
    ```bash
-   chmod 600 /etc/eduai/cron.env && chown root:root /etc/eduai/cron.env
+   chmod 640 /etc/eduai/cron.env && chown root:eduai-cron /etc/eduai/cron.env
    ```
-4. Install `/etc/cron.d/eduai` (see Section 6).
-5. Install `/etc/logrotate.d/eduai-cron` (see Section 7.2).
-6. Perform a dry run of each deletion script using a test database before enabling in production.
+4. Do not install a system crontab for these jobs. Install and enable
+   `eduai-cron-worker.service` with `infra/s378/go-live-systemd-install.sh`;
+   the dedicated Core worker is the scheduler and runs the scripts from
+   `/opt/eduai/cron` using `CRON_SCRIPT_DIR=/opt/eduai/cron`.
+5. Create the worker-owned directories:
+   ```bash
+   install -d -m 0750 -o eduai-cron -g eduai-cron /var/backups/eduai
+   install -d -m 0750 -o eduai-cron -g adm /var/log/eduai
+   ```
+6. Install `/etc/logrotate.d/eduai-cron` (see Section 7.2).
+7. Perform a dry run of each deletion script using a test database before enabling in production.
 
 ### 8.2 Manual Disposition (Out-of-Schedule)
 

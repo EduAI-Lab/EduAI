@@ -122,7 +122,7 @@ async function handle(event, payload) {
     if (payload.action === "opened" && state.draft) await setThreadArchived(state.threadId, true);
     if (payload.action === "review_requested" && payload.requested_reviewer?.login) {
       const reviewer = payload.requested_reviewer.login;
-      state.reviewers = unique([...state.reviewers, reviewer]); state.reviewRequestedAtByReviewer = { ...(state.reviewRequestedAtByReviewer ?? {}), [reviewer]: Date.now() }; state.completedReviewers = (state.completedReviewers ?? []).filter((login) => login !== reviewer); state.reviewerReminderAtByReviewer = (state.reviewerReminderAtByReviewer ?? []).filter((entry) => entry.login !== reviewer);
+      state.reviewers = unique([...state.reviewers, reviewer]); state.reviewRequestedAtByReviewer = { ...state.reviewRequestedAtByReviewer, [reviewer]: Date.now() }; state.completedReviewers = (state.completedReviewers ?? []).filter((login) => login !== reviewer); state.reviewerReminderAtByReviewer = (state.reviewerReminderAtByReviewer ?? []).filter((entry) => entry.login !== reviewer);
       await addToThread(state.threadId, [reviewer]);
       await notify(state, `[Review requested] ${reviewer} has been assigned.`, [reviewer]);
     }
