@@ -8,9 +8,11 @@
  * (Module/Lesson/Activity ids are autoincrement → not guessable).
  *
  * Key design points (from the endpoint spec):
- *  - The pool CourseOffering is a pure anchor row (#1072) keyed by a synthetic
- *    `coreOfferingId` sentinel — it holds no title/description/publish state
- *    (the old "native course" no longer exists).
+ *  - The pool CourseOffering is a pure anchor row (#1072) keyed by the REAL Core
+ *    perf course id read from `.perf-pool/core.json.sharedCourseId` — it holds no
+ *    title/description/publish state (all resolved live from Core). The Core perf
+ *    seed must run first; this seed fails fast if the manifest or `sharedCourseId`
+ *    is missing.
  *  - Destructive endpoints (DELETE module/lesson/activity, DELETE enrollment)
  *    consume victims → a perf run may deplete them; re-run this seed between runs.
  *
@@ -27,10 +29,6 @@ const prisma = new PrismaClient();
 const CORE_INSTRUCTOR = 'seed_user_instructor_cs'; // mirrors apps/core SEED_IDS
 const CORE_STUDENT = 'seed_user_student_01';
 const POOL = Number(process.env.PERF_POOL_SIZE ?? 15);
-// Synthetic Core course id for the pool's anchor CourseOffering row. #1072 made
-// every offering Core-linked, so the perf pool uses a disposable sentinel instead
-// of the old "native course" (which no longer exists).
-const POOL_OFFERING_CORE_ID = 'seed_perf_pool_course';
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 function poolDir(): string {
@@ -55,25 +53,41 @@ function writeManifest(obj: unknown) {
   writeFileSync(f, JSON.stringify(obj, null, 2));
   console.log(`  ✓ wrote pool manifest → ${f}`);
 }
-// Reads the Core perf manifest's readChatId — a real Core chat owned by the seed
-// student — so the AiChatSession points at a chat the messages proxy can fetch.
-function readCoreChatId(): string | null {
+// Loads the Core perf manifest once and returns the two fields the AI Tutor seed
+// depends on. `sharedCourseId` is REQUIRED — the pool CourseOffering is a pure
+// Core anchor, so a missing/unparseable manifest or an absent/empty
+// `sharedCourseId` fails fast (the developer must run the Core perf seed first).
+// `readChatId` stays optional to preserve the existing chat-session fallback.
+function loadCoreManifest(): { sharedCourseId: string; readChatId: string | null } {
+  const file = path.join(poolDir(), 'core.json');
+  let core: Record<string, unknown>;
   try {
-    const core = JSON.parse(readFileSync(path.join(poolDir(), 'core.json'), 'utf8'));
-    return typeof core.readChatId === 'string' ? core.readChatId : null;
+    core = JSON.parse(readFileSync(file, 'utf8'));
   } catch {
-    return null;
+    throw new Error(
+      `Missing or unreadable Core perf manifest at ${file} — run the Core perf seed first (npm run db:seed:perf).`,
+    );
   }
+  const sharedCourseId = core.sharedCourseId;
+  if (typeof sharedCourseId !== 'string' || sharedCourseId.length === 0) {
+    throw new Error(
+      `Core perf manifest at ${file} has no valid sharedCourseId — run the Core perf seed first (npm run db:seed:perf).`,
+    );
+  }
+  return {
+    sharedCourseId,
+    readChatId: typeof core.readChatId === 'string' ? core.readChatId : null,
+  };
 }
 
-async function resetPool() {
+async function resetPool(coreOfferingId: string) {
   // The pool offering cascades to modules/lessons/activities/enrollments/topics/
   // chats, BUT Activity.mainTopicId → Topic is Restrict (no onDelete) while Topic
   // cascades from the course: the DB can't drop a Topic while an Activity still
   // references it. Delete the activities first (cascades their chats/metrics),
   // then the course.
   const ids = (await prisma.courseOffering.findMany({
-    where: { coreOfferingId: POOL_OFFERING_CORE_ID }, select: { id: true },
+    where: { coreOfferingId }, select: { id: true },
   })).map((c) => c.id);
   if (ids.length) {
     await prisma.activity.deleteMany({
@@ -85,11 +99,14 @@ async function resetPool() {
 
 async function main() {
   console.log(`▶ ai-tutor perf pool: ${POOL} victims/endpoint`);
-  await resetPool();
+  // Load the Core manifest up front: the pool offering must anchor to the REAL
+  // Core perf course (sharedCourseId) and the chat session reuses its readChatId.
+  const { sharedCourseId, readChatId } = loadCoreManifest();
+  await resetPool(sharedCourseId);
 
   // --- anchor course offering + instructor + topic ---
   const course = await prisma.courseOffering.create({
-    data: { coreOfferingId: POOL_OFFERING_CORE_ID },
+    data: { coreOfferingId: sharedCourseId },
   });
   await prisma.courseInstructor.create({
     data: { userId: CORE_INSTRUCTOR, courseOfferingId: course.id, role: 'LEAD' },
@@ -138,16 +155,15 @@ async function main() {
   // The messages endpoint proxies Core `GET /api/chats/:chatId/messages`, so the
   // session's chatId must be a REAL Core chat owned by this student — reuse the
   // one the Core perf seed exported (readChatId). A synthetic id → Core 404.
-  const coreChatId = readCoreChatId();
   const chat = await prisma.aiChatSession.create({
     data: {
       userId: CORE_STUDENT,
       activityId: poolActivitiesReuse[0],
       mode: 'teach',
-      chatId: coreChatId ?? `perf-pool-chat-${course.id}`,
+      chatId: readChatId ?? `perf-pool-chat-${course.id}`,
     },
   });
-  if (!coreChatId) {
+  if (!readChatId) {
     console.warn('  ⚠ core.json readChatId missing — messages endpoint will 404 (run core db:seed:perf first)');
   }
 
