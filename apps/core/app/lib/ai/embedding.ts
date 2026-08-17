@@ -985,7 +985,7 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += batchSize) {
     const batch = chunks.slice(i, i + batchSize);
-    const embeddings = settings.wantsLocal
+    const embeddings = settings.wantsLocal && !usesVllmEmbeddingEndpoint()
       ? await embedManyOllamaNative(
           settings.model,
           batch,

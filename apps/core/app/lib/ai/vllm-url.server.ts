@@ -33,7 +33,11 @@ function configuredVllmBaseUrls(): Set<string> {
     const canonical = canonicalLocalInferenceBaseUrl(trimmed);
     if (!canonical) continue;
     bases.add(canonical);
-    if (canonical.endsWith("/v1")) bases.add(canonical.slice(0, -3));
+    if (canonical.endsWith("/v1")) {
+      bases.add(canonical.slice(0, -3));
+    } else {
+      bases.add(`${canonical}/v1`);
+    }
   }
   if (!hasConfiguredEntry) {
     const fallback = canonicalLocalInferenceBaseUrl(defaultVllmBaseUrl());

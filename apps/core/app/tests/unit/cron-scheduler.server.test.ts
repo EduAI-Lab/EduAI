@@ -97,6 +97,7 @@ describe("cron scheduler initialization", () => {
       "backup-nightly.sh",
       "run-1",
       "owner-1",
+      "SCRIPT",
     );
   });
 
