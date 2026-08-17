@@ -19,10 +19,12 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 UNIT_SRC="${SCRIPT_DIR}/systemd"
 REPO="${EDUAI_REPO:-/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore}"
 
-UNITS=(eduai-core.service eduai-aitutor-server.service eduai-qm-backend.service)
+UNITS=(eduai-core.service eduai-cron-worker.service eduai-aitutor-server.service eduai-qm-backend.service)
 SYSTEMD_DIR=/etc/systemd/system
 ENV_DIR=/etc/eduai
 POLKIT_DIR=/etc/polkit-1/rules.d
+CRON_SYNC=/usr/local/sbin/eduai-cron-sync
+SUDOERS_DIR=/etc/sudoers.d
 
 [ -d "$UNIT_SRC" ] || { echo "ERROR: missing $UNIT_SRC"; exit 1; }
 
@@ -36,6 +38,23 @@ echo "  node $(/usr/local/bin/node -v) at /usr/local/bin/node"
 
 getent group eduai-dev >/dev/null || { echo "ERROR: group eduai-dev does not exist"; exit 1; }
 echo "  group eduai-dev ok"
+getent group adm >/dev/null || { echo "ERROR: group adm does not exist (needed for audit-log access)"; exit 1; }
+echo "  group adm ok"
+
+# The worker executes the shell jobs as the dedicated account. Keep this
+# separate from ssaada08 (the account used by the web services) so the cron
+# env, backup files, and audit log have one predictable owner.
+getent passwd eduai-cron >/dev/null || {
+  echo "ERROR: user eduai-cron does not exist"
+  echo "       Create it first: sudo useradd -r -s /bin/false eduai-cron"
+  exit 1
+}
+id -nG eduai-cron | tr ' ' '\n' | grep -qx eduai-dev || {
+  echo "ERROR: eduai-cron must be a member of eduai-dev to read the shared service env"
+  echo "       Run: sudo usermod -a -G eduai-dev eduai-cron"
+  exit 1
+}
+echo "  user eduai-cron ok (member of eduai-dev)"
 
 # Core is exec'd directly rather than via `npm run start`, so this path must exist.
 if [ ! -f "$REPO/node_modules/@react-router/serve/bin.js" ]; then
@@ -43,6 +62,22 @@ if [ ! -f "$REPO/node_modules/@react-router/serve/bin.js" ]; then
   exit 1
 fi
 echo "  react-router-serve ok"
+
+CRON_SRC="$REPO/infra/cron"
+CRON_DIR=/opt/eduai/cron
+[ -d "$CRON_SRC" ] || { echo "ERROR: missing cron scripts at $CRON_SRC"; exit 1; }
+
+echo
+echo "=== installing cron worker scripts ==="
+sudo install -d -m 0750 -o eduai-cron -g eduai-cron "$CRON_DIR"
+for script in "$CRON_SRC"/*.sh; do
+  sudo install -m 0750 -o eduai-cron -g eduai-cron "$script" "$CRON_DIR/"
+done
+echo "  $CRON_DIR (eduai-cron:eduai-cron, 0750)"
+sudo install -d -m 0750 -o eduai-cron -g eduai-cron /var/backups/eduai
+sudo install -d -m 0750 -o eduai-cron -g adm /var/log/eduai
+echo "  /var/backups/eduai (eduai-cron:eduai-cron, 0750)"
+echo "  /var/log/eduai (eduai-cron:adm, 0750)"
 
 echo
 echo "=== retiring the old --user units ==="
@@ -105,6 +140,15 @@ done
 sudo install -m 0644 -o root -g root "$UNIT_SRC/eduai-dev.target" "$SYSTEMD_DIR/eduai-dev.target"
 echo "  $SYSTEMD_DIR/eduai-dev.target"
 
+echo
+echo "=== installing restricted cron sync helper ==="
+sudo install -m 0750 -o root -g root "$SCRIPT_DIR/eduai-cron-sync.sh" "$CRON_SYNC"
+printf '%%eduai-dev ALL=(root) NOPASSWD: %s\n' "$CRON_SYNC" \
+  | sudo tee "$SUDOERS_DIR/eduai-cron-sync" >/dev/null
+sudo chmod 0440 "$SUDOERS_DIR/eduai-cron-sync"
+sudo visudo -cf "$SUDOERS_DIR/eduai-cron-sync"
+echo "  $CRON_SYNC (root-owned; fixed source and destination)"
+
 # The two frontend units are gone for good — both extension frontends are static
 # now and served by Apache. Remove any stale copies so eduai-dev.target does not
 # resurrect a Vite process that fights Apache for the site.
@@ -135,12 +179,13 @@ Next:
 
 Then verify, ideally as an eduai-dev member who is NOT the old unit owner:
   systemctl restart eduai-dev.target     # must NOT prompt for a password
-  systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+  systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
+  systemctl status eduai-cron-worker.service
+  journalctl -u eduai-cron-worker.service -f
+  sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh   # smoke the script identity/env
   systemctl --user list-units 'eduai*'   # expect empty
 
-If the restart does prompt, the polkit rule is not taking effect. Fall back to a
-scoped sudoers entry:
-  echo '%eduai-dev ALL=(root) NOPASSWD: /usr/bin/systemctl restart eduai-*, /usr/bin/systemctl start eduai-*, /usr/bin/systemctl stop eduai-*' \\
-    | sudo tee /etc/sudoers.d/eduai-dev
-  sudo visudo -c
+If the restart does prompt, the polkit rule is not taking effect; fix the
+polkit installation rather than adding a broad sudoers wildcard. The only
+sudoers grant installed here is the argument-less, fixed-path cron sync helper.
 EOF

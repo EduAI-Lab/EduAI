@@ -36,7 +36,7 @@ function makeFetch(...extraMocks) {
     if (path.endsWith('/api/sessions/validate')) {
       return Promise.resolve(sessionReply);
     }
-    if (/\/enrollments$/.test(path)) {
+    if (path.endsWith('/enrollments')) {
       return Promise.resolve(enrollmentOk());
     }
     const next = extraMocks.shift();

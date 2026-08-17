@@ -190,36 +190,32 @@ export async function createQuestion(
     }
   }
 
-  try {
-    const question = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const created = await tx.question.create({
-        data: {
-          courseId,
-          topicId,
-          createdBy,
-          content,
-          type,
-          difficulty,
-          reasoningLevel,
-          choices: choices ?? Prisma.JsonNull,
-          answer,
-          selectAllThatApply,
-          correctAnswers: correctAnswers ?? Prisma.JsonNull,
-          testable,
-        },
-      });
-      if (secondaryTopicIds.length > 0) {
-        await tx.questionSecondaryTopic.createMany({
-          data: secondaryTopicIds.map((tid: string) => ({ questionId: created.id, topicId: tid })),
-        });
-      }
-      return created;
+  const question = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const created = await tx.question.create({
+      data: {
+        courseId,
+        topicId,
+        createdBy,
+        content,
+        type,
+        difficulty,
+        reasoningLevel,
+        choices: choices ?? Prisma.JsonNull,
+        answer,
+        selectAllThatApply,
+        correctAnswers: correctAnswers ?? Prisma.JsonNull,
+        testable,
+      },
     });
+    if (secondaryTopicIds.length > 0) {
+      await tx.questionSecondaryTopic.createMany({
+        data: secondaryTopicIds.map((tid: string) => ({ questionId: created.id, topicId: tid })),
+      });
+    }
+    return created;
+  });
 
-    return { id: question.id };
-  } catch (err) {
-    throw err;
-  }
+  return { id: question.id };
 }
 
 export type ListQuestionsParams = {

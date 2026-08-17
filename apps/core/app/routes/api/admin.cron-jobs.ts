@@ -2,17 +2,15 @@ import { data } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import cron from "node-cron";
 
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
-  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
-import { rescheduleJob } from "~/lib/cron-scheduler.server";
-import { getRequestSession } from "~/lib/auth/request-session.server";
 
 async function requireAdmin(request: Request) {
   const session = await getRequestSession(request);
@@ -72,10 +70,12 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ runId: alreadyRunning.id, reused: true });
     }
 
-    const { runId, created } = await startCronRun(jobName);
-    if (created) {
-      triggerCronJobAsync(jobName, job.script, runId);
-    }
+    const { runId, created } = await startCronRun(jobName, {
+      source: "ADMIN_UI",
+      triggeredByUserId: user.id,
+    });
+    // The worker claims ADMIN_UI runs during its next reconciliation cycle;
+    // shell jobs therefore execute under eduai-cron, never the web account.
 
     return data({ runId, reused: !created });
   }
@@ -93,7 +93,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: "Invalid cron expression" }, { status: 400 });
     }
     await updateCronSchedule(jobName, schedule.trim(), scheduleLabel.trim());
-    rescheduleJob(jobName, schedule.trim());
     const jobs = await listCronJobStatuses();
     return data({ jobs });
   }
@@ -104,7 +103,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
     }
     await resetCronSchedule(jobName);
-    rescheduleJob(jobName, null);
     const jobs = await listCronJobStatuses();
     return data({ jobs });
   }

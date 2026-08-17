@@ -137,7 +137,7 @@ export async function setup() {
   // same plan as development/production.
   try {
     execSync(
-      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE INDEX IF NOT EXISTS \\\"material_embeddings_embedding_ivfflat_idx\\\" ON \\\"material_embeddings\\\" USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);"`,
+      `psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE INDEX IF NOT EXISTS \\"material_embeddings_embedding_ivfflat_idx\\" ON \\"material_embeddings\\" USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);"`,
       { env: pgEnv, stdio: 'pipe' },
     );
   } catch {

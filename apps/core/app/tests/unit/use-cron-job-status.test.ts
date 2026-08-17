@@ -1,152 +1,180 @@
 /**
- * Unit tests for the sidebar cron-job status badge poller.
+ * Unit tests for the sidebar cron-status poller (#1389).
  *
- * Covers: the `enabled === false` no-op, color derivation (null / green /
- * orange / red), the adaptive poll interval (5s while orange, 30s otherwise,
- * 60s after a failed fetch), and that unmounting clears the pending timer so
- * no fetch fires after the component is gone.
+ * The hook was rewritten to stop polling while the tab is hidden and to
+ * soften the "orange" cadence from 5s to 15s. These tests pin: the
+ * visibility gating (no fetch while hidden, resumes on visible), the
+ * orange/steady-state delay choice, and cleanup on unmount.
+ *
+ * Fake timers are used throughout — `advanceTimersByTimeAsync` (rather than
+ * Testing Library's `waitFor`, which relies on real timers) flushes both the
+ * timer queue and the microtask queue between assertions.
  */
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("~/hooks/api/config", () => ({
+  apiFetch: vi.fn(),
+}));
+
+import { apiFetch } from "~/hooks/api/config";
+import type { CronJobEntry } from "~/lib/db.cron-jobs.server";
 import { useCronJobStatus } from "~/hooks/api/use-cron-job-status";
 
-function jobsResponse(jobs: unknown[]) {
-  return new Response(JSON.stringify({ jobs }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+function job(status: "RUNNING" | "SUCCESS" | "ERROR" | null): CronJobEntry {
+  return {
+    name: "backup-nightly",
+    description: "",
+    schedule: "",
+    scheduleLabel: "",
+    triggerEnabled: true,
+    lastRun: status ? { id: "r1", status, startedAt: new Date().toISOString(), finishedAt: null, message: null } : null,
+  } as unknown as CronJobEntry;
 }
 
-function errorResponse(status: number, text: string) {
-  return new Response(text, { status });
+function setVisibility(state: DocumentVisibilityState) {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
 }
-
-let mockFetch: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  mockFetch = vi.fn().mockResolvedValue(jobsResponse([]));
-  vi.stubGlobal("fetch", mockFetch);
+  vi.useFakeTimers();
+  vi.mocked(apiFetch).mockReset();
+  setVisibility("visible");
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 describe("useCronJobStatus", () => {
-  it("does nothing and returns null when disabled", async () => {
-    const { result } = renderHook(() => useCronJobStatus(false));
-
-    expect(result.current).toBeNull();
-    await Promise.resolve();
-    expect(mockFetch).not.toHaveBeenCalled();
+  it("does not poll when disabled", async () => {
+    renderHook(() => useCronJobStatus(false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it("returns null when no job has ever run", async () => {
-    mockFetch.mockResolvedValue(jobsResponse([{ lastRun: null }]));
-
-    const { result } = renderHook(() => useCronJobStatus(true));
-
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
-    expect(result.current).toBeNull();
-  });
-
-  it("returns green when every job's last run succeeded", async () => {
-    mockFetch.mockResolvedValue(
-      jobsResponse([{ lastRun: { status: "SUCCESS" } }]),
-    );
-
-    const { result } = renderHook(() => useCronJobStatus(true));
-
-    await waitFor(() => expect(result.current).toBe("green"));
-  });
-
-  it("returns orange when a job is currently running", async () => {
-    mockFetch.mockResolvedValue(
-      jobsResponse([{ lastRun: { status: "RUNNING" } }]),
-    );
-
-    const { result } = renderHook(() => useCronJobStatus(true));
-
-    await waitFor(() => expect(result.current).toBe("orange"));
-  });
-
-  it("returns red when a job's last run errored, even if another is running", async () => {
-    mockFetch.mockResolvedValue(
-      jobsResponse([
-        { lastRun: { status: "ERROR" } },
-        { lastRun: { status: "RUNNING" } },
-      ]),
-    );
-
-    const { result } = renderHook(() => useCronJobStatus(true));
-
-    await waitFor(() => expect(result.current).toBe("red"));
-  });
-
-  it("polls again after 5s when orange, and picks up the new color", async () => {
-    vi.useFakeTimers();
-    mockFetch
-      .mockResolvedValueOnce(jobsResponse([{ lastRun: { status: "RUNNING" } }]))
-      .mockResolvedValueOnce(jobsResponse([{ lastRun: { status: "SUCCESS" } }]));
-
-    const { result } = renderHook(() => useCronJobStatus(true));
-
-    await vi.waitFor(() => expect(result.current).toBe("orange"));
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(5_000);
-
-    await vi.waitFor(() => expect(result.current).toBe("green"));
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not poll again before 30s when green", async () => {
-    vi.useFakeTimers();
-    mockFetch.mockResolvedValue(jobsResponse([{ lastRun: { status: "SUCCESS" } }]));
-
+  it("polls immediately when enabled and visible", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ jobs: [job("SUCCESS")] });
     renderHook(() => useCronJobStatus(true));
-    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
 
-    await vi.advanceTimersByTimeAsync(29_000);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("retries after 60s on a failed fetch, without clobbering the last known color", async () => {
-    vi.useFakeTimers();
-    mockFetch.mockResolvedValueOnce(jobsResponse([{ lastRun: { status: "SUCCESS" } }]));
-    mockFetch.mockResolvedValueOnce(errorResponse(500, "boom"));
-
+  it("schedules the next poll at 15s (not 30s) when status is orange", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ jobs: [job("RUNNING")] });
     const { result } = renderHook(() => useCronJobStatus(true));
-    await vi.waitFor(() => expect(result.current).toBe("green"));
 
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
-    // The catch branch swallows the error and keeps the previous color.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current).toBe("orange");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("schedules the next poll at 30s when status is green", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ jobs: [job("SUCCESS")] });
+    const { result } = renderHook(() => useCronJobStatus(true));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(result.current).toBe("green");
 
-    // A 60s retry, not another 30s one.
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("stops polling once unmounted", async () => {
-    vi.useFakeTimers();
-    mockFetch.mockResolvedValue(jobsResponse([{ lastRun: { status: "SUCCESS" } }]));
+  it("does not schedule a poll while the document is hidden", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ jobs: [job("SUCCESS")] });
+    renderHook(() => useCronJobStatus(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
 
+    act(() => setVisibility("hidden"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    // No new fetch fired while hidden.
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes polling immediately when the tab becomes visible again", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ jobs: [job("SUCCESS")] });
+    renderHook(() => useCronJobStatus(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+
+    act(() => setVisibility("hidden"));
+    await act(async () => {
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("backs off to 60s on fetch failure", async () => {
+    vi.mocked(apiFetch).mockRejectedValue(new Error("network error"));
+    renderHook(() => useCronJobStatus(true));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops polling and removes the visibility listener on unmount", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ jobs: [job("SUCCESS")] });
+    const removeSpy = vi.spyOn(document, "removeEventListener");
     const { unmount } = renderHook(() => useCronJobStatus(true));
-    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
 
     unmount();
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
   });
 });

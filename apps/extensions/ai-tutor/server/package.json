@@ -14,6 +14,10 @@
     "seed": "tsx prisma/seed.ts",
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "seed:perf": "tsx prisma/seed-perf.ts",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -31,7 +35,6 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.7",
-    "oxlint": "^1.56.0",
     "prisma": "^6.16.1",
     "supertest": "^7.2.2",
     "vitest": "^4.1.9"

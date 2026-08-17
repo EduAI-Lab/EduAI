@@ -136,7 +136,9 @@ async function fetchFromCore(
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json', ...authHeaders },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // Omit the key entirely rather than passing `body: undefined`: `method`
+      // defaults to GET here, and a GET carrying a body key is rejected.
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (res.ok) return res.json();
 

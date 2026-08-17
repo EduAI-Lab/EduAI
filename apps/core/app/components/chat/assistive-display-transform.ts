@@ -471,7 +471,7 @@ function extractStepLadderSection(
       /^Sources:/i.test(trimmed) ||
       /^\*\*Sources/i.test(trimmed) ||
       /^\*\*Connects to/i.test(trimmed) ||
-      /^```/.test(trimmed) ||
+      trimmed.startsWith("```") ||
       (/^#{1,6}\s/.test(trimmed) && !STEP_LADDER_HEADING.test(trimmed))
     ) {
       break;

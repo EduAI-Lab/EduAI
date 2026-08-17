@@ -15,10 +15,10 @@ There are two distinct layers of scheduled work in EduAI:
 
 | Layer | Where it runs | Managed by | Can trigger from admin panel? |
 |---|---|---|---|
-| **Infra shell scripts** | In-process within the Core server | Core's `node-cron` scheduler | Yes |
+| **Infra shell scripts** | Dedicated Core cron worker | Core's `node-cron` scheduler | Yes |
 | **Extension in-process jobs** | Inside the AI Tutor and Question Maker Node servers | Each extension's own scheduler | No (external) |
 
-The admin panel at **Admin → Cron Jobs** surfaces both layers in one view. Triggering a job from the panel runs the corresponding shell script immediately (infra jobs only). Extension-managed jobs show an "External" badge and cannot be triggered from Core.
+The admin panel at **Admin → Cron Jobs** surfaces both layers in one view. Triggering an infra job records an admin run for the dedicated worker; it is dispatched during the next reconciliation cycle under `eduai-cron`. Extension-managed jobs show an "External" badge and cannot be triggered from Core.
 
 ---
 
@@ -71,7 +71,9 @@ Go to **Admin → Cron Jobs**. The panel shows:
 - **Duration** — wall time of that run.
 - **Status** — `Success`, `Error`, `Running` (pulsing), `Never run`, or `External`.
 
-The panel auto-refreshes every 3 seconds while any job shows `Running`.
+The panel uses the shared cron-status poller: it refreshes every 15 seconds while
+jobs are active and backs off to 30 seconds when idle. The sidebar and admin page
+share this same source, so they cannot start competing polling loops.
 
 Click **History** on any row to see the last 10 runs with status, duration, and output message.
 
@@ -81,9 +83,15 @@ Click **History** on any row to see the last 10 runs with status, duration, and 
 
 ### Infra shell-script jobs
 
+Schedule changes are stored in the database and picked up by the dedicated cron
+worker during its next 30-second reconciliation cycle. No web-server restart is
+needed; the worker owns scheduling independently of web requests.
+
 Click **Edit** next to any infra job's schedule to open the schedule editor. Enter a valid 5-field cron expression; the human-readable label auto-fills for common patterns (daily, weekly, monthly) and can be edited freely.
 
-Saving the schedule updates the database and immediately reschedules the job in the Core process — no deployment or server restart required. A yellow "custom" badge appears on the row.
+Saving the schedule updates the database. The worker applies the change during
+its next 30-second reconciliation cycle, so no deployment or server restart is
+needed. A yellow "custom" badge appears on the row.
 
 To restore the original schedule, re-open the editor and click **Reset to default**.
 
@@ -142,7 +150,9 @@ Add an entry to `KNOWN_CRON_JOBS` in `apps/core/app/lib/db.cron-jobs.server.ts`:
 },
 ```
 
-The Core scheduler picks it up on next server start. The job will appear in the admin panel, can be triggered manually, and has its schedule editable via the UI.
+The cron worker discovers it during the next 30-second reconciliation cycle. The
+job will appear in the admin panel, can be triggered manually (and dispatched
+under `eduai-cron`), and has its schedule editable via the UI.
 
 ### 3. Deploy
 
@@ -225,8 +235,12 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `backup-offsite` | `45 2 * * *` (02:45 UTC) | Infra | Sync dumps to off-site storage |
 | `backup-rotate` | `15 3 * * *` (03:15 UTC) | Infra | Delete local dumps past retention window |
 | `cleanup-invitations` | `30 3 * * *` (03:30 UTC) | Infra | Delete revoked/expired invitations past a 30-day grace period |
-| `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Infra | Email users whose provider API keys expire in exactly 7 days |
+| `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Core handler | Email users whose provider API keys expire in exactly 7 days |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 
 For data lifecycle jobs (user expiry, course deletion, etc.) see the [spec](implementations/EduAI_CronJob_DataLifecycle_Spec.md) — those scripts are defined there and are not yet registered in `KNOWN_CRON_JOBS`.
+## Scheduler worker deployment
+
+Run exactly one worker per environment with `npm run cron:worker -w edu-ai`.
+The worker loads database-backed schedule overrides at startup and reconciles them every 30 seconds. Web server instances never create cron timers, so scheduled work does not depend on web traffic. Monitor the worker process and its `[cron-worker]` logs; restart it if it exits unexpectedly.
