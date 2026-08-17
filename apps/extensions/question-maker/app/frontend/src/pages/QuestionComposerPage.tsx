@@ -425,12 +425,6 @@ export function QuestionComposerPage() {
       return;
     }
     const code = resolveCourseCodeForEduAI();
-    if (!code) {
-      setError(
-        "AI service requires a course code. Update the course with a code or ensure it exists in the AI service.",
-      );
-      return;
-    }
     if (!form.generationPrompt.trim()) {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
@@ -519,7 +513,8 @@ export function QuestionComposerPage() {
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
       const response = await eduaiService.generateQuestions({
         prompt: promptWithTopics,
-        courseCode: code,
+        courseId: validCourseId,
+        ...(code ? { courseCode: code } : {}),
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,

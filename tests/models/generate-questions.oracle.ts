@@ -6,14 +6,16 @@
  * from the handler's branch order:
  *   - Only ADMIN/UNIT_ADMIN/INSTRUCTOR platform roles may reach this route
  *     at all (QM_AUTHORIZED, router-level flat gate) -> 403 otherwise.
- *   - `prompt` and `courseCode` are both required -> 400 if either is
- *     missing, checked before anything else request-shaped.
+ *   - `prompt` is required; either `courseId` or `courseCode` is required
+ *     (#1362) -> 400 if prompt missing or neither course identifier is
+ *     present, checked before anything else request-shaped.
  *   - `numQuestions` (default 5) is rejected if it exceeds
  *     `config.maxQuestions` -> 400, checked BEFORE course access is
  *     resolved (a caller with no course access still gets the numQuestions
  *     400, not the access 403, when both would apply).
- *   - The caller must have at least TA-rank access to a QM course matching
- *     `courseCode` -> 403 COURSE_ACCESS_DENIED otherwise.
+ *   - The caller must have at least TA-rank access: via QM `courseId`
+ *     (`resolveCourseAccessWithCourse`) when provided, else via a QM course
+ *     matching `courseCode` -> 403 otherwise.
  *   - Below that, `mcqRequiredChoiceCount` is clamped into [2, 26] and
  *     forwarded only when provided as a finite number; omitted entirely
  *     otherwise. `difficultyDistribution`/`reasoningDistribution` are

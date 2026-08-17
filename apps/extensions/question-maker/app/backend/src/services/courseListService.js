@@ -15,7 +15,11 @@ import {
   listCoursesFromCore,
   searchCoursesFromCore,
 } from "./coreApiService.js";
-import { dedupeCoursesByCoreId, normalizeCourseCode } from "./courseCodeUtils.js";
+import {
+  dedupeCoursesByCoreId,
+  normalizeCourseCode,
+  courseCodeLookupCandidates,
+} from "./courseCodeUtils.js";
 import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
 import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
@@ -623,14 +627,17 @@ export async function findCoursesByProjectedCode(codeQuery, { signal } = {}) {
   const target = normalizeCourseCode(codeQuery);
   if (!target) return [];
 
+  const candidates = courseCodeLookupCandidates(codeQuery);
   let coreById = new Map();
   try {
     assertQmAiDeadline({ signal });
-    // #1125: let Core do the code match instead of pulling the catalog and
-    // filtering here. The exact-match check below still applies, since Core's
-    // `search` is a substring match.
-    const coreCourses = await searchCoursesFromCore(target, { signal }, { serviceKeyOnly: true });
-    coreById = new Map(coreCourses.map((c) => [c.id, c]));
+    // #1125 / #1362: Core `search` is literal contains — try whitespace
+    // variants so compact client codes (COSC121) still match spaced Core
+    // codes (COSC 121). Exact normalized match below still applies.
+    for (const candidate of candidates) {
+      const coreCourses = await searchCoursesFromCore(candidate, { signal }, { serviceKeyOnly: true });
+      for (const c of coreCourses) coreById.set(c.id, c);
+    }
   } catch {
     if (signal?.aborted) assertQmAiDeadline({ signal });
     return []; // Core unreachable — no code-based match is possible; degrade to no access.

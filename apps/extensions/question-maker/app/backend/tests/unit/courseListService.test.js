@@ -58,6 +58,7 @@ const {
   listCoursesPageForUser,
   resetCourseAccessSyncForTests,
   enrichCourseDetail,
+  findCoursesByProjectedCode,
 } = await import("../../src/services/courseListService.js");
 
 describe("listCoursesForUser", () => {
@@ -630,5 +631,35 @@ describe("listCoursesForUser", () => {
         expect(mockGetAuthorizedUnits).not.toHaveBeenCalled();
       });
     });
+  });
+});
+
+describe("findCoursesByProjectedCode (#1362)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindMany.mockReset();
+    mockSearchCoursesFromCore.mockReset();
+  });
+
+  it("matches a spaced Core code when the client sends a compact courseCode", async () => {
+    // Core search is literal contains — "cosc121" does not match "COSC 121".
+    // Lookup must also try the spaced candidate so QM AI gen can resolve.
+    mockSearchCoursesFromCore.mockImplementation(async (q) => {
+      if (String(q).replace(/\s+/g, "").toLowerCase() === "cosc121" && String(q).includes(" ")) {
+        return [{ id: "core-spaced", code: "COSC 121", name: "Programming II" }];
+      }
+      if (String(q).toLowerCase() === "cosc121") return [];
+      return [];
+    });
+    mockFindMany.mockResolvedValue([
+      { id: 42, coreCourseId: "core-spaced", userId: "inst-1" },
+    ]);
+
+    const rows = await findCoursesByProjectedCode("COSC121");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(42);
+    expect(mockSearchCoursesFromCore.mock.calls.map((c) => c[0])).toEqual(
+      expect.arrayContaining(["COSC121", "COSC 121"]),
+    );
   });
 });
