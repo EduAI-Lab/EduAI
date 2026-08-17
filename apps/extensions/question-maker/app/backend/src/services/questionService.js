@@ -1256,7 +1256,7 @@ export const createVariant = async (questionId, variantData, userId) => {
     let answer = variantData.answer;
     let selectAllThatApply = false;
     let correctAnswers = null;
-    
+
     if (question.type === 'MCQ') {
       if (variantData.choices !== undefined) {
         choices = validateMCQChoices(variantData.choices, question.type);
@@ -1265,7 +1265,7 @@ export const createVariant = async (questionId, variantData, userId) => {
           throw new Error('Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.');
         }
       }
-      
+
       // Normalize answer to just letter for MCQ
       if (typeof answer === 'string' && answer.trim()) {
         answer = extractAnswerLetter(answer) || answer.trim();
