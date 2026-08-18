@@ -597,10 +597,12 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
-      "/api/courses/c1/rag-settings",
-      expect.objectContaining({ method: "PATCH" }),
-    ));
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/courses/c1/rag-settings",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
     const [, request] = mockFetch.mock.calls.at(-1) as [string, RequestInit];
     expect(JSON.parse(String(request.body))).toMatchObject({
       courseScopeGuardrailEnabled: true,

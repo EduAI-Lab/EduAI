@@ -228,8 +228,9 @@ export function CourseDetailManagerView({
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
   );
-  const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] =
-    useState(course.courseScopeGuardrailEnabled);
+  const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] = useState(
+    course.courseScopeGuardrailEnabled,
+  );
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -905,17 +906,19 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
-            items={materials.map((m): MaterialListItem => ({
-              id: m.id,
-              name: m.title,
-              status: m.status,
-              mimeType: m.mimeType,
-              meta: (
-                <>
-                  {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
-                </>
-              ),
-            }))}
+            items={materials.map(
+              (m): MaterialListItem => ({
+                id: m.id,
+                name: m.title,
+                status: m.status,
+                mimeType: m.mimeType,
+                meta: (
+                  <>
+                    {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  </>
+                ),
+              }),
+            )}
             fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
             headerActions={
               <>
@@ -1414,8 +1417,8 @@ export function CourseDetailManagerView({
                         Restrict Course Chat to this course
                       </Label>
                       <p className="text-xs text-muted-foreground">
-                        When enabled, clearly off-topic student requests are redirected.
-                        This is off by default.
+                        When enabled, clearly off-topic student requests are redirected. This is off
+                        by default.
                       </p>
                     </div>
                     <Switch
