@@ -13,8 +13,13 @@
  *    title/description/publish state (all resolved live from Core). The Core perf
  *    seed must run first; this seed fails fast if the manifest or `sharedCourseId`
  *    is missing.
- *  - Destructive endpoints (DELETE module/lesson/activity, DELETE enrollment)
- *    consume victims → a perf run may deplete them; re-run this seed between runs.
+ *  - Reseeding is idempotent: the Core seed mints a NEW Core course id on every
+ *    run, so the previous anchor can never be found by `coreOfferingId` alone.
+ *    Cleanup re-reads the previous `aitutor.json` manifest (validated via
+ *    `perf-pool-manifest.js`) and drops the offering it recorded, so repeated
+ *    runs never accumulate stale anchors.
+ *  - Destructive endpoints (DELETE module/lesson/activity) consume victims → a
+ *    perf run may deplete them; re-run this seed between runs.
  *
  * Usage:
  *   cd apps/extensions/ai-tutor/server && npx tsx prisma/seed-perf.ts
@@ -23,6 +28,7 @@
 import { PrismaClient } from "@eduai/ai-tutor-prisma-client";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { previousCourseId } from "./perf-pool-manifest.js";
 
 const prisma = new PrismaClient();
 
@@ -82,24 +88,63 @@ function loadCoreManifest(): { sharedCourseId: string; readChatId: string | null
   };
 }
 
-async function resetPool(coreOfferingId: string) {
-  // The pool offering cascades to modules/lessons/activities/enrollments/topics/
-  // chats, BUT Activity.mainTopicId → Topic is Restrict (no onDelete) while Topic
-  // cascades from the course: the DB can't drop a Topic while an Activity still
-  // references it. Delete the activities first (cascades their chats/metrics),
-  // then the course.
-  const ids = (
-    await prisma.courseOffering.findMany({
-      where: { coreOfferingId },
-      select: { id: true },
-    })
-  ).map((c) => c.id);
-  if (ids.length) {
-    await prisma.activity.deleteMany({
-      where: { lesson: { module: { courseOfferingId: { in: ids } } } },
-    });
-    await prisma.courseOffering.deleteMany({ where: { id: { in: ids } } });
+// Reads the previous AI Tutor pool manifest, if any, and returns the local
+// `CourseOffering.id` it recorded — or null when there is no manifest, the file
+// is unreadable, or the manifest does not safely identify a prior pool. Shape
+// validation lives in `previousCourseId` (perf-pool-manifest.js) so a corrupted
+// or unexpected file can never name a real course for deletion.
+function loadPreviousCourseId(): number | null {
+  const file = path.join(poolDir(), "aitutor.json");
+  if (!existsSync(file)) return null;
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    console.warn(`  ⚠ ignoring unreadable previous manifest at ${file}`);
+    return null;
   }
+  const id = previousCourseId(manifest);
+  if (id === null) {
+    console.warn(`  ⚠ ignoring malformed previous manifest at ${file} (no valid pool course id)`);
+  }
+  return id;
+}
+
+// Collect the local `CourseOffering` ids to drop before reseeding:
+//  1. any offering already anchored to the NEW `sharedCourseId` (a partial re-run);
+//  2. the offering recorded by the PREVIOUS manifest — the common case, since the
+//     Core seed mints a fresh Core course id every run and the stale anchor still
+//     points at the previous one (so matching by `coreOfferingId` alone misses it).
+async function collectStalePoolIds(sharedCourseId: string): Promise<number[]> {
+  const ids = new Set<number>();
+  const current = await prisma.courseOffering.findMany({
+    where: { coreOfferingId: sharedCourseId },
+    select: { id: true },
+  });
+  for (const c of current) ids.add(c.id);
+
+  const previousId = loadPreviousCourseId();
+  if (previousId !== null) {
+    const exists = await prisma.courseOffering.findUnique({
+      where: { id: previousId },
+      select: { id: true },
+    });
+    if (exists) ids.add(previousId);
+    else console.warn(`  ⚠ previous pool offering ${previousId} no longer exists — skipping`);
+  }
+  return [...ids];
+}
+
+// Drop a set of pool offerings, respecting the delete order the schema demands:
+// Activity.mainTopicId → Topic is Restrict (no onDelete) while Topic cascades
+// from the course, so activities go first (cascading their chats/metrics), then
+// the offering (cascading modules/lessons/topics/enrollments/instructors).
+async function cleanupPool(ids: number[]) {
+  if (!ids.length) return;
+  await prisma.activity.deleteMany({
+    where: { lesson: { module: { courseOfferingId: { in: ids } } } },
+  });
+  await prisma.courseOffering.deleteMany({ where: { id: { in: ids } } });
 }
 
 async function main() {
@@ -107,7 +152,9 @@ async function main() {
   // Load the Core manifest up front: the pool offering must anchor to the REAL
   // Core perf course (sharedCourseId) and the chat session reuses its readChatId.
   const { sharedCourseId, readChatId } = loadCoreManifest();
-  await resetPool(sharedCourseId);
+  // Idempotent reseed: drop the previous pool (from its manifest) plus any anchor
+  // already pointing at the new Core course, then rebuild below.
+  await cleanupPool(await collectStalePoolIds(sharedCourseId));
 
   // --- anchor course offering + instructor + topic ---
   const course = await prisma.courseOffering.create({
