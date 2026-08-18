@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { Button, ThemeToggle } from "@eduai/ui";
 import { siteConfig } from "~/config/site";
+import { scrollToSection } from "~/lib/scroll-to-section";
 
 /**
  * Marketing header for the single-scroll landing page.
@@ -35,6 +36,7 @@ export function SiteNavigation() {
                 <a
                   key={item.name}
                   href={item.href}
+                  onClick={(event) => scrollToSection(event, item.href)}
                   className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {item.name}

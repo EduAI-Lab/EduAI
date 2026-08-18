@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { projectInfo, siteConfig } from "~/config/site";
+import { scrollToSection } from "~/lib/scroll-to-section";
 
 /**
  * Marketing footer.
@@ -39,6 +40,7 @@ export function SiteFooter() {
                 <li key={link.name}>
                   <a
                     href={link.href}
+                    onClick={(event) => scrollToSection(event, link.href)}
                     className="text-muted-foreground text-sm hover:text-foreground transition-colors"
                   >
                     {link.name}
