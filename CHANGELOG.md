@@ -4,7 +4,7 @@
 
 ### Changed
 
-- [ai-tutor] perf: Collapse the lesson-page breadcrumb waterfall by nesting module/course ancestry and ordinals on `GET /lessons/:id`, running auth + lesson/activity fetches concurrently (seeded from `useLocalUser` so `/api/me` is not re-hit per navigation), and publishing header crumbs after paint so they leave the LCP path on both student and instructor lesson routes. Closes #1334. (2026-08-17)
+- [ai-tutor] perf: Collapse the lesson-page breadcrumb waterfall by nesting module/course ancestry and ordinals on `GET /lessons/:id`, running auth + lesson/activity fetches concurrently (seeded from `useLocalUser` so `/api/me` is not re-hit per navigation), and publishing header crumbs after paint so they leave the LCP path on both student and instructor lesson routes. Closes #1334. (@GlowyBlack, 2026-08-17) � #PR
 
 ## [Week 16 — August 10–16, 2026]
 
