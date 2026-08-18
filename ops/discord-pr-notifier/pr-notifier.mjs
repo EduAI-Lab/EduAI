@@ -60,9 +60,11 @@ async function memberId(login) {
   memberIds.set(handle, id);
   return id;
 }
-async function send(channelId, text, users = []) {
+async function send(channelId, text, users = [], ping = false) {
   const names = users.map((login) => DISCORD_HANDLES[login] ?? login).filter(Boolean);
-  await discord(`/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content: `${names.join(" ")}${names.length ? " " : ""}${text}`, allowed_mentions: { parse: [] } }) });
+  const ids = ping ? (await Promise.all(users.map(memberId))).filter(Boolean) : [];
+  const prefix = ping ? ids.map((id) => `<@${id}>`).join(" ") : names.join(" ");
+  await discord(`/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content: `${prefix}${prefix ? " " : ""}${text}`, allowed_mentions: ping ? { users: ids } : { parse: [] } }) });
 }
 async function addToThread(threadId, users = []) {
   const ids = (await Promise.all(users.map(memberId))).filter(Boolean);
@@ -84,7 +86,7 @@ async function ensureThread(state) {
   await addToThread(thread.id, unique([state.author, ...(state.assignees ?? []), ...(state.reviewers ?? [])]));
   return thread.id;
 }
-async function notify(state, text, users = []) { if (state.threadId) await send(state.threadId, text, users); }
+async function notify(state, text, users = [], ping = false) { if (state.threadId) await send(state.threadId, text, users, ping); }
 function isFailure(value) { return ["failure", "timed_out", "cancelled", "action_required", "startup_failure"].includes(value); }
 async function maybeReady(state) {
   if (!state.threadId || !state.ciGreen || state.approvers.length < config.approvals || state.readyAt) return;
@@ -181,7 +183,7 @@ async function reminders() {
       const assignedAt = state.reviewRequestedAtByReviewer?.[reviewer];
       const lastReminder = remindersSent.find((entry) => entry.login === reviewer)?.at ?? 0;
       if (assignedAt && Date.now() - assignedAt >= 24 * 60 * 60 * 1000 && (!lastReminder || Date.now() - lastReminder >= 24 * 60 * 60 * 1000)) {
-        await notify(state, "[Reminder] Friendly review reminder.", [reviewer]);
+        await notify(state, "[Reminder] Friendly review reminder.", [reviewer], true);
         state.reviewerReminderAtByReviewer = [...remindersSent.filter((entry) => entry.login !== reviewer), { login: reviewer, at: Date.now() }];
       }
     }
