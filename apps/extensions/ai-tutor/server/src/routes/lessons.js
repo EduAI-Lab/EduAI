@@ -12,6 +12,10 @@ import {
 import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import { calculateLessonProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
+import {
+  buildLessonBreadcrumb,
+  computeLessonTreeContext,
+} from '../services/lessonBreadcrumb.js';
 
 const router = express.Router();
 
@@ -203,7 +207,17 @@ router.get('/lessons/:lessonId', async (req, res) => {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    res.json(mapLesson(lesson));
+    // #1334: nest module/course + ordinals so lesson players drop the
+    // post-lesson breadcrumb waterfall (moduleById → courseById → /context).
+    const publishedOnly = isStudent && !hasElevatedAccess;
+    const { breadcrumb, coreUnavailable } = await buildLessonBreadcrumb(lesson, {
+      publishedOnly,
+    });
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+
+    res.json({ ...mapLesson(lesson), breadcrumb });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -273,57 +287,7 @@ router.get('/lessons/:lessonId/context', async (req, res) => {
     }
 
     const publishedOnly = isStudent && !hasElevatedAccess;
-    const moduleScope = {
-      courseOfferingId: module.courseOfferingId,
-      ...(publishedOnly ? { isPublished: true } : {}),
-    };
-    const lessonScope = {
-      moduleId: lesson.moduleId,
-      ...(publishedOnly ? { isPublished: true } : {}),
-    };
-
-    // "Sorts before me" under the canonical `position asc, id asc` ordering:
-    // a strictly-lower position, or an equal position and a lower id. The id
-    // tiebreak matters because `position` carries no unique constraint.
-    const sortsBefore = (row) => ({
-      OR: [
-        { position: { lt: row.position } },
-        { position: row.position, id: { lt: row.id } },
-      ],
-    });
-    const sortsAfter = (row) => ({
-      OR: [
-        { position: { gt: row.position } },
-        { position: row.position, id: { gt: row.id } },
-      ],
-    });
-
-    const [modulesBefore, moduleTotal, lessonsBefore, lessonTotal, prev, next] =
-      await Promise.all([
-        prisma.module.count({ where: { AND: [moduleScope, sortsBefore(module)] } }),
-        prisma.module.count({ where: moduleScope }),
-        prisma.lesson.count({ where: { AND: [lessonScope, sortsBefore(lesson)] } }),
-        prisma.lesson.count({ where: lessonScope }),
-        prisma.lesson.findFirst({
-          where: { AND: [lessonScope, sortsBefore(lesson)] },
-          orderBy: [{ position: 'desc' }, { id: 'desc' }],
-          select: { id: true },
-        }),
-        prisma.lesson.findFirst({
-          where: { AND: [lessonScope, sortsAfter(lesson)] },
-          orderBy: [{ position: 'asc' }, { id: 'asc' }],
-          select: { id: true },
-        }),
-      ]);
-
-    res.json({
-      moduleOrdinal: modulesBefore + 1,
-      lessonOrdinal: lessonsBefore + 1,
-      moduleTotal,
-      lessonTotal,
-      prevLessonId: prev?.id ?? null,
-      nextLessonId: next?.id ?? null,
-    });
+    res.json(await computeLessonTreeContext(lesson, module, { publishedOnly }));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
