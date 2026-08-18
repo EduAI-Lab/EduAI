@@ -54,12 +54,12 @@ const goals = [
 
 export function ProjectGoals() {
   return (
-    <section className="relative py-20">
+    <section id="goals" className="relative scroll-mt-20 py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <PageHeading
           heading="Project goals"
           className="text-center mb-16 [&>div]:mx-auto"
-          headingClassName="text-4xl font-bold text-foreground"
+          headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">

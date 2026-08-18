@@ -13,13 +13,34 @@ describe("SiteFooter — rendering", () => {
     expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
   });
 
-  it("renders the Quick Links section", () => {
+  it("renders the in-page section links", () => {
     render(
       <MemoryRouter>
         <SiteFooter />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("heading", { name: "Quick links" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "On this page" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Our team" })).toHaveAttribute("href", "#team");
+  });
+
+  it("renders the platform links", () => {
+    render(
+      <MemoryRouter>
+        <SiteFooter />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole("heading", { name: "Platform" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/auth/register");
+  });
+
+  it("does not emit a label for the removed camelCase config key", () => {
+    render(
+      <MemoryRouter>
+        <SiteFooter />
+      </MemoryRouter>
+    );
+    expect(screen.queryByRole("link", { name: /signup/i })).not.toBeInTheDocument();
   });
 
   it("renders the current year in the copyright line", () => {

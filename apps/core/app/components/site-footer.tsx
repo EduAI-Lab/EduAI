@@ -1,6 +1,25 @@
-import { IconBrandGithub } from "@tabler/icons-react";
 import { Link } from "react-router";
 import { projectInfo, siteConfig } from "~/config/site";
+
+/**
+ * Marketing footer.
+ *
+ * The link lists are explicit rather than derived from `siteConfig.navigation`:
+ * that object also holds auth-gated destinations (/courses, /chat) which just
+ * bounce a signed-out visitor to the login page, and its camelCase keys made
+ * poor labels ("SignUp").
+ */
+const sectionLinks = [
+  { name: "About", href: "#about" },
+  { name: "Project goals", href: "#goals" },
+  { name: "Our team", href: "#team" },
+];
+
+const productLinks = [
+  { name: "Dashboard", to: siteConfig.navigation.dashboard },
+  { name: "Log in", to: siteConfig.navigation.login },
+  { name: "Sign up", to: siteConfig.navigation.signUp },
+];
 
 export function SiteFooter() {
   return (
@@ -14,15 +33,30 @@ export function SiteFooter() {
             </p>
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-foreground mb-4">Quick links</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-4">On this page</h3>
             <ul className="space-y-2">
-              {Object.entries(siteConfig.navigation).map(([name, path]) => (
-                <li key={name}>
-                  <Link
-                    to={path}
-                    className="text-muted-foreground hover:text-foreground transition-colors capitalize"
+              {sectionLinks.map((link) => (
+                <li key={link.name}>
+                  <a
+                    href={link.href}
+                    className="text-muted-foreground text-sm hover:text-foreground transition-colors"
                   >
-                    {name.replace("-", " ")}
+                    {link.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-foreground mb-4">Platform</h3>
+            <ul className="space-y-2">
+              {productLinks.map((link) => (
+                <li key={link.name}>
+                  <Link
+                    to={link.to}
+                    className="text-muted-foreground text-sm hover:text-foreground transition-colors"
+                  >
+                    {link.name}
                   </Link>
                 </li>
               ))}

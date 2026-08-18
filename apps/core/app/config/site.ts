@@ -11,7 +11,6 @@ export const siteConfig = {
   description: "AI-powered learning platform for personalized education",
   navigation: {
     home: "/",
-    team: "/team",
     dashboard: "/dashboard",
     courses: "/courses",
     chat: "/chat",

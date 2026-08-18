@@ -19,6 +19,19 @@
 /* Design tokens, base layer and scrollbars live in @eduai/ui's base.css above.
  * Only Core-specific rules belong below. */
 
+/* The landing page is a single scrolling document whose header links are in-page
+ * anchors — smooth scrolling makes the jump legible.
+ *
+ * The reduce-motion block below cannot do the opting out here: its selector is
+ * `[data-reduce-motion="true"] *`, and the attribute lives on <html> itself
+ * (see ui-preferences-provider.tsx), so <html> is never a descendant match.
+ * Both escape hatches therefore have to be spelled out on this rule. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-reduce-motion="true"]) {
+    scroll-behavior: smooth;
+  }
+}
+
 /* Accessibility tab hooks — attributes/classes only when non-default (see root Layout). */
 [data-reduce-motion="true"] *,
 [data-reduce-motion="true"] *::before,

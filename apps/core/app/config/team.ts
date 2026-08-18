@@ -1,8 +1,13 @@
-import { PageHeading } from "@eduai/ui";
-import { SiteNavigation } from "~/components/site-navigation";
-import { SiteFooter } from "~/components/site-footer";
-import { TeamMemberCard } from "~/components/team-member-card";
-
+/**
+ * Research team roster rendered by the homepage's team section.
+ *
+ * This used to live inside `routes/team.tsx`, which was deleted when the
+ * standalone /team page was folded into the single-scroll landing page. The
+ * data is static and has no server dependency, so it sits next to `site.ts`
+ * rather than behind a loader.
+ *
+ * `image` paths are root-relative and resolve out of `apps/core/public/`.
+ */
 export interface TeamMember {
   id: number;
   name: string;
@@ -10,6 +15,7 @@ export interface TeamMember {
   biography: string;
   contribution: string;
   techStack: string[];
+  /** A short personal signature — a code one-liner for some, an accolade for others. */
   codeSnippet: string;
 }
 
@@ -31,7 +37,7 @@ export const teamMembers: TeamMember[] = [
     name: "Dr. Mostafa Mohamed",
     image: "/MohMustafa.jpeg",
     biography:
-      " Professor Mostafa Mohamed, previously an Assistant Professor of Biomedical Engineering and now a Computer Science professor at UBCO , advances research in AI, machine learning, and medical imaging. His notable contributions include white blood cell segmentation, leukemia detection, deep learning–based scene analysis, and human cell classification. With 500+ citations and more than a dozen publications at IEEE, he integrates hardware acceleration, parallel computing, and cloud systems to enhance healthcare diagnostics.",
+      "Professor Mostafa Mohamed, previously an Assistant Professor of Biomedical Engineering and now a Computer Science professor at UBCO, advances research in AI, machine learning, and medical imaging. His notable contributions include white blood cell segmentation, leukemia detection, deep learning–based scene analysis, and human cell classification. With 500+ citations and more than a dozen publications at IEEE, he integrates hardware acceleration, parallel computing, and cloud systems to enhance healthcare diagnostics.",
     contribution:
       "Leads backend development and guides students in building scalable AI infrastructure using LLMs and RAG pipelines for EduAI.",
     techStack: ["Big Data", "GPU acceleration", "Cloud Computing", "Medical Image Processing"],
@@ -46,17 +52,9 @@ export const teamMembers: TeamMember[] = [
       "Assistant Professor in Computer Science and Data Science at UBC Okanagan, leading the FARD Lab (Foundational AIware Research and Development). Her research focuses on AI-driven software engineering, large language models for code, and NLP applications in low-resource programming languages.",
     contribution:
       "Leads research on adapter-based fine-tuning for low-resource programming languages, exploring transfer learning techniques to improve code intelligence. She has published extensively on code summarization, code clone detection, and the intersection of AI and software development.",
-    techStack: [
-      "Python",
-      "PyTorch",
-      "Transformers",
-      "HuggingFace",
-      "NLP",
-      "LLMs",
-      "Data Visualization",
-    ],
+    techStack: ["Python", "PyTorch", "Transformers", "HuggingFace", "NLP", "LLMs", "Data Visualization"],
     codeSnippet:
-      "from transformers import AutoModel, AutoTokenizer; model = AutoModel.from_pretrained('microsoft/codebert-base'); tokenizer = AutoTokenizer.from_pretrained('microsoft/codebert-base'); inputs = tokenizer('def example(): return True', return_tensors='pt'); outputs = model(**inputs)",
+      "from transformers import AutoModel, AutoTokenizer; model = AutoModel.from_pretrained('microsoft/codebert-base')",
   },
   {
     id: 4,
@@ -68,26 +66,25 @@ export const teamMembers: TeamMember[] = [
       "Directed the Distributed Database Lab, advanced query optimization algorithms, and developed the UnityJDBC driver integrating relational and NoSQL data. His work bridges academic research and industry by providing scalable database solutions and mentoring numerous software engineering students.",
     techStack: ["PostgreSQL", "MySQL", "MongoDB", "Java", "JDBC", "C/C++", "SQL Optimization"],
     codeSnippet:
-      "try (Connection conn = DriverManager.getConnection(url, user, pass)) { Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery('SELECT * FROM students'); while (rs.next()) { System.out.println(rs.getString('name')); } }",
+      "ResultSet rs = stmt.executeQuery('SELECT * FROM students'); while (rs.next()) { … }",
   },
   {
     id: 5,
-    name: "Ronit Buti ",
+    name: "Ronit Buti",
     image: "/ronit.jpg",
     biography:
       "Ronit is an Honors Computer Science student who built EduAI, including a provider-agnostic model registry and a pgvector-backed retrieval layer that grounds answers in uploaded course materials.",
     contribution:
       "Led full-stack development of the platform including auth, UI, backend, and RAG pipeline, while architecting extensible tool interfaces for web search and document retrieval.",
     techStack: ["React", "TypeScript", "Next.js", "Prisma", "AI SDK"],
-    codeSnippet:
-      "generateText({ model: 'openai/gpt-5.2', prompt: 'You are a helpful assistant.' })",
+    codeSnippet: "generateText({ model: 'openai/gpt-5.2', prompt: 'You are a helpful assistant.' })",
   },
   {
     id: 6,
     name: "Stavan Shah",
     image: "/Stavan.jpeg",
     biography:
-      "Stavan is an Honours Computer Science student specializing in AI-driven software engineering and RAG systems.He previously worked on Courseplanner which is a course advising chatbot for UBC and an automated configuration agent. His current research focuses on 'Supervisory AI' architectures, designing multi-agent systems where a secondary model validates pedagogical feedback to ensure accuracy and educational value.",
+      "Stavan is an Honours Computer Science student specializing in AI-driven software engineering and RAG systems. He previously worked on Courseplanner, a course advising chatbot for UBC, and an automated configuration agent. His current research focuses on 'Supervisory AI' architectures, designing multi-agent systems where a secondary model validates pedagogical feedback to ensure accuracy and educational value.",
     contribution:
       "Manages the backend API and database architecture. He ensures that all server-side operations are secure, scalable, and properly integrated with the application's data models.",
     techStack: ["React", "TypeScript", "Go", "Django", "Angular", "PostgreSQL"],
@@ -98,16 +95,9 @@ export const teamMembers: TeamMember[] = [
     name: "Ahab Masud Siddiqui",
     image: "/AA.JPG",
     biography:
-      "As a sophomore in Computer Science at UBC and a software engineering intern , I've accumulated strong skills in software development. I have experience in building full-stack web applications and AI/ML projects. I've worked under the supervision of multiple professors in developing an mobile application for a Hospital Wayfinding App as well using Swift and Flutter. I'm eager to contribute to EduAI and collaborate with a passionate research team.",
+      "A sophomore in Computer Science at UBC and a software engineering intern with strong skills in software development, spanning full-stack web applications and AI/ML projects. Has worked under the supervision of multiple professors developing a Hospital Wayfinding mobile app using Swift and Flutter.",
     contribution: "Frontend development and AI integrations for EduAI.",
-    techStack: [
-      "React Native & RR7 ",
-      "Node.js",
-      "TensorFlow",
-      "Docker",
-      "Vite+TypeScript",
-      "Next.js",
-    ],
+    techStack: ["React Native", "React Router 7", "Node.js", "TensorFlow", "Docker", "Vite", "Next.js"],
     codeSnippet:
       "Software Engineering Intern, Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
   },
@@ -118,9 +108,9 @@ export const teamMembers: TeamMember[] = [
     biography:
       "An undergraduate from Turkey with a great interest for AI used in education, as well as a personal interest in video game development. In the EduAI project, he helps develop the backend infrastructure, developing the database, and handling API calls.",
     contribution:
-      "Developed backend infrastructure, managed databases, and implemented API integrations, while exploring applications of AI in education and maintaining a strong personal interest in video game development.",
-    techStack: ["Backend Architecture", "Software Development", "APIs", "ReactRouter"],
-    codeSnippet: " if (working == true){take a break; }else { take a break;}",
+      "Developed backend infrastructure, managed databases, and implemented API integrations, while exploring applications of AI in education.",
+    techStack: ["Backend Architecture", "Software Development", "APIs", "React Router"],
+    codeSnippet: "if (working == true) { take a break; } else { take a break; }",
   },
   {
     id: 9,
@@ -130,8 +120,8 @@ export const teamMembers: TeamMember[] = [
       "Ribhav Sharma is a 4th-year Computer Science student who has demonstrated a strong aptitude for AI and software development. He contributed to the EduAI project, focusing on enhancing the platform’s learning capabilities and user-interaction framework. Ribhav brings a blend of academic rigor and hands-on development experience, making him an asset in building innovative tech solutions.",
     contribution:
       "Contributed to EduAI: improved core learning algorithms and enhanced user-interaction systems.",
-    techStack: ["Java", "Python", "machine learning", "React", "Node.js"],
-    codeSnippet: "while( internship_game == up ) {chills} ",
+    techStack: ["Java", "Python", "Machine Learning", "React", "Node.js"],
+    codeSnippet: "while (internship_game == up) { chills }",
   },
   {
     id: 10,
@@ -142,51 +132,17 @@ export const teamMembers: TeamMember[] = [
     contribution:
       "Volunteer Research Assistant contributing to backend infrastructure development and data architecture design. Responsible for implementing API endpoints and database integration, with a focus on designing efficient data pipelines that ensure seamless information flow throughout the system using React Router 7 and PostgreSQL.",
     techStack: ["Python", "SQL", "Node.js", "APIs", "React Router 7", "PostgreSQL"],
-    codeSnippet: " while self.at(UBC): self.study() self.code() self.drink(RedBull) ",
+    codeSnippet: "while self.at(UBC): self.study(); self.code(); self.drink(RedBull)",
   },
   {
     id: 11,
     name: "Mohamed Gamal Sakr",
     image: "/sakr.jpg",
     biography:
-      "Mohamed Gamal Sakr is an honours Computer Science student at UBC Okanagan specializing in agentic AI and machine learning. He has industry experience from a software engineering internship at Allianz and currently develops LLM-based code vulnerability tools at UBCO. As a student leader and former president-elect of the Computer Science Course Union, he has earned the Dean’s List (2025) and UBC’s Outstanding International Student Award (2022). His project excellence was recognized with the Database Web Development Badge (2024). He also holds professional certifications from Stanford and Harvard, focusing on applying advanced AI research to practical, real-world systems. ",
+      "Mohamed Gamal Sakr is an honours Computer Science student at UBC Okanagan specializing in agentic AI and machine learning. He has industry experience from a software engineering internship at Allianz and currently develops LLM-based code vulnerability tools at UBCO. As a student leader and former president-elect of the Computer Science Course Union, he has earned the Dean’s List (2025) and UBC’s Outstanding International Student Award (2022).",
     contribution:
-      "Lead AI Engineer & Project Manager who integrated a Retrieval-Augmented Generation (RAG) engine and production-grade vector database into the core platform while also directing the project lifecycle — from planning and technical design to task management and team coordination — ensuring timely delivery and alignment between engineering, research, and product stakeholders.",
+      "Lead AI Engineer & Project Manager who integrated a Retrieval-Augmented Generation (RAG) engine and production-grade vector database into the core platform while also directing the project lifecycle — from planning and technical design to task management and team coordination.",
     techStack: ["Machine Learning", "Agentic AI", "LLMs"],
     codeSnippet: "if (hardwork) then dubs",
   },
 ];
-
-export default function TeamPage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <SiteNavigation currentPage="team" />
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Project Introduction */}
-        <div className="text-center mb-16">
-          <PageHeading
-            heading="Meet our research team"
-            className="mb-6 [&>div]:mx-auto"
-            headingClassName="text-4xl font-bold text-foreground"
-          />
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Our dedicated team of undergraduate and graduate students is working alongside faculty
-            to advance the field of Educational Artificial Intelligence, creating innovative
-            solutions that enhance learning experiences for students worldwide.
-          </p>
-        </div>
-
-        {/* Team Members */}
-        <div className="space-y-12">
-          {teamMembers.map((member, index) => (
-            <TeamMemberCard key={member.id} member={member} index={index} />
-          ))}
-        </div>
-
-        <SiteFooter />
-      </main>
-    </div>
-  );
-}

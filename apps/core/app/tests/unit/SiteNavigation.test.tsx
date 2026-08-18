@@ -3,53 +3,52 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { SiteNavigation } from "~/components/site-navigation";
 
+/**
+ * The landing page is one scrolling document, so the header's nav items are
+ * in-page anchors rather than routes, and the Dashboard entry point moved into
+ * the page body (hero + closing CTA band).
+ */
 describe("SiteNavigation — rendering", () => {
-  it("renders Home and Team links", () => {
+  it("renders the in-page section anchors", () => {
     render(
       <MemoryRouter>
-        <SiteNavigation currentPage="home" />
-      </MemoryRouter>,
-    );
-    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Team" })).toBeInTheDocument();
-  });
-
-  it("renders the Dashboard button", () => {
-    render(
-      <MemoryRouter>
-        <SiteNavigation currentPage="home" />
-      </MemoryRouter>,
-    );
-    expect(screen.getByRole("button", { name: "Dashboard" })).toBeInTheDocument();
-  });
-
-  it("renders the Log in and Sign up buttons", () => {
-    render(
-      <MemoryRouter>
-        <SiteNavigation currentPage="home" />
+        <SiteNavigation />
       </MemoryRouter>
     );
-    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign up" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "#about");
+    expect(screen.getByRole("link", { name: "Goals" })).toHaveAttribute("href", "#goals");
+    expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute("href", "#team");
   });
 
-  it("marks the current page link as active", () => {
+  it("renders the wordmark linking back to the top of the site", () => {
     render(
       <MemoryRouter>
-        <SiteNavigation currentPage="team" />
-      </MemoryRouter>,
+        <SiteNavigation />
+      </MemoryRouter>
     );
-    expect(screen.getByRole("link", { name: "Team" })).toHaveClass("border-primary");
+    expect(screen.getByRole("link", { name: "EduAI Lab" })).toHaveAttribute("href", "/");
   });
-});
 
-describe("SiteNavigation — missing data", () => {
-  it("renders without throwing when currentPage matches nothing", () => {
+  it("renders Log in and Sign up as real links, not imperative buttons", () => {
     render(
       <MemoryRouter>
-        <SiteNavigation currentPage="" />
-      </MemoryRouter>,
+        <SiteNavigation />
+      </MemoryRouter>
     );
-    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
+      "href",
+      "/auth/register"
+    );
+  });
+
+  it("no longer carries a Dashboard action — that lives on the page now", () => {
+    render(
+      <MemoryRouter>
+        <SiteNavigation />
+      </MemoryRouter>
+    );
+    expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();
   });
 });
