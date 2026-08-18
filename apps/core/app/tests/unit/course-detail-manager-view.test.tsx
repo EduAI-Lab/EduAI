@@ -582,6 +582,32 @@ describe("CourseDetailManagerView — settings (RAG) tab", () => {
     });
   });
 
+  it("preserves an enabled course-scope toggle when saving only RAG top-k", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    renderView({ course: { ...COURSE, courseScopeGuardrailEnabled: true } });
+    clickTab(/settings/i);
+
+    const toggle = screen.getByRole("switch", {
+      name: /restrict course chat to this course/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.change(screen.getByLabelText(/results per question/i), {
+      target: { value: "6" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
+      "/api/courses/c1/rag-settings",
+      expect.objectContaining({ method: "PATCH" }),
+    ));
+    const [, request] = mockFetch.mock.calls.at(-1) as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      courseScopeGuardrailEnabled: true,
+      ragTopK: 6,
+    });
+  });
+
   it("saves RAG search-tuning settings", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();

@@ -14,18 +14,23 @@
 
 ### Fixed
 
-- [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-14) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
+- [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ### Tests
 
-- [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure with a default-off fallback for the course detail route. (@saadtab01, 2026-08-14) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
+- [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure for the course detail route. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ## [Week 15 — August 10–16, 2026]
 
 ### Added
 
+- [core] feat: Add production deployment runbook and bootstrap artifacts for Core at `my.eduai.ok.ubc.ca`, including a dedicated release layout, database/provisioning checklist, scoped service helper, systemd unit, Apache template, and local OpenAI-compatible CMPS embeddings via `mxbai-embed-large`. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 - [core] feat: Complete the async AI-job status read model with explicit route registration and an advisory `etaSeconds` estimate derived from recent per-pool completion durations and worker concurrency. Closes #1508. (@superbolt08, 2026-08-12) — [#1506](https://github.com/EduAI-Lab/EduAI/pull/1506)
 - [core] feat: Add `GET /api/ai-jobs/:jobId`, a producer-side status endpoint exposing a live, caller-owned `AiJob` snapshot plus its current queue position — recomputed from Postgres on every read (not a stale enqueue-time value) so it reflects jobs that have drained since enqueue and stays correct across a Redis restart. Scoped to the requesting user (404, not 403, on another user's job id, so the response can't confirm the id exists), with a service-key path so Question Maker can poll the synthetic-`service`-owned jobs it creates server-to-server. Closes #917. (@saadtab01, 2026-08-11) — [#1475](https://github.com/EduAI-Lab/EduAI/pull/1475)
+
+### Changed
+
+- [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 
 ### Fixed
 

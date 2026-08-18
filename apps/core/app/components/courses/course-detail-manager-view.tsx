@@ -73,8 +73,13 @@ interface StaffUser {
   email: string;
 }
 
+export type CourseDetailManagerCourse = CourseDetail & {
+  /** Staff course loaders always include the persisted, non-null toggle. */
+  courseScopeGuardrailEnabled: boolean;
+};
+
 interface Props {
-  course: CourseDetail;
+  course: CourseDetailManagerCourse;
   access: CourseAccess;
   topics: CourseTopic[];
   enrollments: CourseEnrollment[];
@@ -224,7 +229,7 @@ export function CourseDetailManagerView({
     course.ragSimilarityThreshold?.toString() ?? "",
   );
   const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] =
-    useState(course.courseScopeGuardrailEnabled ?? false);
+    useState(course.courseScopeGuardrailEnabled);
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
