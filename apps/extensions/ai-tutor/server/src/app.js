@@ -16,6 +16,7 @@ import bugReportRoutes from "./routes/bug-reports.js";
 import aiStatusRoutes from "./routes/ai-status.js";
 import internalRoutes from "./routes/internal.js";
 import { corsOptions } from "./config/cors.js";
+import { csrfOriginGuard } from "./middleware/csrf.js";
 import { prisma } from "./config/database.js";
 
 function isAllowedAdminPath(path) {
@@ -55,6 +56,10 @@ export async function createApp(options = {}) {
 
   // JSON parser for our own routes
   app.use(express.json());
+
+  // CSRF backstop (#1571): reject cross-origin state-changing requests before
+  // any route runs. Independent of Core's SameSite cookie attribute.
+  app.use("/api", csrfOriginGuard);
 
   // Health check endpoint
   app.get("/api/health", async (req, res) => {

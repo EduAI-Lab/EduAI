@@ -450,6 +450,14 @@ export interface FileInfo {
 /**
  * Sanitize text content for database storage
  * Removes null bytes and other problematic characters for PostgreSQL
+ *
+ * TRUST BOUNDARY (#1571): this strips control characters only — it does NOT
+ * strip HTML. A `.md`/`.html` upload's raw `<script>`/`<img onerror=…>` survives
+ * ingest. That is safe TODAY only because the sole render sink for material
+ * `rawText`/`excerpt` is a React-escaped `<pre>{excerpt}</pre>`
+ * (components/courses/material-preview-dialog.tsx). If any future consumer
+ * renders material text through a raw-HTML/markdown renderer, this becomes
+ * stored XSS — sanitize the HTML on ingest (or at that sink) before doing so.
  */
 export function sanitizeTextContent(content: string): string {
   return (

@@ -27,6 +27,12 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
+// #1571: the admin chatMode gate re-checks isActive against the DB. Default the
+// mocked admin to active; the deactivated-admin test overrides it to false.
+vi.mock("~/lib/api-keys/access.server", () => ({
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -46,6 +52,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
@@ -76,6 +83,7 @@ function makeArgs(body: object) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -273,8 +281,18 @@ describe("POST /api/chat — admin chatMode gate", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "a1", role: "ADMIN" },
     } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(true);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an ADMIN-role session whose account was deactivated (#1571)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
   });
 
   it("rejects a valid service key for admin chatMode", async () => {

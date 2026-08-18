@@ -56,6 +56,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // Reading the TA roster is allowed for anyone with course access (students,
   // TAs, instructors, admins). Mutations remain gated in `action` below.
+  //
+  // PII BOUNDARY (#1571 — NEEDS PRODUCT CONFIRMATION): `getCourseTA` returns TA
+  // name + email, so this exposes TA emails to enrolled students. That diverges
+  // from `courses.enrollments.ts`, which blocks students from the roster
+  // entirely. If exposing TA contact info to students is NOT intended, drop
+  // email for student-tier callers here (not at the service layer, which other
+  // callers share).
   if (!access) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
