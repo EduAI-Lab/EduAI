@@ -147,19 +147,39 @@ describe('instructor.lesson clientLoader', () => {
     expect(api.activitiesForLesson).toHaveBeenCalledWith(3, { page: 2, search: 'heap' });
   });
 
-  it('builds the order text from the server context', async () => {
+  it('builds the order text from the lesson breadcrumb payload (#1334)', async () => {
+    api.lessonById.mockResolvedValue({
+      id: 3,
+      title: 'Lesson',
+      moduleId: 2,
+      breadcrumb: {
+        module: { id: 2, title: 'Module', courseOfferingId: 1, position: 0, isPublished: true },
+        course: { id: 1, title: 'Course' },
+        moduleOrdinal: 3,
+        lessonOrdinal: 2,
+      },
+    });
     const result = await load('http://x/instructor/lesson/3');
-    expect(api.lessonContext).toHaveBeenCalledWith(3);
-    expect(result).toMatchObject({ orderText: '3.2' });
-    // Neither sibling list is fetched any more.
+    expect(result).toMatchObject({
+      orderText: '3.2',
+      module: { id: 2, title: 'Module' },
+      course: { id: 1, title: 'Course' },
+    });
+    // #1334: ancestry is nested on the lesson — no follow-up fan-out.
+    expect(api.moduleById).not.toHaveBeenCalled();
+    expect(api.courseById).not.toHaveBeenCalled();
+    expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.modulesForCourse).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
   });
 
-  it('skips the context lookup for a lesson with no parent module', async () => {
+  it('skips breadcrumb fields for a lesson with no parent module', async () => {
     api.lessonById.mockResolvedValue({ id: 3, title: 'Orphan', moduleId: null });
     const result = await load('http://x/instructor/lesson/3');
     expect(result.orderText).toBeUndefined();
+    expect(result.module).toBeNull();
+    expect(result.course).toBeNull();
+    expect(api.moduleById).not.toHaveBeenCalled();
     expect(api.lessonContext).not.toHaveBeenCalled();
   });
 });
@@ -229,10 +249,25 @@ describe('student.lesson clientLoader', () => {
     expect(result).toMatchObject({ activitiesTotal: 120 });
   });
 
-  it('derives the order text from the server context', async () => {
+  it('derives the order text from the lesson breadcrumb payload (#1334)', async () => {
+    api.lessonById.mockResolvedValue({
+      id: 3,
+      title: 'Lesson',
+      moduleId: 2,
+      breadcrumb: {
+        module: { id: 2, title: 'Module', courseOfferingId: 1, position: 0, isPublished: true },
+        course: { id: 1, title: 'Course' },
+        moduleOrdinal: 3,
+        lessonOrdinal: 2,
+      },
+    });
     const result = await load();
     expect(result.orderText).toBe('3.2');
-    expect(api.lessonContext).toHaveBeenCalledWith(3);
+    expect(result.module).toMatchObject({ id: 2 });
+    expect(result.course).toMatchObject({ id: 1 });
+    expect(api.moduleById).not.toHaveBeenCalled();
+    expect(api.courseById).not.toHaveBeenCalled();
+    expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
   });
 

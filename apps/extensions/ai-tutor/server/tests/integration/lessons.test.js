@@ -215,6 +215,63 @@ describe('Lessons routes', () => {
       expect(res.body.title).toBe('Test Lesson');
     });
 
+    // #1334: breadcrumb ancestry ships with the lesson so the player loaders
+    // no longer fan out to moduleById + courseById + /context after the fact.
+    it('includes breadcrumb ancestry (module, course, ordinals) on the lesson', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+        id: coreOfferingId,
+        name: 'Breadcrumb Course',
+        code: 'BC101',
+        isPublished: true,
+      }));
+
+      const module2 = await prisma.module.create({
+        data: {
+          title: 'Second Module',
+          position: 1,
+          isPublished: true,
+          courseOfferingId: seed.course.id,
+        },
+      });
+      await prisma.lesson.create({
+        data: {
+          title: 'Sibling before',
+          contentMd: '',
+          position: 0,
+          isPublished: true,
+          moduleId: module2.id,
+        },
+      });
+      const target = await prisma.lesson.create({
+        data: {
+          title: 'Target Lesson',
+          contentMd: '',
+          position: 1,
+          isPublished: true,
+          moduleId: module2.id,
+        },
+      });
+
+      const res = await request(profApp).get(`/api/lessons/${target.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(target.id);
+      expect(res.body.breadcrumb).toMatchObject({
+        module: {
+          id: module2.id,
+          title: 'Second Module',
+          courseOfferingId: seed.course.id,
+        },
+        course: {
+          id: seed.course.id,
+          title: 'Breadcrumb Course',
+          code: 'BC101',
+        },
+        moduleOrdinal: 2,
+        lessonOrdinal: 2,
+      });
+    });
+
     it('TA sees unpublished lesson', async () => {
       await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
       const ta = await enrollTa();
