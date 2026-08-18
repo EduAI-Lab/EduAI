@@ -45,7 +45,7 @@ STUDENT, TA (instructor shell read-only; student surfaces where allowed), INSTRU
 
 ## Environment
 
-Server (`server/.env`): `DATABASE_URL`, `CORE_URL`, `EDUAI_API_KEY`, `EDUAI_BASE_URL`, `PORT` default 4000
+Server (`server/.env`): `DATABASE_URL`, `CORE_URL`, `EDUAI_API_KEY`, `EDUAI_BASE_URL`, `PORT` default 4000, `CORS_ORIGINS` (comma-separated allowlist; also backs the CSRF Origin guard), `ENCRYPTION_KEY` (optional — when set, the admin `EDUAI_API_KEY` override stored in `SystemSetting` is encrypted at rest with AES-256-GCM; unset keeps existing plaintext working)
 
 Frontend Vite: `VITE_API_URL` default 4000, `VITE_EDUAI_URL` 3000, `VITE_QUESTION_MAKER_URL` 5173
 
