@@ -174,3 +174,38 @@ describe("PATCH /api/policies", () => {
     expect(res.status).toBe(405);
   });
 });
+
+// #1453 — policy flags are read on most page loads and change on the order of
+// hours, so the GET is cacheable for 30s (the TTL AI-Tutor's policyService
+// already assumes). All three read paths must agree, and no denial may be cached.
+describe("GET /api/policies Cache-Control (#1453)", () => {
+  it("caches the non-admin read", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
+    const res = await loader({ request: get() } as any);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("caches the admin read (values plus definitions)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as any);
+    const res = await loader({ request: get() } as any);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("caches the service-key read", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    const res = await loader({ request: get({ Authorization: "Bearer key" }) } as any);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("does not cache a rejected service key", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(
+      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 }),
+    );
+    const res = await loader({ request: get({ Authorization: "Bearer bad" }) } as any);
+    expect(res.headers.get("Cache-Control")).toBeNull();
+  });
+});

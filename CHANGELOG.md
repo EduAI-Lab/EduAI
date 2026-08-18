@@ -8,6 +8,7 @@
 
 ### Changed
 
+- [core] perf: Add a short `private` `Cache-Control` to Core's slow-changing reference GETs (`/api/policies`, `/api/disciplines`, `/api/me`, `/api/preferences`, the AI provider/model catalogues) so the browser stops refetching unchanged data on every navigation, with the admin catalogue hooks bypassing the cache after a mutation. Closes #1453. (@abdullahmoh21, 2026-08-18) — #PR
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 ## [Week 15 — August 10–16, 2026]
 

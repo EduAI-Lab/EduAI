@@ -159,3 +159,35 @@ describe("PATCH /api/preferences", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// #1453 — self-scoped UI prefs, read on most page loads. The defaults path is a
+// separate `return`, so it needs the header too or a user with no row saved
+// keeps paying for the round trip.
+describe("GET /api/preferences Cache-Control (#1453)", () => {
+  it("caches a stored preference row", async () => {
+    mockUser();
+    vi.mocked(prisma.userPreference.findUnique).mockResolvedValue({
+      assistDefault: true,
+      lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    } as never);
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("caches the defaults returned when no row exists", async () => {
+    mockUser();
+    vi.mocked(prisma.userPreference.findUnique).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("does not cache the 401", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBeNull();
+  });
+});

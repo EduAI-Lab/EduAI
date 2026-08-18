@@ -80,7 +80,9 @@ export default function AIModelsPage() {
   const handleCreateModel = useCallback(
     async (data: Record<string, unknown>) => {
       await createModel(data);
-      await refreshProviders();
+      // #1453: a model write changes the provider rows too, so this refetch has
+      // to skip the browser cache the list GET is now allowed to use.
+      await refreshProviders({ force: true });
     },
     [createModel, refreshProviders],
   );
@@ -88,7 +90,9 @@ export default function AIModelsPage() {
   const handleUpdateModel = useCallback(
     async (id: string, data: Record<string, unknown>) => {
       await updateModel(id, data);
-      await refreshProviders();
+      // #1453: a model write changes the provider rows too, so this refetch has
+      // to skip the browser cache the list GET is now allowed to use.
+      await refreshProviders({ force: true });
     },
     [updateModel, refreshProviders],
   );
@@ -96,7 +100,9 @@ export default function AIModelsPage() {
   const handleDeleteModel = useCallback(
     async (id: string) => {
       await deleteModel(id);
-      await refreshProviders();
+      // #1453: a model write changes the provider rows too, so this refetch has
+      // to skip the browser cache the list GET is now allowed to use.
+      await refreshProviders({ force: true });
     },
     [deleteModel, refreshProviders],
   );

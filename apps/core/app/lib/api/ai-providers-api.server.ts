@@ -7,6 +7,7 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import { paginatedResponse, parsePaginationParams } from "~/lib/pagination.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
 
 export async function handleAiProvidersApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -62,7 +63,10 @@ export async function handleAiProvidersApiRequest(request: Request) {
           take: pagination.take,
         }),
       ]);
-      return paginatedResponse(providers, total, pagination);
+      return withReferenceCache(
+        paginatedResponse(providers, total, pagination),
+        REFERENCE_MAX_AGE.aiCatalogue,
+      );
     }
 
     case "POST": {

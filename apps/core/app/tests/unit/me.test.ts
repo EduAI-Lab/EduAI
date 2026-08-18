@@ -143,3 +143,27 @@ describe("PATCH /api/me (#297)", () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });
+
+// #1453 — self-scoped profile read, hit on most page loads.
+describe("GET /api/me Cache-Control (#1453)", () => {
+  it("caches the profile privately for 30s", async () => {
+    mockUser();
+    const res = await loader(makeArgs());
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("does not cache the 401", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(401);
+    expect(res.headers.get("Cache-Control")).toBeNull();
+  });
+
+  it("does not cache a 404 (the row can appear at any time)", async () => {
+    mockUser();
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
+    const res = await loader(makeArgs());
+    expect(res.status).toBe(404);
+    expect(res.headers.get("Cache-Control")).toBeNull();
+  });
+});

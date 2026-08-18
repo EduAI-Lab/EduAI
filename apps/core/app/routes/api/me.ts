@@ -10,6 +10,7 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -49,7 +50,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json(404, { error: "USER_NOT_FOUND" });
   }
 
-  return json(200, user);
+  return withReferenceCache(json(200, user), REFERENCE_MAX_AGE.profile);
 }
 
 export async function action({ request }: ActionFunctionArgs) {

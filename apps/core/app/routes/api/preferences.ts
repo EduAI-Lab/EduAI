@@ -11,6 +11,7 @@ import { saveUserPreference } from "~/lib/user-preferences.server";
 import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -53,10 +54,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   if (!row) {
-    return json(200, DEFAULT_ACCOUNT_PREFERENCES);
+    return withReferenceCache(json(200, DEFAULT_ACCOUNT_PREFERENCES), REFERENCE_MAX_AGE.profile);
   }
 
-  return json(200, rowToResponse(row));
+  return withReferenceCache(json(200, rowToResponse(row)), REFERENCE_MAX_AGE.profile);
 }
 
 export async function action({ request }: ActionFunctionArgs) {

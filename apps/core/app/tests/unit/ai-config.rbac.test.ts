@@ -93,3 +93,23 @@ describe("GET /api/ollama-models (regression — already ADMIN-only)", () => {
     expect([401, 403]).toContain(res.status);
   });
 });
+
+// #1453 — the catalogues are ADMIN-only and change only by an admin edit, so
+// the list GET is cacheable. The 403 must stay uncached: a demoted-then-restored
+// admin would otherwise keep getting their own cached denial.
+describe.each([
+  ["GET /api/ai-providers", providersLoader, "/api/ai-providers"],
+  ["GET /api/ai-models", modelsLoader, "/api/ai-models"],
+] as const)("%s Cache-Control (#1453)", (_name, loader, path) => {
+  it("caches the ADMIN 200 privately for 30s", async () => {
+    mockUser("ADMIN");
+    const res = await loader(makeArgs(path));
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=30");
+  });
+
+  it("does not cache the 403", async () => {
+    mockUser("STUDENT");
+    const res = await loader(makeArgs(path));
+    expect(res.headers.get("Cache-Control")).toBeNull();
+  });
+});

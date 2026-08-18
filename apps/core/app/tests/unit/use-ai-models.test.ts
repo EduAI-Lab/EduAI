@@ -213,3 +213,44 @@ describe("fetchModelsByProvider", () => {
     expect(url).toContain("pageSize=200");
   });
 });
+
+// #1453 — the list GET is now browser-cacheable, so the refetch that follows a
+// mutation has to opt out explicitly. Without `cache: "no-store"` the admin is
+// served the pre-mutation page and their own edit looks like it never landed.
+describe("useAiModels cache busting (#1453)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(apiFetch).mockReset();
+  });
+
+  /** Init passed on the most recent list GET. */
+  function lastListInit() {
+    const calls = vi
+      .mocked(apiFetch)
+      .mock.calls.filter(([url]) => (url as string).startsWith("/api/ai-models?"));
+    return calls.at(-1)?.[1] as RequestInit | undefined;
+  }
+
+  it("lets the initial load be served from cache", async () => {
+    mockPage();
+    const { result } = renderHook(() => useAiModels());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(lastListInit()?.cache).toBeUndefined();
+  });
+
+  it.each([
+    ["createModel", (r: any) => r.createModel({ modelId: "new" })],
+    ["updateModel", (r: any) => r.updateModel("model-1", { name: "Renamed" })],
+    ["deleteModel", (r: any) => r.deleteModel("model-1")],
+  ])("bypasses the cache on the refresh after %s", async (_name, mutate) => {
+    mockPage();
+    const { result } = renderHook(() => useAiModels());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await mutate(result.current);
+    });
+
+    expect(lastListInit()?.cache).toBe("no-store");
+  });
+});

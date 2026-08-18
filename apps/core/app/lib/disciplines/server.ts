@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
 
 /**
  * Disciplines ("units" / UBCO subject codes, §541).
@@ -75,7 +76,10 @@ export async function listDisciplines(request: Request): Promise<Response> {
   if (!session?.user) return unauthorized();
 
   if (listCache && listCache.expiresAt > Date.now()) {
-    return json({ disciplines: listCache.disciplines });
+    return withReferenceCache(
+      json({ disciplines: listCache.disciplines }),
+      REFERENCE_MAX_AGE.disciplines,
+    );
   }
 
   const disciplines = await prisma.discipline.findMany({
@@ -83,5 +87,5 @@ export async function listDisciplines(request: Request): Promise<Response> {
     orderBy: { code: "asc" },
   });
   listCache = { disciplines, expiresAt: Date.now() + CACHE_TTL_MS };
-  return json({ disciplines });
+  return withReferenceCache(json({ disciplines }), REFERENCE_MAX_AGE.disciplines);
 }

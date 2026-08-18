@@ -3,10 +3,14 @@ import { z } from "zod";
 
 import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
+import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+
+/** #1453: every read path returns the same short-lived private cache header. */
+const cached = (response: Response) => withReferenceCache(response, REFERENCE_MAX_AGE.policies);
 
 /**
  * GET /api/policies — read all configurable RBAC policy flags.
@@ -26,21 +30,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
   if (session?.user) {
     if (session.user.role !== "ADMIN") {
-      return json({ policies: await getPolicies() });
+      return cached(json({ policies: await getPolicies() }));
     }
     // Only ADMIN additionally receives the toggle DEFINITIONS used to render the
     // admin settings UI; PATCH stays ADMIN-only.
-    return json({
-      policies: await getPolicies(),
-      definitions: getPolicyDefinitions(),
-    });
+    return cached(
+      json({
+        policies: await getPolicies(),
+        definitions: getPolicyDefinitions(),
+      }),
+    );
   }
 
   // No user session — this is a server-to-server extension call authenticated
   // with the shared service key.
   const guard = await requireServiceKey(request);
   if (guard) return guard;
-  return json({ policies: await getPolicies() });
+  return cached(json({ policies: await getPolicies() }));
 }
 
 const UpdatePolicySchema = z.object({

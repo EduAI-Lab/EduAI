@@ -12,6 +12,7 @@ import {
   parseSearchParam,
 } from "~/lib/pagination.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { REFERENCE_MAX_AGE, withReferenceCache } from "~/lib/api/cache-control.server";
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -81,7 +82,10 @@ export async function handleAiModelsApiRequest(request: Request) {
           take: pagination.take,
         }),
       ]);
-      return paginatedResponse(models, total, pagination);
+      return withReferenceCache(
+        paginatedResponse(models, total, pagination),
+        REFERENCE_MAX_AGE.aiCatalogue,
+      );
     }
 
     case "POST": {
