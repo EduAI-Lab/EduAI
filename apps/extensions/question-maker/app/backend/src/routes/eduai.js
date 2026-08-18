@@ -29,6 +29,19 @@ async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
   return null;
 }
 
+/**
+ * Confirm the caller has at least TA access to the Core course identified by
+ * `coreCourseId` before proxying a metadata read with the privileged service
+ * key (#1569). `resolveAccessForCourse` only reads `coreCourseId` off the
+ * course arg (plus `reqUser`), so a synthetic `{ coreCourseId }` is enough to
+ * resolve the caller's real Core enrollment/unit access — no local QM anchor
+ * row required. Fails closed (returns false) when Core can't authorize.
+ */
+async function callerCanAccessCoreCourse(reqUser, coreCourseId, cookie) {
+  const access = await resolveAccessForCourse(reqUser, { coreCourseId }, { cookie });
+  return Boolean(access && access.rank >= LEVELS.ta.rank);
+}
+
 router.use(authenticateToken, requireRole(QM_AUTHORIZED));
 
 /** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course code. */
@@ -190,10 +203,13 @@ router.post("/generate-questions", async (req, res) => {
   }
 });
 
-/** GET /api/eduai/courses – fetches the list of EduAI-managed courses for selection. */
+/** GET /api/eduai/courses – fetches the EduAI-managed courses the CALLER can see. */
 router.get("/courses", async (req, res) => {
   try {
-    const coursesData = await eduaiService.listCourses();
+    // Scope to the caller's own courses (#1569): forward the session cookie so
+    // Core returns only courses the caller is enrolled in / owns, instead of
+    // the whole platform catalog under the privileged service key.
+    const coursesData = await eduaiService.listCourses({ cookie: req.headers.cookie ?? "" });
 
     res.json({
       success: true,
@@ -215,6 +231,19 @@ router.get("/courses/:courseId/topics", async (req, res) => {
 
     if (!courseId) {
       return res.status(400).json({ error: "Course ID is required" });
+    }
+
+    // Authorize the client-supplied courseId before proxying with the service
+    // key (#1569) — otherwise any instructor-tier user could read topic
+    // metadata for a course they don't teach. Mirrors the /chat and
+    // /generate-questions gates on this same router.
+    const canAccess = await callerCanAccessCoreCourse(req.user, courseId, req.headers.cookie);
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        error: "You do not have access to this course",
+        code: "COURSE_ACCESS_DENIED",
+      });
     }
 
     const topics = await eduaiService.getCourseTopics(courseId);

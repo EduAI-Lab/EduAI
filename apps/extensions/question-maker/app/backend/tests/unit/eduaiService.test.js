@@ -513,9 +513,13 @@ describe("generateQuestions", () => {
 });
 
 describe("listCourses", () => {
-  it("throws when not configured", async () => {
-    eduaiService.apiKey = "";
-    await expect(eduaiService.listCourses()).rejects.toThrow(/not configured/i);
+  // #1569: listCourses is cookie-scoped — Core restricts the catalog to the
+  // caller's courses. A caller cookie is required and the service key must
+  // never be attached.
+  const COOKIE = "session=abc";
+
+  it("throws when no caller cookie is provided", async () => {
+    await expect(eduaiService.listCourses()).rejects.toThrow(/cookie is required/i);
   });
 
   // #1041: Core answers `{ data, total, page, pageSize }` and the service
@@ -526,13 +530,21 @@ describe("listCourses", () => {
 
   it("returns the courses unchanged when no codes are ignored", async () => {
     axios.get.mockResolvedValue(coursePage([{ id: 1, code: "CS 101" }]));
-    const out = await eduaiService.listCourses();
+    const out = await eduaiService.listCourses({ cookie: COOKIE });
     expect(out).toEqual([{ id: 1, code: "CS 101" }]);
+  });
+
+  it("forwards the caller cookie and NOT the service key (#1569 BOLA scope)", async () => {
+    axios.get.mockResolvedValue(coursePage([]));
+    await eduaiService.listCourses({ cookie: COOKIE });
+    const headers = axios.get.mock.calls[0][1]?.headers ?? {};
+    expect(headers.Cookie).toBe(COOKIE);
+    expect(headers.Authorization).toBeUndefined();
   });
 
   it("requests a bounded page rather than the whole catalog", async () => {
     axios.get.mockResolvedValue(coursePage([]));
-    await eduaiService.listCourses();
+    await eduaiService.listCourses({ cookie: COOKIE });
     expect(axios.get.mock.calls[0][0]).toMatch(/\/api\/courses\?page=1&pageSize=200$/);
   });
 
@@ -544,23 +556,29 @@ describe("listCourses", () => {
         { id: 2, code: "BIO 200" },
       ]),
     );
-    const out = await eduaiService.listCourses();
+    const out = await eduaiService.listCourses({ cookie: COOKIE });
     expect(out).toEqual([{ id: 2, code: "BIO 200" }]);
   });
 
   it("translates a server error response", async () => {
     axios.get.mockRejectedValue(responseError({ status: 404, data: { message: "nope" } }));
-    await expect(eduaiService.listCourses()).rejects.toThrow(/EduAI API error \(404\): nope/);
+    await expect(eduaiService.listCourses({ cookie: COOKIE })).rejects.toThrow(
+      /EduAI API error \(404\): nope/,
+    );
   });
 
   it("reports a no-response failure", async () => {
     axios.get.mockRejectedValue(requestError({ code: "ETIMEDOUT" }));
-    await expect(eduaiService.listCourses()).rejects.toThrow(/No response received/);
+    await expect(eduaiService.listCourses({ cookie: COOKIE })).rejects.toThrow(
+      /No response received/,
+    );
   });
 
   it("wraps a setup error", async () => {
     axios.get.mockRejectedValue(new Error("weird"));
-    await expect(eduaiService.listCourses()).rejects.toThrow(/EduAI API error: weird/);
+    await expect(eduaiService.listCourses({ cookie: COOKIE })).rejects.toThrow(
+      /EduAI API error: weird/,
+    );
   });
 });
 

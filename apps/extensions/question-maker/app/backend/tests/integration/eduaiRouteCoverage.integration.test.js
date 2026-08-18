@@ -251,8 +251,16 @@ describe("GET /api/eduai/courses", () => {
 });
 
 describe("GET /api/eduai/courses/:courseId/topics", () => {
-  it("returns topics for the course", async () => {
+  /** Grant the caller TA+ access to the Core course id used in the request path. */
+  function grantAccessToCoreCourse() {
+    mockEnrollments.mockResolvedValue({
+      enrollments: [{ studentId: INSTRUCTOR.id, role: "INSTRUCTOR", isActive: true }],
+    });
+  }
+
+  it("returns topics for the course when the caller has access", async () => {
     authAs(INSTRUCTOR);
+    grantAccessToCoreCourse();
     eduaiService.getCourseTopics.mockResolvedValue([{ id: "t1" }]);
 
     const res = await request(app).get("/api/eduai/courses/c1/topics").set("Cookie", "session=v");
@@ -261,8 +269,24 @@ describe("GET /api/eduai/courses/:courseId/topics", () => {
     expect(res.body.data).toEqual([{ id: "t1" }]);
   });
 
+  it("returns 403 without proxying when the caller lacks access to the course (#1569 BOLA)", async () => {
+    authAs(INSTRUCTOR);
+    // No enrollment for the caller in the target Core course.
+    mockEnrollments.mockResolvedValue({ enrollments: [] });
+    eduaiService.getCourseTopics.mockResolvedValue([{ id: "t1" }]);
+
+    const res = await request(app)
+      .get("/api/eduai/courses/someone-elses-course/topics")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("COURSE_ACCESS_DENIED");
+    expect(eduaiService.getCourseTopics).not.toHaveBeenCalled();
+  });
+
   it("returns 500 when the topics fetch fails", async () => {
     authAs(INSTRUCTOR);
+    grantAccessToCoreCourse();
     eduaiService.getCourseTopics.mockRejectedValue(new Error("unreachable"));
 
     const res = await request(app).get("/api/eduai/courses/c1/topics").set("Cookie", "session=v");
