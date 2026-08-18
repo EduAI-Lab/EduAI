@@ -1,6 +1,33 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// CI unit jobs share Redis. checkRateLimit prefers Redis, and
+// resetRateLimitsForTests() only clears the in-memory fallback, so leftover
+// hits on the shared `bedrock-overflow` key exhaust the burst cap before this
+// file's own test can take the first slot.
+const limiterHits = vi.hoisted(() => new Map<string, number[]>());
+
+vi.mock("~/lib/auth/rate-limit.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/auth/rate-limit.server")>();
+  return {
+    ...actual,
+    checkRateLimit: async (key: string, limit: number, windowMs: number) => {
+      if (limit <= 0) {
+        return { limited: true, retryAfter: Math.max(1, Math.ceil(windowMs / 1000)) };
+      }
+      const now = Date.now();
+      const hits = (limiterHits.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
+      if (hits.length >= limit) {
+        limiterHits.set(key, hits);
+        return { limited: true, retryAfter: 1 };
+      }
+      hits.push(now);
+      limiterHits.set(key, hits);
+      return { limited: false, retryAfter: 0 };
+    },
+  };
+});
+
 import {
   defaultBedrockOverflowSettings,
   type BedrockOverflowSettings,
@@ -56,14 +83,14 @@ describe("tryActivateBedrockOverflow", () => {
 
   beforeEach(() => {
     restoreEnv();
-    resetRateLimitsForTests();
+    limiterHits.clear();
     delete process.env.AWS_BEARER_TOKEN_BEDROCK;
     delete process.env.BEDROCK_MODEL_ID;
   });
 
   afterEach(() => {
     restoreEnv();
-    resetRateLimitsForTests();
+    limiterHits.clear();
   });
 
   it("returns null when the bearer token is missing", async () => {
