@@ -794,6 +794,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/chat-daily-limits",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.chat-daily-limits.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/ollama-models",
     readiness: "ready",
     adminChatTool: "listOllamaModels",

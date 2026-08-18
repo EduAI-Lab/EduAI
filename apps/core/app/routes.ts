@@ -90,6 +90,10 @@ export default [
     "/api/routing-model-settings",
     "routes/api/routing-model-settings.ts",
   ),
+  route(
+    "/api/admin/chat-daily-limits",
+    "routes/api/admin.chat-daily-limits.ts",
+  ),
   route("/api/me", "routes/api/me.ts"),
   route("/api/preferences", "routes/api/preferences.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),

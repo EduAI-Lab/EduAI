@@ -137,6 +137,7 @@ import {
   parseEnvInt,
 } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { consumeLocalChatDailyCap } from "~/lib/chat-daily-limits.server";
 import {
   getActorContext,
   getRequestContext,
@@ -823,6 +824,31 @@ export async function action({ request }: ActionFunctionArgs) {
         { error: "RATE_LIMITED", retryAfter: rateLimit.retryAfter },
         { chatMode, userId: actingUser.id },
         { "Retry-After": String(rateLimit.retryAfter) },
+      );
+    }
+
+    const dailyCap = await consumeLocalChatDailyCap({
+      userId: actingUser.id,
+      role: actingUser.role,
+      model,
+    });
+    if (dailyCap?.limited) {
+      const requestContext = getRequestContext(request);
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+          ...requestContext,
+          actionCode: "RATE_LIMIT_EXCEEDED",
+          outcome: "DENIED",
+          entityType: "Chat",
+          details: { userId: actingUser.id, scope: "daily" },
+        }),
+      );
+      return chatApiReject(
+        429,
+        { error: "RATE_LIMITED", retryAfter: dailyCap.retryAfter },
+        { chatMode, userId: actingUser.id },
+        { "Retry-After": String(dailyCap.retryAfter) },
       );
     }
 

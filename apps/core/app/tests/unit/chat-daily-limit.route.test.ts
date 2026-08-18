@@ -1,7 +1,5 @@
 // @vitest-environment node
-// Per-user rate limiting for /api/chat (#987): caps LLM completion requests
-// so an authenticated user can't submit unbounded requests to the model.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const checkRateLimitMock = vi.hoisted(() => vi.fn());
 
@@ -89,7 +87,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
     aIModel: { findFirst: vi.fn() },
-    systemConfig: { findUnique: vi.fn() },
+    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -97,27 +95,14 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock("~/lib/chat-daily-limits.server", () => ({
-  consumeLocalChatDailyCap: vi.fn().mockResolvedValue(null),
-  getChatDailyLimitSettings: vi.fn().mockResolvedValue({
-    studentLimit: 50,
-    instructorLimit: 200,
-  }),
-}));
-
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
-import { requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
-import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
-import { logSecurityEvent } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
+import { CHAT_DAILY_WINDOW_MS } from "~/lib/chat-daily-limits";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
-const originalChatRateLimit = process.env.CHAT_RATE_LIMIT;
-const originalChatRateLimitWindow = process.env.CHAT_RATE_LIMIT_WINDOW_MS;
-const originalChatRateWindow = process.env.CHAT_RATE_WINDOW_MS;
 
 function makeRequest(body: object) {
   return {
@@ -128,7 +113,7 @@ function makeRequest(body: object) {
     }),
     params: {},
     context: {} as never,
-  } as any;
+  } as never;
 }
 
 function baseBody(overrides: Record<string, unknown> = {}) {
@@ -143,7 +128,11 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function mockStream() {
+beforeEach(() => {
+  vi.clearAllMocks();
+  checkRateLimitMock.mockResolvedValue({ limited: false, retryAfter: 0 });
+  process.env.VLLM_BASE_URL = "http://localhost:8001";
+  process.env.CHAT_RATE_LIMIT = "1000000";
   vi.mocked(streamText).mockResolvedValue({
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve("Partial answer."),
@@ -156,27 +145,9 @@ function mockStream() {
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
   } as never);
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  resetRateLimitsForTests();
-  checkRateLimitMock.mockResolvedValue({ limited: false, retryAfter: 0 });
-  process.env.VLLM_BASE_URL = "http://localhost:8001";
-  process.env.CHAT_RATE_LIMIT = "2";
-  process.env.CHAT_RATE_LIMIT_WINDOW_MS = "60000";
-  process.env.CHAT_RATE_WINDOW_MS = "60000";
-  vi.mocked(requireServiceKey).mockResolvedValue(
-    new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
-
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
   } as never);
-
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
     id: CHAT_ID,
     userId: "user-1",
@@ -184,108 +155,67 @@ beforeEach(() => {
     adhdAssist: false,
     systemPrompt: null,
   } as never);
-
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
   vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
-  mockStream();
+  vi.mocked(prisma.systemConfig.findMany).mockResolvedValue([]);
 });
 
 afterEach(() => {
-  if (originalChatRateLimit === undefined) delete process.env.CHAT_RATE_LIMIT;
-  else process.env.CHAT_RATE_LIMIT = originalChatRateLimit;
-  if (originalChatRateLimitWindow === undefined) delete process.env.CHAT_RATE_LIMIT_WINDOW_MS;
-  else process.env.CHAT_RATE_LIMIT_WINDOW_MS = originalChatRateLimitWindow;
-  if (originalChatRateWindow === undefined) delete process.env.CHAT_RATE_WINDOW_MS;
-  else process.env.CHAT_RATE_WINDOW_MS = originalChatRateWindow;
+  delete process.env.CHAT_RATE_LIMIT;
 });
 
-describe("POST /api/chat — per-user rate limit (#987)", () => {
-  it("allows requests under the configured limit", async () => {
-    const res1 = await action(makeRequest(baseBody()));
-    const res2 = await action(makeRequest(baseBody()));
-    expect(res1.status).not.toBe(429);
-    expect(res2.status).not.toBe(429);
-    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:user-1", 2, 60_000);
-  });
-
-  it("returns the stable 429 contract before calling the provider", async () => {
-    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 17 });
-
-    const res = await action(makeRequest(baseBody()));
-
-    expect(res.status).toBe(429);
-    expect(await res.json()).toEqual({ error: "RATE_LIMITED", retryAfter: 17 });
-    expect(res.headers.get("Retry-After")).toBe("17");
-    expect(streamText).not.toHaveBeenCalled();
-  });
-
-  it("logs a RATE_LIMIT_EXCEEDED security event when throttled", async () => {
-    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 17 });
+describe("POST /api/chat — local chatbot daily caps (#1547)", () => {
+  it("applies the default 50/day student cap on local models", async () => {
     await action(makeRequest(baseBody()));
-
-    expect(logSecurityEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actionCode: "RATE_LIMIT_EXCEEDED",
-        outcome: "DENIED",
-        entityType: "Chat",
-      }),
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      "chat-daily:user-1",
+      50,
+      CHAT_DAILY_WINDOW_MS,
     );
   });
 
-  it("tracks each user independently", async () => {
-    await action(makeRequest(baseBody()));
-
+  it("applies the default 200/day instructor cap on local models", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "user-2", role: "STUDENT" },
+      user: { id: "instr-1", role: "INSTRUCTOR" },
+    } as never);
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: CHAT_ID,
+      userId: "instr-1",
+      courseId: COURSE_ID,
+      adhdAssist: false,
+      systemPrompt: null,
     } as never);
 
-    const res = await action(makeRequest(baseBody()));
-    expect(res.status).not.toBe(429);
-    expect(checkRateLimitMock).toHaveBeenNthCalledWith(1, "chat:user-1", 2, 60_000);
-    expect(checkRateLimitMock).toHaveBeenNthCalledWith(2, "chat:user-2", 2, 60_000);
-  });
-
-  it("rate-limits direct service-key callers with a stable non-secret identity", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null);
-    vi.mocked(requireServiceKey).mockResolvedValue(null);
-    checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 9 });
-
-    const res = await action(
-      makeRequest({ messages: [], model: "vllm:test-model" }),
+    await action(makeRequest(baseBody()));
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      "chat-daily:instr-1",
+      200,
+      CHAT_DAILY_WINDOW_MS,
     );
-
-    expect(res.status).toBe(429);
-    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:service", 2, 60_000);
   });
 
-  it("returns authentication failures before checking the limiter", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+  it("does not apply the daily cap to a user-supplied cloud provider", async () => {
+    await action(makeRequest(baseBody({ model: "openai:gpt-4o" })));
+    expect(checkRateLimitMock).not.toHaveBeenCalledWith(
+      "chat-daily:user-1",
+      50,
+      CHAT_DAILY_WINDOW_MS,
+    );
+  });
+
+  it("returns 429 when the daily cap is exhausted", async () => {
+    checkRateLimitMock.mockImplementation(async (key: string) => {
+      if (String(key).startsWith("chat-daily:")) {
+        return { limited: true, retryAfter: 3600 };
+      }
+      return { limited: false, retryAfter: 0 };
+    });
 
     const res = await action(makeRequest(baseBody()));
-
-    expect(res.status).toBe(401);
-    expect(checkRateLimitMock).not.toHaveBeenCalled();
-  });
-
-  it("uses the documented defaults when rate-limit env values are blank", async () => {
-    process.env.CHAT_RATE_LIMIT = "";
-    process.env.CHAT_RATE_LIMIT_WINDOW_MS = "";
-    process.env.CHAT_RATE_WINDOW_MS = "";
-
-    await action(makeRequest(baseBody()));
-
-    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:user-1", 100, 60_000);
-  });
-
-  it("keeps CHAT_RATE_WINDOW_MS as a fallback alias", async () => {
-    process.env.CHAT_RATE_LIMIT_WINDOW_MS = "";
-    process.env.CHAT_RATE_WINDOW_MS = "45000";
-
-    await action(makeRequest(baseBody()));
-
-    expect(checkRateLimitMock).toHaveBeenCalledWith("chat:user-1", 2, 45_000);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "RATE_LIMITED", retryAfter: 3600 });
   });
 });

@@ -2,6 +2,7 @@ import { Link, useLoaderData, redirect } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { CoreAppShell } from '~/components/layout/core-app-shell'
+import { ChatDailyLimitSettingsCard } from '~/components/settings/chat-daily-limit-settings'
 import {
   Card,
   CardContent,
@@ -22,8 +23,11 @@ import {
   AlertTitle,
 } from '@eduai/ui'
 import { usePolicies } from '~/hooks/api/use-policies'
+import { apiFetch } from '~/hooks/api/config'
 import { getEnvironmentHealth } from '~/lib/environment-health.server'
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { getChatDailyLimitSettings } from '~/lib/chat-daily-limits.server'
+import type { ChatDailyLimitSettings } from '~/lib/chat-daily-limits'
 
 /**
  * Permission groups for the admin settings UI, in display order. Each policy
@@ -83,11 +87,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     user: session.user,
     environmentHealth: getEnvironmentHealth(),
+    chatDailyLimits: await getChatDailyLimitSettings(),
   }
 }
 
 export default function AdminSettingsPage() {
-  const { user, environmentHealth } = useLoaderData<typeof loader>()
+  const { user, environmentHealth, chatDailyLimits } = useLoaderData<typeof loader>()
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies()
 
   // Bucket each flag into the first group whose `match` passes, preserving the
@@ -147,6 +152,15 @@ export default function AdminSettingsPage() {
                   </AlertDescription>
                 </Alert>
               ) : null}
+              <ChatDailyLimitSettingsCard
+                initialSettings={chatDailyLimits}
+                onSave={async (settings: ChatDailyLimitSettings) => {
+                  await apiFetch('/api/admin/chat-daily-limits', {
+                    method: 'PATCH',
+                    body: JSON.stringify(settings),
+                  })
+                }}
+              />
               {isLoading ? (
                 <Card>
                   <CardContent className="pt-6">
