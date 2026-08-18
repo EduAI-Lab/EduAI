@@ -42,6 +42,7 @@ import type {
   EnrollmentRole,
   Lesson,
   Module,
+  ModuleDetail,
   StudentMetricRow,
   SubmissionRow,
   SuggestedPrompt,
@@ -151,6 +152,21 @@ export interface LessonContext {
   prevLessonId: number | null;
   nextLessonId: number | null;
 }
+
+/**
+ * Nested ancestry returned by `GET /lessons/:id` (#1334). Collapses the
+ * former moduleById + courseById + /context fan-out into the lesson payload
+ * the player loaders already await.
+ */
+export interface LessonBreadcrumb extends LessonContext {
+  module: ModuleDetail;
+  course: Course;
+}
+
+/** Lesson row plus optional breadcrumb ancestry from `lessonById`. */
+export type LessonWithBreadcrumb = Lesson & {
+  breadcrumb?: LessonBreadcrumb;
+};
 
 /**
  * Default page size for course lists (#1043 Group A). The server REQUIRES
@@ -577,7 +593,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
+  lessonById: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}`) as Promise<LessonWithBreadcrumb>,
   activitiesForLesson: (lessonId: number, params?: ListParams) =>
     http(
       `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,

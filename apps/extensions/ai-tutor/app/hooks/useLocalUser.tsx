@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import api, { ApiNetworkError } from '~/lib/api';
+import { clearClientUserSeed, seedClientUser } from '~/lib/client-auth';
 import type { User } from '~/lib/types';
 
 // A fresh dev-stack start can briefly have the AI Tutor frontend reachable
@@ -30,6 +31,12 @@ type AuthProviderProps = {
 export function AuthProvider({ initialUser, children }: AuthProviderProps) {
   const [user, setUser] = useState<AuthUser | null>(initialUser);
   const [isInitializing, setIsInitializing] = useState(!initialUser);
+
+  // Keep the clientLoader auth gate in sync with the known session (#1334)
+  // so navigations don't re-hit `/api/me` after AuthProvider already resolved.
+  useEffect(() => {
+    seedClientUser(user);
+  }, [user]);
 
   useEffect(() => {
     if (initialUser) {
@@ -94,6 +101,7 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
     } catch (error) {
       console.error('Failed to log out', error);
     }
+    clearClientUserSeed();
     setUser(null);
   };
 

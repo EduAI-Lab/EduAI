@@ -3,8 +3,8 @@
  *
  * Route: /instructor/lesson/:lessonId
  * Auth: INSTRUCTOR
- * Loads: lesson + activities (parallel), then walks up to module + course
- *        for breadcrumbs (sequential — module/course IDs come from lesson).
+ * Loads: lesson + activities (parallel), with nested breadcrumb ancestry on
+ *        the lesson response (#1334) — no sequential module/course walk.
  * Owns:
  *   - Activity CRUD: create (AddActivityPanel), inline edit
  *     (EditActivityPanel), delete with confirm.
@@ -63,10 +63,7 @@ import api from '../lib/api';
 import type { ImportableActivity } from '../lib/api';
 import type {
   Activity,
-  Course,
   Lesson,
-  Module,
-  ModuleDetail,
   Topic,
 } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
@@ -124,13 +121,12 @@ import {
 import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from '~/components/common/ListSearchInput';
 
 /**
- * Loads the lesson and its activities (parallel), then walks up to the
- * module and course one step at a time because each ID lives on the
- * previous resource. The breadcrumb and EduAI sync path both depend on
- * having the parent course available.
+ * Loads the lesson and its activities in parallel with the role gate (#1334).
+ * Module, course, and ordinals arrive nested on the lesson payload, so the
+ * old sequential breadcrumb fan-out never runs. Breadcrumbs publish after
+ * paint so they leave the LCP path.
  */
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });
@@ -139,8 +135,9 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   // #1207: page + search live in the URL; `search` is applied server-side.
   const { page, search } = parseListUrlParams(request);
 
-  const [lesson, activitiesPage] = await Promise.all([
-    api.lessonById(lessonId) as Promise<Lesson>,
+  const [, lessonWithCrumb, activitiesPage] = await Promise.all([
+    requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']),
+    api.lessonById(lessonId),
     api.activitiesForLesson(lessonId, { page, search }),
   ]);
 
@@ -150,28 +147,11 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     pageSize: activitiesPage.pageSize,
   });
 
-  let module: ModuleDetail | null = null;
-  let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3"), so newly-created lessons
-  // (whose titles carry no number) still follow the decimal system used on the
-  // module card grid.
-  //
-  // #1207: this comes from the server now. It used to be two `findIndex` walks
-  // over the full sibling module and lesson lists — a read that silently
-  // produced "0.0" for anything past the first page once those lists were
-  // paged.
-  let orderText: string | undefined;
-  if (lesson.moduleId) {
-    module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
-    if (module.courseOfferingId) {
-      const [courseData, context] = await Promise.all([
-        api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.lessonContext(lessonId),
-      ]);
-      course = courseData;
-      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
-    }
-  }
+  const { breadcrumb, ...lesson } = lessonWithCrumb;
+  const module = breadcrumb?.module ?? null;
+  const course = breadcrumb?.course ?? null;
+  const orderText =
+    breadcrumb != null ? `${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}` : undefined;
 
   return {
     course,
@@ -860,7 +840,23 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       : { label: 'Lesson' },
   ];
 
-  useShellBreadcrumbs(breadcrumbItems);
+  // #1334: placeholder crumbs first so header updates stay off the LCP path.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setCrumbsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const skeletonBreadcrumbItems = [
+    { label: 'Courses', href: '/instructor' },
+    { label: '…' },
+    { label: '…' },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: 'Lesson' },
+  ];
+
+  useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
   return (
     <CourseTopicsProvider value={courseTopics}>

@@ -3,8 +3,8 @@
  *
  * Route: /student/lesson/:lessonId
  * Auth: STUDENT (enforced by clientLoader via requireClientUser)
- * Loads: lesson + activities for the lesson, then walks up to module + course
- *        for breadcrumbs (sequential because module/course depend on lesson).
+ * Loads: lesson + activities (with nested breadcrumb ancestry on the lesson)
+ *        in one parallel wave alongside the role gate (#1334).
  * Owns: activity progression (idx), MCQ/SHORT_TEXT submission, per-activity
  *       result state, knowledge-level pre-chat modal, optional
  *       post-submission feedback prompt, and orchestration of StudentAiChat
@@ -48,7 +48,7 @@ import { ModuleHero } from '../components/lessons/ModuleHero';
 import { LessonActivityView } from '../components/lessons/LessonActivityView';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
 import api from '../lib/api';
-import type { Activity, Course, Lesson, Module, ModuleDetail } from '../lib/types';
+import type { Activity, Lesson } from '../lib/types';
 import type { Route } from './+types/student.lesson';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
@@ -104,19 +104,22 @@ function createFeedbackState(): StudentFeedbackState {
 }
 
 /**
- * Resolves the lesson, its activities, and the parent module/course needed
- * for breadcrumbs. Lesson + activities run in parallel; module/course are
- * sequential because their IDs come out of the lesson row.
+ * Resolves the lesson, its activities, and breadcrumb ancestry in one wave
+ * (#1334). Auth and data start concurrently — when AuthProvider already seeded
+ * the session, `requireClientUser` is sync; otherwise the role check races the
+ * lesson/activity fetches and rejects after if the role is wrong. Module,
+ * course, and ordinals arrive nested on the lesson response so waves 3–4 of
+ * the old waterfall never run.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });
   }
 
-  const [lesson, activitiesPage] = await Promise.all([
-    api.lessonById(lessonId) as Promise<Lesson>,
+  const [, lessonWithCrumb, activitiesPage] = await Promise.all([
+    requireClientUser(['STUDENT', 'TA']),
+    api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
     // but not all of them up front. It loads the first page and appends the
     // next as the student approaches the end (see `ensureActivitiesLoaded`),
@@ -124,26 +127,11 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     api.activitiesForLesson(lessonId, { page: 1, pageSize: PLAYER_ACTIVITY_PAGE_SIZE }),
   ]);
 
-  let module: ModuleDetail | null = null;
-  let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3"), so lessons whose titles
-  // carry no number still follow the decimal system.
-  //
-  // #1207: served by the server now. This used to be two `findIndex` walks over
-  // the full sibling module and lesson lists — which quietly produced no order
-  // text at all once either list exceeded one page.
-  let orderText: string | undefined;
-  if (lesson.moduleId) {
-    module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
-    if (module?.courseOfferingId) {
-      const [courseData, context] = await Promise.all([
-        api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.lessonContext(lessonId),
-      ]);
-      course = courseData;
-      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
-    }
-  }
+  const { breadcrumb, ...lesson } = lessonWithCrumb;
+  const module = breadcrumb?.module ?? null;
+  const course = breadcrumb?.course ?? null;
+  const orderText =
+    breadcrumb != null ? `${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}` : undefined;
 
   return {
     course,
@@ -547,7 +535,24 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       : { label: 'Lesson' },
   ];
 
-  useShellBreadcrumbs(breadcrumbItems);
+  // #1334: publish a placeholder trail first so the header crumb update stays
+  // off the LCP path; upgrade to the real trail after paint.
+  const [crumbsReady, setCrumbsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setCrumbsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const skeletonBreadcrumbItems = [
+    { label: 'Courses', href: '/student' },
+    { label: '…' },
+    { label: '…' },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: 'Lesson' },
+  ];
+
+  useShellBreadcrumbs(crumbsReady ? breadcrumbItems : skeletonBreadcrumbItems);
 
   const goPrev = useCallback(() => {
     setIdx((i) => Math.max(0, i - 1));
