@@ -157,7 +157,24 @@ const generationAdmission = qmAiProviderCallAdmission({
       prompt: body?.prompt,
       numQuestions: body?.numQuestions,
     });
-    if (budget.status) return budget;
+    if (budget.status) {
+      // Prompt errors win over missing identifier (#1362 validation order)
+      if (budget.code === "QM_PROMPT_REQUIRED" || budget.code === "QM_PROMPT_TOO_LARGE") {
+        return budget;
+      }
+      const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
+      const hasCourseCode = typeof body?.courseCode === "string" && body.courseCode.trim() !== "";
+      if (!hasCourseId && !hasCourseCode) {
+        return { status: 400, body: { error: "Course id or course code is required" } };
+      }
+      return budget;
+    }
+
+    const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
+    const hasCourseCode = typeof body?.courseCode === "string" && body.courseCode.trim() !== "";
+    if (!hasCourseId && !hasCourseCode) {
+      return { status: 400, body: { error: "Course id or course code is required" } };
+    }
 
     // generateQuestions makes one provider call and may make one bounded
     // JSON-repair call, so reserve the complete worst-case fanout up front.

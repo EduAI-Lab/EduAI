@@ -617,8 +617,12 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
  * (`routes/eduai.js`) to authorize a client-supplied course code against a
  * real course — `code` is Core-owned and no longer stored locally (#1072 §4
  * step 10), so matching must read through Core rather than querying the
- * dropped `courses.code` column. One Core-side `?search=` call (#1125)
- * regardless of row count (no N+1, mirrors `listCoursesForUser`).
+ * dropped `courses.code` column.
+ *
+ * Core `?search=` is literal contains (#1125 / #1362), so this issues one
+ * search per whitespace/compact candidate from `courseCodeLookupCandidates`
+ * (not a single query) and unions the results before the exact normalized
+ * match filter. Still no per-row Core fan-out.
  *
  * Returns raw `Course` model instances (not enriched rows) so callers can
  * pass them straight to `resolveAccessForCourse`.
