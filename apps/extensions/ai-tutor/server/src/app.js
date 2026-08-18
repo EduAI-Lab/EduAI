@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import { requireAuth } from "./middleware/auth.js";
 import { requireSameOriginMutation } from "./middleware/csrf.js";
@@ -57,6 +58,23 @@ export async function createApp(options = {}) {
 
   // JSON parser for our own routes
   app.use(express.json());
+
+  // gzip every response above the default 1kb threshold. The content-tree
+  // payloads (course -> module -> lesson -> activity) and lesson `contentMd`
+  // markdown bodies are highly compressible text, and instructors refetch the
+  // tree on every navigation.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        // Nothing streams today, but keep gzip off event-streams so a future
+        // SSE endpoint can't silently buffer behind the compressor. Express
+        // appends `; charset=utf-8`, so match the prefix, not the exact value.
+        const type = String(res.getHeader("Content-Type") || "");
+        if (type.startsWith("text/event-stream")) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
 
   // Health check endpoint
   app.get("/api/health", async (req, res) => {
