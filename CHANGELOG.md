@@ -8,7 +8,7 @@
 
 ### Changed
 
-- [question-maker] perf: Replace full-page spinner gates on question composer (edit source load), assessment builder, and course detail with content-shaped skeletons (`ComposerSkeleton` / `AssessmentBuilderSkeleton` / `CourseDetailSkeleton`, mirroring `/library`'s `ListSkeleton`) so FCP paints layout instead of a spinner while APIs resolve; `listModels`/`listCourses` remain non-gating for create first paint. Closes #1332. (@GlowyBlack, 2026-08-17) — #PR
+- [question-maker] perf: Replace full-page spinner gates on question composer (edit source load), assessment builder, and course detail with content-shaped skeletons (`ComposerSkeleton` / `AssessmentBuilderSkeleton` / `CourseDetailSkeleton`, mirroring `/library`'s `ListSkeleton`) so FCP paints layout instead of a spinner while APIs resolve; `listModels`/`listCourses` remain non-gating for create first paint. Closes #1332. (@GlowyBlack, 2026-08-17) — [#1558](https://github.com/EduAI-Lab/EduAI/pull/1558)
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) â€” [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 ## [Week 15 â€” August 10â€“16, 2026]
 
