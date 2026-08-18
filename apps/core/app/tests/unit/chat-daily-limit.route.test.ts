@@ -100,6 +100,10 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { CHAT_DAILY_WINDOW_MS } from "~/lib/chat-daily-limits";
+import { invalidateChatDailyLimitSettingsCache } from "~/lib/chat-daily-limits.server";
+
+const originalStudentDailyLimit = process.env.CHAT_DAILY_STUDENT_LIMIT;
+const originalInstructorDailyLimit = process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -131,6 +135,9 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   checkRateLimitMock.mockResolvedValue({ limited: false, retryAfter: 0 });
+  delete process.env.CHAT_DAILY_STUDENT_LIMIT;
+  delete process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
+  invalidateChatDailyLimitSettingsCache();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   process.env.CHAT_RATE_LIMIT = "1000000";
   vi.mocked(streamText).mockResolvedValue({
@@ -165,6 +172,14 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.CHAT_RATE_LIMIT;
+  if (originalStudentDailyLimit === undefined) delete process.env.CHAT_DAILY_STUDENT_LIMIT;
+  else process.env.CHAT_DAILY_STUDENT_LIMIT = originalStudentDailyLimit;
+  if (originalInstructorDailyLimit === undefined) {
+    delete process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
+  } else {
+    process.env.CHAT_DAILY_INSTRUCTOR_LIMIT = originalInstructorDailyLimit;
+  }
+  invalidateChatDailyLimitSettingsCache();
 });
 
 describe("POST /api/chat — local chatbot daily caps (#1547)", () => {

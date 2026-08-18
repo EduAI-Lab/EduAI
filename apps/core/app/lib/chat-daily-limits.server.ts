@@ -29,6 +29,16 @@ export async function getChatDailyLimitSettings(): Promise<ChatDailyLimitSetting
   }
 
   const value = defaultChatDailyLimitSettings();
+  // Vitest sets these high so reused identities such as `user-1` do not share
+  // a 50/day Redis bucket across unrelated chat route files. Admin rows win.
+  value.studentLimit = parseChatDailyLimit(
+    process.env.CHAT_DAILY_STUDENT_LIMIT,
+    value.studentLimit,
+  );
+  value.instructorLimit = parseChatDailyLimit(
+    process.env.CHAT_DAILY_INSTRUCTOR_LIMIT,
+    value.instructorLimit,
+  );
   try {
     const keys = CHAT_DAILY_LIMIT_KEYS.map((key) => CHAT_DAILY_LIMIT_PREFIX + key);
     const rows = await prisma.systemConfig.findMany({

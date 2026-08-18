@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import {
   CHAT_DAILY_WINDOW_MS,
@@ -19,13 +19,33 @@ const prismaMock = vi.hoisted(() => ({
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
+const originalStudentDailyLimit = process.env.CHAT_DAILY_STUDENT_LIMIT;
+const originalInstructorDailyLimit = process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
+
+function restoreDailyLimitEnv() {
+  if (originalStudentDailyLimit === undefined) delete process.env.CHAT_DAILY_STUDENT_LIMIT;
+  else process.env.CHAT_DAILY_STUDENT_LIMIT = originalStudentDailyLimit;
+  if (originalInstructorDailyLimit === undefined) {
+    delete process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
+  } else {
+    process.env.CHAT_DAILY_INSTRUCTOR_LIMIT = originalInstructorDailyLimit;
+  }
+}
+
 describe("chat-daily-limits.server", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetRateLimitsForTests();
+    delete process.env.CHAT_DAILY_STUDENT_LIMIT;
+    delete process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
     invalidateChatDailyLimitSettingsCache();
     prismaMock.systemConfig.findMany.mockResolvedValue([]);
     prismaMock.systemConfig.upsert.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    restoreDailyLimitEnv();
+    invalidateChatDailyLimitSettingsCache();
   });
 
   it("defaults to 50 student / 200 instructor messages per day", async () => {

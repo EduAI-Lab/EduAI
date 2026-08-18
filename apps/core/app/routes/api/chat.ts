@@ -829,7 +829,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const dailyCap = await consumeLocalChatDailyCap({
       userId: actingUser.id,
-      role: actingUser.role,
+      role: actingUser.role ?? undefined,
       model,
     });
     if (dailyCap?.limited) {
