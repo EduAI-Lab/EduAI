@@ -4,7 +4,7 @@
 
 ### Changed
 
-- [production] ops: Align AI Tutor and Question Maker with the canonical public domains, add build-time frontend environment templates and Apache reverse-proxy templates, and document their production prerequisites. Partially addresses #1567. (@superbolt08, 2026-08-18) — #PR
+- [production] ops: Align AI Tutor and Question Maker with the canonical public domains, add build-time frontend environment templates and Apache reverse-proxy templates, and document their production prerequisites. Partially addresses #1567. (@superbolt08, 2026-08-18) — [#1577](https://github.com/EduAI-Lab/EduAI/pull/1577)
 
 ## [Week 16 — August 10–16, 2026]
 
