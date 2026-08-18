@@ -36,9 +36,9 @@ The application service runs from `current`. The old checkout remains available 
 - PostgreSQL: private production database, not the legacy checkout's database
 - Redis: private production Redis instance for the optional BullMQ worker
 - Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; begin with cmps01 and add cmps02/cmps03 after firewall validation
-- AI Tutor: `https://aitutor.eduai.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
+- AI Tutor: `https://aitutor.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
 - Shared auth: `COOKIE_DOMAIN=.eduai.ok.ubc.ca` is required across Core and AI Tutor
-- Question Maker remains disabled until its own production API and alias are approved
+- Question Maker: `https://questionmaker.ok.ubc.ca`, Docker frontend on `127.0.0.1:3005` plus API on `127.0.0.1:8000`
 
 ## One-time server preparation
 
@@ -84,13 +84,29 @@ Install the following reviewed templates as root-owned files:
 ```text
 infra/production/ai-tutor.env.example                  -> /etc/eduai/eduai-aitutor.env
 infra/production/systemd/eduai-aitutor-server.service  -> /etc/systemd/system/
-infra/production/apache/aitutor.eduai.ok.ubc.ca.conf   -> /etc/apache2/sites-available/
+infra/production/apache/aitutor.ok.ubc.ca.conf         -> /etc/apache2/sites-available/
+infra/production/question-maker.env.example            -> Question Maker stack `.env`
+infra/production/question-maker-frontend.env           -> Question Maker frontend build `.env`
+infra/production/apache/questionmaker.ok.ubc.ca.conf   -> /etc/apache2/sites-available/
 ```
 
 The frontend uses the public-only values in
 `infra/production/ai-tutor-frontend.env` during the build. The API environment
 must contain the same `EDUAI_API_KEY` as Core, but that secret must never be
 committed or copied into the frontend bundle.
+
+### Question Maker production prerequisites
+
+Copy `question-maker.env.example` to the Question Maker project root as `.env`
+and copy `question-maker-frontend.env` to
+`apps/extensions/question-maker/app/frontend/.env` before running
+`docker compose build`. The
+frontend values are compiled into the static bundle; changing the container's
+runtime environment after the build will not change browser navigation URLs.
+
+Install `apache/questionmaker.ok.ubc.ca.conf` after confirming the managed TLS
+certificate path. The vhost proxies `/api/` to the Question Maker backend on
+`127.0.0.1:8000` and the frontend to `127.0.0.1:3005`.
 
 ## First release procedure
 
@@ -133,7 +149,8 @@ sudo systemctl is-active eduai-aitutor-server
 curl -fsS http://127.0.0.1:3000/api/health >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null
 curl -fsS https://my.eduai.ok.ubc.ca/api/health >/dev/null
-curl -fsS https://aitutor.eduai.ok.ubc.ca/api/health >/dev/null
+curl -fsS https://aitutor.ok.ubc.ca/api/health >/dev/null
+curl -fsS https://questionmaker.ok.ubc.ca/healthz.html >/dev/null
 ```
 
 Do not run `prisma db push` or automatic production seeding in this procedure.
