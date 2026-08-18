@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
+import type { CourseDetailManagerCourse } from "~/components/courses/course-detail-manager-view";
 import { CourseDetailTaView } from "~/components/courses/course-detail-ta-view";
 import { CourseDetailStudentView } from "~/components/courses/course-detail-student-view";
-import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseMaterial } from "~/hooks/api/use-course-materials";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 
@@ -22,7 +22,7 @@ vi.mock("~/components/course-materials-upload", () => ({
 // context and every flag resolves to its code default — which is what these
 // assertions expect (e.g. tas.canManageTopics defaults off → greyed).
 
-const COURSE: CourseDetail = {
+const COURSE: CourseDetailManagerCourse = {
   id: "c1",
   code: "COSC 101",
   name: "Intro to CS",

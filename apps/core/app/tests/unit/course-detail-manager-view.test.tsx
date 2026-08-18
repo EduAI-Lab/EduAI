@@ -14,8 +14,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
-import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
-import type { CourseDetail } from "~/hooks/api/use-course-detail";
+import {
+  CourseDetailManagerView,
+  type CourseDetailManagerCourse,
+} from "~/components/courses/course-detail-manager-view";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
@@ -61,7 +63,7 @@ function candidatesReturnFn(..._args: unknown[]) {
   return candidatesReturn;
 }
 
-const COURSE: CourseDetail = {
+const COURSE: CourseDetailManagerCourse = {
   id: "c1",
   code: "COSC 101",
   name: "Intro to CS",
