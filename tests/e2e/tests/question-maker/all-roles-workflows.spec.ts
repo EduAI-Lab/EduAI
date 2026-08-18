@@ -12,9 +12,7 @@ import {
   createInstructor,
   promoteUser,
   registerUser,
-  signIn,
   signInThroughPage,
-  signOut,
 } from '../helpers/auth';
 import { createQmCourseForInstructor } from '../helpers/qm-courses';
 
@@ -23,8 +21,6 @@ async function createUnitAdmin(
 ): Promise<{ email: string; password: string; name: string }> {
   const user = await registerUser(request, { prefix: 'qm-unit-admin', name: 'E2E Unit Admin' });
   await promoteUser(request, user.email, 'UNIT_ADMIN');
-  await signOut(request);
-  await signIn(request, { email: user.email, password: user.password });
   return user;
 }
 
@@ -44,6 +40,7 @@ test.describe('Question Maker role access', () => {
       page.getByText('Question Maker is available to instructors and administrators.', { exact: false }),
     ).toBeVisible();
     await expect(page.getByRole('link', { name: 'Question Library' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Back to EduAI' })).toBeVisible();
   });
 
   test('TA enrollment follows the same explicit access boundary as a Student platform account', async ({
@@ -75,6 +72,7 @@ test.describe('Question Maker role access', () => {
       await expect(page.getByText('Access restricted', { exact: true })).toBeVisible();
       await expect(page.getByText('teaching assistants should use EduAI Core or AI Tutor', { exact: false }))
         .toBeVisible();
+      await expect(page.getByRole('link', { name: 'Back to EduAI' })).toBeVisible();
     } finally {
       await adminContext.dispose();
       await instructorContext.dispose();
@@ -97,7 +95,6 @@ test.describe('Question Maker authoring and AI workflows', () => {
         code: 'QM-INSTR-AI',
       });
 
-      await signInThroughPage(page, instructor, `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`);
       await page.route('**/api/eduai/generate-questions', async (route) => {
         if (route.request().method() !== 'POST') return route.continue();
         await route.fulfill({
@@ -129,15 +126,16 @@ test.describe('Question Maker authoring and AI workflows', () => {
         });
       });
 
-      await page.goto(`${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`);
+      await signInThroughPage(page, instructor, `${QM_FRONTEND_URL}/courses/${qmCourseId}/questions/new`);
       const prompt = page.getByRole('textbox', { name: 'Prompt' });
       await expect(prompt).toBeVisible();
       await prompt.fill('FIFO data structures');
       await page.getByRole('button', { name: 'Generate question' }).click();
 
-      await expect(page.getByRole('textbox', {
-        name: /e\.g\. Which of the following best describes/,
-      })).toHaveValue('Which data structure uses FIFO ordering?', { timeout: 15_000 });
+      await expect(page.locator('#composer-variant-text')).toHaveValue(
+        'Which data structure uses FIFO ordering?',
+        { timeout: 15_000 },
+      );
       await expect(page.getByRole('textbox', { name: 'Option A' })).toHaveValue('Queue');
       await expect(page.getByRole('checkbox', { name: /Mark as reviewed/ })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Save question' })).toBeEnabled();

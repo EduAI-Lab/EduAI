@@ -13,12 +13,13 @@ test('INSTRUCTOR creates an assessment blueprint through the Question Maker UI',
       code: 'QM-ASSESS-UI',
     });
     await signInThroughPage(page, user, `${QM_FRONTEND_URL}/courses/${qmCourseId}?tab=assessments`);
-    await page.getByRole('button', { name: 'New assessment' }).click();
+    const assessmentsPanel = page.getByTestId('assessments-panel');
+    await assessmentsPanel.getByRole('button', { name: 'New assessment' }).click();
     await page.getByRole('textbox', { name: 'Assessment name *' }).fill('E2E Assessment Blueprint');
     await page.getByRole('button', { name: 'Create Blueprint' }).click();
 
-    await expect(page.getByText('E2E Assessment Blueprint', { exact: true })).toBeVisible();
-    await expect(page.getByText(/No questions yet — open to start building/)).toBeVisible();
+    await expect(assessmentsPanel.getByText('E2E Assessment Blueprint', { exact: true })).toBeVisible();
+    await expect(assessmentsPanel.getByText(/No questions yet — open to start building/)).toBeVisible();
   } finally {
     await instructor.dispose();
   }

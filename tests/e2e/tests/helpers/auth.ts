@@ -30,13 +30,21 @@ export async function signInThroughPage(
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(returnUrl, { waitUntil: "domcontentloaded" });
-}
-
-/** Headers for direct calls to Core's extension-only session validation seam. */
-export function coreServiceHeaders(): Record<string, string> {
-  const key = process.env.EDUAI_API_KEY ?? "test-service-key-not-for-production";
-  return { Authorization: `Bearer ${key}` };
+  const expectedUrl = new URL(returnUrl);
+  try {
+    await page.waitForURL(
+      (url) =>
+        url.origin === expectedUrl.origin &&
+        url.pathname === expectedUrl.pathname &&
+        url.search === expectedUrl.search,
+      { waitUntil: "domcontentloaded" },
+    );
+  } catch {
+    throw new Error(
+      `Core did not redirect to ${returnUrl} (landed on ${page.url()}). ` +
+        "Check the credentials and use a localhost/127.0.0.1 or approved production redirect host.",
+    );
+  }
 }
 
 export interface SignUpResult {

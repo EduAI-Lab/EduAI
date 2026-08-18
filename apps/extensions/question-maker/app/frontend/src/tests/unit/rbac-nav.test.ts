@@ -6,7 +6,6 @@ describe("QM nav RBAC", () => {
   const unitAdmin = { id: "u1", role: "UNIT_ADMIN" as const, authorizedUnits: ["COSC"] };
   const instructor = { id: "i1", role: "INSTRUCTOR" as const };
   const student = { id: "s1", role: "STUDENT" as const };
-  const ta = { id: "t1", role: "TA" as const };
 
   it("includes core workspace links for authorized roles", () => {
     for (const user of [admin, unitAdmin, instructor]) {
@@ -33,11 +32,9 @@ describe("QM nav RBAC", () => {
     expect(getNavForUser(unitAdmin).some((item) => item.key === "bug-reports")).toBe(false);
   });
 
-  it("hides Question Maker navigation from non-authoring roles", () => {
+  it("hides Question Maker navigation from platform Students", () => {
     expect(getNavForUser(student)).toEqual([]);
-    expect(getNavForUser(ta)).toEqual([]);
     expect(getNavSecondaryForUser(student)).toEqual([]);
-    expect(getNavSecondaryForUser(ta)).toEqual([]);
   });
 
   it("returns nothing for a signed-out user", () => {
