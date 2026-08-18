@@ -8,7 +8,7 @@
 
 ### Changed
 
-- [ai-tutor] perf: Clone course content one `createManyAndReturn` per tree level instead of one `create` per node, cutting a 400-activity clone from 2529 statements / 1239ms to 14 statements / 63ms. Closes #1452. (@abdullahmoh21, 2026-08-18) — #PR
+- [ai-tutor] perf: Clone course content one `createManyAndReturn` per tree level instead of one `create` per node, cutting a 400-activity clone from 2529 statements / 1239ms to 14 statements / 63ms. Closes #1452. (@abdullahmoh21, 2026-08-18) — [#1564](https://github.com/EduAI-Lab/EduAI/pull/1564)
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 ## [Week 15 — August 10–16, 2026]
 
