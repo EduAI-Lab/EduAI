@@ -33,6 +33,7 @@ import {
   withAdmissionRelease,
 } from "~/lib/ai/admission.server";
 import { isEffectiveToolCallingAvailable } from "~/lib/ai/routing/local-vllm";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
@@ -744,7 +745,14 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (chatMode === "admin" && (isServiceKeyCaller || actingUser.role !== UserRole.ADMIN)) {
+    if (
+      chatMode === "admin" &&
+      (isServiceKeyCaller ||
+        actingUser.role !== UserRole.ADMIN ||
+        // Re-check isActive against the DB (#1571): a deactivated admin's live
+        // session must not retain admin chat-tools access until it expires.
+        !(await isActiveAdminUser(actingUser.id)))
+    ) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },

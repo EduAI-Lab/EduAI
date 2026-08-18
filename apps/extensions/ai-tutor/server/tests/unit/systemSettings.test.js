@@ -23,15 +23,19 @@ const {
   getEduAiApiKeyStatus,
 } = await import("../../src/services/systemSettings.js");
 
+const { isEncrypted } = await import("../../src/utils/encryption.js");
+
 beforeEach(() => {
   mockFindUnique.mockReset();
   mockUpsert.mockReset();
   mockDelete.mockReset();
   delete process.env.EDUAI_API_KEY;
+  delete process.env.ENCRYPTION_KEY;
 });
 
 afterEach(() => {
   delete process.env.EDUAI_API_KEY;
+  delete process.env.ENCRYPTION_KEY;
   vi.restoreAllMocks();
 });
 
@@ -171,5 +175,51 @@ describe("getEduAiApiKeyStatus", () => {
       EDUAI_API_KEY: "EDUAI_API_KEY",
       AI_MODEL_POLICY: "AI_MODEL_POLICY",
     });
+  });
+});
+
+describe("EDUAI_API_KEY encryption at rest (#1571)", () => {
+  it("stores the EDUAI_API_KEY override as an encrypted blob when ENCRYPTION_KEY is set", async () => {
+    process.env.ENCRYPTION_KEY = "unit-test-encryption-key";
+    mockUpsert.mockResolvedValue({});
+
+    await setSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY, "super-secret-key");
+
+    const stored = mockUpsert.mock.calls[0][0].update.value;
+    expect(stored).not.toBe("super-secret-key");
+    expect(isEncrypted(stored)).toBe(true);
+  });
+
+  it("round-trips: an encrypted override decrypts back to the plaintext key", async () => {
+    process.env.ENCRYPTION_KEY = "unit-test-encryption-key";
+    mockUpsert.mockResolvedValue({});
+    await setSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY, "super-secret-key");
+    const stored = mockUpsert.mock.calls[0][0].update.value;
+
+    mockFindUnique.mockResolvedValue({ value: stored });
+    await expect(getEffectiveEduAiApiKey()).resolves.toBe("super-secret-key");
+  });
+
+  it("stores plaintext (best-effort) when ENCRYPTION_KEY is not set", async () => {
+    mockUpsert.mockResolvedValue({});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await setSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY, "plain-key");
+
+    expect(mockUpsert.mock.calls[0][0].update.value).toBe("plain-key");
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("still reads legacy plaintext overrides written before encryption", async () => {
+    process.env.ENCRYPTION_KEY = "unit-test-encryption-key";
+    mockFindUnique.mockResolvedValue({ value: "legacy-plaintext-key" });
+    await expect(getEffectiveEduAiApiKey()).resolves.toBe("legacy-plaintext-key");
+  });
+
+  it("does not encrypt non-secret setting keys (e.g. AI_MODEL_POLICY JSON)", async () => {
+    process.env.ENCRYPTION_KEY = "unit-test-encryption-key";
+    mockUpsert.mockResolvedValue({});
+    await setSystemSetting(SYSTEM_SETTING_KEYS.AI_MODEL_POLICY, '{"a":1}');
+    expect(mockUpsert.mock.calls[0][0].update.value).toBe('{"a":1}');
   });
 });
