@@ -8,6 +8,7 @@ vi.mock("../../src/config/database.js", () => ({
       createMany: vi.fn(),
       deleteMany: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
 }));
@@ -55,6 +56,7 @@ beforeEach(() => {
   prisma.courseEnrollment.createMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.deleteMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.update.mockResolvedValue({});
+  prisma.courseEnrollment.updateMany.mockResolvedValue({ count: 0 });
 });
 
 afterEach(() => {
@@ -183,11 +185,61 @@ describe("syncCourseEnrollments", () => {
 
       const result = await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).toHaveBeenCalledWith({
-        where: { courseOfferingId_userId: { courseOfferingId: 1, userId: "user-cuid-1" } },
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["user-cuid-1"] } },
         data: { role: "TA" },
       });
       expect(result).toEqual({ synced: 1, created: 0, updated: 1, deleted: 0, errors: [] });
+    });
+
+    // #1451: role updates are grouped, so the query count follows the number of
+    // distinct target roles (at most STUDENT + TA), never the roster size.
+    it("issues one updateMany per distinct target role", async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        { ...ACTIVE_ENROLLMENT, studentId: "u-1", role: "TA" },
+        { ...ACTIVE_ENROLLMENT, studentId: "u-2", role: "TA" },
+        { ...ACTIVE_ENROLLMENT, studentId: "u-3", role: "STUDENT" },
+      ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: "u-1", role: "STUDENT" },
+        { userId: "u-2", role: "STUDENT" },
+        { userId: "u-3", role: "TA" },
+      ]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["u-1", "u-2"] } },
+        data: { role: "TA" },
+      });
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["u-3"] } },
+        data: { role: "STUDENT" },
+      });
+      expect(result.updated).toBe(3);
+    });
+
+    it("stays at two queries when a whole roster changes role", async () => {
+      const ROSTER_SIZE = 200;
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue(
+        Array.from({ length: ROSTER_SIZE }, (_, i) => ({
+          ...ACTIVE_ENROLLMENT,
+          studentId: `bulk-${i}`,
+          role: "TA",
+        })),
+      );
+      prisma.courseEnrollment.findMany.mockResolvedValue(
+        Array.from({ length: ROSTER_SIZE }, (_, i) => ({ userId: `bulk-${i}`, role: "STUDENT" })),
+      );
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(result.updated).toBe(ROSTER_SIZE);
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.courseEnrollment.updateMany.mock.calls[0][0].where.userId.in).toHaveLength(
+        ROSTER_SIZE,
+      );
     });
 
     it("does not update when role is unchanged", async () => {
@@ -198,7 +250,7 @@ describe("syncCourseEnrollments", () => {
 
       await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
+      expect(prisma.courseEnrollment.updateMany).not.toHaveBeenCalled();
     });
 
     it("updates local TA to STUDENT when Core demotes back to STUDENT (#569)", async () => {
@@ -209,8 +261,8 @@ describe("syncCourseEnrollments", () => {
 
       const result = await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).toHaveBeenCalledWith({
-        where: { courseOfferingId_userId: { courseOfferingId: 1, userId: "user-cuid-ta" } },
+      expect(prisma.courseEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ["user-cuid-ta"] } },
         data: { role: "STUDENT" },
       });
       expect(result).toEqual({ synced: 1, created: 0, updated: 1, deleted: 0, errors: [] });
@@ -372,7 +424,7 @@ describe("syncCourseEnrollments", () => {
       await expect(syncCourseEnrollments(1)).rejects.toThrow("Core unavailable");
       expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
       expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
-      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
+      expect(prisma.courseEnrollment.updateMany).not.toHaveBeenCalled();
     });
 
     it('tags a Core fetch failure with phase "fetch"', async () => {

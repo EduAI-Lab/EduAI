@@ -113,10 +113,23 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
       });
     }
 
+    // One updateMany per distinct target role rather than one update per row
+    // (#1451). MIRRORED_ROLES caps this at two queries no matter the roster size.
+    const userIdsByRole = new Map();
     for (const e of toUpdate) {
-      await prisma.courseEnrollment.update({
-        where: { courseOfferingId_userId: { courseOfferingId, userId: e.studentId } },
-        data: { role: e.role ?? "STUDENT" },
+      const role = e.role ?? "STUDENT";
+      const userIds = userIdsByRole.get(role);
+      if (userIds) {
+        userIds.push(e.studentId);
+      } else {
+        userIdsByRole.set(role, [e.studentId]);
+      }
+    }
+
+    for (const [role, userIds] of userIdsByRole) {
+      await prisma.courseEnrollment.updateMany({
+        where: { courseOfferingId, userId: { in: userIds } },
+        data: { role },
       });
     }
 

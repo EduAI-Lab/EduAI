@@ -267,6 +267,174 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
 }
 
 /**
+ * Maps every Core course id to its local offering id, creating the anchors that
+ * are missing. One query when nothing is missing — the create path costs two
+ * more, and only on the first sight of a course.
+ */
+async function resolveOfferingIdsByCoreId(coreCourseIds) {
+  const ids = Array.from(new Set(coreCourseIds.filter((id) => typeof id === "string" && id)));
+  if (ids.length === 0) {
+    return new Map();
+  }
+
+  const rows = await prisma.courseOffering.findMany({
+    where: { coreOfferingId: { in: ids } },
+    select: { id: true, coreOfferingId: true },
+  });
+  const offeringIdByCoreId = new Map(rows.map((row) => [row.coreOfferingId, row.id]));
+
+  const missing = ids.filter((id) => !offeringIdByCoreId.has(id));
+  if (missing.length === 0) {
+    return offeringIdByCoreId;
+  }
+
+  await prisma.courseOffering.createMany({
+    data: missing.map((coreOfferingId) => ({ coreOfferingId })),
+    skipDuplicates: true,
+  });
+
+  const created = await prisma.courseOffering.findMany({
+    where: { coreOfferingId: { in: missing } },
+    select: { id: true, coreOfferingId: true },
+  });
+  for (const row of created) {
+    offeringIdByCoreId.set(row.coreOfferingId, row.id);
+  }
+
+  return offeringIdByCoreId;
+}
+
+/**
+ * Writes one user's mirrored enrollments for every role group in a constant number
+ * of queries (#1451): the offering anchors are resolved up front by
+ * `resolveOfferingIdsByCoreId`, then each role group costs at most one `createMany`
+ * plus one `updateMany`, instead of an `ensureOfferingFromCore` + `upsert` per course.
+ *
+ * `enrolled` still counts every Core course that resolved to a local offering (not
+ * the rows actually written), so a no-op re-run reports the same numbers it always
+ * did.
+ */
+async function batchMirrorEnrollments(student, roleGroups) {
+  let enrolled = 0;
+  let skipped = 0;
+
+  const coreCourseIds = roleGroups.flatMap((group) => group.courses.map((course) => course.id));
+  const offeringIdByCoreId = await resolveOfferingIdsByCoreId(coreCourseIds);
+
+  const existing = await prisma.courseEnrollment.findMany({
+    where: {
+      userId: student.id,
+      courseOfferingId: { in: [...offeringIdByCoreId.values()] },
+    },
+    select: { courseOfferingId: true, role: true },
+  });
+  const existingRoleByOfferingId = new Map(existing.map((e) => [e.courseOfferingId, e.role]));
+
+  for (const group of roleGroups) {
+    const offeringIds = [];
+
+    for (const coreCourse of group.courses) {
+      const offeringId = offeringIdByCoreId.get(coreCourse.id);
+      if (offeringId === undefined) {
+        // The anchor could not be created, so this course cannot be mirrored. Same
+        // per-course isolation the old try/catch gave, just resolved in one pass.
+        console.error(
+          `[eduai] ${group.label} enrollment mirror failed for Core course`,
+          coreCourse.id,
+          new Error("no local course offering anchor"),
+        );
+        skipped++;
+        continue;
+      }
+      offeringIds.push(offeringId);
+      enrolled++;
+    }
+
+    const toCreate = offeringIds.filter((id) => !existingRoleByOfferingId.has(id));
+    const toUpdate = offeringIds.filter(
+      (id) => existingRoleByOfferingId.has(id) && existingRoleByOfferingId.get(id) !== group.role,
+    );
+
+    if (toCreate.length > 0) {
+      await prisma.courseEnrollment.createMany({
+        data: toCreate.map((courseOfferingId) => ({
+          courseOfferingId,
+          userId: student.id,
+          role: group.role,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (toUpdate.length > 0) {
+      await prisma.courseEnrollment.updateMany({
+        where: { userId: student.id, courseOfferingId: { in: toUpdate } },
+        data: { role: group.role },
+      });
+    }
+  }
+
+  return { enrolled, skipped };
+}
+
+/**
+ * Per-course fallback for `batchMirrorEnrollments`. A batched write is
+ * all-or-nothing, so a single poisoned row would abort every course in the group —
+ * this replays the original upsert loop (idempotent) so partial failure is still
+ * reported per course instead of sinking the whole import.
+ */
+async function perCourseMirrorEnrollments(student, roleGroups) {
+  let enrolled = 0;
+  let skipped = 0;
+
+  for (const group of roleGroups) {
+    for (const coreCourse of group.courses) {
+      try {
+        const offering = await ensureOfferingFromCore(coreCourse);
+        await prisma.courseEnrollment.upsert({
+          where: {
+            courseOfferingId_userId: {
+              courseOfferingId: offering.id,
+              userId: student.id,
+            },
+          },
+          update: { role: group.role },
+          create: {
+            courseOfferingId: offering.id,
+            userId: student.id,
+            role: group.role,
+          },
+        });
+        enrolled++;
+      } catch (err) {
+        console.error(
+          `[eduai] ${group.label} enrollment mirror failed for Core course`,
+          coreCourse.id,
+          err,
+        );
+        skipped++;
+      }
+    }
+  }
+
+  return { enrolled, skipped };
+}
+
+async function mirrorEnrollmentsForRoleGroups(student, roleGroups) {
+  const hasCourses = roleGroups.some((group) => group.courses.length > 0);
+  if (!hasCourses) {
+    return { enrolled: 0, skipped: 0 };
+  }
+
+  try {
+    return await batchMirrorEnrollments(student, roleGroups);
+  } catch (err) {
+    console.error("[eduai] Batched enrollment mirror failed, retrying per course", err);
+    return perCourseMirrorEnrollments(student, roleGroups);
+  }
+}
+
+/**
  * Mirrors Core student enrollments into local CourseEnrollment rows. Core is the
  * source of truth — creates offering anchors when missing and prunes stale
  * Core-linked enrollments.
@@ -304,53 +472,14 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   let enrolled = 0;
   let skipped = 0;
 
-  for (const coreCourse of taCourses) {
-    try {
-      const offering = await ensureOfferingFromCore(coreCourse);
-      await prisma.courseEnrollment.upsert({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: offering.id,
-            userId: student.id,
-          },
-        },
-        update: { role: TA_ENROLLMENT_ROLE },
-        create: {
-          courseOfferingId: offering.id,
-          userId: student.id,
-          role: TA_ENROLLMENT_ROLE,
-        },
-      });
-      enrolled++;
-    } catch (err) {
-      console.error("[eduai] TA enrollment mirror failed for Core course", coreCourse.id, err);
-      skipped++;
-    }
-  }
+  const roleGroups = [
+    { role: TA_ENROLLMENT_ROLE, label: "TA", courses: taCourses },
+    { role: STUDENT_ENROLLMENT_ROLE, label: "Student", courses: studentCourses },
+  ];
 
-  for (const coreCourse of studentCourses) {
-    try {
-      const offering = await ensureOfferingFromCore(coreCourse);
-      await prisma.courseEnrollment.upsert({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: offering.id,
-            userId: student.id,
-          },
-        },
-        update: { role: STUDENT_ENROLLMENT_ROLE },
-        create: {
-          courseOfferingId: offering.id,
-          userId: student.id,
-          role: STUDENT_ENROLLMENT_ROLE,
-        },
-      });
-      enrolled++;
-    } catch (err) {
-      console.error("[eduai] Student enrollment mirror failed for Core course", coreCourse.id, err);
-      skipped++;
-    }
-  }
+  const mirrored = await mirrorEnrollmentsForRoleGroups(student, roleGroups);
+  enrolled += mirrored.enrolled;
+  skipped += mirrored.skipped;
 
   const activeStudentCoreIds = new Set(studentCourses.map((course) => course.id));
   const activeTaCoreIds = new Set(taCourses.map((course) => course.id));
