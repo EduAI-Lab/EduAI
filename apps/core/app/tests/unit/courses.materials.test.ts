@@ -11,8 +11,8 @@ vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
   resolveCourseAccessGate: vi.fn(),
 }));
 
-vi.mock("~/lib/prisma.server", () => ({
-  default: {
+vi.mock("~/lib/prisma.server", () => {
+  const client: any = {
     courseMaterial: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -24,6 +24,7 @@ vi.mock("~/lib/prisma.server", () => ({
     materialUploadBlob: {
       upsert: vi.fn(),
       deleteMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     canvasMaterialExclusion: {
       findMany: vi.fn(),
@@ -31,8 +32,12 @@ vi.mock("~/lib/prisma.server", () => ({
     course: {
       findUnique: vi.fn(),
     },
-  },
-}));
+  };
+  // Interactive transaction: hand the callback the same client the assertions
+  // read, so a write made inside the reclaim transaction is still observable.
+  client.$transaction = vi.fn(async (fn: any) => fn(client));
+  return { default: client };
+});
 
 vi.mock("~/lib/ai/embedding", () => ({
   processMaterialEmbeddings: vi.fn().mockResolvedValue(undefined),
@@ -174,7 +179,13 @@ function mockExtraction(overrides: Record<string, unknown> = {}) {
  * PROCESSING row whose lease is absent or expired.
  */
 function isReclaimClaim(where: any): boolean {
-  return Array.isArray(where?.OR) && where.OR.some((c: any) => c?.status?.not === 'PROCESSING');
+  return (
+    Array.isArray(where?.OR) &&
+    // The restore claim carries a `status: { not: 'PROCESSING' }` arm too, but
+    // only ever paired with `deletedAt` (#1494 review) — that pairing is what
+    // separates the two.
+    where.OR.some((c: any) => c?.status?.not === 'PROCESSING' && c?.deletedAt === undefined)
+  );
 }
 
 /**
@@ -1092,6 +1103,53 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(extractUploadedFileContent).toHaveBeenCalled();
   });
 
+  it("commits the reclaim and the replacement bytes together (#1494 review)", async () => {
+    // Two statements left a window: fail between the claim and the blob upsert
+    // and the row is PROCESSING with no bytes — the sweeper skips it for want of
+    // a blob, and an identical retry answers 409. Permanently stranded, with no
+    // recovery path at all. Claim and blob now share one transaction.
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValueOnce({
+      id: "stranded-mat",
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(202);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Both writes ran against the transaction client, not the base one.
+    const tx = vi.mocked(prisma.$transaction).mock.calls[0][0];
+    expect(typeof tx).toBe("function");
+    expect(prisma.materialUploadBlob.upsert).toHaveBeenCalledTimes(1);
+    await flushBackgroundWork();
+  });
+
+  it("leaves the loser's bytes alone when the reclaim claim is lost (#1494 review)", async () => {
+    // Overwriting the blob after losing the claim would swap the bytes out from
+    // under the run the winner just started.
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "stranded-mat",
+    } as never);
+    mockReclaim(0);
+
+    const res = await action(stubUploadArgs());
+
+    expect(res.status).toBe(409);
+    expect(prisma.materialUploadBlob.upsert).not.toHaveBeenCalled();
+  });
+
   it("claims a stranded row conditionally, not with a blind update (#1494 review)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
@@ -1284,6 +1342,54 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     mockAccess({ level: "student", rank: 0 });
     const res = await action(makeDeleteArgs("mat-1"));
     expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("lets a student clear their own duplicate receipt (#1494 review)", async () => {
+    // Students may upload when `students.canUploadMaterials` is on, and a late
+    // content-duplicate leaves them a FAILED receipt the client is expected to
+    // delete. Rank 0 could not, so every student duplicate left a dead row in
+    // the course's material list, one per retry.
+    mockSession("STUDENT", "student-user");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "receipt-1",
+      uploadedBy: "student-user",
+      status: "FAILED",
+      duplicateOfId: "winner-1",
+    } as never);
+
+    const res = await action(makeDeleteArgs("receipt-1"));
+
+    expect(res.status).toBe(204);
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "receipt-1" } }),
+    );
+  });
+
+  it("does not let the receipt carve-out reach real material", async () => {
+    // The carve-out is scoped to the receipt shape: own row, FAILED, pointing at
+    // a winner. A material that merely failed to parse is still material.
+    mockSession("STUDENT", "student-user");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "student-user",
+      status: "FAILED",
+      duplicateOfId: null,
+    } as never);
+
+    expect((await action(makeDeleteArgs("mat-1"))).status).toBe(403);
+
+    // Nor another student's receipt.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "receipt-2",
+      uploadedBy: "other-student",
+      status: "FAILED",
+      duplicateOfId: "winner-1",
+    } as never);
+
+    expect((await action(makeDeleteArgs("receipt-2"))).status).toBe(403);
     expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
   });
 

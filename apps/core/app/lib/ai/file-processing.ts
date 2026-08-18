@@ -1044,9 +1044,16 @@ function buildOfficeExtractionWorkerSource(
       : `
       const JSZip = require("jszip");
       const zip = await JSZip.loadAsync(fs.readFileSync(inputPath));
+      // Sort by slide *number*, not lexically: "slide10.xml" sorts before
+      // "slide2.xml" as a string, so any deck past nine slides was emitted out
+      // of order and every "Slide N" label was wrong (#1494 review).
+      const slideIndex = (name) => {
+        const match = /slide(\\d+)\\.xml$/.exec(name);
+        return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+      };
       const slideNames = Object.keys(zip.files)
-        .filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"))
-        .sort();
+        .filter((name) => /^ppt\\/slides\\/slide\\d+\\.xml$/.test(name))
+        .sort((a, b) => slideIndex(a) - slideIndex(b) || a.localeCompare(b));
       const slides = [];
       for (const name of slideNames) {
         slides.push(await zip.files[name].async("text"));

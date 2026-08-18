@@ -301,7 +301,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId, deletedAt: null },
-        select: { id: true, uploadedBy: true, title: true },
+        select: {
+          id: true,
+          uploadedBy: true,
+          title: true,
+          status: true,
+          duplicateOfId: true,
+        },
       });
       if (!material) {
         return json(404, { error: "MATERIAL_NOT_FOUND" });
@@ -322,9 +328,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
       // own-only carve-out via uploadedBy (#294). Null uploadedBy = no owner,
       // TA denied.
-      const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
-      if (access.rank < 2 && !isOwnTa) {
-        return json(403, { error: "Forbidden" });
+      const isOwnTa = access.level === 'ta' && material.uploadedBy === user.id;
+
+      // #949/#1494 review: a late content-duplicate leaves the uploader a FAILED
+      // receipt row that the client reads and then deletes. Students may upload
+      // when `students.canUploadMaterials` is on, but rank 0 cannot delete — so
+      // without this carve-out every student duplicate leaves a dead receipt in
+      // the course's material list, one per retry. Scoped as narrowly as the
+      // receipt itself: the caller's own row, FAILED, and pointing at a winner.
+      // It grants nothing over real material, which is never FAILED with a
+      // `duplicateOfId`.
+      const isOwnDuplicateReceipt =
+        material.uploadedBy === user.id &&
+        material.status === 'FAILED' &&
+        material.duplicateOfId !== null;
+
+      if (access.rank < 2 && !isOwnTa && !isOwnDuplicateReceipt) {
+        return json(403, { error: 'Forbidden' });
       }
 
       // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
@@ -386,6 +406,7 @@ async function reclaimProvisionalRow(
   courseId: string,
   provisionalChecksum: string,
   userId: string,
+  upload: { bytes: Buffer; fileName: string; mimeType: string },
 ): Promise<{ outcome: 'conflict' | 'reclaimed'; materialId: string } | null> {
   const existing = await prisma.courseMaterial.findFirst({
     where: { courseId, checksum: provisionalChecksum },
@@ -394,45 +415,66 @@ async function reclaimProvisionalRow(
   if (!existing) return null;
 
   const now = new Date();
-  const claimed = await prisma.courseMaterial.updateMany({
-    // Every condition that made this row reclaimable is restated here, not just
-    // the status one (#1494 review) — the lookup above and this write are not
-    // atomic, so anything read outside the WHERE can change underneath us:
-    //
-    //   - `checksum` pins the row to the *provisional* state we found it in. A
-    //     worker that finalizes between the read and this update replaces the
-    //     `pending:` checksum with the real content hash, and without this the
-    //     UPDATE would happily match that now-READY row and reset it back to
-    //     PROCESSING with a null rawText.
-    //   - a PROCESSING row is reclaimable only once its extraction lease has
-    //     expired, soft-deleted or not. `deletedAt != null` alone used to be
-    //     enough, which let a DELETE issued during processing hand the row to a
-    //     second worker while the first was still writing to it.
-    //
-    // A row that fails these is either live or already finalized; both are the
-    // 409 below.
-    where: {
-      id: existing.id,
-      checksum: provisionalChecksum,
-      OR: [
-        { status: { not: 'PROCESSING' } },
-        { extractionLeaseUntil: { lt: now } },
-      ],
-    },
-    data: {
-      status: 'PROCESSING',
-      uploadedBy: userId,
-      deletedAt: null,
-      deletedBy: null,
-      processedAt: null,
-      duplicateOfId: null,
-      rawText: null,
-      // Hand the row back as a fresh job: clear the dead attempt's lease and
-      // reset its attempt count, or a row reclaimed after two failures would
-      // start one strike from being abandoned by the sweeper.
-      extractionLeaseUntil: null,
-      extractionAttempts: 0,
-    },
+  // The claim and the blob replacement commit together (#1494 review). The row
+  // is flipped to PROCESSING here and the dead attempt's bytes are replaced with
+  // this caller's; if those were two statements, a crash between them would
+  // leave a pending row with no blob — invisible to the sweeper, which requires
+  // one, and unreachable by retry, since identical bytes answer 409. The row
+  // would be stranded with no recovery path at all.
+  const claimed = await prisma.$transaction(async (tx) => {
+    const result = await tx.courseMaterial.updateMany({
+      // Every condition that made this row reclaimable is restated here, not
+      // just the status one (#1494 review) — the lookup above and this write are
+      // not atomic, so anything read outside the WHERE can change underneath us:
+      //
+      //   - `checksum` pins the row to the *provisional* state we found it in. A
+      //     worker that finalizes between the read and this update replaces the
+      //     `pending:` checksum with the real content hash, and without this the
+      //     UPDATE would happily match that now-READY row and reset it back to
+      //     PROCESSING with a null rawText.
+      //   - a PROCESSING row is reclaimable only once its extraction lease has
+      //     expired, soft-deleted or not. `deletedAt != null` alone used to be
+      //     enough, which let a DELETE issued during processing hand the row to
+      //     a second worker while the first was still writing to it.
+      //
+      // A row that fails these is either live or already finalized; both are the
+      // 409 below.
+      where: {
+        id: existing.id,
+        checksum: provisionalChecksum,
+        OR: [
+          { status: { not: 'PROCESSING' } },
+          { extractionLeaseUntil: { lt: now } },
+        ],
+      },
+      data: {
+        status: 'PROCESSING',
+        uploadedBy: userId,
+        deletedAt: null,
+        deletedBy: null,
+        processedAt: null,
+        duplicateOfId: null,
+        rawText: null,
+        // Hand the row back as a fresh job: clear the dead attempt's lease and
+        // reset its attempt count, or a row reclaimed after two failures would
+        // start one strike from being abandoned by the sweeper.
+        extractionLeaseUntil: null,
+        extractionAttempts: 0,
+      },
+    });
+
+    // Only the winner replaces the bytes: a loser's UPDATE matched nothing, and
+    // overwriting the blob would corrupt the run the winner is about to start.
+    if (result.count > 0) {
+      await persistUploadBlob(
+        existing.id,
+        upload.bytes,
+        upload.fileName,
+        upload.mimeType,
+        tx,
+      );
+    }
+    return result;
   });
 
   if (claimed.count === 0) {
@@ -515,6 +557,14 @@ async function uploadMaterial(
         courseId,
         provisionalChecksum,
         user.id,
+        // The reclaimed row's bytes belong to the attempt that died; the claim
+        // replaces them with this caller's in the same commit, so a resume
+        // always re-runs against what was actually uploaded.
+        {
+          bytes,
+          fileName: file.name || 'upload',
+          mimeType: file.type || 'application/octet-stream',
+        },
       );
       if (resolution?.outcome === 'conflict') {
         return json(409, {
@@ -524,14 +574,6 @@ async function uploadMaterial(
       }
       if (resolution?.outcome === 'reclaimed') {
         materialId = resolution.materialId;
-        // The reclaimed row's bytes belong to the attempt that died; replace
-        // them so a resume re-runs against what *this* caller uploaded.
-        await persistUploadBlob(
-          materialId,
-          bytes,
-          file.name || 'upload',
-          file.type || 'application/octet-stream',
-        );
       } else {
         // The colliding row disappeared between the failed insert and the
         // lookup — another request finalized or deleted it. Nothing to reclaim.

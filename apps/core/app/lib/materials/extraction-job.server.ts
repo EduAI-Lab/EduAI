@@ -128,17 +128,24 @@ export function toBytesColumn(bytes: Buffer | Uint8Array): Uint8Array<ArrayBuffe
  *
  * Upsert rather than create: reclaiming a stranded row re-uploads the same file,
  * and the new bytes must replace whatever the dead attempt left behind.
+ *
+ * `client` takes a transaction client so the reclaim path can flip the row to
+ * PROCESSING and replace its bytes in one commit (#1494 review). Split across
+ * two statements, a failure in between leaves a pending row with no blob: the
+ * sweeper skips it for want of bytes and identical retries answer 409, so it is
+ * stranded permanently.
  */
 export async function persistUploadBlob(
   materialId: string,
   bytes: Buffer | Uint8Array,
   fileName: string,
   mimeType: string,
+  client: Pick<typeof prisma, 'materialUploadBlob'> = prisma,
 ): Promise<void> {
   // Prisma's Bytes maps to `Uint8Array<ArrayBuffer>`; a Node Buffer can be backed
   // by a SharedArrayBuffer, so normalize rather than cast.
   const payload = { bytes: toBytesColumn(bytes), fileName, mimeType };
-  await prisma.materialUploadBlob.upsert({
+  await client.materialUploadBlob.upsert({
     where: { materialId },
     create: { materialId, ...payload },
     update: payload,
@@ -198,6 +205,13 @@ export async function claimExtraction(materialId: string): Promise<boolean> {
  * PROCESSING row that has never been leased belongs to something else — a Canvas
  * import, which sits in PROCESSING for reasons this module knows nothing about —
  * and must not be stomped.
+ *
+ * `deletedAt != null` is not on its own enough to claim either (#1494 review).
+ * DELETE only stamps `deletedAt`; it does not stop the worker already restoring
+ * the row. A soft-delete landing mid-restore would otherwise re-open the target
+ * to a second claimant, and both workers would embed and finalize the same
+ * material. The live lease is checked first for every row, deleted or not, so
+ * ownership — never the delete flag — decides who may run.
  */
 export async function claimRestoreTarget(
   materialId: string,
@@ -209,7 +223,10 @@ export async function claimRestoreTarget(
     where: {
       id: materialId,
       OR: [
-        { deletedAt: { not: null } },
+        // Settled (READY/FAILED, or any non-PROCESSING state) and soft-deleted:
+        // nothing owns it, so this is an ordinary restore.
+        { deletedAt: { not: null }, status: { not: 'PROCESSING' } },
+        // Mid-restore but abandoned: the previous worker's lease has lapsed.
         { status: 'PROCESSING', extractionLeaseUntil: { lt: now } },
       ],
     },
@@ -235,11 +252,14 @@ export async function claimRestoreTarget(
  * stranding the target forever with no recovery path, because the receipt was
  * the only thing that would ever have looked at it (#1494 review).
  *
- *   - `restore` — soft-deleted (a fresh restore), or a restore whose worker died
- *     and whose lease has since expired. Claim it and (re-)run the restore.
  *   - `busy` — a live restore holds the lease. Resolving the receipt now would
  *     promise the caller a settled winner that is still mid-flight, so leave the
- *     receipt PROCESSING and let a later sweep see the settled truth.
+ *     receipt PROCESSING and let a later sweep see the settled truth. Checked
+ *     *before* `deletedAt` (#1494 review): DELETE only stamps the flag, it does
+ *     not stop the worker, so a soft-delete landing mid-restore must not make a
+ *     live target look claimable.
+ *   - `restore` — soft-deleted and settled (a fresh restore), or a restore whose
+ *     worker died and whose lease has since expired. Claim it and (re-)run it.
  *   - `settled` — READY, or FAILED, or PROCESSING for reasons unrelated to this
  *     module (an unleased Canvas import). Point the receipt at it, as before.
  */
@@ -251,11 +271,14 @@ export function classifyRestoreTarget(
   },
   now: Date = new Date(),
 ): 'restore' | 'busy' | 'settled' {
-  if (duplicate.deletedAt) return 'restore';
-  if (duplicate.status !== 'PROCESSING' || !duplicate.extractionLeaseUntil) {
-    return 'settled';
+  if (duplicate.status === 'PROCESSING') {
+    // Ownership decides, not `deletedAt`: an unleased PROCESSING row is not
+    // ours (a Canvas import), a live lease means someone else is mid-restore,
+    // and only a lapsed lease makes it reclaimable.
+    if (!duplicate.extractionLeaseUntil) return 'settled';
+    return duplicate.extractionLeaseUntil < now ? 'restore' : 'busy';
   }
-  return duplicate.extractionLeaseUntil < now ? 'restore' : 'busy';
+  return duplicate.deletedAt ? 'restore' : 'settled';
 }
 
 /**
@@ -504,12 +527,16 @@ export async function sweepStrandedMaterialExtractions(
       ],
       uploadBlob: { isNot: null },
     },
+    // Ids only — never the bytes (#1494 review). Selecting `uploadBlob.bytes`
+    // here materialized the whole batch at once: at the documented 50 MB upload
+    // cap that is ~1 GB per pass before the `File` copies, which can OOM the
+    // process and strand the very backlog the sweep exists to drain. Each blob
+    // is fetched inside the loop instead, so at most one upload is resident.
     select: {
       id: true,
       courseId: true,
       uploadedBy: true,
       extractionAttempts: true,
-      uploadBlob: { select: { bytes: true, fileName: true, mimeType: true } },
     },
     take: SWEEP_BATCH_SIZE,
   });
@@ -518,8 +545,6 @@ export async function sweepStrandedMaterialExtractions(
   let abandoned = 0;
 
   for (const row of stranded) {
-    if (!row.uploadBlob) continue;
-
     if (row.extractionAttempts >= MAX_EXTRACTION_ATTEMPTS) {
       // Retrying further would just kill another worker on the same bytes.
       await failMaterial(
@@ -533,9 +558,18 @@ export async function sweepStrandedMaterialExtractions(
       continue;
     }
 
+    // One blob in memory at a time, and re-read after the batch scan: a row
+    // finalized in between has already dropped its blob, so there is nothing to
+    // resume from.
+    const blob = await prisma.materialUploadBlob.findUnique({
+      where: { materialId: row.id },
+      select: { bytes: true, fileName: true, mimeType: true },
+    });
+    if (!blob) continue;
+
     const ran = await claimAndRunExtraction(
       row.id,
-      fileFromBlob(row.uploadBlob),
+      fileFromBlob(blob),
       row.courseId,
       row.uploadedBy ?? '',
       requestContext,

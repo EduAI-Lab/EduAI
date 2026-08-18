@@ -11,6 +11,7 @@ vi.mock("~/lib/prisma.server", () => ({
     materialUploadBlob: {
       upsert: vi.fn(),
       deleteMany: vi.fn(),
+      findUnique: vi.fn(),
     },
   },
 }));
@@ -51,11 +52,6 @@ function blobRow(overrides: Record<string, unknown> = {}) {
     courseId: "course-1",
     uploadedBy: "user-1",
     extractionAttempts: 1,
-    uploadBlob: {
-      bytes: Buffer.from("hello"),
-      fileName: "notes.pdf",
-      mimeType: "application/pdf",
-    },
     ...overrides,
   };
 }
@@ -67,6 +63,11 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
   vi.mocked(prisma.materialUploadBlob.upsert).mockResolvedValue({} as never);
+  vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue({
+    bytes: Buffer.from("hello"),
+    fileName: "notes.pdf",
+    mimeType: "application/pdf",
+  } as never);
   vi.mocked(prisma.materialUploadBlob.deleteMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined as never);
   vi.mocked(extractUploadedFileContent).mockResolvedValue({
@@ -285,6 +286,36 @@ describe("sweepStrandedMaterialExtractions", () => {
       replace: true,
     });
   });
+
+  it("never loads the batch's bytes at once (#1494 review)", async () => {
+    // Selecting `uploadBlob.bytes` on the scan materialized every stranded
+    // upload in one array: at the 50 MB upload cap and a batch of 20 that is
+    // ~1 GB before the `File` copies, which can OOM the process and strand the
+    // very backlog the sweep exists to drain. Ids only, one blob at a time.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      blobRow({ id: "mat-1" }),
+      blobRow({ id: "mat-2" }),
+    ] as never);
+
+    await sweepStrandedMaterialExtractions(CTX);
+
+    const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
+    expect(args.select.uploadBlob).toBeUndefined();
+    expect(vi.mocked(prisma.materialUploadBlob.findUnique).mock.calls.map(([c]: [any]) => c.where))
+      .toEqual([{ materialId: "mat-1" }, { materialId: "mat-2" }]);
+  });
+
+  it("skips a row whose blob is gone by the time the sweep reaches it", async () => {
+    // A row finalized between the scan and the fetch has already dropped its
+    // bytes; there is nothing to resume from and nothing to fail it over.
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([blobRow()] as never);
+    vi.mocked(prisma.materialUploadBlob.findUnique).mockResolvedValue(null as never);
+
+    const result = await sweepStrandedMaterialExtractions(CTX);
+
+    expect(result).toEqual({ resumed: 0, abandoned: 0 });
+    expect(extractUploadedFileContent).not.toHaveBeenCalled();
+  });
 });
 
 describe("ensureMaterialSweeperRunning", () => {
@@ -359,6 +390,26 @@ describe("classifyRestoreTarget", () => {
     ).toBe("busy");
   });
 
+  it("will not restore a live target that was soft-deleted mid-flight (#1494 review)", () => {
+    // DELETE only stamps `deletedAt`; it does not stop the worker already
+    // restoring the row. Reading the flag first handed that target to a second
+    // claimant, and both workers embedded and finalized the same material. The
+    // live lease is checked first, for deleted and undeleted rows alike.
+    expect(
+      classifyRestoreTarget(
+        { status: "PROCESSING", deletedAt: new Date(), extractionLeaseUntil: LIVE },
+        NOW,
+      ),
+    ).toBe("busy");
+    // Once that worker's lease lapses the target is reclaimable again.
+    expect(
+      classifyRestoreTarget(
+        { status: "PROCESSING", deletedAt: new Date(), extractionLeaseUntil: EXPIRED },
+        NOW,
+      ),
+    ).toBe("restore");
+  });
+
   it("leaves an unleased PROCESSING row alone — that is a Canvas import", () => {
     // `extractionLeaseUntil` is only ever written by this module, so a
     // PROCESSING row that has never been leased belongs to something else.
@@ -387,7 +438,9 @@ describe("claimRestoreTarget", () => {
     expect(args.where).toEqual({
       id: "target-1",
       OR: [
-        { deletedAt: { not: null } },
+        // Soft-deleted is not on its own enough (#1494 review): a DELETE landing
+        // mid-restore must not re-open a target whose worker is still running.
+        { deletedAt: { not: null }, status: { not: "PROCESSING" } },
         // An expired lease only — a PROCESSING row with a null lease is a
         // Canvas import, not an abandoned restore.
         { status: "PROCESSING", extractionLeaseUntil: { lt: expect.any(Date) } },

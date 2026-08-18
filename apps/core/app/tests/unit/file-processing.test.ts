@@ -906,6 +906,32 @@ describe("extractPptxText", () => {
     expect(result.metadata?.processingMethod).toBe("XML parsing (isolated worker)");
   });
 
+  it("orders slides numerically, not lexically, past slide 9 (#1494 review)", async () => {
+    // `sort()` on the entry names puts "slide10.xml" before "slide2.xml", so any
+    // deck longer than nine slides was emitted out of order and every "Slide N"
+    // label named the wrong slide — corrupting both document order and the
+    // per-slide context the chunker splits on.
+    const buffer = await buildPptxZipArrayBuffer(
+      Array.from({ length: 12 }, (_, i) => `<a:t>content of slide ${i + 1}</a:t>`),
+    );
+    const file = {
+      name: "long-deck.pptx",
+      type: PPTX_MIME,
+      size: buffer.byteLength,
+      arrayBuffer: async () => buffer,
+    };
+
+    const result = await extractPptxText(file as any);
+
+    expect(result.pageCount).toBe(12);
+    for (let n = 1; n <= 12; n += 1) {
+      expect(result.content).toContain(`--- Slide ${n} ---\ncontent of slide ${n}`);
+    }
+    // And the markers themselves are in ascending order in the output.
+    const order = [...result.content.matchAll(/--- Slide (\d+) ---/g)].map((m) => Number(m[1]));
+    expect(order).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+  });
+
   it("falls back to a placeholder message when the presentation has no slides", async () => {
     const buffer = await buildZipArrayBuffer({ "docProps/core.xml": "<core/>" });
     const file = {
