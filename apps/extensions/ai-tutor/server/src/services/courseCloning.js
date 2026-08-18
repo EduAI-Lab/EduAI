@@ -9,47 +9,182 @@
  * Gotchas:
  *   - Topic remapping is name-based, not id-based, because source and target
  *     courses own different topic rows. Matching target topics are reused and
- *     missing names are created on demand inside the transaction.
- *   - `topicIdMap` caches source-topic-id -> target-topic-id mappings so
- *     repeated activity/topic combinations stay consistent and avoid duplicate
- *     topic creation.
- *   - `targetTopicsByName` is also transaction-scoped so newly-created target
- *     topics are immediately visible to later clones in the same run.
+ *     missing names are created in one batch before any activity is written.
+ *   - The whole tree is written level by level with `createManyAndReturn`, so a
+ *     clone costs a fixed number of statements instead of one per node. Each
+ *     level maps parents to children by position in the returned array, which
+ *     Postgres fills in insert order for a single multi-row insert.
  *   - Main-topic remapping is mandatory; if a source activity references a
  *     topic we cannot resolve, the whole clone aborts rather than creating an
  *     activity with a broken foreign key.
+ *   - Source reads deliberately happen outside the transaction so the write
+ *     transaction holds its row locks for as short a window as possible.
  * Related: `docs/ARCHITECTURE.md`, `server/src/routes/courses.js`,
  *   `server/src/routes/modules.js`.
  */
 
+import { Prisma } from "@eduai/ai-tutor-prisma-client";
+
 import { prisma } from "../config/database.js";
 
-async function ensureTopicMapping(tx, options) {
-  const { sourceTopicId, sourceTopicById, topicIdMap, targetTopicsByName, targetCourseId } =
-    options;
-  if (!sourceTopicId) return null;
-  if (topicIdMap.has(sourceTopicId)) {
-    return topicIdMap.get(sourceTopicId);
+// A clone writes a handful of large inserts rather than many small ones, but a
+// deep tree can still outrun Prisma's 5s interactive-transaction default.
+const CLONE_TRANSACTION_TIMEOUT_MS = 15_000;
+
+/**
+ * Collect every source topic id referenced anywhere under the given lessons.
+ *
+ * Why: The topic mapping is resolved once up front, so it needs the full set of
+ * ids before the first write instead of discovering them activity by activity.
+ */
+function collectSourceTopicIds(lessons) {
+  const sourceTopicIds = new Set();
+
+  for (const lesson of lessons) {
+    for (const activity of lesson.activities) {
+      if (activity.mainTopicId) {
+        sourceTopicIds.add(activity.mainTopicId);
+      }
+      for (const relation of activity.secondaryTopics) {
+        if (relation.topicId) {
+          sourceTopicIds.add(relation.topicId);
+        }
+      }
+    }
   }
 
-  const sourceTopic = sourceTopicById.get(sourceTopicId);
-  if (!sourceTopic) {
-    return null;
+  return sourceTopicIds;
+}
+
+/**
+ * Resolve every source topic id to a topic id owned by the target course.
+ *
+ * Why: One read plus one insert replaces the per-activity round-trips the clone
+ * used to make. Names missing from the target are created in a single batch;
+ * source ids we cannot resolve are simply absent from the returned map, which
+ * callers treat the same way the old per-topic helper treated a null return.
+ */
+async function buildTopicIdMap(tx, options) {
+  const { sourceTopicIds, sourceTopicById, targetCourseId } = options;
+  const topicIdMap = new Map();
+  if (sourceTopicIds.size === 0) return topicIdMap;
+
+  const existingTargetTopics = await tx.topic.findMany({
+    where: { courseOfferingId: targetCourseId },
+    select: { id: true, name: true },
+  });
+  const targetTopicIdByName = new Map(existingTargetTopics.map((topic) => [topic.name, topic.id]));
+
+  // Distinct source ids can share a name, and `Topic` is unique on
+  // (courseOfferingId, name), so the insert has to be deduped by name.
+  const missingNames = new Set();
+  for (const sourceTopicId of sourceTopicIds) {
+    const sourceTopic = sourceTopicById.get(sourceTopicId);
+    if (!sourceTopic) continue;
+    if (targetTopicIdByName.has(sourceTopic.name)) continue;
+    missingNames.add(sourceTopic.name);
   }
 
-  let targetTopic = targetTopicsByName.get(sourceTopic.name);
-  if (!targetTopic) {
-    targetTopic = await tx.topic.create({
-      data: {
-        name: sourceTopic.name,
-        courseOfferingId: targetCourseId,
-      },
+  if (missingNames.size > 0) {
+    const createdTopics = await tx.topic.createManyAndReturn({
+      data: Array.from(missingNames, (name) => ({ name, courseOfferingId: targetCourseId })),
+      select: { id: true, name: true },
     });
-    targetTopicsByName.set(sourceTopic.name, targetTopic);
+    for (const topic of createdTopics) {
+      targetTopicIdByName.set(topic.name, topic.id);
+    }
   }
 
-  topicIdMap.set(sourceTopicId, targetTopic.id);
-  return targetTopic.id;
+  for (const sourceTopicId of sourceTopicIds) {
+    const sourceTopic = sourceTopicById.get(sourceTopicId);
+    if (!sourceTopic) continue;
+    const targetTopicId = targetTopicIdByName.get(sourceTopic.name);
+    if (targetTopicId) {
+      topicIdMap.set(sourceTopicId, targetTopicId);
+    }
+  }
+
+  return topicIdMap;
+}
+
+/**
+ * Write every activity under already-created target lessons, plus their
+ * secondary-topic join rows.
+ *
+ * @param lessonBuckets - `[{ lessonId, activities }]` pairing each new target
+ * lesson id with the source activities that belong under it.
+ *
+ * Why: Both entry points end at the same activity-shaped work, and both need
+ * the main-topic check to fire before anything is inserted so a broken mapping
+ * aborts the clone instead of leaving a half-written tree behind.
+ */
+async function createActivitiesForLessons(tx, lessonBuckets, topicIdMap) {
+  const activityRows = [];
+  const sourceActivities = [];
+
+  for (const { lessonId, activities } of lessonBuckets) {
+    for (const activity of activities) {
+      // Activity topic foreign keys must always point at the target course,
+      // even when the source and target happened to start from the same import.
+      const targetMainTopicId = topicIdMap.get(activity.mainTopicId);
+      if (!targetMainTopicId) {
+        throw new Error("Failed to map main topic while cloning activity.");
+      }
+
+      activityRows.push({
+        title: activity.title,
+        instructionsMd: activity.instructionsMd,
+        position: activity.position,
+        lessonId,
+        promptTemplateId: activity.promptTemplateId,
+        // A bare JS null is ambiguous for a Json column, so an absent source
+        // config has to be spelled out as a database NULL.
+        config: activity.config === null ? Prisma.DbNull : activity.config,
+        mainTopicId: targetMainTopicId,
+      });
+      sourceActivities.push(activity);
+    }
+  }
+
+  if (activityRows.length === 0) return;
+
+  const createdActivities = await tx.activity.createManyAndReturn({
+    data: activityRows,
+    select: { id: true },
+  });
+  assertRowCount(createdActivities, activityRows, "activities");
+
+  const joinRows = [];
+  const seenPairs = new Set();
+  for (const [index, sourceActivity] of sourceActivities.entries()) {
+    const activityId = createdActivities[index].id;
+    for (const relation of sourceActivity.secondaryTopics) {
+      const topicId = topicIdMap.get(relation.topicId);
+      if (!topicId) continue;
+      const pairKey = `${activityId}:${topicId}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      joinRows.push({ activityId, topicId });
+    }
+  }
+
+  if (joinRows.length > 0) {
+    await tx.activitySecondaryTopic.createMany({ data: joinRows });
+  }
+}
+
+/**
+ * Guard the index-for-index correlation between an insert and its returned rows.
+ *
+ * Why: Every level maps parents to children by array position. A short return
+ * would silently attach children to the wrong parent, so it aborts instead.
+ */
+function assertRowCount(created, requested, label) {
+  if (created.length !== requested.length) {
+    throw new Error(
+      `Clone wrote ${created.length} ${label} but expected ${requested.length}; aborting.`,
+    );
+  }
 }
 
 /**
@@ -97,86 +232,67 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
   });
   let nextModulePosition = maxPosition._max.position ?? 0;
 
-  await prisma.$transaction(async (tx) => {
-    const existingTargetTopics = await tx.topic.findMany({
-      where: { courseOfferingId: targetCourseId },
-    });
-    const targetTopicsByName = new Map(existingTargetTopics.map((topic) => [topic.name, topic]));
-    const topicIdMap = new Map();
+  const moduleRows = sourceModules.map((module) => {
+    nextModulePosition += 1;
+    return {
+      title: module.title,
+      description: module.description,
+      position: nextModulePosition,
+      courseOfferingId: targetCourseId,
+    };
+  });
 
-    for (const module of sourceModules) {
-      nextModulePosition += 1;
-      const createdModule = await tx.module.create({
-        data: {
-          title: module.title,
-          description: module.description,
-          position: nextModulePosition,
-          courseOfferingId: targetCourseId,
-        },
+  const sourceLessons = sourceModules.flatMap((module) => module.lessons);
+  const sourceTopicIds = collectSourceTopicIds(sourceLessons);
+
+  await prisma.$transaction(
+    async (tx) => {
+      const topicIdMap = await buildTopicIdMap(tx, {
+        sourceTopicIds,
+        sourceTopicById,
+        targetCourseId,
       });
 
-      for (const lesson of module.lessons) {
-        const createdLesson = await tx.lesson.create({
-          data: {
+      const createdModules = await tx.module.createManyAndReturn({
+        data: moduleRows,
+        select: { id: true },
+      });
+      assertRowCount(createdModules, moduleRows, "modules");
+
+      const lessonRows = [];
+      const lessonSources = [];
+      for (const [index, module] of sourceModules.entries()) {
+        const moduleId = createdModules[index].id;
+        for (const lesson of module.lessons) {
+          lessonRows.push({
             title: lesson.title,
             contentMd: lesson.contentMd,
             position: lesson.position,
-            moduleId: createdModule.id,
-          },
-        });
-
-        for (const activity of lesson.activities) {
-          // Activity topic foreign keys must always point at the target course,
-          // even when the source and target happened to start from the same import.
-          const targetMainTopicId = await ensureTopicMapping(tx, {
-            sourceTopicId: activity.mainTopicId,
-            sourceTopicById,
-            topicIdMap,
-            targetTopicsByName,
-            targetCourseId,
+            moduleId,
           });
-
-          if (!targetMainTopicId) {
-            throw new Error("Failed to map main topic while cloning activity.");
-          }
-
-          const mappedSecondaryIds = [];
-          for (const relation of activity.secondaryTopics) {
-            const mapped = await ensureTopicMapping(tx, {
-              sourceTopicId: relation.topicId,
-              sourceTopicById,
-              topicIdMap,
-              targetTopicsByName,
-              targetCourseId,
-            });
-            if (mapped) {
-              mappedSecondaryIds.push(mapped);
-            }
-          }
-
-          await tx.activity.create({
-            data: {
-              title: activity.title,
-              instructionsMd: activity.instructionsMd,
-              position: activity.position,
-              lessonId: createdLesson.id,
-              promptTemplateId: activity.promptTemplateId,
-              config: activity.config,
-              mainTopicId: targetMainTopicId,
-              secondaryTopics:
-                mappedSecondaryIds.length > 0
-                  ? {
-                      create: mappedSecondaryIds.map((topicId) => ({
-                        topic: { connect: { id: topicId } },
-                      })),
-                    }
-                  : undefined,
-            },
-          });
+          lessonSources.push(lesson);
         }
       }
-    }
-  });
+
+      if (lessonRows.length === 0) return;
+
+      const createdLessons = await tx.lesson.createManyAndReturn({
+        data: lessonRows,
+        select: { id: true },
+      });
+      assertRowCount(createdLessons, lessonRows, "lessons");
+
+      await createActivitiesForLessons(
+        tx,
+        lessonSources.map((lesson, index) => ({
+          lessonId: createdLessons[index].id,
+          activities: lesson.activities,
+        })),
+        topicIdMap,
+      );
+    },
+    { timeout: CLONE_TRANSACTION_TIMEOUT_MS },
+  );
 }
 
 /**
@@ -207,19 +323,21 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
 
   if (lessons.length === 0) return;
 
-  const sourceCourseIds = new Set(
-    lessons
-      .map((lesson) => lesson.module.courseOfferingId)
-      .filter((value) => Number.isInteger(value)),
+  // Lessons can originate from multiple source courses, so every source course's
+  // topics are loaded in one read and normalized onto the target course below.
+  const sourceCourseIds = Array.from(
+    new Set(
+      lessons
+        .map((lesson) => lesson.module.courseOfferingId)
+        .filter((value) => Number.isInteger(value)),
+    ),
   );
 
-  const sourceTopicById = new Map();
-  for (const courseId of sourceCourseIds) {
-    const topics = await prisma.topic.findMany({ where: { courseOfferingId: courseId } });
-    for (const topic of topics) {
-      sourceTopicById.set(topic.id, topic);
-    }
-  }
+  const sourceTopics =
+    sourceCourseIds.length > 0
+      ? await prisma.topic.findMany({ where: { courseOfferingId: { in: sourceCourseIds } } })
+      : [];
+  const sourceTopicById = new Map(sourceTopics.map((topic) => [topic.id, topic]));
 
   const maxPosition = await prisma.lesson.aggregate({
     where: { moduleId: targetModuleId },
@@ -227,73 +345,41 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
   });
   let nextLessonPosition = maxPosition._max.position ?? 0;
 
-  await prisma.$transaction(async (tx) => {
-    const existingTargetTopics = await tx.topic.findMany({
-      where: { courseOfferingId: targetModule.courseOfferingId },
-    });
-    const targetTopicsByName = new Map(existingTargetTopics.map((topic) => [topic.name, topic]));
-    const topicIdMap = new Map();
+  const lessonRows = lessons.map((lesson) => {
+    nextLessonPosition += 1;
+    return {
+      title: lesson.title,
+      contentMd: lesson.contentMd,
+      position: nextLessonPosition,
+      moduleId: targetModuleId,
+    };
+  });
 
-    for (const lesson of lessons) {
-      nextLessonPosition += 1;
-      const createdLesson = await tx.lesson.create({
-        data: {
-          title: lesson.title,
-          contentMd: lesson.contentMd,
-          position: nextLessonPosition,
-          moduleId: targetModuleId,
-        },
+  const sourceTopicIds = collectSourceTopicIds(lessons);
+
+  await prisma.$transaction(
+    async (tx) => {
+      const topicIdMap = await buildTopicIdMap(tx, {
+        sourceTopicIds,
+        sourceTopicById,
+        targetCourseId: targetModule.courseOfferingId,
       });
 
-      for (const activity of lesson.activities) {
-        // Lessons can originate from multiple source courses, so the mapping
-        // cache is keyed by source topic id and normalized onto the target course.
-        const targetMainTopicId = await ensureTopicMapping(tx, {
-          sourceTopicId: activity.mainTopicId,
-          sourceTopicById,
-          topicIdMap,
-          targetTopicsByName,
-          targetCourseId: targetModule.courseOfferingId,
-        });
+      const createdLessons = await tx.lesson.createManyAndReturn({
+        data: lessonRows,
+        select: { id: true },
+      });
+      assertRowCount(createdLessons, lessonRows, "lessons");
 
-        if (!targetMainTopicId) {
-          throw new Error("Failed to map main topic while cloning activity.");
-        }
-
-        const mappedSecondaryIds = [];
-        for (const relation of activity.secondaryTopics) {
-          const mapped = await ensureTopicMapping(tx, {
-            sourceTopicId: relation.topicId,
-            sourceTopicById,
-            topicIdMap,
-            targetTopicsByName,
-            targetCourseId: targetModule.courseOfferingId,
-          });
-          if (mapped) {
-            mappedSecondaryIds.push(mapped);
-          }
-        }
-
-        await tx.activity.create({
-          data: {
-            title: activity.title,
-            instructionsMd: activity.instructionsMd,
-            position: activity.position,
-            lessonId: createdLesson.id,
-            promptTemplateId: activity.promptTemplateId,
-            config: activity.config,
-            mainTopicId: targetMainTopicId,
-            secondaryTopics:
-              mappedSecondaryIds.length > 0
-                ? {
-                    create: mappedSecondaryIds.map((topicId) => ({
-                      topic: { connect: { id: topicId } },
-                    })),
-                  }
-                : undefined,
-          },
-        });
-      }
-    }
-  });
+      await createActivitiesForLessons(
+        tx,
+        lessons.map((lesson, index) => ({
+          lessonId: createdLessons[index].id,
+          activities: lesson.activities,
+        })),
+        topicIdMap,
+      );
+    },
+    { timeout: CLONE_TRANSACTION_TIMEOUT_MS },
+  );
 }
