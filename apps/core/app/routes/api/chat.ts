@@ -2231,7 +2231,9 @@ ${buildEmptyCourseRagBlock()}`;
           return clientAbortResponse();
         }
         if (err instanceof AdmissionTimeoutError) {
-          const overflow = tryActivateBedrockOverflow();
+          const overflow = await tryActivateBedrockOverflow({
+            userId: actingUser.id,
+          });
           if (overflow) {
             applyBedrockOverflow(overflow);
             chatApiTrace("bedrock overflow after admission timeout", {
@@ -2473,7 +2475,9 @@ ${buildEmptyCourseRagBlock()}`;
               model: resolvedModelId,
             });
           } else {
-            const overflow = tryActivateBedrockOverflow();
+            const overflow = await tryActivateBedrockOverflow({
+              userId: actingUser.id,
+            });
             if (!overflow) {
               throw error;
             }

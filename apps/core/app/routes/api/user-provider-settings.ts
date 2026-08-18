@@ -7,6 +7,10 @@ import {
 import prisma from "~/lib/prisma.server";
 import { readBoundedJson } from "~/lib/chat-input.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  BEDROCK_USER_SETTINGS_ERROR,
+  isBedrockProviderName,
+} from "~/lib/ai/routing/bedrock/bedrock-settings";
 
 const PROVIDER_SETTINGS_MAX_BODY_BYTES = 32 * 1024;
 const PROVIDER_NAME_MAX_CHARS = 64;
@@ -35,12 +39,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  const result = rows.map((row) => ({
-    providerName: row.provider.name,
-    isEnabled: row.isEnabled,
-    hasKey: row.apiKey != null,
-    baseUrl: row.baseUrl,
-  }));
+  const result = rows
+    .filter((row) => !isBedrockProviderName(row.provider.name))
+    .map((row) => ({
+      providerName: row.provider.name,
+      isEnabled: row.isEnabled,
+      hasKey: row.apiKey != null,
+      baseUrl: row.baseUrl,
+    }));
 
   return new Response(JSON.stringify(result), {
     status: 200,
@@ -87,6 +93,12 @@ export async function action({ request }: ActionFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (isBedrockProviderName(parsed.data.providerName)) {
+      return new Response(JSON.stringify({ error: BEDROCK_USER_SETTINGS_ERROR }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     try {
       await upsertUserProviderSetting(session.user.id, parsed.data.providerName, {
         isEnabled: parsed.data.isEnabled,
@@ -97,6 +109,12 @@ export async function action({ request }: ActionFunctionArgs) {
       if (err instanceof Error && err.message.startsWith("Unknown provider")) {
         return new Response(JSON.stringify({ error: err.message }), {
           status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (err instanceof Error && err.message === BEDROCK_USER_SETTINGS_ERROR) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 403,
           headers: { "Content-Type": "application/json" },
         });
       }
@@ -117,6 +135,12 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: "Invalid body" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (isBedrockProviderName(parsed.data.providerName)) {
+      return new Response(JSON.stringify({ error: BEDROCK_USER_SETTINGS_ERROR }), {
+        status: 403,
         headers: { "Content-Type": "application/json" },
       });
     }

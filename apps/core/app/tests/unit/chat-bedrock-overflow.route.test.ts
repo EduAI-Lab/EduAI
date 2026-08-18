@@ -83,6 +83,14 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
 }));
 
+const bedrockSettingsMocks = vi.hoisted(() => ({
+  getBedrockOverflowSettings: vi.fn(),
+}));
+
+vi.mock("~/lib/ai/routing/bedrock/bedrock-settings.server", () => ({
+  getBedrockOverflowSettings: bedrockSettingsMocks.getBedrockOverflowSettings,
+}));
+
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return { ...actual, fleetRoutingEnabled: vi.fn(() => false) };
@@ -195,6 +203,13 @@ beforeEach(() => {
   vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+  bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+    enabled: false,
+    dailyUserLimit: 0,
+    monthlyUserLimit: 0,
+    globalLimit: 0,
+    resourceLimit: 0,
+  });
 
   vi.mocked(streamText).mockImplementation((args) => {
     args.onStepFinish?.({ toolCalls: [], toolResults: [] } as never);
@@ -239,6 +254,13 @@ describe("Bedrock overflow after admission timeout (#1441)", () => {
 
   it("reaches streamText on Bedrock instead of rethrowing AdmissionTimeoutError", async () => {
     process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
+    bedrockSettingsMocks.getBedrockOverflowSettings.mockResolvedValue({
+      enabled: true,
+      dailyUserLimit: 0,
+      monthlyUserLimit: 0,
+      globalLimit: 0,
+      resourceLimit: 20,
+    });
 
     const res = await action(makeRequest(baseBody()));
     expect(res.status).toBe(200);

@@ -154,6 +154,13 @@ describe("POST /api/user-provider-settings", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 403 when a caller tries to enable bedrock from user settings", async () => {
+    withSession();
+    const res = await action(postReq({ providerName: "bedrock", isEnabled: true }));
+    expect(res.status).toBe(403);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
+  });
+
   it("returns 204 on success and calls upsert with the correct args", async () => {
     withSession("user-7");
     vi.mocked(upsertUserProviderSetting).mockResolvedValue(undefined);
@@ -227,6 +234,13 @@ describe("DELETE /api/user-provider-settings", () => {
     withSession();
     const res = await action(deleteReq({}));
     expect(res.status).toBe(400);
+    expect(deleteUserProviderSetting).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when a caller tries to delete bedrock from user settings", async () => {
+    withSession();
+    const res = await action(deleteReq({ providerName: "bedrock" }));
+    expect(res.status).toBe(403);
     expect(deleteUserProviderSetting).not.toHaveBeenCalled();
   });
 
