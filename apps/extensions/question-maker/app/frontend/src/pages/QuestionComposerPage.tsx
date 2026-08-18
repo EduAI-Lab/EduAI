@@ -21,8 +21,8 @@ import {
   CardTitle,
   Label,
   Separator,
-  Skeleton,
 } from '@eduai/ui';
+import { ComposerSkeleton } from '@/components/shared/Skeletons';
 import {
   IconArrowLeft,
   IconDeviceFloppy,
@@ -1113,18 +1113,3 @@ function ComposerShell({ title, courseCode, children, onCancel, onSave, saving, 
   );
 }
 
-function ComposerSkeleton() {
-  return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-      <div className="flex flex-col gap-6">
-        <Skeleton className="h-28 w-full rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-64 w-full rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
-      </div>
-      <div className="flex flex-col gap-6">
-        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-80 w-full rounded-[var(--radius-xl)]" />
-      </div>
-    </div>
-  );
-}

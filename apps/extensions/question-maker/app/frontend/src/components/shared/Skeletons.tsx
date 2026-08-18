@@ -75,3 +75,64 @@ export function StatRowSkeleton({ count = 4 }: { count?: number }) {
     </div>
   );
 }
+
+/** Two-column question composer layout (edit/create source load). */
+export function ComposerSkeleton() {
+  return (
+    <div
+      data-testid="composer-skeleton"
+      className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
+    >
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-28 w-full rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-64 w-full rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
+      </div>
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-72 w-full rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-80 w-full rounded-[var(--radius-xl)]" />
+      </div>
+    </div>
+  );
+}
+
+/** Assessment builder header + section list placeholders. */
+export function AssessmentBuilderSkeleton() {
+  return (
+    <div
+      data-testid="assessment-builder-skeleton"
+      className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6"
+    >
+      <Skeleton className="h-8 w-40" />
+      <div className="flex items-start gap-3.5">
+        <Skeleton className="hidden size-11 shrink-0 rounded-xl sm:block" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-7 w-1/3" />
+          <div className="flex gap-1.5">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </div>
+      <StatRowSkeleton count={4} />
+      <ListSkeleton count={4} />
+    </div>
+  );
+}
+
+/** Course detail hero + tabs + content placeholders. */
+export function CourseDetailSkeleton() {
+  return (
+    <div data-testid="course-detail-skeleton" className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6">
+      <Skeleton className="h-40 w-full rounded-[var(--radius-xl)]" />
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-24 rounded-[var(--radius-lg)]" />
+        ))}
+      </div>
+      <StatRowSkeleton count={4} />
+      <ListSkeleton count={6} />
+    </div>
+  );
+}

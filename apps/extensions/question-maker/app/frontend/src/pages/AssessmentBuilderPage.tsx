@@ -24,7 +24,6 @@ import {
     IconUpload,
     IconFileText,
     IconFileTypeDocx,
-    IconLoader2,
     IconPencil,
     IconTrash,
     IconSettings,
@@ -43,6 +42,7 @@ import { Assessment, Question, QuestionVariantEntry } from '../types/question';
 import type { AssessmentGenerationParams } from '../types/question';
 import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
+import { AssessmentBuilderSkeleton } from '@/components/shared/Skeletons';
 import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { QuestionModal } from '../components/questions/QuestionModal';
@@ -501,10 +501,7 @@ const AssessmentBuilderPage = () => {
     if (isLoading) {
         return (
             <div className="min-h-screen bg-background">
-                <div className="mx-auto max-w-6xl px-6 py-16 flex flex-col items-center gap-3">
-                    <IconLoader2 className="h-8 w-8 animate-spin text-primary-text" />
-                    <p className="text-sm text-muted-foreground">Loading assessment builder…</p>
-                </div>
+                <AssessmentBuilderSkeleton />
             </div>
         );
     }

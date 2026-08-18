@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router';
-import { IconLoader2 } from '@tabler/icons-react';
 import {
   PageTabs,
   PageTabsList,
@@ -29,6 +28,7 @@ import {
   AlertDescription,
   resolvePaletteAccent,
 } from '@eduai/ui';
+import { CourseDetailSkeleton } from '@/components/shared/Skeletons';
 import { useCourseFromRoute } from '../hooks/useCourseFromRoute';
 import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
@@ -861,11 +861,7 @@ export const CourseDetailPage = () => {
 
   // ── Render: gate states (all hooks above this line) ─────────────────────────
   if (isCourseLoading || accessLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <IconLoader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <CourseDetailSkeleton />;
   }
 
   if (notFound || !course) {
