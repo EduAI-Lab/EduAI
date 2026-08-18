@@ -89,7 +89,11 @@ import {
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
 import { updateBugReportStatus } from "~/lib/bug-reports/server";
-import { resolveAdminCourseId, resolveAdminUserId, getAccessibleCourse } from "~/lib/agent-tools/admin-context.server";
+import {
+  resolveAdminCourseId,
+  resolveAdminUserId,
+  getAccessibleCourse,
+} from "~/lib/agent-tools/admin-context.server";
 import {
   registerWritePreview,
   consumeWritePreview,
@@ -330,7 +334,11 @@ describe("createAdminEnrollment via addEnrollment", () => {
     });
 
     expect(addEnrollment).toHaveBeenCalledWith("c1", { userId: "u1", role: "STUDENT" }, 4);
-    expect(result).toMatchObject({ ok: true, writeSucceeded: true, verifiedEnrollment: { id: "e1" } });
+    expect(result).toMatchObject({
+      ok: true,
+      writeSucceeded: true,
+      verifiedEnrollment: { id: "e1" },
+    });
   });
 });
 
@@ -606,7 +614,10 @@ describe("updateAdminUser additional branches", () => {
       authorizedUnits: ["CS"],
       updatedAt: new Date(),
     });
-    const result = await updateAdminUser(ADMIN, "u2", { role: "UNIT_ADMIN", authorizedUnits: ["CS"] });
+    const result = await updateAdminUser(ADMIN, "u2", {
+      role: "UNIT_ADMIN",
+      authorizedUnits: ["CS"],
+    });
     expect(result).toMatchObject({ ok: true });
   });
 
@@ -689,7 +700,11 @@ describe("createAdminEnrollment additional branches", () => {
 
   it("propagates a course resolution error", async () => {
     const { createAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");
-    vi.mocked(resolveAdminUserId).mockResolvedValue({ userId: "u1", email: "a@test.com", name: "A" });
+    vi.mocked(resolveAdminUserId).mockResolvedValue({
+      userId: "u1",
+      email: "a@test.com",
+      name: "A",
+    });
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ error: "COURSE_NOT_FOUND" } as never);
     const result = await createAdminEnrollment(ADMIN, {
       courseId: "missing",
@@ -702,7 +717,11 @@ describe("createAdminEnrollment additional branches", () => {
 
   it("propagates a course access gate error", async () => {
     const { createAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");
-    vi.mocked(resolveAdminUserId).mockResolvedValue({ userId: "u1", email: "a@test.com", name: "A" });
+    vi.mocked(resolveAdminUserId).mockResolvedValue({
+      userId: "u1",
+      email: "a@test.com",
+      name: "A",
+    });
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
     vi.mocked(getAccessibleCourse).mockResolvedValue({ error: "Forbidden" } as never);
     const result = await createAdminEnrollment(ADMIN, {
@@ -716,7 +735,11 @@ describe("createAdminEnrollment additional branches", () => {
 
   it("returns the mapped failure when addEnrollment fails validation", async () => {
     const { createAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");
-    vi.mocked(resolveAdminUserId).mockResolvedValue({ userId: "u1", email: "a@test.com", name: "A" });
+    vi.mocked(resolveAdminUserId).mockResolvedValue({
+      userId: "u1",
+      email: "a@test.com",
+      name: "A",
+    });
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
     vi.mocked(getAccessibleCourse).mockResolvedValue({
       course: { id: "c1", code: "COSC 111" },
@@ -737,7 +760,11 @@ describe("createAdminEnrollment additional branches", () => {
 
   it("returns VERIFY_FAILED when the enrollment is not visible after write", async () => {
     const { createAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");
-    vi.mocked(resolveAdminUserId).mockResolvedValue({ userId: "u1", email: "a@test.com", name: "A" });
+    vi.mocked(resolveAdminUserId).mockResolvedValue({
+      userId: "u1",
+      email: "a@test.com",
+      name: "A",
+    });
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
     vi.mocked(getAccessibleCourse).mockResolvedValue({
       course: { id: "c1", code: "COSC 111" },
@@ -782,7 +809,10 @@ describe("updateAdminEnrollmentRole additional branches", () => {
   it("maps a 403 forbidden result", async () => {
     const { updateAdminEnrollmentRole } = await import("~/lib/agent-tools/admin-mutations.server");
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
-    vi.mocked(updateEnrollmentRole).mockResolvedValue({ status: "403", error: "FORBIDDEN" } as never);
+    vi.mocked(updateEnrollmentRole).mockResolvedValue({
+      status: "403",
+      error: "FORBIDDEN",
+    } as never);
     const result = await updateAdminEnrollmentRole(ADMIN, {
       courseId: "c1",
       enrollmentId: "e1",
@@ -842,7 +872,10 @@ describe("deactivateAdminEnrollment additional branches", () => {
   it("propagates a course resolution error", async () => {
     const { deactivateAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ error: "COURSE_NOT_FOUND" } as never);
-    const result = await deactivateAdminEnrollment(ADMIN, { courseId: "missing", enrollmentId: "e1" });
+    const result = await deactivateAdminEnrollment(ADMIN, {
+      courseId: "missing",
+      enrollmentId: "e1",
+    });
     expect(result).toEqual({ error: "COURSE_NOT_FOUND" });
     expect(deactivateEnrollment).not.toHaveBeenCalled();
   });
@@ -913,7 +946,11 @@ describe("createAdminCourseTopic", () => {
 
 describe("updateAdminCourseTopic", () => {
   it("returns Forbidden for non-admin", async () => {
-    const result = await updateAdminCourseTopic(STUDENT, { courseId: "c1", topicId: "t1", name: "Loops" });
+    const result = await updateAdminCourseTopic(STUDENT, {
+      courseId: "c1",
+      topicId: "t1",
+      name: "Loops",
+    });
     expect(result).toEqual({ error: "Forbidden" });
   });
 
@@ -944,14 +981,22 @@ describe("updateAdminCourseTopic", () => {
   it("returns TOPIC_NOT_FOUND when update reports 404", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
     vi.mocked(updateCourseTopic).mockResolvedValue({ status: "404" } as never);
-    const result = await updateAdminCourseTopic(ADMIN, { courseId: "c1", topicId: "missing", name: "X" });
+    const result = await updateAdminCourseTopic(ADMIN, {
+      courseId: "c1",
+      topicId: "missing",
+      name: "X",
+    });
     expect(result).toEqual({ error: "TOPIC_NOT_FOUND" });
   });
 
   it("returns TOPIC_ALREADY_EXISTS when update reports 409", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
     vi.mocked(updateCourseTopic).mockResolvedValue({ status: "409", existingId: "t0" } as never);
-    const result = await updateAdminCourseTopic(ADMIN, { courseId: "c1", topicId: "t1", name: "Dup" });
+    const result = await updateAdminCourseTopic(ADMIN, {
+      courseId: "c1",
+      topicId: "t1",
+      name: "Dup",
+    });
     expect(result).toEqual({ error: "TOPIC_ALREADY_EXISTS", existingId: "t0" });
   });
 
@@ -1015,7 +1060,10 @@ describe("deleteAdminCourseTopic", () => {
 describe("createAdminInvitationMutation", () => {
   it("wraps a successful invitation", async () => {
     vi.mocked(createAdminInvitation).mockResolvedValue({ ok: true, invitationId: "i1" } as never);
-    const result = await createAdminInvitationMutation(ADMIN, { email: "new@test.com", role: "STUDENT" });
+    const result = await createAdminInvitationMutation(ADMIN, {
+      email: "new@test.com",
+      role: "STUDENT",
+    });
     expect(result).toMatchObject({ writeSucceeded: true, ok: true, invitationId: "i1" });
   });
 
@@ -1117,7 +1165,10 @@ describe("disconnectAdminCanvas", () => {
 
 describe("linkAdminCanvasRoster", () => {
   it("returns Forbidden for non-admin", async () => {
-    const result = await linkAdminCanvasRoster(STUDENT, { userId: "u1", studentNumber: "12345678" });
+    const result = await linkAdminCanvasRoster(STUDENT, {
+      userId: "u1",
+      studentNumber: "12345678",
+    });
     expect(result).toEqual({ error: "Forbidden" });
   });
 
@@ -1135,7 +1186,10 @@ describe("linkAdminCanvasRoster", () => {
 
   it("wraps a tool error", async () => {
     vi.mocked(linkCanvasRosterForUser).mockResolvedValue({ error: "USER_NOT_FOUND" } as never);
-    const result = await linkAdminCanvasRoster(ADMIN, { userId: "missing", studentNumber: "12345678" });
+    const result = await linkAdminCanvasRoster(ADMIN, {
+      userId: "missing",
+      studentNumber: "12345678",
+    });
     expect(result).toMatchObject({ writeSucceeded: false, error: "USER_NOT_FOUND" });
   });
 });
@@ -1186,8 +1240,16 @@ describe("platform mutation wrappers", () => {
 
   it("updateAdminCourseRagSettingsMutation delegates", async () => {
     vi.mocked(updateAdminCourseRagSettings).mockResolvedValue({ ok: true } as never);
-    const result = await updateAdminCourseRagSettingsMutation(ADMIN, { courseId: "c1" }, { chunkSize: 500 });
-    expect(updateAdminCourseRagSettings).toHaveBeenCalledWith(ADMIN, { courseId: "c1" }, { chunkSize: 500 });
+    const result = await updateAdminCourseRagSettingsMutation(
+      ADMIN,
+      { courseId: "c1" },
+      { chunkSize: 500 },
+    );
+    expect(updateAdminCourseRagSettings).toHaveBeenCalledWith(
+      ADMIN,
+      { courseId: "c1" },
+      { chunkSize: 500 },
+    );
     expect(result).toMatchObject({ writeSucceeded: true });
   });
 
@@ -1200,7 +1262,9 @@ describe("platform mutation wrappers", () => {
   });
 
   it("deleteAdminCourseMaterialMutation delegates and wraps error", async () => {
-    vi.mocked(deleteAdminCourseMaterial).mockResolvedValue({ error: "MATERIAL_NOT_FOUND" } as never);
+    vi.mocked(deleteAdminCourseMaterial).mockResolvedValue({
+      error: "MATERIAL_NOT_FOUND",
+    } as never);
     const opts = { courseId: "c1", materialId: "missing" };
     const result = await deleteAdminCourseMaterialMutation(ADMIN, opts);
     expect(deleteAdminCourseMaterial).toHaveBeenCalledWith(ADMIN, opts);
@@ -1209,8 +1273,16 @@ describe("platform mutation wrappers", () => {
 
   it("updateAdminCourseEmbeddingSettingsMutation delegates", async () => {
     vi.mocked(updateAdminCourseEmbeddingSettings).mockResolvedValue({ ok: true } as never);
-    const result = await updateAdminCourseEmbeddingSettingsMutation(ADMIN, { courseId: "c1" }, { model: "x" });
-    expect(updateAdminCourseEmbeddingSettings).toHaveBeenCalledWith(ADMIN, { courseId: "c1" }, { model: "x" });
+    const result = await updateAdminCourseEmbeddingSettingsMutation(
+      ADMIN,
+      { courseId: "c1" },
+      { model: "x" },
+    );
+    expect(updateAdminCourseEmbeddingSettings).toHaveBeenCalledWith(
+      ADMIN,
+      { courseId: "c1" },
+      { model: "x" },
+    );
     expect(result).toMatchObject({ writeSucceeded: true });
   });
 

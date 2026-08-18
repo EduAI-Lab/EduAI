@@ -6,11 +6,11 @@
  * panels from real `api.*` responses and passes them in here. No fetching, no
  * fabricated numbers.
  */
-import type { ReactNode } from 'react';
-import { Link } from 'react-router';
-import { IconChevronRight } from '@tabler/icons-react';
-import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from '@eduai/ui';
-import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
+import type { ReactNode } from "react";
+import { Link } from "react-router";
+import { IconChevronRight } from "@tabler/icons-react";
+import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from "@eduai/ui";
+import { TruncatedListNotice } from "~/components/common/TruncatedListNotice";
 
 /**
  * Course rows the left panel renders. It is a curated preview, not a browser, so

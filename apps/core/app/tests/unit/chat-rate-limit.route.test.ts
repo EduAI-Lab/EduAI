@@ -17,7 +17,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -245,9 +249,7 @@ describe("POST /api/chat — per-user rate limit (#987)", () => {
     vi.mocked(requireServiceKey).mockResolvedValue(null);
     checkRateLimitMock.mockResolvedValue({ limited: true, retryAfter: 9 });
 
-    const res = await action(
-      makeRequest({ messages: [], model: "vllm:test-model" }),
-    );
+    const res = await action(makeRequest({ messages: [], model: "vllm:test-model" }));
 
     expect(res.status).toBe(429);
     expect(checkRateLimitMock).toHaveBeenCalledWith("chat:service", 2, 60_000);

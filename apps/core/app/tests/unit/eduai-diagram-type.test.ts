@@ -36,15 +36,9 @@ describe("resolveEduaiDiagramTypeId", () => {
   });
 
   it("honors explicit type ids and aliases", () => {
-    expect(resolveEduaiDiagramTypeId({ explicitTypeId: "gd" })).toBe(
-      "gradient-descent",
-    );
-    expect(resolveEduaiDiagramTypeId({ explicitTypeId: "tree" })).toBe(
-      "hierarchy",
-    );
-    expect(resolveEduaiDiagramTypeId({ explicitTypeId: "steps" })).toBe(
-      "process-flow",
-    );
+    expect(resolveEduaiDiagramTypeId({ explicitTypeId: "gd" })).toBe("gradient-descent");
+    expect(resolveEduaiDiagramTypeId({ explicitTypeId: "tree" })).toBe("hierarchy");
+    expect(resolveEduaiDiagramTypeId({ explicitTypeId: "steps" })).toBe("process-flow");
   });
 });
 
@@ -55,9 +49,7 @@ describe("matchExplicitDiagramTypeId", () => {
   });
 
   it("matches canonical ids and aliases", () => {
-    expect(matchExplicitDiagramTypeId("gradient-descent")).toBe(
-      "gradient-descent",
-    );
+    expect(matchExplicitDiagramTypeId("gradient-descent")).toBe("gradient-descent");
     expect(matchExplicitDiagramTypeId("gd")).toBe("gradient-descent");
   });
 });

@@ -48,9 +48,7 @@ export function buildFleetRouterFeatures(
 ): Record<string, unknown> {
   return {
     feature,
-    ...(fleetPick
-      ? { fleetServerId: fleetPick.serverId, fleetReason: fleetPick.reason }
-      : {}),
+    ...(fleetPick ? { fleetServerId: fleetPick.serverId, fleetReason: fleetPick.reason } : {}),
   };
 }
 

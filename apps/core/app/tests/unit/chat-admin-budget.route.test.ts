@@ -9,7 +9,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -37,10 +41,12 @@ vi.mock("~/lib/agent-tools", async (importOriginal) => {
   return {
     ...actual,
     createChatTools: vi.fn().mockReturnValue(adminTools),
-    buildAdminSystemPrompt: vi.fn().mockReturnValue(
-      "You are EduAI Admin Assistant.\n".repeat(40) +
-        "Write safety rules require confirmed:true.\n".repeat(20),
-    ),
+    buildAdminSystemPrompt: vi
+      .fn()
+      .mockReturnValue(
+        "You are EduAI Admin Assistant.\n".repeat(40) +
+          "Write safety rules require confirmed:true.\n".repeat(20),
+      ),
   };
 });
 

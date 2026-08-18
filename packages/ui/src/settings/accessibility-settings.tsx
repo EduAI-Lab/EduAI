@@ -5,13 +5,7 @@
  * providers) is lifted to callback props so the component has zero
  * react-router / server / app-specific hook dependencies.
  */
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Label } from "../ui/label";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Switch } from "../ui/switch";
@@ -104,9 +98,7 @@ export function AccessibilitySettings({
               <Label htmlFor="reduce-motion" className="text-base">
                 Reduce motion
               </Label>
-              <p className="text-sm text-muted-foreground">
-                Minimize animations and transitions.
-              </p>
+              <p className="text-sm text-muted-foreground">Minimize animations and transitions.</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Switch

@@ -74,8 +74,6 @@ describe("resolveAllowedVllmBaseUrl", () => {
   });
 
   it("rejects non-HTTP schemes", () => {
-    expect(() => resolveAllowedVllmBaseUrl("file:///etc/passwd")).toThrow(
-      InvalidVllmBaseUrlError,
-    );
+    expect(() => resolveAllowedVllmBaseUrl("file:///etc/passwd")).toThrow(InvalidVllmBaseUrlError);
   });
 });

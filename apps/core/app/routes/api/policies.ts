@@ -5,12 +5,7 @@ import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
-import {
-  getPolicies,
-  getPolicyDefinitions,
-  isPolicyKey,
-  setPolicy,
-} from "~/lib/policy.server";
+import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**

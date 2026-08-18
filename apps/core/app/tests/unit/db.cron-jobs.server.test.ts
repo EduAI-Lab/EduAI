@@ -62,7 +62,15 @@ describe("listCronJobStatuses", () => {
   it("attaches the most recent run to the matching job", async () => {
     const startedAt = new Date("2026-06-20T02:00:00Z");
     mockQueryRaw.mockResolvedValue([
-      { id: "run-1", jobName: "backup-nightly", status: "SUCCESS", startedAt, finishedAt: null, message: null, exitCode: 0 },
+      {
+        id: "run-1",
+        jobName: "backup-nightly",
+        status: "SUCCESS",
+        startedAt,
+        finishedAt: null,
+        message: null,
+        exitCode: 0,
+      },
     ]);
 
     const result = await listCronJobStatuses();
@@ -79,7 +87,15 @@ describe("listCronJobStatuses", () => {
     const startedAt = new Date("2026-06-20T02:00:00Z");
     const finishedAt = new Date("2026-06-20T02:01:00Z");
     mockQueryRaw.mockResolvedValue([
-      { id: "run-1", jobName: "backup-nightly", status: "SUCCESS", startedAt, finishedAt, message: "ok", exitCode: 0 },
+      {
+        id: "run-1",
+        jobName: "backup-nightly",
+        status: "SUCCESS",
+        startedAt,
+        finishedAt,
+        message: "ok",
+        exitCode: 0,
+      },
     ]);
 
     const result = await listCronJobStatuses();
@@ -107,7 +123,15 @@ describe("listCronJobStatuses", () => {
   it("jobs without a run entry keep lastRun null even when other jobs have runs", async () => {
     const startedAt = new Date("2026-06-20T02:00:00Z");
     mockQueryRaw.mockResolvedValue([
-      { id: "run-1", jobName: "backup-nightly", status: "SUCCESS", startedAt, finishedAt: null, message: null, exitCode: 0 },
+      {
+        id: "run-1",
+        jobName: "backup-nightly",
+        status: "SUCCESS",
+        startedAt,
+        finishedAt: null,
+        message: null,
+        exitCode: 0,
+      },
     ]);
 
     const result = await listCronJobStatuses();
@@ -125,9 +149,7 @@ describe("startCronRun", () => {
   });
 
   it("returns created:false when INSERT conflicts (empty RETURNING)", async () => {
-    mockQueryRaw
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "run-existing" }]);
+    mockQueryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "run-existing" }]);
     const result = await startCronRun("backup-nightly");
     expect(result).toEqual({ runId: "run-existing", created: false });
     expect(mockQueryRaw).toHaveBeenCalledTimes(2);
@@ -202,7 +224,15 @@ describe("getRecentCronJobRuns", () => {
     const startedAt = new Date("2026-06-20T02:00:00Z");
     const finishedAt = new Date("2026-06-20T02:01:00Z");
     mockQueryRaw.mockResolvedValue([
-      { id: "run-1", jobName: "backup-nightly", status: "SUCCESS", startedAt, finishedAt, message: "done", exitCode: 0 },
+      {
+        id: "run-1",
+        jobName: "backup-nightly",
+        status: "SUCCESS",
+        startedAt,
+        finishedAt,
+        message: "done",
+        exitCode: 0,
+      },
     ]);
 
     const runs = await getRecentCronJobRuns("backup-nightly");
@@ -213,7 +243,15 @@ describe("getRecentCronJobRuns", () => {
   it("sets finishedAt to null when the run is still active", async () => {
     const startedAt = new Date("2026-06-20T02:00:00Z");
     mockQueryRaw.mockResolvedValue([
-      { id: "run-1", jobName: "backup-nightly", status: "RUNNING", startedAt, finishedAt: null, message: null, exitCode: null },
+      {
+        id: "run-1",
+        jobName: "backup-nightly",
+        status: "RUNNING",
+        startedAt,
+        finishedAt: null,
+        message: null,
+        exitCode: null,
+      },
     ]);
 
     const runs = await getRecentCronJobRuns("backup-nightly");
@@ -226,7 +264,11 @@ describe("updateCronSchedule", () => {
     await updateCronSchedule("backup-nightly", "0 3 * * *", "Daily at 03:00 UTC");
     expect(mockOverrideUpsert).toHaveBeenCalledWith({
       where: { jobName: "backup-nightly" },
-      create: { jobName: "backup-nightly", schedule: "0 3 * * *", scheduleLabel: "Daily at 03:00 UTC" },
+      create: {
+        jobName: "backup-nightly",
+        schedule: "0 3 * * *",
+        scheduleLabel: "Daily at 03:00 UTC",
+      },
       update: { schedule: "0 3 * * *", scheduleLabel: "Daily at 03:00 UTC" },
     });
   });

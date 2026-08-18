@@ -1,15 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, renderHook } from "@testing-library/react";
 
 const hasSeenMainTourMock = vi.fn();
 
-vi.mock('../../../tour/mainTourStorage', () => ({
+vi.mock("../../../tour/mainTourStorage", () => ({
   hasSeenMainTour: () => hasSeenMainTourMock(),
 }));
 
-import { useAutoStartMainTour } from '../../../tour/useAutoStartMainTour';
+import { useAutoStartMainTour } from "../../../tour/useAutoStartMainTour";
 
-describe('useAutoStartMainTour', () => {
+describe("useAutoStartMainTour", () => {
   const onStartMock = vi.fn();
   let idleCallbackSpy: ReturnType<typeof vi.fn>;
 
@@ -21,8 +21,8 @@ describe('useAutoStartMainTour', () => {
       cb({ didTimeout: false, timeRemaining: () => 50 } as IdleDeadline);
       return 1;
     });
-    vi.stubGlobal('requestIdleCallback', idleCallbackSpy);
-    vi.stubGlobal('cancelIdleCallback', vi.fn());
+    vi.stubGlobal("requestIdleCallback", idleCallbackSpy);
+    vi.stubGlobal("cancelIdleCallback", vi.fn());
   });
 
   afterEach(() => {
@@ -30,7 +30,7 @@ describe('useAutoStartMainTour', () => {
     vi.unstubAllGlobals();
   });
 
-  it('calls onStart when unseen and enabled', () => {
+  it("calls onStart when unseen and enabled", () => {
     hasSeenMainTourMock.mockReturnValue(false);
 
     renderHook(() => useAutoStartMainTour({ enabled: true, onStart: onStartMock }));
@@ -39,7 +39,7 @@ describe('useAutoStartMainTour', () => {
     expect(onStartMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not call onStart when main tour has been seen', () => {
+  it("does not call onStart when main tour has been seen", () => {
     hasSeenMainTourMock.mockReturnValue(true);
 
     renderHook(() => useAutoStartMainTour({ enabled: true, onStart: onStartMock }));
@@ -48,12 +48,12 @@ describe('useAutoStartMainTour', () => {
     expect(idleCallbackSpy).not.toHaveBeenCalled();
   });
 
-  it('does not start when disabled, then starts when enabled becomes true', () => {
+  it("does not start when disabled, then starts when enabled becomes true", () => {
     hasSeenMainTourMock.mockReturnValue(false);
 
     const { rerender } = renderHook(
       ({ enabled }) => useAutoStartMainTour({ enabled, onStart: onStartMock }),
-      { initialProps: { enabled: false } }
+      { initialProps: { enabled: false } },
     );
 
     expect(onStartMock).not.toHaveBeenCalled();

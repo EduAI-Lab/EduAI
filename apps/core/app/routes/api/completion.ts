@@ -97,17 +97,13 @@ export async function action({ request }: ActionFunctionArgs) {
     return outcome.result.toDataStreamResponse({
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        ...(outcome.fleetServerId
-          ? { "X-Fleet-Server": outcome.fleetServerId }
-          : {}),
+        ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
       },
       // HTTP status/headers are immutable once this 200 stream begins. Route
       // late provider errors through the same sanitized contract as the
       // pre-stream path via the AI SDK stream error channel.
       getErrorMessage: (error) =>
-        JSON.stringify(
-          providerFailureBody(classifyProviderError(outcome.provider, error)),
-        ),
+        JSON.stringify(providerFailureBody(classifyProviderError(outcome.provider, error))),
     });
   }
 
@@ -115,9 +111,7 @@ export async function action({ request }: ActionFunctionArgs) {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...(outcome.fleetServerId
-        ? { "X-Fleet-Server": outcome.fleetServerId }
-        : {}),
+      ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
     },
   });
 }

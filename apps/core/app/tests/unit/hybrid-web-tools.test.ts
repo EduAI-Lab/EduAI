@@ -84,7 +84,10 @@ describe("buildHybridWebToolContext", () => {
   });
 
   it("returns an error without calling runFetchPage when fetchPage mode has no URL", async () => {
-    const result = await buildHybridWebToolContext("Fetch the page and list the headings.", "fetchPage");
+    const result = await buildHybridWebToolContext(
+      "Fetch the page and list the headings.",
+      "fetchPage",
+    );
 
     expect(result).toEqual({ mode: "fetchPage", context: "", error: "No URL found in prompt" });
     expect(runFetchPageMock).not.toHaveBeenCalled();
@@ -99,9 +102,7 @@ describe("buildHybridWebToolContext", () => {
       details: "timeout",
     });
 
-    const result = await buildHybridWebToolContext(
-      "Fetch the page at https://example.com please.",
-    );
+    const result = await buildHybridWebToolContext("Fetch the page at https://example.com please.");
 
     expect(result.context).toContain("Failed to fetch https://example.com (timeout)");
     expect(result.context).toContain("could not be loaded");
@@ -126,9 +127,7 @@ describe("buildHybridWebToolContext", () => {
     expect(result.context).toContain("Web search results:");
     expect(result.context).toContain("BC Hydro grid carbon intensity");
     expect(result.context).toContain("(2026-01-01)");
-    expect(runWebSearchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 3 }),
-    );
+    expect(runWebSearchMock).toHaveBeenCalledWith(expect.objectContaining({ limit: 3 }));
   });
 
   it("reports no results when the web search returns an empty array", async () => {

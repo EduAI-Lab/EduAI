@@ -6,10 +6,10 @@
  * Core is the single identity provider.
  */
 
-const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN']);
+const VALID_ROLES = new Set(["STUDENT", "INSTRUCTOR", "ADMIN", "UNIT_ADMIN"]);
 
 function normalizeRole(role) {
-  return VALID_ROLES.has(role) ? role : 'STUDENT';
+  return VALID_ROLES.has(role) ? role : "STUDENT";
 }
 
 /**
@@ -22,22 +22,22 @@ function normalizeRole(role) {
 export async function requireAuth(req, res, next) {
   try {
     const response = await fetch(
-      `${process.env.CORE_URL || 'http://localhost:3000'}/api/sessions/validate`,
+      `${process.env.CORE_URL || "http://localhost:3000"}/api/sessions/validate`,
       {
-        method: 'POST',
-        headers: { cookie: req.headers.cookie ?? '' },
+        method: "POST",
+        headers: { cookie: req.headers.cookie ?? "" },
       },
     );
 
     if (!response.ok) {
-      if (req.path.startsWith('/api/')) {
-        return res.status(401).json({ error: 'Authentication required' });
+      if (req.path.startsWith("/api/")) {
+        return res.status(401).json({ error: "Authentication required" });
       }
       const returnUrl = encodeURIComponent(
-        `${process.env.EXTENSION_URL || 'http://localhost:9000'}${req.originalUrl}`,
+        `${process.env.EXTENSION_URL || "http://localhost:9000"}${req.originalUrl}`,
       );
       return res.redirect(
-        `${process.env.CORE_URL || 'http://localhost:3000'}/login?redirect=${returnUrl}`,
+        `${process.env.CORE_URL || "http://localhost:3000"}/login?redirect=${returnUrl}`,
       );
     }
 
@@ -45,7 +45,7 @@ export async function requireAuth(req, res, next) {
     req.user = { ...user, role: normalizeRole(user.role) };
     next();
   } catch {
-    res.status(503).json({ error: 'Auth service unavailable — is Core running?' });
+    res.status(503).json({ error: "Auth service unavailable — is Core running?" });
   }
 }
 
@@ -59,12 +59,12 @@ export function requireRole(allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: "Authentication required" });
     }
     if (!roles.includes(req.user.role)) {
       return res
         .status(403)
-        .json({ error: `One of the following roles required: ${roles.join(', ')}` });
+        .json({ error: `One of the following roles required: ${roles.join(", ")}` });
     }
     next();
   };

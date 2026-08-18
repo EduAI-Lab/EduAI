@@ -4,21 +4,21 @@
  * category meters where every bar sits mostly empty. Used for difficulty mix and
  * any small composition breakdown. Robust to all-zero data (renders empty track).
  */
-import { cn } from "../utils"
+import { cn } from "../utils";
 
 export interface StackedSegment {
-  label: string
-  value: number
-  color: string
+  label: string;
+  value: number;
+  color: string;
 }
 
 export interface StackedBarProps {
-  data: StackedSegment[]
-  className?: string
+  data: StackedSegment[];
+  className?: string;
 }
 
 export function StackedBar({ data, className }: StackedBarProps) {
-  const total = data.reduce((sum, d) => sum + d.value, 0)
+  const total = data.reduce((sum, d) => sum + d.value, 0);
 
   return (
     <div className={cn("flex flex-col gap-3 pt-1", className)}>
@@ -37,7 +37,7 @@ export function StackedBar({ data, className }: StackedBarProps) {
 
       <ul className="flex min-w-0 flex-col gap-2">
         {data.map((seg, i) => {
-          const pct = total > 0 ? Math.round((seg.value / total) * 100) : 0
+          const pct = total > 0 ? Math.round((seg.value / total) * 100) : 0;
           return (
             <li key={i} className="flex items-center gap-2 text-sm">
               <span
@@ -49,9 +49,9 @@ export function StackedBar({ data, className }: StackedBarProps) {
               <span className="shrink-0 font-medium text-foreground">{seg.value}</span>
               <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">{pct}%</span>
             </li>
-          )
+          );
         })}
       </ul>
     </div>
-  )
+  );
 }

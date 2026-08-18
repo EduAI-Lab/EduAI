@@ -14,26 +14,28 @@
 // Core (fetchCoreCourseSafe) and the outbound EduAI `fetch` are mocked — both
 // always succeed here, since this model tests the *gate*, not the AI call.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
-import { setSystemSetting, SYSTEM_SETTING_KEYS } from '../../src/services/systemSettings.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { createApp } from "../../src/app.js";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
+import { setSystemSetting, SYSTEM_SETTING_KEYS } from "../../src/services/systemSettings.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
-const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/models/ai-chat-gate.cases.json'), 'utf8'));
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
+const rows = JSON.parse(
+  readFileSync(path.join(repoRoot, "tests/models/ai-chat-gate.cases.json"), "utf8"),
+);
 const { expectedGateStatus, isAdmittedPastAccessGate } = await import(
-  path.join(repoRoot, 'tests/models/ai-chat-gate.oracle.ts')
+  path.join(repoRoot, "tests/models/ai-chat-gate.oracle.ts")
 );
 
 /**
@@ -47,25 +49,26 @@ const { expectedGateStatus, isAdmittedPastAccessGate } = await import(
  */
 function isKnownDrift(row) {
   if (!isAdmittedPastAccessGate(row)) return false;
-  if (row.ModeEnabled === 'no' && row.Mode !== 'custom') return true; // #1411
-  if (row.SessionOwnership === 'foreign') return true; // #1412
+  if (row.ModeEnabled === "no" && row.Mode !== "custom") return true; // #1411
+  if (row.SessionOwnership === "foreign") return true; // #1412
   return false;
 }
 
 const MODE_PAYLOAD = {
-  teach: { message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' },
-  guide: { message: 'Need a hint', knowledgeLevel: 'beginner', apiKey: 'test-key' },
-  custom: { message: 'Custom question', knowledgeLevel: 'beginner', apiKey: 'test-key' },
+  teach: { message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" },
+  guide: { message: "Need a hint", knowledgeLevel: "beginner", apiKey: "test-key" },
+  custom: { message: "Custom question", knowledgeLevel: "beginner", apiKey: "test-key" },
 };
 
 beforeEach(async () => {
   await truncateAll();
   vi.stubGlobal(
-    'fetch',
+    "fetch",
     vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ questions: [], total: 0, content: 'AI response', chatId: 'chat-1' }),
-      text: () => Promise.resolve(''),
+      json: () =>
+        Promise.resolve({ questions: [], total: 0, content: "AI response", chatId: "chat-1" }),
+      text: () => Promise.resolve(""),
     }),
   );
 });
@@ -80,50 +83,50 @@ async function buildRow(row) {
   const seed = await seedMinimalCourse(owner.id);
   await prisma.module.update({
     where: { id: seed.module.id },
-    data: { isPublished: row.ModulePublished === 'yes' },
+    data: { isPublished: row.ModulePublished === "yes" },
   });
   await prisma.lesson.update({
     where: { id: seed.lesson.id },
-    data: { isPublished: row.LessonPublished === 'yes' },
+    data: { isPublished: row.LessonPublished === "yes" },
   });
   const activity = await prisma.activity.create({
     data: {
       lessonId: seed.lesson.id,
       mainTopicId: seed.topic.id,
-      instructionsMd: 'Instructions',
-      config: { question: 'Q?', questionType: 'MCQ' },
+      instructionsMd: "Instructions",
+      config: { question: "Q?", questionType: "MCQ" },
       position: 0,
       // Only the requested mode's own flag varies with `ModeEnabled`; the
       // other two stay enabled so the activity always has at least one
       // enabled mode (router-level invariant, activities.js:491).
-      enableTeachMode: row.Mode === 'teach' ? row.ModeEnabled === 'yes' : true,
-      enableGuideMode: row.Mode === 'guide' ? row.ModeEnabled === 'yes' : true,
-      enableCustomMode: row.Mode === 'custom' ? row.ModeEnabled === 'yes' : true,
-      customPrompt: 'Explain like I am five.',
+      enableTeachMode: row.Mode === "teach" ? row.ModeEnabled === "yes" : true,
+      enableGuideMode: row.Mode === "guide" ? row.ModeEnabled === "yes" : true,
+      enableCustomMode: row.Mode === "custom" ? row.ModeEnabled === "yes" : true,
+      customPrompt: "Explain like I am five.",
     },
   });
 
   vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
     id: seed.course.coreOfferingId,
-    isPublished: row.CoursePublishedLive === 'yes',
+    isPublished: row.CoursePublishedLive === "yes",
   });
   await setSystemSetting(
     SYSTEM_SETTING_KEYS.AI_MODEL_POLICY,
-    JSON.stringify({ dualLoopEnabled: row.DualLoop === 'on' }),
+    JSON.stringify({ dualLoopEnabled: row.DualLoop === "on" }),
   );
 
   let mockUser;
   switch (row.Access) {
-    case 'NON_STUDENT':
+    case "NON_STUDENT":
       mockUser = owner; // platform role INSTRUCTOR
       break;
-    case 'STUDENT_NOT_ENROLLED':
+    case "STUDENT_NOT_ENROLLED":
       mockUser = makeStudent();
       break;
-    case 'STUDENT_ENROLLED': {
+    case "STUDENT_ENROLLED": {
       const student = makeStudent();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+        data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
       });
       mockUser = student;
       break;
@@ -135,8 +138,8 @@ async function buildRow(row) {
   // SessionOwnership is "none" (the new-session case already covered by the
   // other dimensions).
   let chatId;
-  if (row.SessionOwnership !== 'none') {
-    const sessionOwnerId = row.SessionOwnership === 'own' ? mockUser.id : makeStudent().id;
+  if (row.SessionOwnership !== "none") {
+    const sessionOwnerId = row.SessionOwnership === "own" ? mockUser.id : makeStudent().id;
     chatId = `chat-${row.SessionOwnership}-${activity.id}`;
     await prisma.aiChatSession.create({
       data: { userId: sessionOwnerId, activityId: activity.id, mode: row.Mode, chatId },
@@ -148,13 +151,15 @@ async function buildRow(row) {
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'ai-chat-gate PICT row #$index $row.Access/$row.CoursePublishedLive/$row.ModulePublished/$row.LessonPublished/$row.Mode/$row.DualLoop/$row.ModeEnabled/$row.SessionOwnership',
+  "ai-chat-gate PICT row #$index $row.Access/$row.CoursePublishedLive/$row.ModulePublished/$row.LessonPublished/$row.Mode/$row.DualLoop/$row.ModeEnabled/$row.SessionOwnership",
   ({ row }) => {
     const run = isKnownDrift(row) ? it.fails : it;
-    run('matches the oracle', async () => {
+    run("matches the oracle", async () => {
       const { app, activityId, chatId } = await buildRow(row);
       const payload = chatId ? { ...MODE_PAYLOAD[row.Mode], chatId } : MODE_PAYLOAD[row.Mode];
-      const res = await request(app).post(`/api/activities/${activityId}/${row.Mode}`).send(payload);
+      const res = await request(app)
+        .post(`/api/activities/${activityId}/${row.Mode}`)
+        .send(payload);
 
       expect(res.status).toBe(expectedGateStatus(row));
     });

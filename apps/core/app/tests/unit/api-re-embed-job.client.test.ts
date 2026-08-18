@@ -43,9 +43,9 @@ describe("formatReEmbedJobMessage", () => {
   });
 
   it("reports a completed count", () => {
-    expect(
-      formatReEmbedJobMessage({ ...baseJob, status: "COMPLETED", processedCount: 3 }),
-    ).toBe("Processed 3 material(s).");
+    expect(formatReEmbedJobMessage({ ...baseJob, status: "COMPLETED", processedCount: 3 })).toBe(
+      "Processed 3 material(s).",
+    );
   });
 
   it("reports a partial result with failures", () => {
@@ -62,7 +62,12 @@ describe("formatReEmbedJobMessage", () => {
 
   it("reports a partial result without failures", () => {
     expect(
-      formatReEmbedJobMessage({ ...baseJob, status: "PARTIAL", processedCount: 2, totalMaterials: 3 }),
+      formatReEmbedJobMessage({
+        ...baseJob,
+        status: "PARTIAL",
+        processedCount: 2,
+        totalMaterials: 3,
+      }),
     ).toBe("Processed 2 of 3 material(s).");
   });
 
@@ -81,8 +86,8 @@ describe("fetchReEmbedJob", () => {
   });
 
   it("returns the job on a successful response", async () => {
-    global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ job: baseJob }), { status: 200 }),
+    global.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ job: baseJob }), { status: 200 }),
     ) as never;
 
     const job = await fetchReEmbedJob("course-1", "job-1");
@@ -99,8 +104,8 @@ describe("fetchReEmbedJob", () => {
   });
 
   it("throws the server's error message on a non-ok response", async () => {
-    global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: "Job not found" }), { status: 404 }),
+    global.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ error: "Job not found" }), { status: 404 }),
     ) as never;
 
     await expect(fetchReEmbedJob("course-1", "job-1")).rejects.toThrow("Job not found");
@@ -130,8 +135,8 @@ describe("pollReEmbedJobUntilDone", () => {
       { ...baseJob, status: "COMPLETED", processedCount: 3 },
     ];
     let call = 0;
-    global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ job: responses[call++] }), { status: 200 }),
+    global.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ job: responses[call++] }), { status: 200 }),
     ) as never;
 
     const onUpdate = vi.fn();

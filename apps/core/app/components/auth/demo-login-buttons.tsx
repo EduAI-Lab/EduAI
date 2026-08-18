@@ -10,14 +10,14 @@
  * Do NOT use these credentials in production — they are development fixtures only.
  */
 
-import { RoleBadge } from "@eduai/ui"
-import { useRef } from "react"
+import { RoleBadge } from "@eduai/ui";
+import { useRef } from "react";
 
 // ---------------------------------------------------------------------------
 // Seed credentials — kept in sync with apps/core/prisma/seed.ts
 // ---------------------------------------------------------------------------
 
-const DEMO_PASSWORD = "EduAI2026!"
+const DEMO_PASSWORD = "EduAI2026!";
 
 const DEMO_ACCOUNTS = [
   {
@@ -40,17 +40,17 @@ const DEMO_ACCOUNTS = [
     role: "STUDENT",
     email: "student1@eduai.local",
   },
-] as const
+] as const;
 
 // ---------------------------------------------------------------------------
 
 interface DemoLoginButtonsProps {
   /** The hidden <input name="redirectTo"> value in the outer form. Needed so
    *  the submit targets the same redirect as a normal login. */
-  redirectTo: string
+  redirectTo: string;
   /** Called when a demo button is clicked, before the form submits.
    *  Use this to set isLoading state in the parent if needed. */
-  onSubmit?: () => void
+  onSubmit?: () => void;
 }
 
 /**
@@ -60,13 +60,13 @@ interface DemoLoginButtonsProps {
  * are exposed beyond what the server already processes.
  */
 export function DemoLoginButtons({ redirectTo, onSubmit }: DemoLoginButtonsProps) {
-  const formRefs = useRef<Map<string, HTMLFormElement>>(new Map())
+  const formRefs = useRef<Map<string, HTMLFormElement>>(new Map());
 
   function handleClick(email: string) {
-    const form = formRefs.current.get(email)
-    if (!form) return
-    onSubmit?.()
-    form.requestSubmit()
+    const form = formRefs.current.get(email);
+    if (!form) return;
+    onSubmit?.();
+    form.requestSubmit();
   }
 
   return (
@@ -104,7 +104,7 @@ export function DemoLoginButtons({ redirectTo, onSubmit }: DemoLoginButtonsProps
                 as normal. */}
             <form
               ref={(el) => {
-                if (el) formRefs.current.set(email, el)
+                if (el) formRefs.current.set(email, el);
               }}
               method="post"
               style={{ display: "none" }}
@@ -133,12 +133,12 @@ export function DemoLoginButtons({ redirectTo, onSubmit }: DemoLoginButtonsProps
                 transition: "border-color 120ms, background 120ms",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--secondary)"
-                e.currentTarget.style.background = "var(--accent)"
+                e.currentTarget.style.borderColor = "var(--secondary)";
+                e.currentTarget.style.background = "var(--accent)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)"
-                e.currentTarget.style.background = "var(--muted)"
+                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.background = "var(--muted)";
               }}
             >
               {/* Role badge */}
@@ -162,5 +162,5 @@ export function DemoLoginButtons({ redirectTo, onSubmit }: DemoLoginButtonsProps
         ))}
       </div>
     </div>
-  )
+  );
 }

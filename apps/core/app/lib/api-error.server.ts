@@ -13,18 +13,11 @@ export function jsonResponse(status: number, body: unknown): Response {
 /**
  * MCP-ready error envelope: `{ error: "CODE", fields?: { field: "message" } }`.
  */
-export function apiError(
-  status: number,
-  error: string,
-  fields?: Record<string, string>,
-): Response {
+export function apiError(status: number, error: string, fields?: Record<string, string>): Response {
   return jsonResponse(status, fields ? { error, fields } : { error });
 }
 
-export function validationErrorFromZod(
-  zodError: z.ZodError,
-  status = 422,
-): Response {
+export function validationErrorFromZod(zodError: z.ZodError, status = 422): Response {
   const fieldErrors = zodError.flatten().fieldErrors;
   const fields: Record<string, string> = {};
   for (const [key, messages] of Object.entries(fieldErrors)) {

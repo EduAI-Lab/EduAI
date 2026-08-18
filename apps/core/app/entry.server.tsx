@@ -9,10 +9,7 @@ import { renderToPipeableStream } from "react-dom/server";
 
 import { NonceProvider } from "~/lib/nonce";
 import { redactErrorForConsole } from "~/lib/redact.server";
-import {
-  applySecurityHeaders,
-  generateNonce,
-} from "~/lib/security-headers.server";
+import { applySecurityHeaders, generateNonce } from "~/lib/security-headers.server";
 
 export const streamTimeout = 5_000;
 
@@ -44,9 +41,7 @@ export default function handleRequest(
     // Ensure requests from bots and SPA Mode renders wait for all content to load before responding
     // https://react.dev/reference/react-dom/server/renderToPipeableStream#waiting-for-all-content-to-load-for-crawlers-and-static-generation
     let readyOption: keyof RenderToPipeableStreamOptions =
-      (userAgent && isbot(userAgent)) || routerContext.isSpaMode
-        ? "onAllReady"
-        : "onShellReady";
+      (userAgent && isbot(userAgent)) || routerContext.isSpaMode ? "onAllReady" : "onShellReady";
 
     // Abort the rendering stream after the `streamTimeout` so it has time to
     // flush down the rejected boundaries

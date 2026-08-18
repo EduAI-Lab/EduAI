@@ -15,9 +15,7 @@ export type StreamStartupHooks = {
  * Create a probe that resolves on first ready signal or rejects on error.
  * Soft-timeout resolves without error so slow-but-alive hosts are not retried.
  */
-export function createStreamStartupProbe(options?: {
-  timeoutMs?: number;
-}): {
+export function createStreamStartupProbe(options?: { timeoutMs?: number }): {
   hooks: StreamStartupHooks;
   wait: () => Promise<void>;
 } {

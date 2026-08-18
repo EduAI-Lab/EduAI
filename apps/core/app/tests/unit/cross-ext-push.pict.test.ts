@@ -47,10 +47,7 @@ import { action } from "~/routes/api/questions";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { createQuestion } from "~/lib/questions/server";
-import {
-  bodyForIdempotencyHash,
-  hashRequestBody,
-} from "~/lib/idempotency.server";
+import { bodyForIdempotencyHash, hashRequestBody } from "~/lib/idempotency.server";
 
 const rows = (cases as CrossExtPushRow[]).filter(
   (row) => row.Draft === "no" && row.CoreReachable === "yes",
@@ -165,7 +162,11 @@ async function runCore(row: CrossExtPushRow): Promise<{ outcome: string }> {
   } as never);
 
   let res: Response;
-  if (row.Idempotency === "in-progress" && row.Session === "present" && row.CourseAccess === "allowed") {
+  if (
+    row.Idempotency === "in-progress" &&
+    row.Session === "present" &&
+    row.CourseAccess === "allowed"
+  ) {
     vi.useFakeTimers();
     try {
       const pending = run;

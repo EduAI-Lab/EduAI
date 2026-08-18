@@ -70,7 +70,14 @@ describe("POST /api/sessions/validate", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({
-      user: { id: "u1", email: "u1@ubc.ca", name: "U1", image: null, role: "STUDENT", authorizedUnits: [] },
+      user: {
+        id: "u1",
+        email: "u1@ubc.ca",
+        name: "U1",
+        image: null,
+        role: "STUDENT",
+        authorizedUnits: [],
+      },
     });
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });

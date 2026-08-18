@@ -85,6 +85,4 @@ export const DEFAULT_BOTH_TIER_IN = DEFAULT_BOTH_TIER_OUT;
 export const DEFAULT_LABELS_OUT = resolveRunsFile("labels.v1.jsonl");
 export const DEFAULT_POLICY_OUT = resolveRunsFile("policy-runs.v1.jsonl");
 export const DEFAULT_CLASSROOM_OUT = resolveRunsFile("classroom-sim.v1.jsonl");
-export const DEFAULT_CLASSROOM_SUMMARY = resolveRunsFile(
-  "classroom-sim-summary.v1.txt",
-);
+export const DEFAULT_CLASSROOM_SUMMARY = resolveRunsFile("classroom-sim-summary.v1.txt");

@@ -100,10 +100,9 @@ describe("materials upload → list → delete cycle (#300)", () => {
     // Delete
     mockSession(instructor);
     const deleted = await action({
-      request: new Request(
-        `http://localhost/api/courses/${courseId}/materials/${materialId}`,
-        { method: "DELETE" },
-      ),
+      request: new Request(`http://localhost/api/courses/${courseId}/materials/${materialId}`, {
+        method: "DELETE",
+      }),
       params: { courseId, materialId },
       context: {} as never,
     } as any);
@@ -157,10 +156,9 @@ describe("materials upload → list → delete cycle (#300)", () => {
     // TA cannot delete the instructor's material
     mockSession(ta);
     const denied = await action({
-      request: new Request(
-        `http://localhost/api/courses/${courseId}/materials/${profMaterialId}`,
-        { method: "DELETE" },
-      ),
+      request: new Request(`http://localhost/api/courses/${courseId}/materials/${profMaterialId}`, {
+        method: "DELETE",
+      }),
       params: { courseId, materialId: profMaterialId },
       context: {} as never,
     } as any);
@@ -169,10 +167,9 @@ describe("materials upload → list → delete cycle (#300)", () => {
     // TA deletes their own
     mockSession(ta);
     const ok = await action({
-      request: new Request(
-        `http://localhost/api/courses/${courseId}/materials/${taMaterialId}`,
-        { method: "DELETE" },
-      ),
+      request: new Request(`http://localhost/api/courses/${courseId}/materials/${taMaterialId}`, {
+        method: "DELETE",
+      }),
       params: { courseId, materialId: taMaterialId },
       context: {} as never,
     } as any);
@@ -180,21 +177,14 @@ describe("materials upload → list → delete cycle (#300)", () => {
   });
 });
 
-function renameArgs(
-  user: { id: string; role: string },
-  materialId: string,
-  title: unknown,
-) {
+function renameArgs(user: { id: string; role: string }, materialId: string, title: unknown) {
   mockSession(user);
   return {
-    request: new Request(
-      `http://localhost/api/courses/${courseId}/materials/${materialId}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      },
-    ),
+    request: new Request(`http://localhost/api/courses/${courseId}/materials/${materialId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
     params: { courseId, materialId },
     context: {} as never,
   } as any;

@@ -2,7 +2,7 @@
  * Multi-select dialog to add existing course questions to a Core question bank.
  * Questions already in the bank are shown but not selectable.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,12 +13,12 @@ import {
   Button,
   Input,
   Badge,
-} from '@eduai/ui';
-import { toast } from 'sonner';
-import { questionService } from '../../services/questionService';
-import { questionBankService } from '../../services/questionBankService';
-import type { Question } from '../../types/question';
-import { questionTypeLabels } from '../../types/question';
+} from "@eduai/ui";
+import { toast } from "sonner";
+import { questionService } from "../../services/questionService";
+import { questionBankService } from "../../services/questionBankService";
+import type { Question } from "../../types/question";
+import { questionTypeLabels } from "../../types/question";
 
 interface AddQuestionsToBankDialogProps {
   open: boolean;
@@ -47,7 +47,7 @@ export function AddQuestionsToBankDialog({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [memberIds, setMemberIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function AddQuestionsToBankDialog({
     if (!open || !courseId || !bankId) return;
     let cancelled = false;
     setSelectedIds(new Set());
-    setSearch('');
+    setSearch("");
     setLoadError(null);
     setIsLoading(true);
     void (async () => {
@@ -82,9 +82,7 @@ export function AddQuestionsToBankDialog({
           setQuestions([]);
           setMemberIds(new Set());
           setLoadError(
-            error?.response?.data?.error ||
-              error?.message ||
-              'Failed to load questions',
+            error?.response?.data?.error || error?.message || "Failed to load questions",
           );
         }
       } finally {
@@ -100,7 +98,8 @@ export function AddQuestionsToBankDialog({
     const q = search.trim().toLowerCase();
     if (!q) return questions;
     return questions.filter((item) => {
-      const hay = `${item.id} ${item.description ?? ''} ${item.variants?.[0]?.questionText ?? ''}`.toLowerCase();
+      const hay =
+        `${item.id} ${item.description ?? ""} ${item.variants?.[0]?.questionText ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [questions, search]);
@@ -131,16 +130,16 @@ export function AddQuestionsToBankDialog({
         }
       }
       if (added > 0) {
-        toast('Questions added', {
-          description: `${added} question${added === 1 ? '' : 's'} added to ${bankName || 'bank'}${
-            failed ? ` (${failed} failed)` : ''
+        toast("Questions added", {
+          description: `${added} question${added === 1 ? "" : "s"} added to ${bankName || "bank"}${
+            failed ? ` (${failed} failed)` : ""
           }.`,
         });
         onAdded?.(added);
         onClose();
       } else {
-        toast.error('Could not add questions', {
-          description: 'No questions were added. Check Core linkage and try again.',
+        toast.error("Could not add questions", {
+          description: "No questions were added. Check Core linkage and try again.",
         });
       }
     } finally {
@@ -154,8 +153,8 @@ export function AddQuestionsToBankDialog({
         <DialogHeader>
           <DialogTitle>Add questions to bank</DialogTitle>
           <DialogDescription>
-            Select existing questions from this course to add to{' '}
-            <span className="font-medium text-foreground">{bankName || 'this bank'}</span>.
+            Select existing questions from this course to add to{" "}
+            <span className="font-medium text-foreground">{bankName || "this bank"}</span>.
             Questions already in the bank cannot be selected again.
           </DialogDescription>
         </DialogHeader>
@@ -187,8 +186,8 @@ export function AddQuestionsToBankDialog({
                     <label
                       className={`flex items-start gap-3 px-3 py-2.5 ${
                         alreadyInBank
-                          ? 'cursor-not-allowed opacity-60'
-                          : 'cursor-pointer hover:bg-muted/50'
+                          ? "cursor-not-allowed opacity-60"
+                          : "cursor-pointer hover:bg-muted/50"
                       }`}
                     >
                       <input
@@ -226,8 +225,8 @@ export function AddQuestionsToBankDialog({
             data-testid="add-to-bank-confirm"
           >
             {isSaving
-              ? 'Adding…'
-              : `Add ${selectedIds.size || ''} question${selectedIds.size === 1 ? '' : 's'}`.trim()}
+              ? "Adding…"
+              : `Add ${selectedIds.size || ""} question${selectedIds.size === 1 ? "" : "s"}`.trim()}
           </Button>
         </DialogFooter>
       </DialogContent>

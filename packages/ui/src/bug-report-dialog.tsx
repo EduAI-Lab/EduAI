@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-import { Button } from './ui/button';
+import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
@@ -8,25 +8,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from './ui/dialog';
-import { Label } from './ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-import { Switch } from './ui/switch';
-import { Textarea } from './ui/textarea';
+} from "./ui/dialog";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Switch } from "./ui/switch";
+import { Textarea } from "./ui/textarea";
 
 export type BugReportType =
-  | 'UI_DISPLAY'
-  | 'FEATURE_NOT_WORKING'
-  | 'PERFORMANCE'
-  | 'CONTENT_ERROR'
-  | 'ACCESS_PERMISSION'
-  | 'OTHER';
+  | "UI_DISPLAY"
+  | "FEATURE_NOT_WORKING"
+  | "PERFORMANCE"
+  | "CONTENT_ERROR"
+  | "ACCESS_PERMISSION"
+  | "OTHER";
 
 export type BugReportSubmitData = {
   description: string;
@@ -40,12 +34,12 @@ export type BugReportSubmitData = {
 };
 
 const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = [
-  { value: 'UI_DISPLAY', label: 'UI / display issue' },
-  { value: 'FEATURE_NOT_WORKING', label: 'Feature not working' },
-  { value: 'PERFORMANCE', label: 'Performance issue' },
-  { value: 'CONTENT_ERROR', label: 'Content error' },
-  { value: 'ACCESS_PERMISSION', label: 'Access / permission issue' },
-  { value: 'OTHER', label: 'Other' },
+  { value: "UI_DISPLAY", label: "UI / display issue" },
+  { value: "FEATURE_NOT_WORKING", label: "Feature not working" },
+  { value: "PERFORMANCE", label: "Performance issue" },
+  { value: "CONTENT_ERROR", label: "Content error" },
+  { value: "ACCESS_PERMISSION", label: "Access / permission issue" },
+  { value: "OTHER", label: "Other" },
 ];
 
 const MIN_DESC = 10;
@@ -69,7 +63,7 @@ export function BugReportDialog({
   captureScreenshot,
   getCapturedData,
 }: BugReportDialogProps) {
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState("");
   const [bugType, setBugType] = useState<BugReportType | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [descError, setDescError] = useState<string | null>(null);
@@ -86,7 +80,7 @@ export function BugReportDialog({
   }, [captureScreenshot, open]);
 
   const reset = () => {
-    setDescription('');
+    setDescription("");
     setBugType(null);
     setIsAnonymous(false);
     setDescError(null);
@@ -112,7 +106,7 @@ export function BugReportDialog({
       setDescError(null);
     }
     if (!bugType) {
-      setTypeError('Please select a bug type');
+      setTypeError("Please select a bug type");
       valid = false;
     } else {
       setTypeError(null);
@@ -141,14 +135,19 @@ export function BugReportDialog({
       await onSubmit(data);
       handleClose();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Could not submit bug report.');
+      setSubmitError(err instanceof Error ? err.message : "Could not submit bug report.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) handleClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) handleClose();
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Report a bug</DialogTitle>
@@ -159,7 +158,7 @@ export function BugReportDialog({
           <div className="space-y-2">
             <Label htmlFor="bug-report-type">Bug type</Label>
             <Select
-              value={bugType ?? ''}
+              value={bugType ?? ""}
               onValueChange={(value) => {
                 setBugType(value as BugReportType);
                 setTypeError(null);
@@ -176,7 +175,7 @@ export function BugReportDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-destructive">{typeError ?? ' '}</p>
+            <p className="text-xs text-destructive">{typeError ?? " "}</p>
           </div>
 
           <div className="space-y-2">
@@ -193,14 +192,14 @@ export function BugReportDialog({
               className="min-h-[140px] resize-y"
             />
             <div className="flex items-center justify-between">
-              <p className="text-xs text-destructive">{descError ?? ' '}</p>
+              <p className="text-xs text-destructive">{descError ?? " "}</p>
               <p
                 className={`text-xs ${
                   description.length > 1900
-                    ? 'text-destructive'
+                    ? "text-destructive"
                     : description.length > 1500
-                      ? 'text-amber-500'
-                      : 'text-muted-foreground'
+                      ? "text-amber-500"
+                      : "text-muted-foreground"
                 }`}
               >
                 {description.length}/{MAX_DESC}
@@ -211,7 +210,9 @@ export function BugReportDialog({
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
               <Label htmlFor="bug-report-anonymous">Submit anonymously</Label>
-              <p className="text-xs text-muted-foreground">Your name is hidden in admin triage views.</p>
+              <p className="text-xs text-muted-foreground">
+                Your name is hidden in admin triage views.
+              </p>
             </div>
             <Switch
               id="bug-report-anonymous"
@@ -232,7 +233,7 @@ export function BugReportDialog({
             Cancel
           </Button>
           <Button type="button" onClick={() => void handleSubmit()} disabled={isSubmitting}>
-            {isSubmitting ? 'Submitting…' : 'Submit report'}
+            {isSubmitting ? "Submitting…" : "Submit report"}
           </Button>
         </DialogFooter>
       </DialogContent>

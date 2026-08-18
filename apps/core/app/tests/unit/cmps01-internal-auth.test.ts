@@ -17,17 +17,13 @@ describe("cmps01 internal auth", () => {
       ...env,
       OLLAMA_BASE_URL: "http://cmps01.ok.ubc.ca:8001/ollama",
     };
-    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/ollama/api")).toBe(
-      true,
-    );
+    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/ollama/api")).toBe(true);
     expect(isTrustedCmps01EdgeUrl("http://evil.example/ollama/api")).toBe(false);
   });
 
   it("does not send internal key to untrusted Ollama URLs", () => {
     process.env = { ...env, CMPS01_INTERNAL_KEY: "secret", OLLAMA_BASE_URL: undefined };
-    expect(cmps01InternalAuthHeadersForUrl("http://attacker.example/api")).toEqual(
-      {},
-    );
+    expect(cmps01InternalAuthHeadersForUrl("http://attacker.example/api")).toEqual({});
   });
 
   it("sends internal key only for trusted edge URLs", () => {
@@ -48,9 +44,7 @@ describe("cmps01 internal auth", () => {
       OLLAMA_BASE_URL: undefined,
       VLLM_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
     };
-    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/ollama/api")).toBe(
-      false,
-    );
+    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/ollama/api")).toBe(false);
   });
 
   it("does not let an untrusted embedding candidate receive the CMPS key", () => {
@@ -71,9 +65,9 @@ describe("cmps01 internal auth", () => {
       CMPS01_INTERNAL_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
     };
     expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/v1")).toBe(true);
-    expect(
-      cmps01InternalAuthHeadersForUrl("http://cmps01.ok.ubc.ca:8001/v1"),
-    ).toEqual(cmps01InternalAuthHeaders());
+    expect(cmps01InternalAuthHeadersForUrl("http://cmps01.ok.ubc.ca:8001/v1")).toEqual(
+      cmps01InternalAuthHeaders(),
+    );
   });
 
   it("does not treat the research energy URL as an application auth target", () => {
@@ -82,8 +76,6 @@ describe("cmps01 internal auth", () => {
       OLLAMA_BASE_URL: undefined,
       ENERGY_SIDECAR_URL: "http://cmps01.ok.ubc.ca:8001/energy",
     };
-    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/energy")).toBe(
-      false,
-    );
+    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/energy")).toBe(false);
   });
 });

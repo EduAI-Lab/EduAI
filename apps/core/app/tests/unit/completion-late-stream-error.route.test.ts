@@ -32,8 +32,7 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
 });
 
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return {
     ...actual,
     fleetRoutingEnabled: vi.fn().mockReturnValue(false),
@@ -41,8 +40,7 @@ vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
 });
 
 vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
   return {
     ...actual,
     resolveFleetHost: vi.fn(),

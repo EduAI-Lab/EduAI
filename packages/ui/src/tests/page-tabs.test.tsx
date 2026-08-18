@@ -13,7 +13,7 @@ describe("PageTabs", () => {
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
         <PageTabsContent value="tab2">Content 2</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     expect(screen.getByText("Tab 1")).toBeInTheDocument();
     expect(screen.getByText("Tab 2")).toBeInTheDocument();
@@ -28,7 +28,7 @@ describe("PageTabs", () => {
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
         <PageTabsContent value="tab2">Content 2</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     expect(screen.getByText("Content 1")).toBeInTheDocument();
   });
@@ -42,7 +42,7 @@ describe("PageTabs", () => {
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
         <PageTabsContent value="tab2">Content 2</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     expect(screen.getByText("Content 1")).toBeInTheDocument();
   });
@@ -56,7 +56,7 @@ describe("PageTabs", () => {
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
         <PageTabsContent value="tab2">Content 2</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     const tab1 = screen.getByText("Tab 1");
     const tab2 = screen.getByText("Tab 2");
@@ -71,7 +71,7 @@ describe("PageTabs", () => {
           <PageTabsTrigger value="tab1">Tab 1</PageTabsTrigger>
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     const list = container.querySelector(".custom-list-class");
     expect(list).toBeInTheDocument();
@@ -86,7 +86,7 @@ describe("PageTabs", () => {
           </PageTabsTrigger>
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     const trigger = container.querySelector(".custom-trigger-class");
     expect(trigger).toBeInTheDocument();
@@ -101,7 +101,7 @@ describe("PageTabs", () => {
         <PageTabsContent value="tab1" className="custom-content-class">
           Content 1
         </PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     const content = container.querySelector(".custom-content-class");
     expect(content).toBeInTheDocument();
@@ -115,7 +115,7 @@ describe("PageTabs", () => {
           <PageTabsTrigger value="tab2">Tab 2</PageTabsTrigger>
         </PageTabsList>
         <PageTabsContent value="tab1">Content 1</PageTabsContent>
-      </PageTabs>
+      </PageTabs>,
     );
     const list = container.querySelector('[role="tablist"]');
     expect(list).toHaveClass("overflow-x-auto");

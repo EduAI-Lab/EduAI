@@ -16,15 +16,15 @@
  * Mirrors the local-settings idiom in `systemSettings.js`, but sourced from Core.
  */
 
-import { getEduAiBaseUrl } from './eduaiClient.js';
-import { getEffectiveEduAiApiKey } from './systemSettings.js';
+import { getEduAiBaseUrl } from "./eduaiClient.js";
+import { getEffectiveEduAiApiKey } from "./systemSettings.js";
 
 // Per-key default applied only when Core is REACHABLE but omits a key (e.g. an
 // older Core that predates the flag). It is NOT an outage fallback: when Core is
 // unreachable and there is no last-good value, `getPolicy` fails closed instead
 // of consulting these. Keep in sync with Core's POLICY_FLAGS defaults.
 const POLICY_DEFAULTS = Object.freeze({
-  'instructors.canCreateCourses': true,
+  "instructors.canCreateCourses": true,
 });
 
 const TTL_MS = Number(process.env.POLICY_CACHE_TTL_MS) || 30_000;
@@ -35,7 +35,7 @@ let lastGood = null; // last successfully fetched policy map
 async function fetchPolicies() {
   const serviceKey = await getEffectiveEduAiApiKey();
   if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+    throw new Error("EDUAI_API_KEY not configured");
   }
 
   const response = await fetch(`${getEduAiBaseUrl()}/policies`, {
@@ -70,7 +70,7 @@ export async function getPolicies() {
   } catch (error) {
     // Serve the last known-good policy if we ever had one; otherwise return
     // null so enforcement fails CLOSED rather than serving permissive defaults.
-    console.error('[policy] Failed to fetch policies from Core', error);
+    console.error("[policy] Failed to fetch policies from Core", error);
     return lastGood;
   }
 }

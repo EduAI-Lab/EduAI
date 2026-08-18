@@ -14,10 +14,7 @@ export function termBucketFor(term: string): "t1" | "t2" | null {
   return null;
 }
 
-export function courseMatchesTermBucket(
-  course: { term: string },
-  bucket: TermBucket,
-): boolean {
+export function courseMatchesTermBucket(course: { term: string }, bucket: TermBucket): boolean {
   if (bucket === "all") return true;
   const mapped = termBucketFor(course.term);
   if (mapped === null) return false;

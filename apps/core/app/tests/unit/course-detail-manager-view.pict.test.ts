@@ -5,10 +5,7 @@
 // Known TA delete-material drift uses it.fails (do not relax the oracle).
 
 import { describe, expect, it } from "vitest";
-import {
-  accessLevelFor,
-  canManageCourseRagSettings,
-} from "~/lib/auth/course-access.server";
+import { accessLevelFor, canManageCourseRagSettings } from "~/lib/auth/course-access.server";
 import {
   canDeleteMaterial,
   canManageInstructors,
@@ -124,8 +121,7 @@ function backendVerdict(row: ManagerViewRow): ManagerViewVerdict {
     }
     case "manage-rag": {
       // Shared helper used by courses.id.rag-settings (rank >= 2).
-      const allowed =
-        access != null && canManageCourseRagSettings(accessLevelFor(access));
+      const allowed = access != null && canManageCourseRagSettings(accessLevelFor(access));
       return { allowed, visible: allowed };
     }
     case "delete-material": {
@@ -134,10 +130,7 @@ function backendVerdict(row: ManagerViewRow): ManagerViewVerdict {
       return {
         allowed,
         visible:
-          access === "ta" ||
-          access === "admin" ||
-          access === "unit" ||
-          access === "instructor",
+          access === "ta" || access === "admin" || access === "unit" || access === "instructor",
       };
     }
   }

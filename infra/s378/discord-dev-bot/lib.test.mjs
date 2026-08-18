@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  isAuthorized,
-  isSafeBranchInput,
-  summarizeOutput,
-} from "./lib.mjs";
+import { isAuthorized, isSafeBranchInput, summarizeOutput } from "./lib.mjs";
 
 test("accepts normal Git branch names", () => {
   for (const branch of ["development", "feature/login", "fix-123", "user.name/test"]) {

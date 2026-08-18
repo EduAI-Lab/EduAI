@@ -75,7 +75,10 @@ describe("GET /api/bug-reports", () => {
 describe("POST /api/bug-reports (action)", () => {
   it("returns 422 for invalid JSON", async () => {
     const args = {
-      request: new Request("http://localhost/api/bug-reports", { method: "POST", body: "not json" }),
+      request: new Request("http://localhost/api/bug-reports", {
+        method: "POST",
+        body: "not json",
+      }),
       params: {},
       context: {} as never,
     } as never;
@@ -139,7 +142,9 @@ describe("POST /api/bug-reports (action)", () => {
 
   it("goes through the service-key path for a Bearer-authenticated CORE call", async () => {
     vi.mocked(createBugReport).mockResolvedValue({ ok: true, report: { id: "bug-2" } } as never);
-    const res = await action(makeActionArgs({ description: "bug" }, { Authorization: "Bearer svc" }));
+    const res = await action(
+      makeActionArgs({ description: "bug" }, { Authorization: "Bearer svc" }),
+    );
     expect(res.status).toBe(201);
     expect(requireServiceKey).toHaveBeenCalled();
     expect(auth.api.getSession).not.toHaveBeenCalled();

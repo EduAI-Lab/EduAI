@@ -47,7 +47,9 @@ vi.mock("~/lib/prisma.server", () => ({
 vi.mock("~/lib/disciplines/server", () => {
   const KNOWN = ["COSC", "MATH", "STAT", "DATA", "PHYS"];
   return {
-    areValidDisciplineCodes: vi.fn(async (codes: string[]) => codes.every((c) => KNOWN.includes(c))),
+    areValidDisciplineCodes: vi.fn(async (codes: string[]) =>
+      codes.every((c) => KNOWN.includes(c)),
+    ),
     isValidDisciplineCode: vi.fn(async (code: string) => KNOWN.includes(code)),
   };
 });
@@ -563,9 +565,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
   it("assigns selected courses to an effective STUDENT in the user update transaction", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
-    vi.mocked(prisma.enrollment.findMany)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
     const body = await res.json();

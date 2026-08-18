@@ -18,8 +18,7 @@ export function requireEnv(name) {
 }
 
 export function loadConfig() {
-  const repo = process.env.EDUAI_REPO?.trim()
-    || "/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore";
+  const repo = process.env.EDUAI_REPO?.trim() || "/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore";
 
   return {
     token: requireEnv("DISCORD_TOKEN"),
@@ -29,8 +28,7 @@ export function loadConfig() {
     allowedUserIds: parseIdList(process.env.DISCORD_ALLOWED_USER_IDS),
     allowedRoleIds: parseIdList(process.env.DISCORD_ALLOWED_ROLE_IDS),
     repo: path.resolve(repo),
-    healthUrl: process.env.EDUAI_HEALTH_URL?.trim()
-      || "http://127.0.0.1:3000/",
+    healthUrl: process.env.EDUAI_HEALTH_URL?.trim() || "http://127.0.0.1:3000/",
     defaultBranch: process.env.EDUAI_DEFAULT_BRANCH?.trim() || "development",
   };
 }

@@ -9,14 +9,14 @@
  * no-op, while `setup.js` resolved correctly and kept integration runs working.
  * One export, one path, so the next layout move breaks both or neither.
  */
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import dotenv from 'dotenv';
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** `apps/extensions/question-maker/.env` — the extension root, not the repo root. */
-export const TEST_ENV_PATH = resolve(__dirname, '../../../../.env');
+export const TEST_ENV_PATH = resolve(__dirname, "../../../../.env");
 
 /** Loads the extension `.env` into `process.env`. Missing file is not an error. */
 export function loadTestEnv() {

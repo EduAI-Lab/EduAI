@@ -138,7 +138,10 @@ describe("GET /api/courses/:courseId/re-embed/:jobId", () => {
   });
 
   it("returns the job on success", async () => {
-    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({ id: "job-1", status: "RUNNING" } as never);
+    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({
+      id: "job-1",
+      status: "RUNNING",
+    } as never);
     const res = await pollLoader(makePollArgs());
     expect(res.status).toBe(200);
     const body = await res.json();

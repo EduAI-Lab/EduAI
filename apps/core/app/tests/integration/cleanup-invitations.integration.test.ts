@@ -22,7 +22,9 @@ const scriptPath = join(
 const scriptSource = readFileSync(scriptPath, "utf-8");
 const sqlMatch = scriptSource.match(/<<'SQL'\n([\s\S]*?)\nSQL/);
 if (!sqlMatch) {
-  throw new Error("cleanup-invitations.integration.test.ts: could not find the DELETE statement in cleanup-invitations.sh");
+  throw new Error(
+    "cleanup-invitations.integration.test.ts: could not find the DELETE statement in cleanup-invitations.sh",
+  );
 }
 const DELETE_STALE_INVITATIONS_SQL = sqlMatch[1];
 

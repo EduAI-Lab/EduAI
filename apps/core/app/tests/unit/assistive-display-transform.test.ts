@@ -195,9 +195,7 @@ Unsupervised: Finds structure
     expect(compare).toContain("### Step ladder");
     expect(compare).toContain("1. **Supervised**:");
     expect(compare).toContain("2. **Unsupervised**:");
-    expect(compare.indexOf("### Step ladder")).toBeLessThan(
-      compare.indexOf("```eduai-diagram"),
-    );
+    expect(compare.indexOf("### Step ladder")).toBeLessThan(compare.indexOf("```eduai-diagram"));
   });
 
   it("completes gradient-descent Step ladder and TLDR from default stages", () => {
@@ -221,9 +219,7 @@ gradient-descent
     expect(displayed.indexOf("### Step ladder")).toBeLessThan(
       displayed.indexOf("```eduai-diagram"),
     );
-    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(
-      displayed.indexOf("**TLDR**"),
-    );
+    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(displayed.indexOf("**TLDR**"));
   });
 
   it("synthesizes TLDR from diagram stages when Top summary is missing", () => {
@@ -245,9 +241,7 @@ Become Law: President signs
     expect(displayed.indexOf("### Step ladder")).toBeLessThan(
       displayed.indexOf("```eduai-diagram"),
     );
-    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(
-      displayed.indexOf("**TLDR**"),
-    );
+    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(displayed.indexOf("**TLDR**"));
     expect(displayed).toContain("**Introduce Bill** — Member files the proposal");
     expect(displayed).toContain("**Continue**");
   });
@@ -304,9 +298,7 @@ Right: b
     const displayed = transformAssistiveDisplayCopy(stored);
     expect(displayed).toContain("title: First");
     expect(displayed).toContain("title: Second");
-    expect(displayed.indexOf("title: First")).toBeLessThan(
-      displayed.indexOf("title: Second"),
-    );
+    expect(displayed.indexOf("title: First")).toBeLessThan(displayed.indexOf("title: Second"));
   });
 
   it("rebuilds TLDR when bullets do not match diagram stage labels", () => {
@@ -354,20 +346,12 @@ Committee Review: Experts study and amend
 **Next?** Want the Floor Vote stage too?`;
 
     const displayed = transformAssistiveDisplayCopy(stored);
-    expect(displayed).toContain(
-      "The key idea is that a bill must survive several veto points",
-    );
+    expect(displayed).toContain("The key idea is that a bill must survive several veto points");
     expect(displayed).toContain("lobbying effort concentrates at that stage");
     // Remainder prose sits between the diagram and the TLDR.
-    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(
-      displayed.indexOf("The key idea"),
-    );
-    expect(displayed.indexOf("The key idea")).toBeLessThan(
-      displayed.indexOf("**TLDR**"),
-    );
-    expect(displayed.indexOf("**TLDR**")).toBeLessThan(
-      displayed.indexOf("**Continue**"),
-    );
+    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(displayed.indexOf("The key idea"));
+    expect(displayed.indexOf("The key idea")).toBeLessThan(displayed.indexOf("**TLDR**"));
+    expect(displayed.indexOf("**TLDR**")).toBeLessThan(displayed.indexOf("**Continue**"));
   });
 
   it("keeps substantive prose but drops remainder blocks duplicating the diagram stages", () => {

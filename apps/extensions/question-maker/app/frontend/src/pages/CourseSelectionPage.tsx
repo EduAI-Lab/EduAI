@@ -2,18 +2,18 @@
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
  * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import { useAuth } from '@/contexts/AuthContext';
-import { useQmLayout } from '../components/layout/QmLayoutContext';
-import { CoursesRoleView } from '@/components/courses/courses-role-view';
-import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-view';
-import { useDisplayCourses } from '../hooks/useDisplayCourses';
-import { Course } from '../types/question';
-import { useGuidedTour } from '../contexts/GuidedTourContext';
-import { useAutoStartMainTour } from '../tour/useAutoStartMainTour';
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQmLayout } from "../components/layout/QmLayoutContext";
+import { CoursesRoleView } from "@/components/courses/courses-role-view";
+import { CoursesUnitAdminView } from "@/components/courses/courses-unit-admin-view";
+import { useDisplayCourses } from "../hooks/useDisplayCourses";
+import { Course } from "../types/question";
+import { useGuidedTour } from "../contexts/GuidedTourContext";
+import { useAutoStartMainTour } from "../tour/useAutoStartMainTour";
 
-const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
+const TOUR_COURSE_STORAGE_KEY = "qm:tour-course-id";
 
 function readTourCourseId(): number | null {
   try {
@@ -82,9 +82,9 @@ export const CourseSelectionPage = () => {
       } else {
         openProfile();
       }
-      startTour('main');
+      startTour("main");
     } catch (err) {
-      console.error('Failed to start guided tour', err);
+      console.error("Failed to start guided tour", err);
     } finally {
       setIsStartingTour(false);
     }
@@ -96,7 +96,7 @@ export const CourseSelectionPage = () => {
       setTourHighlightCourseId(tourCourseId);
       writeTourCourseId(tourCourseId);
     }
-    startTour('main');
+    startTour("main");
   }, [resolveTourCourseId, startTour]);
 
   useAutoStartMainTour({
@@ -114,7 +114,7 @@ export const CourseSelectionPage = () => {
       setTourHighlightCourseId(state.returnCourseId);
     }
 
-    startTour('main');
+    startTour("main");
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.pathname, location.state, navigate, startTour]);
 
@@ -122,7 +122,7 @@ export const CourseSelectionPage = () => {
   useEffect(() => {
     if (!isTourActive) return;
 
-    const unregister = registerStepAction('course-select', async () => {
+    const unregister = registerStepAction("course-select", async () => {
       const tourCourseId = resolveTourCourseId();
       if (tourCourseId != null) {
         clearTourCourseId();
@@ -148,10 +148,10 @@ export const CourseSelectionPage = () => {
     tourHighlightCourseId,
   };
 
-  if (user?.role === 'ADMIN') {
+  if (user?.role === "ADMIN") {
     return <CoursesRoleView role="admin" {...gridProps} />;
   }
-  if (user?.role === 'UNIT_ADMIN') {
+  if (user?.role === "UNIT_ADMIN") {
     return <CoursesUnitAdminView {...gridProps} />;
   }
   return <CoursesRoleView role="instructor" {...gridProps} />;

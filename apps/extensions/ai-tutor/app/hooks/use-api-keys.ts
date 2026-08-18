@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import api from '~/lib/api';
-import { loadApiKeysFromStorage, saveApiKeysToStorage } from '~/lib/provider-keys';
+import { useCallback, useEffect, useState } from "react";
+import api from "~/lib/api";
+import { loadApiKeysFromStorage, saveApiKeysToStorage } from "~/lib/provider-keys";
 
 export type UseApiKeysResult = {
   /** provider id → key. */
@@ -46,7 +46,7 @@ export function useApiKeys(): UseApiKeysResult {
   }, []);
 
   const hasKey = useCallback((provider: string) => Boolean(keys[provider]), [keys]);
-  const getKey = useCallback((provider: string) => keys[provider] ?? '', [keys]);
+  const getKey = useCallback((provider: string) => keys[provider] ?? "", [keys]);
   const validateKey = useCallback(
     (provider: string, key: string) =>
       api.validateApiKey(provider, key) as Promise<{ valid: boolean; error?: string }>,

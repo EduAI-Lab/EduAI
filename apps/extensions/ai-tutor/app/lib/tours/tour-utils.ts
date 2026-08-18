@@ -1,9 +1,9 @@
-import type { AppTourStep, TourContextState } from './tour-types';
+import type { AppTourStep, TourContextState } from "./tour-types";
 
 export function waitForElement(selector: string, timeoutMs = 4000) {
   return new Promise<Element>((resolve, reject) => {
-    if (typeof document === 'undefined') {
-      reject(new Error('document is unavailable'));
+    if (typeof document === "undefined") {
+      reject(new Error("document is unavailable"));
       return;
     }
 
@@ -35,11 +35,11 @@ export function waitForElement(selector: string, timeoutMs = 4000) {
 }
 
 export function resolveStepRoute(step: AppTourStep, context: TourContextState) {
-  return typeof step.route === 'function' ? step.route(context) : step.route;
+  return typeof step.route === "function" ? step.route(context) : step.route;
 }
 
 export function readRouteFromElement(element: Element | null) {
-  if (!element || !('dataset' in element)) return null;
+  if (!element || !("dataset" in element)) return null;
   const route = (element as HTMLElement).dataset?.tourRoute;
-  return typeof route === 'string' ? route : null;
+  return typeof route === "string" ? route : null;
 }

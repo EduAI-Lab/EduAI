@@ -55,11 +55,7 @@ Synapse: Connects cells`).stages[0]?.label,
 Middle
 End`);
     expect(payload.typeId).toBe("process-flow");
-    expect(payload.stages.map((s) => s.label)).toEqual([
-      "Start",
-      "Middle",
-      "End",
-    ]);
+    expect(payload.stages.map((s) => s.label)).toEqual(["Start", "Middle", "End"]);
   });
 });
 

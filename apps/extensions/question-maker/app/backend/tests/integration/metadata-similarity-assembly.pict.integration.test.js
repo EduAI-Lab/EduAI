@@ -15,36 +15,37 @@
  * a plain object, no DB row needed for it. Shared cases/oracle loading comes
  * from tests/helpers/pictModel.js (#1188).
  */
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { createId } from '@paralleldrive/cuid2';
-import { randomUUID } from 'node:crypto';
-import { loadPictModel } from '../helpers/pictModel.js';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { createId } from "@paralleldrive/cuid2";
+import { randomUUID } from "node:crypto";
+import { loadPictModel } from "../helpers/pictModel.js";
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const { rows, oracle } = await loadPictModel('metadata-similarity-assembly');
+const { rows, oracle } = await loadPictModel("metadata-similarity-assembly");
 const { metadataSimilarityAssemblyOracle } = oracle;
 
-const SLOT_TYPE = 'SA';
-const SLOT_DIFFICULTY = 'medium';
-const SLOT_REASONING = 'factual';
-const OTHER_TYPE = 'MCQ';
-const OTHER_DIFFICULTY = 'hard';
-const OTHER_REASONING = 'application';
+const SLOT_TYPE = "SA";
+const SLOT_DIFFICULTY = "medium";
+const SLOT_REASONING = "factual";
+const OTHER_TYPE = "MCQ";
+const OTHER_DIFFICULTY = "hard";
+const OTHER_REASONING = "application";
 
-describeDb('metadata-similarity-assembly (PICT)', () => {
+describeDb("metadata-similarity-assembly (PICT)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let loadBankMetadataWithVariants, selectBestBankMetadata;
 
-  const USER = { id: 'cuid-msa-user', email: 'msa@test.com', name: 'MSA User' };
+  const USER = { id: "cuid-msa-user", email: "msa@test.com", name: "MSA User" };
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    ({ loadBankMetadataWithVariants, selectBestBankMetadata } = await import('../../src/services/assessmentVariantService.js'));
+    ({ loadBankMetadataWithVariants, selectBestBankMetadata } =
+      await import("../../src/services/assessmentVariantService.js"));
   });
 
   afterAll(async () => {
@@ -60,11 +61,17 @@ describeDb('metadata-similarity-assembly (PICT)', () => {
   beforeEach(async () => {
     await truncateTestDatabase();
     await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
-    const course = await prisma.course.create({ data: { userId: USER.id, coreCourseId: `core-${randomUUID()}` } });
+    const course = await prisma.course.create({
+      data: { userId: USER.id, coreCourseId: `core-${randomUUID()}` },
+    });
     courseId = course.id;
-    const slotTopic = await prisma.topics.create({ data: { id: createId(), name: 'Slot Topic', courseId } });
+    const slotTopic = await prisma.topics.create({
+      data: { id: createId(), name: "Slot Topic", courseId },
+    });
     slotTopicId = slotTopic.id;
-    const otherTopic = await prisma.topics.create({ data: { id: createId(), name: 'Other Topic', courseId } });
+    const otherTopic = await prisma.topics.create({
+      data: { id: createId(), name: "Other Topic", courseId },
+    });
     otherTopicId = otherTopic.id;
   });
 
@@ -94,18 +101,18 @@ describeDb('metadata-similarity-assembly (PICT)', () => {
   }
 
   describe.each(rows.map((row, index) => ({ row, index })))(
-    'row #$index $row.TopicMatch/$row.TypeMatch/$row.DifficultyMatch/$row.ReasoningMatch/$row.AlreadyUsed/$row.HasFallback',
+    "row #$index $row.TopicMatch/$row.TypeMatch/$row.DifficultyMatch/$row.ReasoningMatch/$row.AlreadyUsed/$row.HasFallback",
     ({ row }) => {
-      it('matches the oracle', async () => {
+      it("matches the oracle", async () => {
         const primary = await makeBankCandidate({
-          topicMatch: row.TopicMatch === 'yes',
-          typeMatch: row.TypeMatch === 'yes',
-          difficultyMatch: row.DifficultyMatch === 'yes',
-          reasoningMatch: row.ReasoningMatch === 'yes',
+          topicMatch: row.TopicMatch === "yes",
+          typeMatch: row.TypeMatch === "yes",
+          difficultyMatch: row.DifficultyMatch === "yes",
+          reasoningMatch: row.ReasoningMatch === "yes",
         });
 
         let fallback = null;
-        if (row.HasFallback === 'yes') {
+        if (row.HasFallback === "yes") {
           fallback = await makeBankCandidate({
             topicMatch: true,
             typeMatch: true,
@@ -114,7 +121,7 @@ describeDb('metadata-similarity-assembly (PICT)', () => {
           });
         }
 
-        const usedBankMetadataIds = new Set(row.AlreadyUsed === 'yes' ? [primary.id] : []);
+        const usedBankMetadataIds = new Set(row.AlreadyUsed === "yes" ? [primary.id] : []);
         const slotVariant = {
           questionMetadata: { primaryTopicId: slotTopicId, type: SLOT_TYPE },
           difficulty: SLOT_DIFFICULTY,
@@ -130,7 +137,9 @@ describeDb('metadata-similarity-assembly (PICT)', () => {
         } else {
           expect(result).not.toBeNull();
           expect(result.score).toBe(expected.score);
-          expect(result.questionMetadataId).toBe(expected.winner === 'fallback' ? fallback.id : primary.id);
+          expect(result.questionMetadataId).toBe(
+            expected.winner === "fallback" ? fallback.id : primary.id,
+          );
         }
       });
     },
