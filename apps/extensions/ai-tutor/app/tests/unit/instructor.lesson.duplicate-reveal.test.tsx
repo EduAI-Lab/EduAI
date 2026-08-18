@@ -23,6 +23,16 @@ let currentSearchParams = new URLSearchParams();
 vi.mock('~/lib/api', () => ({
   default: {
     lessonById: vi.fn().mockResolvedValue({ id: 1, title: 'Lesson 1', moduleId: null }),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 1, title: 'Module 1', courseOfferingId: 1, position: 0, isPublished: true },
+      course: { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+      moduleTotal: 1,
+      lessonTotal: 1,
+      prevLessonId: null,
+      nextLessonId: null,
+    }),
     activitiesForLesson: (...args: unknown[]) => mockActivitiesForLesson(...args),
     duplicateActivity: (...args: unknown[]) => mockDuplicateActivity(...args),
     deleteActivity: vi.fn().mockResolvedValue(undefined),
@@ -80,15 +90,6 @@ vi.mock('~/components/TourProvider', () => ({
 
 import InstructorLessonBuilder from '~/routes/instructor.lesson';
 
-const course = { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true };
-const module = {
-  id: 1,
-  title: 'Module 1',
-  description: '',
-  position: 0,
-  courseOfferingId: 1,
-  lessons: [],
-};
 const lesson = { id: 1, title: 'Lesson 1', moduleId: 1, isPublished: true, contentMd: '' };
 const activity = (id: number) => ({
   id,
@@ -111,12 +112,9 @@ const activity = (id: number) => ({
 function wrap(overrides: Record<string, unknown> = {}) {
   const props = {
     loaderData: {
-      course,
-      module,
       lesson,
       activities: [activity(99)],
       activitiesTotal: 60,
-      orderText: '1.1',
       page: 1,
       pageSize: 25,
       search: '',

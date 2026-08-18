@@ -17,6 +17,16 @@ vi.mock('~/lib/api', () => ({
   default: {
     courseById: vi.fn(),
     modulesForCourse: vi.fn(),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 2, title: 'Module', courseOfferingId: 1, position: 0, isPublished: true },
+      course: { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true },
+      moduleOrdinal: 3,
+      lessonOrdinal: 2,
+      moduleTotal: 9,
+      lessonTotal: 4,
+      prevLessonId: null,
+      nextLessonId: null,
+    }),
     activitiesForLesson: (...args: unknown[]) => mockActivitiesForLesson(...args),
     submitAnswer: vi.fn(),
     mySubmissions: vi.fn().mockResolvedValue([]),
@@ -129,12 +139,9 @@ describe('student.lesson — paged activity walk (#1207)', () => {
         <StudentLessonPlayer
           {...({
             loaderData: {
-              course,
-              module: { id: 2, title: 'Module', courseOfferingId: 1 },
               lesson: { id: 3, title: 'Lesson', moduleId: 2, isPublished: true, contentMd: '' },
               activities: [activity(1), activity(2)],
               activitiesTotal: 2,
-              orderText: '3.2',
               ...overrides,
             },
           } as unknown as React.ComponentProps<typeof StudentLessonPlayer>)}
@@ -176,9 +183,9 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, { page: 2, pageSize: 50 });
   });
 
-  it('shows the server-derived order text', () => {
+  it('shows the server-derived order text', async () => {
     wrap();
-    expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0));
   });
 
   it('drops an activity page that resolves after the student changed lessons', async () => {
@@ -208,19 +215,15 @@ describe('student.lesson — paged activity walk (#1207)', () => {
       ({ loaderData } as unknown as React.ComponentProps<typeof StudentLessonPlayer>);
 
     const oldLesson = {
-      course,
-      module: { id: 2, title: 'Module', courseOfferingId: 1 },
       lesson: { id: 3, title: 'Lesson', moduleId: 2, isPublished: true, contentMd: '' },
       activities: [named(1, 'OLD ONE'), named(2, 'OLD TWO')],
       activitiesTotal: 3,
-      orderText: '3.2',
     };
     const newLesson = {
       ...oldLesson,
       lesson: { id: 4, title: 'Next lesson', moduleId: 2, isPublished: true, contentMd: '' },
       activities: [named(10, 'NEW ONE')],
       activitiesTotal: 2,
-      orderText: '3.3',
     };
 
     let rerender: (ui: React.ReactElement) => void;

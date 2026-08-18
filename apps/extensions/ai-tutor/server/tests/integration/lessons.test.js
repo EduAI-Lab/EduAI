@@ -215,9 +215,55 @@ describe('Lessons routes', () => {
       expect(res.body.title).toBe('Test Lesson');
     });
 
-    // #1334: breadcrumb ancestry ships with the lesson so the player loaders
-    // no longer fan out to moduleById + courseById + /context after the fact.
-    it('includes breadcrumb ancestry (module, course, ordinals) on the lesson', async () => {
+    // #1334: breadcrumb ancestry is a separate endpoint so GET /lessons/:id
+    // stays off the Core/ordinal path; loaders fetch it after paint.
+    it('does not nest breadcrumb on the lesson payload', async () => {
+      const res = await request(profApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.lesson.id);
+      expect(res.body.breadcrumb).toBeUndefined();
+    });
+
+    it('TA sees unpublished lesson', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
+    });
+
+    it('student gets 403 on unpublished lesson', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('ADMIN (not enrolled/assigned) sees unpublished lesson (#781)', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
+    });
+  });
+
+  // ── GET /api/lessons/:id/breadcrumb ───────────────────────────────
+
+  describe('GET /api/lessons/:id/breadcrumb', () => {
+    // #1334: ancestry lives here so GET /lessons/:id can return without waiting
+    // on Core course resolution or sibling ordinal counts.
+    it('returns module, course, and ordinals', async () => {
       vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
         id: coreOfferingId,
         name: 'Breadcrumb Course',
@@ -252,11 +298,10 @@ describe('Lessons routes', () => {
         },
       });
 
-      const res = await request(profApp).get(`/api/lessons/${target.id}`);
+      const res = await request(profApp).get(`/api/lessons/${target.id}/breadcrumb`);
 
       expect(res.status).toBe(200);
-      expect(res.body.id).toBe(target.id);
-      expect(res.body.breadcrumb).toMatchObject({
+      expect(res.body).toMatchObject({
         module: {
           id: module2.id,
           title: 'Second Module',
@@ -272,36 +317,14 @@ describe('Lessons routes', () => {
       });
     });
 
-    it('TA sees unpublished lesson', async () => {
-      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
-      const ta = await enrollTa();
-      const taApp = await createApp({ mockUser: ta });
-
-      const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.isPublished).toBe(false);
-    });
-
     it('student gets 403 on unpublished lesson', async () => {
       await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}`);
+      const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
 
       expect(res.status).toBe(403);
-    });
-
-    it('ADMIN (not enrolled/assigned) sees unpublished lesson (#781)', async () => {
-      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
-      const admin = makeAdmin();
-      const adminApp = await createApp({ mockUser: admin });
-
-      const res = await request(adminApp).get(`/api/lessons/${seed.lesson.id}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.isPublished).toBe(false);
     });
   });
 

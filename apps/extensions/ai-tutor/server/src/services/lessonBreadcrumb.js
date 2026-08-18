@@ -1,11 +1,12 @@
 /**
- * @file Lesson breadcrumb ancestry for GET /lessons/:id (#1334).
+ * @file Lesson breadcrumb ancestry for GET /lessons/:id/breadcrumb (#1334).
  *
  * The student/instructor lesson players used to walk module → course →
  * sibling ordinals in separate client round-trips after loading the lesson.
  * Those calls existed only for the header breadcrumb and the "3.2" order
- * chip. Computing the same payload next to the lesson row collapses that
- * fan-out into the response the loaders already wait on.
+ * chip. Serving the same payload from a dedicated endpoint keeps Core course
+ * resolution and ordinal counts off the initial GET /lessons/:id path so the
+ * lesson body can render first; clients fetch this after paint.
  *
  * Ordinal math matches GET /lessons/:id/context (#1207): 1-based positions
  * under `position asc, id asc`, with students counting only published
@@ -81,7 +82,7 @@ export async function computeLessonTreeContext(lesson, module, { publishedOnly }
 }
 
 /**
- * Nested breadcrumb payload attached to GET /lessons/:id.
+ * Breadcrumb payload for GET /lessons/:id/breadcrumb.
  *
  * @param {object} lesson Prisma lesson with `module.courseOffering` included
  * @param {{ publishedOnly: boolean }} opts

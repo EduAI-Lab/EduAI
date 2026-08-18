@@ -17,6 +17,16 @@ const mockMoveActivity = vi.fn().mockResolvedValue({ activity: {}, position: 0, 
 vi.mock('~/lib/api', () => ({
   default: {
     lessonById: vi.fn().mockResolvedValue({ id: 1, title: 'Lesson 1', moduleId: null }),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 1, title: 'Module 1', courseOfferingId: 1, position: 0, isPublished: true },
+      course: { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+      moduleTotal: 1,
+      lessonTotal: 1,
+      prevLessonId: null,
+      nextLessonId: null,
+    }),
     activitiesForLesson: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
     listImportableActivities: (...args: unknown[]) => mockListImportable(...args),
     moveActivityToPosition: (...args: unknown[]) => mockMoveActivity(...args),
@@ -89,15 +99,6 @@ vi.mock('~/components/TourButton', () => ({ default: () => null }));
 
 import InstructorLessonBuilder from '~/routes/instructor.lesson';
 
-const course = { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true };
-const module_ = {
-  id: 1,
-  title: 'Module 1',
-  description: '',
-  position: 0,
-  courseOfferingId: 1,
-  lessons: [],
-};
 const lesson = { id: 1, title: 'Lesson 1', moduleId: 1, isPublished: true, contentMd: '', courseOfferingId: 1 };
 
 const candidate = (id: number, title: string) => ({
@@ -112,12 +113,9 @@ const candidate = (id: number, title: string) => ({
 function wrap() {
   const props = {
     loaderData: {
-      course,
-      module: module_,
       lesson,
       activities: [],
       activitiesTotal: 0,
-      orderText: '1.1',
       page: 1,
       pageSize: 25,
       search: '',
@@ -252,12 +250,9 @@ describe('instructor.lesson — paged activity list (#1207)', () => {
   const wrapList = (overrides: Record<string, unknown> = {}) => {
     const props = {
       loaderData: {
-        course,
-        module: module_,
         lesson,
         activities: [activity(1), activity(2), activity(3)],
         activitiesTotal: 60,
-        orderText: '1.1',
         page: 1,
         pageSize: 25,
         search: '',
@@ -326,12 +321,9 @@ describe('instructor.lesson — activity drag persists an absolute ordinal (#120
   const wrapList = (overrides: Record<string, unknown> = {}) => {
     const props = {
       loaderData: {
-        course,
-        module: module_,
         lesson,
         activities: [dragActivity(1), dragActivity(2), dragActivity(3)],
         activitiesTotal: 60,
-        orderText: '1.1',
         page: 1,
         pageSize: 25,
         search: '',

@@ -4,7 +4,7 @@
 
 ### Changed
 
-- [ai-tutor] perf: Collapse the lesson-page breadcrumb waterfall by nesting module/course ancestry and ordinals on `GET /lessons/:id`, running auth + lesson/activity fetches concurrently (seeded from `useLocalUser` so `/api/me` is not re-hit per navigation), and publishing header crumbs after paint so they leave the LCP path on both student and instructor lesson routes. Closes #1334. (@GlowyBlack, 2026-08-17) � [#1559](https://github.com/EduAI-Lab/EduAI/pull/1559)
+- [ai-tutor] perf: Collapse the lesson-page breadcrumb waterfall via `GET /lessons/:id/breadcrumb` (auth + lesson/activity loaders stay concurrent; breadcrumb loads after paint so the lesson body is not blocked), with header crumbs upgrading from skeleton once ancestry resolves. Closes #1334. (@GlowyBlack, 2026-08-17) — [#1559](https://github.com/EduAI-Lab/EduAI/pull/1559)
 
 ## [Week 16 — August 10–16, 2026]
 

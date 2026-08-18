@@ -207,8 +207,70 @@ router.get('/lessons/:lessonId', async (req, res) => {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    // #1334: nest module/course + ordinals so lesson players drop the
-    // post-lesson breadcrumb waterfall (moduleById → courseById → /context).
+    // #1334 review: keep the lesson body off the breadcrumb path — ancestry
+    // loads via GET /lessons/:id/breadcrumb after paint.
+    res.json(mapLesson(lesson));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /lessons/:lessonId/breadcrumb — module/course ancestry + ordinals (#1334).
+ *
+ * Same auth/visibility as GET /lessons/:id. Kept off the initial lesson
+ * response so the player can render the body before Core course resolution
+ * and sibling ordinal counts finish.
+ */
+router.get('/lessons/:lessonId/breadcrumb', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const lessonId = Number(req.params.lessonId);
+  if (!Number.isFinite(lessonId)) {
+    return res.status(400).json({ error: 'Invalid lesson id' });
+  }
+
+  try {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      include: {
+        module: {
+          include: {
+            courseOffering: {
+              include: {
+                instructors: { select: { userId: true } },
+                enrollments: { select: { userId: true, role: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+    const isInstructor = lesson.module.courseOffering.instructors.some(
+      (i) => i.userId === authUser.id,
+    );
+    const enrollment = lesson.module.courseOffering.enrollments.find(
+      (e) => e.userId === authUser.id,
+    );
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
+    const isMember = hasElevatedAccess || isStudent;
+
+    if (!isMember) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+      return res.status(403).json({ error: 'Lesson is not published' });
+    }
+
     const publishedOnly = isStudent && !hasElevatedAccess;
     const { breadcrumb, coreUnavailable } = await buildLessonBreadcrumb(lesson, {
       publishedOnly,
@@ -217,7 +279,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
       res.set('X-Core-Status', 'unavailable');
     }
 
-    res.json({ ...mapLesson(lesson), breadcrumb });
+    res.json(breadcrumb);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

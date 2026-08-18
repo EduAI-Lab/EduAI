@@ -18,6 +18,7 @@ const api = {
   courseById: vi.fn(),
   moduleById: vi.fn(),
   lessonById: vi.fn(),
+  lessonBreadcrumb: vi.fn(),
   modulesForCourse: vi.fn(),
   lessonsForModule: vi.fn(),
   activitiesForLesson: vi.fn(),
@@ -147,40 +148,26 @@ describe('instructor.lesson clientLoader', () => {
     expect(api.activitiesForLesson).toHaveBeenCalledWith(3, { page: 2, search: 'heap' });
   });
 
-  it('builds the order text from the lesson breadcrumb payload (#1334)', async () => {
+  it('loads lesson and activities without awaiting the breadcrumb endpoint (#1334)', async () => {
     api.lessonById.mockResolvedValue({
       id: 3,
       title: 'Lesson',
       moduleId: 2,
-      breadcrumb: {
-        module: { id: 2, title: 'Module', courseOfferingId: 1, position: 0, isPublished: true },
-        course: { id: 1, title: 'Course' },
-        moduleOrdinal: 3,
-        lessonOrdinal: 2,
-      },
     });
     const result = await load('http://x/instructor/lesson/3');
     expect(result).toMatchObject({
-      orderText: '3.2',
-      module: { id: 2, title: 'Module' },
-      course: { id: 1, title: 'Course' },
+      lesson: { id: 3, title: 'Lesson' },
     });
-    // #1334: ancestry is nested on the lesson — no follow-up fan-out.
+    expect(result).not.toHaveProperty('orderText');
+    expect(result).not.toHaveProperty('course');
+    expect(result).not.toHaveProperty('module');
+    // #1334: loaders leave ancestry for a post-paint fetch.
+    expect(api.lessonBreadcrumb).not.toHaveBeenCalled();
     expect(api.moduleById).not.toHaveBeenCalled();
     expect(api.courseById).not.toHaveBeenCalled();
     expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.modulesForCourse).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
-  });
-
-  it('skips breadcrumb fields for a lesson with no parent module', async () => {
-    api.lessonById.mockResolvedValue({ id: 3, title: 'Orphan', moduleId: null });
-    const result = await load('http://x/instructor/lesson/3');
-    expect(result.orderText).toBeUndefined();
-    expect(result.module).toBeNull();
-    expect(result.course).toBeNull();
-    expect(api.moduleById).not.toHaveBeenCalled();
-    expect(api.lessonContext).not.toHaveBeenCalled();
   });
 });
 
@@ -249,22 +236,18 @@ describe('student.lesson clientLoader', () => {
     expect(result).toMatchObject({ activitiesTotal: 120 });
   });
 
-  it('derives the order text from the lesson breadcrumb payload (#1334)', async () => {
+  it('loads activities without awaiting the breadcrumb endpoint (#1334)', async () => {
     api.lessonById.mockResolvedValue({
       id: 3,
       title: 'Lesson',
       moduleId: 2,
-      breadcrumb: {
-        module: { id: 2, title: 'Module', courseOfferingId: 1, position: 0, isPublished: true },
-        course: { id: 1, title: 'Course' },
-        moduleOrdinal: 3,
-        lessonOrdinal: 2,
-      },
     });
     const result = await load();
-    expect(result.orderText).toBe('3.2');
-    expect(result.module).toMatchObject({ id: 2 });
-    expect(result.course).toMatchObject({ id: 1 });
+    expect(result).toMatchObject({ lesson: { id: 3 } });
+    expect(result).not.toHaveProperty('orderText');
+    expect(result).not.toHaveProperty('course');
+    expect(result).not.toHaveProperty('module');
+    expect(api.lessonBreadcrumb).not.toHaveBeenCalled();
     expect(api.moduleById).not.toHaveBeenCalled();
     expect(api.courseById).not.toHaveBeenCalled();
     expect(api.lessonContext).not.toHaveBeenCalled();

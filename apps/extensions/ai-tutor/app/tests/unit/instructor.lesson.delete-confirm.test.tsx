@@ -11,6 +11,16 @@ const mockDeleteActivity = vi.fn().mockResolvedValue(undefined);
 vi.mock('~/lib/api', () => ({
   default: {
     lessonById: vi.fn().mockResolvedValue({ id: 1, title: 'Lesson 1', moduleId: null }),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 1, title: 'Module 1', courseOfferingId: 1, position: 0, isPublished: true },
+      course: { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+      moduleTotal: 1,
+      lessonTotal: 1,
+      prevLessonId: null,
+      nextLessonId: null,
+    }),
     activitiesForLesson: vi.fn().mockResolvedValue([]),
     deleteActivity: (...args: unknown[]) => mockDeleteActivity(...args),
     syncTopics: vi.fn().mockResolvedValue({ missingTopics: 0 }),
@@ -65,8 +75,6 @@ vi.mock('~/components/TourProvider', () => ({ TourProvider: ({ children }: { chi
 
 import InstructorLessonBuilder from '~/routes/instructor.lesson';
 
-const course = { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true };
-const module = { id: 1, title: 'Module 1', description: '', position: 0, courseOfferingId: 1, lessons: [] };
 const lesson = { id: 1, title: 'Lesson 1', moduleId: 1, isPublished: true, contentMd: '' };
 const activity = {
   id: 99,
@@ -88,7 +96,7 @@ const activity = {
 
 function wrap(activities = [activity]) {
   const props = {
-    loaderData: { course, module, lesson, activities, activitiesTotal: activities.length, orderText: '1.1', page: 1, pageSize: 25, search: '' },
+    loaderData: { lesson, activities, activitiesTotal: activities.length, page: 1, pageSize: 25, search: '' },
   } as unknown as Route.ComponentProps;
   return render(
     <MemoryRouter>

@@ -3,8 +3,9 @@
  *
  * Route: /student/lesson/:lessonId
  * Auth: STUDENT (enforced by clientLoader via requireClientUser)
- * Loads: lesson + activities (with nested breadcrumb ancestry on the lesson)
- *        in one parallel wave alongside the role gate (#1334).
+ * Loads: lesson + activities in one parallel wave alongside the role gate;
+ *        breadcrumb ancestry loads after paint via GET /lessons/:id/breadcrumb
+ *        (#1334) so the lesson body is not blocked on Core/ordinal work.
  * Owns: activity progression (idx), MCQ/SHORT_TEXT submission, per-activity
  *       result state, knowledge-level pre-chat modal, optional
  *       post-submission feedback prompt, and orchestration of StudentAiChat
@@ -48,7 +49,7 @@ import { ModuleHero } from '../components/lessons/ModuleHero';
 import { LessonActivityView } from '../components/lessons/LessonActivityView';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
 import api from '../lib/api';
-import type { Activity, Lesson } from '../lib/types';
+import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.lesson';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
@@ -104,12 +105,12 @@ function createFeedbackState(): StudentFeedbackState {
 }
 
 /**
- * Resolves the lesson, its activities, and breadcrumb ancestry in one wave
+ * Resolves the lesson and its activities in one wave with the role gate
  * (#1334). Auth and data start concurrently — when AuthProvider already seeded
  * the session, `requireClientUser` is sync; otherwise the role check races the
- * lesson/activity fetches and rejects after if the role is wrong. Module,
- * course, and ordinals arrive nested on the lesson response so waves 3–4 of
- * the old waterfall never run.
+ * lesson/activity fetches and rejects after if the role is wrong. Breadcrumb
+ * ancestry is intentionally NOT awaited here — the component fetches it after
+ * paint so header crumbs leave the LCP / lesson-body path.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const lessonId = Number(params.lessonId);
@@ -117,7 +118,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid lesson id', { status: 400 });
   }
 
-  const [, lessonWithCrumb, activitiesPage] = await Promise.all([
+  const [, lesson, activitiesPage] = await Promise.all([
     requireClientUser(['STUDENT', 'TA']),
     api.lessonById(lessonId),
     // #1207: the player index-walks this array, so it needs the rows in order —
@@ -127,19 +128,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     api.activitiesForLesson(lessonId, { page: 1, pageSize: PLAYER_ACTIVITY_PAGE_SIZE }),
   ]);
 
-  const { breadcrumb, ...lesson } = lessonWithCrumb;
-  const module = breadcrumb?.module ?? null;
-  const course = breadcrumb?.course ?? null;
-  const orderText =
-    breadcrumb != null ? `${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}` : undefined;
-
   return {
-    course,
-    module,
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
-    orderText,
   };
 }
 
@@ -153,7 +145,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const { user } = useLocalUser();
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
-  const { course, module, lesson, activities, activitiesTotal, orderText } = loaderData;
+  const { lesson, activities, activitiesTotal } = loaderData;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [module, setModule] = useState<ModuleDetail | null>(null);
+  const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
   const [orderedActivities, setOrderedActivities] = useState<Activity[]>(activities ?? []);
   // Highest activity page appended so far (#1207); the loader supplies page 1.
@@ -535,13 +530,36 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       : { label: 'Lesson' },
   ];
 
-  // #1334: publish a placeholder trail first so the header crumb update stays
-  // off the LCP path; upgrade to the real trail after paint.
+  // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
   const [crumbsReady, setCrumbsReady] = useState(false);
   useEffect(() => {
-    const id = requestAnimationFrame(() => setCrumbsReady(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+    let cancelled = false;
+    setCrumbsReady(false);
+    setCourse(null);
+    setModule(null);
+    setOrderText(undefined);
+
+    const frameId = requestAnimationFrame(() => {
+      api
+        .lessonBreadcrumb(lesson.id)
+        .then((breadcrumb) => {
+          if (cancelled) return;
+          setModule(breadcrumb.module);
+          setCourse(breadcrumb.course);
+          setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
+          setCrumbsReady(true);
+        })
+        .catch(() => {
+          // Non-fatal: keep skeleton placeholders rather than blocking the player.
+          if (!cancelled) setCrumbsReady(true);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [lesson.id]);
 
   const skeletonBreadcrumbItems = [
     { label: 'Courses', href: '/student' },

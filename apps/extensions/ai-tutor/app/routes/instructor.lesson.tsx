@@ -3,8 +3,8 @@
  *
  * Route: /instructor/lesson/:lessonId
  * Auth: INSTRUCTOR
- * Loads: lesson + activities (parallel), with nested breadcrumb ancestry on
- *        the lesson response (#1334) — no sequential module/course walk.
+ * Loads: lesson + activities (parallel) with the role gate; breadcrumb
+ *        ancestry loads after paint via GET /lessons/:id/breadcrumb (#1334).
  * Owns:
  *   - Activity CRUD: create (AddActivityPanel), inline edit
  *     (EditActivityPanel), delete with confirm.
@@ -63,7 +63,9 @@ import api from '../lib/api';
 import type { ImportableActivity } from '../lib/api';
 import type {
   Activity,
+  Course,
   Lesson,
+  ModuleDetail,
   Topic,
 } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
@@ -122,9 +124,8 @@ import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from '~/components/co
 
 /**
  * Loads the lesson and its activities in parallel with the role gate (#1334).
- * Module, course, and ordinals arrive nested on the lesson payload, so the
- * old sequential breadcrumb fan-out never runs. Breadcrumbs publish after
- * paint so they leave the LCP path.
+ * Breadcrumb ancestry is fetched after paint in the component — not awaited
+ * here — so the editor body is not blocked on Core/ordinal work.
  */
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   const lessonId = Number(params.lessonId);
@@ -135,7 +136,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   // #1207: page + search live in the URL; `search` is applied server-side.
   const { page, search } = parseListUrlParams(request);
 
-  const [, lessonWithCrumb, activitiesPage] = await Promise.all([
+  const [, lesson, activitiesPage] = await Promise.all([
     requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']),
     api.lessonById(lessonId),
     api.activitiesForLesson(lessonId, { page, search }),
@@ -147,19 +148,10 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
     pageSize: activitiesPage.pageSize,
   });
 
-  const { breadcrumb, ...lesson } = lessonWithCrumb;
-  const module = breadcrumb?.module ?? null;
-  const course = breadcrumb?.course ?? null;
-  const orderText =
-    breadcrumb != null ? `${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}` : undefined;
-
   return {
-    course,
-    module,
     lesson,
     activities: activitiesPage.data,
     activitiesTotal: activitiesPage.total,
-    orderText,
     page: activitiesPage.page,
     pageSize: activitiesPage.pageSize,
     search,
@@ -173,16 +165,16 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
   const {
-    course,
-    module,
     lesson,
     activities: initialActivities,
     activitiesTotal: initialActivitiesTotal,
-    orderText,
     page,
     pageSize,
     search,
   } = loaderData;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [module, setModule] = useState<ModuleDetail | null>(null);
+  const [orderText, setOrderText] = useState<string | undefined>();
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   // #1043/#1162: `total` is state, not a loader constant — refresh, delete, and
@@ -840,12 +832,35 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       : { label: 'Lesson' },
   ];
 
-  // #1334: placeholder crumbs first so header updates stay off the LCP path.
+  // #1334: placeholder crumbs first; after paint fetch ancestry and upgrade.
   const [crumbsReady, setCrumbsReady] = useState(false);
   useEffect(() => {
-    const id = requestAnimationFrame(() => setCrumbsReady(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+    let cancelled = false;
+    setCrumbsReady(false);
+    setCourse(null);
+    setModule(null);
+    setOrderText(undefined);
+
+    const frameId = requestAnimationFrame(() => {
+      api
+        .lessonBreadcrumb(lesson.id)
+        .then((breadcrumb) => {
+          if (cancelled) return;
+          setModule(breadcrumb.module);
+          setCourse(breadcrumb.course);
+          setOrderText(`${breadcrumb.moduleOrdinal}.${breadcrumb.lessonOrdinal}`);
+          setCrumbsReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) setCrumbsReady(true);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [lesson.id]);
 
   const skeletonBreadcrumbItems = [
     { label: 'Courses', href: '/instructor' },
