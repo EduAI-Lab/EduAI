@@ -34,7 +34,9 @@ if (user) {
   const settings = await getUserProviderSettings(user.id);
   apiKey = settings.google?.apiKey?.trim() || apiKey;
 } else if (!apiKey) {
-  console.error("seed user student1@eduai.local not found and GOOGLE_GENERATIVE_AI_API_KEY is unset");
+  console.error(
+    "seed user student1@eduai.local not found and GOOGLE_GENERATIVE_AI_API_KEY is unset",
+  );
   process.exit(1);
 }
 if (!apiKey) {
@@ -57,7 +59,8 @@ const model = google("gemini-2.5-flash");
 const CASES = [
   {
     id: "mitochondria",
-    userText: "Explain mitochondria for my biology quiz — I need the specific cell and ATP numbers.",
+    userText:
+      "Explain mitochondria for my biology quiz — I need the specific cell and ATP numbers.",
     facts: ["37 trillion cells", "adenosine triphosphate", "1,200 mitochondria"],
     draft: `**Top summary**
 - Mitochondria are the powerhouse of the cell, quickly! You need to know this fast for your exam.
@@ -197,10 +200,7 @@ async function main() {
   }
 
   await import("node:fs/promises").then((fs) =>
-    fs.writeFile(
-      "/tmp/content-parity-results.json",
-      JSON.stringify(results, null, 2),
-    ),
+    fs.writeFile("/tmp/content-parity-results.json", JSON.stringify(results, null, 2)),
   );
   console.log("\nFull results written to /tmp/content-parity-results.json");
 }
