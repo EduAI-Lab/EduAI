@@ -644,8 +644,18 @@ export const deleteQuestion = async (questionId, userId) => {
     throw new Error("Question not found");
   }
 
-  await prisma.questionMetadata.delete({ where: { id: question.id } });
-  return true;
+  return await withQuestionMutationFence(question.id, async (db) => {
+    const current = await db.questionMetadata.findFirst({
+      where: { id: question.id, course: { userId } }
+    });
+
+    if (!current) {
+      throw new Error('Question not found');
+    }
+
+    await db.questionMetadata.delete({ where: { id: current.id } });
+    return true;
+  });
 };
 
 /** Bulk-creates multiple questions for approvals, short-circuiting on validation issues. */
@@ -1548,8 +1558,18 @@ export const deleteVariant = async (variantId, userId) => {
     throw new Error("Variant not found");
   }
 
-  await prisma.variants.delete({ where: { id: variant.id } });
-  return true;
+  return await withQuestionMutationFence(variant.questionMetadataId, async (db) => {
+    const current = await db.variants.findFirst({
+      where: { id: variant.id, questionMetadata: { course: { userId } } }
+    });
+
+    if (!current) {
+      throw new Error('Variant not found');
+    }
+
+    await db.variants.delete({ where: { id: current.id } });
+    return true;
+  });
 };
 
 /** Lists all variants for a question, including assessment context, for the owning user. */

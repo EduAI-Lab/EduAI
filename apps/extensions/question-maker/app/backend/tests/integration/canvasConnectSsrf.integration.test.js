@@ -85,7 +85,6 @@ describe("POST /api/canvas/connect — SSRF guard (#991)", () => {
     ['private 192.168/16', 'https://192.168.1.1/'],
     ['non-HTTPS scheme', 'http://canvas.example.com/'],
     ['credentials', 'https://user:password@canvas.example.com/'],
-    ['non-root path', 'https://canvas.example.com/tenant'],
     ['query', 'https://canvas.example.com/?tenant=one'],
     ['fragment', 'https://canvas.example.com/#tenant'],
     ['carrier-grade NAT', 'https://100.64.0.1/'],
@@ -143,6 +142,24 @@ describe("POST /api/canvas/connect — SSRF guard (#991)", () => {
     expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
       INSTRUCTOR.id,
       expect.objectContaining({ canvasUrl: 'https://canvas.example.com:8443' }),
+    );
+  });
+
+  it.each([
+    ['https://canvas.example.com/lms', 'https://canvas.example.com/lms'],
+    ['https://canvas.example.com/lms/', 'https://canvas.example.com/lms'],
+  ])('persists an HTTPS path prefix from %s', async (canvasUrl, canonical) => {
+    canvas.saveCanvasIntegration.mockResolvedValue({ canvasUrl: canonical, isTestMode: true });
+
+    const res = await request(app)
+      .post('/api/canvas/connect')
+      .set('Cookie', 'session=v')
+      .send({ canvasUrl, isTestMode: true });
+
+    expect(res.status).toBe(200);
+    expect(canvas.saveCanvasIntegration).toHaveBeenCalledWith(
+      INSTRUCTOR.id,
+      expect.objectContaining({ canvasUrl: canonical }),
     );
   });
 });

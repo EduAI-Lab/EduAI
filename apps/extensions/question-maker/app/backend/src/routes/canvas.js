@@ -30,7 +30,7 @@ import { CANVAS_ROLES } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
 import { prisma } from '../config/database.js';
-import { validateCanvasUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
+import { validateCanvasUrl, canonicalCanvasBaseUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
 import { canvasRequestContext } from '../middleware/canvasRequestContext.js';
 
 const router = express.Router();
@@ -87,10 +87,11 @@ router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req
     }
 
     // Validate URL format and block SSRF targets (#991) — private/link-local/
-    // loopback IPs and non-HTTPS schemes.
-    let canonicalCanvasOrigin;
+    // loopback IPs and non-HTTPS schemes. Preserve an HTTPS path prefix so
+    // Canvas installs under a subpath (e.g. /lms) keep working.
+    let canonicalCanvasUrl;
     try {
-      canonicalCanvasOrigin = validateCanvasUrl(canvasUrl).origin;
+      canonicalCanvasUrl = canonicalCanvasBaseUrl(validateCanvasUrl(canvasUrl));
     } catch (e) {
       if (e instanceof CanvasUrlValidationError) {
         return res.status(400).json({
@@ -102,7 +103,7 @@ router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req
     }
 
     const integration = await saveCanvasIntegration(req.user.id, {
-      canvasUrl: canonicalCanvasOrigin,
+      canvasUrl: canonicalCanvasUrl,
       apiKey: apiKey || 'test-key', // Use placeholder in test mode
       isTestMode: isTestMode || false
     });

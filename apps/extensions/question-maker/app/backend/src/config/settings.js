@@ -143,4 +143,23 @@ export const config = {
     .filter(Boolean),
 };
 
+/**
+ * Fail-fast check for Core S2S auth. Call at process startup (e.g. startServer),
+ * not while constructing `config`, so tests can import settings without EDUAI_API_KEY.
+ *
+ * Core `/api/sessions/validate` 403s without a service key. `coreUrl` defaults to
+ * localhost, so production and development always require EDUAI_API_KEY.
+ */
+export function assertCoreServiceKeyConfigured(settings = config) {
+  const coreUrl = typeof settings?.coreUrl === 'string' ? settings.coreUrl.trim() : '';
+  if (!coreUrl) return;
+
+  const eduaiApiKey = typeof settings?.eduaiApiKey === 'string' ? settings.eduaiApiKey.trim() : '';
+  if (eduaiApiKey) return;
+
+  throw new Error(
+    'EDUAI_API_KEY is required when Core is configured. Core session validation rejects requests without a service key.',
+  );
+}
+
 export default config;

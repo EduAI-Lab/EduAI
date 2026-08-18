@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 import dns from "node:dns";
 import {
   validateCanvasUrl,
+  canonicalCanvasBaseUrl,
   createPinnedLookup,
   CanvasUrlValidationError,
 } from "../../src/utils/canvasUrlGuard.js";
@@ -28,11 +29,18 @@ describe("validateCanvasUrl", () => {
 
   it.each([
     ['credentials', 'https://user:password@canvas.example.edu/'],
-    ['a non-root path', 'https://canvas.example.edu/canvas'],
     ['a query', 'https://canvas.example.edu/?tenant=one'],
     ['a fragment', 'https://canvas.example.edu/#settings'],
   ])('rejects a Canvas base URL containing %s', (_label, url) => {
     expect(() => validateCanvasUrl(url)).toThrow(CanvasUrlValidationError);
+  });
+
+  it.each([
+    ['https://canvas.example.edu/lms', 'https://canvas.example.edu/lms'],
+    ['https://canvas.example.edu/lms/', 'https://canvas.example.edu/lms'],
+  ])('accepts an HTTPS path prefix and canonicalizes %s', (url, canonical) => {
+    const parsed = validateCanvasUrl(url);
+    expect(canonicalCanvasBaseUrl(parsed)).toBe(canonical);
   });
 
   it.each([
@@ -60,6 +68,8 @@ describe("validateCanvasUrl", () => {
     ['IPv4-compatible IPv6 loopback (deprecated form)', 'https://[::127.0.0.1]/'],
     ['IPv4-compatible IPv6 loopback, already-normalized hex form', 'https://[::7f00:1]/'],
     ['IPv4-compatible IPv6 private (10/8)', 'https://[::10.1.2.3]/'],
+    ['IPv4-compatible IPv6 public (deprecated ::/96)', 'https://[::8.8.8.8]/'],
+    ['IPv4-compatible IPv6 documentation-shaped ::/96', 'https://[::2001:db8]/'],
     ['IPv6 documentation range', 'https://[2001:db8::1]/'],
     ['IPv6 multicast', 'https://[ff02::1]/'],
   ])('rejects %s (%s)', (_label, url) => {
@@ -85,8 +95,8 @@ describe("validateCanvasUrl", () => {
     expect(() => validateCanvasUrl("https://8.8.8.8/")).not.toThrow();
   });
 
-  it("does not reject a public IPv4-compatible IPv6 literal", () => {
-    expect(() => validateCanvasUrl("https://[::8.8.8.8]/")).not.toThrow();
+  it('rejects a public IPv4-compatible IPv6 literal in deprecated ::/96', () => {
+    expect(() => validateCanvasUrl('https://[::8.8.8.8]/')).toThrow(CanvasUrlValidationError);
   });
 
   it("does not treat a private-looking hostname (not an IP literal) as private", () => {
@@ -112,10 +122,37 @@ describe("validateCanvasUrl", () => {
   });
 });
 
-describe("createPinnedLookup", () => {
-  it("rejects a hostname that resolves to a private address (DNS rebinding)", async () => {
-    vi.spyOn(dns, "lookup").mockImplementation((_hostname, _options, cb) => {
-      cb(null, [{ address: "169.254.169.254", family: 4 }]);
+describe('canonicalCanvasBaseUrl', () => {
+  it('returns origin-only without a trailing slash', () => {
+    expect(canonicalCanvasBaseUrl(validateCanvasUrl('https://canvas.example.edu'))).toBe(
+      'https://canvas.example.edu',
+    );
+    expect(canonicalCanvasBaseUrl(validateCanvasUrl('https://canvas.example.edu/'))).toBe(
+      'https://canvas.example.edu',
+    );
+  });
+
+  it('preserves an HTTPS path prefix without a trailing slash', () => {
+    expect(canonicalCanvasBaseUrl(validateCanvasUrl('https://canvas.example.edu/lms'))).toBe(
+      'https://canvas.example.edu/lms',
+    );
+    expect(canonicalCanvasBaseUrl(validateCanvasUrl('https://canvas.example.edu/lms/'))).toBe(
+      'https://canvas.example.edu/lms',
+    );
+  });
+
+  it('joins Canvas API paths as relative segments so a prefix is not dropped', () => {
+    const base = `${canonicalCanvasBaseUrl(validateCanvasUrl('https://canvas.example.edu/lms'))}/`;
+    expect(new URL('api/v1/courses', base).href).toBe(
+      'https://canvas.example.edu/lms/api/v1/courses',
+    );
+  });
+});
+
+describe('createPinnedLookup', () => {
+  it('rejects a hostname that resolves to a private address (DNS rebinding)', async () => {
+    vi.spyOn(dns, 'lookup').mockImplementation((_hostname, _options, cb) => {
+      cb(null, [{ address: '169.254.169.254', family: 4 }]);
     });
 
     const lookup = createPinnedLookup();

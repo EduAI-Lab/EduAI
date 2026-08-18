@@ -117,14 +117,14 @@ export async function readBoundedChatJson(
   return readBoundedJson(request, maxBytes, "Chat request body exceeds size limit");
 }
 
-function serializedContentChars(content: unknown): number | null {
+function serializedContentChars(content: unknown): number {
   if (typeof content === "string") return content.length;
-  if (!Array.isArray(content)) return null;
+  if (!Array.isArray(content)) return 0;
   try {
     const serialized = JSON.stringify(content);
-    return typeof serialized === "string" ? serialized.length : null;
+    return typeof serialized === "string" ? serialized.length : 0;
   } catch {
-    return null;
+    return 0;
   }
 }
 
@@ -162,13 +162,6 @@ export function validateChatBody(
     }
     const candidate = message as Record<string, unknown>;
     const contentChars = serializedContentChars(candidate.content);
-    if (contentChars === null) {
-      return {
-        ok: false,
-        status: 422,
-        error: "each message content must be a string or parts array",
-      };
-    }
     if (contentChars > limits.maxMessageChars) {
       return {
         ok: false,

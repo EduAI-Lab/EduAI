@@ -215,4 +215,55 @@ describe("validateChatBody", () => {
       error: "messages exceeds maximum count",
     });
   });
+
+  it("accepts assistant or unknown-role messages with absent or unknown content", () => {
+    const missingContent = validateChatBody({
+      messages: [{ role: "assistant" }],
+    });
+    expect(missingContent.ok).toBe(true);
+
+    const objectContent = validateChatBody({
+      messages: [{ role: "unknown", content: { type: "tool-call", id: "t1" } }],
+    });
+    expect(objectContent.ok).toBe(true);
+
+    const numericContent = validateChatBody({
+      messages: [{ role: "assistant", content: 42 }],
+    });
+    expect(numericContent.ok).toBe(true);
+  });
+
+  it("counts only string and parts-array content toward aggregate limits", () => {
+    const result = validateChatBody(
+      {
+        messages: [
+          { role: "user", content: "hello" },
+          { role: "assistant", content: { type: "tool-invocation" } },
+          { role: "tool", content: { result: "ok" } },
+        ],
+      },
+      { maxMessageChars: 10, maxTotalMessageChars: 10 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.messages).toHaveLength(3);
+
+    expect(
+      validateChatBody(
+        {
+          messages: [
+            { role: "user", content: "hello" },
+            { role: "assistant", content: { type: "tool-invocation" } },
+            { role: "user", content: "world!" },
+          ],
+        },
+        { maxMessageChars: 10, maxTotalMessageChars: 10 },
+      ),
+    ).toEqual({
+      ok: false,
+      status: 422,
+      error: "messages exceed aggregate character limit",
+    });
+  });
 });

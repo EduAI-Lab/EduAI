@@ -269,7 +269,8 @@ export function validateTestApiKeyAdmission(body = {}) {
  * bucket consumption.
  */
 const providerReservations = new Map();
-const MAX_PROVIDER_RESERVATION_KEYS = 10_000;
+const DEFAULT_MAX_PROVIDER_RESERVATION_KEYS = 10_000;
+let maxProviderReservationKeys = DEFAULT_MAX_PROVIDER_RESERVATION_KEYS;
 
 function purgeExpiredProviderReservations(now) {
   for (const [key, bucket] of providerReservations) {
@@ -300,11 +301,15 @@ export function reserveQmAiProviderCalls(req, cost) {
   }
   bucket.used += normalizedCost;
   bucket.requests += 1;
-  if (!providerReservations.has(key) && providerReservations.size >= MAX_PROVIDER_RESERVATION_KEYS) {
-    // Evict the oldest expired/least-recently-inserted identity rather than
-    // allowing attacker-controlled caller ids to grow this process heap.
+  const isNewKey = !providerReservations.has(key);
+  if (isNewKey && providerReservations.size >= maxProviderReservationKeys) {
+    // Evict the least-recently-refreshed identity rather than allowing
+    // attacker-controlled caller ids to grow this process heap. Insertion
+    // order approximates LRU because a live refresh deletes then re-sets.
     const oldest = providerReservations.keys().next().value;
     if (oldest != null) providerReservations.delete(oldest);
+  } else if (!isNewKey) {
+    providerReservations.delete(key);
   }
   providerReservations.set(key, bucket);
   return { ok: true, used: bucket.used, limit, resetAt: bucket.resetAt };
@@ -313,6 +318,12 @@ export function reserveQmAiProviderCalls(req, cost) {
 // Test-only reset keeps deterministic suites isolated without exposing the map.
 export function resetQmAiAdmissionForTests() {
   providerReservations.clear();
+}
+
+export function setQmAiProviderReservationLimitForTests(n) {
+  maxProviderReservationKeys = Number.isInteger(n) && n > 0
+    ? n
+    : DEFAULT_MAX_PROVIDER_RESERVATION_KEYS;
 }
 
 function sendAdmissionError(res, validation) {

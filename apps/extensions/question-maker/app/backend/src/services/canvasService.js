@@ -7,7 +7,7 @@ import { prisma } from '../config/database.js';
 import { encrypt, decrypt, isEncrypted } from '../utils/encryption.js';
 import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
-import { validateCanvasUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
+import { validateCanvasUrl, canonicalCanvasBaseUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
 import { logger } from '../utils/logger.js';
 import { toStableUpstreamError } from '../utils/safeLogging.js';
 import { config } from '../config/settings.js';
@@ -381,7 +381,9 @@ async function consumeCanvasBody(response, signal) {
 }
 
 function canvasRequestUrl(integration, endpoint) {
-  const canvasOrigin = validateCanvasUrl(integration.canvasUrl).origin;
+  const parsedBase = validateCanvasUrl(integration.canvasUrl);
+  const canvasOrigin = parsedBase.origin;
+  const baseWithTrailingSlash = `${canonicalCanvasBaseUrl(parsedBase)}/`;
   if (/^https?:\/\//i.test(endpoint)) {
     const parsed = new URL(endpoint);
     if (parsed.origin !== canvasOrigin || parsed.protocol !== 'https:' || parsed.username || parsed.password) {
@@ -390,9 +392,9 @@ function canvasRequestUrl(integration, endpoint) {
     return { canvasOrigin, url: parsed.href };
   }
   if (endpoint.startsWith('/api/v1/')) {
-    return { canvasOrigin, url: new URL(endpoint, canvasOrigin).href };
+    return { canvasOrigin, url: new URL(endpoint.replace(/^\//, ''), baseWithTrailingSlash).href };
   }
-  const apiRoot = new URL('/api/v1/', canvasOrigin);
+  const apiRoot = new URL('api/v1/', baseWithTrailingSlash);
   return { canvasOrigin, url: new URL(endpoint.replace(/^\//, ''), apiRoot).href };
 }
 
@@ -586,13 +588,15 @@ function validateNextCanvasUrl(integration, next, previousUrl) {
   } catch {
     throw new CanvasPaginationError('Canvas returned an invalid pagination link');
   }
-  const canvasOrigin = validateCanvasUrl(integration.canvasUrl).origin;
+  const parsedBase = validateCanvasUrl(integration.canvasUrl);
+  const canvasOrigin = parsedBase.origin;
+  const apiPrefix = new URL('api/v1/', `${canonicalCanvasBaseUrl(parsedBase)}/`).pathname;
   if (
     parsed.protocol !== 'https:' ||
     parsed.origin !== canvasOrigin ||
     parsed.username ||
     parsed.password ||
-    !parsed.pathname.startsWith('/api/v1/')
+    !parsed.pathname.startsWith(apiPrefix)
   ) {
     throw new CanvasPaginationError('Canvas pagination link must remain on the configured Canvas API origin');
   }

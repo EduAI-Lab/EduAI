@@ -76,15 +76,19 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     );
   });
 
-  it('rejects a stored base URL with a path instead of letting string concatenation alter the API target', async () => {
+  it('allows a stored HTTPS subpath prefix through to the Canvas API', async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
-      canvasUrl: 'https://canvas.example.edu/tenant',
+      canvasUrl: 'https://canvas.example.edu/lms',
       apiKey: 'secret-token',
     });
+    axiosRequest.mockResolvedValue({ data: [] });
 
-    await expect(getCanvasCourses(42)).rejects.toThrow();
-    expect(axiosRequest).not.toHaveBeenCalled();
+    await expect(getCanvasCourses(42)).resolves.toEqual([]);
+    expect(axiosRequest).toHaveBeenCalled();
+    expect(axiosRequest.mock.calls[0][0].url).toBe(
+      'https://canvas.example.edu/lms/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment',
+    );
   });
 
   const unsafeSegmentCases = [

@@ -82,3 +82,10 @@ The Better Auth API-key migration preserves hashes and owners, but converts
 automatically reversible. The unique course-identity index is also built as a
 regular PostgreSQL index and can hold a table lock while it is created, so run
 this migration in the deployment maintenance window.
+
+## Extension session validation
+
+`EDUAI_API_KEY` is now a hard requirement for any extension calling
+`POST /api/sessions/validate`. Question Maker fails at startup if Core is
+configured and the key is missing. Other extensions that omit it still boot
+and then receive an opaque 403 from Core.

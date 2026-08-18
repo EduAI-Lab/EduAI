@@ -550,4 +550,109 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     expect(persisted.isDraft).toBe(false);
     expect(persisted.coreQuestionId).toBe('core-question-1');
   });
+
+  it('serializes deleteVariant behind the Core link fence', async () => {
+    const { qid, vid } = await createDraftQuestion();
+    const fenceReached = deferred();
+    const release = deferred();
+    let fenceCount = 0;
+    const restoreObserver = setQuestionMutationFenceObserver(async ({ questionId }) => {
+      if (questionId !== qid) return;
+      fenceCount += 1;
+      if (fenceCount === 2) {
+        fenceReached.resolve();
+        await release.promise;
+      }
+    });
+
+    try {
+      const approval = request(app)
+        .put(`/api/questions/variants/${vid}`)
+        .set(cookie())
+        .send({ isDraft: false })
+        .then((response) => response);
+      await fenceReached.promise;
+
+      let deleteSettled = false;
+      const deletion = request(app)
+        .delete(`/api/questions/variants/${vid}`)
+        .set(cookie())
+        .then((response) => {
+          deleteSettled = true;
+          return response;
+        });
+
+      const winner = await Promise.race([
+        deletion.then(() => 'deleted'),
+        new Promise((resolve) => setTimeout(() => resolve('blocked'), 100)),
+      ]);
+      expect(winner).toBe('blocked');
+      expect(deleteSettled).toBe(false);
+      expect(await prisma.variants.findUnique({ where: { id: vid } })).not.toBeNull();
+
+      release.resolve();
+      const [approvalResult, deleteResult] = await Promise.all([approval, deletion]);
+      expect(approvalResult.status).toBe(200);
+      expect(approvalResult.body.data.coreQuestionId).toBe('core-question-1');
+      expect(deleteResult.status).toBe(200);
+      expect(await prisma.variants.findUnique({ where: { id: vid } })).toBeNull();
+      expect(fetchStub.pushCalls).toBe(1);
+    } finally {
+      release.resolve();
+      restoreObserver();
+    }
+  });
+
+  it('serializes deleteQuestion behind the Core link fence', async () => {
+    const { qid, vid } = await createDraftQuestion();
+    const fenceReached = deferred();
+    const release = deferred();
+    let fenceCount = 0;
+    const restoreObserver = setQuestionMutationFenceObserver(async ({ questionId }) => {
+      if (questionId !== qid) return;
+      fenceCount += 1;
+      if (fenceCount === 2) {
+        fenceReached.resolve();
+        await release.promise;
+      }
+    });
+
+    try {
+      const approval = request(app)
+        .put(`/api/questions/variants/${vid}`)
+        .set(cookie())
+        .send({ isDraft: false })
+        .then((response) => response);
+      await fenceReached.promise;
+
+      let deleteSettled = false;
+      const deletion = request(app)
+        .delete(`/api/questions/${qid}`)
+        .set(cookie())
+        .then((response) => {
+          deleteSettled = true;
+          return response;
+        });
+
+      const winner = await Promise.race([
+        deletion.then(() => 'deleted'),
+        new Promise((resolve) => setTimeout(() => resolve('blocked'), 100)),
+      ]);
+      expect(winner).toBe('blocked');
+      expect(deleteSettled).toBe(false);
+      expect(await prisma.questionMetadata.findUnique({ where: { id: qid } })).not.toBeNull();
+
+      release.resolve();
+      const [approvalResult, deleteResult] = await Promise.all([approval, deletion]);
+      expect(approvalResult.status).toBe(200);
+      expect(approvalResult.body.data.coreQuestionId).toBe('core-question-1');
+      expect(deleteResult.status).toBe(200);
+      expect(await prisma.questionMetadata.findUnique({ where: { id: qid } })).toBeNull();
+      expect(await prisma.variants.findUnique({ where: { id: vid } })).toBeNull();
+      expect(fetchStub.pushCalls).toBe(1);
+    } finally {
+      release.resolve();
+      restoreObserver();
+    }
+  });
 });

@@ -81,9 +81,10 @@ function expandIPv6Groups(address) {
 }
 
 /**
- * True for ::1 (loopback), :: (unspecified), fe80::/10 (link-local, the full
- * range — fe80 through febf in the first group, not just the fe80 prefix),
- * fc00::/7 (unique local), and IPv4-mapped private addresses.
+ * True for ::1 (loopback), :: (unspecified), the deprecated IPv4-compatible
+ * ::/96 block, fe80::/10 (link-local, the full range — fe80 through febf in
+ * the first group, not just the fe80 prefix), fc00::/7 (unique local), and
+ * IPv4-mapped private addresses.
  */
 export function isPrivateIPv6(address) {
   const normalized = address.toLowerCase();
@@ -106,15 +107,13 @@ export function isPrivateIPv6(address) {
 
   const groups = expandIPv6Groups(normalized);
   if (!groups || groups.some((g) => !Number.isInteger(g))) return false;
-  // Deprecated IPv4-compatible form (::a.b.c.d, no ffff group): first six
-  // groups zero. Node's URL parser normalizes the embedded IPv4 octets into
-  // the last two hex groups (e.g. `::127.0.0.1` -> `::7f00:1`), so pull them
-  // back out and re-check as IPv4 — this is how `::127.0.0.1` (loopback)
-  // slips past the checks above otherwise.
+  // Deprecated IPv4-compatible form (::/96, first six groups zero). IANA
+  // reserved this block; do not defer to the embedded IPv4, because a
+  // globally routable embedded address (e.g. ::8.8.8.8, ::2001:db8) would
+  // otherwise pass. IPv4-mapped ::ffff:x.x.x.x is handled above (group 5 is
+  // 0xffff). ::1 and :: already returned true at the top of this function.
   if (groups.slice(0, 6).every((g) => g === 0)) {
-    const [hi, lo] = groups.slice(6);
-    const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
-    return isNonGlobalIPv4(ipv4);
+    return true;
   }
 
   const first = groups[0];
@@ -151,8 +150,8 @@ export function validateCanvasUrl(rawUrl) {
   if (parsed.username || parsed.password) {
     throw new CanvasUrlValidationError('Canvas URL may not contain credentials');
   }
-  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
-    throw new CanvasUrlValidationError('Canvas URL must be an HTTPS origin without a path, query, or fragment');
+  if (parsed.search || parsed.hash) {
+    throw new CanvasUrlValidationError('Canvas URL may not contain a query or fragment');
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -167,6 +166,16 @@ export function validateCanvasUrl(rawUrl) {
   }
 
   return parsed;
+}
+
+/**
+ * Persistable Canvas base: origin + pathname, with no trailing slash.
+ * Origin-only URLs are returned as `origin` (which never has a trailing slash).
+ * Call after `validateCanvasUrl` so query, fragment, and userinfo are absent.
+ */
+export function canonicalCanvasBaseUrl(parsedUrl) {
+  const trimmedPath = parsedUrl.pathname.replace(/\/+$/, '');
+  return `${parsedUrl.origin}${trimmedPath}`;
 }
 
 /**

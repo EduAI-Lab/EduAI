@@ -32,6 +32,52 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
 import { hasValidServiceKey } from "~/lib/auth/guards.server";
 
 /**
+ * Parse a URL-like value to its origin, skipping invalid or opaque (`null`)
+ * origins so they cannot join the CSRF allow-list.
+ */
+function parseOrigin(value: string): string | null {
+  try {
+    const origin = new URL(value).origin;
+    return origin === "null" ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Origins allowed to prove same-site intent for cookie-authenticated mutations.
+ *
+ * `request.url` is not a reliable public origin behind TLS-terminating Apache:
+ * `@react-router/express` builds it from `req.protocol`, which stays `http`
+ * because Express does not trust `X-Forwarded-Proto` by default. Browsers then
+ * send `Origin: https://host` while `url.origin` is `http://host`, and a naive
+ * equality check 403s every legitimate mutation. We do not enable `trust proxy`
+ * or trust raw forwarded proto here — those are client-spoofable unless the
+ * proxy layer is locked down.
+ *
+ * `BETTER_AUTH_URL` is the configured public origin (same source as
+ * `authBaseURL`). `request.url`'s origin stays in the set so same-scheme
+ * unit/dev requests still match without that env var.
+ */
+function trustedMutationOrigins(requestUrl: URL): Set<string> {
+  const origins = new Set<string>();
+  const configured =
+    process.env.BETTER_AUTH_URL?.trim() ||
+    import.meta.env.BETTER_AUTH_URL?.trim() ||
+    "http://localhost:3000";
+  const configuredOrigin = parseOrigin(configured);
+  if (configuredOrigin) origins.add(configuredOrigin);
+  const requestOrigin = parseOrigin(requestUrl.origin);
+  if (requestOrigin) origins.add(requestOrigin);
+  return origins;
+}
+
+function originMatchesTrusted(candidate: string, trusted: Set<string>): boolean {
+  const origin = parseOrigin(candidate);
+  return origin !== null && trusted.has(origin);
+}
+
+/**
  * Root middleware — the single request chokepoint that every route matches.
  *
  * Document (HTML) responses already get their nonce-based CSP and the static
@@ -51,22 +97,17 @@ export const middleware: Route.MiddlewareFunction[] = [
     // fallback evidence for clients that omit Origin. Missing or malformed
     // evidence fails closed for ambient-cookie mutations. A non-browser call
     // may bypass only by proving the configured service key in constant time.
+    // Compare against the trusted origin set, not `url.origin` alone — see
+    // `trustedMutationOrigins` for the TLS-terminating proxy mismatch.
     if (isUnsafeMethod && hasCookie) {
+      const trusted = trustedMutationOrigins(url);
       let isSameOrigin = false;
       if (origin !== null) {
-        try {
-          isSameOrigin = new URL(origin).origin === url.origin;
-        } catch {
-          // A malformed Origin cannot prove same-origin intent.
-        }
+        isSameOrigin = originMatchesTrusted(origin, trusted);
       } else {
         const referer = request.headers.get("referer");
         if (referer !== null) {
-          try {
-            isSameOrigin = new URL(referer).origin === url.origin;
-          } catch {
-            // A malformed Referer cannot prove same-origin intent.
-          }
+          isSameOrigin = originMatchesTrusted(referer, trusted);
         } else {
           isSameOrigin = request.headers.get("sec-fetch-site") === "same-origin";
         }

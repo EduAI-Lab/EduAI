@@ -315,4 +315,38 @@ describe("root middleware", () => {
     expect((await (middleware[0] as any)({ request: service }, next)).status).toBe(204);
     expect(next).toHaveBeenCalledTimes(2);
   });
+
+  it("allows https Origin when request.url is http behind a TLS-terminating proxy", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://dev.eduai.ok.ubc.ca");
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const request = new Request("http://dev.eduai.ok.ubc.ca/api/questions", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Origin: "https://dev.eduai.ok.ubc.ca",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(204);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("allows https Referer when request.url is http and BETTER_AUTH_URL is https", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://dev.eduai.ok.ubc.ca");
+    const next = vi.fn(async () => new Response(null, { status: 204 }));
+    const request = new Request("http://dev.eduai.ok.ubc.ca/admin/logs", {
+      method: "POST",
+      headers: {
+        Cookie: "better-auth.session_token=secret",
+        Referer: "https://dev.eduai.ok.ubc.ca/admin/logs",
+      },
+    });
+
+    const res = await (middleware[0] as any)({ request }, next);
+
+    expect(res.status).toBe(204);
+    expect(next).toHaveBeenCalledOnce();
+  });
 });

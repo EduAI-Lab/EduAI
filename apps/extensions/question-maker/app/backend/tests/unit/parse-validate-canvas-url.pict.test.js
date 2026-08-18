@@ -33,14 +33,14 @@ describe.each(rows.map((row, index) => [index, row]))(
   (index, row) => {
     it('matches the shared oracle', () => {
       const sharedExpected = parseValidateCanvasUrlOracle(row);
-      // QM intentionally strengthens the older cross-product oracle: Canvas
-      // configuration is an origin, not an arbitrary URL. Keep the PICT input
-      // coverage while asserting the stricter finding-specific contract.
+      // QM still rejects credentials and query strings, while allowing an
+      // HTTPS path prefix (including path-traversal segments that the URL
+      // parser normalizes). ExtraPath `query-ssrf` remains rejected.
       const expected = {
         accept:
           sharedExpected.accept &&
           row.UrlShape === 'https-host' &&
-          row.ExtraPath === 'none',
+          row.ExtraPath !== 'query-ssrf',
       };
       const rawUrl = canvasUrlStringForRow(row);
       const actual = runQmValidator(rawUrl);
