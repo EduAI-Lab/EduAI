@@ -1,22 +1,12 @@
-/**
- * Research team roster rendered by the homepage's team section.
- *
- * This used to live inside `routes/team.tsx`, which was deleted when the
- * standalone /team page was folded into the single-scroll landing page. The
- * data is static and has no server dependency, so it sits next to `site.ts`
- * rather than behind a loader.
- *
- * `image` paths are root-relative and resolve out of `apps/core/public/`.
- */
 export interface TeamMember {
-  id: number;
-  name: string;
-  image: string;
-  biography: string;
-  contribution: string;
-  techStack: string[];
-  /** A short personal signature — a code one-liner for some, an accolade for others. */
-  codeSnippet: string;
+  id: number
+  name: string
+  image: string
+  biography: string
+  contribution: string
+  techStack: string[]
+  codeSnippet: string
+  imagePosition?: string
 }
 
 export const teamMembers: TeamMember[] = [
@@ -25,24 +15,22 @@ export const teamMembers: TeamMember[] = [
     name: "Dr. Abdallah Mohamed",
     image: "/AbdullahMoh.jpeg",
     biography:
-      "Professor Abdallah Mohamed’s expertise spans software engineering, decision support systems, and creative higher education. His research integrates optimization techniques, expert systems, and component-based software development to enhance decision-making in complex, uncertain, and dynamic environments. Beyond technical research, he is committed to advancing innovation in teaching and learning, developing new methodologies to foster creativity, engagement, and personalized learning experiences.",
+      "Professor Abdallah Mohamed's expertise spans software engineering, decision support systems, and creative higher education. His research integrates optimization techniques, expert systems, and component-based software development to enhance decision-making in complex, uncertain, and dynamic environments. Beyond technical research, he is committed to advancing innovation in teaching and learning, developing new methodologies to foster creativity, engagement, and personalized learning experiences.",
     contribution:
       "Directs AI research, managing model selection and experiments with students to optimize LLM and RAG performance for EduAI.",
     techStack: ["Machine Learning", "Deep Learning", "RAG", "LLMs", "Parallel Computing"],
-    codeSnippet:
-      "Awarded 2023 IKBFOS Grant for innovative courseware advancing computer programming education.",
+    codeSnippet: "Awarded 2023 IKBFOS Grant for innovative courseware advancing computer programming education.",
   },
   {
     id: 2,
     name: "Dr. Mostafa Mohamed",
     image: "/MohMustafa.jpeg",
     biography:
-      "Professor Mostafa Mohamed, previously an Assistant Professor of Biomedical Engineering and now a Computer Science professor at UBCO, advances research in AI, machine learning, and medical imaging. His notable contributions include white blood cell segmentation, leukemia detection, deep learning–based scene analysis, and human cell classification. With 500+ citations and more than a dozen publications at IEEE, he integrates hardware acceleration, parallel computing, and cloud systems to enhance healthcare diagnostics.",
+      "Professor Mostafa Mohamed, previously an Assistant Professor of Biomedical Engineering and now a Computer Science Professor at UBCO, advances research in AI, machine learning, and medical imaging. His notable contributions include white blood cell segmentation, leukemia detection, deep learning–based scene analysis, and human cell classification. With 500+ citations and more than a dozen publications at IEEE, he integrates hardware acceleration, parallel computing, and cloud systems to enhance healthcare diagnostics.",
     contribution:
       "Leads backend development and guides students in building scalable AI infrastructure using LLMs and RAG pipelines for EduAI.",
     techStack: ["Big Data", "GPU acceleration", "Cloud Computing", "Medical Image Processing"],
-    codeSnippet:
-      "500+ citations pioneering AI medical image analysis, leukemia detection, and published at IEEE.",
+    codeSnippet: "500+ citations pioneering AI medical image analysis, leukemia detection, and published at IEEE.",
   },
   {
     id: 3,
@@ -54,7 +42,7 @@ export const teamMembers: TeamMember[] = [
       "Leads research on adapter-based fine-tuning for low-resource programming languages, exploring transfer learning techniques to improve code intelligence. She has published extensively on code summarization, code clone detection, and the intersection of AI and software development.",
     techStack: ["Python", "PyTorch", "Transformers", "HuggingFace", "NLP", "LLMs", "Data Visualization"],
     codeSnippet:
-      "from transformers import AutoModel, AutoTokenizer; model = AutoModel.from_pretrained('microsoft/codebert-base')",
+      "from transformers import AutoModel, AutoTokenizer; model = AutoModel.from_pretrained('microsoft/codebert-base'); tokenizer = AutoTokenizer.from_pretrained('microsoft/codebert-base'); inputs = tokenizer('def example(): return True', return_tensors='pt'); outputs = model(**inputs)",
   },
   {
     id: 4,
@@ -66,14 +54,14 @@ export const teamMembers: TeamMember[] = [
       "Directed the Distributed Database Lab, advanced query optimization algorithms, and developed the UnityJDBC driver integrating relational and NoSQL data. His work bridges academic research and industry by providing scalable database solutions and mentoring numerous software engineering students.",
     techStack: ["PostgreSQL", "MySQL", "MongoDB", "Java", "JDBC", "C/C++", "SQL Optimization"],
     codeSnippet:
-      "ResultSet rs = stmt.executeQuery('SELECT * FROM students'); while (rs.next()) { … }",
+      "try (Connection conn = DriverManager.getConnection(url, user, pass)) { Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery('SELECT * FROM students'); while (rs.next()) { System.out.println(rs.getString('name')); } }",
   },
   {
     id: 5,
     name: "Ronit Buti",
     image: "/ronit.jpg",
     biography:
-      "Ronit is an Honors Computer Science student who built EduAI, including a provider-agnostic model registry and a pgvector-backed retrieval layer that grounds answers in uploaded course materials.",
+      "Ronit is an Honours Computer Science student who built EduAI, including a provider-agnostic model registry and a pgvector-backed retrieval layer that grounds answers in uploaded course materials.",
     contribution:
       "Led full-stack development of the platform including auth, UI, backend, and RAG pipeline, while architecting extensible tool interfaces for web search and document retrieval.",
     techStack: ["React", "TypeScript", "Next.js", "Prisma", "AI SDK"],
@@ -95,33 +83,32 @@ export const teamMembers: TeamMember[] = [
     name: "Ahab Masud Siddiqui",
     image: "/AA.JPG",
     biography:
-      "A sophomore in Computer Science at UBC and a software engineering intern with strong skills in software development, spanning full-stack web applications and AI/ML projects. Has worked under the supervision of multiple professors developing a Hospital Wayfinding mobile app using Swift and Flutter.",
-    contribution: "Frontend development and AI integrations for EduAI.",
-    techStack: ["React Native", "React Router 7", "Node.js", "TensorFlow", "Docker", "Vite", "Next.js"],
-    codeSnippet:
-      "Software Engineering Intern, Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
+      "As a junior in Computer Science and Data science at UBC and a International Undergraduate Research Award recipient (IURA), I've accumulated strong skills in software development. Specific experience lies within building full-stack web applications and AI/ML projects. I've worked under the supervision of multiple professors developing EduAI and Hospital Wayfinding mobile application using Swift and Flutter. I'm eager to contribute to EduAI and collaborate with a passionate research team.",
+    contribution: " Made system design, architecture, and accessibility-focused UI decisions for an ADHD-assistive AI chatbot, alongside full-stack development on the EduAI platform.",
+    techStack: ["React Native & RR7", "Node.js", "TensorFlow", "Docker", "Vite+TypeScript", "Next.js"],
+    codeSnippet: "IURA 2026, Software Engineering Intern,Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
   },
   {
     id: 8,
     name: "Necmi Kaan Sapoglu",
     image: "/kaan.png",
     biography:
-      "An undergraduate from Turkey with a great interest for AI used in education, as well as a personal interest in video game development. In the EduAI project, he helps develop the backend infrastructure, developing the database, and handling API calls.",
+      "An undergraduate from Turkey with a great interest in AI used in education, as well as a personal interest in video game development. In the EduAI project, he helps develop the backend infrastructure, developing the database, and handling API calls.",
     contribution:
-      "Developed backend infrastructure, managed databases, and implemented API integrations, while exploring applications of AI in education.",
-    techStack: ["Backend Architecture", "Software Development", "APIs", "React Router"],
-    codeSnippet: "if (working == true) { take a break; } else { take a break; }",
+      "Developed backend infrastructure, managed databases, and implemented API integrations, while exploring applications of AI in education and maintaining a strong personal interest in video game development.",
+    techStack: ["Backend Architecture", "Software Development", "APIs", "ReactRouter"],
+    codeSnippet: "if (working == true){take a break;}else{take a break;}",
   },
   {
     id: 9,
     name: "Ribhav Sharma",
     image: "/rib.jpeg",
     biography:
-      "Ribhav Sharma is a 4th-year Computer Science student who has demonstrated a strong aptitude for AI and software development. He contributed to the EduAI project, focusing on enhancing the platform’s learning capabilities and user-interaction framework. Ribhav brings a blend of academic rigor and hands-on development experience, making him an asset in building innovative tech solutions.",
-    contribution:
-      "Contributed to EduAI: improved core learning algorithms and enhanced user-interaction systems.",
+      "Ribhav Sharma is a 4th-year Computer Science student who has demonstrated a strong aptitude for AI and software development. He contributed to the EduAI project, focusing on enhancing the platform's learning capabilities and user-interaction framework. Ribhav brings a blend of academic rigor and hands-on development experience, making him an asset in building innovative tech solutions.",
+    contribution: "Contributed to EduAI: improved core learning algorithms and enhanced user-interaction systems.",
     techStack: ["Java", "Python", "Machine Learning", "React", "Node.js"],
-    codeSnippet: "while (internship_game == up) { chills }",
+    codeSnippet: "while( internship_game == up ) {chills}",
+    imagePosition: "object-center",
   },
   {
     id: 10,
@@ -132,17 +119,37 @@ export const teamMembers: TeamMember[] = [
     contribution:
       "Volunteer Research Assistant contributing to backend infrastructure development and data architecture design. Responsible for implementing API endpoints and database integration, with a focus on designing efficient data pipelines that ensure seamless information flow throughout the system using React Router 7 and PostgreSQL.",
     techStack: ["Python", "SQL", "Node.js", "APIs", "React Router 7", "PostgreSQL"],
-    codeSnippet: "while self.at(UBC): self.study(); self.code(); self.drink(RedBull)",
+    codeSnippet: "while self.at(UBC): self.study() self.code() self.drink(RedBull)",
   },
   {
     id: 11,
     name: "Mohamed Gamal Sakr",
     image: "/sakr.jpg",
     biography:
-      "Mohamed Gamal Sakr is an honours Computer Science student at UBC Okanagan specializing in agentic AI and machine learning. He has industry experience from a software engineering internship at Allianz and currently develops LLM-based code vulnerability tools at UBCO. As a student leader and former president-elect of the Computer Science Course Union, he has earned the Dean’s List (2025) and UBC’s Outstanding International Student Award (2022).",
+      "Mohamed Gamal Sakr is an honours Computer Science student at UBC Okanagan specializing in agentic AI and machine learning. He has industry experience from a software engineering internship at Allianz and currently develops LLM-based code vulnerability tools at UBCO. As a student leader and former president-elect of the Computer Science Course Union, he has earned the Dean's List (2025) and UBC's Outstanding International Student Award (2022). His project excellence was recognized with the Database Web Development Badge (2024). He also holds professional certifications from Stanford and Harvard, focusing on applying advanced AI research to practical, real-world systems.",
     contribution:
-      "Lead AI Engineer & Project Manager who integrated a Retrieval-Augmented Generation (RAG) engine and production-grade vector database into the core platform while also directing the project lifecycle — from planning and technical design to task management and team coordination.",
+      "Lead AI Engineer & Project Manager who integrated a Retrieval-Augmented Generation (RAG) engine and production-grade vector database into the core platform while also directing the project lifecycle — from planning and technical design to task management and team coordination — ensuring timely delivery and alignment between engineering, research, and product stakeholders.",
     techStack: ["Machine Learning", "Agentic AI", "LLMs"],
     codeSnippet: "if (hardwork) then dubs",
   },
-];
+  {
+    id: 12,
+    name: "Syed Saad Ali",
+    image: "/saad.jpeg",
+    biography:
+      "Syed Saad Ali is a fourth year computer science student who created the question maker project, dedicated towards assisting professors in creating assessment variations to in their respective courses. He is currently working on a research project for adaptive AI model routing, dedicated towards routing AI prompts to appropriate AI models to optimize educational value and energy use. He is keen on exploring how computer science can improve sustainable impact through well designed systems.",
+    contribution: "Full stack development on Question Maker (Deployment, apis, tests, database, UI, components).",
+    techStack: ["Docker", "React", "PostgreSQL", "Typescript", "Vibe Coding"],
+    codeSnippet: "while laptop.status != 418: spawn(worktree(), agent())",
+  },
+  {
+    id: 13, 
+    name: "Abdullah Mohsin Naqvi",
+    image: "/abdu.jpeg",
+    biography:
+      "Abdullah is a third-year Computer Science Co-op student at UBC Okanagan focused on backend and infrastructure. He built a Redis-compatible key-value store from scratch in C11 hitting over 1.3M RPS on SET/GET, and a React-based therapy booking platform that's been live in production for over a year. He recently wrapped a backend internship at Systems Limited working on cache invalidation and rate limiting, and writes about his projects at naqvi.dev.",
+    contribution: "Worked on the core platform development and implemented backend architecture and system design features to enhance user experience on EduAI.",
+    techStack: ["React", "TypeScript", "C", "Node.js", "Redis", "MongoDB"],
+    codeSnippet: "if (living) { code(); } else { prompt(); }",
+  },
+]
