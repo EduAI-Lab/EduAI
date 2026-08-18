@@ -10,6 +10,13 @@ export interface UserProviderSettings {
     apiKey?: string;
     isEnabled: boolean;
     baseUrl?: string;
+    /**
+     * True when `baseUrl` was sourced from the deployment (env/fleet) rather
+     * than a user/DB override — set by {@link mergeLocalInferenceFromEnv}.
+     * The internal vLLM/LiteLLM key is only attached to a deployment-trusted
+     * base URL, never to a client-supplied one (#1568).
+     */
+    baseUrlIsEnvTrusted?: boolean;
   };
 }
 
@@ -95,14 +102,18 @@ export function mergeLocalInferenceFromEnv(
     }
     if (!envUrl) continue;
 
+    // Provenance (#1568): a fleet override or the env default is deployment-
+    // sourced (trusted); a pre-existing DB/client `baseUrl` is not. Only a
+    // trusted base URL may carry the internal vLLM/LiteLLM key downstream.
+    const useFleet = Boolean(fleetVllmUrl) && providerId === "vllm";
+    const dbBaseUrl = merged[providerId]?.baseUrl;
+
     // Server-managed: availability follows apps/core/.env on the app host, not browser toggles.
     merged[providerId] = {
       ...merged[providerId],
       isEnabled: true,
-      baseUrl:
-        fleetVllmUrl && providerId === "vllm"
-          ? fleetVllmUrl
-          : merged[providerId]?.baseUrl || envUrl,
+      baseUrl: useFleet ? fleetVllmUrl : dbBaseUrl || envUrl,
+      baseUrlIsEnvTrusted: useFleet || !dbBaseUrl,
     };
   }
 

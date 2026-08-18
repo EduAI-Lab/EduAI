@@ -67,6 +67,38 @@ function resolveLocalInferenceBaseUrlOrLog(opts: {
   }
 }
 
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+
+/** True when `url`'s host is loopback. Unparseable URLs are treated as non-loopback. */
+function isLoopbackHostUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    return LOOPBACK_HOSTNAMES.has(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves the vLLM API key used to construct the registry provider.
+ *
+ * Security (#1568): a client-supplied base URL must carry the caller's OWN key
+ * — the deployment's internal vLLM/LiteLLM key (`internalKey`) is only ever
+ * attached to a deployment-trusted endpoint, never to a host the caller named.
+ * Callers pass `clientBaseUrl` ONLY when the base URL is a client/DB override
+ * (see `baseUrlIsEnvTrusted`); a trusted env/fleet base URL passes `undefined`
+ * so it still receives the internal key. Returns undefined when no eligible key
+ * exists, which leaves the provider unconstructed.
+ */
+export function resolveRegistryVllmApiKey(opts: {
+  clientBaseUrl?: string;
+  userApiKey?: string;
+  internalKey?: string;
+}): string | undefined {
+  const { clientBaseUrl, userApiKey, internalKey } = opts;
+  return clientBaseUrl ? userApiKey : userApiKey || internalKey;
+}
+
 /**
  * Creates a dynamic provider registry with user-provided settings
  */
@@ -134,7 +166,20 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
         baseURL = `${baseURL}/v1`;
       }
 
-      const apiKey = userSettings.vllm?.apiKey || resolveVllmApiKey();
+      // #1568: withhold the internal vLLM/LiteLLM key ONLY when a client/DB-
+      // supplied base URL RESOLVED to loopback — a client-controlled loopback
+      // listener the SSRF guard otherwise permits. Everything else keeps the
+      // key: an env/fleet base URL (`baseUrlIsEnvTrusted`, incl. a deployment
+      // that legitimately runs vLLM on loopback), a client base URL that the
+      // SSRF guard rejected and fell back to the trusted server default, and a
+      // client base URL pointing at a deployment-allowlisted (non-loopback)
+      // host. A user supplying their OWN key is unaffected.
+      const clientSupplied = Boolean(clientVllmBaseUrl) && !userSettings.vllm?.baseUrlIsEnvTrusted;
+      const apiKey = resolveRegistryVllmApiKey({
+        clientBaseUrl: clientSupplied && isLoopbackHostUrl(baseURL) ? baseURL : undefined,
+        userApiKey: userSettings.vllm?.apiKey,
+        internalKey: resolveVllmApiKey(),
+      });
       if (apiKey) {
         providers.vllm = createOpenAI({
           apiKey,
