@@ -1,20 +1,34 @@
-import { Button, ScrollArea } from '@eduai/ui';
-import { Tooltip } from '@/components/ui/tooltip';
-import { useMemo, useState } from 'react';
-import { IconHistory, IconTrash, IconX, IconChevronDown, IconChevronRight } from '@tabler/icons-react';
-import { cn } from '@/lib/utils';
-import { OCRJobCard } from './OCRJobCard';
-import type { OCRJob } from '../../types/ocr';
+import { Button, ScrollArea } from "@eduai/ui";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useMemo, useState } from "react";
+import {
+  IconHistory,
+  IconTrash,
+  IconX,
+  IconChevronDown,
+  IconChevronRight,
+} from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
+import { OCRJobCard } from "./OCRJobCard";
+import type { OCRJob } from "../../types/ocr";
 
 function isToday(d: Date): boolean {
   const today = new Date();
-  return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+  return (
+    d.getDate() === today.getDate() &&
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear()
+  );
 }
 
 function isYesterday(d: Date): boolean {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  return d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
+  return (
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear()
+  );
 }
 
 interface GroupedJobs {
@@ -27,7 +41,7 @@ interface GroupedJobs {
 function groupJobsByDate(jobs: OCRJob[]): GroupedJobs {
   const groups: GroupedJobs = { inProgress: [], today: [], yesterday: [], earlier: [] };
   for (const job of jobs) {
-    if (job.status === 'pending' || job.status === 'processing') {
+    if (job.status === "pending" || job.status === "processing") {
       groups.inProgress.push(job);
       continue;
     }
@@ -65,7 +79,11 @@ function JobGroup({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
       >
-        {open ? <IconChevronDown className="size-3.5" /> : <IconChevronRight className="size-3.5" />}
+        {open ? (
+          <IconChevronDown className="size-3.5" />
+        ) : (
+          <IconChevronRight className="size-3.5" />
+        )}
         {title}
         <span className="ml-auto text-[10px] font-normal">({jobs.length})</span>
       </button>
@@ -112,8 +130,8 @@ export function OCRHistoryPanel({
   return (
     <div
       className={cn(
-        'flex flex-col border-l bg-muted/30 transition-all duration-200',
-        isOpen ? 'w-72' : 'w-0 overflow-hidden border-l-0'
+        "flex flex-col border-l bg-muted/30 transition-all duration-200",
+        isOpen ? "w-72" : "w-0 overflow-hidden border-l-0",
       )}
     >
       {isOpen && (
@@ -181,7 +199,11 @@ export function OCRHistoryPanel({
 
           {hasJobs && (
             <div className="border-t p-3">
-              <Tooltip content="Remove all jobs from the list. Does not affect questions you already saved." side="top" className="block w-full">
+              <Tooltip
+                content="Remove all jobs from the list. Does not affect questions you already saved."
+                side="top"
+                className="block w-full"
+              >
                 <Button
                   variant="ghost"
                   size="sm"

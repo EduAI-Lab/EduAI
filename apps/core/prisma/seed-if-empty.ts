@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
-import { execSync } from 'child_process';
-import { SEED_IDS } from './seed';
+import { PrismaClient } from "@prisma/client";
+import { execSync } from "child_process";
+import { SEED_IDS } from "./seed";
 
 const prisma = new PrismaClient();
 
@@ -24,13 +24,13 @@ const [userCount, seedStudentsNeedingBackfill] = await Promise.all([
 await prisma.$disconnect();
 
 if (userCount === 0) {
-  console.log('[auto-seed] No data found, seeding core database...');
-  execSync('npm run db:seed', { stdio: 'inherit' });
+  console.log("[auto-seed] No data found, seeding core database...");
+  execSync("npm run db:seed", { stdio: "inherit" });
 } else if (seedStudentsNeedingBackfill > 0) {
   console.log(
     `[auto-seed] ${seedStudentsNeedingBackfill} seed student(s) need student ID backfill — running targeted update...`,
   );
-  execSync('tsx prisma/seed-backfill-student-ids.ts', { stdio: 'inherit' });
+  execSync("tsx prisma/seed-backfill-student-ids.ts", { stdio: "inherit" });
 } else {
   console.log(`[auto-seed] Core database already has ${userCount} users, skipping seed.`);
 }

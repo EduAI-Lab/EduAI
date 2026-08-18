@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  applySecurityHeaders,
-  generateNonce,
-} from "~/lib/security-headers.server";
+import { applySecurityHeaders, generateNonce } from "~/lib/security-headers.server";
 import { middleware } from "~/root";
 
 describe("generateNonce", () => {
@@ -25,12 +22,8 @@ describe("applySecurityHeaders", () => {
 
     expect(headers.get("X-Frame-Options")).toBe("DENY");
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(headers.get("Referrer-Policy")).toBe(
-      "strict-origin-when-cross-origin",
-    );
-    expect(headers.get("Permissions-Policy")).toBe(
-      "camera=(), microphone=(), geolocation=()",
-    );
+    expect(headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+    expect(headers.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=()");
   });
 
   it("omits HSTS and CSP outside production", () => {
@@ -45,9 +38,7 @@ describe("applySecurityHeaders", () => {
     const headers = new Headers();
     applySecurityHeaders(headers, { isProd: true, nonce: "abc" });
 
-    expect(headers.get("Strict-Transport-Security")).toBe(
-      "max-age=31536000; includeSubDomains",
-    );
+    expect(headers.get("Strict-Transport-Security")).toBe("max-age=31536000; includeSubDomains");
     expect(headers.get("Content-Security-Policy")).not.toBeNull();
   });
 
@@ -116,23 +107,16 @@ describe("root middleware", () => {
 
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("Referrer-Policy")).toBe(
-      "strict-origin-when-cross-origin",
-    );
-    expect(res.headers.get("Permissions-Policy")).toBe(
-      "camera=(), microphone=(), geolocation=()",
-    );
+    expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+    expect(res.headers.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=()");
     expect(res.headers.get("Strict-Transport-Security")).toBe(
       "max-age=31536000; includeSubDomains",
     );
-    expect(res.headers.get("Content-Security-Policy")).toContain(
-      "default-src 'none'",
-    );
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
   });
 
   it("does not clobber the nonce CSP already set on an HTML response", async () => {
-    const nonceCsp =
-      "default-src 'self'; script-src 'self' 'nonce-abc' 'strict-dynamic'";
+    const nonceCsp = "default-src 'self'; script-src 'self' 'nonce-abc' 'strict-dynamic'";
     const html = new Response("<!doctype html><html></html>", {
       headers: {
         "Content-Type": "text/html",

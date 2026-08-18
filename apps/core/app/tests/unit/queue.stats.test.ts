@@ -122,9 +122,7 @@ describe("getQueuePosition", () => {
   it("only counts earlier interactive jobs for an interactive job (nothing outranks it)", async () => {
     prismaMock.aiJob.count.mockResolvedValueOnce(0);
 
-    await expect(
-      getQueuePosition({ ...pendingBackground, type: "interactive" }),
-    ).resolves.toBe(1);
+    await expect(getQueuePosition({ ...pendingBackground, type: "interactive" })).resolves.toBe(1);
 
     expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
       where: {

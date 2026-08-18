@@ -11,10 +11,7 @@ export const WEB_CHAT_TOOL_LABELS: Record<WebChatToolName, string> = {
   fetchPage: "Reading web page…",
 };
 
-export function getChatToolDisplayName(
-  toolName: string,
-  webToolsEnabled: boolean,
-): string | null {
+export function getChatToolDisplayName(toolName: string, webToolsEnabled: boolean): string | null {
   if (isWebChatToolName(toolName)) {
     if (!webToolsEnabled) return null;
     return WEB_CHAT_TOOL_LABELS[toolName];

@@ -42,7 +42,10 @@ function mockGroupByServerId(rows: unknown[]) {
 }
 
 /** Stubs both the serverId grouping and the distinct-chatId grouping (server, chatId) pairs. */
-function mockGroupByServerIdWithChats(rows: unknown[], chatRows: { serverId: string | null; chatId: string }[]) {
+function mockGroupByServerIdWithChats(
+  rows: unknown[],
+  chatRows: { serverId: string | null; chatId: string }[],
+) {
   vi.mocked(prisma.aIInteraction.groupBy).mockImplementation((args: unknown) => {
     const by = (args as { by: string[] }).by;
     if (by.length === 2 && by.includes("chatId")) {
@@ -60,7 +63,12 @@ describe("getInteractionCountsByServer", () => {
 
   it("merges DB counts with live health for a registered server", async () => {
     vi.mocked(getAllFleetServers).mockReturnValue([
-      { id: "cmps01", baseUrl: "http://cmps01.ok.ubc.ca:8001", jobTypes: ["interactive"], models: [] },
+      {
+        id: "cmps01",
+        baseUrl: "http://cmps01.ok.ubc.ca:8001",
+        jobTypes: ["interactive"],
+        models: [],
+      },
     ]);
     vi.mocked(getServerHealth).mockResolvedValue({
       ok: true,
@@ -107,7 +115,12 @@ describe("getInteractionCountsByServer", () => {
 
   it("shows a zero-traffic row for a registered server with no interactions yet", async () => {
     vi.mocked(getAllFleetServers).mockReturnValue([
-      { id: "cmps03", baseUrl: "http://cmps03.ok.ubc.ca:8001", jobTypes: ["background"], models: [] },
+      {
+        id: "cmps03",
+        baseUrl: "http://cmps03.ok.ubc.ca:8001",
+        jobTypes: ["background"],
+        models: [],
+      },
     ]);
     vi.mocked(getServerHealth).mockResolvedValue({
       ok: true,
@@ -135,7 +148,12 @@ describe("getInteractionCountsByServer", () => {
 
   it("reports models: null when the live health probe fails and no config fallback exists", async () => {
     vi.mocked(getAllFleetServers).mockReturnValue([
-      { id: "cmps02", baseUrl: "http://cmps02.ok.ubc.ca:8001", jobTypes: ["interactive"], models: [] },
+      {
+        id: "cmps02",
+        baseUrl: "http://cmps02.ok.ubc.ca:8001",
+        jobTypes: ["interactive"],
+        models: [],
+      },
     ]);
     vi.mocked(getServerHealth).mockResolvedValue({
       ok: false,
@@ -174,7 +192,12 @@ describe("getInteractionCountsByServer", () => {
 
   it("appends unregistered/null serverId rows from the DB after registry rows, with models: null", async () => {
     vi.mocked(getAllFleetServers).mockReturnValue([
-      { id: "cmps01", baseUrl: "http://cmps01.ok.ubc.ca:8001", jobTypes: ["interactive"], models: [] },
+      {
+        id: "cmps01",
+        baseUrl: "http://cmps01.ok.ubc.ca:8001",
+        jobTypes: ["interactive"],
+        models: [],
+      },
     ]);
     vi.mocked(getServerHealth).mockResolvedValue({
       ok: true,
@@ -313,7 +336,10 @@ describe("getPeakUsageHours", () => {
   it("returns all-zero hours when there are no interactions in the window", async () => {
     vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
 
-    const result = await getPeakUsageHours({ dateFrom: new Date("2026-01-01"), dateTo: new Date("2026-01-02") });
+    const result = await getPeakUsageHours({
+      dateFrom: new Date("2026-01-01"),
+      dateTo: new Date("2026-01-02"),
+    });
 
     expect(result.every((h) => h.count === 0)).toBe(true);
   });

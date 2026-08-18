@@ -36,9 +36,7 @@ function mockMaterials(materials: Material[]) {
     materials.map((m) => ({ id: m.id, rawText: m.rawText, title: m.title })),
   );
   prisma.courseMaterial.findUnique.mockImplementation(({ where }: any) =>
-    Promise.resolve(
-      materials.some((m) => m.id === where.id) ? { courseId: "course-1" } : null,
-    ),
+    Promise.resolve(materials.some((m) => m.id === where.id) ? { courseId: "course-1" } : null),
   );
 }
 
@@ -382,10 +380,10 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
 
     await reEmbedCourseMaterials("course-1");
 
-    expect(prisma.$transaction).toHaveBeenCalledWith(
-      expect.any(Function),
-      { maxWait: 10_000, timeout: 60_000 },
-    );
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 10_000,
+      timeout: 60_000,
+    });
   });
 
   it("skips materials with blank or missing rawText and reports them outside eligible/total", async () => {

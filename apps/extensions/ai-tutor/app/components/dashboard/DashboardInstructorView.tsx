@@ -1,13 +1,13 @@
-import { IconBooks, IconSettings, IconUpload } from '@tabler/icons-react';
-import { DonutChart, PanelCard, type DonutSegment } from '@eduai/ui';
-import type { DashboardStats } from '~/lib/api';
-import type { Course } from '~/lib/types';
-import { DashboardView, type DashboardQuickAction } from './DashboardView';
-import { NeedsAttentionPanel } from './NeedsAttentionPanel';
-import { toDashboardCourseRow } from './dashboard-helpers';
+import { IconBooks, IconSettings, IconUpload } from "@tabler/icons-react";
+import { DonutChart, PanelCard, type DonutSegment } from "@eduai/ui";
+import type { DashboardStats } from "~/lib/api";
+import type { Course } from "~/lib/types";
+import { DashboardView, type DashboardQuickAction } from "./DashboardView";
+import { NeedsAttentionPanel } from "./NeedsAttentionPanel";
+import { toDashboardCourseRow } from "./dashboard-helpers";
 
-const PUBLISHED_COLOR = 'var(--color-series-1)';
-const DRAFT_COLOR = 'var(--color-series-2)';
+const PUBLISHED_COLOR = "var(--color-series-1)";
+const DRAFT_COLOR = "var(--color-series-2)";
 
 type DashboardInstructorViewProps = {
   courses: Course[];
@@ -17,7 +17,11 @@ type DashboardInstructorViewProps = {
   dashboardStats?: DashboardStats | null;
 };
 
-export function DashboardInstructorView({ courses, courseTotal, dashboardStats }: DashboardInstructorViewProps) {
+export function DashboardInstructorView({
+  courses,
+  courseTotal,
+  dashboardStats,
+}: DashboardInstructorViewProps) {
   const published = courses.filter((c) => c.isPublished);
   const drafts = courses.filter((c) => !c.isPublished);
   const synced = courses.filter((c) => !!c.coreOfferingId);
@@ -30,15 +34,15 @@ export function DashboardInstructorView({ courses, courseTotal, dashboardStats }
   const syncedCount = dashboardStats?.syncedCourses ?? synced.length;
 
   const stats = [
-    { label: 'Courses teaching', value: totalCourses },
-    { label: 'Published', value: publishedCount },
-    { label: 'Drafts', value: draftCount },
-    { label: 'Synced from EduAI', value: syncedCount },
+    { label: "Courses teaching", value: totalCourses },
+    { label: "Published", value: publishedCount },
+    { label: "Drafts", value: draftCount },
+    { label: "Synced from EduAI", value: syncedCount },
   ];
 
   const statusSegments: DonutSegment[] = [
-    { label: 'Published', value: publishedCount, color: PUBLISHED_COLOR },
-    { label: 'Draft', value: draftCount, color: DRAFT_COLOR },
+    { label: "Published", value: publishedCount, color: PUBLISHED_COLOR },
+    { label: "Draft", value: draftCount, color: DRAFT_COLOR },
   ];
 
   const analytics =
@@ -50,7 +54,7 @@ export function DashboardInstructorView({ courses, courseTotal, dashboardStats }
         <PanelCard title="Draft courses">
           <p className="py-6 text-center text-sm text-muted-foreground">
             {draftCount === 0
-              ? 'Everything you teach is published.'
+              ? "Everything you teach is published."
               : `${draftCount} of ${totalCourses} courses are still in draft.`}
           </p>
         </PanelCard>
@@ -61,21 +65,23 @@ export function DashboardInstructorView({ courses, courseTotal, dashboardStats }
 
   const quickActions: DashboardQuickAction[] = [
     {
-      label: 'View courses',
-      description: 'See everything you teach.',
-      href: '/instructor',
+      label: "View courses",
+      description: "See everything you teach.",
+      href: "/instructor",
       icon: <IconBooks size={16} stroke={1.75} />,
     },
     {
-      label: 'Publish content',
-      description: firstDraft ? `Review ${firstDraft.title ?? 'Untitled course'}.` : 'Everything is already published.',
-      href: firstDraft ? `/instructor/courses/${firstDraft.id}` : '/instructor',
+      label: "Publish content",
+      description: firstDraft
+        ? `Review ${firstDraft.title ?? "Untitled course"}.`
+        : "Everything is already published.",
+      href: firstDraft ? `/instructor/courses/${firstDraft.id}` : "/instructor",
       icon: <IconUpload size={16} stroke={1.75} />,
     },
     {
-      label: 'Open settings',
-      description: 'Manage your AI providers and accessibility.',
-      href: '/settings',
+      label: "Open settings",
+      description: "Manage your AI providers and accessibility.",
+      href: "/settings",
       icon: <IconSettings size={16} stroke={1.75} />,
     },
   ];
@@ -89,7 +95,9 @@ export function DashboardInstructorView({ courses, courseTotal, dashboardStats }
       leftPanelTitle="Your courses"
       quickActions={quickActions}
       rightPanelTitle="Needs attention"
-      rightPanel={<NeedsAttentionPanel courses={courses} total={courseTotal} coursesBaseHref="/instructor" />}
+      rightPanel={
+        <NeedsAttentionPanel courses={courses} total={courseTotal} coursesBaseHref="/instructor" />
+      }
     />
   );
 }

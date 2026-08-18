@@ -12,16 +12,16 @@ export type KnowledgeLevel = {
 };
 
 export const KNOWLEDGE_LEVELS: ReadonlyArray<KnowledgeLevel> = [
-  { value: 'beginner', label: 'Beginner', chip: 'New to this', desc: "I'm new to this" },
-  { value: 'intermediate', label: 'Intermediate', chip: 'Some idea', desc: 'Some experience' },
-  { value: 'advanced', label: 'Advanced', chip: 'Confident', desc: 'Quite experienced' },
+  { value: "beginner", label: "Beginner", chip: "New to this", desc: "I'm new to this" },
+  { value: "intermediate", label: "Intermediate", chip: "Some idea", desc: "Some experience" },
+  { value: "advanced", label: "Advanced", chip: "Confident", desc: "Quite experienced" },
 ];
 
 /** Sensible default so the chat is never *blocked* on picking a level. */
-export const DEFAULT_KNOWLEDGE_LEVEL = 'intermediate';
+export const DEFAULT_KNOWLEDGE_LEVEL = "intermediate";
 
 export function knowledgeLevelLabel(value: string | null | undefined): string {
-  if (!value) return '';
+  if (!value) return "";
   return KNOWLEDGE_LEVELS.find((l) => l.value === value)?.label ?? titleCase(value);
 }
 

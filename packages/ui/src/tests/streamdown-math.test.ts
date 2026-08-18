@@ -29,8 +29,7 @@ function countMathNodes(markdown: string): number {
 
 describe("Streamdown math plugin", () => {
   it("does not treat currency amounts in prose as inline math", () => {
-    const prose =
-      "The subscription costs $9.99 per month and the premium plan is $19.";
+    const prose = "The subscription costs $9.99 per month and the premium plan is $19.";
     expect(countMathNodes(prose)).toBe(0);
   });
 

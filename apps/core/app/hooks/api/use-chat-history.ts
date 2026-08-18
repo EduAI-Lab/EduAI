@@ -107,9 +107,7 @@ export function useChatHistory(filters: ChatHistoryFilters = {}) {
 }
 
 /** Imperatively load a chat's full transcript + edit permission. */
-export async function fetchChatTranscript(
-  chatId: string,
-): Promise<ChatTranscript | null> {
+export async function fetchChatTranscript(chatId: string): Promise<ChatTranscript | null> {
   try {
     return await apiFetch<ChatTranscript>(`/api/chats/${chatId}/messages`);
   } catch {

@@ -1,20 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import {
-  Client,
-  EmbedBuilder,
-  Events,
-  GatewayIntentBits,
-  MessageFlags,
-} from "discord.js";
+import { Client, EmbedBuilder, Events, GatewayIntentBits, MessageFlags } from "discord.js";
 import { loadConfig } from "./config.mjs";
-import {
-  getRepoStatus,
-  isAuthorized,
-  isSafeBranchInput,
-  summarizeOutput,
-} from "./lib.mjs";
+import { getRepoStatus, isAuthorized, isSafeBranchInput, summarizeOutput } from "./lib.mjs";
 
 const config = loadConfig();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -107,9 +96,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   }
 
   if (config.allowedUserIds.size === 0 && config.allowedRoleIds.size === 0) {
-    console.warn(
-      "No allowed Discord users or roles are configured; /dev-branch is deny-all.",
-    );
+    console.warn("No allowed Discord users or roles are configured; /dev-branch is deny-all.");
   }
 });
 
@@ -178,11 +165,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch (error) {
       const output = error.output || error.stack || error.message;
       console.error(output);
-      await interaction.editReply(
-        `The deployment failed. No success was reported. Check the bot service logs for details.`,
-      ).catch((replyError) => {
-        console.error("Could not send the failed-deployment interaction reply:", replyError);
-      });
+      await interaction
+        .editReply(
+          `The deployment failed. No success was reported. Check the bot service logs for details.`,
+        )
+        .catch((replyError) => {
+          console.error("Could not send the failed-deployment interaction reply:", replyError);
+        });
       await announce({ ok: false, branch, actor, output }).catch(console.error);
       return;
     }
@@ -191,11 +180,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       branch,
       sha: "unknown",
     }));
-    await interaction.editReply(
-      `Dev server updated to \`${status.branch}\` at \`${status.sha}\`.`,
-    ).catch((error) => {
-      console.error("Deployment succeeded, but the interaction reply failed:", error);
-    });
+    await interaction
+      .editReply(`Dev server updated to \`${status.branch}\` at \`${status.sha}\`.`)
+      .catch((error) => {
+        console.error("Deployment succeeded, but the interaction reply failed:", error);
+      });
     await announce({ ok: true, branch, actor }).catch((error) => {
       console.error("Deployment succeeded, but the channel announcement failed:", error);
     });

@@ -217,7 +217,7 @@ describe("checkRateLimit", () => {
     });
 
     const results = await Promise.all(
-      Array.from({ length: 6 }, () => checkRateLimit("chat:user-5", 2, 60_000))
+      Array.from({ length: 6 }, () => checkRateLimit("chat:user-5", 2, 60_000)),
     );
 
     expect(results.filter((result) => !result.limited)).toHaveLength(2);
@@ -294,9 +294,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("evicts stale keys once the store exceeds RATE_LIMIT_MAX_KEYS", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     vi.useFakeTimers();
     const start = Date.now();
@@ -320,9 +318,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("falls back to evicting the oldest key when every entry is still hot", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "2");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     // Two hot keys, then a third — all within the window, so the sweep can't
     // reclaim anything and the oldest-inserted key ("hot-1") must be evicted.
@@ -338,9 +334,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("does not treat RATE_LIMIT_MAX_KEYS='' as a cap of 0", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     // A cap of 0 would trigger eviction on every single insert. With the
     // empty string falling back to the 50k default, a handful of keys
@@ -353,9 +347,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("does not treat RATE_LIMIT_MAX_KEYS='   ' (whitespace) as a cap of 0", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "   ");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     isRateLimitedBounded("k1", 5, 60_000);
     isRateLimitedBounded("k2", 5, 60_000);
@@ -365,9 +357,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("evicts below the cap (not just back to it) so a sweep isn't re-triggered on the very next insert", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10");
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     // Fill past the cap once, forcing the oldest-key fallback eviction.
     for (let i = 0; i < 11; i++) {
@@ -386,9 +376,7 @@ describe("isRateLimited — bounded store (#990)", () => {
     // touch this one, even though it's the one that's actually stale.
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = floor(3 * 0.9) = 2
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     vi.useFakeTimers();
     const start = Date.now();
@@ -413,9 +401,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("does NOT evict a key exactly at the STALE_ENTRY_MS boundary (strictly-greater-than)", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = floor(3 * 0.9) = 2
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     vi.useFakeTimers();
     const start = Date.now();
@@ -438,9 +424,7 @@ describe("isRateLimited — bounded store (#990)", () => {
   it("stops evicting exactly at EVICTION_TARGET_KEYS, not past it", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10"); // EVICTION_TARGET_KEYS = floor(10 * 0.9) = 9
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     for (let i = 0; i < 11; i++) {
       isRateLimitedBounded(`hot-${i}`, 5, 60_000);
@@ -463,9 +447,7 @@ describe("isRateLimited — bounded store (#990)", () => {
     // delete one extra key and would take keeper-b with it.
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = 2
-    const { isRateLimited: isRateLimitedBounded } = await import(
-      "~/lib/auth/rate-limit.server"
-    );
+    const { isRateLimited: isRateLimitedBounded } = await import("~/lib/auth/rate-limit.server");
 
     isRateLimitedBounded("keeper-a", 5, 60_000);
     isRateLimitedBounded("keeper-b", 5, 60_000);

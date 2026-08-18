@@ -1,11 +1,11 @@
-import type * as React from "react"
+import type * as React from "react";
 
 import {
   courseHeroBackgroundStyle,
   DEFAULT_COURSE_PALETTE,
   paletteColorAtIndex,
   type CourseAccentColor,
-} from "./course-theme"
+} from "./course-theme";
 
 /**
  * Course accent swatches. `course-theme.ts` is the single owner of these
@@ -14,10 +14,10 @@ import {
  * from CSS. This previously mapped the palette only to discard every value and
  * emit `var(--color-course-N)` from a parallel copy in the stylesheets.
  */
-export const COURSE_COLORS: readonly CourseAccentColor[] = DEFAULT_COURSE_PALETTE
+export const COURSE_COLORS: readonly CourseAccentColor[] = DEFAULT_COURSE_PALETTE;
 
 export interface CourseColorBarProps {
-  index: number
+  index: number;
 }
 
 export function CourseColorBar({ index }: CourseColorBarProps) {
@@ -31,21 +31,21 @@ export function CourseColorBar({ index }: CourseColorBarProps) {
         } as React.CSSProperties
       }
     />
-  )
+  );
 }
 
 export function courseHeroGradientStyle(color: CourseAccentColor): React.CSSProperties {
-  return courseHeroBackgroundStyle(color)
+  return courseHeroBackgroundStyle(color);
 }
 
 export interface CourseCardHeroProps {
-  index: number
-  code: string
+  index: number;
+  code: string;
   /** Resolved accent colour (always pass from `resolvePaletteAccent`). */
-  accentColor?: CourseAccentColor
-  className?: string
+  accentColor?: CourseAccentColor;
+  className?: string;
   /** Optional top-right slot (e.g. student customize menu). */
-  action?: React.ReactNode
+  action?: React.ReactNode;
 }
 
 /** Visual header band for course cards — colour ties to course detail hero. */
@@ -56,7 +56,7 @@ export function CourseCardHero({
   className,
   action,
 }: CourseCardHeroProps) {
-  const resolved = accentColor ?? paletteColorAtIndex(index)
+  const resolved = accentColor ?? paletteColorAtIndex(index);
   return (
     <div
       data-testid="course-card-hero"
@@ -66,12 +66,10 @@ export function CourseCardHero({
         ...courseHeroBackgroundStyle(resolved),
       }}
     >
-      {action && (
-        <div className="absolute top-1 right-1 z-20 pointer-events-auto">{action}</div>
-      )}
+      {action && <div className="absolute top-1 right-1 z-20 pointer-events-auto">{action}</div>}
       <div className="relative flex h-full items-end px-4 pb-2.5">
         <span className="text-sm font-bold tracking-tight text-white drop-shadow-sm">{code}</span>
       </div>
     </div>
-  )
+  );
 }

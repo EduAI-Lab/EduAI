@@ -89,20 +89,14 @@ export async function getCachedTierModels(): Promise<TierModelRow[]> {
   if (!loading || loading.generation !== generation) {
     const promise = loadTierRows()
       .then((rows) => {
-        if (
-          generation === cacheGeneration &&
-          loading?.generation === generation
-        ) {
+        if (generation === cacheGeneration && loading?.generation === generation) {
           cache = { rows, expiresAt: Date.now() + CACHE_TTL_MS };
           loading = null;
         }
         return rows;
       })
       .catch((error: unknown) => {
-        if (
-          generation === cacheGeneration &&
-          loading?.generation === generation
-        ) {
+        if (generation === cacheGeneration && loading?.generation === generation) {
           loading = null;
         }
         throw error;

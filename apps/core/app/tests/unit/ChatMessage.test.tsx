@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { fireEvent, render, screen} from "@testing-library/react";
-import {
-  ChatMessage,
-  coerceMessageContent,
-} from "~/components/chat/chat-message";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { ChatMessage, coerceMessageContent } from "~/components/chat/chat-message";
 import type { Message } from "ai";
 
 beforeAll(() => {
@@ -71,9 +68,7 @@ describe("ChatMessage — AI message", () => {
   it("renders a copy button", () => {
     render(<ChatMessage message={aiMessage} />);
 
-    expect(
-      screen.getByRole("button", { name: /copy/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();
   });
 
   it("marks AI message content as a reading surface", () => {
@@ -82,16 +77,12 @@ describe("ChatMessage — AI message", () => {
   });
 
   it("applies active highlight class when highlightRole is active", () => {
-    const { container } = render(
-      <ChatMessage message={aiMessage} highlightRole="active" />,
-    );
+    const { container } = render(<ChatMessage message={aiMessage} highlightRole="active" />);
     expect(container.querySelector(".chat-message--active")).toBeInTheDocument();
   });
 
   it("applies inactive highlight class when highlightRole is inactive", () => {
-    const { container } = render(
-      <ChatMessage message={aiMessage} highlightRole="inactive" />,
-    );
+    const { container } = render(<ChatMessage message={aiMessage} highlightRole="inactive" />);
     expect(container.querySelector(".chat-message--inactive")).toBeInTheDocument();
   });
 
@@ -106,9 +97,7 @@ gradient-descent
 
 Outro`,
     };
-    const { container } = render(
-      <ChatMessage message={withDiagram} assistiveDisplay />,
-    );
+    const { container } = render(<ChatMessage message={withDiagram} assistiveDisplay />);
     expect(container.querySelector('[data-eduai-diagram="gradient-descent"]')).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /replay/i })).toBeInTheDocument();
     expect(screen.queryByText(/```eduai-diagram/)).not.toBeInTheDocument();
@@ -140,9 +129,7 @@ Floor vote: Chamber decides
 Become law: President signs
 \`\`\``,
     };
-    const { container } = render(
-      <ChatMessage message={withDiagram} assistiveDisplay />,
-    );
+    const { container } = render(<ChatMessage message={withDiagram} assistiveDisplay />);
     const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
     expect(diagram).toBeInTheDocument();
     expect(screen.getByText("How a bill becomes law")).toBeInTheDocument();
@@ -164,9 +151,7 @@ Vote: decide
 Law: sign
 \`\`\``,
     };
-    const { container } = render(
-      <ChatMessage message={withDiagram} assistiveDisplay />,
-    );
+    const { container } = render(<ChatMessage message={withDiagram} assistiveDisplay />);
     fireEvent.click(screen.getByRole("button", { name: "Committee" }));
     const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
     expect(diagram?.textContent).toMatch(/Committee\s+—\s+review/);
@@ -188,9 +173,7 @@ Compute slope: Measure steepness
 Step downhill: Move opposite the slope
 \`\`\``,
     };
-    const { container } = render(
-      <ChatMessage message={withDiagram} assistiveDisplay />,
-    );
+    const { container } = render(<ChatMessage message={withDiagram} assistiveDisplay />);
     const diagram = container.querySelector('[data-eduai-diagram="gradient-descent"]');
     expect(diagram).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Compute slope" }));
@@ -209,13 +192,11 @@ Dendrites: Receive
 Axon: Send
 \`\`\``,
     };
-    const { container, unmount } = render(
-      <ChatMessage message={hierarchy} assistiveDisplay />,
-    );
+    const { container, unmount } = render(<ChatMessage message={hierarchy} assistiveDisplay />);
     fireEvent.click(screen.getByRole("button", { name: "Dendrites" }));
-    expect(
-      container.querySelector('[data-eduai-diagram="hierarchy"]')?.textContent,
-    ).toMatch(/Dendrites\s+—\s+Receive/);
+    expect(container.querySelector('[data-eduai-diagram="hierarchy"]')?.textContent).toMatch(
+      /Dendrites\s+—\s+Receive/,
+    );
     unmount();
 
     const compare: Message = {
@@ -228,13 +209,10 @@ TCP: Reliable
 UDP: Fast
 \`\`\``,
     };
-    const compareRender = render(
-      <ChatMessage message={compare} assistiveDisplay />,
-    );
+    const compareRender = render(<ChatMessage message={compare} assistiveDisplay />);
     fireEvent.click(screen.getByRole("button", { name: "UDP" }));
     expect(
-      compareRender.container.querySelector('[data-eduai-diagram="compare"]')
-        ?.textContent,
+      compareRender.container.querySelector('[data-eduai-diagram="compare"]')?.textContent,
     ).toMatch(/UDP\s+—\s+Fast/);
   });
 
@@ -243,9 +221,7 @@ UDP: Fast
       ...aiMessage,
       content: "```eduai-diagram\nphotosynthesis-cycle\n```",
     };
-    const { container } = render(
-      <ChatMessage message={withDiagram} assistiveDisplay />,
-    );
+    const { container } = render(<ChatMessage message={withDiagram} assistiveDisplay />);
     expect(container.querySelector('[data-eduai-diagram="process-flow"]')).toBeInTheDocument();
   });
 });
@@ -266,13 +242,7 @@ describe("ChatMessage — streaming", () => {
       ...aiMessage,
       content: "**Top summary**\n- Only half so far",
     };
-    render(
-      <ChatMessage
-        message={partialAssist}
-        isStreaming
-        assistiveDisplay
-      />,
-    );
+    render(<ChatMessage message={partialAssist} isStreaming assistiveDisplay />);
     // Progressive relabel — no final-frame snap waiting for Next?.
     expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
     expect(screen.queryByText(/Top summary/i)).not.toBeInTheDocument();
@@ -283,9 +253,7 @@ describe("ChatMessage — streaming", () => {
       ...aiMessage,
       content: "**Next?** Want to try a different angle?",
     };
-    render(
-      <ChatMessage message={redirect} isStreaming assistiveDisplay />,
-    );
+    render(<ChatMessage message={redirect} isStreaming assistiveDisplay />);
     expect(screen.getByText(/Continue/i)).toBeInTheDocument();
     expect(screen.queryByText(/\*\*Next\?/i)).not.toBeInTheDocument();
   });
@@ -295,13 +263,7 @@ describe("ChatMessage — streaming", () => {
       ...aiMessage,
       content: "**Top summary**\n- Point\n\n**Next?** Want to continue?",
     };
-    render(
-      <ChatMessage
-        message={completeAssist}
-        isStreaming
-        assistiveDisplay
-      />,
-    );
+    render(<ChatMessage message={completeAssist} isStreaming assistiveDisplay />);
     expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
     expect(screen.getByText(/Continue/i)).toBeInTheDocument();
   });
@@ -368,33 +330,17 @@ describe("ChatMessage — Continue affordance", () => {
   it("shows Continue when requested", () => {
     const onContinue = vi.fn();
 
-    render(
-      <ChatMessage
-        message={aiMessage}
-        showContinue
-        onContinue={onContinue}
-      />,
-    );
+    render(<ChatMessage message={aiMessage} showContinue onContinue={onContinue} />);
 
-    expect(
-      screen.getByRole("button", { name: "Continue" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
   });
 
   it("calls onContinue when clicked", () => {
     const onContinue = vi.fn();
 
-    render(
-      <ChatMessage
-        message={aiMessage}
-        showContinue
-        onContinue={onContinue}
-      />,
-    );
+    render(<ChatMessage message={aiMessage} showContinue onContinue={onContinue} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(onContinue).toHaveBeenCalledOnce();
   });
@@ -402,23 +348,12 @@ describe("ChatMessage — Continue affordance", () => {
   it("does not show Continue by default", () => {
     render(<ChatMessage message={aiMessage} />);
 
-    expect(
-      screen.queryByRole("button", { name: "Continue" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
   });
 
   it("disables Continue while loading", () => {
-    render(
-      <ChatMessage
-        message={aiMessage}
-        showContinue
-        onContinue={vi.fn()}
-        continueDisabled
-      />,
-    );
+    render(<ChatMessage message={aiMessage} showContinue onContinue={vi.fn()} continueDisabled />);
 
-    expect(
-      screen.getByRole("button", { name: "Continue" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   });
 });

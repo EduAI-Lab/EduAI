@@ -31,17 +31,13 @@ describe("Avatar", () => {
   });
 
   it("respects custom size and radius properties", () => {
-    const { container } = render(
-      <Avatar name="John Doe" size={64} radius={16} />
-    );
+    const { container } = render(<Avatar name="John Doe" size={64} radius={16} />);
     const div = container.querySelector("div");
     expect(div).toHaveStyle({ width: "64px", height: "64px" });
   });
 
   it("falls back to initials when image fails to load", () => {
-    const { rerender } = render(
-      <Avatar name="Jane Smith" src="https://example.com/invalid.jpg" />
-    );
+    const { rerender } = render(<Avatar name="Jane Smith" src="https://example.com/invalid.jpg" />);
     const img = screen.getByAltText("Jane Smith") as HTMLImageElement;
     expect(img).toBeInTheDocument();
 
@@ -53,9 +49,7 @@ describe("Avatar", () => {
   });
 
   it("applies custom className to the element", () => {
-    const { container } = render(
-      <Avatar name="Test User" className="custom-class" />
-    );
+    const { container } = render(<Avatar name="Test User" className="custom-class" />);
     const element = container.querySelector(".custom-class");
     expect(element).toBeInTheDocument();
   });

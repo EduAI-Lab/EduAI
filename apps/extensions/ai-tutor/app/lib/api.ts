@@ -22,7 +22,7 @@
  *   match the server mappers; silent breakage risk if they drift.
  */
 
-import { toast } from 'sonner';
+import { toast } from "sonner";
 import type {
   AdminBugReportRow,
   AdminEnrollmentData,
@@ -47,8 +47,8 @@ import type {
   SuggestedPrompt,
   Topic,
   User,
-} from './types';
-import { getCoreLoginUrl } from './coreUrl';
+} from "./types";
+import { getCoreLoginUrl } from "./coreUrl";
 
 /**
  * Set by course endpoints (#1072 step 2) when a request degraded gracefully
@@ -58,9 +58,9 @@ import { getCoreLoginUrl } from './coreUrl';
  * deduped toast (stable `id`, so concurrent course/stat calls during one page
  * load collapse into one notice instead of stacking).
  */
-const CORE_STATUS_HEADER = 'X-Core-Status';
+const CORE_STATUS_HEADER = "X-Core-Status";
 
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 /**
  * The platform pagination envelope (#1043), matching the AI-Tutor server's
@@ -223,11 +223,11 @@ export interface CourseFacets {
  */
 function courseListQuery(params?: CourseListParams): string {
   const qs = new URLSearchParams();
-  qs.set('page', String(params?.page ?? 1));
-  qs.set('pageSize', String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
+  qs.set("page", String(params?.page ?? 1));
+  qs.set("pageSize", String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
   const search = params?.search?.trim();
-  if (search) qs.set('search', search);
-  for (const key of ['term', 'status', 'progress'] as const) {
+  if (search) qs.set("search", search);
+  for (const key of ["term", "status", "progress"] as const) {
     for (const value of params?.[key] ?? []) {
       if (value) qs.append(key, value);
     }
@@ -248,15 +248,15 @@ function courseListQuery(params?: CourseListParams): string {
  * URL clean and the request cacheable.
  */
 function pageQuery(params?: ListParams): string {
-  if (!params) return '';
+  if (!params) return "";
   const qs = new URLSearchParams();
-  if (params.page !== undefined) qs.set('page', String(params.page));
-  if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
-  if (params.search != null && params.search.trim() !== '') {
-    qs.set('search', params.search.trim());
+  if (params.page !== undefined) qs.set("page", String(params.page));
+  if (params.pageSize !== undefined) qs.set("pageSize", String(params.pageSize));
+  if (params.search != null && params.search.trim() !== "") {
+    qs.set("search", params.search.trim());
   }
   const s = qs.toString();
-  return s ? `?${s}` : '';
+  return s ? `?${s}` : "";
 }
 
 /**
@@ -284,7 +284,7 @@ export interface ImportableActivity {
   id: number;
   title?: string | null;
   question: string;
-  type?: 'MCQ' | 'SHORT_TEXT';
+  type?: "MCQ" | "SHORT_TEXT";
   lessonId?: number;
   lessonTitle?: string | null;
   moduleTitle?: string | null;
@@ -330,17 +330,17 @@ export interface AiTraceRow {
  * treating it as "logged out".
  */
 export class ApiNetworkError extends Error {
-  constructor(message = 'Network request failed') {
+  constructor(message = "Network request failed") {
     super(message);
-    this.name = 'ApiNetworkError';
+    this.name = "ApiNetworkError";
   }
 }
 
 /** Thrown when a request is aborted by `http()`'s own timeout, not by a caller-supplied signal. */
 export class ApiTimeoutError extends Error {
-  constructor(message = 'Request timed out') {
+  constructor(message = "Request timed out") {
     super(message);
-    this.name = 'ApiTimeoutError';
+    this.name = "ApiTimeoutError";
   }
 }
 
@@ -370,24 +370,27 @@ export const CHAT_TIMEOUT_MS = 60_000;
  */
 async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
 
   const { signal: callerSignal, timeoutMs, ...rest } = init ?? {};
   const controller = new AbortController();
-  const TIMEOUT_REASON = Symbol('http-timeout');
+  const TIMEOUT_REASON = Symbol("http-timeout");
   const timeoutId =
     timeoutMs != null ? setTimeout(() => controller.abort(TIMEOUT_REASON), timeoutMs) : undefined;
   if (callerSignal) {
     if (callerSignal.aborted) controller.abort(callerSignal.reason);
-    else callerSignal.addEventListener('abort', () => controller.abort(callerSignal.reason), { once: true });
+    else
+      callerSignal.addEventListener("abort", () => controller.abort(callerSignal.reason), {
+        once: true,
+      });
   }
 
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...rest,
-      credentials: 'include',
+      credentials: "include",
       headers: {
         ...headers,
         ...init?.headers,
@@ -417,7 +420,7 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
     // route's error boundary can render it.
     if (res.status === 401) {
       window.location.href = getCoreLoginUrl();
-      throw new Error('Authentication required');
+      throw new Error("Authentication required");
     }
     // 504 = the AI Tutor server's own upstream call timed out (see
     // EDUAI_CALL_TIMEOUT_MS in callEduAI()) — this is the common case in
@@ -433,9 +436,9 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   }
   // Optional chaining: some lightweight test doubles for `Response` omit
   // `headers` entirely — a real `fetch` Response always has it.
-  if (res.headers?.get?.(CORE_STATUS_HEADER) === 'unavailable') {
-    toast.warning('EduAI Core is unavailable — course data may be out of date.', {
-      id: 'core-unavailable',
+  if (res.headers?.get?.(CORE_STATUS_HEADER) === "unavailable") {
+    toast.warning("EduAI Core is unavailable — course data may be out of date.", {
+      id: "core-unavailable",
     });
   }
   // 204 No Content (e.g. DELETE) has no body — `res.json()` would throw on the
@@ -459,15 +462,17 @@ export const api = {
     if (meInFlight) return meInFlight;
     // #446: bound the session probe so a hung upstream can't strand the
     // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
-    meInFlight = (http('/api/me', { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>).finally(() => {
+    meInFlight = (
+      http("/api/me", { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>
+    ).finally(() => {
       meInFlight = null;
     });
     return meInFlight;
   },
   aiStatus: () =>
-    http('/api/ai-status') as Promise<{
-      cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
-      ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+    http("/api/ai-status") as Promise<{
+      cloud: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
+      ubc: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
     }>,
   listCourses: (params?: CourseListParams) =>
     http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,
@@ -476,15 +481,15 @@ export const api = {
    * set rather than the loaded page (#1208). Fetch once per mount — these change
    * rarely, and re-fetching per keystroke would be pure waste.
    */
-  listCourseFacets: () => http('/api/courses/facets') as Promise<CourseFacets>,
+  listCourseFacets: () => http("/api/courses/facets") as Promise<CourseFacets>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
-      method: 'PATCH',
+      method: "PATCH",
     }),
   unpublishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/unpublish`, {
-      method: 'PATCH',
+      method: "PATCH",
     }),
   importIntoCourse: (
     courseId: number,
@@ -496,7 +501,7 @@ export const api = {
     },
   ) =>
     http(`/api/courses/${courseId}/import`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   modulesForCourse: (courseId: number, params?: ListParams) =>
@@ -509,34 +514,34 @@ export const api = {
     payload: { title: string; description?: string; position?: number },
   ) =>
     http(`/api/courses/${courseId}/modules`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   publishModule: (moduleId: number) =>
     http(`/api/modules/${moduleId}/publish`, {
-      method: 'PATCH',
+      method: "PATCH",
     }),
   unpublishModule: (moduleId: number) =>
     http(`/api/modules/${moduleId}/unpublish`, {
-      method: 'PATCH',
+      method: "PATCH",
     }),
   updateModule: (
     moduleId: number,
     payload: { title?: string; description?: string | null; position?: number },
   ) =>
     http(`/api/modules/${moduleId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
   deleteModule: (moduleId: number) =>
     http(`/api/modules/${moduleId}`, {
-      method: 'DELETE',
+      method: "DELETE",
     }),
   // Bulk-reorder every module in a course. `orderedIds` is the full ordered
   // set of module ids; the server reassigns positions 0..n-1 atomically.
   reorderModules: (courseId: number, orderedIds: number[]) =>
     http(`/api/courses/${courseId}/modules/order`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify({ orderedIds }),
     }),
   lessonsForModule: (moduleId: number, params?: ListParams) =>
@@ -548,33 +553,33 @@ export const api = {
     payload: { title: string; contentMd?: string; position?: number },
   ) =>
     http(`/api/modules/${moduleId}/lessons`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   publishLesson: (lessonId: number) =>
     http(`/api/lessons/${lessonId}/publish`, {
-      method: 'PATCH',
+      method: "PATCH",
     }),
   unpublishLesson: (lessonId: number) =>
     http(`/api/lessons/${lessonId}/unpublish`, {
-      method: 'PATCH',
+      method: "PATCH",
     }),
   updateLesson: (
     lessonId: number,
     payload: { title?: string; contentMd?: string | null; position?: number },
   ) =>
     http(`/api/lessons/${lessonId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
   deleteLesson: (lessonId: number) =>
     http(`/api/lessons/${lessonId}`, {
-      method: 'DELETE',
+      method: "DELETE",
     }),
   // Bulk-reorder every lesson within a module (see reorderModules).
   reorderLessons: (moduleId: number, orderedIds: number[]) =>
     http(`/api/modules/${moduleId}/lessons/order`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify({ orderedIds }),
     }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
@@ -587,7 +592,7 @@ export const api = {
     payload: {
       title?: string;
       question: string;
-      type?: 'MCQ' | 'SHORT_TEXT';
+      type?: "MCQ" | "SHORT_TEXT";
       options?: { choices?: string[] } | null;
       answer?: any;
       hints?: string[];
@@ -603,7 +608,7 @@ export const api = {
     },
   ) =>
     http(`/api/lessons/${lessonId}/activities`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   updateActivity: (
@@ -612,7 +617,7 @@ export const api = {
       title?: string | null;
       instructionsMd?: string;
       question?: string;
-      type?: 'MCQ' | 'SHORT_TEXT';
+      type?: "MCQ" | "SHORT_TEXT";
       options?: { choices?: string[] } | string[] | null;
       answer?: any;
       hints?: string[];
@@ -627,7 +632,7 @@ export const api = {
     },
   ) => {
     const body: Record<string, unknown> = { ...payload };
-    if (Object.prototype.hasOwnProperty.call(payload, 'options')) {
+    if (Object.prototype.hasOwnProperty.call(payload, "options")) {
       const value = payload.options;
       if (value === null) {
         body.options = null;
@@ -638,18 +643,18 @@ export const api = {
       }
     }
     return http(`/api/activities/${activityId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(body),
     });
   },
   deleteActivity: (activityId: number) =>
     http(`/api/activities/${activityId}`, {
-      method: 'DELETE',
+      method: "DELETE",
     }),
   // Bulk-reorder every activity within a lesson (see reorderModules).
   reorderActivities: (lessonId: number, orderedIds: number[]) =>
     http(`/api/lessons/${lessonId}/activities/order`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify({ orderedIds }),
     }),
   topicsForCourse: (courseId: number, params?: ListParams) =>
@@ -658,17 +663,17 @@ export const api = {
     ) as Promise<Paginated<Topic>>,
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   submitAnswer: (activityId: number, payload: any) =>
     http(`/api/questions/${activityId}/answer`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }) as Promise<ActivityAnswerResult>,
   submitActivityFeedback: (activityId: number, payload: { rating: number; note?: string }) =>
     http(`/api/activities/${activityId}/feedback`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     }) as Promise<ActivityFeedbackResult>,
   sendTeachMessage: (
@@ -685,7 +690,7 @@ export const api = {
     signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/teach`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(params),
       signal,
       timeoutMs: CHAT_TIMEOUT_MS,
@@ -704,7 +709,7 @@ export const api = {
     signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/guide`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(params),
       signal,
       timeoutMs: CHAT_TIMEOUT_MS,
@@ -724,35 +729,42 @@ export const api = {
     signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/custom`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(params),
       signal,
       timeoutMs: CHAT_TIMEOUT_MS,
     }),
   listChatSessions: (activityId: number) =>
     http(`/api/activities/${activityId}/chat-sessions`) as Promise<
-      Array<{ id: number; chatId: string; mode: string; modelId: string | null; createdAt: string; updatedAt: string }>
+      Array<{
+        id: number;
+        chatId: string;
+        mode: string;
+        modelId: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>
     >,
   getChatMessages: (activityId: number, chatId: string) =>
     http(`/api/activities/${activityId}/chat-sessions/${chatId}/messages`) as Promise<{
       chat: { id: string; title: string | null };
       messages: Array<{ messageId: string; role: string; content: unknown }>;
     }>,
-  listAiModels: () => http('/api/ai-models') as Promise<AiModel[]>,
+  listAiModels: () => http("/api/ai-models") as Promise<AiModel[]>,
   validateApiKey: (provider: string, apiKey: string) =>
-    http('/api/ai-models/validate-key', {
-      method: 'POST',
+    http("/api/ai-models/validate-key", {
+      method: "POST",
       body: JSON.stringify({ provider, apiKey }),
     }) as Promise<{ valid: boolean; error?: string }>,
   getEduAiApiKeyStatus: () =>
-    http('/api/admin/settings/eduai-api-key') as Promise<EduAiApiKeyStatus>,
+    http("/api/admin/settings/eduai-api-key") as Promise<EduAiApiKeyStatus>,
   getAdminAiModelPolicy: async () => {
-    const result = await http('/api/admin/settings/ai-model-policy');
+    const result = await http("/api/admin/settings/ai-model-policy");
     return (result?.policy ?? result) as AdminAiModelPolicy;
   },
   setAdminAiModelPolicy: async (payload: AdminAiModelPolicy) => {
-    const result = await http('/api/admin/settings/ai-model-policy', {
-      method: 'PUT',
+    const result = await http("/api/admin/settings/ai-model-policy", {
+      method: "PUT",
       body: JSON.stringify(payload),
     });
     return (result?.policy ?? result) as AdminAiModelPolicy;
@@ -778,21 +790,21 @@ export const api = {
     params: { search?: string; page?: number; pageSize?: number } = {},
   ) => {
     const query = new URLSearchParams();
-    if (params.search) query.set('search', params.search);
-    if (params.page) query.set('page', String(params.page));
-    if (params.pageSize) query.set('pageSize', String(params.pageSize));
-    const suffix = query.size > 0 ? `?${query}` : '';
+    if (params.search) query.set("search", params.search);
+    if (params.page) query.set("page", String(params.page));
+    if (params.pageSize) query.set("pageSize", String(params.pageSize));
+    const suffix = query.size > 0 ? `?${query}` : "";
     return http(
       `/api/admin/courses/${courseId}/enrollments${suffix}`,
     ) as Promise<AdminEnrollmentData>;
   },
   removeStudentFromCourse: (courseId: number, userId: string) =>
     http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
-      method: 'DELETE',
+      method: "DELETE",
     }) as Promise<{ ok: true }>,
   updateEnrollmentRole: (courseId: number, userId: string, role: EnrollmentRole) =>
     http(`/api/admin/courses/${courseId}/enrollments/${userId}/role`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ role }),
     }) as Promise<{ ok: true; role: EnrollmentRole }>,
   courseSubmissions: (
@@ -800,12 +812,12 @@ export const api = {
     params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
   ) => {
     const search = new URLSearchParams();
-    if (params?.activityId != null) search.set('activityId', String(params.activityId));
-    if (params?.studentId) search.set('studentId', params.studentId);
-    if (params?.take != null) search.set('take', String(params.take));
-    if (params?.skip != null) search.set('skip', String(params.skip));
+    if (params?.activityId != null) search.set("activityId", String(params.activityId));
+    if (params?.studentId) search.set("studentId", params.studentId);
+    if (params?.take != null) search.set("take", String(params.take));
+    if (params?.skip != null) search.set("skip", String(params.skip));
     const qs = search.toString();
-    return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ''}`) as Promise<
+    return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ""}`) as Promise<
       SubmissionRow[]
     >;
   },
@@ -814,12 +826,12 @@ export const api = {
     params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
   ) => {
     const search = new URLSearchParams();
-    if (params?.activityId != null) search.set('activityId', String(params.activityId));
-    if (params?.studentId) search.set('studentId', params.studentId);
-    if (params?.take != null) search.set('take', String(params.take));
-    if (params?.skip != null) search.set('skip', String(params.skip));
+    if (params?.activityId != null) search.set("activityId", String(params.activityId));
+    if (params?.studentId) search.set("studentId", params.studentId);
+    if (params?.take != null) search.set("take", String(params.take));
+    if (params?.skip != null) search.set("skip", String(params.skip));
     const qs = search.toString();
-    return http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ''}`) as Promise<
+    return http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ""}`) as Promise<
       ActivityFeedbackRow[]
     >;
   },
@@ -831,40 +843,40 @@ export const api = {
     http(`/api/activities/${activityId}/submissions`) as Promise<SubmissionRow[]>,
   listActivityFeedback: (activityId: number) =>
     http(`/api/activities/${activityId}/feedback`) as Promise<ActivityFeedbackRow[]>,
-  mySubmissions: () => http('/api/me/submissions') as Promise<SubmissionRow[]>,
-  myFeedback: () => http('/api/me/feedback') as Promise<ActivityFeedbackRow[]>,
+  mySubmissions: () => http("/api/me/submissions") as Promise<SubmissionRow[]>,
+  myFeedback: () => http("/api/me/feedback") as Promise<ActivityFeedbackRow[]>,
   submitBugReport: (payload: BugReportCreatePayload) =>
-    http('/api/bug-reports', {
-      method: 'POST',
+    http("/api/bug-reports", {
+      method: "POST",
       body: JSON.stringify(payload),
     }) as Promise<{ id: string; status: BugReportStatus; createdAt: string }>,
-  listAdminBugReports: () => http('/api/admin/bug-reports') as Promise<AdminBugReportRow[]>,
+  listAdminBugReports: () => http("/api/admin/bug-reports") as Promise<AdminBugReportRow[]>,
   getAdminBugReport: (reportId: string) =>
     http(`/api/admin/bug-reports/${reportId}`) as Promise<AdminBugReportRow>,
   updateAdminBugReportStatus: (reportId: string, payload: { status: BugReportStatus }) =>
     http(`/api/admin/bug-reports/${reportId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(payload),
     }) as Promise<AdminBugReportRow>,
   setEduAiApiKey: (apiKey: string) =>
-    http('/api/admin/settings/eduai-api-key', {
-      method: 'PUT',
+    http("/api/admin/settings/eduai-api-key", {
+      method: "PUT",
       body: JSON.stringify({ apiKey }),
     }) as Promise<EduAiApiKeyStatus>,
   clearEduAiApiKey: () =>
-    http('/api/admin/settings/eduai-api-key', {
-      method: 'DELETE',
+    http("/api/admin/settings/eduai-api-key", {
+      method: "DELETE",
     }) as Promise<EduAiApiKeyStatus>,
-  listPrompts: () => http('/api/prompts'),
-  listSuggestedPrompts: () => http('/api/suggested-prompts') as Promise<SuggestedPrompt[]>,
+  listPrompts: () => http("/api/prompts"),
+  listSuggestedPrompts: () => http("/api/suggested-prompts") as Promise<SuggestedPrompt[]>,
   createPrompt: (payload: {
     name: string;
     systemPrompt: string;
     temperature?: number | null;
     topP?: number | null;
   }) =>
-    http('/api/prompts', {
-      method: 'POST',
+    http("/api/prompts", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   gradeSubmission: (
@@ -873,16 +885,16 @@ export const api = {
     body: { score?: number; isCorrect?: boolean },
   ) =>
     http(`/api/activities/${activityId}/submissions/${submissionId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(body),
     }) as Promise<GradedSubmission>,
   duplicateActivity: (activityId: number) =>
     http(`/api/activities/${activityId}/duplicate`, {
-      method: 'POST',
+      method: "POST",
     }) as Promise<Activity>,
   importActivity: (lessonId: number, sourceActivityId: number) =>
     http(`/api/lessons/${lessonId}/activities/import`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ sourceActivityId }),
     }) as Promise<Activity>,
   listImportableActivities: (
@@ -890,19 +902,19 @@ export const api = {
     params?: ListParams & { excludeLessonId?: number },
   ) => {
     const qs = new URLSearchParams();
-    if (courseId != null) qs.set('courseId', String(courseId));
+    if (courseId != null) qs.set("courseId", String(courseId));
     if (params?.excludeLessonId != null) {
-      qs.set('excludeLessonId', String(params.excludeLessonId));
+      qs.set("excludeLessonId", String(params.excludeLessonId));
     }
     // Group A endpoint — server requires page/pageSize. #1207: this endpoint's
     // scope is every course the caller manages, so one page is a slice of the
     // instructor's whole activity corpus. `search` is what makes the rest
     // reachable, and it is applied server-side — the picker must not filter the
     // returned page again.
-    qs.set('page', String(params?.page ?? 1));
-    qs.set('pageSize', String(params?.pageSize ?? IMPORT_PICKER_PAGE_SIZE));
-    if (params?.search != null && params.search.trim() !== '') {
-      qs.set('search', params.search.trim());
+    qs.set("page", String(params?.page ?? 1));
+    qs.set("pageSize", String(params?.pageSize ?? IMPORT_PICKER_PAGE_SIZE));
+    if (params?.search != null && params.search.trim() !== "") {
+      qs.set("search", params.search.trim());
     }
     return http(`/api/activities/importable?${qs.toString()}`) as Promise<
       Paginated<ImportableActivity>
@@ -917,17 +929,17 @@ export const api = {
    */
   moveModuleToPosition: (moduleId: number, position: number) =>
     http(`/api/modules/${moduleId}/position`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ position }),
     }) as Promise<{ module: Module } & MoveResult>,
   moveLessonToPosition: (lessonId: number, position: number) =>
     http(`/api/lessons/${lessonId}/position`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ position }),
     }) as Promise<{ lesson: Lesson } & MoveResult>,
   moveActivityToPosition: (activityId: number, position: number) =>
     http(`/api/activities/${activityId}/position`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ position }),
     }) as Promise<{ activity: Activity } & MoveResult>,
   /**
@@ -944,14 +956,14 @@ export const api = {
    */
   moduleContext: (moduleId: number) =>
     http(`/api/modules/${moduleId}/context`) as Promise<ModuleContext>,
-  dashboardStats: () => http('/api/me/dashboard-stats') as Promise<DashboardStats>,
+  dashboardStats: () => http("/api/me/dashboard-stats") as Promise<DashboardStats>,
   adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
     const search = new URLSearchParams();
-    if (params?.unit) search.set('unit', params.unit);
-    if (params?.courseId != null) search.set('courseId', String(params.courseId));
-    if (params?.limit != null) search.set('limit', String(params.limit));
+    if (params?.unit) search.set("unit", params.unit);
+    if (params?.courseId != null) search.set("courseId", String(params.courseId));
+    if (params?.limit != null) search.set("limit", String(params.limit));
     const qs = search.toString();
-    return http(`/api/admin/ai-traces${qs ? `?${qs}` : ''}`) as Promise<AiTraceRow[]>;
+    return http(`/api/admin/ai-traces${qs ? `?${qs}` : ""}`) as Promise<AiTraceRow[]>;
   },
   /**
    * Proxies sign-out through the AT backend (server-to-server to Core) so the
@@ -961,8 +973,8 @@ export const api = {
    */
   logout: async () => {
     await fetch(`${API_BASE}/api/logout`, {
-      method: 'POST',
-      credentials: 'include',
+      method: "POST",
+      credentials: "include",
     }).catch(() => {});
     return { ok: true } as const;
   },

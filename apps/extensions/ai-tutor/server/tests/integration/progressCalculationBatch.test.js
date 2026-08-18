@@ -6,15 +6,15 @@
  * with `calculateCourseProgress` exactly — so most assertions here compare the
  * two directly on the same fixtures rather than restating expected numbers.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach } from "vitest";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 import {
   calculateCourseProgress,
   calculateCourseProgressBatch,
   progressBucket,
-} from '../../src/services/progressCalculation.js';
+} from "../../src/services/progressCalculation.js";
 
-describe('calculateCourseProgressBatch', () => {
+describe("calculateCourseProgressBatch", () => {
   let prof;
   let a; // course A seed
   let b; // course B seed
@@ -46,8 +46,8 @@ describe('calculateCourseProgressBatch', () => {
       data: {
         lessonId: seed.lesson.id,
         mainTopicId: seed.topic.id,
-        instructionsMd: 'Instructions',
-        config: { question: 'Q?', questionType: 'MCQ' },
+        instructionsMd: "Instructions",
+        config: { question: "Q?", questionType: "MCQ" },
         position: 0,
         ...overrides,
       },
@@ -70,12 +70,12 @@ describe('calculateCourseProgressBatch', () => {
     return batch;
   }
 
-  it('returns zeroes for every requested course when none have activities', async () => {
+  it("returns zeroes for every requested course when none have activities", async () => {
     const batch = await expectAgreement([a.course.id, b.course.id], studentId);
     expect(batch.get(a.course.id)).toEqual({ completed: 0, total: 0, percentage: 0 });
   });
 
-  it('agrees with calculateCourseProgress across a mixed set', async () => {
+  it("agrees with calculateCourseProgress across a mixed set", async () => {
     // Course A: 3 activities, 2 correct → 67%
     const a1 = await createActivity(a);
     const a2 = await createActivity(a);
@@ -92,7 +92,7 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(b.course.id)).toEqual({ completed: 0, total: 2, percentage: 0 });
   });
 
-  it('is sticky (#1187): a later wrong answer does not un-complete an activity', async () => {
+  it("is sticky (#1187): a later wrong answer does not un-complete an activity", async () => {
     const a1 = await createActivity(a);
     await submit(a1.id, studentId, 1, true);
     await submit(a1.id, studentId, 2, false);
@@ -101,7 +101,7 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(a.course.id)).toEqual({ completed: 1, total: 1, percentage: 100 });
   });
 
-  it('counts a later correct answer, so it completes an activity', async () => {
+  it("counts a later correct answer, so it completes an activity", async () => {
     const a1 = await createActivity(a);
     await submit(a1.id, studentId, 1, false);
     await submit(a1.id, studentId, 2, true);
@@ -110,21 +110,21 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(a.course.id)).toEqual({ completed: 1, total: 1, percentage: 100 });
   });
 
-  it('excludes activities in unpublished lessons and unpublished modules', async () => {
+  it("excludes activities in unpublished lessons and unpublished modules", async () => {
     const published = await createActivity(a);
     await submit(published.id, studentId, 1, true);
 
     const draftLesson = await prisma.lesson.create({
-      data: { title: 'Draft', position: 1, isPublished: false, moduleId: a.module.id },
+      data: { title: "Draft", position: 1, isPublished: false, moduleId: a.module.id },
     });
     const hidden = await createActivity(a, { lessonId: draftLesson.id });
     await submit(hidden.id, studentId, 1, true);
 
     const draftModule = await prisma.module.create({
-      data: { title: 'Draft mod', position: 1, isPublished: false, courseOfferingId: a.course.id },
+      data: { title: "Draft mod", position: 1, isPublished: false, courseOfferingId: a.course.id },
     });
     const draftModuleLesson = await prisma.lesson.create({
-      data: { title: 'L', position: 0, isPublished: true, moduleId: draftModule.id },
+      data: { title: "L", position: 0, isPublished: true, moduleId: draftModule.id },
     });
     await createActivity(a, { lessonId: draftModuleLesson.id });
 
@@ -132,7 +132,7 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(a.course.id)).toEqual({ completed: 1, total: 1, percentage: 100 });
   });
 
-  it('isolates users — another student\'s submissions do not count', async () => {
+  it("isolates users — another student's submissions do not count", async () => {
     const a1 = await createActivity(a);
     await submit(a1.id, otherStudentId, 1, true);
 
@@ -140,7 +140,7 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(a.course.id)).toEqual({ completed: 0, total: 1, percentage: 0 });
   });
 
-  it('does not leak completion across courses', async () => {
+  it("does not leak completion across courses", async () => {
     const a1 = await createActivity(a);
     await createActivity(b);
     await submit(a1.id, studentId, 1, true);
@@ -150,41 +150,41 @@ describe('calculateCourseProgressBatch', () => {
     expect(batch.get(b.course.id)).toEqual({ completed: 0, total: 1, percentage: 0 });
   });
 
-  it('returns an empty map for an empty id list and never queries', async () => {
+  it("returns an empty map for an empty id list and never queries", async () => {
     await expect(calculateCourseProgressBatch([], studentId)).resolves.toEqual(new Map());
   });
 
-  it('returns zeroes when userId is missing', async () => {
+  it("returns zeroes when userId is missing", async () => {
     await createActivity(a);
     const batch = await calculateCourseProgressBatch([a.course.id], undefined);
     expect(batch.get(a.course.id)).toEqual({ completed: 0, total: 0, percentage: 0 });
   });
 
-  it('de-dupes repeated ids and ignores non-integer ids', async () => {
+  it("de-dupes repeated ids and ignores non-integer ids", async () => {
     const batch = await calculateCourseProgressBatch(
-      [a.course.id, a.course.id, null, undefined, 'x'],
+      [a.course.id, a.course.id, null, undefined, "x"],
       studentId,
     );
     expect([...batch.keys()]).toEqual([a.course.id]);
   });
 
-  describe('progressBucket', () => {
+  describe("progressBucket", () => {
     // These four cases are the contract shared with PROGRESS_FILTER in
     // app/routes/student.tsx — the frontend has a mirrored test.
-    it('returns null when the course has no published activities', () => {
+    it("returns null when the course has no published activities", () => {
       expect(progressBucket({ completed: 0, total: 0, percentage: 0 })).toBeNull();
     });
 
-    it('buckets an untouched course as not-started', () => {
-      expect(progressBucket({ completed: 0, total: 3, percentage: 0 })).toBe('not-started');
+    it("buckets an untouched course as not-started", () => {
+      expect(progressBucket({ completed: 0, total: 3, percentage: 0 })).toBe("not-started");
     });
 
-    it('buckets a partly-done course as in-progress', () => {
-      expect(progressBucket({ completed: 1, total: 3, percentage: 33 })).toBe('in-progress');
+    it("buckets a partly-done course as in-progress", () => {
+      expect(progressBucket({ completed: 1, total: 3, percentage: 33 })).toBe("in-progress");
     });
 
-    it('buckets a fully-done course as completed', () => {
-      expect(progressBucket({ completed: 3, total: 3, percentage: 100 })).toBe('completed');
+    it("buckets a fully-done course as completed", () => {
+      expect(progressBucket({ completed: 3, total: 3, percentage: 100 })).toBe("completed");
     });
   });
 });

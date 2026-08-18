@@ -1,6 +1,6 @@
-import type { AppTourDefinition, AppTourStep, TourContextState } from './tour-types';
-import { isLessonRoute } from './tour-storage';
-import { readRouteFromElement, resolveStepRoute } from './tour-utils';
+import type { AppTourDefinition, AppTourStep, TourContextState } from "./tour-types";
+import { isLessonRoute } from "./tour-storage";
+import { readRouteFromElement, resolveStepRoute } from "./tour-utils";
 
 export type ActiveTourSession = {
   tour: AppTourDefinition;
@@ -33,16 +33,8 @@ export function getSessionStep(session: ActiveTourSession): AppTourStep {
   return session.tour.steps[session.stepIndex];
 }
 
-export function findStepIndex(
-  session: ActiveTourSession,
-  fromIndex: number,
-  direction: 1 | -1,
-) {
-  for (
-    let index = fromIndex;
-    index >= 0 && index < session.tour.steps.length;
-    index += direction
-  ) {
+export function findStepIndex(session: ActiveTourSession, fromIndex: number, direction: 1 | -1) {
+  for (let index = fromIndex; index >= 0 && index < session.tour.steps.length; index += direction) {
     const route = resolveStepRoute(session.tour.steps[index], session.context);
     if (route) return index;
   }

@@ -11,7 +11,10 @@ import prisma from "~/lib/prisma.server";
 import { createQuestion } from "~/lib/questions/server";
 import { seedUser, seedCourse, cleanupRbac } from "../helpers/rbac";
 import createQuestionCases from "../../../../../tests/models/create-question.cases.json";
-import { createQuestionOracle, type CreateQuestionRow } from "../../../../../tests/models/create-question.oracle";
+import {
+  createQuestionOracle,
+  type CreateQuestionRow,
+} from "../../../../../tests/models/create-question.oracle";
 
 const rows = createQuestionCases as CreateQuestionRow[];
 
@@ -104,45 +107,42 @@ async function buildBody(
 describe.each(rows.map((row, index) => [index, row] as const))(
   "create-question PICT row #%i",
   (index, row) => {
-    it(
-      `${row.Validity}/${row.Course}/${row.PrimaryTopic}/${row.SecondaryTopicIds}/${row.Type} matches oracle`,
-      async () => {
-        const expected = createQuestionOracle(row);
+    it(`${row.Validity}/${row.Course}/${row.PrimaryTopic}/${row.SecondaryTopicIds}/${row.Type} matches oracle`, async () => {
+      const expected = createQuestionOracle(row);
 
-        const creator = await seedUser({ role: "INSTRUCTOR" });
-        userIds.push(creator.id);
+      const creator = await seedUser({ role: "INSTRUCTOR" });
+      userIds.push(creator.id);
 
-        // Topics always live under a real course, independent of whether the
-        // *submitted* courseId (below) resolves to anything.
-        const topicHomeCourse = await seedCourse();
-        courseIds.push(topicHomeCourse.id);
+      // Topics always live under a real course, independent of whether the
+      // *submitted* courseId (below) resolves to anything.
+      const topicHomeCourse = await seedCourse();
+      courseIds.push(topicHomeCourse.id);
 
-        const submittedCourseId = row.Course === "exists" ? topicHomeCourse.id : nonexistentId();
+      const submittedCourseId = row.Course === "exists" ? topicHomeCourse.id : nonexistentId();
 
-        const { creatorId, ...body } = await buildBody(
-          row,
-          submittedCourseId,
-          topicHomeCourse.id,
-          creator.id,
-        );
+      const { creatorId, ...body } = await buildBody(
+        row,
+        submittedCourseId,
+        topicHomeCourse.id,
+        creator.id,
+      );
 
-        const result = await createQuestion(body, creatorId);
+      const result = await createQuestion(body, creatorId);
 
-        if (expected.outcome === "SUCCESS") {
-          expect("id" in result, JSON.stringify(result)).toBe(true);
-          if ("id" in result) {
-            const persisted = await prisma.question.findUniqueOrThrow({
-              where: { id: result.id },
-              include: { secondaryTopics: true },
-            });
-            expect(persisted.type).toBe(row.Type);
-            expect(persisted.secondaryTopics.length).toBe(body.secondaryTopicIds.length);
-          }
-        } else {
-          expect("error" in result, JSON.stringify(result)).toBe(true);
-          if ("error" in result) expect(result.error).toBe(expected.outcome);
+      if (expected.outcome === "SUCCESS") {
+        expect("id" in result, JSON.stringify(result)).toBe(true);
+        if ("id" in result) {
+          const persisted = await prisma.question.findUniqueOrThrow({
+            where: { id: result.id },
+            include: { secondaryTopics: true },
+          });
+          expect(persisted.type).toBe(row.Type);
+          expect(persisted.secondaryTopics.length).toBe(body.secondaryTopicIds.length);
         }
-      },
-    );
+      } else {
+        expect("error" in result, JSON.stringify(result)).toBe(true);
+        if ("error" in result) expect(result.error).toBe(expected.outcome);
+      }
+    });
   },
 );

@@ -2,10 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import type {
-  JobPayload,
-  QueuedJobPayload,
-} from "~/lib/queue/job-schema";
+import type { JobPayload, QueuedJobPayload } from "~/lib/queue/job-schema";
 
 const prismaMock = vi.hoisted(() => ({
   aiJob: {
@@ -28,8 +25,7 @@ vi.mock("@prisma/client", () => ({
   },
 }));
 vi.mock("~/lib/queue/queues.server", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("~/lib/queue/queues.server")>();
+  const original = await importOriginal<typeof import("~/lib/queue/queues.server")>();
   return {
     ...original,
     getQueue: getQueueMock,
@@ -98,12 +94,10 @@ beforeEach(() => {
 describe("AI-job dequeue worker", () => {
   it("uses the durable id when dequeue wins the bullJobId persistence race", async () => {
     let emittedPayload: QueuedJobPayload | undefined;
-    queueAdd.mockImplementation(
-      async (_name: string, data: QueuedJobPayload) => {
-        emittedPayload = data;
-        return { id: "bull_1" };
-      },
-    );
+    queueAdd.mockImplementation(async (_name: string, data: QueuedJobPayload) => {
+      emittedPayload = data;
+      return { id: "bull_1" };
+    });
 
     await expect(enqueue(payload)).resolves.toEqual({
       jobId: "aijob_1",
@@ -130,11 +124,7 @@ describe("AI-job dequeue worker", () => {
       fleetHost: "http://cmps03:8001",
     });
 
-    const result = await processAiJob(
-      bullJob(emittedPayload),
-      "ai-jobs-chat",
-      execute,
-    );
+    const result = await processAiJob(bullJob(emittedPayload), "ai-jobs-chat", execute);
 
     expect(execute).toHaveBeenCalledWith(payload);
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith({
@@ -175,16 +165,14 @@ describe("AI-job dequeue worker", () => {
   });
 
   it("falls back to the queue identity when the embedded row lost an idempotency race", async () => {
-    prismaMock.aiJob.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: "aijob_winner",
-        status: "PENDING",
-        startedAt: null,
-        userId: "user_1",
-        queueName: "ai-jobs-chat",
-        bullJobId: "dedupe-key",
-      });
+    prismaMock.aiJob.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "aijob_winner",
+      status: "PENDING",
+      startedAt: null,
+      userId: "user_1",
+      queueName: "ai-jobs-chat",
+      bullJobId: "dedupe-key",
+    });
     const execute = vi.fn().mockResolvedValue({
       kind: "question-generation",
       model: "vllm:qwen2.5-32b-instruct",
@@ -233,9 +221,9 @@ describe("AI-job dequeue worker", () => {
     prismaMock.aiJob.updateMany.mockResolvedValueOnce({ count: 0 });
     const execute = vi.fn();
 
-    await expect(
-      processAiJob(bullJob(), "ai-jobs-chat", execute),
-    ).rejects.toThrow("Could not claim AiJob aijob_1");
+    await expect(processAiJob(bullJob(), "ai-jobs-chat", execute)).rejects.toThrow(
+      "Could not claim AiJob aijob_1",
+    );
     expect(execute).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -255,9 +243,10 @@ describe("AI-job dequeue worker", () => {
     });
     const execute = vi.fn();
 
-    await expect(
-      processAiJob(bullJob(), "ai-jobs-chat", execute),
-    ).resolves.toEqual({ skipped: true, reason: "cancelled" });
+    await expect(processAiJob(bullJob(), "ai-jobs-chat", execute)).resolves.toEqual({
+      skipped: true,
+      reason: "cancelled",
+    });
     expect(execute).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.updateMany).not.toHaveBeenCalled();
   });
@@ -331,11 +320,7 @@ describe("AI-job dequeue worker", () => {
     });
 
     await expect(
-      processAiJob(
-        bullJob(payload, { name: "wrong-kind" }),
-        "ai-jobs-chat",
-        vi.fn(),
-      ),
+      processAiJob(bullJob(payload, { name: "wrong-kind" }), "ai-jobs-chat", vi.fn()),
     ).rejects.toThrow('does not match payload kind "question-generation"');
   });
 });

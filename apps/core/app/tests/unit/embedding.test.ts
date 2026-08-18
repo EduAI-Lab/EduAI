@@ -18,11 +18,12 @@ const {
   wantsLocalEmbeddingProvider,
   resolveIvfflatProbes,
   DEFAULT_EMBEDDING_DIMENSION,
- insertMaterialEmbeddingsBatched,
- MATERIAL_EMBEDDING_INSERT_BATCH_SIZE,
+  insertMaterialEmbeddingsBatched,
+  MATERIAL_EMBEDDING_INSERT_BATCH_SIZE,
   classifyRagRetrievalError,
 } = await import("~/lib/ai/embedding");
-const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
+const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } =
+  await import("~/lib/ai/file-processing");
 const { Prisma } = await import("@prisma/client");
 
 const sampleEmbedding = Array.from({ length: 1024 }, () => 0);
@@ -228,7 +229,10 @@ describe("generateEmbeddings", () => {
 
     const result = await generateEmbeddings(chunks);
 
-    expect(result[0]).toEqual({ embedding: mockIndexedEmbeddings(["chunk-0"])[0], content: "chunk-0" });
+    expect(result[0]).toEqual({
+      embedding: mockIndexedEmbeddings(["chunk-0"])[0],
+      content: "chunk-0",
+    });
     expect(result[64]).toEqual({
       embedding: mockIndexedEmbeddings(["chunk-64"])[0],
       content: "chunk-64",
@@ -529,7 +533,7 @@ describe("classifyRagRetrievalError", () => {
   });
 
   it("classifies a pgvector dimension error as RAG_DIMENSION_MISMATCH", () => {
-    const err = new Error('different vector dimensions 1024 and 768');
+    const err = new Error("different vector dimensions 1024 and 768");
     expect(classifyRagRetrievalError(err)).toBe("RAG_DIMENSION_MISMATCH");
   });
 

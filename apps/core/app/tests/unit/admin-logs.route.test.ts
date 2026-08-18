@@ -20,7 +20,9 @@ vi.mock("~/lib/db.systemlog.server", () => ({
 }));
 
 vi.mock("~/lib/db.log-retention-policy.server", () => ({
-  getLogRetentionPolicy: vi.fn().mockResolvedValue({ auditRetentionDays: 90, systemRetentionDays: 30 }),
+  getLogRetentionPolicy: vi
+    .fn()
+    .mockResolvedValue({ auditRetentionDays: 90, systemRetentionDays: 30 }),
   runConfiguredLogRetentionIfDue: vi.fn().mockResolvedValue(undefined),
   updateLogRetentionPolicy: vi.fn().mockResolvedValue(undefined),
 }));
@@ -35,7 +37,10 @@ import { loader, action } from "~/routes/admin.logs";
 import { auth } from "~/lib/auth/server";
 import { listAuditLogs, listSecurityLogs, runAuditLogRetention } from "~/lib/db.auditlog.server";
 import { listSystemLogs, runSystemLogRetention } from "~/lib/db.systemlog.server";
-import { getLogRetentionPolicy, updateLogRetentionPolicy } from "~/lib/db.log-retention-policy.server";
+import {
+  getLogRetentionPolicy,
+  updateLogRetentionPolicy,
+} from "~/lib/db.log-retention-policy.server";
 import {
   getInteractionCountsByServer,
   getInteractionCountsByModel,
@@ -118,26 +123,20 @@ describe("admin.logs loader tab dispatch", () => {
       makeLoaderArgs("/admin/logs?tab=security&outcome=DENIED&outcome2=bogus"),
     )) as { tab: string };
     expect(result.tab).toBe("security");
-    expect(listSecurityLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: "DENIED" }),
-    );
+    expect(listSecurityLogs).toHaveBeenCalledWith(expect.objectContaining({ outcome: "DENIED" }));
   });
 
   it("queries listSystemLogs for tab=system, dropping an unknown level", async () => {
-    const result = (await loader(
-      makeLoaderArgs("/admin/logs?tab=system&level=NOT_A_LEVEL"),
-    )) as { tab: string };
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=system&level=NOT_A_LEVEL"))) as {
+      tab: string;
+    };
     expect(result.tab).toBe("system");
-    expect(listSystemLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ level: undefined }),
-    );
+    expect(listSystemLogs).toHaveBeenCalledWith(expect.objectContaining({ level: undefined }));
   });
 
   it("drops an unknown audit category filter instead of passing it through", async () => {
     await loader(makeLoaderArgs("/admin/logs?category=NOT_REAL"));
-    expect(listAuditLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ category: undefined }),
-    );
+    expect(listAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ category: undefined }));
   });
 
   it("parses valid YYYY-MM-DD date filters into UTC boundaries", async () => {
@@ -155,9 +154,9 @@ describe("admin.logs loader tab dispatch", () => {
 
   it("computes hasMore from page * pageSize vs total", async () => {
     vi.mocked(listAuditLogs).mockResolvedValue({ rows: [], total: 100 } as never);
-    const result = (await loader(
-      makeLoaderArgs("/admin/logs?page=1&pageSize=25"),
-    )) as { hasMore: boolean };
+    const result = (await loader(makeLoaderArgs("/admin/logs?page=1&pageSize=25"))) as {
+      hasMore: boolean;
+    };
     expect(result.hasMore).toBe(true);
   });
 
@@ -252,9 +251,9 @@ describe("admin.logs loader — servers tab date defaulting", () => {
   });
 
   it("treats a present-but-empty custom dateFrom/dateTo (blank inputs submitted) as no selection, applying the 30-day default instead of going unbounded", async () => {
-    const result = (await loader(
-      makeLoaderArgs("/admin/logs?tab=servers&dateFrom=&dateTo="),
-    )) as { query: { dateFrom?: string; dateTo?: string; datePreset?: string } };
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&dateFrom=&dateTo="))) as {
+      query: { dateFrom?: string; dateTo?: string; datePreset?: string };
+    };
 
     expect(result.query.datePreset).toBe("30");
     expect(result.query.dateFrom).toBeDefined();
@@ -285,7 +284,7 @@ describe("admin.logs loader — servers tab date defaulting", () => {
     expect(call.dateTo).toBeInstanceOf(Date);
   });
 
-  it("rejects an out-of-allow-list datePreset (e.g. \"0\") and falls back to the 30-day default instead of a zero-width window", async () => {
+  it('rejects an out-of-allow-list datePreset (e.g. "0") and falls back to the 30-day default instead of a zero-width window', async () => {
     const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset=0"))) as {
       query: { dateFrom?: string; dateTo?: string; datePreset?: string };
     };
@@ -302,9 +301,9 @@ describe("admin.logs loader — servers tab date defaulting", () => {
   });
 
   it("rejects an arbitrarily large datePreset instead of computing an unbounded-in-practice window", async () => {
-    const result = (await loader(
-      makeLoaderArgs("/admin/logs?tab=servers&datePreset=99999"),
-    )) as { query: { datePreset?: string } };
+    const result = (await loader(makeLoaderArgs("/admin/logs?tab=servers&datePreset=99999"))) as {
+      query: { datePreset?: string };
+    };
 
     expect(result.query.datePreset).toBe("30");
 

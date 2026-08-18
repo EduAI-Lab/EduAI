@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const EduAiCourseSchema = z
   .object({
@@ -77,7 +77,10 @@ export const EduAiQuestionSchema = z
     type: z.string(),
     difficulty: z.string(),
     content: z.string(),
-    choices: z.array(z.object({ letter: z.string(), text: z.string() })).nullable().optional(),
+    choices: z
+      .array(z.object({ letter: z.string(), text: z.string() }))
+      .nullable()
+      .optional(),
     answer: z.string().nullable().optional(),
   })
   .passthrough();

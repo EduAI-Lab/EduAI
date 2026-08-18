@@ -49,7 +49,7 @@ const WORKSPACES = [
     exclude: (p) =>
       /(^|\/)tests\//.test(p) ||
       /\.test\.(ts|tsx)$/.test(p) ||
-      p.endsWith('.d.ts') ||
+      p.endsWith(".d.ts") ||
       p === "apps/core/app/root.tsx" ||
       p === "apps/core/app/routes.ts",
   },
@@ -93,13 +93,17 @@ const WORKSPACES = [
     exclude: (p) =>
       /(^|\/)tests\//.test(p) ||
       /\.test\.(ts|tsx)$/.test(p) ||
-      p.endsWith('.d.ts') ||
+      p.endsWith(".d.ts") ||
       p === "apps/extensions/question-maker/app/frontend/src/main.tsx",
   },
 ];
 
 function git(args) {
-  return execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync("git", args, {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
 }
 
 // Added (new-file) line numbers per repo-relative path, from a -U0 diff. With zero context,
@@ -254,7 +258,7 @@ function main() {
   for (const ws of WORKSPACES) {
     const lcov = parseLcov(ws.covDir);
     const wsFiles = changedFiles.filter(
-      (f) => f.startsWith(ws.srcPrefix) && ws.ext.test(f) && !ws.exclude(f)
+      (f) => f.startsWith(ws.srcPrefix) && ws.ext.test(f) && !ws.exclude(f),
     );
     if (lcov === null) {
       if (wsFiles.length) skippedWorkspaces.push({ label: ws.label, count: wsFiles.length });
@@ -273,7 +277,15 @@ function main() {
       const lines = lcov[file];
       if (!lines) {
         // In scope, ran, but no lcov record → never imported by a test → fully untested.
-        results.push({ label: ws.label, file, executable: null, covered: 0, uncovered: [], neverImported: true, addedCount: addedSet.size });
+        results.push({
+          label: ws.label,
+          file,
+          executable: null,
+          covered: 0,
+          uncovered: [],
+          neverImported: true,
+          addedCount: addedSet.size,
+        });
         continue;
       }
       let executable = 0;
@@ -291,7 +303,7 @@ function main() {
 
   const assessable = results.filter((r) => r.neverImported || r.executable > 0);
   const flagged = assessable.filter(
-    (r) => r.neverImported || (r.covered / r.executable) * 100 < WARN_THRESHOLD
+    (r) => r.neverImported || (r.covered / r.executable) * 100 < WARN_THRESHOLD,
   );
   let totalExec = 0;
   let totalCov = 0;
@@ -316,7 +328,9 @@ function main() {
   } else if (!assessable.length) {
     out.push("### 🧪 Patch coverage — n/a ✅");
     out.push("");
-    out.push("No added executable lines in tracked source files (changes were config, comments, or types).");
+    out.push(
+      "No added executable lines in tracked source files (changes were config, comments, or types).",
+    );
   } else {
     const verdict = flagged.length ? "⚠️" : "✅";
     out.push(`### 🧪 Patch coverage: ${fmtPct(totalCov, totalExec)} ${verdict}`);
@@ -343,17 +357,23 @@ function main() {
       }
       const pctNum = (r.covered / r.executable) * 100;
       const mark = pctNum < WARN_THRESHOLD ? "⚠️" : "✅";
-      out.push(`| \`${r.file}\` | ${fmtPct(r.covered, r.executable)} | ${r.covered} / ${r.executable} | ${mark} |`);
+      out.push(
+        `| \`${r.file}\` | ${fmtPct(r.covered, r.executable)} | ${r.covered} / ${r.executable} | ${mark} |`,
+      );
     }
 
     // Exact uncovered lines for flagged files — the actionable payload.
     if (flagged.length) {
       out.push("");
-      out.push(`<details open><summary><strong>Uncovered added lines</strong> (${flagged.length} file${flagged.length === 1 ? "" : "s"})</summary>`);
+      out.push(
+        `<details open><summary><strong>Uncovered added lines</strong> (${flagged.length} file${flagged.length === 1 ? "" : "s"})</summary>`,
+      );
       out.push("");
       for (const r of flagged) {
         if (r.neverImported) {
-          out.push(`- \`${r.file}\` — entire file (${r.addedCount} added line${r.addedCount === 1 ? "" : "s"}); no test imports it`);
+          out.push(
+            `- \`${r.file}\` — entire file (${r.addedCount} added line${r.addedCount === 1 ? "" : "s"}); no test imports it`,
+          );
         } else if (r.uncovered.length) {
           out.push(`- \`${r.file}\` — lines ${compressRanges(r.uncovered)}`);
         }
@@ -367,8 +387,10 @@ function main() {
     out.push("");
     out.push(
       "> ⚠️ Not assessed — coverage didn't run for " +
-        skippedWorkspaces.map((s) => `**${s.label}** (${s.count} file${s.count === 1 ? "" : "s"})`).join(", ") +
-        ` (turbo \`--affected\` skipped it or the suite failed).`
+        skippedWorkspaces
+          .map((s) => `**${s.label}** (${s.count} file${s.count === 1 ? "" : "s"})`)
+          .join(", ") +
+        ` (turbo \`--affected\` skipped it or the suite failed).`,
     );
   }
 
@@ -379,21 +401,24 @@ function main() {
     out.push(
       "> 🛠️ **Coverage data could not be mapped to files** for " +
         brokenWorkspaces
-          .map((b) => `**${b.label}** (\`${b.covDir}/lcov.info\`, ${b.count} changed file${b.count === 1 ? "" : "s"})`)
+          .map(
+            (b) =>
+              `**${b.label}** (\`${b.covDir}/lcov.info\`, ${b.count} changed file${b.count === 1 ? "" : "s"})`,
+          )
           .join(", ") +
-        ". Every `SF:` record failed to resolve to a path on disk, so those files are excluded from the numbers above rather than reported as 0%. This is a bug in `pr-patch-coverage.js`, not a coverage finding — see #1192."
+        ". Every `SF:` record failed to resolve to a path on disk, so those files are excluded from the numbers above rather than reported as 0%. This is a bug in `pr-patch-coverage.js`, not a coverage finding — see #1192.",
     );
   }
 
   out.push("");
   out.push(
-    `<sub>base \`${BASE_REF}\` · threshold ${WARN_THRESHOLD}% · ran ${ranWorkspaces.join(", ") || "none"} · advisory, never blocks merge</sub>`
+    `<sub>base \`${BASE_REF}\` · threshold ${WARN_THRESHOLD}% · ran ${ranWorkspaces.join(", ") || "none"} · advisory, never blocks merge</sub>`,
   );
   out.push("");
   out.push("<details><summary>What is patch coverage?</summary>");
   out.push("");
   out.push(
-    "The share of the lines **this PR added or changed** that a test executes — not a whole-file %, which is noisy (it swings on unrelated deletions and moves). A low number means new code shipped without a test running it. A file that no test imports shows as 0%."
+    "The share of the lines **this PR added or changed** that a test executes — not a whole-file %, which is noisy (it swings on unrelated deletions and moves). A low number means new code shipped without a test running it. A file that no test imports shows as 0%.",
   );
   out.push("");
   out.push("</details>");

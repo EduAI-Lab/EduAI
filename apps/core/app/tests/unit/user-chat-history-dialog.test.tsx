@@ -87,7 +87,11 @@ describe("UserChatHistoryDialog — loading/error/empty", () => {
   });
 
   it("shows the error message when the list read failed", () => {
-    useChatHistory.mockReturnValue({ chats: [], isLoading: false, error: "Failed to load chat history" });
+    useChatHistory.mockReturnValue({
+      chats: [],
+      isLoading: false,
+      error: "Failed to load chat history",
+    });
     renderDialog();
     expect(screen.getByText("Failed to load chat history")).toBeInTheDocument();
   });
@@ -104,9 +108,7 @@ describe("UserChatHistoryDialog — loading/error/empty", () => {
 
   it("disables the chat-history fetch when the dialog is closed", () => {
     renderDialog({ open: false });
-    expect(useChatHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ enabled: false }),
-    );
+    expect(useChatHistory).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
   });
 });
 

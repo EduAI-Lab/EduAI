@@ -4,16 +4,16 @@
  * (e.g. difficulty mix) prefer StackedBar — separate meters leave every bar mostly
  * empty. Pass any CSS color/var for the fill.
  */
-import { cn } from "../utils"
+import { cn } from "../utils";
 
 export interface MeterBarProps {
-  label: string
-  value: number
-  total: number
-  color?: string
+  label: string;
+  value: number;
+  total: number;
+  color?: string;
   /** Show the raw "value / total" instead of a percentage. */
-  showCount?: boolean
-  className?: string
+  showCount?: boolean;
+  className?: string;
 }
 
 export function MeterBar({
@@ -24,7 +24,7 @@ export function MeterBar({
   showCount = false,
   className,
 }: MeterBarProps) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-center justify-between text-sm">
@@ -40,5 +40,5 @@ export function MeterBar({
         />
       </div>
     </div>
-  )
+  );
 }

@@ -36,9 +36,7 @@ export type RecordAssistiveEventInput = {
   metricsJson: Prisma.InputJsonValue;
 };
 
-export async function recordAssistiveEvent(
-  input: RecordAssistiveEventInput,
-): Promise<void> {
+export async function recordAssistiveEvent(input: RecordAssistiveEventInput): Promise<void> {
   await prisma.assistiveEvent.create({
     data: {
       userId: input.userId,
@@ -84,11 +82,7 @@ export async function recordResponseComplianceEvent(args: {
   const profileStructuralPass =
     args.extras?.profileStructuralPass ??
     (args.extras?.responseProfile
-      ? isProfileStructuralPass(
-          metrics,
-          args.extras.responseProfile,
-          args.assistantText,
-        )
+      ? isProfileStructuralPass(metrics, args.extras.responseProfile, args.assistantText)
       : null);
   const payload: Prisma.InputJsonValue = {
     ...metrics,
@@ -120,15 +114,11 @@ export async function recordResponseComplianceEvent(args: {
   });
 }
 
-export function isAssistiveClientEventType(
-  value: string,
-): value is AssistiveClientEventType {
+export function isAssistiveClientEventType(value: string): value is AssistiveClientEventType {
   return (ASSISTIVE_CLIENT_EVENT_TYPES as readonly string[]).includes(value);
 }
 
-export function sanitizeClientMetrics(
-  metrics: unknown,
-): Prisma.InputJsonValue {
+export function sanitizeClientMetrics(metrics: unknown): Prisma.InputJsonValue {
   if (metrics == null || typeof metrics !== "object" || Array.isArray(metrics)) {
     return {};
   }

@@ -22,7 +22,12 @@ const baseProvider = {
 describe("ProvidersTable — empty state", () => {
   it("renders the empty state message when providers is empty", () => {
     render(
-      <ProvidersTable providers={[]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("No providers found.")).toBeInTheDocument();
   });
@@ -35,7 +40,12 @@ describe("ProvidersTable — empty state", () => {
 describe("ProvidersTable — rendering", () => {
   it("renders the provider display name and description", () => {
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
     expect(screen.getByText("Hosted AI models from OpenAI")).toBeInTheDocument();
@@ -43,14 +53,24 @@ describe("ProvidersTable — rendering", () => {
 
   it("renders the model count badge", () => {
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
   it("renders the env var name", () => {
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("OPENAI_API_KEY")).toBeInTheDocument();
   });
@@ -62,7 +82,7 @@ describe("ProvidersTable — rendering", () => {
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onToggleActive={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("None")).toBeInTheDocument();
   });
@@ -73,7 +93,12 @@ describe("ProvidersTable — rendering", () => {
       { ...baseProvider, id: "p2", name: "google", displayName: "Google" },
     ];
     render(
-      <ProvidersTable providers={providers} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={providers}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
     expect(screen.getByText("Google")).toBeInTheDocument();
@@ -88,7 +113,12 @@ describe("ProvidersTable — callbacks", () => {
   it("calls onEdit with the provider when the edit button is clicked", () => {
     const onEdit = vi.fn();
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={onEdit} onDelete={vi.fn()} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+        onToggleActive={vi.fn()}
+      />,
     );
     const [editBtn] = screen.getAllByRole("button");
     fireEvent.click(editBtn);
@@ -98,7 +128,12 @@ describe("ProvidersTable — callbacks", () => {
   it("calls onDelete with the provider id after confirming the delete dialog", () => {
     const onDelete = vi.fn();
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={vi.fn()} onDelete={onDelete} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+        onToggleActive={vi.fn()}
+      />,
     );
     const [, trashBtn] = screen.getAllByRole("button");
     fireEvent.click(trashBtn);
@@ -109,7 +144,12 @@ describe("ProvidersTable — callbacks", () => {
   it("does not call onDelete when the delete dialog is cancelled", () => {
     const onDelete = vi.fn();
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={vi.fn()} onDelete={onDelete} onToggleActive={vi.fn()} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+        onToggleActive={vi.fn()}
+      />,
     );
     const [, trashBtn] = screen.getAllByRole("button");
     fireEvent.click(trashBtn);
@@ -120,7 +160,12 @@ describe("ProvidersTable — callbacks", () => {
   it("calls onToggleActive with the provider when the active switch is clicked", () => {
     const onToggleActive = vi.fn();
     render(
-      <ProvidersTable providers={[baseProvider]} onEdit={vi.fn()} onDelete={vi.fn()} onToggleActive={onToggleActive} />
+      <ProvidersTable
+        providers={[baseProvider]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleActive={onToggleActive}
+      />,
     );
     fireEvent.click(screen.getByRole("switch"));
     expect(onToggleActive).toHaveBeenCalledWith(baseProvider);

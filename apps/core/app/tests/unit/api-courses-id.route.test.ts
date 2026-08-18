@@ -31,7 +31,10 @@ vi.mock("~/lib/logging.server", () => ({
 import { loader, action } from "~/routes/api/courses.id";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse, wantsIncludeDeleted } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
+} from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
 import { logAuditAction } from "~/lib/logging.server";
 

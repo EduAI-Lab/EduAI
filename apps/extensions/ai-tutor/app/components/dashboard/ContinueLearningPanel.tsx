@@ -5,13 +5,13 @@
  * part of the dashboard redesign, #938). Entirely driven by real per-course
  * `progress` data from `api.listCourses()` — no fabricated numbers.
  */
-import { useNavigate } from 'react-router';
-import { IconBooks, IconArrowRight } from '@tabler/icons-react';
-import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
-import type { Course } from '~/lib/types';
-import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
-import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
-import { findResumeCourse, inProgressCourses } from './dashboard-helpers';
+import { useNavigate } from "react-router";
+import { IconBooks, IconArrowRight } from "@tabler/icons-react";
+import { Card, CardContent, courseHeroBackgroundStyle } from "@eduai/ui";
+import type { Course } from "~/lib/types";
+import { accentForCourse, courseCode, courseName } from "~/lib/course-display";
+import { TruncatedListNotice } from "~/components/common/TruncatedListNotice";
+import { findResumeCourse, inProgressCourses } from "./dashboard-helpers";
 
 type ContinueLearningPanelProps = {
   courses: Course[];
@@ -84,7 +84,9 @@ export function ContinueLearningPanel({
               <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-white/70">
                 {courseCode(resumeCourse)}
               </div>
-              <h3 className="text-lg font-semibold leading-snug text-white">{courseName(resumeCourse)}</h3>
+              <h3 className="text-lg font-semibold leading-snug text-white">
+                {courseName(resumeCourse)}
+              </h3>
             </div>
             <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
               <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
@@ -112,7 +114,11 @@ export function ContinueLearningPanel({
             className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
           >
             Continue learning
-            <IconArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" />
+            <IconArrowRight
+              size={16}
+              aria-hidden="true"
+              className="transition-transform group-hover:translate-x-0.5"
+            />
           </span>
         </div>
       </button>

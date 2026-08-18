@@ -29,12 +29,7 @@ describe("getEnvironmentHealth", () => {
   it("reports required keys and the local embedding endpoint by name only", () => {
     process.env.EMBEDDING_PROVIDER = "local";
     expect(getEnvironmentHealth({ EMBEDDING_PROVIDER: "local" })).toEqual({
-      missingKeys: [
-        "DATABASE_URL",
-        "BETTER_AUTH_SECRET",
-        "EDUAI_API_KEY",
-        "OLLAMA_BASE_URL",
-      ],
+      missingKeys: ["DATABASE_URL", "BETTER_AUTH_SECRET", "EDUAI_API_KEY", "OLLAMA_BASE_URL"],
     });
   });
 

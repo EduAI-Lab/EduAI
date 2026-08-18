@@ -47,8 +47,12 @@ function uniqueEmail(prefix: string): string {
 const verificationIdentifiers: string[] = [];
 
 function cookieHeaderFrom(res: Response): string {
-  const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
-  return setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  const setCookies =
+    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  return setCookies
+    .map((c) => c.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
 }
 
 async function signUp(email: string, password: string): Promise<{ res: Response; cookie: string }> {
@@ -225,11 +229,8 @@ afterAll(async () => {
 describe.each(rows.map((row, index) => [index, row] as const))(
   "password-set-reuse-gate PICT row #%i",
   (index, row) => {
-    it(
-      `${row.Path}/${row.Strength}/${row.ResetToken}/${row.Session}/${row.CurrentPassword}/${row.Reuse} matches oracle`,
-      async () => {
-        await runRow(row);
-      },
-    );
+    it(`${row.Path}/${row.Strength}/${row.ResetToken}/${row.Session}/${row.CurrentPassword}/${row.Reuse} matches oracle`, async () => {
+      await runRow(row);
+    });
   },
 );

@@ -102,9 +102,13 @@ describe("useAiProviders", () => {
       await result.current.createProvider({ name: "anthropic" });
     });
 
-    expect(vi.mocked(apiFetch).mock.calls.some(([url, init]) =>
-      url === "/api/ai-providers" && (init as RequestInit)?.method === "POST",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.some(
+          ([url, init]) => url === "/api/ai-providers" && (init as RequestInit)?.method === "POST",
+        ),
+    ).toBe(true);
     expect(listUrls().length).toBeGreaterThan(before);
   });
 
@@ -118,9 +122,14 @@ describe("useAiProviders", () => {
       await result.current.updateProvider("prov-1", { displayName: "Renamed" });
     });
 
-    expect(vi.mocked(apiFetch).mock.calls.some(([url, init]) =>
-      url === "/api/ai-providers/prov-1" && (init as RequestInit)?.method === "PATCH",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.some(
+          ([url, init]) =>
+            url === "/api/ai-providers/prov-1" && (init as RequestInit)?.method === "PATCH",
+        ),
+    ).toBe(true);
     expect(listUrls().length).toBeGreaterThan(before);
   });
 
@@ -134,9 +143,14 @@ describe("useAiProviders", () => {
       await result.current.deleteProvider("prov-1");
     });
 
-    expect(vi.mocked(apiFetch).mock.calls.some(([url, init]) =>
-      url === "/api/ai-providers/prov-1" && (init as RequestInit)?.method === "DELETE",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.some(
+          ([url, init]) =>
+            url === "/api/ai-providers/prov-1" && (init as RequestInit)?.method === "DELETE",
+        ),
+    ).toBe(true);
     expect(listUrls().length).toBeGreaterThan(before);
   });
 

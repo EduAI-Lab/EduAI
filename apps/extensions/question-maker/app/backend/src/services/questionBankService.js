@@ -3,7 +3,7 @@
  * Local QM courses resolve via `Course.coreCourseId`.
  * Membership stores QM QuestionMetadata ids as externalQuestionId on Core.
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   listQuestionBanksFromCore,
   createQuestionBankOnCore,
@@ -13,10 +13,10 @@ import {
   addQuestionBankMembershipOnCore,
   addQuestionBankMembershipsOnCore,
   removeQuestionBankMembershipOnCore,
-} from './coreApiService.js';
+} from "./coreApiService.js";
 
-export const DEFAULT_BANK_NAME = 'Course bank';
-const SOURCE = 'question-maker';
+export const DEFAULT_BANK_NAME = "Course bank";
+const SOURCE = "question-maker";
 
 function coreError(message, status = 400) {
   const err = new Error(message);
@@ -35,7 +35,7 @@ async function callCore(fn) {
       error.response?.data?.error ||
       error.response?.data?.message ||
       error.message ||
-      'EduAI Core request failed';
+      "EduAI Core request failed";
     throw coreError(message, status);
   }
 }
@@ -49,20 +49,20 @@ async function callCore(fn) {
 export async function resolveCoreCourse(localCourseId, userId) {
   const parsedId = Number(localCourseId);
   if (!Number.isInteger(parsedId)) {
-    throw coreError('Invalid course id', 400);
+    throw coreError("Invalid course id", 400);
   }
 
   const localCourse = await prisma.course.findUnique({
     where: { id: parsedId },
   });
   if (!localCourse) {
-    throw coreError('Course not found', 404);
+    throw coreError("Course not found", 404);
   }
 
   // Prefer linked Core id; owner check is soft — routes use requireCourseAccess.
   if (!localCourse.coreCourseId) {
     throw coreError(
-      'Course is not linked to EduAI Core. Link the course before managing question banks.',
+      "Course is not linked to EduAI Core. Link the course before managing question banks.",
       400,
     );
   }
@@ -89,7 +89,7 @@ export async function ensureDefaultBank(localCourseId, userId) {
   const list = Array.isArray(payload?.banks) ? payload.banks : [];
   const defaultBank = list.find((b) => b.isDefault);
   if (!defaultBank) {
-    throw coreError('Failed to ensure default question bank in Core', 500);
+    throw coreError("Failed to ensure default question bank in Core", 500);
   }
   return mapBank(defaultBank, localCourseId);
 }
@@ -102,9 +102,9 @@ export async function listBanks(localCourseId, userId) {
 }
 
 export async function createBank(localCourseId, userId, { name, description = null }) {
-  const trimmed = typeof name === 'string' ? name.trim() : '';
+  const trimmed = typeof name === "string" ? name.trim() : "";
   if (!trimmed) {
-    throw coreError('Bank name is required', 400);
+    throw coreError("Bank name is required", 400);
   }
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   const bank = await callCore(() =>
@@ -118,9 +118,7 @@ export async function createBank(localCourseId, userId, { name, description = nu
 
 export async function updateBank(localCourseId, userId, bankId, payload) {
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
-  const bank = await callCore(() =>
-    updateQuestionBankOnCore(coreCourseId, bankId, payload),
-  );
+  const bank = await callCore(() => updateQuestionBankOnCore(coreCourseId, bankId, payload));
   return mapBank(bank, localCourseId);
 }
 
@@ -138,10 +136,10 @@ export async function addQuestionToBank(localCourseId, userId, bankId, questionM
     where: { id: Number(questionMetadataId) },
   });
   if (!question) {
-    throw coreError('Question not found', 404);
+    throw coreError("Question not found", 404);
   }
   if (Number(question.courseId) !== Number(localCourseId)) {
-    throw coreError('Question and bank must belong to the same course', 400);
+    throw coreError("Question and bank must belong to the same course", 400);
   }
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   const membership = await callCore(() =>
@@ -155,7 +153,9 @@ export async function addQuestionToBank(localCourseId, userId, bankId, questionM
 
 /** Bulk Core membership add for Canvas bank sync. */
 export async function addQuestionsToBank(localCourseId, userId, bankId, questionMetadataIds) {
-  const ids = [...new Set((questionMetadataIds || []).map(Number).filter((id) => Number.isInteger(id)))];
+  const ids = [
+    ...new Set((questionMetadataIds || []).map(Number).filter((id) => Number.isInteger(id))),
+  ];
   if (ids.length === 0) return { added: 0 };
 
   const questions = await prisma.questionMetadata.findMany({
@@ -163,7 +163,7 @@ export async function addQuestionsToBank(localCourseId, userId, bankId, question
     select: { id: true },
   });
   if (questions.length !== ids.length) {
-    throw coreError('Question and bank must belong to the same course', 400);
+    throw coreError("Question and bank must belong to the same course", 400);
   }
 
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
@@ -179,36 +179,21 @@ export async function addQuestionsToBank(localCourseId, userId, bankId, question
   );
 }
 
-export async function removeQuestionFromBank(
-  localCourseId,
-  userId,
-  bankId,
-  questionMetadataId,
-) {
+export async function removeQuestionFromBank(localCourseId, userId, bankId, questionMetadataId) {
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   return callCore(() =>
-    removeQuestionBankMembershipOnCore(
-      coreCourseId,
-      bankId,
-      String(questionMetadataId),
-      SOURCE,
-    ),
+    removeQuestionBankMembershipOnCore(coreCourseId, bankId, String(questionMetadataId), SOURCE),
   );
 }
 
 /**
  * Attach a newly created local question to one or more Core banks.
  */
-export async function attachQuestionToBanks(
-  localCourseId,
-  userId,
-  questionMetadataId,
-  opts = {},
-) {
+export async function attachQuestionToBanks(localCourseId, userId, questionMetadataId, opts = {}) {
   let bankIds = [];
   if (Array.isArray(opts.questionBankIds) && opts.questionBankIds.length > 0) {
     bankIds = opts.questionBankIds.map(String).filter(Boolean);
-  } else if (opts.questionBankId != null && opts.questionBankId !== '') {
+  } else if (opts.questionBankId != null && opts.questionBankId !== "") {
     bankIds = [String(opts.questionBankId)];
   }
 
@@ -228,9 +213,7 @@ export async function attachQuestionToBanks(
  */
 export async function listExternalQuestionIdsForBank(localCourseId, userId, bankId) {
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
-  const payload = await callCore(() =>
-    listQuestionBankMembershipsFromCore(coreCourseId, bankId),
-  );
+  const payload = await callCore(() => listQuestionBankMembershipsFromCore(coreCourseId, bankId));
   const memberships = Array.isArray(payload?.memberships) ? payload.memberships : [];
   return memberships
     .filter((m) => (m.source || SOURCE) === SOURCE)

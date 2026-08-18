@@ -8,13 +8,18 @@
  * surface (Add Question, Composer, Upload, Profile, API test bench); when a question
  * is generating it also shows the Generating/Review phase label.
  */
-import { Tooltip } from '@/components/ui/tooltip';
-import { IconCloud } from '@tabler/icons-react';
-import type { QuestionGenerationPhase } from '../../hooks/useEduAIStatus';
-import { isCloudProvider, isCampusProvider, type AIProvider, type CampusProvider } from '../../services/apiKeyStorage';
+import { Tooltip } from "@/components/ui/tooltip";
+import { IconCloud } from "@tabler/icons-react";
+import type { QuestionGenerationPhase } from "../../hooks/useEduAIStatus";
+import {
+  isCloudProvider,
+  isCampusProvider,
+  type AIProvider,
+  type CampusProvider,
+} from "../../services/apiKeyStorage";
 
-type EduAIStatus = 'loading' | 'ok' | 'error';
-type DotState = 'online' | 'idle' | 'error' | 'loading';
+type EduAIStatus = "loading" | "ok" | "error";
+type DotState = "online" | "idle" | "error" | "loading";
 
 interface AIServiceIndicatorsProps {
   status: EduAIStatus;
@@ -26,10 +31,10 @@ interface AIServiceIndicatorsProps {
 }
 
 const DOT_CLASS: Record<DotState, string> = {
-  online: 'bg-emerald-500',
-  idle: 'bg-muted-foreground/40',
-  error: 'bg-red-500',
-  loading: 'bg-amber-400 animate-pulse',
+  online: "bg-emerald-500",
+  idle: "bg-muted-foreground/40",
+  error: "bg-red-500",
+  loading: "bg-amber-400 animate-pulse",
 };
 
 function Chip({
@@ -54,7 +59,7 @@ function Chip({
         onClick={onClick}
         aria-label={label}
         className={`relative inline-flex h-6 w-6 items-center justify-center align-middle rounded-md border border-border bg-card shadow-sm transition-colors hover:bg-muted ${
-          active ? 'text-foreground' : 'text-muted-foreground'
+          active ? "text-foreground" : "text-muted-foreground"
         }`}
       >
         {children}
@@ -75,51 +80,69 @@ export const AIServiceIndicators = ({
   onRefresh,
   className,
 }: AIServiceIndicatorsProps) => {
-  const isOk = status === 'ok';
+  const isOk = status === "ok";
   const ubcOnline = isOk && isCampusProvider(provider);
   const cloudOnline = isOk && isCloudProvider(provider);
 
   const ubcDot: DotState =
-    status === 'loading' ? 'loading' : ubcOnline ? 'online' : status === 'error' ? 'error' : 'idle';
+    status === "loading" ? "loading" : ubcOnline ? "online" : status === "error" ? "error" : "idle";
   const cloudDot: DotState =
-    status === 'loading' ? 'loading' : cloudOnline ? 'online' : status === 'error' ? 'error' : 'idle';
+    status === "loading"
+      ? "loading"
+      : cloudOnline
+        ? "online"
+        : status === "error"
+          ? "error"
+          : "idle";
 
   const ubcTip =
-    status === 'loading'
-      ? 'Checking UBC-hosted AI…'
+    status === "loading"
+      ? "Checking UBC-hosted AI…"
       : ubcOnline
-        ? 'UBC-hosted AI · Online'
-        : status === 'error'
-          ? message || 'UBC-hosted AI unavailable (needs UBC wifi/VPN)'
-          : 'UBC-hosted AI · Not in use — cloud key active';
+        ? "UBC-hosted AI · Online"
+        : status === "error"
+          ? message || "UBC-hosted AI unavailable (needs UBC wifi/VPN)"
+          : "UBC-hosted AI · Not in use — cloud key active";
   const cloudTip =
-    status === 'loading'
-      ? 'Checking cloud AI…'
+    status === "loading"
+      ? "Checking cloud AI…"
       : cloudOnline
-        ? 'Cloud AI · Online (your provider key)'
-        : status === 'error'
-          ? message || 'Cloud AI unavailable — add a provider key in Settings'
-          : 'Cloud AI · Not in use — UBC-hosted model active';
+        ? "Cloud AI · Online (your provider key)"
+        : status === "error"
+          ? message || "Cloud AI unavailable — add a provider key in Settings"
+          : "Cloud AI · Not in use — UBC-hosted model active";
 
   const phaseLabel =
-    questionGenerationPhase === 'generating'
-      ? 'Generating'
-      : questionGenerationPhase === 'review'
-        ? 'Review'
+    questionGenerationPhase === "generating"
+      ? "Generating"
+      : questionGenerationPhase === "review"
+        ? "Review"
         : null;
 
   return (
-    <div className={`inline-flex items-center gap-1 ${className ?? ''}`}>
-      <Chip label="UBC-hosted AI status" tooltip={ubcTip} dot={ubcDot} active={ubcOnline} onClick={onRefresh}>
+    <div className={`inline-flex items-center gap-1 ${className ?? ""}`}>
+      <Chip
+        label="UBC-hosted AI status"
+        tooltip={ubcTip}
+        dot={ubcDot}
+        active={ubcOnline}
+        onClick={onRefresh}
+      >
         <span className="text-[9px] font-bold leading-none tracking-tight">UBC</span>
       </Chip>
-      <Chip label="Cloud AI status" tooltip={cloudTip} dot={cloudDot} active={cloudOnline} onClick={onRefresh}>
+      <Chip
+        label="Cloud AI status"
+        tooltip={cloudTip}
+        dot={cloudDot}
+        active={cloudOnline}
+        onClick={onRefresh}
+      >
         <IconCloud className="size-3.5" strokeWidth={1.75} />
       </Chip>
       {phaseLabel !== null && (
         <span
           className={`ml-1 text-xs font-medium ${
-            questionGenerationPhase === 'generating' ? 'text-amber-700' : 'text-primary-text'
+            questionGenerationPhase === "generating" ? "text-amber-700" : "text-primary-text"
           }`}
         >
           {phaseLabel}

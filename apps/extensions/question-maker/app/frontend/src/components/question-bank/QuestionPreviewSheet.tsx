@@ -3,7 +3,7 @@
  * inspect a question — its text, choices, answer, topics and provenance — without
  * leaving the library, then jump into the owning course to edit or spin up a variant.
  */
-import { useNavigate } from 'react-router';
+import { useNavigate } from "react-router";
 import {
   Sheet,
   SheetContent,
@@ -15,11 +15,11 @@ import {
   Badge,
   QuestionStatusBadge,
   Separator,
-} from '@eduai/ui';
-import { IconArrowRight, IconGitBranch, IconSparkles, IconBook2 } from '@tabler/icons-react';
-import type { Question } from '@/types/question';
-import { questionTypeLabels } from '@/types/question';
-import { markCorrectChoices } from '@/lib/mcq';
+} from "@eduai/ui";
+import { IconArrowRight, IconGitBranch, IconSparkles, IconBook2 } from "@tabler/icons-react";
+import type { Question } from "@/types/question";
+import { questionTypeLabels } from "@/types/question";
+import { markCorrectChoices } from "@/lib/mcq";
 
 interface QuestionPreviewSheetProps {
   question: Question | null;
@@ -29,12 +29,11 @@ interface QuestionPreviewSheetProps {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-const difficultyVariant: Record<string, 'success' | 'warning' | 'destructive'> = {
-  easy: 'success',
-  medium: 'warning',
-  hard: 'destructive',
+const difficultyVariant: Record<string, "success" | "warning" | "destructive"> = {
+  easy: "success",
+  medium: "warning",
+  hard: "destructive",
 };
-
 
 export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionPreviewSheetProps) {
   const navigate = useNavigate();
@@ -43,9 +42,10 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
   const variant = question.variants?.[0];
   const variantCount = question.variants?.length ?? 0;
   const difficulty = variant?.difficulty;
-  const courseLabel = question.course?.code ?? question.course?.name ?? `Course ${question.courseId}`;
+  const courseLabel =
+    question.course?.code ?? question.course?.name ?? `Course ${question.courseId}`;
   const topic = question.primaryTopic?.name ?? question.primaryTopicId;
-  const choices = question.type === 'MCQ' ? variant?.choices ?? [] : [];
+  const choices = question.type === "MCQ" ? (variant?.choices ?? []) : [];
 
   const goToCourse = () => {
     onOpenChange(false);
@@ -66,8 +66,9 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
         <SheetHeader className="space-y-3 border-b border-border p-6">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{questionTypeLabels[question.type]}</Badge>
-            {difficulty && <Badge variant={difficultyVariant[difficulty] ?? 'warning'}>{cap(difficulty)}</Badge>
-            }
+            {difficulty && (
+              <Badge variant={difficultyVariant[difficulty] ?? "warning"}>{cap(difficulty)}</Badge>
+            )}
             {variant?.isAiGenerated && (
               <Badge variant="secondary" className="gap-1">
                 <IconSparkles className="size-3" /> AI
@@ -76,7 +77,7 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
             <QuestionStatusBadge isDraft={!!variant?.isDraft} />
           </div>
           <SheetTitle className="text-left text-base font-semibold leading-snug">
-            {question.description || 'Untitled question'}
+            {question.description || "Untitled question"}
           </SheetTitle>
           <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-left">
             <span className="inline-flex items-center gap-1 font-medium text-foreground">
@@ -88,7 +89,7 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
               <>
                 <span aria-hidden>·</span>
                 <span>
-                  {variantCount} variant{variantCount === 1 ? '' : 's'}
+                  {variantCount} variant{variantCount === 1 ? "" : "s"}
                 </span>
               </>
             )}
@@ -97,15 +98,19 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
 
         <div className="flex-1 space-y-5 overflow-y-auto p-6">
           <section className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Prompt</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Prompt
+            </p>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {variant?.questionText || 'No prompt text for this question yet.'}
+              {variant?.questionText || "No prompt text for this question yet."}
             </p>
           </section>
 
           {choices.length > 0 && (
             <section className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Choices</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Choices
+              </p>
               <ul className="space-y-1.5">
                 {markCorrectChoices(variant?.answer ?? null, choices, {
                   selectAllThatApply: variant?.selectAllThatApply,
@@ -117,8 +122,8 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
                       key={choice.letter}
                       className={`flex gap-2.5 rounded-lg border px-3 py-2 text-sm ${
                         correct
-                          ? 'border-success-500/40 bg-success-100/60 text-success-800'
-                          : 'border-border bg-card text-foreground'
+                          ? "border-success-500/40 bg-success-100/60 text-success-800"
+                          : "border-border bg-card text-foreground"
                       }`}
                     >
                       <span className="font-semibold">{choice.letter}.</span>

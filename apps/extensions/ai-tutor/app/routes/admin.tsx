@@ -15,7 +15,7 @@
  * Related: server/src/routes/admin.js, app/lib/admin-settings.ts,
  *   app/components/admin/AiOversightPanel.tsx
  */
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Badge,
   PageHeading,
@@ -23,23 +23,23 @@ import {
   PageTabsContent,
   PageTabsList,
   PageTabsTrigger,
-} from '@eduai/ui';
-import { IconBrain, IconBug, IconSettings } from '@tabler/icons-react';
-import BugReportsTab from '~/components/admin/BugReportsTab';
-import { AdminSettingsPanel } from '~/components/admin/AdminSettingsPanel';
-import { AiOversightPanel } from '~/components/admin/AiOversightPanel';
-import api, { type AiTraceRow } from '~/lib/api';
-import type { AdminBugReportRow, EduAiApiKeyStatus, Role } from '~/lib/types';
-import type { Route } from './+types/admin';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+} from "@eduai/ui";
+import { IconBrain, IconBug, IconSettings } from "@tabler/icons-react";
+import BugReportsTab from "~/components/admin/BugReportsTab";
+import { AdminSettingsPanel } from "~/components/admin/AdminSettingsPanel";
+import { AiOversightPanel } from "~/components/admin/AiOversightPanel";
+import api, { type AiTraceRow } from "~/lib/api";
+import type { AdminBugReportRow, EduAiApiKeyStatus, Role } from "~/lib/types";
+import type { Route } from "./+types/admin";
+import { requireClientUser } from "~/lib/client-auth";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
 import {
   getApiKeySourceTag,
   loadAdminSettingsData,
   type AdminSettingsLoaderData,
-} from '~/lib/admin-settings';
+} from "~/lib/admin-settings";
 
-const ADMIN_ROLES: Role[] = ['ADMIN', 'UNIT_ADMIN'];
+const ADMIN_ROLES: Role[] = ["ADMIN", "UNIT_ADMIN"];
 
 type AdminLoaderData = {
   role: Role;
@@ -50,11 +50,11 @@ type AdminLoaderData = {
 
 // Borrow only the source-tag label and render it as a DS Badge (the shared
 // helper still returns a legacy `.tag` className we don't use here).
-function sourceTagBadgeVariant(status: EduAiApiKeyStatus): 'default' | 'secondary' | 'outline' {
-  if (!status.configured) return 'outline';
-  if (status.source === 'ADMIN') return 'default';
-  if (status.source === 'ENV') return 'secondary';
-  return 'outline';
+function sourceTagBadgeVariant(status: EduAiApiKeyStatus): "default" | "secondary" | "outline" {
+  if (!status.configured) return "outline";
+  if (status.source === "ADMIN") return "default";
+  if (status.source === "ENV") return "secondary";
+  return "outline";
 }
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
@@ -63,7 +63,7 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   // Bug reports + AI settings hit ADMIN-only server routes (403 for
   // UNIT_ADMIN) — only fetch them for ADMIN so a unit admin's Promise.all
   // doesn't fail wholesale and lock them out of the AI oversight tab.
-  const isAdmin = user.role === 'ADMIN';
+  const isAdmin = user.role === "ADMIN";
 
   const [adminSettings, bugReports, aiTraces] = await Promise.all([
     isAdmin ? loadAdminSettingsData() : Promise.resolve(null),
@@ -76,11 +76,11 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
 
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const { role, adminSettings, bugReports, aiTraces } = loaderData;
-  const isAdmin = role === 'ADMIN';
-  const [activeTab, setActiveTab] = useState(isAdmin ? 'bug-reports' : 'ai-oversight');
+  const isAdmin = role === "ADMIN";
+  const [activeTab, setActiveTab] = useState(isAdmin ? "bug-reports" : "ai-oversight");
   const sourceTag = adminSettings ? getApiKeySourceTag(adminSettings.status) : null;
 
-  useShellBreadcrumbs([{ label: 'Admin' }]);
+  useShellBreadcrumbs([{ label: "Admin" }]);
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
@@ -88,8 +88,8 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
         heading="Admin console"
         subheading={
           isAdmin
-            ? 'Triage bug reports, configure AI tutoring, and review AI oversight.'
-            : 'Review AI tutoring activity in your unit.'
+            ? "Triage bug reports, configure AI tutoring, and review AI oversight."
+            : "Review AI tutoring activity in your unit."
         }
       />
 

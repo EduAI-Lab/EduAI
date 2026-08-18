@@ -1,11 +1,11 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { Dialog, DialogContent } from '@eduai/ui';
-import type { CourseTopicsState } from '~/hooks/useCourseTopics';
-import { CourseTopicsProvider } from '~/hooks/useCourseTopics';
-import AddActivityPanel from '~/components/AddActivityPanel';
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { Dialog, DialogContent } from "@eduai/ui";
+import type { CourseTopicsState } from "~/hooks/useCourseTopics";
+import { CourseTopicsProvider } from "~/hooks/useCourseTopics";
+import AddActivityPanel from "~/components/AddActivityPanel";
 
-vi.mock('~/lib/api', () => ({
+vi.mock("~/lib/api", () => ({
   default: {
     createActivity: vi.fn(),
   },
@@ -37,28 +37,28 @@ function renderPanel(topicsState: CourseTopicsState) {
   );
 }
 
-describe('AddActivityPanel empty-topics hint (#1021)', () => {
-  it('shows the sync-from-Core hint when the course has no topics', () => {
+describe("AddActivityPanel empty-topics hint (#1021)", () => {
+  it("shows the sync-from-Core hint when the course has no topics", () => {
     renderPanel(emptyTopicsState());
 
     expect(screen.getByText(/No topics on this course yet/i)).toBeTruthy();
     expect(screen.getByText(/Sync topics from EduAI Core/i)).toBeTruthy();
   });
 
-  it('hides the empty-topics hint while topics are loading', () => {
+  it("hides the empty-topics hint while topics are loading", () => {
     renderPanel(emptyTopicsState({ loading: true }));
 
     expect(screen.queryByText(/No topics on this course yet/i)).toBeNull();
   });
 
-  it('hides the empty-topics hint when topics exist', () => {
+  it("hides the empty-topics hint when topics exist", () => {
     renderPanel(
       emptyTopicsState({
-        topics: [{ id: 1, name: 'Recursion' }],
+        topics: [{ id: 1, name: "Recursion" }],
       }),
     );
 
     expect(screen.queryByText(/No topics on this course yet/i)).toBeNull();
-    expect(screen.getByText('Recursion')).toBeTruthy();
+    expect(screen.getByText("Recursion")).toBeTruthy();
   });
 });

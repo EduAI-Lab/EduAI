@@ -1,6 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { User } from '../types/auth';
-import { authService } from '../services/authService';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from "react";
+import { User } from "../types/auth";
+import { authService } from "../services/authService";
 
 interface AuthContextType {
   user: User | null;
@@ -14,7 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
@@ -50,9 +57,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const logout = useCallback(async () => {
-    const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
-    await fetch(`${apiUrl}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
-    const coreUrl = (import.meta as any).env?.VITE_CORE_URL || 'http://localhost:3000';
+    const apiUrl = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
+    await fetch(`${apiUrl}/api/auth/logout`, { method: "POST", credentials: "include" }).catch(
+      () => {},
+    );
+    const coreUrl = (import.meta as any).env?.VITE_CORE_URL || "http://localhost:3000";
     window.location.href = `${coreUrl}/login`;
   }, []);
 

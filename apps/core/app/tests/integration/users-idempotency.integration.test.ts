@@ -85,10 +85,7 @@ describe("POST /api/users — centralized idempotency (#828)", () => {
     expect(first.status).toBe(201);
     createdUserIds.push((await first.clone().json()).id);
 
-    const second = await postUser(
-      { email: `other-${email}`, name: "Bo", role: "STUDENT" },
-      key,
-    );
+    const second = await postUser({ email: `other-${email}`, name: "Bo", role: "STUDENT" }, key);
     expect(second.status).toBe(422);
     expect(await second.json()).toEqual({ error: "IDEMPOTENCY_KEY_MISMATCH" });
   });

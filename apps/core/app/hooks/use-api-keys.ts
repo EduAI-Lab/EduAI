@@ -1,14 +1,14 @@
-import { useSyncExternalStore, useCallback } from 'react';
-import type { UserProviderSettings } from '~/lib/ai/provider-types';
-import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/provider-types';
+import { useSyncExternalStore, useCallback } from "react";
+import type { UserProviderSettings } from "~/lib/ai/provider-types";
+import { LOCAL_INFERENCE_PROVIDERS } from "~/lib/ai/provider-types";
 
 /**
  * Sentinel stored in the client-side state when the real key lives in the DB.
  * Never sent back to the server — the server loads the decrypted key directly.
  */
-export const DB_STORED_KEY = '__db_stored__';
+export const DB_STORED_KEY = "__db_stored__";
 
-const LEGACY_STORAGE_KEY = 'edu-ai-api-keys';
+const LEGACY_STORAGE_KEY = "edu-ai-api-keys";
 
 // ---------------------------------------------------------------------------
 // Server row shape returned by GET /api/user-provider-settings
@@ -57,15 +57,15 @@ function setState(next: ApiKeysStore) {
 
 // One-time fetch on the first component mount.
 function ensureLoaded() {
-  if (fetchInitiated || typeof window === 'undefined') return;
+  if (fetchInitiated || typeof window === "undefined") return;
   fetchInitiated = true;
 
-  fetch('/api/user-provider-settings', { credentials: 'include' })
+  fetch("/api/user-provider-settings", { credentials: "include" })
     .then((r) => {
       if (r.status === 401) {
         // Session expired/unauthenticated: surface as no keys rather than
         // falling back to a stale, possibly-mismatched localStorage keyset.
-        console.error('Failed to load provider settings: unauthorized');
+        console.error("Failed to load provider settings: unauthorized");
         setState({ data: {}, isLoading: false });
         return null;
       }
@@ -119,10 +119,10 @@ async function migrateFromLocalStorage(
   const entries = Object.entries(toMigrate);
   const results = await Promise.allSettled(
     entries.map(([providerName, settings]) =>
-      fetch('/api/user-provider-settings', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+      fetch("/api/user-provider-settings", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           providerName,
           isEnabled: settings.isEnabled,
@@ -140,7 +140,7 @@ async function migrateFromLocalStorage(
   // user's key.
   const migratedProviders = new Set(
     entries
-      .filter((_, i) => results[i].status === 'fulfilled')
+      .filter((_, i) => results[i].status === "fulfilled")
       .map(([providerName]) => providerName),
   );
   const remaining = Object.fromEntries(
@@ -184,27 +184,24 @@ export function useApiKeys() {
       return () => listeners.delete(listener);
     },
     () => storeState,
-    () => ({ data: {}, isLoading: true } satisfies ApiKeysStore),
+    () => ({ data: {}, isLoading: true }) satisfies ApiKeysStore,
   );
 
   const apiKeys = store.data;
   const isLoading = store.isLoading;
 
   const updateProviderSettings = useCallback(
-    (
-      providerId: string,
-      settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean },
-    ) => {
+    (providerId: string, settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean }) => {
       // Optimistic: show change immediately.
       optimisticSet(providerId, {
         ...settings,
         apiKey: settings.apiKey ?? storeState.data[providerId]?.apiKey,
       });
 
-      fetch('/api/user-provider-settings', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+      fetch("/api/user-provider-settings", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerName: providerId, ...settings }),
       }).catch(console.error);
     },
@@ -214,10 +211,10 @@ export function useApiKeys() {
   const removeProviderSettings = useCallback((providerId: string) => {
     optimisticDelete(providerId);
 
-    fetch('/api/user-provider-settings', {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+    fetch("/api/user-provider-settings", {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ providerName: providerId }),
     }).catch(console.error);
   }, []);
@@ -225,7 +222,9 @@ export function useApiKeys() {
   const getValidApiKeys = useCallback((): UserProviderSettings => {
     const valid: UserProviderSettings = {};
     for (const [providerId, settings] of Object.entries(apiKeys)) {
-      if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
+      if (
+        LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])
+      ) {
         if (settings.isEnabled) valid[providerId] = settings;
       } else {
         if (settings.isEnabled && settings.apiKey) valid[providerId] = settings;
@@ -236,18 +235,17 @@ export function useApiKeys() {
 
   const isProviderConfigured = useCallback(
     (providerId: string) => {
-      if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
-        return !!(apiKeys[providerId]?.isEnabled);
+      if (
+        LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])
+      ) {
+        return !!apiKeys[providerId]?.isEnabled;
       }
       return !!(apiKeys[providerId]?.isEnabled && apiKeys[providerId]?.apiKey);
     },
     [apiKeys],
   );
 
-  const getProviderSettings = useCallback(
-    (providerId: string) => apiKeys[providerId],
-    [apiKeys],
-  );
+  const getProviderSettings = useCallback((providerId: string) => apiKeys[providerId], [apiKeys]);
 
   return {
     apiKeys,
@@ -258,12 +256,9 @@ export function useApiKeys() {
     isProviderConfigured,
     getProviderSettings,
     /** @deprecated Use updateProviderSettings instead. */
-    saveApiKeys: useCallback(
-      (newKeys: UserProviderSettings) => {
-        setState({ data: newKeys, isLoading: false });
-      },
-      [],
-    ),
+    saveApiKeys: useCallback((newKeys: UserProviderSettings) => {
+      setState({ data: newKeys, isLoading: false });
+    }, []),
   };
 }
 
