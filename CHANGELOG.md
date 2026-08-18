@@ -8,7 +8,7 @@
 
 ### Changed
 
-- [monorepo] perf: Batch the per-row enrollment upsert loops in Core's Canvas enrollment link and AI Tutor's enrollment mirror and sync so each writes a bounded number of `createMany`/`updateMany` calls instead of one round trip per roster row. Closes #1451. (@abdullahmoh21, 2026-08-18) — #PR
+- [monorepo] perf: Batch the per-row enrollment upsert loops in Core's Canvas enrollment link and AI Tutor's enrollment mirror and sync so each writes a bounded number of `createMany`/`updateMany` calls instead of one round trip per roster row. Closes #1451. (@abdullahmoh21, 2026-08-18) — [#1566](https://github.com/EduAI-Lab/EduAI/pull/1566)
 
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 ## [Week 15 — August 10–16, 2026]
