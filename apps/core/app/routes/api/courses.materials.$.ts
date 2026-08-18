@@ -4,10 +4,10 @@
  * Extensions may rely on deletedAt being set to detect EduAI-side removals.
  */
 
-import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
-import { createHash } from 'crypto';
-import { validateUploadedFile } from '~/lib/ai/file-processing';
-import prisma from '~/lib/prisma.server';
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { createHash } from "crypto";
+import { validateUploadedFile } from "~/lib/ai/file-processing";
+import prisma from "~/lib/prisma.server";
 import {
   PENDING_CHECKSUM_PREFIX,
   ensureMaterialSweeperRunning,
@@ -15,7 +15,7 @@ import {
   persistUploadBlob,
   startMaterialExtraction,
   toBytesColumn,
-} from '~/lib/materials/extraction-job.server';
+} from "~/lib/materials/extraction-job.server";
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
@@ -328,7 +328,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
       // own-only carve-out via uploadedBy (#294). Null uploadedBy = no owner,
       // TA denied.
-      const isOwnTa = access.level === 'ta' && material.uploadedBy === user.id;
+      const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
 
       // #949/#1494 review: a late content-duplicate leaves the uploader a FAILED
       // receipt row that the client reads and then deletes. Students may upload
@@ -340,11 +340,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // `duplicateOfId`.
       const isOwnDuplicateReceipt =
         material.uploadedBy === user.id &&
-        material.status === 'FAILED' &&
+        material.status === "FAILED" &&
         material.duplicateOfId !== null;
 
       if (access.rank < 2 && !isOwnTa && !isOwnDuplicateReceipt) {
-        return json(403, { error: 'Forbidden' });
+        return json(403, { error: "Forbidden" });
       }
 
       // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
@@ -374,8 +374,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-const DUPLICATE_CONTENT_MESSAGE =
-  'A file with identical content already exists in this course';
+const DUPLICATE_CONTENT_MESSAGE = "A file with identical content already exists in this course";
 
 /**
  * Resolve a `(courseId, pending:<bytehash>)` collision — two uploads of the
@@ -407,7 +406,7 @@ async function reclaimProvisionalRow(
   provisionalChecksum: string,
   userId: string,
   upload: { bytes: Buffer; fileName: string; mimeType: string },
-): Promise<{ outcome: 'conflict' | 'reclaimed'; materialId: string } | null> {
+): Promise<{ outcome: "conflict" | "reclaimed"; materialId: string } | null> {
   const existing = await prisma.courseMaterial.findFirst({
     where: { courseId, checksum: provisionalChecksum },
     select: { id: true },
@@ -442,13 +441,10 @@ async function reclaimProvisionalRow(
       where: {
         id: existing.id,
         checksum: provisionalChecksum,
-        OR: [
-          { status: { not: 'PROCESSING' } },
-          { extractionLeaseUntil: { lt: now } },
-        ],
+        OR: [{ status: { not: "PROCESSING" } }, { extractionLeaseUntil: { lt: now } }],
       },
       data: {
-        status: 'PROCESSING',
+        status: "PROCESSING",
         uploadedBy: userId,
         deletedAt: null,
         deletedBy: null,
@@ -466,13 +462,7 @@ async function reclaimProvisionalRow(
     // Only the winner replaces the bytes: a loser's UPDATE matched nothing, and
     // overwriting the blob would corrupt the run the winner is about to start.
     if (result.count > 0) {
-      await persistUploadBlob(
-        existing.id,
-        upload.bytes,
-        upload.fileName,
-        upload.mimeType,
-        tx,
-      );
+      await persistUploadBlob(existing.id, upload.bytes, upload.fileName, upload.mimeType, tx);
     }
     return result;
   });
@@ -481,9 +471,9 @@ async function reclaimProvisionalRow(
     // Either the row was live PROCESSING all along, or a concurrent retry won
     // the claim a moment ago. Both mean "someone else is already processing
     // these bytes", which is the 409 case.
-    return { outcome: 'conflict', materialId: existing.id };
+    return { outcome: "conflict", materialId: existing.id };
   }
-  return { outcome: 'reclaimed', materialId: existing.id };
+  return { outcome: "reclaimed", materialId: existing.id };
 }
 
 async function uploadMaterial(
@@ -520,10 +510,10 @@ async function uploadMaterial(
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const provisionalChecksum = `${PENDING_CHECKSUM_PREFIX}${createHash('sha256')
+  const provisionalChecksum = `${PENDING_CHECKSUM_PREFIX}${createHash("sha256")
     .update(bytes)
-    .digest('hex')}`;
-  const title = (file.name || 'upload').replace(/\.[^/.]+$/, '') || 'upload';
+    .digest("hex")}`;
+  const title = (file.name || "upload").replace(/\.[^/.]+$/, "") || "upload";
 
   let materialId: string;
   try {
@@ -535,17 +525,17 @@ async function uploadMaterial(
       data: {
         courseId,
         title,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type || "application/octet-stream",
         fileSize: file.size || bytes.length,
         checksum: provisionalChecksum,
         rawText: null,
-        status: 'PROCESSING',
+        status: "PROCESSING",
         uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
         uploadBlob: {
           create: {
             bytes: toBytesColumn(bytes),
-            fileName: file.name || 'upload',
-            mimeType: file.type || 'application/octet-stream',
+            fileName: file.name || "upload",
+            mimeType: file.type || "application/octet-stream",
           },
         },
       },
@@ -562,17 +552,17 @@ async function uploadMaterial(
         // always re-runs against what was actually uploaded.
         {
           bytes,
-          fileName: file.name || 'upload',
-          mimeType: file.type || 'application/octet-stream',
+          fileName: file.name || "upload",
+          mimeType: file.type || "application/octet-stream",
         },
       );
-      if (resolution?.outcome === 'conflict') {
+      if (resolution?.outcome === "conflict") {
         return json(409, {
-          error: 'This file is already being processed in this course',
+          error: "This file is already being processed in this course",
           materialId: resolution.materialId,
         });
       }
-      if (resolution?.outcome === 'reclaimed') {
+      if (resolution?.outcome === "reclaimed") {
         materialId = resolution.materialId;
       } else {
         // The colliding row disappeared between the failed insert and the
@@ -582,7 +572,7 @@ async function uploadMaterial(
         });
       }
     } else {
-      console.error('Error persisting material upload:', createError);
+      console.error("Error persisting material upload:", createError);
       return json(500, { error: toMaterialUploadUserMessage(createError) });
     }
   }
@@ -597,16 +587,16 @@ async function uploadMaterial(
     logAuditAction({
       ...getActorContext(user ?? null),
       ...requestContext,
-      actionCode: 'MATERIAL_UPLOADED',
-      category: 'MATERIAL',
-      entityType: 'CourseMaterial',
+      actionCode: "MATERIAL_UPLOADED",
+      category: "MATERIAL",
+      entityType: "CourseMaterial",
       entityId: materialId,
       entityLabel: title,
       details: {
         courseId,
         actorEmail: user.email,
         actorName: user.name,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type || "application/octet-stream",
         fileSize: file.size || bytes.length,
       },
     }),
@@ -622,8 +612,8 @@ async function uploadMaterial(
   return json(202, {
     success: true,
     materialId,
-    status: 'PROCESSING',
-    message: 'Material accepted and is being processed',
+    status: "PROCESSING",
+    message: "Material accepted and is being processed",
   });
 }
 
@@ -681,7 +671,7 @@ async function materialsListResponse(
   const rows = await prisma.courseMaterial.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     select: MATERIAL_LIST_SELECT,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
@@ -811,7 +801,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const rows = await prisma.courseMaterial.findMany({
     where: { courseId, deletedAt: null, ...studentGate },
     select: MATERIAL_LIST_SELECT,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });

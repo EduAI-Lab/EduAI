@@ -53,7 +53,8 @@ describe("extractDocxText (real mammoth, unmocked)", () => {
       name: "styled.docx",
       type: DOCX_MIME,
       size: buffer.byteLength,
-      arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      arrayBuffer: async () =>
+        buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
     };
 
     const result = await extractDocxText(file as any);

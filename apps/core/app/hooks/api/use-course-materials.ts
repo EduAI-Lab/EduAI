@@ -16,12 +16,12 @@ export interface CourseMaterial {
   /** Student-visibility gate (staff-only field). See #839. */
   visibleToStudents?: boolean;
   /** Scheduled reveal timestamp (ISO) or null. Staff-only. See #839. */
-  availableAt?: string | null
+  availableAt?: string | null;
   /**
    * Set on a FAILED row when background extraction found this upload's content
    * already present on the course (#949) — points at the material that won.
    */
-  duplicateOfId?: string | null
+  duplicateOfId?: string | null;
 }
 
 /**
@@ -37,15 +37,15 @@ export interface CourseMaterial {
  *                  error: the row keeps processing server-side.
  */
 export type UploadOutcome =
-  | { status: 'ready'; materialId: string }
-  | { status: 'duplicate'; materialId: string; duplicateOfId: string }
-  | { status: 'failed'; materialId: string }
-  | { status: 'processing'; materialId: string }
+  | { status: "ready"; materialId: string }
+  | { status: "duplicate"; materialId: string; duplicateOfId: string }
+  | { status: "failed"; materialId: string }
+  | { status: "processing"; materialId: string };
 
 /** How often to re-read the list while an upload is still PROCESSING. */
-const UPLOAD_POLL_INTERVAL_MS = 1500
+const UPLOAD_POLL_INTERVAL_MS = 1500;
 /** Give up watching after this long; the server keeps going regardless. */
-const UPLOAD_POLL_TIMEOUT_MS = 5 * 60 * 1000
+const UPLOAD_POLL_TIMEOUT_MS = 5 * 60 * 1000;
 /**
  * Slow re-read that stays alive for as long as *any* row is still PROCESSING
  * (#1494 review). `watchUpload` gives up after five minutes, but the UI tells
@@ -53,7 +53,7 @@ const UPLOAD_POLL_TIMEOUT_MS = 5 * 60 * 1000
  * would then sit stale forever. Deliberately much slower than the active poll:
  * this is the long tail, not the common case.
  */
-const BACKGROUND_REFRESH_INTERVAL_MS = 30 * 1000
+const BACKGROUND_REFRESH_INTERVAL_MS = 30 * 1000;
 
 /** Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch. */
 export function useCourseMaterials(courseId: string) {
@@ -106,13 +106,16 @@ export function useCourseMaterials(courseId: string) {
     fetchMaterials();
   }, [fetchMaterials]);
 
-  const deleteMaterial = useCallback(async (materialId: string): Promise<void> => {
-    const res = await fetch(`/api/courses/${courseId}/materials/${materialId}`, {
-      method: 'DELETE',
-    })
-    if (!res.ok) throw new Error(await res.text())
-    await fetchMaterials()
-  }, [courseId, fetchMaterials])
+  const deleteMaterial = useCallback(
+    async (materialId: string): Promise<void> => {
+      const res = await fetch(`/api/courses/${courseId}/materials/${materialId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await fetchMaterials();
+    },
+    [courseId, fetchMaterials],
+  );
 
   /**
    * Merge one freshly-read row into local state without clobbering pages the
@@ -123,8 +126,8 @@ export function useCourseMaterials(courseId: string) {
       prev.some((m) => m.id === row.id)
         ? prev.map((m) => (m.id === row.id ? row : m))
         : [row, ...prev],
-    )
-  }, [])
+    );
+  }, []);
 
   /**
    * Quiet re-read of page 1: refreshes the rows already on screen and picks up
@@ -136,55 +139,58 @@ export function useCourseMaterials(courseId: string) {
    */
   const refreshFirstPage = useCallback(async () => {
     try {
-      const data = await fetchPage(null)
+      const data = await fetchPage(null);
       setMaterials((prev) => {
-        const fresh = new Map(data.materials.map((m) => [m.id, m]))
-        const known = new Set(prev.map((m) => m.id))
-        const updated = prev.map((m) => fresh.get(m.id) ?? m)
-        const added = data.materials.filter((m) => !known.has(m.id))
-        return added.length > 0 ? [...added, ...updated] : updated
-      })
+        const fresh = new Map(data.materials.map((m) => [m.id, m]));
+        const known = new Set(prev.map((m) => m.id));
+        const updated = prev.map((m) => fresh.get(m.id) ?? m);
+        const added = data.materials.filter((m) => !known.has(m.id));
+        return added.length > 0 ? [...added, ...updated] : updated;
+      });
     } catch {
       /* transient read failure — the next tick retries */
     }
-  }, [fetchPage])
+  }, [fetchPage]);
 
-  const hasProcessingRow = materials.some((m) => m.status === 'PROCESSING')
+  const hasProcessingRow = materials.some((m) => m.status === "PROCESSING");
 
   useEffect(() => {
-    if (!courseId || !hasProcessingRow) return
+    if (!courseId || !hasProcessingRow) return;
     const timer = setInterval(() => {
-      void refreshFirstPage()
-    }, BACKGROUND_REFRESH_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [courseId, hasProcessingRow, refreshFirstPage])
+      void refreshFirstPage();
+    }, BACKGROUND_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [courseId, hasProcessingRow, refreshFirstPage]);
 
   /**
    * Watch a material until it leaves PROCESSING (#949). Uploads are ordered
    * newest-first, so a brand-new row is always on page 1.
    */
-  const watchUpload = useCallback(async (materialId: string): Promise<UploadOutcome> => {
-    const deadline = Date.now() + UPLOAD_POLL_TIMEOUT_MS
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, UPLOAD_POLL_INTERVAL_MS))
-      let page: { materials: CourseMaterial[] }
-      try {
-        page = await fetchPage(null)
-      } catch {
-        continue // transient read failure — the row is still processing server-side
+  const watchUpload = useCallback(
+    async (materialId: string): Promise<UploadOutcome> => {
+      const deadline = Date.now() + UPLOAD_POLL_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, UPLOAD_POLL_INTERVAL_MS));
+        let page: { materials: CourseMaterial[] };
+        try {
+          page = await fetchPage(null);
+        } catch {
+          continue; // transient read failure — the row is still processing server-side
+        }
+        const row = page.materials.find((m) => m.id === materialId);
+        if (!row) return { status: "processing", materialId };
+        mergeMaterial(row);
+        if (row.status === "READY") return { status: "ready", materialId };
+        if (row.status === "FAILED") {
+          return row.duplicateOfId
+            ? { status: "duplicate", materialId, duplicateOfId: row.duplicateOfId }
+            : { status: "failed", materialId };
+        }
       }
-      const row = page.materials.find((m) => m.id === materialId)
-      if (!row) return { status: 'processing', materialId }
-      mergeMaterial(row)
-      if (row.status === 'READY') return { status: 'ready', materialId }
-      if (row.status === 'FAILED') {
-        return row.duplicateOfId
-          ? { status: 'duplicate', materialId, duplicateOfId: row.duplicateOfId }
-          : { status: 'failed', materialId }
-      }
-    }
-    return { status: 'processing', materialId }
-  }, [fetchPage, mergeMaterial])
+      return { status: "processing", materialId };
+    },
+    [fetchPage, mergeMaterial],
+  );
 
   /**
    * Upload a file. The endpoint returns 202 as soon as the row is persisted
@@ -195,31 +201,34 @@ export function useCourseMaterials(courseId: string) {
    * FAILED receipt row pointing at the winner; we read it, then delete it so
    * repeated attempts don't pile up in the list.
    */
-  const uploadMaterial = useCallback(async (file: File): Promise<UploadOutcome> => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const res = await fetch(`/api/courses/${courseId}/materials`, {
-      method: 'POST',
-      body: formData,
-    })
-    const body = await res.json().catch(() => ({} as Record<string, unknown>))
-    if (!res.ok) {
-      throw new Error(
-        typeof body.error === 'string' ? body.error : `Upload failed (${res.status})`,
-      )
-    }
+  const uploadMaterial = useCallback(
+    async (file: File): Promise<UploadOutcome> => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/courses/${courseId}/materials`, {
+        method: "POST",
+        body: formData,
+      });
+      const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+      if (!res.ok) {
+        throw new Error(
+          typeof body.error === "string" ? body.error : `Upload failed (${res.status})`,
+        );
+      }
 
-    const materialId = body.materialId as string
-    await fetchMaterials() // paint the PROCESSING row right away
-    const outcome = await watchUpload(materialId)
+      const materialId = body.materialId as string;
+      await fetchMaterials(); // paint the PROCESSING row right away
+      const outcome = await watchUpload(materialId);
 
-    if (outcome.status === 'duplicate') {
-      await deleteMaterial(materialId).catch(() => {
-        /* receipt cleanup is best-effort; the outcome is already known */
-      })
-    }
-    return outcome
-  }, [courseId, fetchMaterials, watchUpload, deleteMaterial])
+      if (outcome.status === "duplicate") {
+        await deleteMaterial(materialId).catch(() => {
+          /* receipt cleanup is best-effort; the outcome is already known */
+        });
+      }
+      return outcome;
+    },
+    [courseId, fetchMaterials, watchUpload, deleteMaterial],
+  );
 
   return {
     materials,

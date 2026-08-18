@@ -1017,7 +1017,7 @@ export type ExtractPdfTextIsolatedLimits = {
    */
   workerSource?: (maxOutputBytes: number) => string;
   /** Temp-file extension for the child's input; also names the temp dir. */
-  inputKind?: 'pdf' | 'docx' | 'pptx';
+  inputKind?: "pdf" | "docx" | "pptx";
 };
 
 /**
@@ -1030,12 +1030,9 @@ export type ExtractPdfTextIsolatedLimits = {
  * mammoth's and jszip's inflate/parse work off the request-serving event loop,
  * which is the part #949 was asked to move.
  */
-function buildOfficeExtractionWorkerSource(
-  kind: 'docx' | 'pptx',
-  maxOutputBytes: number,
-): string {
+function buildOfficeExtractionWorkerSource(kind: "docx" | "pptx", maxOutputBytes: number): string {
   const body =
-    kind === 'docx'
+    kind === "docx"
       ? `
       const mammoth = require("mammoth");
       const result = await mammoth.convertToHtml({ buffer: fs.readFileSync(inputPath) });
@@ -1101,7 +1098,7 @@ export async function extractPdfTextIsolated<T = { content: string }>(
   const maxRssMb = limits.maxRssMb ?? getPdfExtractionMaxRssMb();
   const timeoutMs = limits.timeoutMs ?? PDF_EXTRACTION_WORKER_TIMEOUT_MS;
   const maxOutputBytes = limits.maxOutputBytes ?? PDF_EXTRACTION_MAX_OUTPUT_BYTES;
-  const inputKind = limits.inputKind ?? 'pdf';
+  const inputKind = limits.inputKind ?? "pdf";
   const buildWorkerSource = limits.workerSource ?? buildPdfExtractionWorkerSource;
 
   // Acquire the slot before any fallible setup (mkdtemp/write) so a failure cannot leak
@@ -1112,7 +1109,7 @@ export async function extractPdfTextIsolated<T = { content: string }>(
   try {
     dir = await mkdtemp(join(tmpdir(), `${inputKind}-extract-`));
     const inputPath = join(dir, `input.${inputKind}`);
-    const outputPath = join(dir, 'output.json');
+    const outputPath = join(dir, "output.json");
 
     await writeFile(inputPath, buffer);
 
@@ -1252,9 +1249,9 @@ export async function extractPdfTextIsolated<T = { content: string }>(
       );
     }
 
-    const raw = await readFile(outputPath, 'utf8');
+    const raw = await readFile(outputPath, "utf8");
     const parsed = JSON.parse(raw) as { content?: unknown };
-    if (typeof parsed.content === 'string' && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+    if (typeof parsed.content === "string" && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
       throw new Error(
         `PDF extraction result of ${parsed.content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
       );
@@ -1322,7 +1319,7 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
     // temp file into a Buffer for the same reason.
     const result = await extractPdfTextIsolated<{ html: string; messages: unknown[] }>(
       Buffer.from(arrayBuffer),
-      { inputKind: 'docx', workerSource: (max) => buildOfficeExtractionWorkerSource('docx', max) },
+      { inputKind: "docx", workerSource: (max) => buildOfficeExtractionWorkerSource("docx", max) },
     );
 
     if (result.messages && result.messages.length > 0) {
@@ -1336,8 +1333,8 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
       content: sanitizeTextContent(markdownContent),
       metadata: {
         extractionWarnings: result.messages,
-        format: 'markdown',
-        processingMethod: 'mammoth.js + HTML conversion (isolated worker)',
+        format: "markdown",
+        processingMethod: "mammoth.js + HTML conversion (isolated worker)",
         isClientSide: false,
       },
     };
@@ -1362,14 +1359,14 @@ export async function extractPptxText(
 
     const arrayBuffer = await file.arrayBuffer();
     // ZIP-bomb caps run in the parent, before any worker is spawned.
-    await loadZipWithLimits(arrayBuffer, 'PPTX');
+    await loadZipWithLimits(arrayBuffer, "PPTX");
 
     // Inflating every slide part is the expensive half and now runs in the same
     // isolated worker as PDF/DOCX (#1494 review); the parent only does the cheap
     // regex pass over the returned XML.
     const { slides } = await extractPdfTextIsolated<{ slides: string[] }>(
       Buffer.from(arrayBuffer),
-      { inputKind: 'pptx', workerSource: (max) => buildOfficeExtractionWorkerSource('pptx', max) },
+      { inputKind: "pptx", workerSource: (max) => buildOfficeExtractionWorkerSource("pptx", max) },
     );
 
     const textContent: string[] = [];
@@ -1395,9 +1392,9 @@ export async function extractPptxText(
       pageCount: slideCount,
       metadata: {
         slideCount,
-        processingMethod: 'XML parsing (isolated worker)',
+        processingMethod: "XML parsing (isolated worker)",
         isClientSide: false,
-        note: 'Basic text extraction - complex formatting may not be preserved',
+        note: "Basic text extraction - complex formatting may not be preserved",
       },
     };
   } catch (error) {

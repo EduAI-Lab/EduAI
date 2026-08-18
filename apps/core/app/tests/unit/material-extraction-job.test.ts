@@ -88,10 +88,7 @@ describe("claimExtraction", () => {
       expect.objectContaining({
         id: "mat-1",
         status: "PROCESSING",
-        OR: [
-          { extractionLeaseUntil: null },
-          { extractionLeaseUntil: { lt: expect.any(Date) } },
-        ],
+        OR: [{ extractionLeaseUntil: null }, { extractionLeaseUntil: { lt: expect.any(Date) } }],
       }),
     );
     // A claim is also an attempt — that counter is what bounds the retry loop.
@@ -301,8 +298,9 @@ describe("sweepStrandedMaterialExtractions", () => {
 
     const [args] = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0] as [any];
     expect(args.select.uploadBlob).toBeUndefined();
-    expect(vi.mocked(prisma.materialUploadBlob.findUnique).mock.calls.map(([c]: [any]) => c.where))
-      .toEqual([{ materialId: "mat-1" }, { materialId: "mat-2" }]);
+    expect(
+      vi.mocked(prisma.materialUploadBlob.findUnique).mock.calls.map(([c]: [any]) => c.where),
+    ).toEqual([{ materialId: "mat-1" }, { materialId: "mat-2" }]);
   });
 
   it("skips a row whose blob is gone by the time the sweep reaches it", async () => {

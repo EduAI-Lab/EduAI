@@ -66,10 +66,7 @@ import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import {
-  extractUploadedFileContent,
-  validateUploadedFile,
-} from "~/lib/ai/file-processing";
+import { extractUploadedFileContent, validateUploadedFile } from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE_ID = "course-1";
@@ -184,7 +181,7 @@ function isReclaimClaim(where: any): boolean {
     // The restore claim carries a `status: { not: 'PROCESSING' }` arm too, but
     // only ever paired with `deletedAt` (#1494 review) — that pairing is what
     // separates the two.
-    where.OR.some((c: any) => c?.status?.not === 'PROCESSING' && c?.deletedAt === undefined)
+    where.OR.some((c: any) => c?.status?.not === "PROCESSING" && c?.deletedAt === undefined)
   );
 }
 
@@ -197,9 +194,9 @@ function restoreClaims(): Array<{ where?: any; data?: any }> {
   return vi
     .mocked(prisma.courseMaterial.updateMany)
     .mock.calls.map(([arg]) => arg as any)
-    .filter((arg) =>
-      Array.isArray(arg?.where?.OR) &&
-      arg.where.OR.some((c: any) => c?.deletedAt?.not === null),
+    .filter(
+      (arg) =>
+        Array.isArray(arg?.where?.OR) && arg.where.OR.some((c: any) => c?.deletedAt?.not === null),
     );
 }
 
@@ -719,7 +716,9 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("returns 400 when the file fails validation or MIME sniffing (stays synchronous)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(validateUploadedFile).mockRejectedValueOnce(
-      new Error("File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX"),
+      new Error(
+        "File type application/zip is not supported. Supported types: PDF, TXT, MD, DOCX, PPTX",
+      ),
     );
 
     const res = await action(stubUploadArgs());
@@ -789,7 +788,9 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("marks the row FAILED in the background when extraction dies (#1018)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(extractUploadedFileContent).mockRejectedValueOnce(
-      new Error("Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)"),
+      new Error(
+        "Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)",
+      ),
     );
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
@@ -992,7 +993,10 @@ describe("POST /api/courses/:courseId/materials action", () => {
     // Re-embedding the restored material is still in flight.
     let finishEmbedding: () => void = () => {};
     vi.mocked(processMaterialEmbeddings).mockImplementation(
-      () => new Promise<void>((resolve) => { finishEmbedding = () => resolve(); }),
+      () =>
+        new Promise<void>((resolve) => {
+          finishEmbedding = () => resolve();
+        }),
     );
 
     const res = await action(stubUploadArgs());
@@ -1170,10 +1174,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
         id: "stranded-mat",
         // Pins the row to the provisional state the lookup saw it in.
         checksum: expect.stringMatching(/^pending:/),
-        OR: [
-          { status: { not: "PROCESSING" } },
-          { extractionLeaseUntil: { lt: expect.any(Date) } },
-        ],
+        OR: [{ status: { not: "PROCESSING" } }, { extractionLeaseUntil: { lt: expect.any(Date) } }],
       }),
     );
   });
@@ -1243,10 +1244,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockReclaim(1, 0);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "stranded-mat" } as never);
 
-    const [first, second] = await Promise.all([
-      action(stubUploadArgs()),
-      action(stubUploadArgs()),
-    ]);
+    const [first, second] = await Promise.all([action(stubUploadArgs()), action(stubUploadArgs())]);
 
     expect(first.status).toBe(202);
     expect(second.status).toBe(409);

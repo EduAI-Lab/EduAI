@@ -21,11 +21,11 @@
  * lives in the UPDATE's WHERE so the database serializes two workers racing for
  * the same row and exactly one proceeds.
  */
-import prisma from '~/lib/prisma.server';
-import { processMaterialEmbeddings } from '~/lib/ai/embedding';
-import { extractUploadedFileContent } from '~/lib/ai/file-processing';
-import { fireAndForget, logSystemError } from '~/lib/logging.server';
-import type { getRequestContext } from '~/lib/request-context.server';
+import prisma from "~/lib/prisma.server";
+import { processMaterialEmbeddings } from "~/lib/ai/embedding";
+import { extractUploadedFileContent } from "~/lib/ai/file-processing";
+import { fireAndForget, logSystemError } from "~/lib/logging.server";
+import type { getRequestContext } from "~/lib/request-context.server";
 
 type RequestContext = ReturnType<typeof getRequestContext>;
 
@@ -35,7 +35,7 @@ type RequestContext = ReturnType<typeof getRequestContext>;
  * sweeper only ever touches direct uploads, and the prefix is how it tells them
  * apart from Canvas rows that are PROCESSING for entirely different reasons.
  */
-export const PENDING_CHECKSUM_PREFIX = 'pending:';
+export const PENDING_CHECKSUM_PREFIX = "pending:";
 
 /**
  * How long a claimed extraction may run before the sweeper treats it as dead.
@@ -60,7 +60,7 @@ export const SWEEP_BATCH_SIZE = 20;
  */
 export async function failMaterial(
   materialId: string,
-  code: 'MATERIAL_EXTRACT_FAILED' | 'MATERIAL_EMBED_FAILED' | 'MATERIAL_EXTRACT_ABANDONED',
+  code: "MATERIAL_EXTRACT_FAILED" | "MATERIAL_EMBED_FAILED" | "MATERIAL_EXTRACT_ABANDONED",
   message: string,
   error: unknown,
   requestContext: RequestContext,
@@ -69,16 +69,16 @@ export async function failMaterial(
   try {
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: 'FAILED', extractionLeaseUntil: null },
+      data: { status: "FAILED", extractionLeaseUntil: null },
     });
   } catch (updateError) {
-    console.error('Additionally failed to mark material FAILED:', updateError);
+    console.error("Additionally failed to mark material FAILED:", updateError);
   }
   await discardUploadBlob(materialId);
   fireAndForget(
     logSystemError({
       ...requestContext,
-      source: 'AI',
+      source: "AI",
       code,
       message,
       error,
@@ -94,14 +94,11 @@ export async function failMaterial(
  * pointing at the winner. Clients are expected to read it and then delete it,
  * so duplicate attempts don't accumulate in the materials list.
  */
-export async function markDuplicateReceipt(
-  materialId: string,
-  winnerId: string,
-): Promise<void> {
+export async function markDuplicateReceipt(materialId: string, winnerId: string): Promise<void> {
   await prisma.courseMaterial.update({
     where: { id: materialId },
     data: {
-      status: 'FAILED',
+      status: "FAILED",
       duplicateOfId: winnerId,
       processedAt: new Date(),
       extractionLeaseUntil: null,
@@ -140,7 +137,7 @@ export async function persistUploadBlob(
   bytes: Buffer | Uint8Array,
   fileName: string,
   mimeType: string,
-  client: Pick<typeof prisma, 'materialUploadBlob'> = prisma,
+  client: Pick<typeof prisma, "materialUploadBlob"> = prisma,
 ): Promise<void> {
   // Prisma's Bytes maps to `Uint8Array<ArrayBuffer>`; a Node Buffer can be backed
   // by a SharedArrayBuffer, so normalize rather than cast.
@@ -161,7 +158,7 @@ async function discardUploadBlob(materialId: string): Promise<void> {
   try {
     await prisma.materialUploadBlob.deleteMany({ where: { materialId } });
   } catch (error) {
-    console.error('Failed to discard material upload blob:', error);
+    console.error("Failed to discard material upload blob:", error);
   }
 }
 
@@ -178,7 +175,7 @@ export async function claimExtraction(materialId: string): Promise<boolean> {
   const claimed = await prisma.courseMaterial.updateMany({
     where: {
       id: materialId,
-      status: 'PROCESSING',
+      status: "PROCESSING",
       OR: [{ extractionLeaseUntil: null }, { extractionLeaseUntil: { lt: now } }],
     },
     data: {
@@ -225,15 +222,15 @@ export async function claimRestoreTarget(
       OR: [
         // Settled (READY/FAILED, or any non-PROCESSING state) and soft-deleted:
         // nothing owns it, so this is an ordinary restore.
-        { deletedAt: { not: null }, status: { not: 'PROCESSING' } },
+        { deletedAt: { not: null }, status: { not: "PROCESSING" } },
         // Mid-restore but abandoned: the previous worker's lease has lapsed.
-        { status: 'PROCESSING', extractionLeaseUntil: { lt: now } },
+        { status: "PROCESSING", extractionLeaseUntil: { lt: now } },
       ],
     },
     data: {
       deletedAt: null,
       deletedBy: null,
-      status: 'PROCESSING',
+      status: "PROCESSING",
       uploadedBy: userId,
       processedAt: null,
       duplicateOfId: null,
@@ -270,15 +267,15 @@ export function classifyRestoreTarget(
     extractionLeaseUntil: Date | null;
   },
   now: Date = new Date(),
-): 'restore' | 'busy' | 'settled' {
-  if (duplicate.status === 'PROCESSING') {
+): "restore" | "busy" | "settled" {
+  if (duplicate.status === "PROCESSING") {
     // Ownership decides, not `deletedAt`: an unleased PROCESSING row is not
     // ours (a Canvas import), a live lease means someone else is mid-restore,
     // and only a lapsed lease makes it reclaimable.
-    if (!duplicate.extractionLeaseUntil) return 'settled';
-    return duplicate.extractionLeaseUntil < now ? 'restore' : 'busy';
+    if (!duplicate.extractionLeaseUntil) return "settled";
+    return duplicate.extractionLeaseUntil < now ? "restore" : "busy";
   }
-  return duplicate.deletedAt ? 'restore' : 'settled';
+  return duplicate.deletedAt ? "restore" : "settled";
 }
 
 /**
@@ -319,8 +316,8 @@ export async function runMaterialExtraction(
     // longer a window where extraction fails before anything is persisted.
     await failMaterial(
       materialId,
-      'MATERIAL_EXTRACT_FAILED',
-      'Material extraction failed during background processing',
+      "MATERIAL_EXTRACT_FAILED",
+      "Material extraction failed during background processing",
       extractError,
       requestContext,
     );
@@ -338,14 +335,14 @@ export async function runMaterialExtraction(
     if (duplicate) {
       const targetState = classifyRestoreTarget(duplicate);
 
-      if (targetState === 'busy') {
+      if (targetState === "busy") {
         // Another worker is mid-restore. Leave this receipt PROCESSING with its
         // lease running: a sweep after that lease expires re-reads the target
         // and finds it settled, which is the outcome the client should see.
         return;
       }
 
-      if (targetState === 'restore') {
+      if (targetState === "restore") {
         // Restore-on-re-upload (#685) — preserved from the old synchronous path,
         // just deferred: the soft-deleted original comes back and is re-embedded
         // with `replace: true`, and this upload's row becomes its receipt.
@@ -364,13 +361,13 @@ export async function runMaterialExtraction(
           });
           await prisma.courseMaterial.update({
             where: { id: duplicate.id },
-            data: { status: 'READY', processedAt: new Date(), extractionLeaseUntil: null },
+            data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
           });
         } catch (embeddingError) {
           await failMaterial(
             duplicate.id,
-            'MATERIAL_EMBED_FAILED',
-            'Material embedding failed while restoring a soft-deleted material',
+            "MATERIAL_EMBED_FAILED",
+            "Material embedding failed while restoring a soft-deleted material",
             embeddingError,
             requestContext,
           );
@@ -418,8 +415,8 @@ export async function runMaterialExtraction(
     }
     await failMaterial(
       materialId,
-      'MATERIAL_EXTRACT_FAILED',
-      'Material finalization failed during background processing',
+      "MATERIAL_EXTRACT_FAILED",
+      "Material finalization failed during background processing",
       finalizeError,
       requestContext,
     );
@@ -437,14 +434,14 @@ export async function runMaterialExtraction(
     await processMaterialEmbeddings(materialId, fileInfo.content, { replace: true });
     await prisma.courseMaterial.update({
       where: { id: materialId },
-      data: { status: 'READY', processedAt: new Date(), extractionLeaseUntil: null },
+      data: { status: "READY", processedAt: new Date(), extractionLeaseUntil: null },
     });
     await discardUploadBlob(materialId);
   } catch (embeddingError) {
     await failMaterial(
       materialId,
-      'MATERIAL_EMBED_FAILED',
-      'Material embedding failed during background processing',
+      "MATERIAL_EMBED_FAILED",
+      "Material embedding failed during background processing",
       embeddingError,
       requestContext,
     );
@@ -484,7 +481,7 @@ export function startMaterialExtraction(
 ): void {
   void claimAndRunExtraction(materialId, file, courseId, userId, requestContext).catch(
     (error: unknown) => {
-      console.error('Material extraction job crashed:', error);
+      console.error("Material extraction job crashed:", error);
     },
   );
 }
@@ -519,7 +516,7 @@ export async function sweepStrandedMaterialExtractions(
   const unclaimedSince = new Date(now.getTime() - EXTRACTION_LEASE_MS);
   const stranded = await prisma.courseMaterial.findMany({
     where: {
-      status: 'PROCESSING',
+      status: "PROCESSING",
       checksum: { startsWith: PENDING_CHECKSUM_PREFIX },
       OR: [
         { extractionLeaseUntil: { lt: now } },
@@ -549,9 +546,9 @@ export async function sweepStrandedMaterialExtractions(
       // Retrying further would just kill another worker on the same bytes.
       await failMaterial(
         row.id,
-        'MATERIAL_EXTRACT_ABANDONED',
+        "MATERIAL_EXTRACT_ABANDONED",
         `Material extraction abandoned after ${row.extractionAttempts} attempts`,
-        new Error('extraction attempts exhausted'),
+        new Error("extraction attempts exhausted"),
         requestContext,
       );
       abandoned += 1;
@@ -571,7 +568,7 @@ export async function sweepStrandedMaterialExtractions(
       row.id,
       fileFromBlob(blob),
       row.courseId,
-      row.uploadedBy ?? '',
+      row.uploadedBy ?? "",
       requestContext,
     );
     if (ran) resumed += 1;
@@ -590,9 +587,9 @@ declare global {
  * upload path.
  */
 const SWEEPER_CONTEXT: RequestContext = {
-  requestId: 'material-extraction-sweeper',
-  routePath: 'lib/materials/extraction-job.server',
-  httpMethod: 'SYSTEM',
+  requestId: "material-extraction-sweeper",
+  routePath: "lib/materials/extraction-job.server",
+  httpMethod: "SYSTEM",
   ipAddress: null,
   userAgent: null,
 };
@@ -618,7 +615,7 @@ export function ensureMaterialSweeperRunning(
   if (globalThis.__materialSweeperTimer) return;
   const sweep = () => {
     sweepStrandedMaterialExtractions(requestContext).catch((error: unknown) => {
-      console.error('Material extraction sweep failed:', error);
+      console.error("Material extraction sweep failed:", error);
     });
   };
   // One pass immediately: at startup the interesting rows are the ones the
@@ -639,9 +636,9 @@ export function ensureMaterialSweeperRunning(
  */
 export function isChecksumConflict(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
+    typeof error === "object" &&
     error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'P2002'
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
   );
 }

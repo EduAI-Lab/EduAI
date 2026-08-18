@@ -50,10 +50,8 @@ import {
 // statically at the top of file-processing.ts, which this test file also statically
 // imports — that ordering means those Node-builtin mocks are not reliably applied
 // here, so PDF-worker subprocess tests below use real spawn/fs instead.)
-const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const PPTX_MIME =
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 async function buildZipArrayBuffer(
   files: Record<string, string> = { "word/document.xml": "<xml/>" },
