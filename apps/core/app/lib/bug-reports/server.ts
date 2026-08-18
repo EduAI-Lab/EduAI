@@ -7,6 +7,15 @@ type BugReportSource = (typeof VALID_SOURCES)[number];
 
 const VALID_BUG_TYPES = Object.values(BugReportType);
 
+/**
+ * A screenshot is a base64 image data URL captured client-side. Anything else
+ * (a `javascript:`/`http(s):`/arbitrary string) is rejected at write (#1570):
+ * the value is later rendered to an admin as an `<a href>`, so an unvalidated
+ * scheme is an admin-clickable link-injection sink. Only these image data URLs
+ * are stored; other values drop to null (the report itself still persists).
+ */
+const SCREENSHOT_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif|avif);base64,/i;
+
 /** Field size caps (#979) — bound storage and admin-list payload amplification. */
 export const BUG_REPORT_FIELD_LIMITS = {
   description: 2000,
@@ -129,10 +138,14 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
   // a broken image, and failing the submit would lose the description + logs
   // with it (full-page captures trip the cap easily — #1116 review).
   // Empty strings are stored as null so has* flags stay consistent.
+  // Non-image-data-URL values are also dropped to null (#1570): the screenshot
+  // is rendered to an admin as an `<a href>`, so only a real base64 image data
+  // URL may be stored — never a `javascript:`/`http(s):`/arbitrary string.
   const screenshotValue =
     typeof p.screenshot === "string" &&
     p.screenshot.length > 0 &&
-    p.screenshot.length <= BUG_REPORT_FIELD_LIMITS.screenshot
+    p.screenshot.length <= BUG_REPORT_FIELD_LIMITS.screenshot &&
+    SCREENSHOT_DATA_URL_RE.test(p.screenshot)
       ? p.screenshot
       : null;
 
