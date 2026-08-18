@@ -208,17 +208,13 @@ async function main() {
   for (const i of range(POOL))
     poolActivitiesDrop.push((await newActivity(`PERF-POOL Activity DROP ${i}`, 10 + i)).id);
 
-  // --- enrollments: drop[POOL] (DELETE) + role[2] (role flip). userId is a bare
-  //     string (no FK), so synthetic ids are fine. ---
-  const enrollDropUserIds = range(POOL).map((i) => `perf_user_del_${String(i).padStart(4, "0")}`);
-  const enrollRoleUserIds = [0, 1].map((i) => `perf_user_role_${String(i).padStart(4, "0")}`);
-  for (const uid of [...enrollDropUserIds, ...enrollRoleUserIds]) {
-    await prisma.courseEnrollment.create({
-      data: { courseOfferingId: course.id, userId: uid, role: "STUDENT" },
-    });
-  }
-  // The chat-session reads run as the seed STUDENT — GET chat-sessions requires
-  // that student to be enrolled in the activity's course, else 403.
+  // --- enrollment: the seed STUDENT (needed for chat-session reads) ---
+  // GET chat-sessions requires the reader to be enrolled in the activity's
+  // course, else 403. `userId` holds a Core CUID (`seed_user_student_01` maps to
+  // student1, the `student` role the harness mints a cookie for). The synthetic
+  // enrollment DELETE/role-PATCH pools were dropped with the #1072 anchor
+  // refactor: those routes now require a matching Core enrollment and write
+  // through to Core, so they are out of the local-mutation benchmark.
   await prisma.courseEnrollment.create({
     data: { courseOfferingId: course.id, userId: CORE_STUDENT, role: "STUDENT" },
   });
@@ -246,16 +242,14 @@ async function main() {
     poolSize: POOL,
     instructorUserId: CORE_INSTRUCTOR,
     studentUserId: CORE_STUDENT,
-    nativeCourseId: course.id,
-    nativeTopicId: topic.id,
+    courseId: course.id,
+    topicId: topic.id,
     poolModulesReuse,
     poolModulesDrop,
     poolLessonsReuse,
     poolLessonsDrop,
     poolActivitiesReuse,
     poolActivitiesDrop,
-    enrollDropUserIds,
-    enrollRoleUserIds,
     // reads reuse the pool entities (all exist under the pool offering):
     seededModuleId: poolModulesReuse[0],
     seededLessonId: poolLessonsReuse[0],
