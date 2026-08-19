@@ -143,6 +143,7 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 
 export function parseAdhdStructuredResponse(
   text: string,
+  expectedStageCount?: number | null,
 ): AdhdStructuredResponse | null {
   const object = parseJsonObject(text);
   if (!object) return null;
@@ -162,7 +163,20 @@ export function parseAdhdStructuredResponse(
     })
     .filter((stage): stage is EduaiDiagramStage => stage !== null);
 
-  if (!title || !answer || !tldr || !next || stages.length < 3) return null;
+  const exactStageCount =
+    expectedStageCount != null && expectedStageCount >= 3 && expectedStageCount <= 5
+      ? expectedStageCount
+      : null;
+  if (
+    !title ||
+    !answer ||
+    !tldr ||
+    !next ||
+    stages.length < 3 ||
+    (exactStageCount != null && stages.length !== exactStageCount)
+  ) {
+    return null;
+  }
   return { title, answer, stages: stages.slice(0, 5), tldr, next };
 }
 
@@ -179,7 +193,10 @@ export function renderAdhdStructuredResponse(args: {
   text: string;
   userText?: string;
 }): string | null {
-  const parsed = parseAdhdStructuredResponse(args.text);
+  const parsed = parseAdhdStructuredResponse(
+    args.text,
+    resolveRequestedAssistStageCount(args.userText),
+  );
   if (!parsed) return null;
 
   const resolvedTypeId = resolveEduaiDiagramTypeId({

@@ -54,6 +54,9 @@ const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
 const expectedModels = parseCommaList(
   process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen3.5-2b-instruct,qwen3.5-9b-instruct",
 );
+const assistModel = (process.env.ADHD_ASSIST_AUTO_MODEL || "vllm:qwen2.5-32b-instruct")
+  .replace(/^vllm:/i, "")
+  .trim();
 
 const chatUrls = parseCommaList(process.env.VLLM_FLEET_CHAT_URLS);
 const heavyUrl = process.env.VLLM_FLEET_HEAVY_URL?.trim();
@@ -130,6 +133,21 @@ async function main() {
 
   const okCount = results.filter((r) => r.ok).length;
   console.log(`\nSummary: ${okCount}/${results.length} hosts healthy`);
+  const assistHosts = results.filter((result) =>
+    result.modelIds.some(
+      (modelId) => modelId.toLowerCase() === assistModel.toLowerCase(),
+    ),
+  );
+  if (assistHosts.length === 0) {
+    console.error(
+      `FAIL  Assist Auto model ${assistModel} was not advertised by any healthy fleet host. ` +
+        "Provision it on the configured host (cmps02 in the production example) before enabling Assist Auto.",
+    );
+    process.exit(1);
+  }
+  console.log(
+    `Assist Auto model ${assistModel}: ${assistHosts.map((host) => host.id).join(", ")}`,
+  );
   if (okCount >= 2) {
     console.log("Round-robin: send several chat requests and check X-Fleet-Server alternates.");
   }

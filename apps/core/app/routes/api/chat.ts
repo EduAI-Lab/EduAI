@@ -2515,7 +2515,7 @@ ${buildEmptyCourseRagBlock()}`;
             adhdToolsUsed = true;
           }
         },
-        onFinish: needsOversight
+        onFinish: needsOversight || structuredAssistOutput
           ? undefined
           : async ({ text, usage, finishReason, response }) => {
               probe?.hooks.signalReady();
@@ -2727,6 +2727,13 @@ ${buildEmptyCourseRagBlock()}`;
               userText: lastUserText,
             })
           : null;
+        if (
+          structuredAssistOutput &&
+          requestedAssistStageCount != null &&
+          !structuredDraft
+        ) {
+          throw new Error("Provider returned invalid structured Assist output");
+        }
         draft = structuredDraft ?? providerDraft;
         if (structuredDraft) {
           chatApiDebug("Rendered constrained Assist response", {
@@ -2893,6 +2900,162 @@ ${buildEmptyCourseRagBlock()}`;
         return new Response(
           JSON.stringify({
             error: "Failed to generate overseen response",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
+    // Structured Assist output must be normalized before either response mode
+    // is sent. When oversight is disabled there is no later application pass
+    // to turn the provider's JSON into the learner-facing Markdown contract.
+    if (structuredAssistOutput) {
+      let providerResultResolved = false;
+      try {
+        await result.consumeStream?.();
+        const [text, usage, finishReason, sources, reasoning, response] =
+          await Promise.all([
+            result.text,
+            result.usage,
+            result.finishReason,
+            result.sources,
+            result.reasoning,
+            result.response,
+          ]);
+        providerResultResolved = true;
+
+        const renderedText = renderAdhdStructuredResponse({
+          text: text ?? "",
+          userText: lastUserText,
+        });
+        const normalizedText = renderedText ?? (text ?? "").trim();
+        if (
+          !normalizedText ||
+          (requestedAssistStageCount != null && !renderedText)
+        ) {
+          throw new Error("Provider returned invalid structured Assist output");
+        }
+
+        const messagesToPersist = buildOverseenAssistantMessagesToPersist(
+          response?.messages,
+          normalizedText,
+        ).map((message) => ({
+          ...(message as GenericMessage),
+          metadata: {
+            finishReason,
+            hitLongOutputCap: didHitLongOutputCap(usage),
+          },
+        }));
+        if (messagesToPersist.length > 0) {
+          await appendMessages(messagesToPersist);
+        }
+
+        const normalizedUsage = coalesceTokenUsage(
+          usage as Record<string, unknown> | undefined,
+        );
+        await persistTurnTelemetry({
+          responseText: normalizedText,
+          usage: {
+            promptTokens: normalizedUsage.promptTokens ?? undefined,
+            completionTokens:
+              normalizedUsage.completionTokens ?? undefined,
+            totalTokens: normalizedUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
+        logResponseCompliance(normalizedText, {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+        });
+
+        if (streaming) {
+          const headers: Record<string, string> = {
+            "Content-Encoding": "none",
+            "Transfer-Encoding": "chunked",
+            Connection: "keep-alive",
+          };
+          if (chat?.id) {
+            headers["X-Chat-Id"] = chat.id;
+          }
+          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          Object.assign(
+            headers,
+            autoRoutingHeaders(
+              resolvedModelId,
+              routingTier,
+              wasAuto,
+              resolvedRouterVersion,
+              fleetPick?.serverId ?? null,
+            ),
+          );
+          void liveStreamData?.close();
+          releaseAdmission();
+          return createDataStreamResponse({
+            headers: { ...headers, ...admissionHeaders() },
+            execute: (dataStream) => {
+              dataStream.write(formatDataStreamPart("text", normalizedText));
+              dataStream.writeMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(usage),
+              });
+              dataStream.write(
+                formatDataStreamPart("finish_message", {
+                  finishReason: finishReason ?? "stop",
+                }),
+              );
+            },
+          });
+        }
+
+        releaseAdmission();
+        return new Response(
+          JSON.stringify({
+            content: normalizedText,
+            model,
+            usage,
+            finishReason,
+            hitLongOutputCap: didHitLongOutputCap(usage),
+            sources: sources || [],
+            reasoning,
+            responseId: response?.id,
+            courseCode,
+            chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              ...admissionHeaders(),
+              ...(fleetPick?.serverId
+                ? { "X-Fleet-Server": fleetPick.serverId }
+                : {}),
+            },
+          },
+        );
+      } catch (error) {
+        releaseAdmission();
+        if (isClientAbort(error, request.signal)) {
+          return clientAbortResponse();
+        }
+        if (!providerResultResolved) {
+          logStreamError(error, streamTrace);
+          return rejectProviderFailure(
+            classifyProviderError(parsedModel.providerId, error),
+            { ...streamTrace, stage: "structured-provider" },
+          );
+        }
+        console.error("Error rendering structured Assist response:", error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to render structured Assist response",
             details: error instanceof Error ? error.message : "Unknown error",
           }),
           {

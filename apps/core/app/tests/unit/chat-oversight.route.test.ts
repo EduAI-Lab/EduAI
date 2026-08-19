@@ -101,6 +101,17 @@ const OVERSEEN = `**Top summary**
 - Fixed point
 
 **Next?** Want to continue?`;
+const STRUCTURED_ASSIST = JSON.stringify({
+  title: "Gradient descent",
+  answer: "The optimizer lowers error by following the slope downhill.",
+  stages: [
+    { label: "Start point", detail: "Pick initial parameter values." },
+    { label: "Compute gradient", detail: "Measure the uphill direction." },
+    { label: "Step downhill", detail: "Move opposite the gradient." },
+  ],
+  tldr: "Follow the slope downhill, one measured step at a time.",
+  next: "try one update yourself",
+});
 
 const originalVllm = process.env.VLLM_BASE_URL;
 
@@ -314,6 +325,44 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const body = await res.json();
     expect(body.content).toBe(DRAFT);
     expect(body.content).not.toContain("**Top summary**");
+  });
+
+  it("renders structured Assist output when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.content).toContain("**Top summary**");
+    expect(body.content).toContain("### Step ladder");
+    expect(body.content).not.toBe(STRUCTURED_ASSIST);
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it("normalizes structured Assist output before a streaming response when oversight is disabled", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({ text: STRUCTURED_ASSIST });
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: true,
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("**Top summary**");
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
   });
 });
 

@@ -84,6 +84,24 @@ describe("structured Assist output", () => {
     expect(schema.properties.stages.maxItems).toBe(5);
   });
 
+  it("rejects provider output that ignores an exact stage-count request", () => {
+    expect(parseAdhdStructuredResponse(structured, 5)).toBeNull();
+    const parsed = JSON.parse(structured) as Record<string, unknown>;
+    const stages = parsed.stages as Array<Record<string, string>>;
+    expect(
+      parseAdhdStructuredResponse(
+        JSON.stringify({
+          ...parsed,
+          stages: [
+            ...stages,
+            { label: "Verify result", detail: "Check the final loss." },
+          ],
+        }),
+        5,
+      )?.stages,
+    ).toHaveLength(5);
+  });
+
   it("does not truncate an explicitly requested flow as a two-sided comparison", () => {
     const rendered = renderAdhdStructuredResponse({
       text: structured,
