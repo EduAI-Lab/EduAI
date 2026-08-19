@@ -16,9 +16,9 @@ export function TeamSection() {
           headingClassName="text-3xl lg:text-4xl font-bold text-foreground"
           subheading={
             <span className="mx-auto block max-w-3xl text-lg">
-              Our dedicated team of undergraduate and graduate students works alongside faculty to
-              advance the field of Educational Artificial Intelligence, creating innovative
-              solutions that enhance learning experiences for students worldwide.
+              We are an enthusiastic crew of UBC undergrads, graduate researchers, and faculty
+              members passionate about making learning more engaging and accessible. Here are the
+              people writing the code, training the models, and building EduAI.
             </span>
           }
         />

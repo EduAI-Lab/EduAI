@@ -21,7 +21,7 @@ export function meta(_args: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "An AI-powered learning platform built at UBC Okanagan — the project, its goals, and the research team behind it.",
+        "An AI learning platform crafted at UBC Okanagan. Discover what we are building, why we love doing it, and meet the team behind it all.",
     },
   ];
 }
@@ -37,9 +37,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 const capabilities = [
-  { icon: IconCpu, label: "Machine learning" },
-  { icon: IconBook, label: "Educational technology" },
-  { icon: IconUsers, label: "Personalized learning" },
+  { icon: IconCpu, label: "Smart course AI" },
+  { icon: IconBook, label: "Real class notes" },
+  { icon: IconUsers, label: "Personalized practice" },
 ];
 
 export default function HomePage() {
@@ -106,16 +106,17 @@ export default function HomePage() {
           <div className="grid items-start gap-10 lg:grid-cols-2">
             <div className="space-y-6">
               <p className="text-lg leading-relaxed text-muted-foreground">
-                EduAI is a groundbreaking research initiative at UBC Okanagan that harnesses the
-                power of artificial intelligence to transform educational experiences. Our project
-                focuses on developing intelligent systems that understand, adapt, and respond to
-                individual learning needs.
+                We are a research lab at UBC Okanagan building learning tools that feel genuinely
+                helpful. Instead of handing you the answer or replacing great teachers,
+                our tools break down confusing topics step by step, and meet
+                you wherever you are in your coursework.
               </p>
 
               <p className="text-lg leading-relaxed text-muted-foreground">
-                By combining advanced machine learning algorithms, natural language processing, and
-                educational theory, we're creating tools that make learning more personalized,
-                accessible, and effective for students across all disciplines.
+                By mixing machine learning research with real classroom feedback, we build software
+                that students actually want to use. Whether you are untangling difficult code, reviewing
+                lecture slides before an exam, or exploring new ideas, we want studying to feel less
+                daunting and more accessible.
               </p>
 
               <div className="flex flex-wrap gap-3">
@@ -134,12 +135,12 @@ export default function HomePage() {
             <Card>
               <CardContent className="px-6 py-6">
                 <h3 className="mb-4 text-lg font-semibold text-card-foreground">
-                  Built on the platform you're signing into
+                  Powered by the platform right here
                 </h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  EduAI Core is the course-aware tutoring platform the lab builds and runs. Course
-                  materials are embedded and retrieved to ground every answer, so students get help
-                  anchored in what their instructor actually taught — not a generic model's guess.
+                  EduAI Core is our home-grown tutoring platform. It connects directly with your
+                  course slides, readings, and syllabi so every answer is anchored in what your
+                  professor actually taught, rather than random guesses from the open web.
                 </p>
                 <div className="mt-5">
                   <Button asChild variant="outline">
@@ -163,15 +164,15 @@ export default function HomePage() {
       <section className="bg-primary py-20">
         <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-primary-foreground lg:text-4xl">
-            Ready to get started?
+            Ready to dive in?
           </h2>
           <div
             aria-hidden="true"
             className="mx-auto my-5 h-[3px] w-10 rounded-[2px] bg-[var(--gold)]"
           />
           <p className="mb-8 text-lg leading-relaxed text-primary-foreground/80">
-            Head to your dashboard to pick up where you left off, or create an account to start
-            learning with course-aware AI.
+            Jump into your dashboard to continue your studies, or set up a free account and try out
+            an AI tutor that actually knows your syllabus.
           </p>
 
           <div className="flex flex-wrap justify-center gap-3">

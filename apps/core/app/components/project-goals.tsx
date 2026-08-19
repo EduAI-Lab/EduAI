@@ -4,51 +4,51 @@ import { Card, CardContent, PageHeading } from "@eduai/ui";
 const goals = [
   {
     icon: IconBrain,
-    title: "Cognitive AI Models",
+    title: "Patient, smart tutors",
     description:
-      "Develop state-of-the-art AI models that understand and adapt to individual learning patterns.",
+      "AI companions that meet you where you are, explain tricky ideas step by step, and never get tired of questions.",
   },
   {
     icon: IconTarget,
-    title: "Personalized Learning",
+    title: "Tailored study paths",
     description:
-      "Create adaptive learning paths that evolve with each student's progress and needs.",
+      "Practice sessions that adapt to what clicks for you, giving you extra support right where you need it most.",
   },
   {
     icon: IconCode,
-    title: "Open Source",
+    title: "Built in the open",
     description:
-      "Contribute to the educational community through open-source AI tools and frameworks.",
+      "We share our code and research freely so teachers, students, and curious developers everywhere can build on it.",
   },
   {
     icon: IconCpu,
-    title: "Advanced Analytics",
+    title: "Helpful progress insights",
     description:
-      "Provide deep insights into learning patterns and educational effectiveness.",
+      "Clear, honest feedback showing where you are thriving and where a quick refresher could make a big difference.",
   },
   {
     icon: IconUsers,
-    title: "Collaborative Learning",
+    title: "Learning together",
     description:
-      "Foster peer-to-peer learning through AI-facilitated group interactions.",
+      "Features designed to help classmates team up, bounce ideas around, and work through tough problems as a group.",
   },
   {
     icon: IconWorld,
-    title: "Global Access",
+    title: "Accessible to everyone",
     description:
-      "Make quality education accessible to learners worldwide through AI technology.",
+      "Fast, lightweight tools designed to run smoothly for anyone, anywhere, across all kinds of devices.",
   },
   {
     icon: IconBulb,
-    title: "Innovation",
+    title: "Curiosity first",
     description:
-      "Push the boundaries of educational technology with cutting-edge AI research.",
+      "Real classroom experiments driven by students and professors who love testing fresh ideas and learning.",
   },
   {
     icon: IconGitBranch,
-    title: "Integration",
+    title: "Plays well with your classes",
     description:
-      "Seamlessly integrate with existing educational platforms and workflows.",
+      "Connects naturally with platforms you already use every day, like Canvas, without adding extra hassle.",
   },
 ];
 
