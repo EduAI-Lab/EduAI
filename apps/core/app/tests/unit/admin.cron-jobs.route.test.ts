@@ -125,13 +125,27 @@ describe("GET /api/admin/cron-jobs (loader)", () => {
 describe("POST /api/admin/cron-jobs (action) — auth guard", () => {
   it("returns 401 when unauthenticated", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
     expect(status(res)).toBe(401);
   });
 
   it("returns 401 when user is not ADMIN", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: STUDENT_USER } as any);
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
     expect(status(res)).toBe(401);
   });
 });
@@ -146,21 +160,39 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
   });
 
   it("returns 400 for an unknown job name", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "ghost-job" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "ghost-job" }),
+      ),
+    );
     expect(status(res)).toBe(400);
     const b = body(res);
     expect(b.error).toMatch(/Unknown job/);
   });
 
   it("returns 400 for a job managed by an extension server (triggerEnabled: false)", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "ai-tutor-reconcile" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "ai-tutor-reconcile",
+        }),
+      ),
+    );
     expect(status(res)).toBe(400);
     const b = body(res);
     expect(b.error).toMatch(/extension server/);
   });
 
   it("records a run for the worker to dispatch for a valid triggerable job", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
     expect(status(res)).toBe(200);
     expect(findRunningCronRun).toHaveBeenCalledWith("backup-nightly");
     expect(startCronRun).toHaveBeenCalledWith("backup-nightly", {
@@ -173,7 +205,14 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
 
   it("reuses an existing RUNNING run instead of spawning again", async () => {
     vi.mocked(findRunningCronRun).mockResolvedValue({ id: "run-existing" });
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
     expect(status(res)).toBe(200);
     expect(startCronRun).not.toHaveBeenCalled();
     const b = body(res);
@@ -192,54 +231,78 @@ describe("POST /api/admin/cron-jobs (action) — intent: update-schedule", () =>
   });
 
   it("returns 400 when schedule is missing", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "update-schedule",
-      jobName: "backup-nightly",
-      scheduleLabel: "Daily at 03:00 UTC",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-schedule",
+          jobName: "backup-nightly",
+          scheduleLabel: "Daily at 03:00 UTC",
+        }),
+      ),
+    );
     expect(status(res)).toBe(400);
   });
 
   it("returns 400 when scheduleLabel is missing", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "update-schedule",
-      jobName: "backup-nightly",
-      schedule: "0 3 * * *",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-schedule",
+          jobName: "backup-nightly",
+          schedule: "0 3 * * *",
+        }),
+      ),
+    );
     expect(status(res)).toBe(400);
   });
 
   it("returns 400 for an invalid cron expression", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "update-schedule",
-      jobName: "backup-nightly",
-      schedule: "not-a-cron",
-      scheduleLabel: "Bad",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-schedule",
+          jobName: "backup-nightly",
+          schedule: "not-a-cron",
+          scheduleLabel: "Bad",
+        }),
+      ),
+    );
     expect(status(res)).toBe(400);
     const b = body(res);
     expect(b.error).toMatch(/Invalid cron expression/);
   });
 
   it("returns 400 for an unknown job", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "update-schedule",
-      jobName: "ghost-job",
-      schedule: "0 3 * * *",
-      scheduleLabel: "Daily at 03:00 UTC",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-schedule",
+          jobName: "ghost-job",
+          schedule: "0 3 * * *",
+          scheduleLabel: "Daily at 03:00 UTC",
+        }),
+      ),
+    );
     expect(status(res)).toBe(400);
   });
 
   it("updates the schedule on valid input", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "update-schedule",
-      jobName: "backup-nightly",
-      schedule: "0 3 * * *",
-      scheduleLabel: "Daily at 03:00 UTC",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "update-schedule",
+          jobName: "backup-nightly",
+          schedule: "0 3 * * *",
+          scheduleLabel: "Daily at 03:00 UTC",
+        }),
+      ),
+    );
     expect(status(res)).toBe(200);
-    expect(updateCronSchedule).toHaveBeenCalledWith("backup-nightly", "0 3 * * *", "Daily at 03:00 UTC");
+    expect(updateCronSchedule).toHaveBeenCalledWith(
+      "backup-nightly",
+      "0 3 * * *",
+      "Daily at 03:00 UTC",
+    );
     const b = body(res);
     expect(b.jobs).toBeDefined();
   });
@@ -256,18 +319,26 @@ describe("POST /api/admin/cron-jobs (action) — intent: reset-schedule", () => 
   });
 
   it("returns 400 for an unknown job", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "reset-schedule",
-      jobName: "ghost-job",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-schedule",
+          jobName: "ghost-job",
+        }),
+      ),
+    );
     expect(status(res)).toBe(400);
   });
 
   it("resets the override on valid input", async () => {
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", {
-      intent: "reset-schedule",
-      jobName: "backup-nightly",
-    })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "reset-schedule",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
     expect(status(res)).toBe(200);
     expect(resetCronSchedule).toHaveBeenCalledWith("backup-nightly");
     const b = body(res);
@@ -282,7 +353,9 @@ describe("POST /api/admin/cron-jobs (action) — intent: reset-schedule", () => 
 describe("POST /api/admin/cron-jobs (action) — unknown intent", () => {
   it("returns 400 with an error message", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: ADMIN_USER } as any);
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "unknown" })));
+    const res = await action(
+      makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "unknown" })),
+    );
     expect(status(res)).toBe(400);
     const b = body(res);
     expect(b.error).toBe("Unknown intent");

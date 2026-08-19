@@ -10,10 +10,10 @@
  *
  * Related: `app/lib/list-params.ts`, `app/components/common/PaginationControls.tsx`.
  */
-import { useEffect, useRef, useState } from 'react';
-import { Input } from '@eduai/ui';
-import { IconSearch, IconX } from '@tabler/icons-react';
-import { MAX_SEARCH_LENGTH } from '~/lib/list-params';
+import { useEffect, useRef, useState } from "react";
+import { Input } from "@eduai/ui";
+import { IconSearch, IconX } from "@tabler/icons-react";
+import { MAX_SEARCH_LENGTH } from "~/lib/list-params";
 
 /** Long enough not to fire per keystroke, short enough to feel immediate. */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -39,7 +39,7 @@ export type ListSearchInputProps = {
 export function ListSearchInput({
   value,
   onSearchChange,
-  placeholder = 'Search…',
+  placeholder = "Search…",
   label,
   disabled = false,
 }: ListSearchInputProps) {
@@ -90,14 +90,14 @@ export function ListSearchInput({
         onChange={(event) => setDraft(event.target.value)}
         className="pl-9 pr-9"
       />
-      {draft !== '' ? (
+      {draft !== "" ? (
         <button
           type="button"
           aria-label={`Clear ${label.toLowerCase()}`}
           onClick={() => {
-            setDraft('');
-            submittedRef.current = '';
-            onSearchChangeRef.current('');
+            setDraft("");
+            submittedRef.current = "";
+            onSearchChangeRef.current("");
           }}
           className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
         >

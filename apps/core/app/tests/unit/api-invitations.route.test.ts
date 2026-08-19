@@ -40,7 +40,7 @@ function makeActionArgs(body: unknown, method = "POST") {
     request: new Request("http://localhost/api/invitations", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: {},
     context: {} as never,
@@ -123,7 +123,11 @@ describe("POST /api/invitations (action)", () => {
     } as never);
     vi.mocked(assertValidUnits).mockResolvedValue(new Response(null, { status: 400 }) as never);
     const res = await action(
-      makeActionArgs({ email: "new@student.ubc.ca", role: "UNIT_ADMIN", authorizedUnits: ["BOGUS"] }),
+      makeActionArgs({
+        email: "new@student.ubc.ca",
+        role: "UNIT_ADMIN",
+        authorizedUnits: ["BOGUS"],
+      }),
     );
     expect(res.status).toBe(400);
     expect(createInvitation).not.toHaveBeenCalled();
@@ -134,8 +138,14 @@ describe("POST /api/invitations (action)", () => {
       response: null,
       session: { user: { id: "admin-1", role: "ADMIN", name: "Admin" } },
     } as never);
-    vi.mocked(createInvitation).mockResolvedValue({ ok: false, error: "USER_EXISTS", status: 409 } as never);
-    const res = await action(makeActionArgs({ email: "existing@student.ubc.ca", role: "INSTRUCTOR" }));
+    vi.mocked(createInvitation).mockResolvedValue({
+      ok: false,
+      error: "USER_EXISTS",
+      status: 409,
+    } as never);
+    const res = await action(
+      makeActionArgs({ email: "existing@student.ubc.ca", role: "INSTRUCTOR" }),
+    );
     expect(res.status).toBe(409);
   });
 

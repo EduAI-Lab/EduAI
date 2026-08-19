@@ -3,7 +3,6 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { createBugReport, listOwnBugReports } from "~/lib/bug-reports/server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
-
 /**
  * GET /api/bug-reports?mine=true (#304, §11) — own submitted reports for any
  * authenticated user (own-resource fallback, §19).
@@ -49,13 +48,17 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     body = await request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }),
+      {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
-  const source = body && typeof body === "object" ? (body as { source?: string }).source : undefined;
+  const source =
+    body && typeof body === "object" ? (body as { source?: string }).source : undefined;
   const extensionSource = source === "AI_TUTOR" || source === "QUESTION_MAKER";
   let sessionUserId: string | null = null;
 
@@ -82,15 +85,15 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (!result.ok) {
     if (result.error === "VALIDATION_ERROR") {
-      return new Response(
-        JSON.stringify({ error: "VALIDATION_ERROR", fields: result.fields }),
-        { status: 422, headers: { "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: result.fields }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-    return new Response(
-      JSON.stringify({ error: result.error }),
-      { status: 422, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: result.error }), {
+      status: 422,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return new Response(JSON.stringify({ id: result.report.id }), {

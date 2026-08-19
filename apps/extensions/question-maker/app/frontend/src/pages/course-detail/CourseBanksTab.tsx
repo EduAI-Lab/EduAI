@@ -2,7 +2,7 @@
  * Banks tab: manage Core-owned question banks for this course.
  * Clicking a bank opens `/courses/:courseId/banks/:bankId` (same pattern as assessments).
  */
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Button,
   EmptyState,
@@ -12,14 +12,9 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-} from '@eduai/ui';
-import {
-  IconPlus,
-  IconRefresh,
-  IconStack2,
-  IconArrowRight,
-} from '@tabler/icons-react';
-import type { QuestionBank } from '../../services/questionBankService';
+} from "@eduai/ui";
+import { IconPlus, IconRefresh, IconStack2, IconArrowRight } from "@tabler/icons-react";
+import type { QuestionBank } from "../../services/questionBankService";
 
 interface CourseBanksTabProps {
   banks: QuestionBank[];
@@ -41,7 +36,7 @@ export function CourseBanksTab({
   onOpenBank,
 }: CourseBanksTabProps) {
   const [isCreating, setIsCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newName, setNewName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   const handleCreate = async () => {
@@ -50,7 +45,7 @@ export function CourseBanksTab({
     setIsSaving(true);
     try {
       await onCreateBank(trimmed);
-      setNewName('');
+      setNewName("");
       setIsCreating(false);
     } finally {
       setIsSaving(false);
@@ -111,16 +106,21 @@ export function CourseBanksTab({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleCreate();
-              if (e.key === 'Escape') {
+              if (e.key === "Enter") void handleCreate();
+              if (e.key === "Escape") {
                 setIsCreating(false);
-                setNewName('');
+                setNewName("");
               }
             }}
             className="max-w-xs"
             autoFocus
           />
-          <Button type="button" size="sm" disabled={isSaving || !newName.trim()} onClick={() => void handleCreate()}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={isSaving || !newName.trim()}
+            onClick={() => void handleCreate()}
+          >
             Create
           </Button>
           <Button
@@ -129,7 +129,7 @@ export function CourseBanksTab({
             size="sm"
             onClick={() => {
               setIsCreating(false);
-              setNewName('');
+              setNewName("");
             }}
           >
             Cancel
@@ -149,8 +149,8 @@ export function CourseBanksTab({
           title="No question banks yet"
           description={
             canWrite
-              ? 'Create a named bank or sync one from Canvas. A default course bank is created when Core is linked.'
-              : 'No banks are available for this course.'
+              ? "Create a named bank or sync one from Canvas. A default course bank is created when Core is linked."
+              : "No banks are available for this course."
           }
           bare={false}
         />
@@ -164,16 +164,14 @@ export function CourseBanksTab({
                 className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => onOpenBank(bank.id)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     onOpenBank(bank.id);
                   }
                 }}
               >
                 <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
-                  <CardTitle className="text-base font-medium leading-snug">
-                    {bank.name}
-                  </CardTitle>
+                  <CardTitle className="text-base font-medium leading-snug">{bank.name}</CardTitle>
                   {bank.isDefault && <Badge variant="secondary">Default</Badge>}
                 </CardHeader>
                 <CardContent className="space-y-3">

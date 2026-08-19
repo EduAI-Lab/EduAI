@@ -1,9 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import tsconfigPaths from 'vite-tsconfig-paths';
-import type { ViteUserConfig } from 'vitest/config';
+import fs from "node:fs";
+import path from "node:path";
+import tsconfigPaths from "vite-tsconfig-paths";
+import type { ViteUserConfig } from "vitest/config";
 
-import { uiAliases } from './vitest.ui-aliases';
+import { uiAliases } from "./vitest.ui-aliases";
 
 // Walk up from a config file's directory until we find the monorepo root
 // (identified by a packages/ui subdirectory). This must work both for a
@@ -13,7 +13,7 @@ import { uiAliases } from './vitest.ui-aliases';
 // sandbox case, so we search instead of hardcoding depth.
 export function findMonorepoRoot(startDir: string): string {
   let dir = startDir;
-  while (!fs.existsSync(path.join(dir, 'packages', 'ui'))) {
+  while (!fs.existsSync(path.join(dir, "packages", "ui"))) {
     const parent = path.dirname(dir);
     if (parent === dir) {
       throw new Error(`Could not locate monorepo root (packages/ui) starting from ${startDir}`);
@@ -40,9 +40,9 @@ export function baseVitestConfig(coreDir: string): ViteUserConfig {
     test: {
       globals: true,
       // happy-dom avoids jsdom@29 → html-encoding-sniffer → @exodus/bytes ERR_REQUIRE_ESM
-      environment: 'happy-dom',
+      environment: "happy-dom",
       fileParallelism: false,
-      setupFiles: ['./app/tests/setup.ts'],
+      setupFiles: ["./app/tests/setup.ts"],
     },
   };
 }

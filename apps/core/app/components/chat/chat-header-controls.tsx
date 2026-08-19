@@ -84,10 +84,7 @@ export function ChatHeaderControls({
           <p className="mt-0.5 opacity-75">Works independently of Assistive mode.</p>
         </TooltipContent>
       </Tooltip>
-      <SystemPromptSettings
-        systemPrompt={systemPrompt}
-        onSave={onSystemPromptSave}
-      />
+      <SystemPromptSettings systemPrompt={systemPrompt} onSave={onSystemPromptSave} />
     </div>
   );
 }

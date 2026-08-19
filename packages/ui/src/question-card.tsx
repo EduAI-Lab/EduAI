@@ -1,85 +1,80 @@
-import type { CSSProperties, ReactNode } from "react"
-import {
-  IconListDetails,
-  IconSparkles,
-  IconHistory,
-  IconDots,
-} from "@tabler/icons-react"
+import type { CSSProperties, ReactNode } from "react";
+import { IconListDetails, IconSparkles, IconHistory, IconDots } from "@tabler/icons-react";
 
-import { cn } from "./utils"
-import { Badge } from "./ui/badge"
-import { AnswerOption } from "./answer-option"
+import { cn } from "./utils";
+import { Badge } from "./ui/badge";
+import { AnswerOption } from "./answer-option";
 
-export type QuestionDifficulty = "easy" | "medium" | "hard"
+export type QuestionDifficulty = "easy" | "medium" | "hard";
 
 export interface QuestionCardChoice {
   /** Letter label e.g. "A" */
-  letter: string
+  letter: string;
   /** Choice body text */
-  text: string
+  text: string;
   /** Marks this choice as the correct answer */
-  correct?: boolean
+  correct?: boolean;
 }
 
 export interface QuestionCardStatus {
-  label: string
+  label: string;
   /** Maps to Badge variant; defaults to "success" (Reviewed) */
-  variant?: "success" | "warning" | "muted" | "outline" | "default"
+  variant?: "success" | "warning" | "muted" | "outline" | "default";
 }
 
 export interface QuestionCardProps {
   /** Question type label e.g. "Multiple Choice" */
-  type: string
+  type: string;
   /** Optional override for the type icon (defaults to a list icon) */
-  typeIcon?: ReactNode
+  typeIcon?: ReactNode;
   /** Difficulty label e.g. "Medium" */
-  difficulty?: string
+  difficulty?: string;
   /** Difficulty colour mapping (easy=success, medium=warning, hard=destructive) */
-  difficultyLevel?: QuestionDifficulty
+  difficultyLevel?: QuestionDifficulty;
   /** Show the "AI" chip when the question was AI-generated */
-  ai?: boolean
+  ai?: boolean;
   /** Muted label on the top-right e.g. "Variant #2 of Question #5" */
-  label?: string
+  label?: string;
   /** Prominent identity marker rendered top-left, ahead of the type/difficulty badges. */
-  identity?: ReactNode
+  identity?: ReactNode;
   /** Review/publish status pill on the top-right */
-  status?: QuestionCardStatus
+  status?: QuestionCardStatus;
   /** The question prompt */
-  question: ReactNode
+  question: ReactNode;
   /** MCQ choices — rendered as a responsive grid */
-  choices?: QuestionCardChoice[]
+  choices?: QuestionCardChoice[];
   /** For SA/LA questions: rendered in place of the choice grid */
-  answer?: ReactNode
+  answer?: ReactNode;
   /** Topic tags shown in the footer */
-  topics?: string[]
+  topics?: string[];
   /** Footer right-aligned timestamp e.g. "Updated 2 days ago" */
-  updatedLabel?: string
+  updatedLabel?: string;
   /** History icon-button handler; hidden when omitted */
-  onHistory?: () => void
+  onHistory?: () => void;
   /** Rendered inside the kebab (⋮) slot — pass a DropdownMenu trigger or buttons */
-  menu?: ReactNode
+  menu?: ReactNode;
   /** "default" full card, "compact" for dense lists (e.g. Question Bank) */
-  size?: "default" | "compact"
+  size?: "default" | "compact";
   /** Makes the whole card clickable (e.g. to open the question). Controls in the header stop propagation. */
-  onClick?: () => void
-  className?: string
-  style?: CSSProperties
+  onClick?: () => void;
+  className?: string;
+  style?: CSSProperties;
 }
 
 const difficultyVariant: Record<QuestionDifficulty, "success" | "warning" | "destructive"> = {
   easy: "success",
   medium: "warning",
   hard: "destructive",
-}
+};
 
 function IconButton({
   label,
   onClick,
   children,
 }: {
-  label: string
-  onClick?: () => void
-  children: ReactNode
+  label: string;
+  onClick?: () => void;
+  children: ReactNode;
 }) {
   return (
     <button
@@ -90,7 +85,7 @@ function IconButton({
     >
       {children}
     </button>
-  )
+  );
 }
 
 export function QuestionCard({
@@ -114,7 +109,7 @@ export function QuestionCard({
   className,
   style,
 }: QuestionCardProps) {
-  const compact = size === "compact"
+  const compact = size === "compact";
 
   return (
     <div
@@ -125,8 +120,8 @@ export function QuestionCard({
         onClick
           ? (event) => {
               if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault()
-                onClick()
+                event.preventDefault();
+                onClick();
               }
             }
           : undefined
@@ -146,45 +141,48 @@ export function QuestionCard({
           label also collapses to an icon below 20rem to keep the row compact for as long as possible. */}
       <div className="flex flex-wrap items-center gap-2">
         {identity && (
-            <span
-              className={cn(
-                "inline-flex shrink-0 items-center rounded-md bg-accent px-2 py-0.5 font-semibold text-accent-foreground",
-                compact ? "text-xs" : "text-[13px]",
-              )}
-            >
-              {identity}
-            </span>
-          )}
-          <Badge variant="muted" size={compact ? "sm" : "default"} className="shrink-0 gap-1.5" title={type}>
-            {typeIcon ?? <IconListDetails className="size-3.5" />}
-            <span className="hidden @[20rem]/qcard:inline">{type}</span>
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center rounded-md bg-accent px-2 py-0.5 font-semibold text-accent-foreground",
+              compact ? "text-xs" : "text-[13px]",
+            )}
+          >
+            {identity}
+          </span>
+        )}
+        <Badge
+          variant="muted"
+          size={compact ? "sm" : "default"}
+          className="shrink-0 gap-1.5"
+          title={type}
+        >
+          {typeIcon ?? <IconListDetails className="size-3.5" />}
+          <span className="hidden @[20rem]/qcard:inline">{type}</span>
+        </Badge>
+        {difficulty && (
+          <Badge variant={difficultyVariant[difficultyLevel]} size={compact ? "sm" : "default"}>
+            {difficulty}
           </Badge>
-          {difficulty && (
-            <Badge variant={difficultyVariant[difficultyLevel]} size={compact ? "sm" : "default"}>
-              {difficulty}
-            </Badge>
-          )}
-          {ai && (
-            <Badge
-              size={compact ? "sm" : "default"}
-              className="gap-1 border-transparent"
-              style={{
-                background: "var(--color-blue-100)",
-                color: "var(--color-blue-700)",
-              }}
-            >
-              <IconSparkles className="size-3.5" />
-              AI
-            </Badge>
-          )}
+        )}
+        {ai && (
+          <Badge
+            size={compact ? "sm" : "default"}
+            className="gap-1 border-transparent"
+            style={{
+              background: "var(--color-blue-100)",
+              color: "var(--color-blue-700)",
+            }}
+          >
+            <IconSparkles className="size-3.5" />
+            AI
+          </Badge>
+        )}
 
         <div
           className="ml-0 flex shrink-0 items-center gap-2 @[24rem]/qcard:ml-auto"
           onClick={onClick ? (event) => event.stopPropagation() : undefined}
         >
-          {label && (
-            <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
-          )}
+          {label && <span className="text-[13px] font-medium text-muted-foreground">{label}</span>}
           {status && (
             <Badge variant={status.variant ?? "success"} size={compact ? "sm" : "default"}>
               {status.label}
@@ -200,7 +198,12 @@ export function QuestionCard({
       </div>
 
       {/* Body: question + choices, with the left accent rail */}
-      <div className={cn("mt-4 flex flex-1 flex-col border-l-2 border-border pl-4", compact && "mt-3 pl-3")}>
+      <div
+        className={cn(
+          "mt-4 flex flex-1 flex-col border-l-2 border-border pl-4",
+          compact && "mt-3 pl-3",
+        )}
+      >
         <div
           className={cn(
             "font-semibold leading-snug text-foreground",
@@ -247,10 +250,20 @@ export function QuestionCard({
 
       {/* Footer: topics + timestamp */}
       {(topics.length > 0 || updatedLabel) && (
-        <div className={cn("mt-5 flex flex-col gap-2 border-t border-border @[26rem]/qcard:flex-row @[26rem]/qcard:items-center @[26rem]/qcard:justify-between", compact ? "pt-3" : "pt-4")}>
+        <div
+          className={cn(
+            "mt-5 flex flex-col gap-2 border-t border-border @[26rem]/qcard:flex-row @[26rem]/qcard:items-center @[26rem]/qcard:justify-between",
+            compact ? "pt-3" : "pt-4",
+          )}
+        >
           <div className="flex min-w-0 flex-wrap gap-2">
             {topics.map((topic) => (
-              <Badge key={topic} variant="muted" size={compact ? "sm" : "default"} className="max-w-full font-medium">
+              <Badge
+                key={topic}
+                variant="muted"
+                size={compact ? "sm" : "default"}
+                className="max-w-full font-medium"
+              >
                 <span className="truncate">{topic}</span>
               </Badge>
             ))}
@@ -261,5 +274,5 @@ export function QuestionCard({
         </div>
       )}
     </div>
-  )
+  );
 }

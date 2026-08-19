@@ -106,10 +106,7 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
       imageContext,
     );
 
-    expect(mocks.classifyPromptForTier).toHaveBeenCalledWith(
-      "describe this image",
-      imageContext,
-    );
+    expect(mocks.classifyPromptForTier).toHaveBeenCalledWith("describe this image", imageContext);
     expect(decision.tier).toBe(3);
     expect(decision.features).toMatchObject({
       rule: "llm_classifier",

@@ -5,10 +5,7 @@ import {
   type EduaiDiagramStage,
 } from "~/lib/ai/eduai-diagram-payload";
 import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
-import {
-  userRequestedDiagram,
-  type AdhdTurnProfile,
-} from "~/lib/ai/adhd-turn-profile";
+import { userRequestedDiagram, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 
 /**
  * The model supplies semantics; the application supplies the learner-facing
@@ -26,9 +23,7 @@ const STAGE_COUNT_WORDS: Record<string, number> = {
  * The value becomes part of the constrained schema, rather than relying on a
  * small model to remember a stage-count instruction in its prompt.
  */
-export function resolveRequestedAssistStageCount(
-  userText?: string,
-): number | null {
+export function resolveRequestedAssistStageCount(userText?: string): number | null {
   const match =
     /\b(?:exactly\s+)?(3|4|5|three|four|five)(?:\s+(?:ordered|labeled|labelled|clear|simple))*\s+(?:stages?|steps?)\b/i.exec(
       userText ?? "",
@@ -39,9 +34,7 @@ export function resolveRequestedAssistStageCount(
   return count >= 3 && count <= 5 ? count : null;
 }
 
-export function buildAdhdAssistStructuredResponseSchema(
-  exactStageCount?: number | null,
-) {
+export function buildAdhdAssistStructuredResponseSchema(exactStageCount?: number | null) {
   const stageCount =
     exactStageCount != null && exactStageCount >= 3 && exactStageCount <= 5
       ? exactStageCount
@@ -74,8 +67,7 @@ export function buildAdhdAssistStructuredResponseSchema(
   };
 }
 
-export const ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA =
-  buildAdhdAssistStructuredResponseSchema();
+export const ADHD_ASSIST_STRUCTURED_RESPONSE_SCHEMA = buildAdhdAssistStructuredResponseSchema();
 
 export type AdhdStructuredResponse = {
   title: string;
@@ -85,9 +77,7 @@ export type AdhdStructuredResponse = {
   next: string;
 };
 
-export function isVllmStructuredAdhdAssistModel(
-  modelIdentifier: string,
-): boolean {
+export function isVllmStructuredAdhdAssistModel(modelIdentifier: string): boolean {
   return /^vllm:[^:]+$/i.test(modelIdentifier);
 }
 
@@ -207,14 +197,9 @@ export function renderAdhdStructuredResponse(args: {
   // three to five stages must remain a process flow even when a topic (for
   // example, binary search) contains comparison-like wording.
   const requestedStageCount = resolveRequestedAssistStageCount(args.userText);
-  const typeId =
-    requestedStageCount && requestedStageCount > 2
-      ? "process-flow"
-      : resolvedTypeId;
+  const typeId = requestedStageCount && requestedStageCount > 2 ? "process-flow" : resolvedTypeId;
   const stages = normalizeStagesForType(typeId, parsed.stages);
-  const summary = stages
-    .map((stage) => `- **${stage.label}** — ${stage.detail}`)
-    .join("\n");
+  const summary = stages.map((stage) => `- **${stage.label}** — ${stage.detail}`).join("\n");
   const ladder = stages
     .map((stage, index) => `${index + 1}. **${stage.label}** — ${stage.detail}`)
     .join("\n");
@@ -248,14 +233,8 @@ export function renderAdhdStructuredResponse(args: {
 }
 
 /** Add the canonical visual after oversight when a provider fell back to Markdown. */
-export function ensureAdhdAssistDiagram(args: {
-  text: string;
-  userText?: string;
-}): string {
-  if (
-    !userRequestedDiagram(args.userText) ||
-    /```eduai-diagram\b/i.test(args.text)
-  ) {
+export function ensureAdhdAssistDiagram(args: { text: string; userText?: string }): string {
+  if (!userRequestedDiagram(args.userText) || /```eduai-diagram\b/i.test(args.text)) {
     return args.text;
   }
 

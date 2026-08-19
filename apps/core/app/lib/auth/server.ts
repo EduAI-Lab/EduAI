@@ -12,10 +12,7 @@ import {
   PASSWORD_POLICY_MESSAGE,
   SKIP_REUSE_PATHS,
 } from "./password-policy";
-import {
-  isPasswordReused,
-  recordPasswordHistory,
-} from "./password-history.server";
+import { isPasswordReused, recordPasswordHistory } from "./password-history.server";
 import { resolvePasswordReuseUserId } from "./password-reuse-guard.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 import { isActiveAdminUser } from "../api-keys/access.server";
@@ -300,7 +297,7 @@ export const auth = betterAuth({
   rateLimit: {
     // Disable in E2E/test environments where many sign-ups happen in quick
     // succession. Set BETTER_AUTH_DISABLE_RATE_LIMIT=1 to turn this off.
-    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== '1',
+    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== "1",
     window: 60,
     max: 100,
   },

@@ -88,9 +88,8 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
   });
 
   it("links enrollments when roster sisUserId is encrypted at rest", async () => {
-    const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } = await import(
-      "~/lib/canvas/student-id.server"
-    );
+    const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } =
+      await import("~/lib/canvas/student-id.server");
     const roster = prepareRosterSisUserIdStorage("10000001");
     const user = prepareStudentIdStorage("10000001");
 
@@ -252,9 +251,8 @@ describe("deactivateDroppedCanvasEnrollments", () => {
   });
 
   async function storage() {
-    const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } = await import(
-      "~/lib/canvas/student-id.server"
-    );
+    const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } =
+      await import("~/lib/canvas/student-id.server");
     return { prepareRosterSisUserIdStorage, prepareStudentIdStorage };
   }
 

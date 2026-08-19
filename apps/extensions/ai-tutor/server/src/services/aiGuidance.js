@@ -33,15 +33,15 @@
  *   `routes/activities.js` (HTTP entry points).
  */
 
-import { randomUUID } from 'crypto';
-import { setTimeout as wait } from 'node:timers/promises';
-import { prisma } from '../config/database.js';
-import { getEduAiCompletionUrl } from './eduaiClient.js';
-import { trimNonEmpty } from '../utils/coreCourseId.js';
-import { DEFAULT_TUTOR_MODEL } from './aiModelPolicy.js';
+import { randomUUID } from "crypto";
+import { setTimeout as wait } from "node:timers/promises";
+import { prisma } from "../config/database.js";
+import { getEduAiCompletionUrl } from "./eduaiClient.js";
+import { trimNonEmpty } from "../utils/coreCourseId.js";
+import { DEFAULT_TUTOR_MODEL } from "./aiModelPolicy.js";
 
 const SUPERVISOR_ERROR_MESSAGE =
-  'AI study buddy encountered an issue reviewing the response. Please try again.';
+  "AI study buddy encountered an issue reviewing the response. Please try again.";
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 
@@ -50,13 +50,13 @@ const FALLBACK_MESSAGE =
 const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
 const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
-const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
+const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try again.";
 
 function resolveRetryDelayMs(retryAfter, remainingMs, nowMs = Date.now()) {
   const safeRemainingMs = Math.max(remainingMs, 0);
   let requestedDelayMs = EDUAI_RETRY_DELAY_MS;
 
-  if (typeof retryAfter === 'string') {
+  if (typeof retryAfter === "string") {
     const value = retryAfter.trim();
 
     if (/^-?\d+(?:\.\d+)?$/.test(value)) {
@@ -87,17 +87,17 @@ function isRetryableEduAiResponse(status, errorText) {
   // bounded backoff.
   try {
     const coreError = JSON.parse(errorText)?.error;
-    return coreError !== 'RATE_LIMITED' && coreError !== 'Too Many Requests';
+    return coreError !== "RATE_LIMITED" && coreError !== "Too Many Requests";
   } catch {
     return true;
   }
 }
 
 function eduAiErrorMessage(status, errorText) {
-  let detail = '';
+  let detail = "";
   try {
     const coreError = JSON.parse(errorText)?.error;
-    if (typeof coreError === 'string' && coreError.trim()) {
+    if (typeof coreError === "string" && coreError.trim()) {
       detail = `: ${coreError.trim()}`;
     }
   } catch {
@@ -137,25 +137,25 @@ async function callEduAI({
   const model = modelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
 
   if (!cookie) {
-    console.error('[aiGuidance] Missing session cookie for EduAI call');
-    const error = new Error('Session cookie is required for EduAI calls');
+    console.error("[aiGuidance] Missing session cookie for EduAI call");
+    const error = new Error("Session cookie is required for EduAI calls");
     error.status = 401;
     throw error;
   }
 
   if (!userApiKey) {
-    console.error('[aiGuidance] Missing user API key');
-    const error = new Error('API key is required');
+    console.error("[aiGuidance] Missing user API key");
+    const error = new Error("API key is required");
     error.status = 400;
     throw error;
   }
 
   // Model IDs are namespaced "provider:model" (e.g. "google:gemini-2.5-flash");
   // the provider half indexes into the apiKeys map sent to EduAI.
-  const [provider] = model.split(':');
+  const [provider] = model.split(":");
   if (!provider) {
-    console.error('[aiGuidance] Invalid model ID format:', model);
-    throw new Error('Invalid model ID format');
+    console.error("[aiGuidance] Invalid model ID format:", model);
+    throw new Error("Invalid model ID format");
   }
 
   const userMessageId = messageId || randomUUID();
@@ -171,12 +171,12 @@ async function callEduAI({
   const trimmedCourseCode = trimNonEmpty(courseCode);
 
   const requestBody = {
-    messages: [{ id: userMessageId, role: 'user', content: userMessage }],
+    messages: [{ id: userMessageId, role: "user", content: userMessage }],
     systemPrompt,
     model,
     apiKeys,
     streaming: false,
-    routingContext: { feature: 'tutor', jobType: 'interactive' },
+    routingContext: { feature: "tutor", jobType: "interactive" },
     ...(chatId ? { chatId } : {}),
     ...(trimmedCourseId ? { courseId: trimmedCourseId } : {}),
     ...(trimmedCourseCode ? { courseCode: trimmedCourseCode } : {}),
@@ -192,9 +192,9 @@ async function callEduAI({
 
     for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           cookie,
         },
         body: JSON.stringify(requestBody),
@@ -208,41 +208,41 @@ async function callEduAI({
 
         if (shouldRetry) {
           console.warn(
-            '[aiGuidance] Transient API error; retrying once:',
+            "[aiGuidance] Transient API error; retrying once:",
             response.status,
             errorText,
           );
           const nowMs = Date.now();
           const remainingMs = Math.max(deadline - nowMs, 0);
           const retryDelayMs = resolveRetryDelayMs(
-            response.headers.get('Retry-After'),
+            response.headers.get("Retry-After"),
             remainingMs,
             nowMs,
           );
           await wait(retryDelayMs, undefined, { signal: requestSignal });
           requestSignal.throwIfAborted();
           if (Date.now() >= deadline) {
-            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+            throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
           }
           continue;
         }
 
-        console.error('[aiGuidance] API error:', response.status, errorText);
+        console.error("[aiGuidance] API error:", response.status, errorText);
         const error = new Error(eduAiErrorMessage(response.status, errorText));
         error.status = response.status;
         throw error;
       }
 
       const data = await response.json();
-      if (data.content && typeof data.content === 'string') {
+      if (data.content && typeof data.content === "string") {
         return {
           message: data.content,
           chatId: data.chatId || chatId || null,
         };
       }
 
-      console.error('[aiGuidance] Unexpected response format:', data);
-      throw new Error('Invalid response format from AI API');
+      console.error("[aiGuidance] Unexpected response format:", data);
+      throw new Error("Invalid response format from AI API");
     }
   } catch (error) {
     if (signal?.aborted) {
@@ -252,14 +252,14 @@ async function callEduAI({
       // instead of mapping it to a 504.
       throw error;
     }
-    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      console.error('[aiGuidance] EduAI call timed out after', EDUAI_CALL_TIMEOUT_MS, 'ms');
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      console.error("[aiGuidance] EduAI call timed out after", EDUAI_CALL_TIMEOUT_MS, "ms");
       const timeoutError = new Error(TIMEOUT_MESSAGE);
       timeoutError.status = 504;
-      timeoutError.code = 'TIMEOUT';
+      timeoutError.code = "TIMEOUT";
       throw timeoutError;
     }
-    console.error('[aiGuidance] Error calling eduAI:', error);
+    console.error("[aiGuidance] Error calling eduAI:", error);
     throw error;
   }
 }
@@ -275,10 +275,10 @@ async function getPromptTemplateBySlug(slug) {
  */
 function stripMarkdownFence(rawText) {
   let value = rawText.trim();
-  if (value.startsWith('```')) {
+  if (value.startsWith("```")) {
     value = value
-      .replace(/```json?\n?/g, '')
-      .replace(/```/g, '')
+      .replace(/```json?\n?/g, "")
+      .replace(/```/g, "")
       .trim();
   }
   return value;
@@ -292,14 +292,14 @@ function stripMarkdownFence(rawText) {
 function normalizeSupervisorVerdict(verdict) {
   return {
     approved: Boolean(verdict.approved),
-    reason: verdict.reason || '',
+    reason: verdict.reason || "",
     feedbackToTutor:
       verdict.feedbackToTutor ||
       verdict.suggestion ||
-      'Revise the response to stay more Socratic and avoid directly revealing the answer.',
+      "Revise the response to stay more Socratic and avoid directly revealing the answer.",
     safeResponseToStudent:
       verdict.safeResponseToStudent ||
-      'Let’s take one smaller step. Focus on the key concept behind the question and explain which part feels most uncertain.',
+      "Let’s take one smaller step. Focus on the key concept behind the question and explain which part feels most uncertain.",
   };
 }
 
@@ -324,9 +324,9 @@ async function callSupervisor({
   courseId = null,
   signal,
 }) {
-  const template = await getPromptTemplateBySlug('supervisor-prompt');
+  const template = await getPromptTemplateBySlug("supervisor-prompt");
   if (!template) {
-    throw new Error('Supervisor prompt template not configured');
+    throw new Error("Supervisor prompt template not configured");
   }
 
   const buildUserMessage = (parseErrorDetails = null) => {
@@ -375,19 +375,19 @@ RESPOND WITH ONLY VALID JSON.`;
     return { ...first.verdict, parseFailed: false, raw: first.raw };
   }
 
-  const second = await attemptParse(first.parseError?.message || 'Invalid JSON');
+  const second = await attemptParse(first.parseError?.message || "Invalid JSON");
   if (second.ok) {
     return { ...second.verdict, parseFailed: false, raw: second.raw };
   }
 
-  console.error('[supervisor] Failed to parse verdict after retry:', second.raw, second.parseError);
+  console.error("[supervisor] Failed to parse verdict after retry:", second.raw, second.parseError);
   return {
     approved: false,
-    reason: 'Supervisor response invalid after retry',
+    reason: "Supervisor response invalid after retry",
     feedbackToTutor:
-      'Revise the reply to avoid revealing the answer and stay focused on a single helpful hint.',
+      "Revise the reply to avoid revealing the answer and stay focused on a single helpful hint.",
     safeResponseToStudent:
-      'Let’s slow down and focus on one clue at a time. Think about which concept the question is really testing before choosing your next step.',
+      "Let’s slow down and focus on one clue at a time. Think about which concept the question is really testing before choosing your next step.",
     parseFailed: true,
     raw: second.raw,
   };
@@ -402,7 +402,7 @@ RESPOND WITH ONLY VALID JSON.`;
 function buildSystemPrompt(templateContent, context = {}) {
   let systemPrompt =
     templateContent ||
-    'You are a helpful teaching assistant who guides students toward understanding without revealing answers directly.';
+    "You are a helpful teaching assistant who guides students toward understanding without revealing answers directly.";
 
   if (context.topic) {
     systemPrompt = systemPrompt.replace(/\[INSERT TOPIC HERE\]/g, context.topic);
@@ -417,7 +417,7 @@ function buildSystemPrompt(templateContent, context = {}) {
 }
 
 function buildTeachUserMessage({ topicName, message }) {
-  const topicText = topicName ? `Topic: ${topicName}\n\n` : '';
+  const topicText = topicName ? `Topic: ${topicName}\n\n` : "";
   return `${topicText}Student request: ${message}`;
 }
 
@@ -427,22 +427,22 @@ function buildTeachUserMessage({ topicName, message }) {
  * never reveals them. Returns an empty string when the list is empty.
  */
 function buildQuestionBankContext(questions) {
-  if (!Array.isArray(questions) || questions.length === 0) return '';
+  if (!Array.isArray(questions) || questions.length === 0) return "";
 
   const lines = [
-    'Course Testable Question Bank (supervisor reference only — do not reveal to student):',
+    "Course Testable Question Bank (supervisor reference only — do not reveal to student):",
   ];
   questions.forEach((q, i) => {
     lines.push(`${i + 1}. [${q.type}, ${q.difficulty}] ${q.content}`);
     if (Array.isArray(q.choices) && q.choices.length > 0) {
-      const choiceStr = q.choices.map((c) => `${c.letter}. ${c.text}`).join(', ');
+      const choiceStr = q.choices.map((c) => `${c.letter}. ${c.text}`).join(", ");
       lines.push(`   Choices: ${choiceStr}`);
     }
     if (q.answer) {
       lines.push(`   Answer: ${q.answer}`);
     }
   });
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 /**
@@ -453,11 +453,11 @@ function buildQuestionBankContext(questions) {
  */
 function buildGuideUserMessage(activity, { message, studentAnswer }) {
   const config = activity.config || {};
-  const questionType = config.questionType || 'MCQ';
-  const question = config.question || activity.instructionsMd || 'No question text provided.';
+  const questionType = config.questionType || "MCQ";
+  const question = config.question || activity.instructionsMd || "No question text provided.";
 
   let base = `Question: ${question}`;
-  if (questionType === 'MCQ') {
+  if (questionType === "MCQ") {
     // Tolerate two historical shapes: `options: [...]` and `options: { choices: [...] }`.
     const options = Array.isArray(config.options)
       ? config.options
@@ -466,7 +466,7 @@ function buildGuideUserMessage(activity, { message, studentAnswer }) {
         : [];
 
     if (options.length > 0) {
-      base += '\n\nOptions:\n';
+      base += "\n\nOptions:\n";
       options.forEach((option, idx) => {
         const letter = String.fromCharCode(65 + idx);
         base += `${letter}. ${option}\n`;
@@ -477,7 +477,7 @@ function buildGuideUserMessage(activity, { message, studentAnswer }) {
   if (studentAnswer !== null && studentAnswer !== undefined && String(studentAnswer).length > 0) {
     // Numeric answers are MCQ option indices; map to A/B/C/... letters.
     const answerText =
-      typeof studentAnswer === 'number'
+      typeof studentAnswer === "number"
         ? String.fromCharCode(65 + studentAnswer)
         : String(studentAnswer);
     base += `\n\nStudent answer: ${answerText}`;
@@ -494,9 +494,9 @@ function buildGuideUserMessage(activity, { message, studentAnswer }) {
  */
 function formatAnswerKey(activity, studentAnswer) {
   const config = activity.config || {};
-  const questionType = config.questionType || 'MCQ';
+  const questionType = config.questionType || "MCQ";
 
-  if (questionType === 'MCQ') {
+  if (questionType === "MCQ") {
     const correctIndex = config.answer?.correctIndex;
     const options = Array.isArray(config.options)
       ? config.options
@@ -504,7 +504,7 @@ function formatAnswerKey(activity, studentAnswer) {
         ? config.options.choices
         : [];
 
-    if (typeof correctIndex === 'number') {
+    if (typeof correctIndex === "number") {
       const label = String.fromCharCode(65 + correctIndex);
       const answerText = options[correctIndex] ? `${label}. ${options[correctIndex]}` : label;
       return `Correct answer: ${answerText}`;
@@ -512,8 +512,8 @@ function formatAnswerKey(activity, studentAnswer) {
   }
 
   if (
-    questionType === 'SHORT_TEXT' &&
-    typeof config.answer?.text === 'string' &&
+    questionType === "SHORT_TEXT" &&
+    typeof config.answer?.text === "string" &&
     config.answer.text.trim()
   ) {
     return `Correct answer: ${config.answer.text.trim()}`;
@@ -523,7 +523,7 @@ function formatAnswerKey(activity, studentAnswer) {
     return `Student submitted answer: ${String(studentAnswer)}`;
   }
 
-  return 'Correct answer: unavailable';
+  return "Correct answer: unavailable";
 }
 
 function buildTeachSupervisorContexts({ topicName, knowledgeLevel, message }) {
@@ -586,7 +586,7 @@ async function supervisedGenerate(generateFn, context) {
       chatId: currentChatId,
       trace: {
         ...trace,
-        finalOutcome: 'single_pass',
+        finalOutcome: "single_pass",
         finalResponse: tutorResult.message,
         iterationCount: 1,
       },
@@ -632,7 +632,7 @@ async function supervisedGenerate(generateFn, context) {
           chatId: currentChatId,
           trace: {
             ...trace,
-            finalOutcome: 'approved',
+            finalOutcome: "approved",
             finalResponse: tutorResult.message,
             iterationCount: trace.iterations.length,
           },
@@ -643,7 +643,7 @@ async function supervisedGenerate(generateFn, context) {
       // `[SUPERVISOR FEEDBACK: ...]` to the user message.
       context.lastFeedback = verdict.feedbackToTutor;
     } catch (supervisorError) {
-      console.error('[supervisor] Error during review:', supervisorError);
+      console.error("[supervisor] Error during review:", supervisorError);
       throw new Error(SUPERVISOR_ERROR_MESSAGE, { cause: supervisorError });
     }
   }
@@ -653,7 +653,7 @@ async function supervisedGenerate(generateFn, context) {
     chatId: currentChatId,
     trace: {
       ...trace,
-      finalOutcome: 'safe_fallback',
+      finalOutcome: "safe_fallback",
       finalResponse: lastSafeResponse,
       iterationCount: trace.iterations.length,
     },
@@ -752,12 +752,12 @@ export async function generateTeachResponse({
   signal,
 }) {
   try {
-    const template = await getPromptTemplateBySlug('learning-prompt');
+    const template = await getPromptTemplateBySlug("learning-prompt");
     if (!template) {
-      throw new Error('Learning prompt template missing');
+      throw new Error("Learning prompt template missing");
     }
 
-    const resolvedTopicName = topicName || activity.mainTopic?.name || 'the subject';
+    const resolvedTopicName = topicName || activity.mainTopic?.name || "the subject";
     const baseUserMessage = buildTeachUserMessage({ topicName: resolvedTopicName, message });
     const { visibleContext, hiddenContext: baseHiddenContext } = buildTeachSupervisorContexts({
       topicName: resolvedTopicName,
@@ -791,17 +791,17 @@ export async function generateTeachResponse({
       signal,
     });
   } catch (error) {
-    console.error('[aiGuidance] Failed to generate teach response:', error);
+    console.error("[aiGuidance] Failed to generate teach response:", error);
     return {
-      message: error.message || 'AI study buddy not available right now. Please try again later.',
+      message: error.message || "AI study buddy not available right now. Please try again later.",
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
-        finalOutcome: 'error',
+        finalOutcome: "error",
         finalResponse:
-          error.message || 'AI study buddy not available right now. Please try again later.',
+          error.message || "AI study buddy not available right now. Please try again later.",
         iterationCount: 0,
       },
     };
@@ -832,9 +832,9 @@ export async function generateGuideResponse({
   signal,
 }) {
   try {
-    const template = await getPromptTemplateBySlug('exercise-prompt');
+    const template = await getPromptTemplateBySlug("exercise-prompt");
     if (!template) {
-      throw new Error('Exercise prompt template missing');
+      throw new Error("Exercise prompt template missing");
     }
 
     const baseUserMessage = buildGuideUserMessage(activity, { message, studentAnswer });
@@ -849,7 +849,7 @@ export async function generateGuideResponse({
 
     return generateWithSupervisor({
       systemPrompt: buildSystemPrompt(template.systemPrompt, {
-        topic: activity.mainTopic?.name || 'the subject',
+        topic: activity.mainTopic?.name || "the subject",
         knowledgeLevel,
       }),
       buildUserMessage: () => baseUserMessage,
@@ -869,17 +869,17 @@ export async function generateGuideResponse({
       signal,
     });
   } catch (error) {
-    console.error('[aiGuidance] Failed to generate guide response:', error);
+    console.error("[aiGuidance] Failed to generate guide response:", error);
     return {
-      message: error.message || 'AI study buddy not available right now. Please try again later.',
+      message: error.message || "AI study buddy not available right now. Please try again later.",
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
-        finalOutcome: 'error',
+        finalOutcome: "error",
         finalResponse:
-          error.message || 'AI study buddy not available right now. Please try again later.',
+          error.message || "AI study buddy not available right now. Please try again later.",
         iterationCount: 0,
       },
     };
@@ -913,10 +913,10 @@ export async function generateCustomResponse({
 }) {
   try {
     if (!activity.customPrompt) {
-      throw new Error('No custom prompt configured for this activity');
+      throw new Error("No custom prompt configured for this activity");
     }
 
-    const resolvedTopicName = topicName || activity.mainTopic?.name || 'the subject';
+    const resolvedTopicName = topicName || activity.mainTopic?.name || "the subject";
     const baseUserMessage = buildGuideUserMessage(activity, { message, studentAnswer });
     const { visibleContext, hiddenContext: baseHiddenContext } = buildGuideSupervisorContexts(
       activity,
@@ -949,17 +949,17 @@ export async function generateCustomResponse({
       signal,
     });
   } catch (error) {
-    console.error('[aiGuidance] Failed to generate custom response:', error);
+    console.error("[aiGuidance] Failed to generate custom response:", error);
     return {
-      message: error.message || 'AI study buddy not available right now. Please try again later.',
+      message: error.message || "AI study buddy not available right now. Please try again later.",
       chatId,
       trace: {
         tutorModelId,
         supervisorModelId,
         iterations: [],
-        finalOutcome: 'error',
+        finalOutcome: "error",
         finalResponse:
-          error.message || 'AI study buddy not available right now. Please try again later.',
+          error.message || "AI study buddy not available right now. Please try again later.",
         iterationCount: 0,
       },
     };

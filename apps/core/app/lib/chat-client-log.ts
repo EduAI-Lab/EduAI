@@ -23,8 +23,7 @@ export async function logChatApiResponse(response: Response, label = "chat"): Pr
 }
 
 export function logChatUseChatError(error: Error, label = "chat"): void {
-  const cause =
-    "cause" in error && error.cause !== undefined ? error.cause : undefined;
+  const cause = "cause" in error && error.cause !== undefined ? error.cause : undefined;
   console.error(`[${label}] useChat error`, {
     message: error.message,
     name: error.name,

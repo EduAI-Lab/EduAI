@@ -15,7 +15,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -207,7 +211,11 @@ describe("POST /api/chat — Auto routing image-capability selection (#1403 revi
     mockResolveRoutedModel.mockResolvedValue({
       modelId: "vllm:qwen3.5-32b",
       tier: 3,
-      features: { routerVersion: "v1-rules", rule: "rule6_default_tier_1_energy", pickSource: "rules" },
+      features: {
+        routerVersion: "v1-rules",
+        rule: "rule6_default_tier_1_energy",
+        pickSource: "rules",
+      },
     });
 
     const res = await action(makeRequest(baseBody()));
@@ -258,7 +266,11 @@ describe("POST /api/chat — Auto routing image-capability selection (#1403 revi
     mockResolveRoutedModel.mockResolvedValue({
       modelId: "vllm:qwen3.5-32b",
       tier: 3,
-      features: { routerVersion: "v1-rules", rule: "rule6_default_tier_1_energy", pickSource: "rules" },
+      features: {
+        routerVersion: "v1-rules",
+        rule: "rule6_default_tier_1_energy",
+        pickSource: "rules",
+      },
     });
 
     const res = await action(
@@ -289,9 +301,7 @@ describe("POST /api/chat — explicit (non-Auto) model image-capability check (#
       maxTokens: 8192,
     });
 
-    const res = await action(
-      makeRequest(baseBody({ model: "vllm:qwen3.5-7b" })),
-    );
+    const res = await action(makeRequest(baseBody({ model: "vllm:qwen3.5-7b" })));
 
     expect(res.status).toBe(400);
     const responseBody = await res.json();
@@ -310,9 +320,7 @@ describe("POST /api/chat — explicit (non-Auto) model image-capability check (#
       maxTokens: 16_384,
     });
 
-    const res = await action(
-      makeRequest(baseBody({ model: "vllm:qwen3.5-32b" })),
-    );
+    const res = await action(makeRequest(baseBody({ model: "vllm:qwen3.5-32b" })));
 
     expect(res.status).toBe(200);
   });

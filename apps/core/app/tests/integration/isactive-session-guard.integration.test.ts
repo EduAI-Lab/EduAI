@@ -42,8 +42,12 @@ function signIn(email: string, password = PASSWORD): Promise<Response> {
 }
 
 function cookieHeaderFrom(res: Response): string {
-  const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
-  return setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  const setCookies =
+    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  return setCookies
+    .map((c) => c.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
 }
 
 afterAll(async () => {

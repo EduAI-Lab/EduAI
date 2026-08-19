@@ -28,28 +28,28 @@
  * Composite FKs are out of scope; QM has none, and `conkey[1]` would only check
  * the first column if one were added.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 /** Every index this migration is responsible for, as `table.column`. */
 const EXPECTED_INDEXED_FKS = [
-  'assessment_sections.assessment_id',
-  'assessments.course_id',
-  'canvas_bank_question_mappings.local_question_metadata_id',
-  'course_access.course_id',
-  'courses.user_id',
-  'question_metadata.course_id',
-  'question_metadata.created_by',
-  'question_metadata.primary_topic_id',
-  'section_variants.variant_id',
-  'variant_selection_cursors.last_variant_id',
-  'variant_selection_cursors.question_metadata_id',
-  'variants.assessment_id',
-  'variants.created_by',
-  'variants.question_metadata_id',
-  'variants.reference_id',
+  "assessment_sections.assessment_id",
+  "assessments.course_id",
+  "canvas_bank_question_mappings.local_question_metadata_id",
+  "course_access.course_id",
+  "courses.user_id",
+  "question_metadata.course_id",
+  "question_metadata.created_by",
+  "question_metadata.primary_topic_id",
+  "section_variants.variant_id",
+  "variant_selection_cursors.last_variant_id",
+  "variant_selection_cursors.question_metadata_id",
+  "variants.assessment_id",
+  "variants.created_by",
+  "variants.question_metadata_id",
+  "variants.reference_id",
 ];
 
 /**
@@ -58,22 +58,22 @@ const EXPECTED_INDEXED_FKS = [
  * fails loudly here instead of quietly costing a seq scan.
  */
 const COVERED_BY_EXISTING_UNIQUE = [
-  'canvas_bank_mappings.user_id',
-  'canvas_bank_question_mappings.user_id',
-  'canvas_course_mappings.local_course_id',
-  'canvas_course_mappings.user_id',
-  'canvas_integrations.user_id',
-  'course_access.user_id',
-  'section_variants.section_id',
-  'topics.course_id',
-  'variant_selection_cursors.course_id',
+  "canvas_bank_mappings.user_id",
+  "canvas_bank_question_mappings.user_id",
+  "canvas_course_mappings.local_course_id",
+  "canvas_course_mappings.user_id",
+  "canvas_integrations.user_id",
+  "course_access.user_id",
+  "section_variants.section_id",
+  "topics.course_id",
+  "variant_selection_cursors.course_id",
 ];
 
-describeDb('foreign key indexes (integration)', () => {
+describeDb("foreign key indexes (integration)", () => {
   let prisma, connectTestDatabase;
 
   beforeAll(async () => {
-    ({ prisma, connectTestDatabase } = await import('../helpers/testDb.js'));
+    ({ prisma, connectTestDatabase } = await import("../helpers/testDb.js"));
     await connectTestDatabase();
   });
 
@@ -109,7 +109,7 @@ describeDb('foreign key indexes (integration)', () => {
     return rows.map((r) => `${r.table_name}.${r.column_name}`);
   }
 
-  it('leaves no foreign key without a usable index', async () => {
+  it("leaves no foreign key without a usable index", async () => {
     expect(await findUnindexedForeignKeys()).toEqual([]);
   });
 
@@ -144,21 +144,27 @@ describeDb('foreign key indexes (integration)', () => {
     return byColumn;
   }
 
-  it('has every index the migration declares, and each is a plain non-partial btree', async () => {
+  it("has every index the migration declares, and each is a plain non-partial btree", async () => {
     const byColumn = await indexesByForeignKey();
 
     for (const fk of EXPECTED_INDEXED_FKS) {
-      const [table, column] = fk.split('.');
+      const [table, column] = fk.split(".");
       const matches = byColumn.get(fk) ?? [];
       expect(matches.length, `${fk} has no usable index`).toBeGreaterThan(0);
       // Prisma's own naming, so a later `migrate dev` sees no drift and does not
       // drop and recreate these.
-      expect(matches.some((m) => m.index_name === `${table}_${column}_idx`), fk).toBe(true);
-      expect(matches.every((m) => m.method === 'btree'), fk).toBe(true);
+      expect(
+        matches.some((m) => m.index_name === `${table}_${column}_idx`),
+        fk,
+      ).toBe(true);
+      expect(
+        matches.every((m) => m.method === "btree"),
+        fk,
+      ).toBe(true);
     }
   });
 
-  it('keeps the FK columns that ride an existing unique index, without giving them their own', async () => {
+  it("keeps the FK columns that ride an existing unique index, without giving them their own", async () => {
     // Test 1 already fails if any of these lost its coverage, so asserting "not unindexed" here
     // would be dead weight. What it cannot see is HOW they are covered: these must keep riding a
     // pre-existing unique, not quietly acquire a redundant `<table>_<column>_idx` of their own that
@@ -166,9 +172,12 @@ describeDb('foreign key indexes (integration)', () => {
     const byColumn = await indexesByForeignKey();
 
     for (const fk of COVERED_BY_EXISTING_UNIQUE) {
-      const [table, column] = fk.split('.');
+      const [table, column] = fk.split(".");
       const matches = byColumn.get(fk) ?? [];
-      expect(matches.some((m) => m.is_unique), `${fk} lost the unique index that was covering it`).toBe(true);
+      expect(
+        matches.some((m) => m.is_unique),
+        `${fk} lost the unique index that was covering it`,
+      ).toBe(true);
       expect(
         matches.some((m) => m.index_name === `${table}_${column}_idx`),
         `${fk} is already covered by a unique; the standalone index is redundant`,
@@ -176,7 +185,7 @@ describeDb('foreign key indexes (integration)', () => {
     }
   });
 
-  it('does not count the partial practice-exam index as covering assessments.course_id', async () => {
+  it("does not count the partial practice-exam index as covering assessments.course_id", async () => {
     // Guards the audit itself. `assessments_practice_exam_unique` is partial, so
     // dropping the unconditional index must make this FK show up as unindexed.
     // If it does not, the query above has lost its `indpred IS NULL` filter and
@@ -196,12 +205,12 @@ describeDb('foreign key indexes (integration)', () => {
           `;
           expect(partial[0]?.predicate).toBeTruthy();
 
-          await tx.$executeRawUnsafe('DROP INDEX assessments_course_id_idx');
+          await tx.$executeRawUnsafe("DROP INDEX assessments_course_id_idx");
 
-          expect(await findUnindexedForeignKeys(tx)).toContain('assessments.course_id');
+          expect(await findUnindexedForeignKeys(tx)).toContain("assessments.course_id");
 
           // Roll back so the index survives for the rest of the suite.
-          throw new Error('__rollback__');
+          throw new Error("__rollback__");
         },
         // The DROP takes an ACCESS EXCLUSIVE lock and there are several catalog round-trips around
         // it; Prisma's 5s interactive default turns a slow runner into a P2028 failure on a PR that
@@ -209,7 +218,7 @@ describeDb('foreign key indexes (integration)', () => {
         { timeout: 30_000, maxWait: 10_000 },
       )
       .catch((err) => {
-        if (err.message !== '__rollback__') throw err;
+        if (err.message !== "__rollback__") throw err;
       });
 
     // The rollback must have restored it.

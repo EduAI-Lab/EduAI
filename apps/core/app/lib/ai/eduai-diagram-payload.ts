@@ -79,25 +79,19 @@ function splitLabelDetail(line: string): EduaiDiagramStage | null {
 
   const colon = trimmed.indexOf(":");
   if (colon <= 0) {
-    const bare = clampLabel(
-      trimmed.replace(/^[-*•]\s+/, "").replace(/^\d+[.)]\s+/, ""),
-    );
+    const bare = clampLabel(trimmed.replace(/^[-*•]\s+/, "").replace(/^\d+[.)]\s+/, ""));
     if (!bare) return null;
     return { label: bare, detail: "" };
   }
 
   const left = trimmed.slice(0, colon).trim();
   const right = trimmed.slice(colon + 1).trim();
-  const label = clampLabel(
-    left.replace(/^[-*•]\s+/, "").replace(/^\d+[.)]\s+/, ""),
-  );
+  const label = clampLabel(left.replace(/^[-*•]\s+/, "").replace(/^\d+[.)]\s+/, ""));
   if (!label) return null;
   return { label, detail: clampDetail(right) };
 }
 
-export function defaultStagesForType(
-  typeId: EduaiDiagramCanonicalId,
-): EduaiDiagramStage[] {
+export function defaultStagesForType(typeId: EduaiDiagramCanonicalId): EduaiDiagramStage[] {
   if (typeId === "hierarchy") return DEFAULT_HIERARCHY_STAGES.map((s) => ({ ...s }));
   if (typeId === "compare") return DEFAULT_COMPARE_STAGES.map((s) => ({ ...s }));
   if (typeId === "gradient-descent") {
@@ -182,9 +176,7 @@ export function parseEduaiDiagramBody(body: string): EduaiDiagramPayload {
   });
   const stages = normalizeStagesForType(
     typeId,
-    stageLines
-      .map(splitLabelDetail)
-      .filter((s): s is EduaiDiagramStage => s !== null),
+    stageLines.map(splitLabelDetail).filter((s): s is EduaiDiagramStage => s !== null),
   );
 
   return { typeId, title, stages };
@@ -197,14 +189,15 @@ export function extractStagesFromDraft(markdown: string): EduaiDiagramStage[] {
   const text = markdown ?? "";
 
   const stepLadder =
-    /###\s*Step ladder[\s\S]*?(?=\n###|\n\*\*Next\?\*\*|\n```|$)/i.exec(text)?.[0] ??
-    "";
+    /###\s*Step ladder[\s\S]*?(?=\n###|\n\*\*Next\?\*\*|\n```|$)/i.exec(text)?.[0] ?? "";
 
   const fromNumbered: EduaiDiagramStage[] = [];
   for (const match of stepLadder.matchAll(/(?:^|\n)\s*(\d+)[.)]\s+(.+)/g)) {
     const item = (match[2] ?? "").trim();
     if (!item) continue;
-    const stage = splitLabelDetail(item.includes(":") ? item : `${clampLabel(item.split(/\s+/).slice(0, 3).join(" "))}: ${item}`);
+    const stage = splitLabelDetail(
+      item.includes(":") ? item : `${clampLabel(item.split(/\s+/).slice(0, 3).join(" "))}: ${item}`,
+    );
     if (stage) fromNumbered.push(stage);
   }
 
@@ -215,8 +208,7 @@ export function extractStagesFromDraft(markdown: string): EduaiDiagramStage[] {
   }
 
   const bulletRegion =
-    /\*\*Top summary\*\*([\s\S]*?)(?=\n###|\n\*\*Next\?\*\*|\n```|$)/i.exec(text)?.[1] ??
-    "";
+    /\*\*Top summary\*\*([\s\S]*?)(?=\n###|\n\*\*Next\?\*\*|\n```|$)/i.exec(text)?.[1] ?? "";
 
   const fromBullets: EduaiDiagramStage[] = [];
   for (const match of bulletRegion.matchAll(/(?:^|\n)\s*[-*•]\s+(.+)/g)) {
@@ -256,10 +248,7 @@ export function inferDiagramTitle(userText?: string): string | undefined {
   const t = (userText ?? "").trim();
   if (!t) return undefined;
   const cleaned = t
-    .replace(
-      /\b(draw|sketch|animate|show|diagram|visual(ly)?|of|a|an|the|me|please)\b/gi,
-      " ",
-    )
+    .replace(/\b(draw|sketch|animate|show|diagram|visual(ly)?|of|a|an|the|me|please)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (cleaned.length < 3) return undefined;
@@ -286,8 +275,7 @@ export function buildEduaiDiagramFence(args: {
   }
   stages = normalizeStagesForType(typeId, stages);
 
-  const title =
-    args.title?.trim() || inferDiagramTitle(args.userText) || undefined;
+  const title = args.title?.trim() || inferDiagramTitle(args.userText) || undefined;
 
   const lines = ["```eduai-diagram", typeId];
   if (title) {

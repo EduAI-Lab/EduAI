@@ -139,7 +139,9 @@ describe("useStudentCandidates", () => {
           resolveFirst = resolve;
         });
       }
-      return Promise.resolve(okJson({ data: [{ id: "u2", name: "Grace Hopper", email: "grace@example.com" }] }));
+      return Promise.resolve(
+        okJson({ data: [{ id: "u2", name: "Grace Hopper", email: "grace@example.com" }] }),
+      );
     });
 
     const { result } = renderHook(() => useStudentCandidates("course-1", "enrolled"));
@@ -160,8 +162,10 @@ describe("useStudentCandidates", () => {
       resolveFirst(okJson({ data: [candidate] }));
     });
 
-    await vi.waitFor(() => expect(result.current.candidates).toEqual([
-      { id: "u2", name: "Grace Hopper", email: "grace@example.com" },
-    ]));
+    await vi.waitFor(() =>
+      expect(result.current.candidates).toEqual([
+        { id: "u2", name: "Grace Hopper", email: "grace@example.com" },
+      ]),
+    );
   });
 });

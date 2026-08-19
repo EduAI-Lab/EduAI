@@ -62,9 +62,7 @@ export function parseClassifierJson(text: string): LlmRouteClassification {
 }
 
 function classifierModelId(): string {
-  return (
-    process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen3.5-2b-instruct"
-  );
+  return process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
 }
 
 function classifierMinConfidence(): number {
@@ -77,10 +75,7 @@ function classifierTimeoutMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 30_000;
 }
 
-function buildClassifierUserPrompt(
-  prompt: string,
-  context: LlmClassifierContext,
-): string {
+function buildClassifierUserPrompt(prompt: string, context: LlmClassifierContext): string {
   const lines = [
     "Student prompt:",
     prompt.trim(),
@@ -97,9 +92,7 @@ function buildClassifierUserPrompt(
 }
 
 /** Map classifier output → tier (1 / 2 / 3). Exported for tests. */
-export function tierFromLlmClassification(
-  classification: LlmRouteClassification,
-): 1 | 2 | 3 {
+export function tierFromLlmClassification(classification: LlmRouteClassification): 1 | 2 | 3 {
   const minConf = classifierMinConfidence();
   if (classification.confidence < minConf) {
     // Two-tier vLLM stack: prefer 7B when classifier is uncertain.

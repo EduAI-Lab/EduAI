@@ -35,17 +35,15 @@ describe("CourseTopicsHeroAction", () => {
   });
 
   it("renders a create-topic button when unlinked", () => {
-    render(
-      <CourseTopicsHeroAction canManage={true} isLinked={false} onCreateTopic={vi.fn()} />,
-    );
+    render(<CourseTopicsHeroAction canManage={true} isLinked={false} onCreateTopic={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Create topic" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sync topics from EduAI" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Sync topics from EduAI" }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens the create dialog when the create-topic button is clicked", () => {
-    render(
-      <CourseTopicsHeroAction canManage={true} isLinked={false} onCreateTopic={vi.fn()} />,
-    );
+    render(<CourseTopicsHeroAction canManage={true} isLinked={false} onCreateTopic={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Create topic" }));
     expect(screen.getByText("Create Topic")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Topic name")).toBeInTheDocument();

@@ -4,4 +4,4 @@
  * utils/modelSizeRanks.js, which re-exports the same implementation).
  */
 
-export { MODEL_SIZE_RANK_PATTERNS, modelSizeRankFromText } from '@eduai/types';
+export { MODEL_SIZE_RANK_PATTERNS, modelSizeRankFromText } from "@eduai/types";

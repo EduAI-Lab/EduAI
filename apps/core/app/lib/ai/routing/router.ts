@@ -76,6 +76,7 @@ export type ResolveRouterOptions = {
  */
 export type RouterInputContext = {
   courseId: string | null;
+  adhdAssist?: boolean;
   /** Course code for carbon policy overrides (optional). */
   courseCode?: string | null;
   imagesPresent: boolean;
@@ -93,8 +94,6 @@ export type RouterInputContext = {
    * rule directly).
    */
   toolsEffectivelyAvailable?: boolean;
-  /** Assist Auto is pinned to the retained large local model. */
-  adhdAssist?: boolean;
 };
 
 export type RouterDecision = {
@@ -103,13 +102,9 @@ export type RouterDecision = {
   features: Record<string, unknown>;
 };
 
-const carbonByCourse = () =>
-  parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
+const carbonByCourse = () => parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
 
-function buildPhase1Context(
-  prompt: string,
-  ctx: RouterInputContext,
-): Phase1RouterContext {
+function buildPhase1Context(prompt: string, ctx: RouterInputContext): Phase1RouterContext {
   return {
     prompt: prompt.trim(),
     courseId: ctx.courseId,
@@ -180,9 +175,7 @@ async function finalizePick(
     // must still fail closed (or pick a genuinely tool-capable model) rather
     // than quietly landing on a model without tools.
     const requireTools =
-      normalizedPick.kind === "minTier"
-        ? normalizedPick.requireTools
-        : undefined;
+      normalizedPick.kind === "minTier" ? normalizedPick.requireTools : undefined;
     picked = await pickModelForSpec(
       normalizePickForLocalVllm({
         kind: "exactTier",
@@ -201,11 +194,7 @@ async function finalizePick(
     modelId = picked.registryId;
     tier = tierFromRow(
       picked,
-      normalizedPick.kind === "exactTier"
-        ? normalizedPick.tier
-        : isLocalVllmRouting()
-          ? 3
-          : 2,
+      normalizedPick.kind === "exactTier" ? normalizedPick.tier : isLocalVllmRouting() ? 3 : 2,
     );
   } else if (meta.context.imagesPresent) {
     throw new Error(
@@ -394,8 +383,7 @@ export async function resolveRoutedModelLlm(
       context,
       pickSource: "rules",
     });
-    decision.features.classifierError =
-      err instanceof Error ? err.message : String(err);
+    decision.features.classifierError = err instanceof Error ? err.message : String(err);
     return decision;
   }
 }
@@ -418,9 +406,8 @@ export async function resolveRoutedModel(
   options?: ResolveRouterOptions,
 ): Promise<RouterDecision> {
   // Keep Assist Auto independent of the normal quality/energy tier rules. The
-  // Assist policy is model-agnostic, but its diagram and oversight paths need
-  // the retained large model for reliable context handling. Directly selected
-  // models still exercise the same policy and oversight contract.
+  // retained model provides the context capacity required by the Assist
+  // diagram and oversight paths; direct model selections remain unchanged.
   if (context.adhdAssist && !context.imagesPresent) {
     const modelId = resolveAdhdAssistAutoModelId();
     return {

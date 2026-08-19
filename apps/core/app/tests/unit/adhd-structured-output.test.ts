@@ -75,9 +75,7 @@ describe("structured Assist output", () => {
       ),
     ).toBe(5);
     expect(resolveRequestedAssistStageCount("show the four steps")).toBe(4);
-    expect(
-      resolveRequestedAssistStageCount("explain this visually"),
-    ).toBeNull();
+    expect(resolveRequestedAssistStageCount("explain this visually")).toBeNull();
 
     const schema = buildAdhdAssistStructuredResponseSchema(5);
     expect(schema.properties.stages.minItems).toBe(5);
@@ -92,10 +90,7 @@ describe("structured Assist output", () => {
       parseAdhdStructuredResponse(
         JSON.stringify({
           ...parsed,
-          stages: [
-            ...stages,
-            { label: "Verify result", detail: "Check the final loss." },
-          ],
+          stages: [...stages, { label: "Verify result", detail: "Check the final loss." }],
         }),
         5,
       )?.stages,
@@ -105,8 +100,7 @@ describe("structured Assist output", () => {
   it("does not truncate an explicitly requested flow as a two-sided comparison", () => {
     const rendered = renderAdhdStructuredResponse({
       text: structured,
-      userText:
-        "Explain binary search visually with exactly four ordered stages.",
+      userText: "Explain binary search visually with exactly four ordered stages.",
     });
 
     expect(rendered?.match(/^\d+\./gm)).toHaveLength(4);
@@ -131,11 +125,7 @@ describe("structured Assist output", () => {
       chatMode: "learning" as const,
       profile: "full_tutoring" as const,
     };
-    expect(
-      isStructuredAdhdAssistCandidate({ ...base, imagesPresent: true }),
-    ).toBe(false);
-    expect(
-      isStructuredAdhdAssistCandidate({ ...base, toolsEnabled: true }),
-    ).toBe(false);
+    expect(isStructuredAdhdAssistCandidate({ ...base, imagesPresent: true })).toBe(false);
+    expect(isStructuredAdhdAssistCandidate({ ...base, toolsEnabled: true })).toBe(false);
   });
 });

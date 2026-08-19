@@ -1,12 +1,12 @@
-import { createHash } from 'crypto';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createHash } from "crypto";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
-export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
+export const SEMANTIC_CHUNK_SEPARATOR = "--- CHUNK SEPARATOR ---";
 
 /** Default character overlap between consecutive semantic upload chunks (matches generateChunks fallback). */
 export const DEFAULT_SEMANTIC_CHUNK_OVERLAP = 80;
@@ -62,7 +62,7 @@ export function assertZipWithinLimits(zip: any, label: string): void {
 
     // Declared uncompressed size from the central directory; no decompression.
     const size: unknown = entry._data?.uncompressedSize;
-    if (typeof size !== 'number' || size < 0) continue; // unknown → jszip enforces at inflate time
+    if (typeof size !== "number" || size < 0) continue; // unknown → jszip enforces at inflate time
 
     if (size > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES) {
       throw new Error(
@@ -84,7 +84,7 @@ export function assertZipWithinLimits(zip: any, label: string): void {
  * Used for both PPTX and (pre-mammoth) DOCX inputs.
  */
 async function loadZipWithLimits(arrayBuffer: ArrayBuffer, label: string): Promise<any> {
-  const JSZip = await import('jszip');
+  const JSZip = await import("jszip");
   const zip = await JSZip.default.loadAsync(arrayBuffer);
   assertZipWithinLimits(zip, label);
   return zip;
@@ -120,7 +120,7 @@ export function isDocumentSectionBoundary(line: string): boolean {
   if (/^ICD(?:-10)?:\s*[A-Z]\d/i.test(trimmed)) return true;
 
   if (trimmed.length >= 3 && trimmed.length <= 60 && !/[.!?]/.test(trimmed)) {
-    const letters = trimmed.replace(/[^a-zA-Z]/g, '');
+    const letters = trimmed.replace(/[^a-zA-Z]/g, "");
     if (letters.length >= 3) {
       const upperCount = (letters.match(/[A-Z]/g) ?? []).length;
       if (upperCount / letters.length >= 0.85) return true;
@@ -136,8 +136,8 @@ export function findEquationSpans(content: string): Array<{ start: number; end: 
   let i = 0;
 
   while (i < content.length) {
-    if (content.startsWith('$$', i)) {
-      const close = content.indexOf('$$', i + 2);
+    if (content.startsWith("$$", i)) {
+      const close = content.indexOf("$$", i + 2);
       if (close !== -1) {
         spans.push({ start: i, end: close + 2 });
         i = close + 2;
@@ -145,9 +145,9 @@ export function findEquationSpans(content: string): Array<{ start: number; end: 
       }
     }
 
-    if (content[i] === '$' && content[i - 1] !== '\\') {
-      const close = content.indexOf('$', i + 1);
-      if (close !== -1 && content[close - 1] !== '\\') {
+    if (content[i] === "$" && content[i - 1] !== "\\") {
+      const close = content.indexOf("$", i + 1);
+      if (close !== -1 && content[close - 1] !== "\\") {
         spans.push({ start: i, end: close + 1 });
         i = close + 1;
         continue;
@@ -160,7 +160,10 @@ export function findEquationSpans(content: string): Array<{ start: number; end: 
   return spans;
 }
 
-function isInsideEquationSpan(index: number, spans: Array<{ start: number; end: number }>): boolean {
+function isInsideEquationSpan(
+  index: number,
+  spans: Array<{ start: number; end: number }>,
+): boolean {
   return spans.some((span) => index > span.start && index < span.end);
 }
 
@@ -220,13 +223,13 @@ function splitTextRespectingEquations(text: string, maxChunkSize: number): strin
 
 function stripInlineHtml(html: string): string {
   return html
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\s+/g, ' ')
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -238,30 +241,30 @@ function convertTableHtmlToMarkdown(tableHtml: string): string {
     const cells: string[] = [];
     const cellMatches = rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi);
     for (const cellMatch of cellMatches) {
-      cells.push(stripInlineHtml(cellMatch[1]).replace(/\|/g, '\\|'));
+      cells.push(stripInlineHtml(cellMatch[1]).replace(/\|/g, "\\|"));
     }
     if (cells.length > 0) rows.push(cells);
   }
 
-  if (rows.length === 0) return '';
+  if (rows.length === 0) return "";
 
   const colCount = Math.max(...rows.map((row) => row.length));
   const normalized = rows.map((row) => {
     const copy = [...row];
-    while (copy.length < colCount) copy.push('');
+    while (copy.length < colCount) copy.push("");
     return copy;
   });
 
   const header = normalized[0];
-  const separator = header.map(() => '---');
+  const separator = header.map(() => "---");
   const body = normalized.slice(1);
   const lines = [
-    `| ${header.join(' | ')} |`,
-    `| ${separator.join(' | ')} |`,
-    ...body.map((row) => `| ${row.join(' | ')} |`),
+    `| ${header.join(" | ")} |`,
+    `| ${separator.join(" | ")} |`,
+    ...body.map((row) => `| ${row.join(" | ")} |`),
   ];
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 function mathMlFragmentToLatex(mathml: string): string {
@@ -274,7 +277,9 @@ function mathMlFragmentToLatex(mathml: string): string {
     return `\\frac{${num}}{${den}}`;
   }
 
-  const supMatch = mathml.match(/<m:sSup[^>]*>[\s\S]*?<m:e[^>]*>([\s\S]*?)<\/m:e>[\s\S]*?<m:sup[^>]*>([\s\S]*?)<\/m:sup>/i);
+  const supMatch = mathml.match(
+    /<m:sSup[^>]*>[\s\S]*?<m:e[^>]*>([\s\S]*?)<\/m:e>[\s\S]*?<m:sup[^>]*>([\s\S]*?)<\/m:sup>/i,
+  );
   if (supMatch) {
     const base = mathMlFragmentToLatex(supMatch[1]) || stripInlineHtml(supMatch[1]);
     const exp = mathMlFragmentToLatex(supMatch[2]) || stripInlineHtml(supMatch[2]);
@@ -287,9 +292,9 @@ function mathMlFragmentToLatex(mathml: string): string {
 
 function convertMathHtmlToMarkdown(markup: string): string {
   const latex = mathMlFragmentToLatex(markup);
-  if (!latex) return '';
+  if (!latex) return "";
   const trimmed = latex.trim();
-  if (trimmed.includes('\n')) return `\n$$\n${trimmed}\n$$\n`;
+  if (trimmed.includes("\n")) return `\n$$\n${trimmed}\n$$\n`;
   return ` $${trimmed}$ `;
 }
 
@@ -302,7 +307,7 @@ export function enrichExtractedDocumentContent(content: string): string {
 
   enriched = enriched.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, tableBody) => {
     const tableMarkdown = convertTableHtmlToMarkdown(tableBody);
-    return tableMarkdown ? `\n${tableMarkdown}\n` : '';
+    return tableMarkdown ? `\n${tableMarkdown}\n` : "";
   });
 
   enriched = enriched.replace(/\\\(([\s\S]*?)\\\)/g, (_, body) => `$${body.trim()}$`);
@@ -326,7 +331,7 @@ function isHeadingOnlySection(lines: string[]): boolean {
 }
 
 function splitIntoDocumentSections(content: string): string[] {
-  const lines = content.split('\n');
+  const lines = content.split("\n");
   const sections: string[] = [];
   let currentLines: string[] = [];
 
@@ -335,7 +340,7 @@ function splitIntoDocumentSections(content: string): string[] {
       if (isHeadingOnlySection(currentLines)) {
         currentLines.push(line);
       } else {
-        const section = currentLines.join('\n').trim();
+        const section = currentLines.join("\n").trim();
         if (section.length > 0) sections.push(section);
         currentLines = [line];
       }
@@ -344,7 +349,7 @@ function splitIntoDocumentSections(content: string): string[] {
     }
   }
 
-  const last = currentLines.join('\n').trim();
+  const last = currentLines.join("\n").trim();
   if (last.length > 0) {
     if (isHeadingOnlySection(currentLines) && sections.length > 0) {
       sections[sections.length - 1] += `\n\n${last}`;
@@ -384,19 +389,19 @@ export function applyChunkOverlap(
 
 function takeOverlapSuffix(text: string, targetChars: number): string {
   const trimmed = text.trim();
-  if (!trimmed) return '';
+  if (!trimmed) return "";
 
   if (trimmed.length <= targetChars && isDocumentSectionBoundary(trimmed)) {
-    return '';
+    return "";
   }
 
   const words = trimmed.split(/\s+/);
   const overlapWordCount = Math.max(1, Math.floor(targetChars / 5));
-  let suffix = words.slice(-overlapWordCount).join(' ');
+  let suffix = words.slice(-overlapWordCount).join(" ");
 
   if (trimmed.length <= targetChars) {
     const cap = Math.floor(trimmed.length * 0.5);
-    if (cap === 0) return '';
+    if (cap === 0) return "";
     if (suffix.length > cap) suffix = suffix.slice(-cap);
     return suffix.trim();
   }
@@ -447,18 +452,21 @@ export interface FileInfo {
  * Removes null bytes and other problematic characters for PostgreSQL
  */
 export function sanitizeTextContent(content: string): string {
-  return content
-    // Remove null bytes (0x00) that cause PostgreSQL errors
-    .replace(/\0/g, '')
-    // Remove other control characters except newlines, tabs, and carriage returns
-    .replace(/[\x01-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '')
-    // Normalize line endings
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    // Remove excessive whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    // Trim whitespace
-    .trim();
+  return (
+    content
+      // Remove null bytes (0x00) that cause PostgreSQL errors
+      .replace(/\0/g, "")
+      // Remove other control characters except newlines, tabs, and carriage returns
+      // eslint-disable-next-line no-control-regex -- matching control characters is the point here
+      .replace(/[\x01-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "")
+      // Normalize line endings
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      // Remove excessive whitespace
+      .replace(/\n{3,}/g, "\n\n")
+      // Trim whitespace
+      .trim()
+  );
 }
 
 /**
@@ -470,7 +478,7 @@ function convertHtmlToMarkdown(html: string): string {
   // Preserve tables as markdown before stripping remaining HTML
   markdown = markdown.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, tableBody) => {
     const tableMarkdown = convertTableHtmlToMarkdown(tableBody);
-    return tableMarkdown ? `\n${tableMarkdown}\n` : '';
+    return tableMarkdown ? `\n${tableMarkdown}\n` : "";
   });
 
   // Preserve equations from MathML / Office Math markup
@@ -483,25 +491,25 @@ function convertHtmlToMarkdown(html: string): string {
 
   // Convert headers
   markdown = markdown.replace(/<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi, (match, level, content) => {
-    const hashes = '#'.repeat(parseInt(level));
+    const hashes = "#".repeat(parseInt(level));
     return `\n${hashes} ${content.trim()}\n`;
   });
 
   // Convert paragraphs
-  markdown = markdown.replace(/<p[^>]*>(.*?)<\/p>/gi, '\n$1\n');
+  markdown = markdown.replace(/<p[^>]*>(.*?)<\/p>/gi, "\n$1\n");
 
   // Convert bold and strong
-  markdown = markdown.replace(/<(b|strong)[^>]*>(.*?)<\/(b|strong)>/gi, '**$2**');
+  markdown = markdown.replace(/<(b|strong)[^>]*>(.*?)<\/(b|strong)>/gi, "**$2**");
 
   // Convert italic and em
-  markdown = markdown.replace(/<(i|em)[^>]*>(.*?)<\/(i|em)>/gi, '*$2*');
+  markdown = markdown.replace(/<(i|em)[^>]*>(.*?)<\/(i|em)>/gi, "*$2*");
 
   // Convert line breaks
-  markdown = markdown.replace(/<br\s*\/?>/gi, '\n');
+  markdown = markdown.replace(/<br\s*\/?>/gi, "\n");
 
   // Convert lists
   markdown = markdown.replace(/<ul[^>]*>(.*?)<\/ul>/gis, (match, content) => {
-    const items = content.replace(/<li[^>]*>(.*?)<\/li>/gis, '- $1\n');
+    const items = content.replace(/<li[^>]*>(.*?)<\/li>/gis, "- $1\n");
     return `\n${items}\n`;
   });
 
@@ -514,11 +522,11 @@ function convertHtmlToMarkdown(html: string): string {
   });
 
   // Remove remaining HTML tags
-  markdown = markdown.replace(/<[^>]*>/g, '');
+  markdown = markdown.replace(/<[^>]*>/g, "");
 
   // Clean up extra whitespace and sanitize
-  markdown = markdown.replace(/\n\s*\n\s*\n/g, '\n\n');
-  markdown = markdown.replace(/^\s+|\s+$/g, '');
+  markdown = markdown.replace(/\n\s*\n\s*\n/g, "\n\n");
+  markdown = markdown.replace(/^\s+|\s+$/g, "");
 
   // Final sanitization to ensure no problematic characters remain
   return sanitizeTextContent(markdown);
@@ -528,17 +536,14 @@ function convertHtmlToMarkdown(html: string): string {
  * Generate SHA256 checksum for content
  */
 export function generateChecksum(content: string): string {
-  return createHash('sha256').update(content).digest('hex');
+  return createHash("sha256").update(content).digest("hex");
 }
 
 /**
  * Extract text from different file types
  */
-export async function extractTextFromFile(
-  file: File | any,
-  content: string
-): Promise<FileInfo> {
-  const title = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+export async function extractTextFromFile(file: File | any, content: string): Promise<FileInfo> {
+  const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
   const mimeType = file.type;
   const fileSize = file.size;
 
@@ -560,11 +565,11 @@ export async function extractTextFromFile(
  */
 export function validateFile(file: File | any): { isValid: boolean; error?: string } {
   const allowedTypes = [
-    'text/plain',
-    'text/markdown',
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    "text/plain",
+    "text/markdown",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ];
 
   const maxSize = 50 * 1024 * 1024; // 50MB - increased for presentations
@@ -636,10 +641,8 @@ function looksLikeBinaryNoise(bytes: Uint8Array): boolean {
   return suspicious / bytes.length > 0.3;
 }
 
-const DOCX_MIME_TYPE =
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const PPTX_MIME_TYPE =
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 /**
  * Sniffs the first bytes of an uploaded file against its declared
@@ -651,7 +654,7 @@ const PPTX_MIME_TYPE =
 export async function validateFileSignature(
   file: File | any,
 ): Promise<{ isValid: boolean; error?: string }> {
-  if (typeof file.arrayBuffer !== 'function') {
+  if (typeof file.arrayBuffer !== "function") {
     return { isValid: true };
   }
 
@@ -659,11 +662,11 @@ export async function validateFileSignature(
   const head = new Uint8Array(buffer.slice(0, MAGIC_BYTE_SNIFF_LENGTH));
 
   switch (file.type) {
-    case 'application/pdf':
+    case "application/pdf":
       if (!looksLikePdf(head)) {
         return {
           isValid: false,
-          error: 'File declared as application/pdf does not start with the PDF signature (%PDF)',
+          error: "File declared as application/pdf does not start with the PDF signature (%PDF)",
         };
       }
       return { isValid: true };
@@ -678,8 +681,8 @@ export async function validateFileSignature(
       }
       return { isValid: true };
 
-    case 'text/plain':
-    case 'text/markdown':
+    case "text/plain":
+    case "text/markdown":
       if (looksLikePdf(head) || looksLikeZipContainer(head) || looksLikeBinaryNoise(head)) {
         return {
           isValid: false,
@@ -698,34 +701,34 @@ export async function validateFileSignature(
  */
 export async function readFileAsText(file: File | any): Promise<string> {
   // Handle server-side file objects (from formData)
-  if (typeof file.arrayBuffer === 'function') {
+  if (typeof file.arrayBuffer === "function") {
     const buffer = await file.arrayBuffer();
     return new TextDecoder().decode(buffer);
   }
 
   // Handle browser File objects
-  if (typeof FileReader !== 'undefined') {
+  if (typeof FileReader !== "undefined") {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
       reader.onload = (event) => {
         const result = event.target?.result;
-        if (typeof result === 'string') {
+        if (typeof result === "string") {
           resolve(result);
         } else {
-          reject(new Error('Failed to read file as text'));
+          reject(new Error("Failed to read file as text"));
         }
       };
 
       reader.onerror = () => {
-        reject(new Error('Failed to read file'));
+        reject(new Error("Failed to read file"));
       };
 
       reader.readAsText(file);
     });
   }
 
-  throw new Error('File reading not supported in this environment');
+  throw new Error("File reading not supported in this environment");
 }
 
 /**
@@ -799,16 +802,16 @@ export const PDF_EXTRACTION_DEFAULT_MAX_QUEUED = 16;
  */
 export class PdfExtractionBusyError extends Error {
   constructor(
-    message = 'PDF extraction busy: capacity exceeded (too many concurrent/queued extractions)',
+    message = "PDF extraction busy: capacity exceeded (too many concurrent/queued extractions)",
   ) {
     super(message);
-    this.name = 'PdfExtractionBusyError';
+    this.name = "PdfExtractionBusyError";
   }
 }
 
 function readIntEnv(name: string, fallback: number, { min }: { min: number }): number {
   const raw = process.env[name];
-  if (raw == null || raw === '') return fallback;
+  if (raw == null || raw === "") return fallback;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) && n >= min ? n : fallback;
 }
@@ -819,30 +822,32 @@ function readIntEnv(name: string, fallback: number, { min }: { min: number }): n
  * approximately `replicas × PDF_EXTRACTION_MAX_CONCURRENT` (plus each replica's queue).
  */
 export function getPdfExtractionMaxConcurrent(): number {
-  return readIntEnv('PDF_EXTRACTION_MAX_CONCURRENT', PDF_EXTRACTION_DEFAULT_MAX_CONCURRENT, { min: 1 });
+  return readIntEnv("PDF_EXTRACTION_MAX_CONCURRENT", PDF_EXTRACTION_DEFAULT_MAX_CONCURRENT, {
+    min: 1,
+  });
 }
 
 /** Waiting-queue depth before reject (0 = reject when all slots busy). Override with `PDF_EXTRACTION_MAX_QUEUED`. */
 export function getPdfExtractionMaxQueued(): number {
-  return readIntEnv('PDF_EXTRACTION_MAX_QUEUED', PDF_EXTRACTION_DEFAULT_MAX_QUEUED, { min: 0 });
+  return readIntEnv("PDF_EXTRACTION_MAX_QUEUED", PDF_EXTRACTION_DEFAULT_MAX_QUEUED, { min: 0 });
 }
 
 /** Hard per-worker RSS ceiling in MB. Override with `PDF_EXTRACTION_MAX_RSS_MB`. */
 export function getPdfExtractionMaxRssMb(): number {
-  return readIntEnv('PDF_EXTRACTION_MAX_RSS_MB', PDF_EXTRACTION_WORKER_MAX_RSS_MB, { min: 64 });
+  return readIntEnv("PDF_EXTRACTION_MAX_RSS_MB", PDF_EXTRACTION_WORKER_MAX_RSS_MB, { min: 64 });
 }
 
 /** Best-effort RSS sample for a child PID (Linux `/proc`, Darwin `ps`). */
 export function readChildRssBytes(pid: number): number | null {
   try {
-    if (process.platform === 'linux') {
-      const status = readFileSync(`/proc/${pid}/status`, 'utf8');
+    if (process.platform === "linux") {
+      const status = readFileSync(`/proc/${pid}/status`, "utf8");
       const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
       return match ? Number(match[1]) * 1024 : null;
     }
-    if (process.platform === 'darwin') {
-      const out = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], {
-        encoding: 'utf8',
+    if (process.platform === "darwin") {
+      const out = execFileSync("ps", ["-o", "rss=", "-p", String(pid)], {
+        encoding: "utf8",
         timeout: 1_000,
       }).trim();
       const kb = Number.parseInt(out, 10);
@@ -871,14 +876,14 @@ export function spawnPdfExtractionWorker(
   inputPath: string,
   outputPath: string,
 ): ChildProcess {
-  const nodeArgs = [`--max-old-space-size=${maxOldSpaceMb}`, '-', inputPath, outputPath];
+  const nodeArgs = [`--max-old-space-size=${maxOldSpaceMb}`, "-", inputPath, outputPath];
   const opts = {
     cwd: process.cwd(),
-    stdio: ['pipe', 'ignore', 'pipe'] as ['pipe', 'ignore', 'pipe'],
+    stdio: ["pipe", "ignore", "pipe"] as ["pipe", "ignore", "pipe"],
     env: buildPdfWorkerMinimalEnv(),
   };
 
-  if (process.platform !== 'win32') {
+  if (process.platform !== "win32") {
     // RLIMIT_AS is virtual address space, not RSS. Size it generously so Node can start.
     const addressSpaceMb = Math.max(
       maxRssMb * PDF_EXTRACTION_AS_MULTIPLIER,
@@ -886,12 +891,12 @@ export function spawnPdfExtractionWorker(
     );
     const virtualMemKb = Math.max(1, Math.floor(addressSpaceMb * 1024));
     return spawn(
-      'sh',
+      "sh",
       [
-        '-c',
+        "-c",
         // Ignore ulimit failures (e.g. Darwin) so the worker still starts; RSS monitor backs us.
         `ulimit -v ${virtualMemKb} 2>/dev/null || true; exec "$@"`,
-        'pdf-extract-worker',
+        "pdf-extract-worker",
         process.execPath,
         ...nodeArgs,
       ],
@@ -949,7 +954,7 @@ async function acquirePdfExtractionSlot(): Promise<() => void> {
 function buildPdfWorkerMinimalEnv(): NodeJS.ProcessEnv {
   // Minimal env so the worker can resolve modules via cwd/`node_modules` — not a sandbox.
   const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH ?? '',
+    PATH: process.env.PATH ?? "",
   };
   if (process.env.NODE_PATH) env.NODE_PATH = process.env.NODE_PATH;
   if (process.env.HOME) env.HOME = process.env.HOME;
@@ -1022,9 +1027,9 @@ export async function extractPdfTextIsolated(
   let dir: string | undefined;
 
   try {
-    dir = await mkdtemp(join(tmpdir(), 'pdf-extract-'));
-    const inputPath = join(dir, 'input.pdf');
-    const outputPath = join(dir, 'output.json');
+    dir = await mkdtemp(join(tmpdir(), "pdf-extract-"));
+    const inputPath = join(dir, "input.pdf");
+    const outputPath = join(dir, "output.json");
 
     await writeFile(inputPath, buffer);
 
@@ -1051,7 +1056,7 @@ export async function extractPdfTextIsolated(
 
       const forceKillChild = () => {
         if (child.exitCode === null && child.signalCode === null) {
-          child.kill('SIGKILL');
+          child.kill("SIGKILL");
         }
       };
 
@@ -1069,7 +1074,7 @@ export async function extractPdfTextIsolated(
       const timer = setTimeout(() => {
         // Only mark timedOut when we actually issue a kill against a still-running child.
         if (child.exitCode === null && child.signalCode === null) {
-          const killed = child.kill('SIGKILL');
+          const killed = child.kill("SIGKILL");
           if (killed) timedOut = true;
         }
       }, timeoutMs);
@@ -1084,7 +1089,7 @@ export async function extractPdfTextIsolated(
         }
       }, PDF_EXTRACTION_RSS_POLL_MS);
 
-      child.stderr?.on('data', (chunk: Buffer) => {
+      child.stderr?.on("data", (chunk: Buffer) => {
         if (stderrBytes >= PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES) return;
         const remaining = PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES - stderrBytes;
         const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
@@ -1092,21 +1097,21 @@ export async function extractPdfTextIsolated(
         stderrBytes += slice.length;
       });
 
-      child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+      child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
         // Child often closes stdin early on crash/OOM; EPIPE is expected and the exit
         // handler owns the outcome. Other stdin errors kill + wait for exit.
-        if (error.code === 'EPIPE') return;
+        if (error.code === "EPIPE") return;
         killAndReject(error);
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         // Spawn/startup failure — there may be no process to wait on.
         earlyFailure = earlyFailure ?? error;
         forceKillChild();
         settle(() => reject(earlyFailure!));
       });
 
-      child.on('exit', (code, signal) => {
+      child.on("exit", (code, signal) => {
         childExited = true;
         settle(() => {
           if (earlyFailure) {
@@ -1125,28 +1130,22 @@ export async function extractPdfTextIsolated(
             resolve();
             return;
           }
-          const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+          const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
           // Hard RSS breach (parent monitor) or OS/V8 OOM: normalize to a "killed" message
           // so callers/tests accept both signal termination (Unix) and plain exit-code OOM
           // (Windows reports V8 heap fatal errors without a signal).
           if (rssBreached || signal || looksLikeHeapOom(stderr)) {
-            const reason = rssBreached
-              ? ` after exceeding the ${maxRssMb}MB RSS hard limit`
-              : '';
+            const reason = rssBreached ? ` after exceeding the ${maxRssMb}MB RSS hard limit` : "";
             reject(
               new Error(
-                `PDF extraction worker was killed (signal ${signal ?? 'none'}` +
-                  (code != null ? `, exit code ${code}` : '') +
+                `PDF extraction worker was killed (signal ${signal ?? "none"}` +
+                  (code != null ? `, exit code ${code}` : "") +
                   `)${reason}`,
               ),
             );
             return;
           }
-          reject(
-            new Error(
-              `PDF extraction worker failed: ${stderr || `exit code ${code}`}`,
-            ),
-          );
+          reject(new Error(`PDF extraction worker failed: ${stderr || `exit code ${code}`}`));
         });
       });
 
@@ -1155,7 +1154,7 @@ export async function extractPdfTextIsolated(
         child.stdin?.end();
       } catch (error) {
         // Synchronous write failures: kill and wait for exit before rejecting.
-        if ((error as NodeJS.ErrnoException)?.code !== 'EPIPE') {
+        if ((error as NodeJS.ErrnoException)?.code !== "EPIPE") {
           killAndReject(error as Error);
         }
       }
@@ -1170,9 +1169,9 @@ export async function extractPdfTextIsolated(
       );
     }
 
-    const raw = await readFile(outputPath, 'utf8');
+    const raw = await readFile(outputPath, "utf8");
     const parsed = JSON.parse(raw) as { content: string };
-    if (typeof parsed.content === 'string' && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+    if (typeof parsed.content === "string" && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
       throw new Error(
         `PDF extraction result of ${parsed.content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
       );
@@ -1182,7 +1181,7 @@ export async function extractPdfTextIsolated(
     release();
     if (dir) {
       await rm(dir, { recursive: true, force: true }).catch((error) => {
-        console.error('[PDF_EXTRACTION_TEMP_CLEANUP_FAILED]', { dir, error });
+        console.error("[PDF_EXTRACTION_TEMP_CLEANUP_FAILED]", { dir, error });
       });
     }
   }
@@ -1192,7 +1191,9 @@ export async function extractPdfTextIsolated(
  * Extract text from PDF files using @opendocsg/pdf2md, isolated in a memory- and
  * time-capped subprocess (see PDF extraction isolation guardrails above).
  */
-export async function extractPdfText(file: File): Promise<{ content: string; pageCount?: number; metadata?: any }> {
+export async function extractPdfText(
+  file: File,
+): Promise<{ content: string; pageCount?: number; metadata?: any }> {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const { content: markdown } = await extractPdfTextIsolated(Buffer.from(arrayBuffer));
@@ -1204,13 +1205,15 @@ export async function extractPdfText(file: File): Promise<{ content: string; pag
       content: sanitizeTextContent(markdown),
       pageCount,
       metadata: {
-        format: 'markdown',
-        processingMethod: '@opendocsg/pdf2md',
+        format: "markdown",
+        processingMethod: "@opendocsg/pdf2md",
         isClientSide: true,
       },
     };
   } catch (error) {
-    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to extract text from PDF: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }
 
@@ -1220,12 +1223,12 @@ export async function extractPdfText(file: File): Promise<{ content: string; pag
 export async function extractDocxText(file: File): Promise<{ content: string; metadata?: any }> {
   try {
     // Dynamic import for client-side DOCX processing
-    const mammoth = await import('mammoth');
+    const mammoth = await import("mammoth");
 
     const arrayBuffer = await file.arrayBuffer();
 
     // DOCX is a ZIP container; bound decompression before mammoth inflates it.
-    await loadZipWithLimits(arrayBuffer, 'DOCX');
+    await loadZipWithLimits(arrayBuffer, "DOCX");
 
     // Extract as HTML first, then convert to markdown-like format for better RAG performance
     // mammoth's Node build only accepts `{ path }` / `{ buffer }` (NodeJsInput), not
@@ -1234,7 +1237,7 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
     const result = await mammoth.convertToHtml({ buffer: Buffer.from(arrayBuffer) });
 
     if (result.messages && result.messages.length > 0) {
-      console.warn('DOCX extraction warnings:', result.messages);
+      console.warn("DOCX extraction warnings:", result.messages);
     }
 
     // Convert HTML to markdown-like text for better RAG performance
@@ -1244,13 +1247,15 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
       content: sanitizeTextContent(markdownContent),
       metadata: {
         extractionWarnings: result.messages,
-        format: 'markdown',
-        processingMethod: 'mammoth.js + HTML conversion',
+        format: "markdown",
+        processingMethod: "mammoth.js + HTML conversion",
         isClientSide: true,
       },
     };
   } catch (error) {
-    throw new Error(`Failed to extract text from DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to extract text from DOCX: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }
 
@@ -1258,34 +1263,36 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
  * Extract text from PPTX files using basic client-side parsing
  * Note: For complex PPTX processing, consider server-side solutions
  */
-export async function extractPptxText(file: File): Promise<{ content: string; pageCount: number; metadata?: any }> {
+export async function extractPptxText(
+  file: File,
+): Promise<{ content: string; pageCount: number; metadata?: any }> {
   try {
     // For now, we'll use a simple client-side approach
     // In a production environment, you might want to use a server-side service
     // or a more robust client-side PPTX parser when available
 
     const arrayBuffer = await file.arrayBuffer();
-    const zipContent = await loadZipWithLimits(arrayBuffer, 'PPTX');
+    const zipContent = await loadZipWithLimits(arrayBuffer, "PPTX");
 
     const textContent: string[] = [];
     let slideCount = 0;
 
     // Extract slide content from the PPTX structure
-    const slideFiles = Object.keys(zipContent.files).filter(name =>
-      name.startsWith('ppt/slides/slide') && name.endsWith('.xml')
+    const slideFiles = Object.keys(zipContent.files).filter(
+      (name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"),
     );
 
     slideCount = slideFiles.length;
 
     for (const slideFile of slideFiles) {
-      const slideXml: string = await zipContent.files[slideFile].async('text');
+      const slideXml: string = await zipContent.files[slideFile].async("text");
 
       // Basic text extraction from XML (simplified approach)
       const textMatches: string[] = slideXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
       const slideText = textMatches
-        .map((match: string) => match.replace(/<[^>]*>/g, '').trim())
+        .map((match: string) => match.replace(/<[^>]*>/g, "").trim())
         .filter((text: string) => text.length > 0)
-        .join(' ');
+        .join(" ");
 
       if (slideText) {
         const slideNumber = slideFiles.indexOf(slideFile) + 1;
@@ -1294,17 +1301,21 @@ export async function extractPptxText(file: File): Promise<{ content: string; pa
     }
 
     return {
-      content: sanitizeTextContent(textContent.join('\n\n') || 'No text content found in presentation'),
+      content: sanitizeTextContent(
+        textContent.join("\n\n") || "No text content found in presentation",
+      ),
       pageCount: slideCount,
       metadata: {
         slideCount,
-        processingMethod: 'client-side XML parsing',
+        processingMethod: "client-side XML parsing",
         isClientSide: true,
-        note: 'Basic text extraction - complex formatting may not be preserved',
+        note: "Basic text extraction - complex formatting may not be preserved",
       },
     };
   } catch (error) {
-    throw new Error(`Failed to extract text from PPTX: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to extract text from PPTX: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }
 
@@ -1314,7 +1325,7 @@ export async function extractPptxText(file: File): Promise<{ content: string; pa
  */
 export function applySemanticChunking(content: string, maxChunkSize: number = 1500): string[] {
   // Check if content appears to be markdown
-  const isMarkdown = content.includes('# ') || content.includes('## ') || content.includes('### ');
+  const isMarkdown = content.includes("# ") || content.includes("## ") || content.includes("### ");
 
   if (isMarkdown) {
     return applyMarkdownSemanticChunking(content, maxChunkSize);
@@ -1329,10 +1340,10 @@ export function applySemanticChunking(content: string, maxChunkSize: number = 15
  */
 function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): string[] {
   const chunks: string[] = [];
-  let currentChunk = '';
+  let currentChunk = "";
   let currentHeaders: string[] = [];
 
-  const lines = content.split('\n');
+  const lines = content.split("\n");
 
   for (const line of lines) {
     const trimmedLine = line.trim();
@@ -1346,7 +1357,7 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
       // If we have content and this header would start a new major section, save current chunk
       if (currentChunk.trim() && headerLevel <= 2 && currentChunk.length > maxChunkSize * 0.5) {
         chunks.push(addContextHeaders(currentChunk.trim(), currentHeaders));
-        currentChunk = '';
+        currentChunk = "";
       }
 
       // Update headers context
@@ -1355,11 +1366,11 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
     }
 
     // Add line to current chunk
-    currentChunk += (currentChunk ? '\n' : '') + line;
+    currentChunk += (currentChunk ? "\n" : "") + line;
 
     // If chunk is getting too large, try to split at logical boundaries
     if (currentChunk.length > maxChunkSize) {
-      const lastParagraphIndex = currentChunk.lastIndexOf('\n\n');
+      const lastParagraphIndex = currentChunk.lastIndexOf("\n\n");
       if (lastParagraphIndex > maxChunkSize * 0.7) {
         // Split at paragraph boundary
         const chunkToSave = currentChunk.substring(0, lastParagraphIndex);
@@ -1368,7 +1379,7 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
       } else if (currentChunk.length > maxChunkSize * 1.2) {
         // Force split if we're way over the limit
         chunks.push(addContextHeaders(currentChunk.trim(), currentHeaders));
-        currentChunk = '';
+        currentChunk = "";
       }
     }
   }
@@ -1402,14 +1413,14 @@ function applyStandardChunking(content: string, maxChunkSize: number): string[] 
 function chunkSectionByParagraphs(section: string, maxChunkSize: number): string[] {
   const paragraphs = section.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
   const chunks: string[] = [];
-  let currentChunk = '';
+  let currentChunk = "";
 
   for (const paragraph of paragraphs) {
     const trimmedParagraph = paragraph.trim();
 
     if (currentChunk.length + trimmedParagraph.length > maxChunkSize && currentChunk.length > 0) {
       chunks.push(currentChunk.trim());
-      currentChunk = '';
+      currentChunk = "";
     }
 
     if (trimmedParagraph.length > maxChunkSize) {
@@ -1418,12 +1429,12 @@ function chunkSectionByParagraphs(section: string, maxChunkSize: number): string
       for (const sentence of sentences) {
         if (currentChunk.length + sentence.length > maxChunkSize && currentChunk.length > 0) {
           chunks.push(currentChunk.trim());
-          currentChunk = '';
+          currentChunk = "";
         }
-        currentChunk += (currentChunk ? ' ' : '') + sentence;
+        currentChunk += (currentChunk ? " " : "") + sentence;
       }
     } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + trimmedParagraph;
+      currentChunk += (currentChunk ? "\n\n" : "") + trimmedParagraph;
     }
   }
 
@@ -1440,14 +1451,14 @@ function chunkSectionByParagraphs(section: string, maxChunkSize: number): string
  * Add header context to chunks for better RAG retrieval
  */
 function addContextHeaders(chunk: string, headers: string[]): string {
-  const relevantHeaders = headers.filter(h => h && h.trim());
+  const relevantHeaders = headers.filter((h) => h && h.trim());
   if (relevantHeaders.length === 0) {
     return chunk;
   }
 
   const contextHeader = relevantHeaders
-    .map((header, index) => `${'#'.repeat(index + 1)} ${header}`)
-    .join('\n');
+    .map((header, index) => `${"#".repeat(index + 1)} ${header}`)
+    .join("\n");
 
   return `${contextHeader}\n\n${chunk}`;
 }
@@ -1475,16 +1486,16 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
 
   try {
     switch (file.type) {
-      case 'text/plain':
-      case 'text/markdown':
+      case "text/plain":
+      case "text/markdown":
         content = sanitizeTextContent(await readFileAsText(file));
         metadata = {
-          processingMethod: 'Native text extraction',
+          processingMethod: "Native text extraction",
           isClientSide: true,
         };
         break;
 
-      case 'application/pdf': {
+      case "application/pdf": {
         const result = await extractPdfText(file);
         content = result.content;
         pageCount = result.pageCount;
@@ -1495,14 +1506,14 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
         break;
       }
 
-      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+      case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
         const result = await extractDocxText(file);
         content = result.content;
         metadata = result.metadata || {};
         break;
       }
 
-      case 'application/vnd.openxmlformats-officedocument.presentationml.presentation': {
+      case "application/vnd.openxmlformats-officedocument.presentationml.presentation": {
         const result = await extractPptxText(file);
         content = result.content;
         pageCount = result.pageCount;
@@ -1542,12 +1553,14 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
         ...metadata,
         chunkCount: overlappedChunks.length,
         extractedAt: new Date(),
-        processingLibrary: metadata.processingMethod || 'Unknown',
+        processingLibrary: metadata.processingMethod || "Unknown",
         isEnhanced: true, // Indicates this uses the new enhanced processing
       },
     };
   } catch (error) {
-    throw new Error(`Failed to process file ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to process file ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }
 
@@ -1556,16 +1569,16 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
  */
 function getProcessingMethod(mimeType: string): string {
   switch (mimeType) {
-    case 'application/pdf':
-      return 'PDF.js';
-    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-      return 'Mammoth.js';
-    case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-      return 'node-pptx-parser';
-    case 'text/plain':
-    case 'text/markdown':
-      return 'Native text extraction';
+    case "application/pdf":
+      return "PDF.js";
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return "Mammoth.js";
+    case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      return "node-pptx-parser";
+    case "text/plain":
+    case "text/markdown":
+      return "Native text extraction";
     default:
-      return 'Unknown';
+      return "Unknown";
   }
 }

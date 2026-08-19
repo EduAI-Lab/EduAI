@@ -15,7 +15,7 @@ describe("CourseHeroCard", () => {
         year={2024}
         name="Computation, Programs, and Programming"
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText(/CPSC 110 · 2024W2/)).toBeInTheDocument();
     // Headline is the name alone; the code reads in the eyebrow, not repeated behind a colon.
@@ -30,19 +30,14 @@ describe("CourseHeroCard", () => {
         name="Test Course"
         description="An introduction to programming"
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText("An introduction to programming")).toBeInTheDocument();
   });
 
   it("does not render description when not provided", () => {
     render(
-      <CourseHeroCard
-        code="CPSC 110"
-        term="Winter"
-        name="Test Course"
-        accentColor={ACCENT}
-      />
+      <CourseHeroCard code="CPSC 110" term="Winter" name="Test Course" accentColor={ACCENT} />,
     );
     expect(screen.queryByText(/An introduction/)).not.toBeInTheDocument();
   });
@@ -55,7 +50,7 @@ describe("CourseHeroCard", () => {
         name="Test Course"
         topics={["Python", "Variables", "Functions"]}
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText("Python")).toBeInTheDocument();
     expect(screen.getByText("Variables")).toBeInTheDocument();
@@ -70,7 +65,7 @@ describe("CourseHeroCard", () => {
         name="Test Course"
         badges={["Active", "Popular"]}
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByText("Popular")).toBeInTheDocument();
@@ -84,7 +79,7 @@ describe("CourseHeroCard", () => {
         name="Test Course"
         topRightBadges={["Instructor", "TBD"]}
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText("Instructor")).toBeInTheDocument();
     expect(screen.getByText("TBD")).toBeInTheDocument();
@@ -98,7 +93,7 @@ describe("CourseHeroCard", () => {
         year="2024"
         name="Test Course"
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText(/2024W2/)).toBeInTheDocument();
 
@@ -109,7 +104,7 @@ describe("CourseHeroCard", () => {
         year={2024}
         name="Test Course"
         accentColor={ACCENT}
-      />
+      />,
     );
     expect(screen.getByText(/2024W2/)).toBeInTheDocument();
   });
@@ -122,7 +117,7 @@ describe("CourseHeroCard", () => {
         name="Test Course"
         className="custom-hero-class"
         accentColor={ACCENT}
-      />
+      />,
     );
     const hero = container.querySelector(".custom-hero-class");
     expect(hero).toBeInTheDocument();

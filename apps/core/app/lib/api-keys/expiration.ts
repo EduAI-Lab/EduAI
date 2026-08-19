@@ -29,7 +29,10 @@ export function expirationChoiceToSeconds(choice: ApiKeyExpirationChoice): numbe
   return option.seconds;
 }
 
-export function daysUntilExpiration(expiresAt: Date | string | null | undefined, now = Date.now()): number | null {
+export function daysUntilExpiration(
+  expiresAt: Date | string | null | undefined,
+  now = Date.now(),
+): number | null {
   if (!expiresAt) return null;
   const expiresMs = new Date(expiresAt).getTime();
   if (Number.isNaN(expiresMs)) return null;

@@ -30,10 +30,7 @@ vi.mock("ai", () => ({
   createProviderRegistry: (providers: unknown) => ({ __providers: providers }),
 }));
 
-import {
-  createAIProviderRegistry,
-  mergeLocalInferenceFromEnv,
-} from "~/lib/ai/providers";
+import { createAIProviderRegistry, mergeLocalInferenceFromEnv } from "~/lib/ai/providers";
 import byokKeyResolutionCases from "../../../../../tests/models/byok-vs-platform-key-resolution.cases.json";
 import {
   byokKeyResolutionOracle,
@@ -154,11 +151,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
       const modelId = row.Provider === "vllm" ? "vllm:qwen2.5-7b-instruct" : "ollama:qwen2.5:7b";
       const fleetOverride = row.FleetBaseUrl === "set" ? FLEET_URL : undefined;
 
-      const merged = mergeLocalInferenceFromEnv(
-        buildUserSettings(row),
-        modelId,
-        fleetOverride,
-      );
+      const merged = mergeLocalInferenceFromEnv(buildUserSettings(row), modelId, fleetOverride);
 
       const providerConfig = merged[row.Provider];
       expect(Boolean(providerConfig?.isEnabled)).toBe(verdict.enabled);

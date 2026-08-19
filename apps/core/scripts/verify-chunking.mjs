@@ -25,7 +25,9 @@ for (const [line, expected] of boundaryCases) {
   const got = isDocumentSectionBoundary(line);
   const ok = got === expected;
   if (ok) boundaryPass += 1;
-  console.log(`${ok ? "PASS" : "FAIL"} isDocumentSectionBoundary(${JSON.stringify(line)}) => ${got}`);
+  console.log(
+    `${ok ? "PASS" : "FAIL"} isDocumentSectionBoundary(${JSON.stringify(line)}) => ${got}`,
+  );
 }
 console.log(`\nSection boundary detection: ${boundaryPass}/${boundaryCases.length}\n`);
 
@@ -36,7 +38,10 @@ ${"word ".repeat(80)}
 --- Slide 3 ---
 ${"word ".repeat(40)}`;
 
-const chunks = applyChunkOverlap(applySemanticChunking(sample, 400), DEFAULT_SEMANTIC_CHUNK_OVERLAP);
+const chunks = applyChunkOverlap(
+  applySemanticChunking(sample, 400),
+  DEFAULT_SEMANTIC_CHUNK_OVERLAP,
+);
 console.log(`Sample doc chunks (400-char limit): ${chunks.length}`);
 if (chunks.length >= 2) {
   const words0 = chunks[0].split(/\s+/).slice(-3);

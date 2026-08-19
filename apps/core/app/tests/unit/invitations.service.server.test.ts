@@ -27,8 +27,9 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/auth-handler-request", () => ({
   INTERNAL_INVITE_SIGNUP_HEADER: "x-eduai-invite-signup",
-  buildAuthSubRequest: vi.fn((_path: string, request: Request, init: RequestInit) =>
-    new Request("http://localhost/api/auth/sign-up/email", init),
+  buildAuthSubRequest: vi.fn(
+    (_path: string, request: Request, init: RequestInit) =>
+      new Request("http://localhost/api/auth/sign-up/email", init),
   ),
 }));
 

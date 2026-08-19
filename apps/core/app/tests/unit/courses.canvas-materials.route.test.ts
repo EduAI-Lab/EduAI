@@ -75,9 +75,7 @@ describe("courses.canvas-materials loader", () => {
 
   it("treats any non-'true' value as not opting in", async () => {
     await loader({
-      request: makeRequest(
-        "http://localhost/api/courses/core-course-1/canvas-materials?recheck=1",
-      ),
+      request: makeRequest("http://localhost/api/courses/core-course-1/canvas-materials?recheck=1"),
       params: { courseId: "core-course-1" },
     } as never);
 

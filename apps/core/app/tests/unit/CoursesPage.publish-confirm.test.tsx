@@ -1,68 +1,68 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 
-const { mockToastError } = vi.hoisted(() => ({ mockToastError: vi.fn() }))
-vi.mock('sonner', () => ({ toast: { error: mockToastError, success: vi.fn() } }))
+const { mockToastError } = vi.hoisted(() => ({ mockToastError: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { error: mockToastError, success: vi.fn() } }));
 
 // Capture the onPublishToggle prop wired in by CoursesPage so tests can
 // trigger it directly without going through the Radix DropdownMenu.
-let capturedPublishToggle: ((id: string, publish: boolean) => Promise<void>) | null = null
+let capturedPublishToggle: ((id: string, publish: boolean) => Promise<void>) | null = null;
 
-vi.mock('~/components/courses/courses-view', () => ({
+vi.mock("~/components/courses/courses-view", () => ({
   CoursesView: (props: any) => {
-    if (props.role === 'admin') {
-      capturedPublishToggle = props.onPublishToggle
-      return <div data-testid="admin-view" />
+    if (props.role === "admin") {
+      capturedPublishToggle = props.onPublishToggle;
+      return <div data-testid="admin-view" />;
     }
-    return null
+    return null;
   },
-}))
+}));
 
-vi.mock('~/components/app-sidebar', () => ({ AppSidebar: () => null }))
-vi.mock('~/components/site-header', () => ({ SiteHeader: () => null }))
+vi.mock("~/components/app-sidebar", () => ({ AppSidebar: () => null }));
+vi.mock("~/components/site-header", () => ({ SiteHeader: () => null }));
 
 // This branch routes the page chrome through CoreAppShell (which calls
 // useCoreSidebarProps); stub it to render children only so the courses page
 // under test isn't coupled to the shared shell.
-vi.mock('~/components/layout/core-app-shell', () => ({
+vi.mock("~/components/layout/core-app-shell", () => ({
   CoreAppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}))
+}));
 
-vi.mock('react-router', async (importActual) => {
-  const actual = await importActual<typeof import('react-router')>()
+vi.mock("react-router", async (importActual) => {
+  const actual = await importActual<typeof import("react-router")>();
   return {
     ...actual,
     useLoaderData: () => ({
-      user: { id: 'u1', role: 'ADMIN', name: 'Admin', email: 'a@test.com' },
+      user: { id: "u1", role: "ADMIN", name: "Admin", email: "a@test.com" },
       authorizedUnits: [],
       taCourseIds: [],
       enrolledCourseIds: [],
       instructors: [],
     }),
     useSearchParams: () => [new URLSearchParams(), vi.fn()],
-  }
-})
+  };
+});
 
-const mockUpdateCourse = vi.fn().mockResolvedValue(undefined)
+const mockUpdateCourse = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('~/hooks/api/use-courses', () => ({
+vi.mock("~/hooks/api/use-courses", () => ({
   useCourses: () => ({
     courses: [
       {
-        id: 'c1',
-        code: 'COSC 101',
-        name: 'Intro to CS',
+        id: "c1",
+        code: "COSC 101",
+        name: "Intro to CS",
         description: null,
-        term: 'Fall',
+        term: "Fall",
         year: 2025,
         isActive: true,
         isPublished: true,
-        aiInstructions: '',
+        aiInstructions: "",
         instructorId: null,
         department: null,
-        createdAt: '2025-01-01T00:00:00.000Z',
-        updatedAt: '2025-01-01T00:00:00.000Z',
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
       },
     ],
     // #1041: the hook now owns one page and the route renders TablePagination.
@@ -74,121 +74,119 @@ vi.mock('~/hooks/api/use-courses', () => ({
     updateCourse: mockUpdateCourse,
     deleteCourse: vi.fn(),
   }),
-}))
+}));
 
-import CoursesPage from '~/routes/courses'
+import CoursesPage from "~/routes/courses";
 
 function wrap() {
   return render(
     <MemoryRouter>
       <CoursesPage />
     </MemoryRouter>,
-  )
+  );
 }
 
-describe('CoursesPage — publish/unpublish confirmation', () => {
+describe("CoursesPage — publish/unpublish confirmation", () => {
   beforeEach(() => {
-    capturedPublishToggle = null
-    mockUpdateCourse.mockClear()
-    mockToastError.mockClear()
-  })
+    capturedPublishToggle = null;
+    mockUpdateCourse.mockClear();
+    mockToastError.mockClear();
+  });
 
-  it('triggering unpublish opens a confirmation dialog without calling the API', async () => {
-    wrap()
-
-    await act(async () => {
-      await capturedPublishToggle!('c1', false)
-    })
-
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    expect(mockUpdateCourse).not.toHaveBeenCalled()
-  })
-
-  it('dialog shows course label and unpublish-specific copy', async () => {
-    wrap()
+  it("triggering unpublish opens a confirmation dialog without calling the API", async () => {
+    wrap();
 
     await act(async () => {
-      await capturedPublishToggle!('c1', false)
-    })
+      await capturedPublishToggle!("c1", false);
+    });
 
-    expect(screen.getByText(/unpublish "cosc 101 — intro to cs"/i)).toBeInTheDocument()
-    expect(screen.getByText(/students will lose access to this course/i)).toBeInTheDocument()
-  })
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(mockUpdateCourse).not.toHaveBeenCalled();
+  });
 
-  it('confirming unpublish calls updateCourse with isPublished: false', async () => {
-    wrap()
-
-    await act(async () => {
-      await capturedPublishToggle!('c1', false)
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: /^unpublish$/i }))
-
-    expect(mockUpdateCourse).toHaveBeenCalledWith('c1', { isPublished: false })
-  })
-
-  it('cancelling unpublish does not call updateCourse', async () => {
-    wrap()
+  it("dialog shows course label and unpublish-specific copy", async () => {
+    wrap();
 
     await act(async () => {
-      await capturedPublishToggle!('c1', false)
-    })
+      await capturedPublishToggle!("c1", false);
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(screen.getByText(/unpublish "cosc 101 — intro to cs"/i)).toBeInTheDocument();
+    expect(screen.getByText(/students will lose access to this course/i)).toBeInTheDocument();
+  });
 
-    expect(mockUpdateCourse).not.toHaveBeenCalled()
-  })
-
-  it('triggering publish opens a confirmation dialog without calling the API', async () => {
-    wrap()
-
-    await act(async () => {
-      await capturedPublishToggle!('c1', true)
-    })
-
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    expect(mockUpdateCourse).not.toHaveBeenCalled()
-  })
-
-  it('dialog shows course label and publish-specific copy', async () => {
-    wrap()
+  it("confirming unpublish calls updateCourse with isPublished: false", async () => {
+    wrap();
 
     await act(async () => {
-      await capturedPublishToggle!('c1', true)
-    })
+      await capturedPublishToggle!("c1", false);
+    });
 
-    expect(screen.getByText(/publish "cosc 101 — intro to cs"/i)).toBeInTheDocument()
-    expect(screen.getByText(/students will be able to see this course/i)).toBeInTheDocument()
-  })
+    fireEvent.click(screen.getByRole("button", { name: /^unpublish$/i }));
 
-  it('confirming publish calls updateCourse with isPublished: true', async () => {
-    wrap()
+    expect(mockUpdateCourse).toHaveBeenCalledWith("c1", { isPublished: false });
+  });
 
-    await act(async () => {
-      await capturedPublishToggle!('c1', true)
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: /^publish$/i }))
-
-    expect(mockUpdateCourse).toHaveBeenCalledWith('c1', { isPublished: true })
-  })
-
-  it('shows a toast error when updateCourse fails', async () => {
-    mockUpdateCourse.mockRejectedValueOnce(new Error('network error'))
-    wrap()
+  it("cancelling unpublish does not call updateCourse", async () => {
+    wrap();
 
     await act(async () => {
-      await capturedPublishToggle!('c1', false)
-    })
+      await capturedPublishToggle!("c1", false);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(mockUpdateCourse).not.toHaveBeenCalled();
+  });
+
+  it("triggering publish opens a confirmation dialog without calling the API", async () => {
+    wrap();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^unpublish$/i }))
-    })
+      await capturedPublishToggle!("c1", true);
+    });
+
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(mockUpdateCourse).not.toHaveBeenCalled();
+  });
+
+  it("dialog shows course label and publish-specific copy", async () => {
+    wrap();
+
+    await act(async () => {
+      await capturedPublishToggle!("c1", true);
+    });
+
+    expect(screen.getByText(/publish "cosc 101 — intro to cs"/i)).toBeInTheDocument();
+    expect(screen.getByText(/students will be able to see this course/i)).toBeInTheDocument();
+  });
+
+  it("confirming publish calls updateCourse with isPublished: true", async () => {
+    wrap();
+
+    await act(async () => {
+      await capturedPublishToggle!("c1", true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
+
+    expect(mockUpdateCourse).toHaveBeenCalledWith("c1", { isPublished: true });
+  });
+
+  it("shows a toast error when updateCourse fails", async () => {
+    mockUpdateCourse.mockRejectedValueOnce(new Error("network error"));
+    wrap();
+
+    await act(async () => {
+      await capturedPublishToggle!("c1", false);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^unpublish$/i }));
+    });
 
     await waitFor(() => {
-      expect(mockToastError).toHaveBeenCalledWith(
-        expect.stringMatching(/failed/i),
-      )
-    })
-  })
-})
+      expect(mockToastError).toHaveBeenCalledWith(expect.stringMatching(/failed/i));
+    });
+  });
+});

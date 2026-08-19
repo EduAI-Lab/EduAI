@@ -69,18 +69,14 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       adhdAssist: true,
       profile: "redirect",
     });
-    expect(result).toContain(
-      "Do NOT explain, define, or give any fact about the second topic",
-    );
+    expect(result).toContain("Do NOT explain, define, or give any fact about the second topic");
     expect(result).toContain("Max 3 sentences total");
     expect(result).toContain("that instruction does not");
   });
 
   it("resolveAdhdAssistPolicyBlock returns full block by default", () => {
     expect(resolveAdhdAssistPolicyBlock()).toBe(ADHD_ASSIST_POLICY_BLOCK);
-    expect(resolveAdhdAssistPolicyBlock("full_tutoring")).toBe(
-      ADHD_ASSIST_POLICY_BLOCK,
-    );
+    expect(resolveAdhdAssistPolicyBlock("full_tutoring")).toBe(ADHD_ASSIST_POLICY_BLOCK);
   });
 });
 
@@ -227,9 +223,7 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("compare");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("SAME stage names");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("never omit later");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
-      "do not emit a bare type-id-only fence",
-    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("do not emit a bare type-id-only fence");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("How a bill becomes law");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the **Next?** line");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
@@ -248,17 +242,13 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
       "AND the learner asked for one. Never add diagrams by default.",
     );
-    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
-      "gradient-descent needs only the type id line",
-    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain("gradient-descent needs only the type id line");
   });
 
   it("keeps the Top summary / Next? anchors the oversight layer depends on", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Top summary**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Next?**");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
-      "Do not rename **Top summary** or **Next?**",
-    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Do not rename **Top summary** or **Next?**");
   });
 });
 
@@ -289,9 +279,7 @@ describe("ensureDiagramBeforeNext", () => {
     expect(fixed).toContain("```eduai-diagram");
     expect(fixed).toContain("process-flow");
     expect(fixed).toContain("Light reactions:");
-    expect(fixed.indexOf("```eduai-diagram")).toBeLessThan(
-      fixed.indexOf("**Next?**"),
-    );
+    expect(fixed.indexOf("```eduai-diagram")).toBeLessThan(fixed.indexOf("**Next?**"));
   });
 
   it("picks gradient-descent when the learner asks about it", () => {

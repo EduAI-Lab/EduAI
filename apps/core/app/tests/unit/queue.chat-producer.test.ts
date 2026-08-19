@@ -108,9 +108,7 @@ describe("enqueueQuestionGeneration", () => {
   it("extracts the latest user prompt from array-shaped content parts", async () => {
     await enqueueQuestionGeneration({
       body: {},
-      messages: [
-        { role: "user", content: [{ text: "part one " }, { text: "part two" }] },
-      ],
+      messages: [{ role: "user", content: [{ text: "part one " }, { text: "part two" }] }],
       userId: "user-1",
     });
 

@@ -10,12 +10,12 @@
  *   we assert the buggy allow (HTTP 200) rather than a broad it.fails that
  *   would also swallow 500s / unexpected statuses.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import request from "supertest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { createApp } from "../../src/app.js";
 import {
   makeStudent,
   makeAdmin,
@@ -23,20 +23,20 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
-vi.mock('../../src/services/policyService.js', () => ({
+vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn().mockResolvedValue(true),
-  getPolicies: vi.fn().mockResolvedValue({ 'instructors.canCreateCourses': true }),
+  getPolicies: vi.fn().mockResolvedValue({ "instructors.canCreateCourses": true }),
   invalidatePolicyCache: vi.fn(),
   __resetPolicyServiceState: vi.fn(),
 }));
 
-vi.mock('../../src/services/topicSync.js', () => ({
+vi.mock("../../src/services/topicSync.js", () => ({
   syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../src/services/enrollmentSync.js', () => ({
+vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
   syncCourseEnrollments: vi.fn().mockResolvedValue({
@@ -48,7 +48,7 @@ vi.mock('../../src/services/enrollmentSync.js', () => ({
   }),
 }));
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
@@ -59,53 +59,49 @@ vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
   };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../");
 const allCases = JSON.parse(
-  readFileSync(path.join(repoRoot, 'tests/models/course-access-across-apps.cases.json'), 'utf8'),
+  readFileSync(path.join(repoRoot, "tests/models/course-access-across-apps.cases.json"), "utf8"),
 );
-const {
-  courseAccessOracle,
-  effectiveEnrollment,
-  formatCourseAccessRow,
-  platformRoleForRow,
-} = await import(path.join(repoRoot, 'tests/models/course-access-across-apps.oracle.ts'));
+const { courseAccessOracle, effectiveEnrollment, formatCourseAccessRow, platformRoleForRow } =
+  await import(path.join(repoRoot, "tests/models/course-access-across-apps.oracle.ts"));
 
-const APP = 'ai-tutor';
+const APP = "ai-tutor";
 const rows = allCases;
-const DEPARTMENT = 'COSC';
-const OTHER_DEPARTMENT = 'MATH';
+const DEPARTMENT = "COSC";
+const OTHER_DEPARTMENT = "MATH";
 
 /** Rows where AT detail membership diverges from the shared contract (#1405). */
 function isUnpublishedStudentDrift(expected) {
-  return expected.outcome === 'denied' && expected.reason === 'unpublished-student';
+  return expected.outcome === "denied" && expected.reason === "unpublished-student";
 }
 
 function actualFromStatus(status, levelWhenAllowed) {
-  if (status === 404) return { outcome: 'denied', reason: 'no-course' };
-  if (status === 403 || status === 401) return { outcome: 'denied', reason: 'no-access' };
-  if (status === 200) return { outcome: 'allowed', level: levelWhenAllowed };
+  if (status === 404) return { outcome: "denied", reason: "no-course" };
+  if (status === 403 || status === 401) return { outcome: "denied", reason: "no-access" };
+  if (status === 200) return { outcome: "allowed", level: levelWhenAllowed };
   throw new Error(`unexpected HTTP status ${status} (not mapped to a course-access verdict)`);
 }
 
 function levelFromEnrollment(row) {
   const enrollment = effectiveEnrollment(row);
-  if (row.Role === 'ADMIN') return 'admin';
-  if (row.Role === 'UNIT_ADMIN' && row.UnitMatch === 'in-unit') return 'unit';
-  if (enrollment === 'active-INSTRUCTOR') return 'instructor';
-  if (enrollment === 'active-TA') return 'ta';
-  if (enrollment === 'active-STUDENT') return 'student';
-  return 'student';
+  if (row.Role === "ADMIN") return "admin";
+  if (row.Role === "UNIT_ADMIN" && row.UnitMatch === "in-unit") return "unit";
+  if (enrollment === "active-INSTRUCTOR") return "instructor";
+  if (enrollment === "active-TA") return "ta";
+  if (enrollment === "active-STUDENT") return "student";
+  return "student";
 }
 
 async function runRow(row) {
   const platformRole = platformRoleForRow(row, APP);
 
   let user;
-  if (platformRole === 'ADMIN') {
+  if (platformRole === "ADMIN") {
     user = makeAdmin();
-  } else if (platformRole === 'UNIT_ADMIN') {
+  } else if (platformRole === "UNIT_ADMIN") {
     user = makeUnitAdmin([DEPARTMENT]);
   } else {
     user = makeStudent({ role: platformRole });
@@ -114,7 +110,7 @@ async function runRow(row) {
   let courseId;
   let levelWhenAllowed = levelFromEnrollment(row);
 
-  if (row.CourseState === 'deleted') {
+  if (row.CourseState === "deleted") {
     courseId = 999999;
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue(null);
   } else {
@@ -122,30 +118,30 @@ async function runRow(row) {
     courseId = seed.course.id;
 
     let department = DEPARTMENT;
-    if (row.Role === 'UNIT_ADMIN') {
-      if (row.UnitMatch === 'null-dept') department = null;
-      else if (row.UnitMatch === 'out-of-unit') department = OTHER_DEPARTMENT;
+    if (row.Role === "UNIT_ADMIN") {
+      if (row.UnitMatch === "null-dept") department = null;
+      else if (row.UnitMatch === "out-of-unit") department = OTHER_DEPARTMENT;
     }
 
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
       id: seed.course.coreOfferingId,
-      name: 'PICT Course',
+      name: "PICT Course",
       department,
-      isPublished: row.CourseState === 'published',
+      isPublished: row.CourseState === "published",
     });
 
     const enrollment = effectiveEnrollment(row);
-    if (enrollment === 'active-INSTRUCTOR') {
+    if (enrollment === "active-INSTRUCTOR") {
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: courseId, userId: user.id, role: 'INSTRUCTOR' },
+        data: { courseOfferingId: courseId, userId: user.id, role: "INSTRUCTOR" },
       });
-    } else if (enrollment === 'active-TA') {
+    } else if (enrollment === "active-TA") {
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: courseId, userId: user.id, role: 'TA' },
+        data: { courseOfferingId: courseId, userId: user.id, role: "TA" },
       });
-    } else if (enrollment === 'active-STUDENT') {
+    } else if (enrollment === "active-STUDENT") {
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: courseId, userId: user.id, role: 'STUDENT' },
+        data: { courseOfferingId: courseId, userId: user.id, role: "STUDENT" },
       });
     }
     // Enrollment=inactive: AT CourseEnrollment has no isActive column; omitting
@@ -167,7 +163,7 @@ afterEach(async () => {
 });
 
 describe.each(rows.map((row, index) => [index, row]))(
-  'course-access-across-apps AI Tutor PICT row #%i',
+  "course-access-across-apps AI Tutor PICT row #%i",
   (index, row) => {
     const expected = courseAccessOracle(row, APP);
 

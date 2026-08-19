@@ -29,9 +29,10 @@ export type PaginatedResponse<T> = {
   pageSize: number;
 };
 
-export const initialPaginationState = (
-  pageSize = DEFAULT_PAGE_SIZE,
-): PaginationState => ({ pageIndex: 0, pageSize });
+export const initialPaginationState = (pageSize = DEFAULT_PAGE_SIZE): PaginationState => ({
+  pageIndex: 0,
+  pageSize,
+});
 
 /** Serialize paging (plus any extra filters) into a query string. */
 export function paginationQuery(

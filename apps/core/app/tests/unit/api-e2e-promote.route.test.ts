@@ -38,13 +38,17 @@ afterEach(() => {
 describe("POST /api/e2e/promote", () => {
   it("returns 404 when NODE_ENV is not test", async () => {
     process.env.NODE_ENV = "production";
-    const res = await action(makeArgs("POST", { secret: "shhh", email: "a@ubc.ca", role: "ADMIN" }));
+    const res = await action(
+      makeArgs("POST", { secret: "shhh", email: "a@ubc.ca", role: "ADMIN" }),
+    );
     expect(res.status).toBe(404);
   });
 
   it("returns 404 when E2E_SEED_SECRET is unset", async () => {
     delete process.env.E2E_SEED_SECRET;
-    const res = await action(makeArgs("POST", { secret: "shhh", email: "a@ubc.ca", role: "ADMIN" }));
+    const res = await action(
+      makeArgs("POST", { secret: "shhh", email: "a@ubc.ca", role: "ADMIN" }),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -54,7 +58,9 @@ describe("POST /api/e2e/promote", () => {
   });
 
   it("returns 403 when the secret does not match", async () => {
-    const res = await action(makeArgs("POST", { secret: "wrong", email: "a@ubc.ca", role: "ADMIN" }));
+    const res = await action(
+      makeArgs("POST", { secret: "wrong", email: "a@ubc.ca", role: "ADMIN" }),
+    );
     expect(res.status).toBe(403);
   });
 
@@ -89,7 +95,9 @@ describe("POST /api/e2e/promote", () => {
       name: "A",
     } as never);
 
-    const res = await action(makeArgs("POST", { secret: "shhh", email: "a@ubc.ca", role: "ADMIN" }));
+    const res = await action(
+      makeArgs("POST", { secret: "shhh", email: "a@ubc.ca", role: "ADMIN" }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ id: "u1", email: "a@ubc.ca", role: "ADMIN", name: "A" });

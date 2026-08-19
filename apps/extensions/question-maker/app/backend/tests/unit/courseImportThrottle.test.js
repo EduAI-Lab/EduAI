@@ -4,21 +4,21 @@
  * `runCoreMirror`, apps/extensions/ai-tutor/server/src/routes/authentication.js).
  * No DB, no network — every collaborator of the route is mocked.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
-import request from 'supertest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import express from "express";
+import request from "supertest";
 
-vi.mock('../../src/middleware/auth.js', () => ({
+vi.mock("../../src/middleware/auth.js", () => ({
   authenticateToken: (req, _res, next) => next(),
   requireRole: () => (_req, _res, next) => next(),
 }));
 
-vi.mock('../../src/middleware/courseAccess.js', () => ({
+vi.mock("../../src/middleware/courseAccess.js", () => ({
   requireCourseAccess: () => (_req, _res, next) => next(),
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     course: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     questionMetadata: {},
@@ -26,37 +26,35 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-vi.mock('../../src/services/coreApiService.js', () => ({
+vi.mock("../../src/services/coreApiService.js", () => ({
   pushTopicToCore: vi.fn(),
   isCoreCourseInScopedList: vi.fn(),
   getCourseEnrollmentsFromCore: vi.fn(),
 }));
 
-vi.mock('../../src/services/courseListService.js', () => ({
+vi.mock("../../src/services/courseListService.js", () => ({
   listCoursesForUser: vi.fn().mockResolvedValue([]),
   listCoursesPageForUser: vi.fn().mockResolvedValue({ courses: [], total: 0 }),
   enrichCourseDetail: vi.fn(),
 }));
 
-vi.mock('../../src/services/topicSyncService.js', () => ({
+vi.mock("../../src/services/topicSyncService.js", () => ({
   syncTopicsFromCoreForCourse: vi.fn(),
 }));
 
-vi.mock('../../src/services/importTaughtCoursesService.js', () => ({
+vi.mock("../../src/services/importTaughtCoursesService.js", () => ({
   importTaughtCoursesFromCore: vi.fn().mockResolvedValue({ imported: 0, skipped: 0 }),
 }));
 
-vi.mock('../../src/utils/logger.js', () => ({
+vi.mock("../../src/utils/logger.js", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-const { importTaughtCoursesFromCore } = await import(
-  '../../src/services/importTaughtCoursesService.js'
-);
-const { listCoursesForUser, listCoursesPageForUser } = await import(
-  '../../src/services/courseListService.js'
-);
-const courseModule = await import('../../src/routes/course.js');
+const { importTaughtCoursesFromCore } =
+  await import("../../src/services/importTaughtCoursesService.js");
+const { listCoursesForUser, listCoursesPageForUser } =
+  await import("../../src/services/courseListService.js");
+const courseModule = await import("../../src/routes/course.js");
 const courseRouter = courseModule.default;
 const { resetCoreImportThrottleForTests } = courseModule;
 
@@ -66,13 +64,13 @@ function appFor(user) {
     req.user = user;
     next();
   });
-  app.use('/api/course', courseRouter);
+  app.use("/api/course", courseRouter);
   return app;
 }
 
-const instructor = { id: 'u-1', role: 'INSTRUCTOR' };
+const instructor = { id: "u-1", role: "INSTRUCTOR" };
 
-describe('GET /api/course auto-import mirror throttle', () => {
+describe("GET /api/course auto-import mirror throttle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetCoreImportThrottleForTests();
@@ -81,38 +79,51 @@ describe('GET /api/course auto-import mirror throttle', () => {
     listCoursesPageForUser.mockResolvedValue({ courses: [], total: 0 });
   });
 
-  it('triggers the Core mirror on the first list call', async () => {
-    const res = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+  it("triggers the Core mirror on the first list call", async () => {
+    const res = await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
 
     expect(res.status).toBe(200);
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(1);
-    expect(importTaughtCoursesFromCore).toHaveBeenCalledWith('u-1', 'INSTRUCTOR', 'session=x');
+    expect(importTaughtCoursesFromCore).toHaveBeenCalledWith("u-1", "INSTRUCTOR", "session=x");
   });
 
-  it('does not re-trigger the mirror on a second list call within the throttle window', async () => {
-    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
-    const second = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+  it("does not re-trigger the mirror on a second list call within the throttle window", async () => {
+    await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
+    const second = await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
 
     expect(second.status).toBe(200);
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(1);
   });
 
-  it('throttles per user, not globally', async () => {
-    const other = { id: 'u-2', role: 'INSTRUCTOR' };
+  it("throttles per user, not globally", async () => {
+    const other = { id: "u-2", role: "INSTRUCTOR" };
 
-    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
-    await request(appFor(other)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=y');
+    await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
+    await request(appFor(other)).get("/api/course?page=1&pageSize=25").set("Cookie", "session=y");
 
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(2);
   });
 
-  it('does not block the list response on the mirror settling (fire-and-forget)', async () => {
+  it("does not block the list response on the mirror settling (fire-and-forget)", async () => {
     let releaseImport;
     importTaughtCoursesFromCore.mockImplementation(
-      () => new Promise((resolve) => { releaseImport = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          releaseImport = resolve;
+        }),
     );
 
-    const res = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+    const res = await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
 
     // The response already came back even though the mirror promise above is
     // still unsettled — proves the route didn't await it.
@@ -121,18 +132,24 @@ describe('GET /api/course auto-import mirror throttle', () => {
     releaseImport({ imported: 0, skipped: 0 });
   });
 
-  it('logs and swallows a mirror failure without failing the list response', async () => {
-    importTaughtCoursesFromCore.mockRejectedValue(new Error('Core unreachable'));
+  it("logs and swallows a mirror failure without failing the list response", async () => {
+    importTaughtCoursesFromCore.mockRejectedValue(new Error("Core unreachable"));
 
-    const res = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+    const res = await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
 
     expect(res.status).toBe(200);
   });
 
-  it('resetCoreImportThrottleForTests clears the per-user throttle', async () => {
-    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+  it("resetCoreImportThrottleForTests clears the per-user throttle", async () => {
+    await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
     resetCoreImportThrottleForTests();
-    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+    await request(appFor(instructor))
+      .get("/api/course?page=1&pageSize=25")
+      .set("Cookie", "session=x");
 
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(2);
   });

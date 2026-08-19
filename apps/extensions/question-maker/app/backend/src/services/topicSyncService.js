@@ -1,7 +1,7 @@
-import { createId } from '@paralleldrive/cuid2';
-import { prisma } from '../config/database.js';
-import { getCourseTopicsFromCore } from './coreApiService.js';
-import { logger } from '../utils/logger.js';
+import { createId } from "@paralleldrive/cuid2";
+import { prisma } from "../config/database.js";
+import { getCourseTopicsFromCore } from "./coreApiService.js";
+import { logger } from "../utils/logger.js";
 
 function parseCoreTopics(data) {
   if (Array.isArray(data?.topics)) return data.topics;
@@ -10,7 +10,11 @@ function parseCoreTopics(data) {
 }
 
 /** Upserts Core course topics into the local QM topics table. */
-export async function syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError = false } = {}) {
+export async function syncTopicsFromCoreForCourse(
+  course,
+  cookie,
+  { failOnCoreError = false } = {},
+) {
   if (!course?.coreCourseId) return 0;
 
   let coreTopics;
@@ -18,7 +22,7 @@ export async function syncTopicsFromCoreForCourse(course, cookie, { failOnCoreEr
     const data = await getCourseTopicsFromCore(course.coreCourseId, { cookie });
     coreTopics = parseCoreTopics(data);
   } catch (err) {
-    logger.warn({ err, coreCourseId: course.coreCourseId }, 'Core topic sync skipped');
+    logger.warn({ err, coreCourseId: course.coreCourseId }, "Core topic sync skipped");
     if (failOnCoreError) throw err;
     return 0;
   }

@@ -12,33 +12,37 @@
  * fix the question is skipped and the loop ends with its intentional "No questions could be
  * imported" guard (proving the catch ran without throwing on `canvasQuestion`).
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
-vi.mock('../../src/services/authService.js', () => ({
+vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
+describeDb("importQuizFromCanvas per-question skip (integration, #3)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let canvas;
 
-  const USER = { id: 'cuid-canvas-skip-user', email: 'canvas-skip@test.com', name: 'Canvas Skip User' };
+  const USER = {
+    id: "cuid-canvas-skip-user",
+    email: "canvas-skip@test.com",
+    name: "Canvas Skip User",
+  };
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
-    canvas = await import('../../src/services/canvasService.js');
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
+    canvas = await import("../../src/services/canvasService.js");
 
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   let courseId, topicId;
@@ -55,8 +59,8 @@ describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
     await prisma.canvasIntegration.create({
       data: {
         userId: USER.id,
-        canvasUrl: 'https://canvas.test',
-        apiKey: 'test-token',
+        canvasUrl: "https://canvas.test",
+        apiKey: "test-token",
         isTestMode: true,
       },
     });
@@ -67,10 +71,14 @@ describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  it('skips a failing question without a ReferenceError in the catch', async () => {
-    const spy = vi.spyOn(prisma.questionMetadata, 'create').mockRejectedValue(new Error('simulated insert failure'));
+  it("skips a failing question without a ReferenceError in the catch", async () => {
+    const spy = vi
+      .spyOn(prisma.questionMetadata, "create")
+      .mockRejectedValue(new Error("simulated insert failure"));
     try {
-      const promise = canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, { primaryTopicId: topicId });
+      const promise = canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, {
+        primaryTopicId: topicId,
+      });
       // After the fix the catch runs cleanly, the question is skipped, and the loop hits its
       // intentional empty-import guard. Before the fix it rejects with "canvasQuestion is not defined".
       await expect(promise).rejects.toThrow(/No questions could be imported/);

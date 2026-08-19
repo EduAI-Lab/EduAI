@@ -5,16 +5,14 @@ import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 
 describe("resolveVllmApiKey (#1115)", () => {
   it("prefers an explicit VLLM_API_KEY", () => {
-    expect(
-      resolveVllmApiKey({ VLLM_API_KEY: " real-secret ", NODE_ENV: "production" }),
-    ).toBe("real-secret");
+    expect(resolveVllmApiKey({ VLLM_API_KEY: " real-secret ", NODE_ENV: "production" })).toBe(
+      "real-secret",
+    );
   });
 
   it("never falls back to vllm-local in production", () => {
     expect(resolveVllmApiKey({ NODE_ENV: "production" })).toBeUndefined();
-    expect(
-      resolveVllmApiKey({ VLLM_API_KEY: "  ", NODE_ENV: "production" }),
-    ).toBeUndefined();
+    expect(resolveVllmApiKey({ VLLM_API_KEY: "  ", NODE_ENV: "production" })).toBeUndefined();
   });
 
   it("allows the documented local default outside production", () => {
@@ -32,9 +30,7 @@ describe("resolveVllmApiKey (#1115)", () => {
         VLLM_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
       }),
     ).toBeUndefined();
-    expect(
-      resolveVllmApiKey({ NODE_ENV: "development", VLLM_BASE_URL: "  " }),
-    ).toBe("vllm-local");
+    expect(resolveVllmApiKey({ NODE_ENV: "development", VLLM_BASE_URL: "  " })).toBe("vllm-local");
   });
 
   it("still allows the local default when VLLM_BASE_URL points at loopback", () => {
@@ -43,14 +39,14 @@ describe("resolveVllmApiKey (#1115)", () => {
     expect(
       resolveVllmApiKey({ NODE_ENV: "development", VLLM_BASE_URL: "http://localhost:8001" }),
     ).toBe("vllm-local");
-    expect(
-      resolveVllmApiKey({ NODE_ENV: "test", VLLM_BASE_URL: "http://127.0.0.1:8001" }),
-    ).toBe("vllm-local");
+    expect(resolveVllmApiKey({ NODE_ENV: "test", VLLM_BASE_URL: "http://127.0.0.1:8001" })).toBe(
+      "vllm-local",
+    );
   });
 
   it("treats a malformed VLLM_BASE_URL as not configured rather than throwing", () => {
-    expect(
-      resolveVllmApiKey({ NODE_ENV: "development", VLLM_BASE_URL: "not-a-url" }),
-    ).toBe("vllm-local");
+    expect(resolveVllmApiKey({ NODE_ENV: "development", VLLM_BASE_URL: "not-a-url" })).toBe(
+      "vllm-local",
+    );
   });
 });

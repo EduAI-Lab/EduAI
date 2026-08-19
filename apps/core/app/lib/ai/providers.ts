@@ -111,9 +111,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
       providers.ollama = createOllama({
         baseURL,
         // Never attach cmps01 internal key for client-supplied base URLs (IP allowlist bypass).
-        headers: clientOllamaBaseUrl
-          ? {}
-          : cmps01InternalAuthHeadersForUrl(baseURL),
+        headers: clientOllamaBaseUrl ? {} : cmps01InternalAuthHeadersForUrl(baseURL),
       });
     }
   }
@@ -154,10 +152,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
             vllm(modelId, { ...settings, structuredOutputs: true }),
           vllm,
           {
-            languageModel: (
-              modelId: string,
-              settings?: Record<string, unknown>,
-            ) =>
+            languageModel: (modelId: string, settings?: Record<string, unknown>) =>
               vllm.languageModel(modelId, {
                 ...settings,
                 structuredOutputs: true,
@@ -204,9 +199,7 @@ export function getAvailableProviders(): ProviderConfig[] {
 /**
  * Get provider configuration by ID
  */
-export function getProviderConfig(
-  providerId: SupportedProvider,
-): ProviderConfig | null {
+export function getProviderConfig(providerId: SupportedProvider): ProviderConfig | null {
   return PROVIDER_CONFIGS[providerId] || null;
 }
 
@@ -233,27 +226,17 @@ export function isProviderConfigured(
 /**
  * Get model identifier for registry usage (provider:model format)
  */
-export function getModelIdentifier(
-  providerId: SupportedProvider,
-  modelId: string,
-): string {
+export function getModelIdentifier(providerId: SupportedProvider, modelId: string): string {
   return `${providerId}:${modelId}`;
 }
 
 /** Providers that would be registered from current settings (for error messages). */
-export function listEnabledRegistryProviders(
-  userSettings: UserProviderSettings,
-): string[] {
+export function listEnabledRegistryProviders(userSettings: UserProviderSettings): string[] {
   const ids: string[] = [];
-  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey)
-    ids.push("openai");
-  if (userSettings.google?.isEnabled && userSettings.google?.apiKey)
-    ids.push("google");
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push("openai");
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push("google");
   if (userSettings.ollama?.isEnabled) ids.push("ollama");
-  if (
-    userSettings.vllm?.isEnabled &&
-    (userSettings.vllm?.apiKey || resolveVllmApiKey())
-  )
+  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey()))
     ids.push("vllm");
   return ids;
 }

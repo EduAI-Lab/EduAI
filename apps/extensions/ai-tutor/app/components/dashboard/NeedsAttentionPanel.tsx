@@ -7,12 +7,12 @@
  * rest. Derived entirely from the real `isPublished` flag on
  * `api.listCourses()` results — no fabrication.
  */
-import { useNavigate } from 'react-router';
-import { IconCircleCheck, IconArrowRight, IconEyeOff } from '@tabler/icons-react';
-import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
-import type { Course } from '~/lib/types';
-import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
-import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
+import { useNavigate } from "react-router";
+import { IconCircleCheck, IconArrowRight, IconEyeOff } from "@tabler/icons-react";
+import { Card, CardContent, courseHeroBackgroundStyle } from "@eduai/ui";
+import type { Course } from "~/lib/types";
+import { accentForCourse, courseCode, courseName } from "~/lib/course-display";
+import { TruncatedListNotice } from "~/components/common/TruncatedListNotice";
 
 type NeedsAttentionPanelProps = {
   courses: Course[];
@@ -26,11 +26,7 @@ type NeedsAttentionPanelProps = {
   total?: number;
 };
 
-export function NeedsAttentionPanel({
-  courses,
-  coursesBaseHref,
-  total,
-}: NeedsAttentionPanelProps) {
+export function NeedsAttentionPanel({ courses, coursesBaseHref, total }: NeedsAttentionPanelProps) {
   const navigate = useNavigate();
   const drafts = courses.filter((c) => !c.isPublished);
 
@@ -82,7 +78,9 @@ export function NeedsAttentionPanel({
               <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-white/70">
                 {courseCode(primary)}
               </div>
-              <h3 className="text-lg font-semibold leading-snug text-white">{courseName(primary)}</h3>
+              <h3 className="text-lg font-semibold leading-snug text-white">
+                {courseName(primary)}
+              </h3>
             </div>
             <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
               <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
@@ -100,7 +98,11 @@ export function NeedsAttentionPanel({
             className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
           >
             Publish it
-            <IconArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" />
+            <IconArrowRight
+              size={16}
+              aria-hidden="true"
+              className="transition-transform group-hover:translate-x-0.5"
+            />
           </span>
         </div>
       </button>
@@ -123,10 +125,14 @@ export function NeedsAttentionPanel({
                     aria-hidden="true"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-foreground">{courseCode(course)}</div>
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {courseCode(course)}
+                    </div>
                     <div className="truncate text-xs text-muted-foreground">{course.title}</div>
                   </div>
-                  <span className="flex-shrink-0 text-xs font-medium text-primary-text">Publish it →</span>
+                  <span className="flex-shrink-0 text-xs font-medium text-primary-text">
+                    Publish it →
+                  </span>
                 </button>
               );
             })}

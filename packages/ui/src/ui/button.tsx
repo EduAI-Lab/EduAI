@@ -1,8 +1,8 @@
-import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "../utils"
+import { cn } from "../utils";
 
 const buttonVariants = cva(
   [
@@ -23,18 +23,15 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground border-primary hover:brightness-90 dark:hover:brightness-125 active:brightness-75",
         secondary:
           "bg-secondary text-secondary-foreground border-secondary hover:brightness-90 dark:hover:brightness-125 active:brightness-75",
-        outline:
-          "bg-transparent text-primary-text border-border hover:bg-muted/50",
-        ghost:
-          "bg-transparent text-foreground border-transparent hover:bg-muted/60",
+        outline: "bg-transparent text-primary-text border-border hover:bg-muted/50",
+        ghost: "bg-transparent text-foreground border-transparent hover:bg-muted/60",
         destructive:
           "bg-destructive text-destructive-foreground border-destructive hover:bg-[var(--color-destructive-hover)] hover:border-[var(--color-destructive-hover)] active:brightness-75",
         link: "bg-transparent text-primary-text border-transparent underline-offset-4 hover:underline",
         gold: "bg-[var(--color-gold-100)] text-[var(--color-gold-700)] border-[var(--color-gold-400)] hover:brightness-90",
       },
       size: {
-        default:
-          "text-sm px-4 min-h-[38px] py-2 rounded-[var(--radius-base)] has-[>svg]:px-3",
+        default: "text-sm px-4 min-h-[38px] py-2 rounded-[var(--radius-base)] has-[>svg]:px-3",
         sm: "text-[13px] px-3 min-h-8 py-1 rounded-[var(--radius-base)] has-[>svg]:px-2.5",
         lg: "text-[15px] px-5 min-h-11 py-3 rounded-[var(--radius-base)] has-[>svg]:px-4",
         icon: "text-sm size-[38px] rounded-[var(--radius-base)]",
@@ -44,8 +41,8 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 function Button({
   className,
@@ -55,9 +52,9 @@ function Button({
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
+    asChild?: boolean;
   }) {
-  const Comp = asChild ? Slot : "button"
+  const Comp = asChild ? Slot : "button";
 
   return (
     <Comp
@@ -65,7 +62,7 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

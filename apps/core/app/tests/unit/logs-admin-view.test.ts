@@ -25,11 +25,7 @@ describe("buildLogsTabLinks", () => {
       page: "3",
     });
 
-    expect(links.security).toBe(
-      "?tab=security&dateFrom=2026-07-10&dateTo=2026-08-09&page=1",
-    );
-    expect(links.system).toBe(
-      "?tab=system&dateFrom=2026-07-10&dateTo=2026-08-09&page=1",
-    );
+    expect(links.security).toBe("?tab=security&dateFrom=2026-07-10&dateTo=2026-08-09&page=1");
+    expect(links.system).toBe("?tab=system&dateFrom=2026-07-10&dateTo=2026-08-09&page=1");
   });
 });

@@ -84,9 +84,7 @@ async function checkHost({ url, pool }) {
       return { ok: false, id, pool, modelIds: [] };
     }
     const body = await res.json();
-    const modelIds = Array.isArray(body.data)
-      ? body.data.map((m) => m?.id).filter(Boolean)
-      : [];
+    const modelIds = Array.isArray(body.data) ? body.data.map((m) => m?.id).filter(Boolean) : [];
     const missing = expectedModels.filter(
       (m) => !modelIds.some((id) => id.toLowerCase() === m.toLowerCase()),
     );
@@ -124,7 +122,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Fleet smoke — ${targets.length} host(s), expected models: ${expectedModels.join(", ")}\n`);
+  console.log(
+    `Fleet smoke — ${targets.length} host(s), expected models: ${expectedModels.join(", ")}\n`,
+  );
 
   const results = [];
   for (const target of targets) {
@@ -134,9 +134,7 @@ async function main() {
   const okCount = results.filter((r) => r.ok).length;
   console.log(`\nSummary: ${okCount}/${results.length} hosts healthy`);
   const assistHosts = results.filter((result) =>
-    result.modelIds.some(
-      (modelId) => modelId.toLowerCase() === assistModel.toLowerCase(),
-    ),
+    result.modelIds.some((modelId) => modelId.toLowerCase() === assistModel.toLowerCase()),
   );
   if (assistHosts.length === 0) {
     console.error(
@@ -145,9 +143,7 @@ async function main() {
     );
     process.exit(1);
   }
-  console.log(
-    `Assist Auto model ${assistModel}: ${assistHosts.map((host) => host.id).join(", ")}`,
-  );
+  console.log(`Assist Auto model ${assistModel}: ${assistHosts.map((host) => host.id).join(", ")}`);
   if (okCount >= 2) {
     console.log("Round-robin: send several chat requests and check X-Fleet-Server alternates.");
   }

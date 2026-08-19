@@ -93,9 +93,27 @@ export type CanvasModuleApi = {
 };
 
 const MOCK_CANVAS_COURSES: CanvasCourseApi[] = [
-  { id: 1, name: "Introduction to Computer Science", course_code: "COSC 101", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
-  { id: 2, name: "Data Structures and Algorithms", course_code: "COSC 201", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
-  { id: 3, name: "Machine Architecture", course_code: "COSC 211", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
+  {
+    id: 1,
+    name: "Introduction to Computer Science",
+    course_code: "COSC 101",
+    start_at: "2026-01-06T08:00:00Z",
+    end_at: "2026-04-30T23:59:59Z",
+  },
+  {
+    id: 2,
+    name: "Data Structures and Algorithms",
+    course_code: "COSC 201",
+    start_at: "2026-01-06T08:00:00Z",
+    end_at: "2026-04-30T23:59:59Z",
+  },
+  {
+    id: 3,
+    name: "Machine Architecture",
+    course_code: "COSC 211",
+    start_at: "2026-01-06T08:00:00Z",
+    end_at: "2026-04-30T23:59:59Z",
+  },
 ];
 
 const MOCK_CANVAS_ROSTER: Record<number, CanvasCourseUserApi[]> = {
@@ -133,8 +151,7 @@ const MOCK_CANVAS_FILES: Record<number, CanvasFileApi[]> = {
       id: 2001,
       display_name: "Algorithms Overview.pptx",
       filename: "algorithms.pptx",
-      "content-type":
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       size: 4096,
       updated_at: "2025-02-01T10:00:00.000Z",
       url: "mock://canvas/files/2001",
@@ -153,12 +170,7 @@ export class CanvasApiError extends Error {
 }
 
 /** Hostnames allowed to use plain HTTP (local Canvas dev). Production must use HTTPS. */
-const HTTP_ALLOWED_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  "::1",
-  "canvas.docker",
-]);
+const HTTP_ALLOWED_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "canvas.docker"]);
 
 export class CanvasVerificationError extends Error {
   readonly statusCode: 400 | 502;
@@ -200,9 +212,7 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
   // Scoped to http: the allowance exists for the dev docker Canvas, so an
   // https URL aimed at a loopback address gets the IP check like any other.
   const isAllowedLocalHost =
-    parsed.protocol === "http:" &&
-    HTTP_ALLOWED_HOSTNAMES.has(hostname) &&
-    allowsLocalHttpCanvas();
+    parsed.protocol === "http:" && HTTP_ALLOWED_HOSTNAMES.has(hostname) && allowsLocalHttpCanvas();
 
   if (!isAllowedLocalHost) {
     // "localhost" is a name, so the IP-literal check below can't see it, but
@@ -506,15 +516,10 @@ export async function getCanvasCourseWithTerm(
   fetchImpl: typeof fetch = fetch,
 ): Promise<CanvasCourseApi | null> {
   if (credentials.isTestMode) {
-    return (
-      MOCK_CANVAS_COURSES.find((course) => String(course.id) === canvasCourseId) ?? null
-    );
+    return MOCK_CANVAS_COURSES.find((course) => String(course.id) === canvasCourseId) ?? null;
   }
 
-  const url = buildCanvasApiUrl(
-    credentials.canvasUrl,
-    `/courses/${canvasCourseId}?include[]=term`,
-  );
+  const url = buildCanvasApiUrl(credentials.canvasUrl, `/courses/${canvasCourseId}?include[]=term`);
 
   try {
     const { data } = await canvasFetchJson<CanvasCourseApi>(
@@ -625,7 +630,11 @@ async function performCanvasFileDownloadRequest(
 
   if (useUndici) {
     const requestUrl = resolveCanvasFileDownloadUrl(url, credentials.canvasUrl);
-    const { statusCode, headers: responseHeaders, body } = await undiciRequest(requestUrl, {
+    const {
+      statusCode,
+      headers: responseHeaders,
+      body,
+    } = await undiciRequest(requestUrl, {
       headers: {
         ...headers,
         host: LOCAL_CANVAS_DOCKER_HOST,
@@ -660,18 +669,17 @@ async function fetchCanvasFileBytes(
 ): Promise<Uint8Array> {
   let url = resolveCanvasFileDownloadUrl(initialUrl, credentials.canvasUrl);
 
-  for (let redirectCount = 0; redirectCount <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS; redirectCount++) {
+  for (
+    let redirectCount = 0;
+    redirectCount <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS;
+    redirectCount++
+  ) {
     const headers: Record<string, string> = {};
     if (!url.includes("sf_verifier")) {
       headers.Authorization = `Bearer ${credentials.apiKey}`;
     }
 
-    const response = await performCanvasFileDownloadRequest(
-      url,
-      headers,
-      credentials,
-      fetchImpl,
-    );
+    const response = await performCanvasFileDownloadRequest(url, headers, credentials, fetchImpl);
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.getHeader("location");

@@ -59,9 +59,7 @@ export function extractIdempotencyKey(
 }
 
 /** Body copy without `idempotencyKey` for request-hash comparison. */
-export function bodyForIdempotencyHash(
-  body: Record<string, unknown> | null | undefined,
-): unknown {
+export function bodyForIdempotencyHash(body: Record<string, unknown> | null | undefined): unknown {
   if (!body || typeof body !== "object") return body ?? null;
   const { idempotencyKey: _ignored, ...rest } = body;
   return rest;
@@ -153,9 +151,7 @@ export async function claimIdempotency(opts: {
     });
     return { kind: "claimed" };
   } catch (error) {
-    if (
-      !(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
-    ) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
       throw error;
     }
   }
@@ -291,12 +287,7 @@ export type WithIdempotencyOptions = {
  */
 const inFlightIdempotentRequests = new Map<string, Promise<Response>>();
 
-function inFlightKey(
-  key: string,
-  route: string,
-  actorId: string,
-  requestHash: string,
-): string {
+function inFlightKey(key: string, route: string, actorId: string, requestHash: string): string {
   return `${key}\0${route}\0${actorId}\0${requestHash}`;
 }
 
@@ -352,7 +343,10 @@ async function executeIdempotentRequest(
   }
 
   const statusCode = response.status;
-  const responseBody = await response.clone().json().catch(() => null);
+  const responseBody = await response
+    .clone()
+    .json()
+    .catch(() => null);
 
   if (statusCode >= 200 && statusCode < 300) {
     // Do not release or mark FAILED if persistence fails after the mutation
