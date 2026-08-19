@@ -10,8 +10,14 @@
  *
  * Feeds the shared `@eduai/ui` AIServiceIndicators. The poll / abort / last-known
  * retention loop is the shared `useAiServiceStatus` hook (#1551 unification) —
- * QM just injects its own two probes as the `fetcher`, so it now polls on the
- * same interval as Core and AI Tutor instead of checking only once on mount.
+ * QM just injects its own two probes as the `fetcher`, so it now refreshes over
+ * time instead of checking only once on mount.
+ *
+ * Interval is deliberately LONGER than Core/AI Tutor's 60s default. Each probe
+ * here is a live `test-api-key` validation (two per cycle: cloud + vLLM), a real
+ * provider round-trip — not the cheap Core-cached `/api/ai-status` the others
+ * poll. A 5-minute cadence keeps the chips fresh while bounding per-tab load on
+ * the key-validation endpoint and any upstream provider rate limits.
  *
  * NOTE: QM's health tiers are `operational` / `outage` only. It has no route to
  * the vLLM fleet's `/metrics`, so it can't observe the UBC `degraded` (heavy
@@ -73,13 +79,16 @@ async function probeUbc(): Promise<ServiceStatus> {
   }
 }
 
+/** 5 min — see the interval note in the file header (live key-validation probes). */
+const QM_POLL_INTERVAL_MS = 300_000;
+
 export function useAiServicesStatus() {
   const fetcher = useCallback(async (): Promise<AiServiceStatusPair> => {
     const [cloud, ubc] = await Promise.all([probeCloud(), probeUbc()]);
     return { cloud, ubc };
   }, []);
 
-  return useAiServiceStatus({ fetcher });
+  return useAiServiceStatus({ fetcher, intervalMs: QM_POLL_INTERVAL_MS });
 }
 
 export default useAiServicesStatus;

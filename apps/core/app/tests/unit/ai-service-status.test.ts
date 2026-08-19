@@ -71,6 +71,17 @@ describe("resolveLoadThresholds", () => {
       } as NodeJS.ProcessEnv),
     ).toEqual({ waiting: 4, cachePct: 0.9 });
   });
+
+  it("falls back to defaults for blank / whitespace values (not 0)", () => {
+    // Number("") === 0 — a blank env line must NOT pin the threshold to 0, which
+    // would flag the fleet degraded under any load.
+    expect(
+      resolveLoadThresholds({
+        VLLM_DEGRADED_WAITING: "",
+        VLLM_DEGRADED_CACHE_PCT: "   ",
+      } as NodeJS.ProcessEnv),
+    ).toEqual({ waiting: 4, cachePct: 0.9 });
+  });
 });
 
 describe("parseVllmLoad", () => {
