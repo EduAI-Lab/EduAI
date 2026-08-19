@@ -1355,6 +1355,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
+    let ragLatencyMs: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
     if (
@@ -1362,6 +1363,7 @@ export async function action({ request }: ActionFunctionArgs) {
       effectiveCourseId &&
       lastUserMessageTextForRouting.trim().length > 0
     ) {
+      const ragStartedAt = Date.now();
       try {
         routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
@@ -1376,6 +1378,8 @@ export async function action({ request }: ActionFunctionArgs) {
           ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err });
+      } finally {
+        ragLatencyMs = Date.now() - ragStartedAt;
       }
     }
 
@@ -1493,6 +1497,7 @@ export async function action({ request }: ActionFunctionArgs) {
         fleetPick = await resolveFleetHost({
           jobType,
           resolvedModelId,
+          affinityKey: chat?.id ?? actingUser.id,
         });
         if (fleetPick) {
           chatApiTrace("fleet host selected", {
@@ -1920,6 +1925,7 @@ export async function action({ request }: ActionFunctionArgs) {
         if (routerRagPrefetch) {
           return { hits: routerRagPrefetch };
         }
+        const ragStartedAt = Date.now();
         try {
           const hits = await findRelevantContent(
             userQuestion,
@@ -1928,8 +1934,10 @@ export async function action({ request }: ActionFunctionArgs) {
             undefined,
             restrictRagToStudentVisible,
           );
+          ragLatencyMs = Date.now() - ragStartedAt;
           return { hits };
         } catch (error) {
+          ragLatencyMs = Date.now() - ragStartedAt;
           console.error("Error prefetching course RAG context:", error);
           return { hits: [], error };
         }
@@ -2566,6 +2574,7 @@ ${buildEmptyCourseRagBlock()}`;
             failedPick,
             resolvedModelId,
             jobType,
+            affinityKey: chat?.id ?? actingUser.id,
           });
           if (nextPick) {
             fleetPick = nextPick;
@@ -2783,11 +2792,15 @@ ${buildEmptyCourseRagBlock()}`;
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate:
               ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
           {
             status: 200,
             headers: {
-              "Content-Type": "application/json",
+            "Content-Type": "application/json",
+              ...(ragLatencyMs !== null
+                ? { "X-RAG-Latency-Ms": String(ragLatencyMs) }
+                : {}),
               ...admissionHeaders(),
               ...(fleetPick?.serverId
                 ? { "X-Fleet-Server": fleetPick.serverId }
@@ -2828,6 +2841,9 @@ ${buildEmptyCourseRagBlock()}`;
         Connection: "keep-alive",
         ...admissionHeaders(),
       };
+      if (ragLatencyMs !== null) {
+        headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+      }
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
@@ -2948,11 +2964,15 @@ ${buildEmptyCourseRagBlock()}`;
             ragChunkCount: courseRagHits.length,
             ragContextTokenEstimate:
               ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
           {
             status: 200,
             headers: {
-              "Content-Type": "application/json",
+            "Content-Type": "application/json",
+              ...(ragLatencyMs !== null
+                ? { "X-RAG-Latency-Ms": String(ragLatencyMs) }
+                : {}),
               ...admissionHeaders(),
               ...(fleetPick?.serverId
                 ? { "X-Fleet-Server": fleetPick.serverId }

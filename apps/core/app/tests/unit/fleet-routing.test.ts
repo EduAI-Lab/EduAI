@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   invalidateFleetHealthCacheForUrl,
+  recordFleetHostFailure,
   resetFleetHealthCache,
 } from "~/lib/ai/routing/fleet/health";
 import {
@@ -250,6 +251,52 @@ describe("resolveFleetHost", () => {
     expect(first?.reason).toBe("interactive-round-robin");
     expect(second?.serverId).toBe("cmps02");
     fetchMock.mockRestore();
+  });
+
+  it("keeps a chat affinity key on the same server across requests", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001,http://cmps03.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    const first = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      affinityKey: "chat-123",
+    });
+    const second = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      affinityKey: "chat-123",
+    });
+
+    expect(second?.serverId).toBe(first?.serverId);
+    expect(first?.reason).toBe("interactive-affinity");
+  });
+
+  it("ejects an inference-failed host before selecting the next request", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    recordFleetHostFailure("http://cmps01.ok.ubc.ca:8001");
+    const pick = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+    });
+
+    expect(pick?.serverId).toBe("cmps02");
   });
 
   it("checks candidate health concurrently", async () => {
