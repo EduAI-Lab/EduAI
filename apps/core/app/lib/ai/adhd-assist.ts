@@ -49,9 +49,7 @@ export const ADHD_ASSIST_POLICY_VERSION = "2.3";
 export const ADHD_ASSIST_AUTO_MODEL_ID = "vllm:qwen2.5-32b-instruct";
 
 export function resolveAdhdAssistAutoModelId(): string {
-  return (
-    process.env.ADHD_ASSIST_AUTO_MODEL?.trim() || ADHD_ASSIST_AUTO_MODEL_ID
-  );
+  return process.env.ADHD_ASSIST_AUTO_MODEL?.trim() || ADHD_ASSIST_AUTO_MODEL_ID;
 }
 
 /**
@@ -282,9 +280,7 @@ continuation offer. Hard cap 120 words.
 ${ADHD_ASSIST_CORE_RULES}
 === END ADHD ASSIST MODE ===`;
 
-export function resolveAdhdAssistPolicyBlock(
-  profile?: AdhdTurnProfile,
-): string {
+export function resolveAdhdAssistPolicyBlock(profile?: AdhdTurnProfile): string {
   switch (profile) {
     case "greeting":
       return ADHD_ASSIST_GREETING_BLOCK;
@@ -367,9 +363,7 @@ export function ensureDiagramBeforeNext(
   if (nextIdx >= 0) {
     const before = trimmed.slice(0, nextIdx).replace(/\n+$/, "");
     const after = trimmed.slice(nextIdx);
-    return `${before}\n\n${fence}\n\n${after}`
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+    return `${before}\n\n${fence}\n\n${after}`.replace(/\n{3,}/g, "\n\n").trim();
   }
 
   return `${trimmed}\n\n${fence}`.replace(/\n{3,}/g, "\n\n").trim();

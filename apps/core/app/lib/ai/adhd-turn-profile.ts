@@ -121,10 +121,7 @@ export function resolveAdhdTurnProfile(args: {
     return "full_tutoring";
   }
 
-  if (
-    hasPriorAssistant(prior) &&
-    SUBSTANTIVE_CONTINUATION_PATTERN.test(trimmed)
-  ) {
+  if (hasPriorAssistant(prior) && SUBSTANTIVE_CONTINUATION_PATTERN.test(trimmed)) {
     return "full_tutoring";
   }
 
@@ -151,9 +148,7 @@ export function resolveAdhdTurnProfile(args: {
   return "full_tutoring";
 }
 
-export function getProfileRequirements(
-  profile: AdhdTurnProfile,
-): AdhdProfileRequirements {
+export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileRequirements {
   switch (profile) {
     case "greeting":
       return {

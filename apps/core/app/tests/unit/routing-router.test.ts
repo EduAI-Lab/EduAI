@@ -71,10 +71,7 @@ beforeEach(() => {
 
 describe("image inputs after retiring the dedicated image-routing rule (capability constraint still enforced centrally)", () => {
   it("lets kNN choose the tier for image inputs", async () => {
-    const decision = await resolveRoutedModelKnn(
-      "describe this image",
-      imageContext,
-    );
+    const decision = await resolveRoutedModelKnn("describe this image", imageContext);
 
     expect(mocks.predictTierKnn).toHaveBeenCalledWith("describe this image");
     expect(decision.tier).toBe(3);
@@ -86,10 +83,7 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
   });
 
   it("lets confident hybrid routing choose the kNN tier for image inputs", async () => {
-    const decision = await resolveRoutedModelHybrid(
-      "describe this image",
-      imageContext,
-    );
+    const decision = await resolveRoutedModelHybrid("describe this image", imageContext);
 
     expect(mocks.predictTierKnn).toHaveBeenCalledWith("describe this image");
     expect(decision.tier).toBe(3);
@@ -101,10 +95,7 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
   });
 
   it("passes image context to the classifier without overriding its tier", async () => {
-    const decision = await resolveRoutedModelLlm(
-      "describe this image",
-      imageContext,
-    );
+    const decision = await resolveRoutedModelLlm("describe this image", imageContext);
 
     expect(mocks.classifyPromptForTier).toHaveBeenCalledWith("describe this image", imageContext);
     expect(decision.tier).toBe(3);
@@ -135,9 +126,9 @@ describe("image inputs after retiring the dedicated image-routing rule (capabili
       return null;
     });
 
-    await expect(
-      resolveRoutedModelKnn("describe this image", imageContext),
-    ).rejects.toThrow(/image-capable model/i);
+    await expect(resolveRoutedModelKnn("describe this image", imageContext)).rejects.toThrow(
+      /image-capable model/i,
+    );
 
     for (const call of mocks.pickModelForSpec.mock.calls) {
       expect(call[0]).toMatchObject({ requireImages: true });
@@ -217,9 +208,9 @@ describe("requireTools is preserved through the fallback pick (#1403 review)", (
       };
     });
 
-    await expect(
-      resolveRoutedModelRules("search the web please", toolsContext),
-    ).rejects.toThrow(/no active model/i);
+    await expect(resolveRoutedModelRules("search the web please", toolsContext)).rejects.toThrow(
+      /no active model/i,
+    );
 
     // Every fallback attempt must have asked for requireTools: true — never
     // silently drop back to a tool-less tier.
@@ -259,10 +250,7 @@ describe("requireTools is preserved through the fallback pick (#1403 review)", (
       return null;
     });
 
-    const decision = await resolveRoutedModelRules(
-      "search the web please",
-      toolsContext,
-    );
+    const decision = await resolveRoutedModelRules("search the web please", toolsContext);
     expect(decision.modelId).toBe("vllm:qwen3.5-32b");
     expect(decision.features.fallbackUsed).toBe(true);
   });
@@ -283,10 +271,7 @@ describe("requireTools is preserved through the fallback pick (#1403 review)", (
       supportsTools: false,
     });
 
-    const decision = await resolveRoutedModelRules(
-      "explain recursion",
-      toolsContext,
-    );
+    const decision = await resolveRoutedModelRules("explain recursion", toolsContext);
     expect(decision.modelId).toBe("vllm:qwen3.5-7b");
 
     const fallbackCall = mocks.pickModelForSpec.mock.calls[1][0];
