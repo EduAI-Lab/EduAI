@@ -363,9 +363,15 @@ router.get("/courses", async (req, res) => {
     });
   } catch (error) {
     logEduaiRouteError("EduAI list courses error", error);
-    res.status(500).json({
+    // Honor an auth failure (missing cookie → 401) or an upstream Core status
+    // instead of flattening everything to 500. Message/body stay redacted.
+    const status = error.statusCode ?? error.response?.status ?? 500;
+    res.status(status).json({
       success: false,
-      error: "Failed to retrieve courses from EduAI",
+      error:
+        status === 401 || status === 403
+          ? "Not authorized to list courses"
+          : "Failed to retrieve courses from EduAI",
       code: "EDUAI_COURSE_LIST_FAILED",
     });
   }

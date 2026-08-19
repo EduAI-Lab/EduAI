@@ -23,7 +23,7 @@ const {
   getEduAiApiKeyStatus,
 } = await import("../../src/services/systemSettings.js");
 
-const { isEncrypted } = await import("../../src/utils/encryption.js");
+const { isEncrypted, encrypt } = await import("../../src/utils/encryption.js");
 
 beforeEach(() => {
   mockFindUnique.mockReset();
@@ -121,6 +121,33 @@ describe("getEffectiveEduAiApiKey", () => {
     process.env.EDUAI_API_KEY = "env-key";
     const result = await getEffectiveEduAiApiKey();
     expect(result).toBe("env-key");
+  });
+
+  it("degrades to the env key when the encrypted override can't be decrypted (key rotated away)", async () => {
+    process.env.ENCRYPTION_KEY = "rotation-test-key";
+    const blob = encrypt("stored-admin-key");
+    expect(isEncrypted(blob)).toBe(true);
+    delete process.env.ENCRYPTION_KEY; // key is now gone — blob is undecryptable
+    process.env.EDUAI_API_KEY = "env-key";
+    mockFindUnique.mockResolvedValue({ value: blob });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await getEffectiveEduAiApiKey();
+
+    expect(result).toBe("env-key");
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("returns null when the override can't be decrypted and no env key exists", async () => {
+    process.env.ENCRYPTION_KEY = "rotation-test-key";
+    const blob = encrypt("stored-admin-key");
+    delete process.env.ENCRYPTION_KEY;
+    mockFindUnique.mockResolvedValue({ value: blob });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await getEffectiveEduAiApiKey();
+
+    expect(result).toBeNull();
   });
 });
 

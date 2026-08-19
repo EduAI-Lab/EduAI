@@ -792,7 +792,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       throw new Error("EduAI service is not configured. Please set the EDUAI base URL.");
     }
     if (!cookie) {
-      throw new Error("A caller session cookie is required to list courses.");
+      // No Core session to scope by — this is an auth failure, not a service
+      // fault. Tag it so the route answers 401 instead of a misleading 500.
+      const err = new Error("A caller session cookie is required to list courses.");
+      err.statusCode = 401;
+      throw err;
     }
 
     // #1041: Core requires paging and answers `{ data, total, page, pageSize }`.

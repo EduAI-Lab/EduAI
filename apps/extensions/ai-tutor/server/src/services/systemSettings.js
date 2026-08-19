@@ -61,7 +61,18 @@ export async function clearSystemSetting(key) {
 export async function getEffectiveEduAiApiKey() {
   const override = await getSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY);
   if (override?.value) {
-    return readSecretValue(SYSTEM_SETTING_KEYS.EDUAI_API_KEY, override.value);
+    try {
+      return readSecretValue(SYSTEM_SETTING_KEYS.EDUAI_API_KEY, override.value);
+    } catch (error) {
+      // The stored override can't be decrypted (ENCRYPTION_KEY missing/rotated,
+      // or a corrupted blob). Degrade to the env key rather than 500-ing every
+      // eduai request that needs the key.
+      console.warn(
+        "[systemSettings] Failed to decrypt EDUAI_API_KEY override; falling back to env key.",
+        error?.message ?? error,
+      );
+      return process.env.EDUAI_API_KEY || null;
+    }
   }
   return process.env.EDUAI_API_KEY || null;
 }

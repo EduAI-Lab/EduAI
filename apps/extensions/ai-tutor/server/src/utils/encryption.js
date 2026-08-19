@@ -103,6 +103,13 @@ export function decrypt(encryptedData) {
     );
   }
 
+  if (!hasEncryptionKey()) {
+    // A four-segment blob is encrypted, but the key needed to read it is gone
+    // (never set, rotated away, or lost). Surface a typed decrypt failure so
+    // callers can degrade instead of a raw config Error that 500s the request.
+    throw new CredentialDecryptError("Failed to decrypt credential: ENCRYPTION_KEY is not set");
+  }
+
   const encryptionKey = requireEncryptionKey();
   const [saltBase64, ivBase64, tagBase64, encrypted] = parts;
   const salt = decodeStrictBase64Segment(saltBase64, SALT_LENGTH);
@@ -123,7 +130,6 @@ export function decrypt(encryptedData) {
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch (cause) {
-    if (cause instanceof CredentialDecryptError) throw cause;
     throw new CredentialDecryptError(
       "Failed to decrypt credential: invalid key or corrupted data",
       {

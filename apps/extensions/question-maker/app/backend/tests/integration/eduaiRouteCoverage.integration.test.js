@@ -565,6 +565,17 @@ describe("GET /api/eduai/courses", () => {
     expect(res.body.details).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain("unreachable");
   });
+
+  it("surfaces an auth failure as 401, not 500", async () => {
+    authAs(INSTRUCTOR);
+    const err = new Error("A caller session cookie is required to list courses.");
+    err.statusCode = 401;
+    eduaiService.listCourses.mockRejectedValue(err);
+
+    const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
+
+    expect(res.status).toBe(401);
+  });
 });
 
 describe("GET /api/eduai/courses/:courseId/topics", () => {

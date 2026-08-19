@@ -71,6 +71,18 @@ describe("ReportViewerDialog", () => {
     expect(screen.queryByRole("link", { name: /open in new tab/i })).not.toBeInTheDocument();
   });
 
+  it("omits the 'Open in new tab' link for a script-capable data:image/svg+xml href (#1570)", () => {
+    const svgAttack = {
+      ...REPORT,
+      screenshot:
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxzY3JpcHQ+YWxlcnQoMSk8L3NjcmlwdD48L3N2Zz4=",
+    };
+    render(<ReportViewerDialog viewerType="screenshot" report={svgAttack} onClose={vi.fn()} />);
+    // svg is excluded from the raster allowlist, so opening it top-level (where
+    // its inline <script> would run at a null origin) is not offered.
+    expect(screen.queryByRole("link", { name: /open in new tab/i })).not.toBeInTheDocument();
+  });
+
   it("tolerates a report whose captured payloads are missing", () => {
     const bare = { ...REPORT, consoleLogs: null, networkLogs: null, screenshot: null };
     render(<ReportViewerDialog viewerType="console" report={bare} onClose={vi.fn()} />);

@@ -777,6 +777,10 @@ describe("listCourses", () => {
     await expect(eduaiService.listCourses()).rejects.toThrow(/not configured/i);
   });
 
+  it("tags the no-cookie error with statusCode 401 so the route answers 401 not 500", async () => {
+    await expect(eduaiService.listCourses()).rejects.toMatchObject({ statusCode: 401 });
+  });
+
   // #1041: Core answers `{ data, total, page, pageSize }` and the service
   // unwraps it to a plain course array.
   const coursePage = (courses) => ({
