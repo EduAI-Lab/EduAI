@@ -40,15 +40,29 @@ const messageDir = path.join(outDir, "chat-message");
 fs.mkdirSync(outDir, { recursive: true });
 fs.mkdirSync(messageDir, { recursive: true });
 
+function renderWithReducedMotion(node: ReactNode, reducedMotion: boolean): string {
+  return renderToStaticMarkup(
+    <DiagramReducedMotionContext.Provider value={reducedMotion}>
+      {node}
+    </DiagramReducedMotionContext.Provider>,
+  );
+}
+
 function renderVisible(node: ReactNode): string {
   // Reduced-motion markup so HierarchyNode (and any sibling intro) ships
   // opacity-100 in the static HTML — renderToStaticMarkup never runs effects,
   // so the default opacity-0 intro would otherwise stay invisible in Chromium.
-  return renderToStaticMarkup(
-    <DiagramReducedMotionContext.Provider value={true}>
-      {node}
-    </DiagramReducedMotionContext.Provider>,
-  ).replaceAll("opacity-0 scale-95", "opacity-100 scale-100");
+  return renderWithReducedMotion(node, true).replaceAll(
+    "opacity-0 scale-95",
+    "opacity-100 scale-100",
+  );
+}
+
+function renderAnimated(node: ReactNode): string {
+  // Motion on: used by the playback spec so <animateMotion> is actually in
+  // the fixture. Provider value={false} also skips matchMedia, so CI cannot
+  // silently drop the animation via prefers-reduced-motion.
+  return renderWithReducedMotion(node, false);
 }
 
 const fixtures: Record<string, string> = {
@@ -61,6 +75,11 @@ const fixtures: Record<string, string> = {
 for (const [name, html] of Object.entries(fixtures)) {
   fs.writeFileSync(path.join(outDir, `${name}.html`), html, "utf8");
 }
+
+const animatedGradientHtml = renderAnimated(
+  <AnimatedGradientDescent payload={gradientDescentPayload} />,
+);
+fs.writeFileSync(path.join(outDir, "gradient-descent-animated.html"), animatedGradientHtml, "utf8");
 
 /**
  * Mirrors the real ancestor chain a diagram renders inside (chat-message.tsx
@@ -108,5 +127,6 @@ for (const [name, { base, head }] of Object.entries(messageFixtures)) {
 
 console.log(
   `[diagram-visual] wrote ${Object.keys(fixtures).length} fixtures to ${outDir}, ` +
+    `1 animated gradient-descent fixture, ` +
     `${Object.keys(messageFixtures).length * 2} chat-message base/head fixtures to ${messageDir}`,
 );

@@ -491,17 +491,24 @@ test.describe("diagram containment during animation playback", () => {
    * its start/end resting state) would pass every existing check. Only
    * gradient-descent has real motion (an SVG <animateMotion>, 3.2s) rather
    * than opacity/color transitions, so it's the only fixture that can
-   * meaningfully regress this way.
+   * meaningfully regress this way. Containment fixtures above use reduced
+   * motion so chips are visible; this test uses a dedicated non-reduced-motion
+   * fixture (`gradient-descent-animated.html`) so <animateMotion> is present.
    */
   test("gradient-descent stays contained at every point during its animateMotion playback", async ({
     page,
   }) => {
     await page.setViewportSize({ width: COLUMN_WIDTH, height: 900 });
     const html = fs.readFileSync(
-      path.resolve(__dirname, "fixtures", "gradient-descent.html"),
+      path.resolve(__dirname, "fixtures", "gradient-descent-animated.html"),
       "utf8",
     );
+    expect(html, "playback fixture must include SVG animateMotion").toContain("<animateMotion");
     await page.setContent(pageHtml(html));
+    await expect(
+      page.locator("animateMotion"),
+      "live document must keep the animateMotion node",
+    ).toHaveCount(1);
 
     const columnBox = await page.locator("#column").boundingBox();
     expect(columnBox).not.toBeNull();
