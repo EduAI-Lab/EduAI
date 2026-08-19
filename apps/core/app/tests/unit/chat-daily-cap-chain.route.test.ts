@@ -97,6 +97,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
+    courseTopic: { findMany: vi.fn().mockResolvedValue([]) },
     aIModel: { findFirst: vi.fn() },
     systemConfig: {
       findUnique: vi.fn(),
@@ -134,7 +135,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 
 import { streamText } from "ai";
 import { action as chatAction } from "~/routes/api/chat";
-import { action as adminAction } from "~/routes/api/admin.chat-daily-limits";
+import { action as adminAction, loader as adminLoader } from "~/routes/api/admin.chat-daily-limits";
 import { auth } from "~/lib/auth/server";
 import { requireAdmin } from "~/lib/auth/guards.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
@@ -144,14 +145,14 @@ import { invalidateChatDailyLimitSettingsCache } from "~/lib/chat-daily-limits.s
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function chatRequest() {
+function chatRequest(model = "vllm:test-model") {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
-        model: "vllm:test-model",
+        model,
         apiKeys: {},
         streaming: false,
         chatId: CHAT_ID,
@@ -163,16 +164,29 @@ function chatRequest() {
   } as never;
 }
 
-function adminPatch(body: object) {
+function adminRequest(method: string, body?: object) {
   return {
     request: new Request("http://localhost/api/admin/chat-daily-limits", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: {},
     context: {} as never,
   } as never;
+}
+
+function asUser(userId: string, role: string) {
+  vi.mocked(auth.api.getSession).mockResolvedValue({
+    user: { id: userId, role },
+  } as never);
+  vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+    id: CHAT_ID,
+    userId,
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+  } as never);
 }
 
 beforeEach(() => {
@@ -215,20 +229,20 @@ afterEach(() => {
 });
 
 describe("admin daily cap → /api/chat 429 chain (#1557)", () => {
-  it("persists a student cap of 1 and 429s the second local chat", async () => {
-    const userId = `cap-chain-${randomUUID()}`;
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: userId, role: "STUDENT" },
-    } as never);
-    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-      id: CHAT_ID,
-      userId,
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-    } as never);
+  it("loads the default 50/200 caps before any admin save", async () => {
+    const loaded = await adminLoader(adminRequest("GET"));
+    expect(loaded.status).toBe(200);
+    await expect(loaded.json()).resolves.toMatchObject({
+      settings: { studentLimit: 50, instructorLimit: 200 },
+    });
+  });
 
-    const saved = await adminAction(adminPatch({ studentLimit: 1, instructorLimit: 200 }));
+  it("persists a student cap of 1 and 429s the second local chat", async () => {
+    asUser(`cap-chain-${randomUUID()}`, "STUDENT");
+
+    const saved = await adminAction(
+      adminRequest("PATCH", { studentLimit: 1, instructorLimit: 200 }),
+    );
     expect(saved.status).toBe(200);
     await expect(saved.json()).resolves.toMatchObject({
       settings: { studentLimit: 1, instructorLimit: 200 },
@@ -240,5 +254,49 @@ describe("admin daily cap → /api/chat 429 chain (#1557)", () => {
     const second = await chatAction(chatRequest());
     expect(second.status).toBe(429);
     await expect(second.json()).resolves.toMatchObject({ error: "RATE_LIMITED" });
+  });
+
+  it("persists an instructor cap of 1 and 429s the second instructor chat", async () => {
+    asUser(`cap-chain-instr-${randomUUID()}`, "INSTRUCTOR");
+
+    const saved = await adminAction(
+      adminRequest("PATCH", { studentLimit: 50, instructorLimit: 1 }),
+    );
+    expect(saved.status).toBe(200);
+
+    expect((await chatAction(chatRequest())).status).toBe(200);
+    const second = await chatAction(chatRequest());
+    expect(second.status).toBe(429);
+    await expect(second.json()).resolves.toMatchObject({ error: "RATE_LIMITED" });
+  });
+
+  it("does not consume the local bucket for a cloud openai turn", async () => {
+    asUser(`cap-chain-cloud-${randomUUID()}`, "STUDENT");
+
+    await adminAction(adminRequest("PATCH", { studentLimit: 1, instructorLimit: 200 }));
+
+    const cloud = await chatAction(chatRequest("openai:gpt-4o"));
+    expect(cloud.status).not.toBe(429);
+
+    expect((await chatAction(chatRequest())).status).toBe(200);
+    const third = await chatAction(chatRequest());
+    expect(third.status).toBe(429);
+    await expect(third.json()).resolves.toMatchObject({ error: "RATE_LIMITED" });
+  });
+
+  it("rejects a non-admin PATCH", async () => {
+    vi.mocked(requireAdmin).mockResolvedValue({
+      response: new Response(JSON.stringify({ error: "Forbidden: Admins only" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+      session: null,
+    } as never);
+
+    const denied = await adminAction(
+      adminRequest("PATCH", { studentLimit: 1, instructorLimit: 200 }),
+    );
+    expect(denied.status).toBe(403);
+    expect(systemConfigStore.size).toBe(0);
   });
 });

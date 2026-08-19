@@ -274,7 +274,8 @@ describe("POST /api/chat — local chatbot daily caps (#1547)", () => {
   });
 
   it("does not consume a daily token for regenerateOnly previews", async () => {
-    await action(makeRequest(baseBody({ regenerateOnly: true })));
+    const res = await action(makeRequest(baseBody({ regenerateOnly: true })));
+    expect(res.status).toBe(200);
     expect(checkRateLimitMock).not.toHaveBeenCalledWith(
       "chat-daily:user-1",
       50,

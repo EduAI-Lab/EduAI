@@ -91,6 +91,36 @@ describe("chat-daily-limits.server", () => {
       ChatDailyLimitSettingsUnavailableError,
     );
   });
+
+  it("keeps enforcing a 1/day cap when Postgres fails after a successful load", async () => {
+    prismaMock.systemConfig.findMany.mockResolvedValue([
+      { key: "chat.daily.studentLimit", value: "1" },
+      { key: "chat.daily.instructorLimit", value: "200" },
+    ]);
+    const userId = `outage-${randomUUID()}`;
+    await expect(
+      consumeLocalChatDailyCap({
+        userId,
+        role: "STUDENT",
+        model: "vllm:test-model",
+      }),
+    ).resolves.toEqual({ limited: false, retryAfter: 0 });
+
+    prismaMock.systemConfig.findMany.mockRejectedValue(new Error("db down"));
+    const later = Date.now() + 11_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      await expect(
+        consumeLocalChatDailyCap({
+          userId,
+          role: "STUDENT",
+          model: "vllm:test-model",
+        }),
+      ).resolves.toMatchObject({ limited: true });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
 });
 
 describe("consumeLocalChatDailyCap", () => {

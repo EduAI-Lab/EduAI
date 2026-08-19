@@ -4,6 +4,7 @@
 
 ### Added
 
+- [core] feat: Admin-configurable local chatbot daily caps on `/admin/settings` — students default to 50 messages/day and instructors (plus other staff roles) to 200/day. Caps apply after routing resolves to `vllm`/`ollama`; Auto that lands on a cloud provider is not counted; `0` disables that role’s daily limit. Config outages keep last-known settings or 503. Partially addresses #1547. (@Ayyhab, 2026-08-19) — [#1557](https://github.com/EduAI-Lab/EduAI/pull/1557)
 - [core] feat: Add production deployment runbook and bootstrap artifacts for Core at `my.eduai.ok.ubc.ca`, including a dedicated release layout, database/provisioning checklist, scoped service helper, systemd unit, Apache template, and local OpenAI-compatible CMPS embeddings via `mxbai-embed-large`. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 
 ### Changed

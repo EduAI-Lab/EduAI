@@ -53,7 +53,14 @@ export async function getChatDailyLimitSettings(): Promise<ChatDailyLimitSetting
   } catch (error) {
     // Keep the last successful admin override if Postgres flakes after the
     // 10s TTL. Falling back to 50/200 would reopen a tightened cap.
-    if (cache) return cache.value;
+    if (cache) {
+      console.error(
+        "[chat-daily-limits] SystemConfig read failed; keeping last-known caps",
+        error instanceof Error ? error.message : error,
+      );
+      cache = { value: cache.value, expiresAt: Date.now() + CACHE_TTL_MS };
+      return cache.value;
+    }
     throw new ChatDailyLimitSettingsUnavailableError(
       error instanceof Error ? error.message : undefined,
     );

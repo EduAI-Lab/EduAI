@@ -76,6 +76,19 @@ describe("admin chat daily limits API", () => {
     expect(mocks.getChatDailyLimitSettings).not.toHaveBeenCalled();
   });
 
+  it("rejects a non-admin PATCH", async () => {
+    mocks.requireAdmin.mockResolvedValue({
+      response: new Response(JSON.stringify({ error: "Forbidden: Admins only" }), {
+        status: 403,
+      }),
+      session: null,
+    });
+
+    const res = await action(makeArgs("PATCH", settings));
+    expect(res.status).toBe(403);
+    expect(mocks.setChatDailyLimitSettings).not.toHaveBeenCalled();
+  });
+
   it("persists a valid settings update", async () => {
     const next = { studentLimit: 40, instructorLimit: 180 };
     mocks.setChatDailyLimitSettings.mockResolvedValue(next);
