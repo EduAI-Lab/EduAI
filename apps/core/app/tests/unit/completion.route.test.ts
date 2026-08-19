@@ -29,8 +29,7 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
 });
 
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return {
     ...actual,
     fleetRoutingEnabled: vi.fn().mockReturnValue(false),
@@ -38,8 +37,7 @@ vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
 });
 
 vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
   return {
     ...actual,
     resolveFleetHost: vi.fn(),
@@ -51,15 +49,9 @@ import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import {
-  FleetUnavailableError,
-  resolveFleetHost,
-} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 
-function makeRequest(
-  body: object,
-  signal?: AbortSignal,
-): Parameters<typeof action>[0] {
+function makeRequest(body: object, signal?: AbortSignal): Parameters<typeof action>[0] {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",

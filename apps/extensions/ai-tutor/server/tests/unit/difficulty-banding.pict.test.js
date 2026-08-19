@@ -9,31 +9,38 @@
 // `npm run test:pict:gen` from tests/models/difficulty-banding.pict). No
 // world-builder needed — `calculateDifficulty` is a pure function.
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { calculateDifficulty } from '../../src/services/activityAnalytics.js';
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { calculateDifficulty } from "../../src/services/activityAnalytics.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
-const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/models/difficulty-banding.cases.json'), 'utf8'));
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
+const rows = JSON.parse(
+  readFileSync(path.join(repoRoot, "tests/models/difficulty-banding.cases.json"), "utf8"),
+);
 const { buildInputs, difficultyBandingOracle } = await import(
-  path.join(repoRoot, 'tests/models/difficulty-banding.oracle.ts')
+  path.join(repoRoot, "tests/models/difficulty-banding.oracle.ts")
 );
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'difficulty-banding PICT row #$index $row.StudentCount/$row.HelpRequestCount/$row.SubmissionCount/$row.IncorrectRate/$row.AverageRating',
+  "difficulty-banding PICT row #$index $row.StudentCount/$row.HelpRequestCount/$row.SubmissionCount/$row.IncorrectRate/$row.AverageRating",
   ({ row }) => {
-    it('matches the oracle', () => {
+    it("matches the oracle", () => {
       const result = calculateDifficulty(buildInputs(row));
       expect(result).toEqual(difficultyBandingOracle(row));
     });
   },
 );
 
-describe('difficulty-banding: null rating vs. perfect rating (documented equivalence)', () => {
-  it('produces the identical score whether averageRating is null or 5', () => {
-    const base = { studentCount: 10, helpRequestCount: 5, submissionCount: 10, incorrectSubmissionCount: 3 };
+describe("difficulty-banding: null rating vs. perfect rating (documented equivalence)", () => {
+  it("produces the identical score whether averageRating is null or 5", () => {
+    const base = {
+      studentCount: 10,
+      helpRequestCount: 5,
+      submissionCount: 10,
+      incorrectSubmissionCount: 3,
+    };
     expect(calculateDifficulty({ ...base, averageRating: null })).toEqual(
       calculateDifficulty({ ...base, averageRating: 5 }),
     );

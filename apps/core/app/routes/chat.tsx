@@ -2,10 +2,7 @@ import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
-import {
-  chatPreferencesAction,
-  loadChatBaseData,
-} from "~/lib/chat/chat-route.server";
+import { chatPreferencesAction, loadChatBaseData } from "~/lib/chat/chat-route.server";
 
 /**
  * `/chat` — a new, blank conversation. The route is the source of truth for

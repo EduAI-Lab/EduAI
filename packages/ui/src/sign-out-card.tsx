@@ -1,6 +1,6 @@
-import * as React from "react"
+import * as React from "react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 
 export interface SignOutCardProps {
   /**
@@ -8,11 +8,11 @@ export interface SignOutCardProps {
    * React Router action, the extensions call a handler — so the trigger is injected
    * rather than owned here.
    */
-  action: React.ReactNode
+  action: React.ReactNode;
   /** Defaults to the platform-wide wording; override only with a good reason. */
-  title?: string
-  description?: string
-  className?: string
+  title?: string;
+  description?: string;
+  className?: string;
 }
 
 /**
@@ -35,5 +35,5 @@ export function SignOutCard({
       </CardHeader>
       <CardContent>{action}</CardContent>
     </Card>
-  )
+  );
 }

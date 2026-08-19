@@ -8,7 +8,14 @@ import {
   buildDepartmentFilterGroup,
 } from "../course-list-view";
 
-type Course = { id: number; title: string; code: string; term: string; year: number; published: boolean };
+type Course = {
+  id: number;
+  title: string;
+  code: string;
+  term: string;
+  year: number;
+  published: boolean;
+};
 
 const COURSES: Course[] = [
   { id: 1, title: "Algorithms", code: "COSC 320", term: "W1", year: 2026, published: true },

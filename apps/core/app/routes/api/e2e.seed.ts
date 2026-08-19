@@ -28,7 +28,7 @@ function enqueueSeed<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  if (process.env.NODE_ENV !== 'test') {
+  if (process.env.NODE_ENV !== "test") {
     return new Response(null, { status: 404 });
   }
 

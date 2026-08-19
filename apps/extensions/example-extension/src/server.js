@@ -10,28 +10,28 @@
  * See docs/EXTENSION_ONBOARDING.md for the full guide.
  * Run: cp .env.example .env && npm install && npm run dev
  */
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import { requireAuth, requireRole } from './middleware/auth.js';
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import { requireAuth, requireRole } from "./middleware/auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 9000;
-const CORE_URL = process.env.CORE_URL || 'http://localhost:3000';
+const CORE_URL = process.env.CORE_URL || "http://localhost:3000";
 const EDUAI_BASE_URL = process.env.EDUAI_BASE_URL || `${CORE_URL}/api`;
 
 function escapeHtml(value) {
   return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 app.use(
   cors({
-    origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3000'],
+    origin: process.env.CORS_ORIGINS?.split(",") ?? ["http://localhost:3000"],
     credentials: true,
   }),
 );
@@ -39,15 +39,15 @@ app.use(express.json());
 
 // ── Unauthenticated ──────────────────────────────────────────────────────────
 
-app.get('/healthz', (_req, res) => {
-  res.json({ status: 'ok', extension: 'example-extension' });
+app.get("/healthz", (_req, res) => {
+  res.json({ status: "ok", extension: "example-extension" });
 });
 
 // ── Browser route: home page ─────────────────────────────────────────────────
 // requireAuth redirects unauthenticated browsers to Core login and returns
 // them here after a successful login (via the ?redirect= param).
 
-app.get('/', requireAuth, (req, res) => {
+app.get("/", requireAuth, (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,32 +80,34 @@ app.get('/', requireAuth, (req, res) => {
 
 // Returns the Core user identity — the minimal building block every extension
 // uses to know who is making the request.
-app.get('/api/me', requireAuth, (req, res) => {
+app.get("/api/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
 // Role-gated example: ADMIN or UNIT_ADMIN only.
-app.get('/api/admin-only', requireAuth, requireRole(['ADMIN', 'UNIT_ADMIN']), (req, res) => {
-  res.json({ message: 'You have admin access.', user: req.user });
+app.get("/api/admin-only", requireAuth, requireRole(["ADMIN", "UNIT_ADMIN"]), (req, res) => {
+  res.json({ message: "You have admin access.", user: req.user });
 });
 
 // User-scoped Core API call: forward the browser's session cookie so Core
 // applies the correct role filtering for this specific user.
-app.get('/api/courses', requireAuth, async (req, res) => {
+app.get("/api/courses", requireAuth, async (req, res) => {
   try {
     // Core's list endpoints require `page`/`pageSize` and answer with
     // `{ data, total, page, pageSize }` (#1041) — there is no full-list mode.
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 25;
     const upstream = await fetch(`${EDUAI_BASE_URL}/courses?page=${page}&pageSize=${pageSize}`, {
-      headers: { cookie: req.headers.cookie ?? '' },
+      headers: { cookie: req.headers.cookie ?? "" },
     });
     if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: 'Core returned an error', status: upstream.status });
+      return res
+        .status(upstream.status)
+        .json({ error: "Core returned an error", status: upstream.status });
     }
     res.json(await upstream.json());
   } catch {
-    res.status(503).json({ error: 'Could not reach Core — is it running?' });
+    res.status(503).json({ error: "Could not reach Core — is it running?" });
   }
 });
 
@@ -124,5 +126,7 @@ app.get('/api/courses', requireAuth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[example-extension] Running on http://localhost:${PORT}`);
   console.log(`[example-extension] Core: ${CORE_URL}`);
-  console.log(`[example-extension] Open http://localhost:${PORT} in a browser to test the login flow`);
+  console.log(
+    `[example-extension] Open http://localhost:${PORT} in a browser to test the login flow`,
+  );
 });

@@ -1,25 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
-import type {
-  OCRJob,
-  OCRJobStatus,
-  StoredQuestion,
-} from '../types/ocr';
+import { useState, useEffect, useCallback } from "react";
+import type { OCRJob, OCRJobStatus, StoredQuestion } from "../types/ocr";
 import {
   OCR_HISTORY_KEY,
   MAX_HISTORY_ITEMS,
   HISTORY_RETENTION_DAYS,
   MAX_STORED_QUESTIONS_PER_JOB,
-} from '../types/ocr';
+} from "../types/ocr";
 
 export interface UseOCRHistoryReturn {
   jobs: OCRJob[];
   isLoading: boolean;
-  addJob: (job: Omit<OCRJob, 'id' | 'createdAt'>) => string;
+  addJob: (job: Omit<OCRJob, "id" | "createdAt">) => string;
   updateJob: (id: string, updates: Partial<OCRJob>) => void;
   updateJobStatus: (
     id: string,
     status: OCRJobStatus,
-    extras?: { error?: string; questionsCount?: number; storedQuestions?: StoredQuestion[] }
+    extras?: { error?: string; questionsCount?: number; storedQuestions?: StoredQuestion[] },
   ) => void;
   removeJob: (id: string) => void;
   clearHistory: () => void;
@@ -38,7 +34,7 @@ const pruneOldJobs = (jobs: OCRJob[]): OCRJob[] => {
 };
 
 const loadFromStorage = (): OCRJob[] => {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
   try {
     const stored = localStorage.getItem(OCR_HISTORY_KEY);
     if (!stored) return [];
@@ -46,20 +42,20 @@ const loadFromStorage = (): OCRJob[] => {
     if (!Array.isArray(parsed)) return [];
     return pruneOldJobs(parsed);
   } catch (error) {
-    console.warn('[useOCRHistory] Failed to parse localStorage, resetting history:', error);
+    console.warn("[useOCRHistory] Failed to parse localStorage, resetting history:", error);
     localStorage.removeItem(OCR_HISTORY_KEY);
     return [];
   }
 };
 
 const saveToStorage = (jobs: OCRJob[]): boolean => {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   try {
     const limitedJobs = jobs.slice(0, MAX_HISTORY_ITEMS);
     localStorage.setItem(OCR_HISTORY_KEY, JSON.stringify(limitedJobs));
     return true;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+    if (error instanceof DOMException && error.name === "QuotaExceededError") {
       const reducedJobs = jobs.slice(0, Math.floor(jobs.length / 2));
       try {
         localStorage.setItem(OCR_HISTORY_KEY, JSON.stringify(reducedJobs));
@@ -82,15 +78,15 @@ export function useOCRHistory(): UseOCRHistoryReturn {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === OCR_HISTORY_KEY) setJobs(loadFromStorage());
     };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   useEffect(() => {
     if (!isLoading) saveToStorage(jobs);
   }, [jobs, isLoading]);
 
-  const addJob = useCallback((jobData: Omit<OCRJob, 'id' | 'createdAt'>): string => {
+  const addJob = useCallback((jobData: Omit<OCRJob, "id" | "createdAt">): string => {
     const id = generateId();
     const newJob: OCRJob = {
       ...jobData,
@@ -113,7 +109,7 @@ export function useOCRHistory(): UseOCRHistoryReturn {
             ? updates.storedQuestions.slice(0, MAX_STORED_QUESTIONS_PER_JOB)
             : job.storedQuestions,
         };
-      })
+      }),
     );
   }, []);
 
@@ -121,7 +117,7 @@ export function useOCRHistory(): UseOCRHistoryReturn {
     (
       id: string,
       status: OCRJobStatus,
-      extras?: { error?: string; questionsCount?: number; storedQuestions?: StoredQuestion[] }
+      extras?: { error?: string; questionsCount?: number; storedQuestions?: StoredQuestion[] },
     ) => {
       setJobs((prev) =>
         prev.map((job) => {
@@ -129,19 +125,21 @@ export function useOCRHistory(): UseOCRHistoryReturn {
           return {
             ...job,
             status,
-            ...(status === 'success' || status === 'error' || status === 'discarded'
+            ...(status === "success" || status === "error" || status === "discarded"
               ? { completedAt: new Date().toISOString() }
               : {}),
             ...(extras?.error ? { error: extras.error } : {}),
-            ...(extras?.questionsCount !== undefined ? { questionsCount: extras.questionsCount } : {}),
+            ...(extras?.questionsCount !== undefined
+              ? { questionsCount: extras.questionsCount }
+              : {}),
             ...(extras?.storedQuestions
               ? { storedQuestions: extras.storedQuestions.slice(0, MAX_STORED_QUESTIONS_PER_JOB) }
               : {}),
           };
-        })
+        }),
       );
     },
-    []
+    [],
   );
 
   const removeJob = useCallback((id: string) => {
@@ -158,18 +156,15 @@ export function useOCRHistory(): UseOCRHistoryReturn {
       const statuses = Array.isArray(status) ? status : [status];
       return jobs.filter((job) => statuses.includes(job.status));
     },
-    [jobs]
+    [jobs],
   );
 
   const getJobsByCourse = useCallback(
     (courseId: number) => jobs.filter((job) => job.courseId === courseId),
-    [jobs]
+    [jobs],
   );
 
-  const getJob = useCallback(
-    (id: string) => jobs.find((job) => job.id === id),
-    [jobs]
-  );
+  const getJob = useCallback((id: string) => jobs.find((job) => job.id === id), [jobs]);
 
   return {
     jobs,

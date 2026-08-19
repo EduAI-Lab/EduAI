@@ -3,7 +3,13 @@ import path from "node:path";
 import prisma from "~/lib/prisma.server";
 import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
 
+declare global {
+  var __manualCronRunIds: Set<string> | undefined;
+}
+
 export type CronJobStatusValue = "RUNNING" | "SUCCESS" | "ERROR";
+export type CronJobTriggerSource = "SCHEDULE" | "ADMIN_UI" | "ADMIN_CHAT" | "UNKNOWN";
+export type CronJobExecution = "SCRIPT" | "CORE";
 
 export interface KnownCronJob {
   name: string;
@@ -11,6 +17,7 @@ export interface KnownCronJob {
   schedule: string;
   scheduleLabel: string;
   script: string;
+  execution?: CronJobExecution;
   triggerEnabled?: boolean;
 }
 
@@ -48,7 +55,8 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     description: "Email users whose AI provider API keys expire in 7 days",
     schedule: "0 4 * * *",
     scheduleLabel: "Daily at 04:00 UTC",
-    script: "notify-api-key-expiry.sh",
+    script: "Core handler",
+    execution: "CORE",
   },
   {
     name: "ai-tutor-reconcile",
@@ -60,7 +68,8 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
   },
   {
     name: "qm-reconcile",
-    description: "Nullify stale core_course_id / core_topic_id / core_question_id references on Core 404",
+    description:
+      "Nullify stale core_course_id / core_topic_id / core_question_id references on Core 404",
     schedule: "0 2 * * *",
     scheduleLabel: "Daily at 02:00 UTC (QM server)",
     script: "",
@@ -76,6 +85,8 @@ export interface CronJobRunRow {
   finishedAt: string | null;
   message: string | null;
   exitCode: number | null;
+  triggerSource: CronJobTriggerSource;
+  triggeredByUserId: string | null;
 }
 
 export interface CronJobEntry extends KnownCronJob {
@@ -94,10 +105,12 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
         finishedAt: Date | null;
         message: string | null;
         exitCode: number | null;
+        triggerSource: CronJobTriggerSource;
+        triggeredByUserId: string | null;
       }>
     >`
       SELECT DISTINCT ON ("jobName")
-        id, "jobName", status, "startedAt", "finishedAt", message, "exitCode"
+        id, "jobName", status, "startedAt", "finishedAt", message, "exitCode", "triggerSource", "triggeredByUserId"
       FROM cron_job_runs
       ORDER BY "jobName", "startedAt" DESC
     `,
@@ -115,6 +128,8 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
         finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
         message: r.message,
         exitCode: r.exitCode,
+        triggerSource: r.triggerSource,
+        triggeredByUserId: r.triggeredByUserId,
       } satisfies CronJobRunRow,
     ]),
   );
@@ -159,9 +174,11 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
       finishedAt: Date | null;
       message: string | null;
       exitCode: number | null;
+      triggerSource: CronJobTriggerSource;
+      triggeredByUserId: string | null;
     }>
   >`
-    SELECT id, "jobName", status, "startedAt", "finishedAt", message, "exitCode"
+    SELECT id, "jobName", status, "startedAt", "finishedAt", message, "exitCode", "triggerSource", "triggeredByUserId"
     FROM cron_job_runs
     WHERE "jobName" = ${jobName}
     ORDER BY "startedAt" DESC
@@ -175,12 +192,12 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
     finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
     message: r.message,
     exitCode: r.exitCode,
+    triggerSource: r.triggerSource,
+    triggeredByUserId: r.triggeredByUserId,
   }));
 }
 
-export async function findRunningCronRun(
-  jobName: string,
-): Promise<{ id: string } | null> {
+export async function findRunningCronRun(jobName: string): Promise<{ id: string } | null> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM cron_job_runs
@@ -194,17 +211,20 @@ export async function findRunningCronRun(
 
 export async function startCronRun(
   jobName: string,
+  metadata: { source: CronJobTriggerSource; triggeredByUserId?: string } = { source: "UNKNOWN" },
 ): Promise<{ runId: string; created: boolean }> {
   // Insert first; partial unique index (one RUNNING per jobName) makes concurrent
   // triggers conflict instead of double-spawning. ON CONFLICT DO NOTHING + reclaim.
   // `created: true` only when this caller won the INSERT — losers must not spawn.
   const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
-    INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "createdAt")
+    INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "triggerSource", "triggeredByUserId", "createdAt")
     VALUES (
       gen_random_uuid()::text,
       ${jobName},
       'RUNNING'::"CronJobStatus",
       NOW(),
+      ${metadata.source}::"CronJobTriggerSource",
+      ${metadata.triggeredByUserId ?? null},
       NOW()
     )
     ON CONFLICT ("jobName") WHERE (status = 'RUNNING') DO NOTHING
@@ -255,7 +275,31 @@ function resolveScriptDir(): string {
   return cwdNorm.endsWith("apps/core") ? fromAppsCore : fromCwd;
 }
 
-export function triggerCronJobAsync(jobName: string, script: string, runId: string): void {
+export function triggerCronJobAsync(
+  jobName: string,
+  script: string,
+  runId: string,
+  execution: CronJobExecution = "SCRIPT",
+): void {
+  if (execution === "CORE") {
+    void import("~/lib/cron-notify-api-key-expiry.server")
+      .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
+      .then(({ notified }) =>
+        finishCronRun(runId, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0),
+      )
+      .catch((err: unknown) =>
+        finishCronRun(
+          runId,
+          "ERROR",
+          `Core handler failed: ${redactErrorForConsole(err)}`,
+          1,
+        ).catch((finishErr: unknown) =>
+          console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+        ),
+      );
+    return;
+  }
+
   // Pass the script dir as cwd so Node sets the working directory at the OS level
   const scriptDir = resolveScriptDir();
 
@@ -293,4 +337,30 @@ export function triggerCronJobAsync(jobName: string, script: string, runId: stri
       console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
     );
   });
+}
+
+/**
+ * Dispatch administrator-triggered runs from the dedicated worker. Keeping
+ * this claim in the worker means shell scripts always execute as eduai-cron;
+ * the Core web process only records the requested run in Postgres.
+ */
+export async function dispatchManualCronRuns(): Promise<void> {
+  const claimed =
+    globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
+  const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string }>>`
+    SELECT id, "jobName"
+    FROM cron_job_runs
+    WHERE status = 'RUNNING'::"CronJobStatus"
+      AND "triggerSource" IN ('ADMIN_UI'::"CronJobTriggerSource", 'ADMIN_CHAT'::"CronJobTriggerSource")
+    ORDER BY "startedAt" ASC
+    LIMIT 20
+  `;
+
+  for (const row of rows) {
+    if (claimed.has(row.id)) continue;
+    const job = KNOWN_CRON_JOBS.find((candidate) => candidate.name === row.jobName);
+    if (!job || job.triggerEnabled === false) continue;
+    claimed.add(row.id);
+    triggerCronJobAsync(row.jobName, job.script, row.id, job.execution);
+  }
 }

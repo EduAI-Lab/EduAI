@@ -11,7 +11,7 @@
  * `atListResponse` only when the spec asserts on the status or the envelope
  * metadata itself.
  */
-import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
 
 /**
  * Page size used by list calls that just want "everything the fixture made".
@@ -30,7 +30,7 @@ export function atListResponse(
     page: String(params.page ?? 1),
     pageSize: String(params.pageSize ?? AT_LIST_PAGE_SIZE),
   });
-  return ctx.get(`${url}${url.includes('?') ? '&' : '?'}${qs}`);
+  return ctx.get(`${url}${url.includes("?") ? "&" : "?"}${qs}`);
 }
 
 /**

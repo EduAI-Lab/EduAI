@@ -146,9 +146,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- 404 ---
   it("returns 404 for nonexistent course (service key)", async () => {
-    const res = await loader(
-      makeArgs("nonexistent-id", `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs("nonexistent-id", `Bearer ${VALID_SERVICE_KEY}`));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
   });
@@ -173,9 +171,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- 200 service key ---
   it("returns all enrollments via service key", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.enrollments).toHaveLength(3);
@@ -223,9 +219,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- Role mapping from real DB ---
   it("maps all three roles correctly from real DB data", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
     const roles = body.enrollments.map((e: Record<string, unknown>) => e.role);
     expect(roles).toContain("STUDENT");
@@ -235,25 +229,19 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- Active and inactive ---
   it("returns both active and inactive enrollments", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map(
-      (e: Record<string, unknown>) => e.isActive
-    );
+    const activeStates = body.enrollments.map((e: Record<string, unknown>) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });
 
   // --- Correct field values ---
   it("returns correct student data from real DB", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
     const student = body.enrollments.find(
-      (e: Record<string, unknown>) => e.studentId === studentId
+      (e: Record<string, unknown>) => e.studentId === studentId,
     );
     expect(student).toBeDefined();
     expect(student.studentEmail).toBe("enroll-student@test.com");
@@ -264,13 +252,9 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   });
 
   it("returns inactive TA with correct data", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const ta = body.enrollments.find(
-      (e: Record<string, unknown>) => e.studentId === taId
-    );
+    const ta = body.enrollments.find((e: Record<string, unknown>) => e.studentId === taId);
     expect(ta).toBeDefined();
     expect(ta.studentEmail).toBe("enroll-ta@test.com");
     expect(ta.isActive).toBe(false);
@@ -285,9 +269,8 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 describe("enrollment management lifecycle (#305)", () => {
   it("create course with 1 instructor → add second → remove first → removing last is 409", async () => {
     const { action: enrollmentsAction } = await import("~/routes/api/courses.enrollments");
-    const { action: enrollmentIdAction } = await import(
-      "~/routes/api/courses.enrollments.$enrollmentId"
-    );
+    const { action: enrollmentIdAction } =
+      await import("~/routes/api/courses.enrollments.$enrollmentId");
     const { createCourse } = await import("~/lib/courses/server");
     const { seedUser, mockSession, cleanupRbac } = await import("../helpers/rbac");
 

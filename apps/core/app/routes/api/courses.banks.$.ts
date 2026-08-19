@@ -2,10 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import {
-  resolveCourseAccessWithCourse,
-  type AccessLevel,
-} from "~/lib/auth/course-access.server";
+import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { canEditCourse } from "~/lib/rbac";
 import {
   addQuestionToBank,
@@ -55,10 +52,7 @@ async function authorizeSession(
     };
   }
 
-  const { course, access } = await resolveCourseAccessWithCourse(
-    session.user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
   if (!course) {
     return {
       errorResponse: json({ error: "COURSE_NOT_FOUND" }, 404),
@@ -194,14 +188,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (parts.length === 3 && parts[1] === "questions" && method === "DELETE") {
-    const source =
-      new URL(request.url).searchParams.get("source") || "question-maker";
-    const result = await removeQuestionFromBank(
-      courseId,
-      parts[0],
-      parts[2],
-      source,
-    );
+    const source = new URL(request.url).searchParams.get("source") || "question-maker";
+    const result = await removeQuestionFromBank(courseId, parts[0], parts[2], source);
     if ("error" in result) {
       const status =
         result.error === "Question bank not found" ||

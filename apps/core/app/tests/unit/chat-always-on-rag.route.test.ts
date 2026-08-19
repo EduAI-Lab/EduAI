@@ -9,7 +9,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -133,7 +137,11 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamConfig(): { system?: string; maxTokens?: number; messages?: Array<{ id?: string }> } {
+function lastStreamConfig(): {
+  system?: string;
+  maxTokens?: number;
+  messages?: Array<{ id?: string }>;
+} {
   const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as
     | { system?: string; maxTokens?: number; messages?: Array<{ id?: string }> }
     | undefined;
@@ -157,11 +165,7 @@ function storedRecord(id: string, role: string, content: string) {
 function storedRecordsDesc(count: number) {
   return Array.from({ length: count }, (_, i) => {
     const idx = count - 1 - i;
-    return storedRecord(
-      `stored-${idx}`,
-      idx % 2 === 0 ? "user" : "assistant",
-      `turn-${idx}`,
-    );
+    return storedRecord(`stored-${idx}`, idx % 2 === 0 ? "user" : "assistant", `turn-${idx}`);
   });
 }
 
@@ -196,16 +200,16 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) => ({
-      id: CHAT_ID,
-      userId: "user-1",
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-      ...(args.data ?? {}),
-    })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
+    data?: Record<string, unknown>;
+  }) => ({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
@@ -240,9 +244,13 @@ describe("Smart course RAG gate (#484)", () => {
       ]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Course grounding rules");
@@ -253,9 +261,11 @@ describe("Smart course RAG gate (#484)", () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
@@ -276,9 +286,13 @@ describe("Smart course RAG gate (#484)", () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
@@ -290,9 +304,13 @@ describe("Smart course RAG gate (#484)", () => {
         new Error("Embedding dimension mismatch in generateEmbedding: got 768, expected 1024."),
       );
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -305,9 +323,13 @@ describe("Smart course RAG gate (#484)", () => {
         new Error("Local embedding provider failed (mxbai-embed-large). fetch failed"),
       );
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -318,9 +340,11 @@ describe("Smart course RAG gate (#484)", () => {
     it("fails closed on prefetch failure even when intent heuristics skip grounding (#225 RAG-01/RAG-02)", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "Explain polymorphism" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "Explain polymorphism" }],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();
@@ -331,9 +355,11 @@ describe("Smart course RAG gate (#484)", () => {
     it("fails closed on prefetch failure for a greeting that would otherwise skip inject", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       expect(streamText).not.toHaveBeenCalled();
@@ -450,9 +476,13 @@ describe("Smart course RAG gate (#484)", () => {
       ]);
       mockStream();
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What does the syllabus say about late work?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Late work loses 10%");
@@ -464,9 +494,13 @@ describe("Smart course RAG gate (#484)", () => {
         new Error("Embedding dimension mismatch in generateEmbedding: got 768, expected 1024."),
       );
       const res = await action(
-        makeRequest(baseBody({
-          messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
-        })),
+        makeRequest(
+          baseBody({
+            messages: [
+              { id: "msg-1", role: "user", content: "What does the syllabus say about late work?" },
+            ],
+          }),
+        ),
       );
       expect(res.status).toBe(503);
       const body = await res.json();

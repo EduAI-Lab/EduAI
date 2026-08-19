@@ -1,10 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
-import {
-  getReEmbedJobForCourse,
-  serializeReEmbedJob,
-} from "~/lib/ai/re-embed-job.server";
+import { getReEmbedJobForCourse, serializeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {

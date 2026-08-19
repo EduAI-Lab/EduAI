@@ -36,13 +36,7 @@ export type ManagerViewVerdict = {
   visible: boolean;
 };
 
-export type ManagerAccess =
-  | "admin"
-  | "unit"
-  | "instructor"
-  | "ta"
-  | "student"
-  | null;
+export type ManagerAccess = "admin" | "unit" | "instructor" | "ta" | "student" | null;
 
 export function managerViewAccess(row: ManagerViewRow): ManagerAccess {
   if (row.Access === "none") return null;

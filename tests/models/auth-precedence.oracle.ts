@@ -46,9 +46,11 @@ export function guardOracle(row: AuthPrecedenceRow): GuardVerdict {
 }
 
 /** GUARD site: does `enforceAdminIfApiKey` return a response, and if not, a session? */
-export function expectedGuardResult(
-  row: AuthPrecedenceRow,
-): { hasResponse: boolean; status?: number; hasSession: boolean } {
+export function expectedGuardResult(row: AuthPrecedenceRow): {
+  hasResponse: boolean;
+  status?: number;
+  hasSession: boolean;
+} {
   const verdict = guardOracle(row);
   switch (verdict.outcome) {
     case "admit":

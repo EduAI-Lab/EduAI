@@ -123,7 +123,9 @@ describe("onboarding.student-id action", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    vi.mocked(linkCanvasRoster).mockRejectedValue(new LinkRosterError("No matching roster entry", 404));
+    vi.mocked(linkCanvasRoster).mockRejectedValue(
+      new LinkRosterError("No matching roster entry", 404),
+    );
 
     const result = (await action(makeActionArgs({ studentNumber: "12345678" }))) as {
       formError?: string;

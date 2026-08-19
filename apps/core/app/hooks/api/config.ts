@@ -26,10 +26,7 @@ function parseErrorMessage(text: string): string {
 }
 
 /** Session-cookie fetch wrapper for Core `/api/*` routes. */
-export async function apiFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

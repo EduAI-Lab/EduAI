@@ -13,9 +13,9 @@
  *     is no in-app import — they appear here automatically.
  * Related: routes/instructor.course.tsx (drilldown)
  */
-import { Link, redirect, useNavigation } from 'react-router';
-import type { ReactNode } from 'react';
-import { IconSchool, IconSearch } from '@tabler/icons-react';
+import { Link, redirect, useNavigation } from "react-router";
+import type { ReactNode } from "react";
+import { IconSchool, IconSearch } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
@@ -24,28 +24,34 @@ import {
   PageHeading,
   buildStatusFilterGroup,
   buildTermFilterGroup,
-} from '@eduai/ui';
-import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
-import api from '../lib/api';
-import { getEduAiAppUrl } from '../lib/extension-urls';
-import type { Course } from '../lib/types';
-import type { Route } from './+types/instructor';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { PaginationControls } from '~/components/common/PaginationControls';
+} from "@eduai/ui";
+import {
+  accentForCourse,
+  courseCode,
+  courseName,
+  courseTerm,
+  courseYear,
+} from "../lib/course-display";
+import api from "../lib/api";
+import { getEduAiAppUrl } from "../lib/extension-urls";
+import type { Course } from "../lib/types";
+import type { Route } from "./+types/instructor";
+import { requireClientUser } from "~/lib/client-auth";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { PaginationControls } from "~/components/common/PaginationControls";
 import {
   MAX_COURSE_SEARCH_LENGTH,
   readCourseListSelection,
   useCourseListFilters,
-} from '~/lib/course-list-filters';
-import { loadCourseFacets } from '~/lib/course-facets';
+} from "~/lib/course-list-filters";
+import { loadCourseFacets } from "~/lib/course-facets";
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
  * authenticated user's role, so this is the full set the instructor can act on.
  */
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
+  await requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]);
   // #1043: /courses is paginated. The page comes from the URL (?page=), so the
   // pager is bookmarkable and survives reload.
   // #1208: search and the term/status filters come from the URL too and are
@@ -78,7 +84,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // `url.searchParams` preserves the search/filter params alongside `page`.
   const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
   if (selection.page > lastPage) {
-    url.searchParams.set('page', String(lastPage));
+    url.searchParams.set("page", String(lastPage));
     throw redirect(`${url.pathname}${url.search}`);
   }
 
@@ -93,7 +99,15 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
 }
 
 /** Shared centered empty/no-results card used by the course list. */
-function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string; body: ReactNode }) {
+function EmptyCourseCard({
+  icon,
+  title,
+  body,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: ReactNode;
+}) {
   return (
     <Card className="mx-auto max-w-lg">
       <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -118,7 +132,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   const { searchDraft, setSearchDraft, setFilter, clearAll, goToPage } =
     useCourseListFilters(selection);
 
-  useShellBreadcrumbs([{ label: 'Courses' }]);
+  useShellBreadcrumbs([{ label: "Courses" }]);
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
@@ -157,7 +171,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             title="No courses yet"
             body={
               <>
-                Courses are created in{' '}
+                Courses are created in{" "}
                 <a
                   href={`${getEduAiAppUrl()}/courses`}
                   className="font-medium text-primary-text underline underline-offset-2"
@@ -198,7 +212,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             year={courseYear(c)}
             isPublished={c.isPublished}
             accentColor={accentForCourse(c)}
-            extraBadges={c.coreOfferingId ? ['EduAI'] : []}
+            extraBadges={c.coreOfferingId ? ["EduAI"] : []}
             href={`/instructor/courses/${c.id}`}
             LinkComponent={Link}
           />
@@ -210,7 +224,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
         pageSize={pageSize}
         total={total}
         onPageChange={goToPage}
-        disabled={navigation.state === 'loading'}
+        disabled={navigation.state === "loading"}
       />
     </div>
   );

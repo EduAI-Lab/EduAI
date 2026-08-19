@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  allowsSupportsToolsToggle,
-  isSmallModelSlug,
-} from "~/lib/ai/model-tool-capability";
+import { allowsSupportsToolsToggle, isSmallModelSlug } from "~/lib/ai/model-tool-capability";
 
 describe("isSmallModelSlug", () => {
   it("detects common small Ollama slugs", () => {

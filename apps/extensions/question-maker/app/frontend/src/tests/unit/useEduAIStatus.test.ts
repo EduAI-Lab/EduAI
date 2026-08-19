@@ -10,99 +10,99 @@
  * automatically retries with backoff and can recover to "ok" without any
  * user interaction (no manual refresh(), no chip click).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
 
 const testApiKey = vi.fn();
 
-vi.mock('@/services/eduaiService', () => ({
-    default: { testApiKey: (...args: unknown[]) => testApiKey(...args) },
+vi.mock("@/services/eduaiService", () => ({
+  default: { testApiKey: (...args: unknown[]) => testApiKey(...args) },
 }));
 
-vi.mock('@/services/apiKeyStorage', () => ({
-    apiKeyStorage: { getAllApiKeys: vi.fn().mockResolvedValue({}) },
-    isCloudProvider: () => false,
+vi.mock("@/services/apiKeyStorage", () => ({
+  apiKeyStorage: { getAllApiKeys: vi.fn().mockResolvedValue({}) },
+  isCloudProvider: () => false,
 }));
 
 /** Flushes pending microtasks (promise chains) without touching macrotask timers. */
 const flushMicrotasks = async () => {
-    for (let i = 0; i < 10; i++) {
-        await Promise.resolve();
-    }
+  for (let i = 0; i < 10; i++) {
+    await Promise.resolve();
+  }
 };
 
-describe('useEduAIStatus automatic recovery', () => {
-    beforeEach(() => {
-        vi.resetModules();
-        vi.useFakeTimers();
-        testApiKey.mockReset();
+describe("useEduAIStatus automatic recovery", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    testApiKey.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("automatically retries after an error and recovers to ok without manual refresh", async () => {
+    // First probe (module-import side effect) fails; subsequent background
+    // retry succeeds — simulating a transient outage clearing on its own.
+    testApiKey.mockRejectedValueOnce(new Error("network down"));
+    testApiKey.mockResolvedValueOnce({ success: true, provider: "vllm" });
+
+    const { useEduAIStatus } = await import("@/hooks/useEduAIStatus");
+
+    // Let the module's own initial probe (fired on import) settle.
+    await act(async () => {
+      await flushMicrotasks();
     });
 
-    afterEach(() => {
-        cleanup();
-        vi.useRealTimers();
+    const { result } = renderHook(() => useEduAIStatus());
+
+    expect(result.current.status).toBe("error");
+    expect(testApiKey).toHaveBeenCalledTimes(1);
+
+    // No manual refresh() call — advancing time alone should trigger the
+    // backoff retry (first delay is 1s) and flip status to 'ok'.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
     });
 
-    it('automatically retries after an error and recovers to ok without manual refresh', async () => {
-        // First probe (module-import side effect) fails; subsequent background
-        // retry succeeds — simulating a transient outage clearing on its own.
-        testApiKey.mockRejectedValueOnce(new Error('network down'));
-        testApiKey.mockResolvedValueOnce({ success: true, provider: 'vllm' });
+    expect(result.current.status).toBe("ok");
+    expect(testApiKey).toHaveBeenCalledTimes(2);
+  });
 
-        const { useEduAIStatus } = await import('@/hooks/useEduAIStatus');
+  it("gives up retrying after the max attempt count on a persistent outage", async () => {
+    testApiKey.mockRejectedValue(new Error("still down"));
 
-        // Let the module's own initial probe (fired on import) settle.
-        await act(async () => {
-            await flushMicrotasks();
-        });
+    const { useEduAIStatus } = await import("@/hooks/useEduAIStatus");
 
-        const { result } = renderHook(() => useEduAIStatus());
-
-        expect(result.current.status).toBe('error');
-        expect(testApiKey).toHaveBeenCalledTimes(1);
-
-        // No manual refresh() call — advancing time alone should trigger the
-        // backoff retry (first delay is 1s) and flip status to 'ok'.
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(1000);
-            await flushMicrotasks();
-        });
-
-        expect(result.current.status).toBe('ok');
-        expect(testApiKey).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await flushMicrotasks();
     });
 
-    it('gives up retrying after the max attempt count on a persistent outage', async () => {
-        testApiKey.mockRejectedValue(new Error('still down'));
+    const { result } = renderHook(() => useEduAIStatus());
+    expect(result.current.status).toBe("error");
 
-        const { useEduAIStatus } = await import('@/hooks/useEduAIStatus');
+    // Advance well past the bounded backoff window (1+2+4+8+8+8s = 31s)
+    // plus slack, flushing microtasks between ticks so each retry's async
+    // fetchStatus() resolves before the next timer is scheduled.
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+        await flushMicrotasks();
+      });
+    }
 
-        await act(async () => {
-            await flushMicrotasks();
-        });
+    const callsAfterExhaustion = testApiKey.mock.calls.length;
+    expect(callsAfterExhaustion).toBeGreaterThan(1);
+    expect(callsAfterExhaustion).toBeLessThanOrEqual(7); // initial + MAX_RETRIES
+    expect(result.current.status).toBe("error");
 
-        const { result } = renderHook(() => useEduAIStatus());
-        expect(result.current.status).toBe('error');
-
-        // Advance well past the bounded backoff window (1+2+4+8+8+8s = 31s)
-        // plus slack, flushing microtasks between ticks so each retry's async
-        // fetchStatus() resolves before the next timer is scheduled.
-        for (let i = 0; i < 20; i++) {
-            await act(async () => {
-                await vi.advanceTimersByTimeAsync(10_000);
-                await flushMicrotasks();
-            });
-        }
-
-        const callsAfterExhaustion = testApiKey.mock.calls.length;
-        expect(callsAfterExhaustion).toBeGreaterThan(1);
-        expect(callsAfterExhaustion).toBeLessThanOrEqual(7); // initial + MAX_RETRIES
-        expect(result.current.status).toBe('error');
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(60_000);
-            await flushMicrotasks();
-        });
-        expect(testApiKey.mock.calls.length).toBe(callsAfterExhaustion);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flushMicrotasks();
     });
+    expect(testApiKey.mock.calls.length).toBe(callsAfterExhaustion);
+  });
 });

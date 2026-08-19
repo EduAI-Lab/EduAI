@@ -5,15 +5,13 @@
 /** Normalizes OCR text by trimming whitespace, collapsing blank lines, and removing tabs. */
 export const normalizeExtractText = (text) => {
   if (!text) return "";
-  return (
-    text
-      .replace(/\r\n/g, "\n")
-      .replace(/\t/g, " ")
-      .replace(/\u00a0/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/[ ]{2,}/g, " ")
-      .trim()
-  );
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\t/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ ]{2,}/g, " ")
+    .trim();
 };
 
 /** Splits long extraction text into chunkSize-safe segments. */
@@ -33,8 +31,12 @@ export const chunkText = (text, chunkSize = 6000) => {
 export const splitIntoQuestionBlocks = (text) => {
   if (!text || !text.trim()) return [];
   const trimmed = text.trim();
-  const blockStartRe = /\n\s*(?=(?:\d+[.)]\s|Question\s+\d+\s|Part\s+[A-Z0-9]\s*[:.]?\s|Task\s+\d+\s|Exercise\s+\d+\s|Section\s+\d+\s))/im;
-  const parts = trimmed.split(blockStartRe).map((s) => s.trim()).filter(Boolean);
+  const blockStartRe =
+    /\n\s*(?=(?:\d+[.)]\s|Question\s+\d+\s|Part\s+[A-Z0-9]\s*[:.]?\s|Task\s+\d+\s|Exercise\s+\d+\s|Section\s+\d+\s))/im;
+  const parts = trimmed
+    .split(blockStartRe)
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (parts.length <= 1) return trimmed ? [trimmed] : [];
   return parts;
 };
@@ -97,7 +99,10 @@ export const deduplicateExtractedQuestions = (questions) => {
     const key = extractedQuestionDedupeKey(q);
     if (!keyOrder.has(key)) keyOrder.set(key, index++);
     const existing = byKey.get(key);
-    if (!existing || (typeof q.question === "string" && q.question.length > (existing.question?.length ?? 0))) {
+    if (
+      !existing ||
+      (typeof q.question === "string" && q.question.length > (existing.question?.length ?? 0))
+    ) {
       byKey.set(key, q);
     }
   }

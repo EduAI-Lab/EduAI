@@ -1,5 +1,5 @@
-import type { FormEvent } from 'react';
-import { useMemo, useState } from 'react';
+import type { FormEvent } from "react";
+import { useMemo, useState } from "react";
 import {
   IconPlus,
   IconX,
@@ -8,20 +8,20 @@ import {
   IconTag,
   IconSparkles,
   IconDeviceFloppy,
-} from '@tabler/icons-react';
-import { Button, Input, Label, SegmentedControl, Textarea } from '@eduai/ui';
-import { cn } from '~/lib/utils';
-import type { Activity } from '../lib/types';
+} from "@tabler/icons-react";
+import { Button, Input, Label, SegmentedControl, Textarea } from "@eduai/ui";
+import { cn } from "~/lib/utils";
+import type { Activity } from "../lib/types";
 import {
   activityToFormValues,
   buildUpdatePayload,
   ensureChoiceSlots,
   type ActivityFormValues,
-} from '../lib/activityForm';
+} from "../lib/activityForm";
 
 const TYPE_OPTIONS = [
-  { value: 'MCQ' as const, label: 'MCQ' },
-  { value: 'SHORT_TEXT' as const, label: 'Short answer' },
+  { value: "MCQ" as const, label: "MCQ" },
+  { value: "SHORT_TEXT" as const, label: "Short answer" },
 ];
 
 type EditActivityPanelProps = {
@@ -32,7 +32,7 @@ type EditActivityPanelProps = {
     title: string | null;
     instructionsMd: string;
     question: string;
-    type: 'MCQ' | 'SHORT_TEXT';
+    type: "MCQ" | "SHORT_TEXT";
     options: string[] | null;
     answer: any;
     hints: string[];
@@ -67,7 +67,7 @@ export default function EditActivityPanel({
     event.preventDefault();
     const { payload, error: buildError } = buildUpdatePayload(values);
     if (buildError || !payload) {
-      setFormError(buildError ?? 'Invalid activity data.');
+      setFormError(buildError ?? "Invalid activity data.");
       return;
     }
     setFormError(null);
@@ -113,21 +113,21 @@ export default function EditActivityPanel({
           // and the MCQ branch has side effects (choice-slot padding +
           // resetting correctIndex) that must not run on a no-op reselect.
           if (nextType === values.type) return;
-          if (nextType === 'MCQ') {
+          if (nextType === "MCQ") {
             setValues((prev) => ({
               ...prev,
-              type: 'MCQ',
+              type: "MCQ",
               choices: ensureChoiceSlots(prev.choices),
               correctIndex: 0,
             }));
           } else {
-            setValues((prev) => ({ ...prev, type: 'SHORT_TEXT' }));
+            setValues((prev) => ({ ...prev, type: "SHORT_TEXT" }));
           }
         }}
         options={TYPE_OPTIONS}
       />
 
-      {values.type === 'MCQ' ? (
+      {values.type === "MCQ" ? (
         <div className="space-y-2">
           <div className="flex items-baseline justify-between gap-3">
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -146,10 +146,10 @@ export default function EditActivityPanel({
                 <div
                   key={index}
                   className={cn(
-                    'relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors',
+                    "relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors",
                     isCorrect
-                      ? 'border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10'
-                      : 'border-transparent',
+                      ? "border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10"
+                      : "border-transparent",
                   )}
                 >
                   <button
@@ -166,12 +166,12 @@ export default function EditActivityPanel({
                         ? `Option ${letter} (correct answer)`
                         : `Mark option ${letter} correct`
                     }
-                    title={isCorrect ? 'Correct answer' : 'Mark as correct answer'}
+                    title={isCorrect ? "Correct answer" : "Mark as correct answer"}
                     className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      "flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       isCorrect
-                        ? 'bg-[var(--color-success-500)] text-white'
-                        : 'bg-primary/15 text-foreground hover:bg-primary/30',
+                        ? "bg-[var(--color-success-500)] text-white"
+                        : "bg-primary/15 text-foreground hover:bg-primary/30",
                     )}
                   >
                     {letter}
@@ -231,7 +231,7 @@ export default function EditActivityPanel({
               onClick={() =>
                 setValues((prev) => ({
                   ...prev,
-                  choices: [...ensureChoiceSlots(prev.choices), ''],
+                  choices: [...ensureChoiceSlots(prev.choices), ""],
                 }))
               }
             >
@@ -256,7 +256,10 @@ export default function EditActivityPanel({
       )}
 
       <div className="space-y-2">
-        <Label htmlFor={`activity-${activity.id}-instructions`} className="flex items-center gap-1.5">
+        <Label
+          htmlFor={`activity-${activity.id}-instructions`}
+          className="flex items-center gap-1.5"
+        >
           <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
           Instructions <span className="font-normal text-muted-foreground">(optional)</span>
         </Label>
@@ -300,7 +303,7 @@ export default function EditActivityPanel({
         </Button>
         <Button type="submit" disabled={busy}>
           <IconDeviceFloppy className="size-4" aria-hidden="true" />
-          {busy ? 'Saving…' : 'Save changes'}
+          {busy ? "Saving…" : "Save changes"}
         </Button>
       </div>
     </form>

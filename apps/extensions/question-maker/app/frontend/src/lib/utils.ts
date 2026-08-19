@@ -1,1 +1,1 @@
-export { cn } from "@eduai/ui"
+export { cn } from "@eduai/ui";

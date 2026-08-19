@@ -1,8 +1,8 @@
 // NB: the client is generated to a custom output (see `generator client` in
 // schema.prisma), so `Prisma` must come from there — importing it from
 // '@prisma/client' resolves to a different module whose `Prisma.join` is undefined.
-import { Prisma } from '@eduai/ai-tutor-prisma-client';
-import { prisma } from '../config/database.js';
+import { Prisma } from "@eduai/ai-tutor-prisma-client";
+import { prisma } from "../config/database.js";
 
 /** Progress shape returned when there is nothing to compute. */
 const EMPTY_PROGRESS = { completed: 0, total: 0, percentage: 0 };
@@ -32,9 +32,9 @@ export function progressBucket(progress) {
   const total = progress?.total ?? 0;
   const completed = progress?.completed ?? 0;
   if (total <= 0) return null;
-  if (completed <= 0) return 'not-started';
-  if (completed >= total) return 'completed';
-  return 'in-progress';
+  if (completed <= 0) return "not-started";
+  if (completed >= total) return "completed";
+  return "in-progress";
 }
 
 /**
@@ -112,7 +112,7 @@ export async function calculateCourseProgressBatch(courseIds, userId) {
     }
     return result;
   } catch (error) {
-    console.error('Error calculating batched course progress:', error);
+    console.error("Error calculating batched course progress:", error);
     return result;
   }
 }
@@ -155,7 +155,7 @@ export async function calculateCourseProgress(courseId, userId) {
       percentage: Math.round((completedCount / totalActivities) * 100),
     };
   } catch (error) {
-    console.error('Error calculating course progress:', error);
+    console.error("Error calculating course progress:", error);
     return { completed: 0, total: 0, percentage: 0 };
   }
 }
@@ -196,7 +196,7 @@ export async function calculateModuleProgress(moduleId, userId) {
       percentage: Math.round((completedCount / totalActivities) * 100),
     };
   } catch (error) {
-    console.error('Error calculating module progress:', error);
+    console.error("Error calculating module progress:", error);
     return { completed: 0, total: 0, percentage: 0 };
   }
 }
@@ -239,7 +239,7 @@ export async function calculateLessonProgress(lessonId, userId) {
       percentage: Math.round((completedCount / totalActivities) * 100),
     };
   } catch (error) {
-    console.error('Error calculating lesson progress:', error);
+    console.error("Error calculating lesson progress:", error);
     return { completed: 0, total: 0, percentage: 0 };
   }
 }
@@ -280,17 +280,17 @@ export async function getActivityCompletionStatuses(activityIds, userId) {
     const statusMap = new Map();
     for (const activityId of activityIds) {
       if (everCorrect.has(activityId)) {
-        statusMap.set(activityId, 'correct');
+        statusMap.set(activityId, "correct");
       } else if (everAttempted.has(activityId)) {
-        statusMap.set(activityId, 'incorrect');
+        statusMap.set(activityId, "incorrect");
       } else {
-        statusMap.set(activityId, 'not_attempted');
+        statusMap.set(activityId, "not_attempted");
       }
     }
 
     return statusMap;
   } catch (error) {
-    console.error('Error getting activity completion statuses:', error);
+    console.error("Error getting activity completion statuses:", error);
     return new Map();
   }
 }
@@ -313,12 +313,12 @@ async function countCompletedActivities(activityIds, userId) {
         isCorrect: true,
       },
       select: { activityId: true },
-      distinct: ['activityId'],
+      distinct: ["activityId"],
     });
 
     return completedActivities.length;
   } catch (error) {
-    console.error('Error counting completed activities:', error);
+    console.error("Error counting completed activities:", error);
     return 0;
   }
 }

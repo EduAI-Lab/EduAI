@@ -6,18 +6,18 @@
  * the single source of truth for the shared part; each app's `lib/apps.tsx`
  * shrinks to: resolve its 3 URLs from env, then call `getLauncherApps`.
  */
-import { IconBooks, IconMessageChatbot, IconSchool } from "@tabler/icons-react"
+import { IconBooks, IconMessageChatbot, IconSchool } from "@tabler/icons-react";
 
-import { QUESTION_MAKER_ROLES, type LauncherApp } from "./app-launcher"
+import { QUESTION_MAKER_ROLES, type LauncherApp } from "./app-launcher";
 
 /** Stable ids for the three EduAI apps/extensions (mirrors each app's own `CURRENT_APP_ID`). */
-export type LauncherAppId = "core" | "ai-tutor" | "question-maker"
+export type LauncherAppId = "core" | "ai-tutor" | "question-maker";
 
 /** Absolute URLs for each app, resolved by the caller from its own env. */
 export interface LauncherAppUrls {
-  core: string
-  aiTutor: string
-  questionMaker: string
+  core: string;
+  aiTutor: string;
+  questionMaker: string;
 }
 
 export interface GetLauncherAppsOptions {
@@ -28,9 +28,9 @@ export interface GetLauncherAppsOptions {
    * `currentAppId` prop. Typing it here keeps the call site symmetric with
    * `BrandSwitcherProps.currentAppId` and catches a typo'd id at compile time.
    */
-  currentAppId: LauncherAppId
+  currentAppId: LauncherAppId;
   /** Absolute URLs for each app, resolved by the caller (env-specific per app/deployment). */
-  urls: LauncherAppUrls
+  urls: LauncherAppUrls;
 }
 
 /**
@@ -67,5 +67,5 @@ export function getLauncherApps({ urls }: GetLauncherAppsOptions): LauncherApp[]
       color: "oklch(0.660 0.145 65)",
       roles: QUESTION_MAKER_ROLES,
     },
-  ]
+  ];
 }

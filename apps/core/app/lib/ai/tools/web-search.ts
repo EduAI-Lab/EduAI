@@ -51,11 +51,12 @@ const isFirecrawlDocument = (entry: unknown): entry is Document => {
 };
 
 const parseDocumentResult = (entry: Document): ExternalSearchResult | null => {
-  const metadata = typeof entry.metadata === "object" && entry.metadata ? entry.metadata : undefined;
+  const metadata =
+    typeof entry.metadata === "object" && entry.metadata ? entry.metadata : undefined;
 
   const url = pickFirstText(
     (metadata as { url?: string } | undefined)?.url,
-    (entry as unknown as { url?: string }).url
+    (entry as unknown as { url?: string }).url,
   );
   if (!url) return null;
 
@@ -64,7 +65,7 @@ const parseDocumentResult = (entry: Document): ExternalSearchResult | null => {
       (entry as unknown as { title?: string }).title,
       (metadata as { title?: string } | undefined)?.title,
       (metadata as { ogTitle?: string } | undefined)?.ogTitle,
-      (metadata as { ogSiteName?: string } | undefined)?.ogSiteName
+      (metadata as { ogSiteName?: string } | undefined)?.ogSiteName,
     ) ?? url;
 
   const snippetCandidate = pickFirstText(
@@ -72,13 +73,13 @@ const parseDocumentResult = (entry: Document): ExternalSearchResult | null => {
     (entry as { summary?: string }).summary,
     (entry as unknown as { description?: string }).description,
     (metadata as { description?: string } | undefined)?.description,
-    (metadata as { ogDescription?: string } | undefined)?.ogDescription
+    (metadata as { ogDescription?: string } | undefined)?.ogDescription,
   );
   if (!snippetCandidate) return null;
 
   const publishedAt = pickFirstText(
     (metadata as { publishedTime?: string } | undefined)?.publishedTime,
-    (metadata as { modifiedTime?: string } | undefined)?.modifiedTime
+    (metadata as { modifiedTime?: string } | undefined)?.modifiedTime,
   );
 
   return {
@@ -114,7 +115,10 @@ const parseNewsSearchResult = (entry: unknown): ExternalSearchResult | null => {
   const url = typeof record.url === "string" ? record.url.trim() : undefined;
   if (!url) return null;
   const titleCandidate = typeof record.title === "string" ? record.title : undefined;
-  const snippetCandidate = pickFirstText((record as { snippet?: unknown }).snippet, record.description);
+  const snippetCandidate = pickFirstText(
+    (record as { snippet?: unknown }).snippet,
+    record.description,
+  );
   if (!snippetCandidate) return null;
   const publishedAt = typeof record.date === "string" ? record.date.trim() : undefined;
   return {
@@ -133,101 +137,107 @@ export async function runWebSearch({
   query: string;
   limit?: number;
 }): Promise<ExternalSearchResult[]> {
-    const sanitizedQuery = query.trim();
-    if (!sanitizedQuery) {
-      throw new Error("Cannot perform web search without a query.");
+  const sanitizedQuery = query.trim();
+  if (!sanitizedQuery) {
+    throw new Error("Cannot perform web search without a query.");
+  }
+
+  const boundedLimit = Math.min(Math.max(limit, 1), 5);
+  const client = getFirecrawlClient();
+
+  // Helper to aggregate results from various API shapes
+  const collectFromResponse = (resp: unknown, max: number): ExternalSearchResult[] => {
+    const out: ExternalSearchResult[] = [];
+    const r = resp as Record<string, unknown> | unknown[] | undefined;
+
+    // Shape 1: { web: [...], news: [...] }
+    if (r && typeof r === "object" && !Array.isArray(r)) {
+      const webArr = Array.isArray((r as { web?: unknown[] }).web)
+        ? (r as { web: unknown[] }).web
+        : [];
+      for (const entry of webArr) {
+        if (out.length >= max) break;
+        const parsed = parseWebSearchResult(entry);
+        if (parsed) out.push(parsed);
+      }
+
+      const newsArr = Array.isArray((r as { news?: unknown[] }).news)
+        ? (r as { news: unknown[] }).news
+        : [];
+      for (const entry of newsArr) {
+        if (out.length >= max) break;
+        const parsed = parseNewsSearchResult(entry);
+        if (parsed) out.push(parsed);
+      }
     }
 
-    const boundedLimit = Math.min(Math.max(limit, 1), 5);
-    const client = getFirecrawlClient();
-
-    // Helper to aggregate results from various API shapes
-    const collectFromResponse = (resp: unknown, max: number): ExternalSearchResult[] => {
-      const out: ExternalSearchResult[] = [];
-      const r = resp as Record<string, unknown> | unknown[] | undefined;
-
-      // Shape 1: { web: [...], news: [...] }
-      if (r && typeof r === "object" && !Array.isArray(r)) {
-        const webArr = Array.isArray((r as { web?: unknown[] }).web) ? (r as { web: unknown[] }).web : [];
-        for (const entry of webArr) {
-          if (out.length >= max) break;
-          const parsed = parseWebSearchResult(entry);
-          if (parsed) out.push(parsed);
+    // Shape 2: { success: true, data: [...] }
+    if (out.length < max && r && typeof r === "object" && !Array.isArray(r)) {
+      const dataArr = Array.isArray((r as { data?: unknown[] }).data)
+        ? (r as { data: unknown[] }).data
+        : [];
+      for (const entry of dataArr) {
+        if (out.length >= max) break;
+        // Try as document first, then as generic SERP item
+        const docParsed = isFirecrawlDocument(entry)
+          ? parseDocumentResult(entry as Document)
+          : null;
+        if (docParsed) {
+          out.push(docParsed);
+          continue;
         }
-
-        const newsArr = Array.isArray((r as { news?: unknown[] }).news) ? (r as { news: unknown[] }).news : [];
-        for (const entry of newsArr) {
-          if (out.length >= max) break;
-          const parsed = parseNewsSearchResult(entry);
-          if (parsed) out.push(parsed);
-        }
+        const generic = parseWebSearchResult(entry);
+        if (generic) out.push(generic);
       }
+    }
 
-      // Shape 2: { success: true, data: [...] }
-      if (out.length < max && r && typeof r === "object" && !Array.isArray(r)) {
-        const dataArr = Array.isArray((r as { data?: unknown[] }).data) ? (r as { data: unknown[] }).data : [];
-        for (const entry of dataArr) {
-          if (out.length >= max) break;
-          // Try as document first, then as generic SERP item
-          const docParsed = isFirecrawlDocument(entry) ? parseDocumentResult(entry as Document) : null;
-          if (docParsed) {
-            out.push(docParsed);
-            continue;
-          }
-          const generic = parseWebSearchResult(entry);
-          if (generic) out.push(generic);
-        }
+    // Shape 3: top-level array
+    if (out.length < max && Array.isArray(r)) {
+      for (const entry of r) {
+        if (out.length >= max) break;
+        const parsed = parseWebSearchResult(entry);
+        if (parsed) out.push(parsed);
       }
+    }
 
-      // Shape 3: top-level array
-      if (out.length < max && Array.isArray(r)) {
-        for (const entry of r) {
-          if (out.length >= max) break;
-          const parsed = parseWebSearchResult(entry);
-          if (parsed) out.push(parsed);
-        }
-      }
+    return out.slice(0, max);
+  };
 
-      return out.slice(0, max);
-    };
+  // First attempt: fast SERP (no scraping) to maximize recall
+  let response: unknown;
+  try {
+    response = await client.search(sanitizedQuery, {
+      limit: boundedLimit,
+      timeout: 30000,
+    });
+  } catch (e) {
+    // fall through to second attempt with alternate signature
+  }
 
-    // First attempt: fast SERP (no scraping) to maximize recall
-    let response: unknown;
+  let aggregated: ExternalSearchResult[] = collectFromResponse(response, boundedLimit);
+
+  // Second attempt: request markdown scraping if the first came back empty
+  if (aggregated.length === 0) {
     try {
-      response = await client.search(sanitizedQuery, {
+      const resp2 = await client.search(sanitizedQuery, {
         limit: boundedLimit,
         timeout: 30000,
-      });
-    } catch (e) {
-      // fall through to second attempt with alternate signature
-    }
-
-    let aggregated: ExternalSearchResult[] = collectFromResponse(response, boundedLimit);
-
-    // Second attempt: request markdown scraping if the first came back empty
-    if (aggregated.length === 0) {
-      try {
-        const resp2 = await client.search(sanitizedQuery, {
-          limit: boundedLimit,
+        scrapeOptions: {
+          formats: ["markdown"],
+          onlyMainContent: true,
           timeout: 30000,
-          scrapeOptions: {
-            formats: ["markdown"],
-            onlyMainContent: true,
-            timeout: 30000,
-            mobile: true,
-            waitFor: 2000,
-            fastMode: false,
-          },
-        });
-        aggregated = collectFromResponse(resp2, boundedLimit);
-      } catch {
-        // ignore and return empty below
-      }
+          mobile: true,
+          waitFor: 2000,
+          fastMode: false,
+        },
+      });
+      aggregated = collectFromResponse(resp2, boundedLimit);
+    } catch {
+      // ignore and return empty below
     }
+  }
 
-
-
-    return aggregated;
+  return aggregated;
 }
 
 export const webSearch = tool({
@@ -241,5 +251,3 @@ export const webSearch = tool({
 });
 
 export type { FirecrawlApp };
-
-

@@ -161,8 +161,10 @@ describe("assertPublicHostname", () => {
       "2001:db9::1", // adjacent to the documentation range but not in it
     ]) {
       lookupMock.mockResolvedValueOnce([{ address, family: 6 }]);
-      await expect(assertPublicHostname(`v6-ok-${address}.example`), address).resolves
-        .toBeUndefined();
+      await expect(
+        assertPublicHostname(`v6-ok-${address}.example`),
+        address,
+      ).resolves.toBeUndefined();
     }
   });
 

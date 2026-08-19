@@ -3,11 +3,7 @@ import { lazy, Suspense, useState } from "react";
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
 import { UsersTable } from "~/components/admin/users-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
-import type {
-  CreateUserInput,
-  PlatformUser,
-  UpdateUserInput,
-} from "~/hooks/api/types";
+import type { CreateUserInput, PlatformUser, UpdateUserInput } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
 import type { UsersQuery, UserStats } from "~/hooks/api/use-users";
 

@@ -159,8 +159,9 @@ describe("useCourses", () => {
 
     expect(created).toEqual(course);
     const post = mockFetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === "POST");
-    expect(post?.[0]).toBe("/api/courses");
-    expect((post?.[1] as RequestInit).body).toBeInstanceOf(FormData);
+    expect(post).toBeDefined();
+    expect(post![0]).toBe("/api/courses");
+    expect((post![1] as RequestInit).body).toBeInstanceOf(FormData);
     expect(listUrls(mockFetch).length).toBeGreaterThan(before);
   });
 
@@ -170,7 +171,11 @@ describe("useCourses", () => {
     mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
       Promise.resolve(
         init?.method === "POST"
-          ? ({ ok: false, status: 422, text: () => Promise.resolve("duplicate code") } as unknown as Response)
+          ? ({
+              ok: false,
+              status: 422,
+              text: () => Promise.resolve("duplicate code"),
+            } as unknown as Response)
           : page(),
       ),
     );
@@ -231,7 +236,11 @@ describe("useCourses", () => {
     mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
       Promise.resolve(
         init?.method === "DELETE"
-          ? ({ ok: false, status: 409, text: () => Promise.resolve("course has enrollments") } as unknown as Response)
+          ? ({
+              ok: false,
+              status: 409,
+              text: () => Promise.resolve("course has enrollments"),
+            } as unknown as Response)
           : page(),
       ),
     );

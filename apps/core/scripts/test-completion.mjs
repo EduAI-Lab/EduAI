@@ -46,7 +46,7 @@ if (!googleKey) {
 
 const body = {
   systemPrompt:
-    "You are a question generator. Reply with valid JSON only: {\"ok\": true, \"message\": \"completion works\"}",
+    'You are a question generator. Reply with valid JSON only: {"ok": true, "message": "completion works"}',
   messages: [{ role: "user", content: "Confirm the endpoint works." }],
   model: "google:gemini-2.5-flash",
   apiKeys: { google: { apiKey: googleKey, isEnabled: true } },

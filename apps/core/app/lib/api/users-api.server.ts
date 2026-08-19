@@ -59,7 +59,9 @@ export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
   const requestContext = getRequestContext(request);
 
-  const logAdminDenied = (actor: { id: string; role?: string | null; email?: string | null } | null) =>
+  const logAdminDenied = (
+    actor: { id: string; role?: string | null; email?: string | null } | null,
+  ) =>
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(actor),
@@ -144,11 +146,7 @@ export async function handleUsersApiRequest(request: Request) {
       if (courseId) {
         // This mode is constrained to the picker contract so course managers
         // cannot turn it into a platform-wide user directory.
-        if (
-          roleFilter.length !== 1 ||
-          roleFilter[0] !== "STUDENT" ||
-          isActiveParam !== "true"
-        ) {
+        if (roleFilter.length !== 1 || roleFilter[0] !== "STUDENT" || isActiveParam !== "true") {
           return apiError(400, "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
         }
 
@@ -358,8 +356,7 @@ export async function handleUsersApiRequest(request: Request) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
-      const platformRoleChanged =
-        result.data.role !== undefined && previousRole !== effectiveRole;
+      const platformRoleChanged = result.data.role !== undefined && previousRole !== effectiveRole;
 
       // AUTH-04: this update would take the target out of the active-ADMIN
       // pool — either a role change away from ADMIN, or a deactivation.
@@ -369,11 +366,7 @@ export async function handleUsersApiRequest(request: Request) {
           result.data.isActive === false);
 
       try {
-        const {
-          studentId: studentIdInput,
-          taCourseIds,
-          ...userUpdateFields
-        } = result.data;
+        const { studentId: studentIdInput, taCourseIds, ...userUpdateFields } = result.data;
         const updateData: Record<string, unknown> = { ...userUpdateFields };
 
         if (result.data.role !== undefined && result.data.role !== "UNIT_ADMIN") {
@@ -399,30 +392,31 @@ export async function handleUsersApiRequest(request: Request) {
           }
         }
 
-        const updateUser = (client: Pick<Prisma.TransactionClient, "user">) => client.user.update({
-          where: { id: userId },
-          data: updateData,
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            image: true,
-            role: true,
-            studentId: true,
-            isActive: true,
-            emailVerified: true,
-            authorizedUnits: true,
-            createdAt: true,
-            updatedAt: true,
-            _count: {
-              select: {
-                enrollments: { where: activeStudentEnrollmentWhere },
-                taughtCourses: true,
-                aiInteractions: true,
+        const updateUser = (client: Pick<Prisma.TransactionClient, "user">) =>
+          client.user.update({
+            where: { id: userId },
+            data: updateData,
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              image: true,
+              role: true,
+              studentId: true,
+              isActive: true,
+              emailVerified: true,
+              authorizedUnits: true,
+              createdAt: true,
+              updatedAt: true,
+              _count: {
+                select: {
+                  enrollments: { where: activeStudentEnrollmentWhere },
+                  taughtCourses: true,
+                  aiInteractions: true,
+                },
               },
             },
-          },
-        });
+          });
 
         const shouldReconcileTACourses =
           taCourseIds !== undefined ||
@@ -453,9 +447,7 @@ export async function handleUsersApiRequest(request: Request) {
             return {
               updated: await updateUser(tx),
               activeTACourseIds: reconciliation.activeTACourseIds,
-              previousTACourseIds: previousTAEnrollments.map(
-                (enrollment) => enrollment.courseId,
-              ),
+              previousTACourseIds: previousTAEnrollments.map((enrollment) => enrollment.courseId),
             } as const;
           });
 
@@ -487,18 +479,14 @@ export async function handleUsersApiRequest(request: Request) {
             where: { userId, role: "TA", isActive: true },
             select: { courseId: true },
           });
-          activeTACourseIds = activeTAEnrollments.map(
-            (enrollment) => enrollment.courseId,
-          );
+          activeTACourseIds = activeTAEnrollments.map((enrollment) => enrollment.courseId);
         } else {
           updatedWithCount = await updateUser(prisma);
           const activeTAEnrollments = await prisma.enrollment.findMany({
             where: { userId, role: "TA", isActive: true },
             select: { courseId: true },
           });
-          activeTACourseIds = activeTAEnrollments.map(
-            (enrollment) => enrollment.courseId,
-          );
+          activeTACourseIds = activeTAEnrollments.map((enrollment) => enrollment.courseId);
         }
 
         const { _count, ...updated } = updatedWithCount;
@@ -551,12 +539,8 @@ export async function handleUsersApiRequest(request: Request) {
             details: {
               email: updated.email,
               changedFields,
-              ...(platformRoleChanged
-                ? { previousRole, newRole: effectiveRole }
-                : {}),
-              ...(shouldReconcileTACourses
-                ? { taCourseIdsAdded, taCourseIdsRemoved }
-                : {}),
+              ...(platformRoleChanged ? { previousRole, newRole: effectiveRole } : {}),
+              ...(shouldReconcileTACourses ? { taCourseIdsAdded, taCourseIdsRemoved } : {}),
             },
           }),
         );
@@ -685,8 +669,7 @@ async function createUserFromBody(
   try {
     const createData = {
       ...result.data,
-      authorizedUnits:
-        result.data.role === "UNIT_ADMIN" ? (result.data.authorizedUnits ?? []) : [],
+      authorizedUnits: result.data.role === "UNIT_ADMIN" ? (result.data.authorizedUnits ?? []) : [],
     };
     const { _count, ...created } = await prisma.user.create({
       data: {

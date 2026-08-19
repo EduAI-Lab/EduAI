@@ -24,12 +24,17 @@ vi.mock("~/components/admin/user-form-dialog", () => ({
   }) =>
     props.open ? (
       <div data-testid="user-form-dialog">
-        <span data-testid="form-mode">
-          {props.user ? `editing:${props.user.id}` : "creating"}
-        </span>
+        <span data-testid="form-mode">{props.user ? `editing:${props.user.id}` : "creating"}</span>
         <button
           onClick={() => {
-            props.onSubmit({ name: "New Person", email: "new@example.com", role: "STUDENT", isActive: true }).catch(() => {});
+            props
+              .onSubmit({
+                name: "New Person",
+                email: "new@example.com",
+                role: "STUDENT",
+                isActive: true,
+              })
+              .catch(() => {});
           }}
         >
           submit-form
@@ -201,7 +206,10 @@ describe("UsersAdminView — edit user", () => {
     fireEvent.click(screen.getByText("submit-form"));
 
     await waitFor(() =>
-      expect(onUpdateUser).toHaveBeenCalledWith(user.id, expect.objectContaining({ name: "New Person" })),
+      expect(onUpdateUser).toHaveBeenCalledWith(
+        user.id,
+        expect.objectContaining({ name: "New Person" }),
+      ),
     );
   });
 });
@@ -268,7 +276,9 @@ describe("UsersAdminView — chat history", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /view chat history/i }));
 
     await waitFor(() =>
-      expect(screen.getByTestId("chat-history-dialog")).toHaveTextContent(`${user.name} (${user.id})`),
+      expect(screen.getByTestId("chat-history-dialog")).toHaveTextContent(
+        `${user.name} (${user.id})`,
+      ),
     );
   });
 });

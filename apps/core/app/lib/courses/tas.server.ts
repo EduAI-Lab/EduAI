@@ -5,10 +5,7 @@ import { AddTASchema, RemoveTASchema, type AddTAInput, type RemoveTAInput } from
 // A TA is a course-level role, modelled as an Enrollment with role = "TA".
 // There is no longer a separate CourseTA table or platform-level UserRole.TA.
 
-function shapeTA(enrollment: {
-  id: string;
-  user: { id: string; name: string; email: string };
-}) {
+function shapeTA(enrollment: { id: string; user: { id: string; name: string; email: string } }) {
   return { id: enrollment.id, user: enrollment.user };
 }
 

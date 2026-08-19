@@ -4,7 +4,7 @@
  * This service only maintains the thin local user record required for FK
  * integrity within QM (courses, canvas_integrations, canvas_course_mappings).
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 /**
  * Find or create the local QM user record for a Core-authenticated user.

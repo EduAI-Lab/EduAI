@@ -161,6 +161,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "GET",
+    path: "/api/ai-jobs/:jobId",
+    readiness: "excluded",
+    reason: "Authenticated background AI-job status polling for UI clients; not an agent operation",
+    routeFile: "routes/api.ai-jobs.$jobId.ts",
+  }),
+  entry({
     method: "POST",
     path: "/api/completion",
     readiness: "excluded",
@@ -174,7 +181,8 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "excluded",
     reason: "Chat UI persistence — not ops",
     routeFile: "routes/api/chats.ts",
-  }),  entry({
+  }),
+  entry({
     method: "GET",
     path: "/api/chats/:chatId",
     readiness: "excluded",
@@ -569,7 +577,10 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/users",
     readiness: "ready",
-    pagination: { required: true, lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"] },
+    pagination: {
+      required: true,
+      lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"],
+    },
     errorEnvelope: "standard",
     adminChatTool: "listUsers",
     routeFile: "routes/api/users.$.ts",

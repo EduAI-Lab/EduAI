@@ -173,7 +173,11 @@ describe("enqueue", () => {
   it("enqueues interactive work at high priority", async () => {
     await enqueue({ ...job, type: "interactive" });
     expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-chat");
-    expect(queueAdd).toHaveBeenCalledWith("question-generation", expect.anything(), expect.objectContaining({ priority: 1 }));
+    expect(queueAdd).toHaveBeenCalledWith(
+      "question-generation",
+      expect.anything(),
+      expect.objectContaining({ priority: 1 }),
+    );
   });
 
   it("passes idempotencyKey through as the BullMQ jobId", async () => {

@@ -63,11 +63,13 @@ beforeEach(() => {
   vi.mocked(startReEmbedJob).mockResolvedValue({ job, created: true, keyHonored: true });
 });
 
-function postArgs(opts: {
-  courseId?: string;
-  idempotencyKey?: string;
-  headerKey?: string;
-} = {}) {
+function postArgs(
+  opts: {
+    courseId?: string;
+    idempotencyKey?: string;
+    headerKey?: string;
+  } = {},
+) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (opts.headerKey) headers["Idempotency-Key"] = opts.headerKey;
   const body =

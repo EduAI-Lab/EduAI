@@ -106,8 +106,7 @@ describe("fleet registry", () => {
   });
 
   it("enables fleet routing when chat URLs are configured", () => {
-    process.env.VLLM_FLEET_CHAT_URLS =
-      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
     resetFleetRegistryCache();
     expect(fleetRoutingEnabled()).toBe(true);
   });
@@ -151,7 +150,11 @@ describe("fleet registry — config file", () => {
 
   it("uses the config file over env vars when both are present", () => {
     writeConfig([
-      { id: "cmps-from-config", baseUrl: "http://cmps-from-config:8001", jobTypes: ["interactive"] },
+      {
+        id: "cmps-from-config",
+        baseUrl: "http://cmps-from-config:8001",
+        jobTypes: ["interactive"],
+      },
     ]);
     // Env vars are set too, to prove the config file wins rather than merging.
     process.env.VLLM_FLEET_CHAT_URLS = "http://cmps-from-env:8001";
@@ -224,8 +227,7 @@ describe("resolveFleetHost", () => {
   });
 
   it("round-robins across healthy chat servers", async () => {
-    process.env.VLLM_FLEET_CHAT_URLS =
-      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
     resetFleetRegistryCache();
 
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
@@ -264,10 +266,9 @@ describe("resolveFleetHost", () => {
       maxInFlight = Math.max(maxInFlight, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 10));
       inFlight -= 1;
-      return new Response(
-        JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      });
     });
 
     await resolveFleetHost({
@@ -374,8 +375,7 @@ describe("resolveFleetHost", () => {
   });
 
   it("keeps independent round-robin cursors per pool", async () => {
-    process.env.VLLM_FLEET_CHAT_URLS =
-      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
     process.env.VLLM_FLEET_HEAVY_URL = "http://cmps03.ok.ubc.ca:8001";
     resetFleetRegistryCache();
 
@@ -425,8 +425,7 @@ describe("resolveFleetHost", () => {
   });
 
   it("excludes a failed server id on retry pick", async () => {
-    process.env.VLLM_FLEET_CHAT_URLS =
-      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
     resetFleetRegistryCache();
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
@@ -449,8 +448,7 @@ describe("resolveFleetHost", () => {
   });
 
   it("resolveFleetHostAfterFailure invalidates and picks the other host", async () => {
-    process.env.VLLM_FLEET_CHAT_URLS =
-      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
     resetFleetRegistryCache();
 
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {

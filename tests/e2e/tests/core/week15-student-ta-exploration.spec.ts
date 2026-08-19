@@ -12,25 +12,25 @@
  * a "should be blocked" outcome. Findings get written up in
  * docs/end-to-end-user-workflows/eduai-core-workflows.md, not here.
  */
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { CORE_URL } from '../../playwright.config';
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { CORE_URL } from "../../playwright.config";
 
-const PASSWORD = 'EduAI2026!';
+const PASSWORD = "EduAI2026!";
 
 const USERS = {
-  student1: 'student1@eduai.local', // Alex Patel — cosc101, cosc121, math200, data310, phys121, engl110 (all published)
-  student2: 'student2@eduai.local', // Brooke Kim — cosc101, cosc121, cosc211 (UNPUBLISHED), stat300, psyo121, data310, engl110
-  taCS: 'ta.cs@eduai.local',        // Sam Carter — TA in cosc101, cosc121 only. Platform role = STUDENT.
-  taMath: 'ta.math@eduai.local',    // Riley Chen — TA in math200 only.
-  admin: 'admin@eduai.local',
+  student1: "student1@eduai.local", // Alex Patel — cosc101, cosc121, math200, data310, phys121, engl110 (all published)
+  student2: "student2@eduai.local", // Brooke Kim — cosc101, cosc121, cosc211 (UNPUBLISHED), stat300, psyo121, data310, engl110
+  taCS: "ta.cs@eduai.local", // Sam Carter — TA in cosc101, cosc121 only. Platform role = STUDENT.
+  taMath: "ta.math@eduai.local", // Riley Chen — TA in math200 only.
+  admin: "admin@eduai.local",
 };
 
 const COURSES = {
-  cosc101: 'seed_course_cosc101', // published, student1+student2 enrolled, taCS is TA
-  cosc121: 'seed_course_cosc121', // published, taCS is TA
-  cosc211: 'seed_course_cosc211', // UNPUBLISHED, student2 enrolled, no TA
-  math200: 'seed_course_math200', // published, taMath is TA, student1 enrolled
-  hist210: 'seed_course_hist210', // published, student1/student2/taCS/taMath NOT enrolled
+  cosc101: "seed_course_cosc101", // published, student1+student2 enrolled, taCS is TA
+  cosc121: "seed_course_cosc121", // published, taCS is TA
+  cosc211: "seed_course_cosc211", // UNPUBLISHED, student2 enrolled, no TA
+  math200: "seed_course_math200", // published, taMath is TA, student1 enrolled
+  hist210: "seed_course_hist210", // published, student1/student2/taCS/taMath NOT enrolled
 };
 
 async function apiSignIn(ctx: APIRequestContext, email: string): Promise<void> {
@@ -60,7 +60,7 @@ async function newAuthedContext(playwright: any, email: string) {
 test.beforeAll(async ({ playwright }) => {
   const ctx = await playwright.request.newContext();
   try {
-    const secret = process.env.E2E_SEED_SECRET ?? 'e2e-seed-secret';
+    const secret = process.env.E2E_SEED_SECRET ?? "e2e-seed-secret";
     const res = await ctx.post(`${CORE_URL}/api/e2e/seed`, { data: { secret } });
     expect(res.ok(), `demo-data seed failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   } finally {
@@ -72,14 +72,14 @@ test.beforeAll(async ({ playwright }) => {
 // STUDENT — real UI walkthrough
 // ===========================================================================
 
-test.describe('Student (student1) — UI walkthrough', () => {
-  test('dashboard shows only enrolled courses, no TA framing', async ({ page, playwright }) => {
+test.describe("Student (student1) — UI walkthrough", () => {
+  test("dashboard shows only enrolled courses, no TA framing", async ({ page, playwright }) => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/dashboard`);
-      await page.waitForLoadState('networkidle');
-      await page.screenshot({ path: 'test-results/week15/student1-dashboard.png', fullPage: true });
+      await page.waitForLoadState("networkidle");
+      await page.screenshot({ path: "test-results/week15/student1-dashboard.png", fullPage: true });
       // Sanity: dashboard did not bounce back to login
       await expect(page).not.toHaveURL(/\/auth\/login/);
     } finally {
@@ -87,29 +87,35 @@ test.describe('Student (student1) — UI walkthrough', () => {
     }
   });
 
-  test('course chat: on-topic + off-topic (course-scope guardrail)', async ({ page, playwright }) => {
+  test("course chat: on-topic + off-topic (course-scope guardrail)", async ({
+    page,
+    playwright,
+  }) => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       await injectSession(page, ctx);
-      await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent('COSC 101')}`);
-      const understand = page.getByRole('button', { name: 'I understand' });
-      await understand.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+      await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent("COSC 101")}`);
+      const understand = page.getByRole("button", { name: "I understand" });
+      await understand.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
       if (await understand.count()) {
         await understand.click();
-        await understand.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
+        await understand.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
       }
-      const input = page.locator('#chat-message-input');
+      const input = page.locator("#chat-message-input");
       await expect(input).toBeEnabled({ timeout: 15_000 });
-      await input.fill('What is decomposition in computational thinking?');
-      await page.getByRole('button', { name: 'Send message' }).click({ timeout: 15_000 });
+      await input.fill("What is decomposition in computational thinking?");
+      await page.getByRole("button", { name: "Send message" }).click({ timeout: 15_000 });
       await page.waitForTimeout(15_000);
-      await page.screenshot({ path: 'test-results/week15/student1-chat-ontopic.png', fullPage: true });
+      await page.screenshot({
+        path: "test-results/week15/student1-chat-ontopic.png",
+        fullPage: true,
+      });
     } finally {
       await ctx.dispose();
     }
   });
 
-  test('enrolled-but-unpublished course (student2/cosc211): list + direct nav', async ({
+  test("enrolled-but-unpublished course (student2/cosc211): list + direct nav", async ({
     page,
     playwright,
   }) => {
@@ -121,12 +127,12 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/courses/${COURSES.cosc211}`);
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState("networkidle");
       await page.screenshot({
-        path: 'test-results/week15/student2-cosc211-unpublished-direct-nav.png',
+        path: "test-results/week15/student2-cosc211-unpublished-direct-nav.png",
         fullPage: true,
       });
-      const bodyText = await page.locator('body').innerText();
+      const bodyText = await page.locator("body").innerText();
 
       // Bug found + fixed in this pass: this redirect used to be a bare `/courses`
       // with zero explanation, unlike the clear "you do not have access" banner
@@ -136,17 +142,17 @@ test.describe('Student (student1) — UI walkthrough', () => {
       await expect(page.getByText(/isn.t published yet/i)).toBeVisible();
 
       test.info().annotations.push({
-        type: 'finding',
+        type: "finding",
         description:
           `enrolled-but-unpublished direct nav: inList(api ?ids=)=${inList}, ` +
-          `finalURL=${page.url()}, bodyExcerpt="${bodyText.slice(0, 200).replace(/\n/g, ' ')}"`,
+          `finalURL=${page.url()}, bodyExcerpt="${bodyText.slice(0, 200).replace(/\n/g, " ")}"`,
       });
     } finally {
       await ctx.dispose();
     }
   });
 
-  test('IDOR probes: cross-course chat, enrollments, questions, chats-by-id', async ({
+  test("IDOR probes: cross-course chat, enrollments, questions, chats-by-id", async ({
     playwright,
   }) => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
@@ -154,11 +160,14 @@ test.describe('Student (student1) — UI walkthrough', () => {
       // 1. Chat in a course student1 is NOT enrolled in (hist210)
       const chatRes = await ctx.post(`${CORE_URL}/api/chat`, {
         data: {
-          messages: [{ role: 'user', content: 'hello' }],
+          messages: [{ role: "user", content: "hello" }],
           courseId: COURSES.hist210,
         },
       });
-      expect(chatRes.status(), 'POST /api/chat with unenrolled courseId (hist210) as student1').toBe(403);
+      expect(
+        chatRes.status(),
+        "POST /api/chat with unenrolled courseId (hist210) as student1",
+      ).toBe(403);
 
       // 2. Enrollment list for a course student1 is not enrolled/staff in
       const enrRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.hist210}/enrollments`);
@@ -166,11 +175,11 @@ test.describe('Student (student1) — UI walkthrough', () => {
 
       // 3. Enrollment list for a course student1 IS enrolled in (as STUDENT, not staff)
       const enrOwnRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`);
-      expect(enrOwnRes.status(), 'GET enrollments for own enrolled course as STUDENT').toBe(403);
+      expect(enrOwnRes.status(), "GET enrollments for own enrolled course as STUDENT").toBe(403);
 
       // 4. Questions endpoint for an enrolled course
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
-      expect(qRes.status(), 'GET /api/questions as enrolled STUDENT').toBe(403);
+      expect(qRes.status(), "GET /api/questions as enrolled STUDENT").toBe(403);
 
       // 5. Admin-only route
       const usersRes = await ctx.get(`${CORE_URL}/api/users`);
@@ -180,33 +189,37 @@ test.describe('Student (student1) — UI walkthrough', () => {
     }
   });
 
-  test('materials visibility for an enrolled course', async ({ playwright }) => {
+  test("materials visibility for an enrolled course", async ({ playwright }) => {
     const ctx = await newAuthedContext(playwright, USERS.student1);
     try {
       const res = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/materials`);
-      expect(res.status(), 'GET materials for enrolled course as STUDENT').toBe(200);
+      expect(res.status(), "GET materials for enrolled course as STUDENT").toBe(200);
       const body = await res.json();
       const items = Array.isArray(body) ? body : (body.materials ?? body.data ?? []);
-      expect(Array.isArray(items), 'materials payload should be a list').toBeTruthy();
+      expect(Array.isArray(items), "materials payload should be a list").toBeTruthy();
       expect(
         items.every((m: { visibleToStudents?: boolean }) => m.visibleToStudents !== false),
-        'student materials list must not include staff-only rows',
+        "student materials list must not include staff-only rows",
       ).toBeTruthy();
     } finally {
       await ctx.dispose();
     }
   });
 
-  test('bug reports: own vs guessing another user\'s report id', async ({ playwright }) => {
+  test("bug reports: own vs guessing another user's report id", async ({ playwright }) => {
     const adminCtx = await newAuthedContext(playwright, USERS.admin);
     const studentCtx = await newAuthedContext(playwright, USERS.student1);
     try {
       const adminListRes = await adminCtx.get(`${CORE_URL}/api/admin/bug-reports`);
       const adminList = await adminListRes.json();
-      const reports = Array.isArray(adminList) ? adminList : (adminList.reports ?? adminList.data ?? []);
-      const someoneElsesReport = reports.find((r: any) => r.userId && r.userId !== 'seed_user_student_01');
+      const reports = Array.isArray(adminList)
+        ? adminList
+        : (adminList.reports ?? adminList.data ?? []);
+      const someoneElsesReport = reports.find(
+        (r: any) => r.userId && r.userId !== "seed_user_student_01",
+      );
 
-      const targetId = someoneElsesReport?.id ?? 'does-not-exist-idor-probe';
+      const targetId = someoneElsesReport?.id ?? "does-not-exist-idor-probe";
       const guessRes = await studentCtx.get(`${CORE_URL}/api/bug-reports/${targetId}`);
       expect(
         guessRes.status(),
@@ -223,100 +236,106 @@ test.describe('Student (student1) — UI walkthrough', () => {
 // TA — real UI walkthrough
 // ===========================================================================
 
-test.describe('TA (ta.cs) — UI walkthrough', () => {
-  test('dashboard reflects TA framing, not generic Student', async ({ page, playwright }) => {
+test.describe("TA (ta.cs) — UI walkthrough", () => {
+  test("dashboard reflects TA framing, not generic Student", async ({ page, playwright }) => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
     try {
       const meRes = await ctx.get(`${CORE_URL}/api/me`);
       expect(meRes.status()).toBe(200);
       const me = await meRes.json();
-      expect(me.role, 'TA platform role stays STUDENT; TA status is enrollment-scoped').toBe('STUDENT');
+      expect(me.role, "TA platform role stays STUDENT; TA status is enrollment-scoped").toBe(
+        "STUDENT",
+      );
 
       await injectSession(page, ctx);
       await page.goto(`${CORE_URL}/dashboard`);
-      await page.waitForLoadState('networkidle');
-      await page.screenshot({ path: 'test-results/week15/ta-cs-dashboard.png', fullPage: true });
+      await page.waitForLoadState("networkidle");
+      await page.screenshot({ path: "test-results/week15/ta-cs-dashboard.png", fullPage: true });
     } finally {
       await ctx.dispose();
     }
   });
 
-  test('TA course page (cosc101) vs non-TA course (math200)', async ({ page, playwright }) => {
+  test("TA course page (cosc101) vs non-TA course (math200)", async ({ page, playwright }) => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
     try {
       await injectSession(page, ctx);
 
       await page.goto(`${CORE_URL}/courses/${COURSES.cosc101}`);
-      await page.waitForLoadState('networkidle');
-      await page.screenshot({ path: 'test-results/week15/ta-cs-cosc101.png', fullPage: true });
+      await page.waitForLoadState("networkidle");
+      await page.screenshot({ path: "test-results/week15/ta-cs-cosc101.png", fullPage: true });
 
       await page.goto(`${CORE_URL}/courses/${COURSES.math200}`);
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState("networkidle");
       await expect(page).toHaveURL(/\/courses\?access=denied/);
     } finally {
       await ctx.dispose();
     }
   });
 
-  test('TA chat in own course + course-scope guardrail', async ({ page, playwright }) => {
+  test("TA chat in own course + course-scope guardrail", async ({ page, playwright }) => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
     try {
       await injectSession(page, ctx);
-      await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent('COSC 101')}`);
-      const understand = page.getByRole('button', { name: 'I understand' });
-      await understand.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+      await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent("COSC 101")}`);
+      const understand = page.getByRole("button", { name: "I understand" });
+      await understand.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
       if (await understand.count()) {
         await understand.click();
-        await understand.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
+        await understand.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
       }
-      const input = page.locator('#chat-message-input');
+      const input = page.locator("#chat-message-input");
       await expect(input).toBeEnabled({ timeout: 15_000 });
-      await input.fill('As the TA, can I see which students are struggling with algorithms_basics?');
-      await page.getByRole('button', { name: 'Send message' }).click({ timeout: 15_000 });
+      await input.fill(
+        "As the TA, can I see which students are struggling with algorithms_basics?",
+      );
+      await page.getByRole("button", { name: "Send message" }).click({ timeout: 15_000 });
       await page.waitForTimeout(15_000);
-      await page.screenshot({ path: 'test-results/week15/ta-cs-chat.png', fullPage: true });
+      await page.screenshot({ path: "test-results/week15/ta-cs-chat.png", fullPage: true });
     } finally {
       await ctx.dispose();
     }
   });
 
-  test('TA permission probes: questions (view w/ answers), create question, enroll, admin routes', async ({
+  test("TA permission probes: questions (view w/ answers), create question, enroll, admin routes", async ({
     playwright,
   }) => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
     try {
       // Can TA view questions (with answers) in their own course?
       const qRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.cosc101}`);
-      expect(qRes.status(), 'GET /api/questions as TA in own course').toBe(200);
+      expect(qRes.status(), "GET /api/questions as TA in own course").toBe(200);
       const qBody = await qRes.json();
       const items = Array.isArray(qBody) ? qBody : (qBody.questions ?? qBody.data ?? []);
-      expect(items.length, 'TA own-course question bank should not be empty').toBeGreaterThan(0);
-      const anyAnswer = items.some((q: { answer?: unknown }) => q.answer !== undefined && q.answer !== null && q.answer !== '');
-      expect(anyAnswer, 'TA should see answers in their own course bank').toBeTruthy();
+      expect(items.length, "TA own-course question bank should not be empty").toBeGreaterThan(0);
+      const anyAnswer = items.some(
+        (q: { answer?: unknown }) => q.answer !== undefined && q.answer !== null && q.answer !== "",
+      );
+      expect(anyAnswer, "TA should see answers in their own course bank").toBeTruthy();
 
       // TA in cosc101 querying questions for a course they have no relation to
       const qOtherRes = await ctx.get(`${CORE_URL}/api/questions?courseId=${COURSES.math200}`);
-      expect(qOtherRes.status(), 'GET /api/questions for unrelated course as TA').toBe(403);
+      expect(qOtherRes.status(), "GET /api/questions for unrelated course as TA").toBe(403);
 
       // TA creating a question (should be instructor+ only)
       const createQRes = await ctx.post(`${CORE_URL}/api/questions`, {
         data: {
           courseId: COURSES.cosc101,
-          topicSlug: 'computational_thinking',
-          type: 'SA',
-          content: 'TA-created probe question',
-          answer: 'n/a',
-          difficulty: 'EASY',
-          reasoningLevel: 'FACTUAL',
+          topicSlug: "computational_thinking",
+          type: "SA",
+          content: "TA-created probe question",
+          answer: "n/a",
+          difficulty: "EASY",
+          reasoningLevel: "FACTUAL",
         },
       });
       expect([401, 403, 404, 422]).toContain(createQRes.status());
 
       // TA enrolling a new student (should be blocked — not a policy-granted instructor)
       const enrollRes = await ctx.post(`${CORE_URL}/api/courses/${COURSES.cosc101}/enrollments`, {
-        data: { userId: 'seed_user_student_05', role: 'STUDENT' },
+        data: { userId: "seed_user_student_05", role: "STUDENT" },
       });
-      expect(enrollRes.status(), 'POST enrollments (add student) as TA in own course').toBe(403);
+      expect(enrollRes.status(), "POST enrollments (add student) as TA in own course").toBe(403);
 
       // TA hitting admin-only routes
       const usersRes = await ctx.get(`${CORE_URL}/api/users`);
@@ -328,7 +347,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     }
   });
 
-  test('TA chat oversight: viewing course chats for own course vs unrelated course', async ({
+  test("TA chat oversight: viewing course chats for own course vs unrelated course", async ({
     playwright,
   }) => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
@@ -339,14 +358,14 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       const ownCourseChatsRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.cosc101}/chats`);
       expect(ownCourseChatsRes.status()).toBe(403);
       test.info().annotations.push({
-        type: 'finding',
+        type: "finding",
         description: `GET /api/courses/cosc101/chats (own TA course) as TA -> ${ownCourseChatsRes.status()} (permanently 'never' for TA tier, not policy-configurable)`,
       });
 
       const otherCourseChatsRes = await ctx.get(`${CORE_URL}/api/courses/${COURSES.math200}/chats`);
       expect(otherCourseChatsRes.status()).toBe(403);
       test.info().annotations.push({
-        type: 'finding',
+        type: "finding",
         description: `GET /api/courses/math200/chats (unrelated course) as TA -> ${otherCourseChatsRes.status()}`,
       });
     } finally {
@@ -354,7 +373,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     }
   });
 
-  test('TA own-course enrollments (200, roster) + AUTH-08 material own-upload RBAC', async ({
+  test("TA own-course enrollments (200, roster) + AUTH-08 material own-upload RBAC", async ({
     playwright,
   }) => {
     const ctx = await newAuthedContext(playwright, USERS.taCS);
@@ -364,7 +383,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       expect(enrRes.status()).toBe(200);
       const enrBody = await enrRes.json();
       test.info().annotations.push({
-        type: 'finding',
+        type: "finding",
         description: `GET enrollments for own TA course (cosc101) -> 200, ${enrBody.enrollments?.length ?? 0} peers returned`,
       });
 
@@ -373,13 +392,13 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       // seed_material_cosc101_overview is instructor-owned; seed_material_cosc101_notes is TA-owned.
       const renameOtherRes = await ctx.patch(
         `${CORE_URL}/api/courses/${COURSES.cosc101}/materials/seed_material_cosc101_overview`,
-        { data: { title: 'Hacked title' } },
+        { data: { title: "Hacked title" } },
       );
       expect(renameOtherRes.status()).toBe(403);
 
       const renameOwnRes = await ctx.patch(
         `${CORE_URL}/api/courses/${COURSES.cosc101}/materials/seed_material_cosc101_notes`,
-        { data: { title: 'COSC 101 — Computational Thinking Notes' } }, // no-op rename, same title
+        { data: { title: "COSC 101 — Computational Thinking Notes" } }, // no-op rename, same title
       );
       expect(renameOwnRes.status()).toBe(200);
 
@@ -389,7 +408,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
       expect(deleteOtherRes.status()).toBe(403);
 
       test.info().annotations.push({
-        type: 'finding',
+        type: "finding",
         description: `AUTH-08 own-upload RBAC verified live: TA blocked (403) renaming/deleting instructor-owned material, allowed (200) renaming own upload.`,
       });
     } finally {
@@ -397,7 +416,7 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     }
   });
 
-  test('mixed-role scenario: student1 promoted to TA in hist210, dashboard framing check', async ({
+  test("mixed-role scenario: student1 promoted to TA in hist210, dashboard framing check", async ({
     page,
     playwright,
   }) => {
@@ -405,27 +424,31 @@ test.describe('TA (ta.cs) — UI walkthrough', () => {
     const studentCtx = await newAuthedContext(playwright, USERS.student1);
     try {
       // Enroll student1 as TA in a course where they otherwise have no relation.
-      const enrollRes = await adminCtx.post(`${CORE_URL}/api/courses/${COURSES.hist210}/enrollments`, {
-        data: { userId: 'seed_user_student_01', role: 'TA' },
-      });
-      expect([200, 201], `Admin adding student1 as TA to hist210 -> ${enrollRes.status()}`).toContain(
-        enrollRes.status(),
+      const enrollRes = await adminCtx.post(
+        `${CORE_URL}/api/courses/${COURSES.hist210}/enrollments`,
+        {
+          data: { userId: "seed_user_student_01", role: "TA" },
+        },
       );
+      expect(
+        [200, 201],
+        `Admin adding student1 as TA to hist210 -> ${enrollRes.status()}`,
+      ).toContain(enrollRes.status());
       const { id: enrollmentId } = await enrollRes.json();
       try {
         await injectSession(page, studentCtx);
         await page.goto(`${CORE_URL}/dashboard`);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await page.screenshot({
-          path: 'test-results/week15/student1-mixed-role-ta-dashboard.png',
+          path: "test-results/week15/student1-mixed-role-ta-dashboard.png",
           fullPage: true,
         });
 
         // Their still-STUDENT course (cosc101) — does the shell show TA-level controls there too?
         await page.goto(`${CORE_URL}/courses/${COURSES.cosc101}`);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await page.screenshot({
-          path: 'test-results/week15/student1-mixed-role-cosc101-still-student.png',
+          path: "test-results/week15/student1-mixed-role-cosc101-still-student.png",
           fullPage: true,
         });
       } finally {

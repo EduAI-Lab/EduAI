@@ -12,10 +12,10 @@
  * and carry only `has*` flags, so `onLoadDetail` below hands the shared view a
  * fetcher for `GET /api/admin/bug-reports/:id`.
  */
-import { BugReportsAdminView } from '@eduai/ui';
-import type { AdminBugReportRow, BugReportStatus } from '@eduai/ui';
+import { BugReportsAdminView } from "@eduai/ui";
+import type { AdminBugReportRow, BugReportStatus } from "@eduai/ui";
 
-import api from '~/lib/api';
+import api from "~/lib/api";
 
 export default function BugReportsTab({ initialReports }: { initialReports: AdminBugReportRow[] }) {
   return (

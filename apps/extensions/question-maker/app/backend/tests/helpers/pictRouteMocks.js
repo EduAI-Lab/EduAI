@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 /**
  * Shared mock factories + session/enrollment stubs for the QM route-level
@@ -14,11 +14,11 @@ export function mockAuthService() {
 /** `overrides` merges into the base test config (e.g. `{ maxQuestions: 50 }`). */
 export function mockSettings(overrides = {}) {
   const cfg = {
-    coreUrl: 'http://core.test',
-    eduaiApiKey: 'k',
-    corsOrigins: ['*'],
-    nodeEnv: 'test',
-    logLevel: 'silent',
+    coreUrl: "http://core.test",
+    eduaiApiKey: "k",
+    corsOrigins: ["*"],
+    nodeEnv: "test",
+    logLevel: "silent",
     ...overrides,
   };
   return { config: cfg, default: cfg };
@@ -28,7 +28,7 @@ export function mockSettings(overrides = {}) {
 export function mockCoreApiService(mockEnrollments, overrides = {}) {
   return {
     getCourseEnrollmentsFromCore: mockEnrollments,
-    getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
+    getCourseFromCore: vi.fn().mockResolvedValue({ id: "cuid-core-course", department: "COSC" }),
     getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
     ...overrides,
   };
@@ -36,7 +36,10 @@ export function mockCoreApiService(mockEnrollments, overrides = {}) {
 
 /** Stubs global fetch so authService's session lookup resolves to `user`. */
 export function stubSessionUser(user) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ user }) }),
+  );
 }
 
 /** Sets the mocked Core enrollment for `userId`, or none if `role` is falsy. */

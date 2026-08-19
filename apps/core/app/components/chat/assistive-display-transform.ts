@@ -11,10 +11,7 @@
  * Step ladder or Top summary blocks are completed from those stages.
  */
 
-import {
-  parseEduaiDiagramBody,
-  type EduaiDiagramStage,
-} from "~/lib/ai/eduai-diagram-payload";
+import { parseEduaiDiagramBody, type EduaiDiagramStage } from "~/lib/ai/eduai-diagram-payload";
 import { EDUAI_DIAGRAM_FENCE_GLOBAL } from "~/lib/ai/eduai-diagram-type";
 
 /** Heading line that opens the Top summary / TLDR block (case-insensitive). */
@@ -136,9 +133,7 @@ function dropDuplicateRemainderBlocks(
 
   const blocks = remainder.split(/\n{2,}/);
   const kept = blocks.filter(
-    (block) =>
-      block.trim() !== "" &&
-      !isDuplicateRemainderBlock(block, stageKeys, renderedProse),
+    (block) => block.trim() !== "" && !isDuplicateRemainderBlock(block, stageKeys, renderedProse),
   );
   return kept.join("\n\n").trim();
 }
@@ -154,9 +149,7 @@ function isDuplicateRemainderBlock(
     .filter((line) => line !== "");
   if (lines.length === 0) return true;
 
-  const duplicates = lines.map((line) =>
-    isDuplicateRemainderLine(line, stageKeys, renderedProse),
-  );
+  const duplicates = lines.map((line) => isDuplicateRemainderLine(line, stageKeys, renderedProse));
 
   // A lead-in ending with ":" counts as duplicate when everything after it in
   // the block is duplicate list content (e.g. "Here's a sketch:" + stage list).
@@ -204,14 +197,15 @@ function normalizeProse(text: string): string {
 function synthesizeTldrLines(stages: EduaiDiagramStage[]): string | null {
   if (stages.length === 0) return null;
   return stages
-    .map((s) =>
-      s.detail ? `- **${s.label}** — ${s.detail}` : `- **${s.label}**`,
-    )
+    .map((s) => (s.detail ? `- **${s.label}** — ${s.detail}` : `- **${s.label}**`))
     .join("\n");
 }
 
 function normalizeLabelKey(label: string): string {
-  return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 function countListItems(block: string, pattern: RegExp): number {
@@ -246,17 +240,9 @@ function completeTldrFromStages(
   if (stages.length === 0) return existing || null;
 
   const bulletCount = countListItems(existing, /(?:^|\n)\s*[-*•]\s+/g);
-  const labelMatches = countMatchingStageLabels(
-    existing,
-    stages,
-    /(?:^|\n)\s*[-*•]\s+(.+)/g,
-  );
+  const labelMatches = countMatchingStageLabels(existing, stages, /(?:^|\n)\s*[-*•]\s+(.+)/g);
   // Keep only when count is enough AND labels largely cover diagram stages.
-  if (
-    existing &&
-    bulletCount >= stages.length &&
-    labelMatches >= Math.ceil(stages.length / 2)
-  ) {
+  if (existing && bulletCount >= stages.length && labelMatches >= Math.ceil(stages.length / 2)) {
     return existing;
   }
 
@@ -271,9 +257,7 @@ function completeTldrFromStages(
   const lines = stages.map((s) => {
     const prior = byLabel.get(normalizeLabelKey(s.label));
     if (prior) return `- ${prior.replace(/^[-*•]\s*/, "")}`;
-    return s.detail
-      ? `- **${s.label}** — ${s.detail}`
-      : `- **${s.label}**`;
+    return s.detail ? `- **${s.label}** — ${s.detail}` : `- **${s.label}**`;
   });
 
   return normalizeGaps(["**Top summary**", ...lines].join("\n"));
@@ -308,8 +292,7 @@ function completeStepLadderFromStages(
   const startLine = resolveStartHereLine(existing, stages[0]?.label ?? "first step");
 
   const steps = stages.map((s, i) => {
-    const prior =
-      byLabel.get(normalizeLabelKey(s.label)) ?? byIndex.get(i + 1) ?? null;
+    const prior = byLabel.get(normalizeLabelKey(s.label)) ?? byIndex.get(i + 1) ?? null;
     if (prior) return `${i + 1}. ${formatStepItem(s.label, prior)}`;
     return `${i + 1}. ${formatStepItem(s.label, s.detail || null)}`;
   });
@@ -373,10 +356,7 @@ function normalizeGaps(text: string): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function stripRanges(
-  content: string,
-  ranges: Array<{ start: number; end: number }>,
-): string {
+function stripRanges(content: string, ranges: Array<{ start: number; end: number }>): string {
   if (ranges.length === 0) return content;
   const sorted = [...ranges].sort((a, b) => a.start - b.start);
   let out = "";
@@ -471,7 +451,7 @@ function extractStepLadderSection(
       /^Sources:/i.test(trimmed) ||
       /^\*\*Sources/i.test(trimmed) ||
       /^\*\*Connects to/i.test(trimmed) ||
-      /^```/.test(trimmed) ||
+      trimmed.startsWith("```") ||
       (/^#{1,6}\s/.test(trimmed) && !STEP_LADDER_HEADING.test(trimmed))
     ) {
       break;
@@ -514,9 +494,7 @@ function extractEduaiDiagramFences(
   return fences;
 }
 
-function extractNextSection(
-  content: string,
-): { text: string; start: number; end: number } | null {
+function extractNextSection(content: string): { text: string; start: number; end: number } | null {
   const match = /\*\*Next\?\*\*[^\n]*/.exec(content);
   if (!match || match.index === undefined) return null;
   const start = match.index;

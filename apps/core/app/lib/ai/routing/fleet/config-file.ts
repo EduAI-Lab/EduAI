@@ -139,8 +139,14 @@ export function loadFleetConfigFile(): FleetConfigFile | null {
     throw new FleetConfigError(`fleet config file at ${path} is not valid JSON: ${String(err)}`);
   }
 
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { servers?: unknown }).servers)) {
-    throw new FleetConfigError(`fleet config file at ${path} must have a top-level "servers" array`);
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !Array.isArray((parsed as { servers?: unknown }).servers)
+  ) {
+    throw new FleetConfigError(
+      `fleet config file at ${path} must have a top-level "servers" array`,
+    );
   }
 
   const servers = (parsed as { servers: unknown[] }).servers.map((entry, index) =>
@@ -150,7 +156,9 @@ export function loadFleetConfigFile(): FleetConfigFile | null {
   const ids = new Set<string>();
   for (const server of servers) {
     if (ids.has(server.id)) {
-      throw new FleetConfigError(`fleet config file at ${path} has a duplicate server id: ${server.id}`);
+      throw new FleetConfigError(
+        `fleet config file at ${path} has a duplicate server id: ${server.id}`,
+      );
     }
     ids.add(server.id);
   }

@@ -120,7 +120,7 @@ const URL_USERINFO_RE = /\/\/[^/@\s"']+:[^@\s"']+@/g;
  * long non-matching run is rejected at one position instead of at every offset.
  */
 const SENSITIVE_KEY_PREFIX_RE =
-  /(?<![A-Za-z0-9_.\-])(["']?)([A-Za-z_][A-Za-z0-9_.\-]{0,63})\1\s*[:=]\s*/g;
+  /(?<![A-Za-z0-9_.-])(["']?)([A-Za-z_][A-Za-z0-9_.-]{0,63})\1\s*[:=]\s*/g;
 
 /**
  * The value half, matched sticky at the position the key pattern stopped.
@@ -431,21 +431,17 @@ export function sanitizeSensitiveData(
     const record = value as Record<string, unknown>;
     // HAR-style header rows: `{ name: "Cookie", value: "session=…" }`
     if (isHarHeaderEntry(record) && shouldRedactKey(record.name)) {
-      result = {
-        ...Object.fromEntries(
-          Object.entries(record).map(([key, entry]) =>
-            key === "value"
-              ? [key, REDACTED_VALUE]
-              : [key, typeof entry === "string" ? redactSecretValuesInString(entry) : entry],
-          ),
+      result = Object.fromEntries(
+        Object.entries(record).map(([key, entry]) =>
+          key === "value"
+            ? [key, REDACTED_VALUE]
+            : [key, typeof entry === "string" ? redactSecretValuesInString(entry) : entry],
         ),
-      };
+      );
     } else {
       const sanitized: Record<string, unknown> = {};
       for (const [key, entry] of Object.entries(record)) {
-        sanitized[key] = shouldRedactKey(key)
-          ? REDACTED_VALUE
-          : sanitizeSensitiveData(entry, seen);
+        sanitized[key] = shouldRedactKey(key) ? REDACTED_VALUE : sanitizeSensitiveData(entry, seen);
       }
       result = sanitized;
     }

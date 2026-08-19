@@ -1,9 +1,6 @@
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import { buildEduaiDiagramFence } from "~/lib/ai/eduai-diagram-payload";
-import {
-  hasEduaiDiagramFence,
-  resolveEduaiDiagramTypeId,
-} from "~/lib/ai/eduai-diagram-type";
+import { hasEduaiDiagramFence, resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
 
 /**
  * Version stamp for the ADHD Assist response-format policy. Logged on every

@@ -22,7 +22,7 @@
  *   `server/src/routes/modules.js`.
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 async function ensureTopicMapping(tx, options) {
   const { sourceTopicId, sourceTopicById, topicIdMap, targetTopicsByName, targetCourseId } =
@@ -70,13 +70,13 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
       courseOfferingId: sourceCourseId,
       ...(Array.isArray(moduleIds) && moduleIds.length > 0 ? { id: { in: moduleIds } } : {}),
     },
-    orderBy: { position: 'asc' },
+    orderBy: { position: "asc" },
     include: {
       lessons: {
-        orderBy: { position: 'asc' },
+        orderBy: { position: "asc" },
         include: {
           activities: {
-            orderBy: { position: 'asc' },
+            orderBy: { position: "asc" },
             include: { secondaryTopics: true },
           },
         },
@@ -137,7 +137,7 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
           });
 
           if (!targetMainTopicId) {
-            throw new Error('Failed to map main topic while cloning activity.');
+            throw new Error("Failed to map main topic while cloning activity.");
           }
 
           const mappedSecondaryIds = [];
@@ -195,11 +195,11 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
 
   const lessons = await prisma.lesson.findMany({
     where: { id: { in: sourceLessonIds } },
-    orderBy: { position: 'asc' },
+    orderBy: { position: "asc" },
     include: {
       module: { select: { courseOfferingId: true } },
       activities: {
-        orderBy: { position: 'asc' },
+        orderBy: { position: "asc" },
         include: { secondaryTopics: true },
       },
     },
@@ -257,7 +257,7 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
         });
 
         if (!targetMainTopicId) {
-          throw new Error('Failed to map main topic while cloning activity.');
+          throw new Error("Failed to map main topic while cloning activity.");
         }
 
         const mappedSecondaryIds = [];

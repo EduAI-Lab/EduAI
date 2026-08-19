@@ -32,11 +32,7 @@ const monorepoRoot = path.resolve(coreDir, "../..");
 // Module ids reach plugins posix-normalized, but the separator class keeps the
 // match correct even if a raw Windows path (`\node_modules\react\`) slips in.
 function manualChunks(id: string): string | undefined {
-  if (
-    /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/.test(
-      id,
-    )
-  ) {
+  if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/.test(id)) {
     return "vendor-react";
   }
   return undefined;
@@ -44,11 +40,9 @@ function manualChunks(id: string): string | undefined {
 
 export default defineConfig(({ mode, isSsrBuild }) => {
   const env = loadEnv(mode, coreDir, "");
-  const hmrPublicHost =
-    env.DEV_SERVER_HMR_HOST?.trim() || process.env.DEV_SERVER_HMR_HOST?.trim();
+  const hmrPublicHost = env.DEV_SERVER_HMR_HOST?.trim() || process.env.DEV_SERVER_HMR_HOST?.trim();
   const hmrClientPortRaw =
-    env.DEV_SERVER_HMR_CLIENT_PORT?.trim() ||
-    process.env.DEV_SERVER_HMR_CLIENT_PORT?.trim();
+    env.DEV_SERVER_HMR_CLIENT_PORT?.trim() || process.env.DEV_SERVER_HMR_CLIENT_PORT?.trim();
   const hmrClientPort = Number(hmrClientPortRaw || "443") || 443;
 
   return {
@@ -73,9 +67,7 @@ export default defineConfig(({ mode, isSsrBuild }) => {
       manifest: true,
       // Client build only — the SSR bundle is a single file and the React
       // Router server build rejects manualChunks.
-      ...(isSsrBuild
-        ? {}
-        : { rollupOptions: { output: { manualChunks } } }),
+      ...(isSsrBuild ? {} : { rollupOptions: { output: { manualChunks } } }),
     },
     ssr: {
       // Server bundle is ESM (react-router default). Packages that need bundling:

@@ -5,6 +5,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
 import pLimit from "p-limit";
 import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
+import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
 import prisma from "../prisma.server";
 import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
@@ -160,10 +161,13 @@ async function pgvectorSupportsIterativeScan(): Promise<boolean> {
           IVFFLAT_ITERATIVE_SCAN_MIN_VERSION,
         );
       } catch (err) {
-        console.warn("[embeddings] failed to read pgvector extension version; " +
-          "skipping ivfflat.iterative_scan / ivfflat.max_probes", {
-          error: err instanceof Error ? err.message : String(err),
-        });
+        console.warn(
+          "[embeddings] failed to read pgvector extension version; " +
+            "skipping ivfflat.iterative_scan / ivfflat.max_probes",
+          {
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
         return false;
       }
     })();
@@ -289,11 +293,7 @@ function chunkTextBySize(text: string, maxChunkSize: number, overlap: number): s
   return chunks;
 }
 
-function enforceMaxChunkSize(
-  chunks: string[],
-  maxChunkSize: number,
-  overlap: number,
-): string[] {
+function enforceMaxChunkSize(chunks: string[], maxChunkSize: number, overlap: number): string[] {
   const out: string[] = [];
   for (const chunk of chunks) {
     if (chunk.length <= maxChunkSize) {
@@ -310,10 +310,7 @@ function ollamaEmbedEndpoint(): string {
 }
 
 /** Native Ollama `/api/embed` (same contract as `curl`); avoids AI SDK provider batch quirks. */
-async function fetchOllamaEmbeddings(
-  modelId: string,
-  values: string[],
-): Promise<number[][]> {
+async function fetchOllamaEmbeddings(modelId: string, values: string[]): Promise<number[][]> {
   const res = await fetch(ollamaEmbedEndpoint(), {
     method: "POST",
     headers: {
@@ -327,9 +324,7 @@ async function fetchOllamaEmbeddings(
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(
-      `${res.status} ${res.statusText}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
-    );
+    throw new Error(`${res.status} ${res.statusText}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
   }
   const data = (await res.json()) as { embeddings?: number[][] };
   const embeddings = data.embeddings;
@@ -382,6 +377,7 @@ const QUERY_EMBED_CACHE_MAX = Math.min(
 
 export type EmbeddingProviderKind =
   | "ollama-local"
+  | "vllm-local"
   | "openrouter"
   | "google"
   | "openai";
@@ -617,14 +613,38 @@ function createOllamaEmbeddingClient() {
   });
 }
 
+function createVllmEmbeddingClient() {
+  const configuredBaseURL = process.env.VLLM_EMBEDDING_BASE_URL?.trim();
+  if (!configuredBaseURL) return null;
+
+  const apiKey = process.env.VLLM_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("VLLM_API_KEY is required for the configured local embedding endpoint");
+  }
+
+  let baseURL: string;
+  try {
+    baseURL = resolveAllowedVllmBaseUrl(configuredBaseURL).replace(/\/$/, "");
+  } catch (error) {
+    throw new Error(
+      `VLLM_EMBEDDING_BASE_URL is not allowed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+
+  return createOpenAI({
+    apiKey,
+    baseURL,
+    headers: cmps01InternalAuthHeadersForUrl(baseURL),
+  });
+}
+
 function createOpenRouterEmbeddingClient() {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) return null;
 
   const referer =
-    process.env.OPENROUTER_HTTP_REFERER?.trim() ||
-    process.env.BETTER_AUTH_URL?.trim() ||
-    undefined;
+    process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.BETTER_AUTH_URL?.trim() || undefined;
 
   return createOpenAI({
     apiKey,
@@ -636,13 +656,25 @@ function createOpenRouterEmbeddingClient() {
   });
 }
 
-function getLocalEmbeddingModel(
-  settings: EffectiveEmbeddingSettings,
-): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
+function getLocalEmbeddingModel(settings: EffectiveEmbeddingSettings): {
+  model: EmbeddingModel<string>;
+  kind: EmbeddingProviderKind;
+} {
+  const vllm = createVllmEmbeddingClient();
+  if (vllm) {
+    const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
+    logEmbeddingProvider("vllm-local", settings, modelId);
+    return { model: vllm.embedding(modelId), kind: "vllm-local" };
+  }
+
   const ollama = createOllamaEmbeddingClient();
   const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
   logEmbeddingProvider("ollama-local", settings, modelId);
   return { model: ollama.embedding(modelId), kind: "ollama-local" };
+}
+
+function usesVllmEmbeddingEndpoint(): boolean {
+  return Boolean(process.env.VLLM_EMBEDDING_BASE_URL?.trim());
 }
 
 /** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
@@ -665,9 +697,10 @@ export function resolveMaterialChunks(
  * Cloud embedding model for the configured dimension.
  * Resolution: OpenRouter → Google (3072 only) → OpenAI.
  */
-function getCloudEmbeddingModel(
-  settings: EffectiveEmbeddingSettings,
-): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
+function getCloudEmbeddingModel(settings: EffectiveEmbeddingSettings): {
+  model: EmbeddingModel<string>;
+  kind: EmbeddingProviderKind;
+} {
   const dimension = getExpectedEmbeddingDimension();
 
   if (dimension === 1024) {
@@ -714,7 +747,9 @@ function getCloudEmbeddingModel(
   const openRouter = createOpenRouterEmbeddingClient();
   if (openRouter) {
     const modelId =
-      settings.model || process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || DEFAULT_OPENROUTER_GEMINI_MODEL;
+      settings.model ||
+      process.env.OPENROUTER_EMBEDDING_MODEL?.trim() ||
+      DEFAULT_OPENROUTER_GEMINI_MODEL;
     logEmbeddingProvider("openrouter", settings, modelId);
     return { model: openRouter.embedding(modelId), kind: "openrouter" };
   }
@@ -756,7 +791,7 @@ async function embedWithConfiguredProvider<T>(
   } catch (err) {
     if (settings.wantsLocal) {
       throw new Error(
-        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
+        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix the configured local embedding service or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
         { cause: err },
       );
     }
@@ -779,14 +814,20 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += batchSize) {
     const batch = chunks.slice(i, i + batchSize);
-    const embeddings = settings.wantsLocal
-      ? await embedManyOllamaNative(settings.model, batch).catch((err) => {
-          throw wrapLocalEmbeddingError(settings.model, err);
-        })
-      : await embedWithConfiguredProvider(async (model) => {
-          const result = await embedMany({ model, values: batch });
-          return result.embeddings;
-        }, courseId);
+    const embeddings =
+      settings.wantsLocal && !usesVllmEmbeddingEndpoint()
+        ? await embedManyOllamaNative(settings.model, batch).catch((err) => {
+            throw wrapLocalEmbeddingError(settings.model, err);
+          })
+        : settings.wantsLocal
+          ? await embedWithConfiguredProvider(async (model) => {
+              const result = await embedMany({ model, values: batch });
+              return result.embeddings;
+            }, courseId)
+          : await embedWithConfiguredProvider(async (model) => {
+              const result = await embedMany({ model, values: batch });
+              return result.embeddings;
+            }, courseId);
 
     if (embeddings.length !== batch.length) {
       throw new Error(
@@ -816,15 +857,18 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
     return hit.embedding;
   }
 
-  const embedding = settings.wantsLocal
-    ? (
-        await embedManyOllamaNative(settings.model, [query]).catch((err) => {
-          throw wrapLocalEmbeddingError(settings.model, err);
-        })
-      )[0]
-    : (
-        await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId)
-      ).embedding;
+  const embedding =
+    settings.wantsLocal && !usesVllmEmbeddingEndpoint()
+      ? (
+          await embedManyOllamaNative(settings.model, [query]).catch((err) => {
+            throw wrapLocalEmbeddingError(settings.model, err);
+          })
+        )[0]
+      : settings.wantsLocal
+        ? (await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId))
+            .embedding
+        : (await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId))
+            .embedding;
 
   assertEmbeddingDimension(embedding, "generateEmbedding");
 
@@ -863,7 +907,9 @@ export async function findRelevantContent(
   const courseSettings = await getCourseRagSettings(courseId);
   const effectiveLimit = courseSettings?.ragTopK ?? limit;
   const threshold =
-    courseSettings?.ragSimilarityThreshold ?? similarityThreshold ?? getDefaultRagSimilarityThreshold();
+    courseSettings?.ragSimilarityThreshold ??
+    similarityThreshold ??
+    getDefaultRagSimilarityThreshold();
 
   const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
 
@@ -932,9 +978,7 @@ export async function findRelevantContent(
     // to the resulting candidate set.
     const [, hybridResults] = await prisma.$transaction([
       prisma.$executeRaw(applyIvfflatSettings),
-      prisma.$queryRaw<
-        Array<{ content: string; score: number; material_title: string }>
-      >`
+      prisma.$queryRaw<Array<{ content: string; score: number; material_title: string }>>`
         WITH vector_candidates AS MATERIALIZED (
           SELECT
             mc.content,
@@ -1126,38 +1170,38 @@ export async function reEmbedCourseMaterials(
       limit(async () => {
         const content = material.rawText!.trim();
 
+        try {
+          await prisma.courseMaterial.update({
+            where: { id: material.id },
+            data: { status: "PROCESSING" },
+          });
+          await processMaterialEmbeddings(material.id, content, {
+            replace: true,
+            transactionOptions: {
+              maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+              timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+            },
+          });
+          await prisma.courseMaterial.update({
+            where: { id: material.id },
+            data: { status: "READY", processedAt: new Date() },
+          });
+          processed += 1;
+        } catch (err) {
+          failed.push(material.id);
           try {
             await prisma.courseMaterial.update({
               where: { id: material.id },
-              data: { status: "PROCESSING" },
+              data: { status: "FAILED" },
             });
-            await processMaterialEmbeddings(material.id, content, {
-              replace: true,
-              transactionOptions: {
-                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
-                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
-              },
+          } catch (statusError) {
+            console.error("[re-embed] failed to persist material failure", {
+              courseId,
+              materialId: material.id,
+              error: statusError instanceof Error ? statusError.message : String(statusError),
             });
-            await prisma.courseMaterial.update({
-              where: { id: material.id },
-              data: { status: "READY", processedAt: new Date() },
-            });
-            processed += 1;
-          } catch (err) {
-            failed.push(material.id);
-            try {
-              await prisma.courseMaterial.update({
-                where: { id: material.id },
-                data: { status: "FAILED" },
-              });
-            } catch (statusError) {
-              console.error("[re-embed] failed to persist material failure", {
-                courseId,
-                materialId: material.id,
-                error: statusError instanceof Error ? statusError.message : String(statusError),
-              });
-            }
-            console.error("[re-embed] material failed", {
+          }
+          console.error("[re-embed] material failed", {
             courseId,
             materialId: material.id,
             title: material.title,
@@ -1210,14 +1254,15 @@ export async function insertMaterialEmbeddingsBatched(
   }
 
   const rowLimit = resolveMaterialEmbeddingInsertBatchSize();
-  for (let start = 0; start < chunksByIndex.length; ) {
+  for (let start = 0; start < chunksByIndex.length;) {
     const batch = [] as Array<{ chunk: { id: string }; embedding: number[] }>;
     let estimatedBytes = 0;
     while (start + batch.length < chunksByIndex.length && batch.length < rowLimit) {
       const index = start + batch.length;
       const embedding = embeddings[index].embedding;
       const rowBytes = embedding.length * 8 + 128;
-      if (batch.length > 0 && estimatedBytes + rowBytes > MATERIAL_EMBEDDING_INSERT_MAX_BYTES) break;
+      if (batch.length > 0 && estimatedBytes + rowBytes > MATERIAL_EMBEDDING_INSERT_MAX_BYTES)
+        break;
       batch.push({ chunk: chunksByIndex[index], embedding });
       estimatedBytes += rowBytes;
     }
@@ -1274,8 +1319,9 @@ export async function processMaterialEmbeddings(
     // $executeRaw instead, following the same Prisma.sql/Prisma.join pattern
     // insertMaterialEmbeddingsBatched (above) already uses for the sibling
     // Unsupported("vector") column on MaterialEmbedding.
-    const chunkRows = chunks.map((chunkContent, i) =>
-      Prisma.sql`(${randomUUID()}, ${materialId}, ${i}, ${chunkContent}, NOW())`,
+    const chunkRows = chunks.map(
+      (chunkContent, i) =>
+        Prisma.sql`(${randomUUID()}, ${materialId}, ${i}, ${chunkContent}, NOW())`,
     );
     await tx.$executeRaw`
       INSERT INTO material_chunks (id, "materialId", index, content, "createdAt")

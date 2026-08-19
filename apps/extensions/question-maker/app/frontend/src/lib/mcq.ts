@@ -15,7 +15,7 @@
  * When `selectAllThatApply` is set with `correctAnswers`, multiple letters may
  * be marked correct.
  */
-const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
+const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 
 /**
  * Returns a boolean per choice (same order as `choices`) indicating which
@@ -32,7 +32,7 @@ export type McqChoiceLike = {
 export function markCorrectChoices(
   answer: string | null | undefined,
   choices: McqChoiceLike[],
-  options?: { selectAllThatApply?: boolean; correctAnswers?: string[] | null }
+  options?: { selectAllThatApply?: boolean; correctAnswers?: string[] | null },
 ): boolean[] {
   if (
     options?.selectAllThatApply &&
@@ -40,13 +40,13 @@ export function markCorrectChoices(
     options.correctAnswers.length > 0
   ) {
     const set = new Set(
-      options.correctAnswers.map((l) => (l ?? '').trim().toLowerCase()).filter(Boolean)
+      options.correctAnswers.map((l) => (l ?? "").trim().toLowerCase()).filter(Boolean),
     );
-    return choices.map((c) => set.has((c.letter ?? '').trim().toLowerCase()));
+    return choices.map((c) => set.has((c.letter ?? "").trim().toLowerCase()));
   }
 
   const a = norm(answer);
-  if (a === '') return choices.map(() => false);
+  if (a === "") return choices.map(() => false);
 
   const matchesLetter = choices.some((c) => norm(c.letter) === a);
   return choices.map((c) => (matchesLetter ? norm(c.letter) === a : norm(c.text) === a));

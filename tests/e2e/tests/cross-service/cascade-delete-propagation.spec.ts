@@ -9,37 +9,37 @@
  * both extensions, delete it in Core, and assert neither extension has an
  * orphaned copy left behind.
  */
-import { test, expect } from '@playwright/test';
-import { AI_TUTOR_API_URL, CORE_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { createAdmin, createInstructor } from '../helpers/auth';
-import { importQmCourseForInstructor } from '../helpers/qm-courses';
+import { test, expect } from "@playwright/test";
+import { AI_TUTOR_API_URL, CORE_URL, QM_BACKEND_URL } from "../../playwright.config";
+import { createAdmin, createInstructor } from "../helpers/auth";
+import { importQmCourseForInstructor } from "../helpers/qm-courses";
 
 const AT = AI_TUTOR_API_URL;
 const QM = QM_BACKEND_URL;
 const RUN_SUFFIX = Date.now().toString().slice(-5);
 
-test.describe('Course deletion in Core cascades to QM and AI Tutor', () => {
-  test('deleting a Core course removes the mirrored course from both extensions', async ({
+test.describe("Course deletion in Core cascades to QM and AI Tutor", () => {
+  test("deleting a Core course removes the mirrored course from both extensions", async ({
     playwright,
   }) => {
     const adminCtx = await playwright.request.newContext();
     const instrCtx = await playwright.request.newContext();
 
     try {
-      await createAdmin(adminCtx, { prefix: 'cascade-admin' });
-      await createInstructor(instrCtx, { prefix: 'cascade-instr' });
+      await createAdmin(adminCtx, { prefix: "cascade-admin" });
+      await createInstructor(instrCtx, { prefix: "cascade-instr" });
       const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
 
       // Create a Core course assigned to the instructor.
       const createRes = await adminCtx.post(`${CORE_URL}/api/courses`, {
         form: {
-          name: 'Cascade Delete Test Course',
+          name: "Cascade Delete Test Course",
           code: `CASC-${RUN_SUFFIX}`,
-          section: '001',
-          term: 'W1',
-          year: '2026',
-          startDate: '2026-09-08',
-          department: 'COSC',
+          section: "001",
+          term: "W1",
+          year: "2026",
+          startDate: "2026-09-08",
+          department: "COSC",
           instructorUserIds: instrId,
         },
       });

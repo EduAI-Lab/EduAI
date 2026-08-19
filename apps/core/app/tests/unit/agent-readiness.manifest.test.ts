@@ -54,7 +54,11 @@ describe("agent-readiness manifest (#672)", () => {
   });
 
   it("lists every admin write tool on a ready endpoint", () => {
-    const toolsOnReady = new Set(agentReadyEndpoints().map((e) => e.adminChatTool).filter(Boolean));
+    const toolsOnReady = new Set(
+      agentReadyEndpoints()
+        .map((e) => e.adminChatTool)
+        .filter(Boolean),
+    );
     for (const tool of ADMIN_WRITE_TOOL_NAMES) {
       expect(toolsOnReady.has(tool), `admin tool ${tool} not on a ready endpoint`).toBe(true);
     }

@@ -46,11 +46,7 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 gap-2"
-        >
+        <Button type="button" variant="outline" className="h-9 gap-2">
           <IconMessage className="h-4 w-4" />
           <span>System Prompt</span>
         </Button>
@@ -59,7 +55,8 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
         <DialogHeader>
           <DialogTitle>System Prompt Settings</DialogTitle>
           <DialogDescription>
-            Set a custom system prompt for this chat. This will override the default prompt and apply to all messages in this conversation.
+            Set a custom system prompt for this chat. This will override the default prompt and
+            apply to all messages in this conversation.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
@@ -90,4 +87,3 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
     </Dialog>
   );
 }
-

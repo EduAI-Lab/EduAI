@@ -93,14 +93,11 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("rejects the legacy auto-hybrid mode before course or model routing", async () => {
-    const res = await action(
-      makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
       error: "Unsupported routing model",
-      details:
-        'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+      details: 'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
     });
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
@@ -111,9 +108,7 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
       autoRulesEnabled: false,
     });
 
-    const res = await action(
-      makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
       error: "Routing model disabled",
@@ -122,9 +117,7 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("rejects Auto (rules) when the administrator disables rule routing", async () => {
-    const res = await action(
-      makeArgs({ messages: [], model: "auto", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
       error: "Routing model disabled",
@@ -359,9 +352,7 @@ describe("POST /api/chat — chat isolation guards (#225 RAG-03)", () => {
       chatbotType: null,
     } as never);
 
-    const res = await action(
-      makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }),
-    );
+    const res = await action(makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }));
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "COURSE_MISMATCH" });

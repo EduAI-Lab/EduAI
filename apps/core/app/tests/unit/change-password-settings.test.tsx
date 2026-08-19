@@ -41,9 +41,7 @@ describe("ChangePasswordSettings", () => {
     expect(screen.getByLabelText("Current password")).toBeInTheDocument();
     expect(screen.getByLabelText("New password")).toBeInTheDocument();
     expect(screen.getByLabelText("Confirm new password")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /change password/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /change password/i })).toBeDisabled();
   });
 
   it("flags a mismatched confirmation and keeps submit disabled", () => {
@@ -54,9 +52,7 @@ describe("ChangePasswordSettings", () => {
     expect(screen.getByText("Passwords don't match")).toBeInTheDocument();
     const confirmInput = screen.getByLabelText("Confirm new password");
     expect(confirmInput).toHaveAttribute("aria-invalid", "true");
-    expect(
-      screen.getByRole("button", { name: /change password/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /change password/i })).toBeDisabled();
   });
 
   it("enables submit once all fields are filled and passwords match", () => {
@@ -64,9 +60,7 @@ describe("ChangePasswordSettings", () => {
 
     fillForm();
 
-    expect(
-      screen.getByRole("button", { name: /change password/i }),
-    ).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /change password/i })).not.toBeDisabled();
   });
 
   it("submits successfully, shows a success message, and clears the fields", async () => {
@@ -81,9 +75,7 @@ describe("ChangePasswordSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: /change password/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Password changed successfully.",
-      ),
+      expect(screen.getByRole("status")).toHaveTextContent("Password changed successfully."),
     );
 
     expect(authClient.changePassword).toHaveBeenCalledWith({
@@ -91,12 +83,8 @@ describe("ChangePasswordSettings", () => {
       newPassword: "NewPass123!",
       revokeOtherSessions: false,
     });
-    expect(
-      (screen.getByLabelText("Current password") as HTMLInputElement).value,
-    ).toBe("");
-    expect(
-      (screen.getByLabelText("New password") as HTMLInputElement).value,
-    ).toBe("");
+    expect((screen.getByLabelText("Current password") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("New password") as HTMLInputElement).value).toBe("");
   });
 
   it("shows the server error message when the API call returns an error", async () => {
@@ -111,9 +99,7 @@ describe("ChangePasswordSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: /change password/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Current password is incorrect",
-      ),
+      expect(screen.getByRole("alert")).toHaveTextContent("Current password is incorrect"),
     );
   });
 

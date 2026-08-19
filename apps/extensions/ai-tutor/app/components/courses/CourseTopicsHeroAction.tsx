@@ -17,10 +17,10 @@
  *     show), or for EduAI-sourced courses (no manual action needed — #1031).
  * Related: hooks/useCourseTopics
  */
-import { CourseTopicsHeroAction as SharedCourseTopicsHeroAction } from '@eduai/ui';
-import { useAtPermissions } from '~/hooks/useAtPermissions';
-import type { CourseTopicsState } from '~/hooks/useCourseTopics';
-import type { Course } from '~/lib/types';
+import { CourseTopicsHeroAction as SharedCourseTopicsHeroAction } from "@eduai/ui";
+import { useAtPermissions } from "~/hooks/useAtPermissions";
+import type { CourseTopicsState } from "~/hooks/useCourseTopics";
+import type { Course } from "~/lib/types";
 
 export function CourseTopicsHeroAction({
   course,
@@ -47,7 +47,7 @@ export function CourseTopicsHeroAction({
         await courseTopics.createTopic(name);
       }}
       createDialogDescription="Add a new topic to organize this course's content."
-      onCreateError={(error) => console.error('Failed to create topic', error)}
+      onCreateError={(error) => console.error("Failed to create topic", error)}
     />
   );
 }

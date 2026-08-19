@@ -14,7 +14,12 @@
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

@@ -17,14 +17,15 @@ more. Core stays a node process because it is SSR.
 
 ## Process management
 
-Three **system** units, owned by the `eduai-dev` group:
+Four **system** units, owned by the `eduai-dev` group:
 
 | Unit | Port |
 |------|------|
 | `eduai-core.service` | `:3000` |
+| `eduai-cron-worker.service` | no HTTP port; runs scheduled jobs |
 | `eduai-aitutor-server.service` | `:4000` |
 | `eduai-qm-backend.service` | `:8000` |
-| `eduai-dev.target` | starts/stops all three |
+| `eduai-dev.target` | starts/stops all four |
 
 These are system units, not `systemctl --user` units, so **any** `eduai-dev`
 member can restart the stack — no `loginctl enable-linger`, no being locked to
@@ -33,18 +34,38 @@ the group lifecycle control over `eduai-*` units).
 
 ### One-time install on s378
 
+For a new host, run the installer before the first build. Existing hosts upgrading
+to the dedicated cron worker must also rerun it once so
+`eduai-cron-worker.service` is installed and enabled.
+
 ```bash
+sudo useradd -r -s /bin/false eduai-cron          # once, if absent
+sudo usermod -a -G eduai-dev eduai-cron           # lets the worker read shared env
 bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
 bash infra/s378/go-live-build.sh             # build + start
 ```
+
+The installer copies `infra/cron/*.sh` to `/opt/eduai/cron` with
+`eduai-cron:eduai-cron` ownership and `0750` mode. The production cron secrets
+file must be readable by the worker but no other users:
+`sudo chown root:eduai-cron /etc/eduai/cron.env && sudo chmod 640 /etc/eduai/cron.env`.
+Deploys refresh that directory through the root-owned,
+argument-less `/usr/local/sbin/eduai-cron-sync` helper. Its sudoers entry fixes
+both source and destination, so deploy users do not receive general-purpose
+root `install` or `cp` privileges.
+It also creates the worker-owned local backup directory and audit-log directory:
+`/var/backups/eduai` (`eduai-cron:eduai-cron`, `0750`) and `/var/log/eduai`
+(`eduai-cron:adm`, `0750`).
 
 ### Day-to-day
 
 ```bash
 systemctl status eduai-dev.target
-systemctl restart eduai-dev.target       # all three — no sudo, no --user
+systemctl restart eduai-dev.target       # all four — no sudo, no --user
 systemctl restart eduai-aitutor-server   # one app
 journalctl -u eduai-core -f              # logs
+systemctl status eduai-cron-worker.service
+journalctl -u eduai-cron-worker.service -f
 ```
 
 Restarting picks up **server-side** `.env` changes. A `VITE_`-prefixed value is
@@ -132,8 +153,10 @@ for h in dev.eduai dev.aitutor.eduai dev.questionmaker.eduai; do
   printf '%s -> ' "$h"; curl -sk -o /dev/null -w '%{http_code}\n' "https://$h.ok.ubc.ca/"
 done
 
-# systemd — three units, and nothing left under --user
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+# systemd — four units, and nothing left under --user
+systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
+systemctl status eduai-cron-worker.service --no-pager
+journalctl -u eduai-cron-worker.service -n 50 --no-pager
 systemctl --user list-units 'eduai*'        # expect empty
 pgrep -af 'nodemon|vite|react-router dev'   # expect empty
 

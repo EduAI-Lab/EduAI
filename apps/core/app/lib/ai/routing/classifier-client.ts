@@ -9,8 +9,7 @@ import { vllmThinkingDisabledFetch } from "~/lib/ai/vllm-thinking.server";
 
 export function createClassifierClient() {
   const vllmPort = process.env.VLLM_PORT || "8001";
-  let baseURL =
-    process.env.VLLM_BASE_URL?.trim() || `http://localhost:${vllmPort}`;
+  let baseURL = process.env.VLLM_BASE_URL?.trim() || `http://localhost:${vllmPort}`;
   baseURL = baseURL.replace(/\/$/, "");
   if (!baseURL.endsWith("/v1")) {
     baseURL = `${baseURL}/v1`;

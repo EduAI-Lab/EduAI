@@ -11,19 +11,19 @@
  * disable redirects (`maxRedirects: 0`), so the resolved address is re-validated
  * at connection time and a permitted host can't redirect the request elsewhere.
  */
-import net from 'node:net';
-import dns from 'node:dns';
+import net from "node:net";
+import dns from "node:dns";
 
 export class CanvasUrlValidationError extends Error {
   constructor(message) {
     super(message);
-    this.name = 'CanvasUrlValidationError';
+    this.name = "CanvasUrlValidationError";
   }
 }
 
 /** True for 10/8, 127/8, 169.254/16 (incl. cloud metadata), 172.16/12, 192.168/16, and 0.0.0.0/8. */
 function isPrivateIPv4(address) {
-  const parts = address.split('.').map(Number);
+  const parts = address.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
     return false;
   }
@@ -44,16 +44,16 @@ function isPrivateIPv4(address) {
  * `net.isIP` has already confirmed is a valid IPv6 literal).
  */
 function expandIPv6Groups(address) {
-  const [head, tail] = address.split('::');
-  const headGroups = head ? head.split(':') : [];
-  const tailGroups = tail ? tail.split(':') : [];
+  const [head, tail] = address.split("::");
+  const headGroups = head ? head.split(":") : [];
+  const tailGroups = tail ? tail.split(":") : [];
   if (tail === undefined) {
     // No '::' compression present.
     return headGroups.length === 8 ? headGroups.map((g) => parseInt(g, 16)) : null;
   }
   const missing = 8 - headGroups.length - tailGroups.length;
   if (missing < 0) return null;
-  const groups = [...headGroups, ...Array(missing).fill('0'), ...tailGroups];
+  const groups = [...headGroups, ...Array(missing).fill("0"), ...tailGroups];
   return groups.map((g) => parseInt(g, 16));
 }
 
@@ -64,16 +64,16 @@ function expandIPv6Groups(address) {
  */
 export function isPrivateIPv6(address) {
   const normalized = address.toLowerCase();
-  if (normalized === '::1' || normalized === '::') return true;
+  if (normalized === "::1" || normalized === "::") return true;
 
-  if (normalized.startsWith('::ffff:')) {
+  if (normalized.startsWith("::ffff:")) {
     // Node's URL parser normalizes an IPv4-mapped literal to hex groups
     // (e.g. `::ffff:127.0.0.1` -> `::ffff:7f00:1`), so handle both forms.
-    const embedded = normalized.slice('::ffff:'.length);
-    if (embedded.includes('.')) {
+    const embedded = normalized.slice("::ffff:".length);
+    if (embedded.includes(".")) {
       return isPrivateIPv4(embedded);
     }
-    const [hi, lo] = embedded.split(':').map((part) => parseInt(part, 16));
+    const [hi, lo] = embedded.split(":").map((part) => parseInt(part, 16));
     if (Number.isInteger(hi) && Number.isInteger(lo)) {
       const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
       return isPrivateIPv4(ipv4);
@@ -111,20 +111,22 @@ export function validateCanvasUrl(rawUrl) {
   try {
     parsed = new URL(rawUrl);
   } catch {
-    throw new CanvasUrlValidationError('Invalid Canvas URL format');
+    throw new CanvasUrlValidationError("Invalid Canvas URL format");
   }
 
-  if (parsed.protocol !== 'https:') {
-    throw new CanvasUrlValidationError('Canvas URL must use HTTPS');
+  if (parsed.protocol !== "https:") {
+    throw new CanvasUrlValidationError("Canvas URL must use HTTPS");
   }
 
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const ipVersion = net.isIP(hostname);
   if (
     (ipVersion === 4 && isPrivateIPv4(hostname)) ||
     (ipVersion === 6 && isPrivateIPv6(hostname))
   ) {
-    throw new CanvasUrlValidationError('Canvas URL may not target a private or reserved IP address');
+    throw new CanvasUrlValidationError(
+      "Canvas URL may not target a private or reserved IP address",
+    );
   }
 
   return parsed;
@@ -147,8 +149,8 @@ export function createPinnedLookup() {
         if (isPrivate) {
           return callback(
             new CanvasUrlValidationError(
-              `Canvas hostname resolved to a private or reserved address (${address})`
-            )
+              `Canvas hostname resolved to a private or reserved address (${address})`,
+            ),
           );
         }
       }

@@ -39,7 +39,7 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 const { processMaterialEmbeddings } = await import("~/lib/ai/embedding");
 
-const sampleEmbedding = new Array(1024).fill(0);
+const sampleEmbedding = Array.from({ length: 1024 }, () => 0);
 
 describe("processMaterialEmbeddings", () => {
   const originalProvider = process.env.EMBEDDING_PROVIDER;
