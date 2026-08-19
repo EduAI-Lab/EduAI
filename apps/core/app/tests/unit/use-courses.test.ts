@@ -196,22 +196,89 @@ describe("useCourses", () => {
     ).rejects.toThrow("duplicate code");
   });
 
-  it("updateCourse patches the loaded row in place without a refetch", async () => {
+  it("updateCourse PATCHes and refetches the filtered list + facets instead of patching the page", async () => {
     const { result } = renderHook(() => useCourses());
     await waitFor(() => expect(result.current.loading).toBe(false));
     const before = listUrls(mockFetch).length;
+    let facetCalls = 0;
     const updated = { ...course, name: "Renamed" };
-    mockFetch.mockImplementation((_url: string, init?: RequestInit) =>
-      Promise.resolve(init?.method === "PATCH" ? okJson(updated) : page()),
-    );
-
-    await act(async () => {
-      await result.current.updateCourse("course-1", { name: "Renamed" } as never);
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") return Promise.resolve(okJson(updated));
+      if (String(url).startsWith("/api/courses/facets")) {
+        facetCalls += 1;
+        return Promise.resolve(okJson({ status: [], term: [], department: [] }));
+      }
+      return Promise.resolve(page([updated]));
     });
 
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.updateCourse("course-1", { name: "Renamed" } as never);
+    });
+
+    expect(returned).toEqual(updated);
+    // The server owns filtering (#1263), so a mutation refetches list + facets
+    // rather than trusting a locally-patched row.
+    await waitFor(() => expect(listUrls(mockFetch).length).toBeGreaterThan(before));
+    expect(facetCalls).toBeGreaterThan(0);
     expect(result.current.courses).toEqual([updated]);
-    // An in-place edit can't move the row between pages, so no refetch.
-    expect(listUrls(mockFetch).length).toBe(before);
+  });
+
+  it("re-fetches the server-filtered list after an update that leaves the active status filter", async () => {
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setFilter("status", ["published"]));
+    await waitFor(() =>
+      expect(listUrls(mockFetch).some((u) => u.includes("status=published"))).toBe(true),
+    );
+
+    const before = listUrls(mockFetch).length;
+    const updated = { ...course, isPublished: false };
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") return Promise.resolve(okJson(updated));
+      if (String(url).startsWith("/api/courses/facets")) {
+        return Promise.resolve(
+          okJson({ status: ["published", "draft"], term: [], department: [] }),
+        );
+      }
+      // The server no longer matches the now-draft course under status=published.
+      return Promise.resolve(page([], 0));
+    });
+
+    await act(async () => {
+      await result.current.updateCourse("course-1", { isPublished: false } as never);
+    });
+
+    // The refetch still carries the active filter and reflects the server truth:
+    // the unpublished course disappears from the published-filter page.
+    expect(listUrls(mockFetch).length).toBeGreaterThan(before);
+    expect(listUrls(mockFetch).some((u) => u.includes("status=published"))).toBe(true);
+    await waitFor(() => expect(result.current.courses).toEqual([]));
+    expect(result.current.total).toBe(0);
+  });
+
+  it("refreshes facets when an update changes a facet-bearing property (department)", async () => {
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = listUrls(mockFetch).length;
+    let facetCalls = 0;
+    const updated = { ...course, department: "MATH" };
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") return Promise.resolve(okJson(updated));
+      if (String(url).startsWith("/api/courses/facets")) {
+        facetCalls += 1;
+        return Promise.resolve(okJson({ status: [], term: [], department: ["MATH"] }));
+      }
+      return Promise.resolve(page([updated]));
+    });
+
+    await act(async () => {
+      await result.current.updateCourse("course-1", { department: "MATH" } as never);
+    });
+
+    expect(listUrls(mockFetch).length).toBeGreaterThan(before);
+    expect(facetCalls).toBeGreaterThan(0);
   });
 
   it("deleteCourse refetches, because removing a row pulls the next page's first row in", async () => {
