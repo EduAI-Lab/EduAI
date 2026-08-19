@@ -1,11 +1,14 @@
-const PRODUCTION_CANVAS_URL = 'https://canvas.ubc.ca';
+const PRODUCTION_CANVAS_URL = "https://canvas.ubc.ca";
 
-const RESERVED_HOSTS = new Set(['localhost', 'localhost.localdomain']);
-const RESERVED_SUFFIXES = ['.test', '.invalid', '.localhost', '.local', '.example'];
+const RESERVED_HOSTS = new Set(["localhost", "localhost.localdomain"]);
+const RESERVED_SUFFIXES = [".test", ".invalid", ".localhost", ".local", ".example"];
 
 function isPrivateIpv4(hostname: string): boolean {
-  const octets = hostname.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+  const octets = hostname.split(".").map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
     return false;
   }
 
@@ -29,12 +32,12 @@ export function isUsableCanvasDefaultUrl(value: string): boolean {
     const url = new URL(value.trim());
     const hostname = url.hostname.toLowerCase();
     return (
-      url.protocol === 'https:' &&
+      url.protocol === "https:" &&
       hostname.length > 0 &&
       !RESERVED_HOSTS.has(hostname) &&
       !RESERVED_SUFFIXES.some((suffix) => hostname.endsWith(suffix)) &&
       !isPrivateIpv4(hostname) &&
-      hostname !== '::1'
+      hostname !== "::1"
     );
   } catch {
     return false;
@@ -51,6 +54,6 @@ export function getCanvasDefaultUrl(
   configuredUrl: string | undefined = import.meta.env.VITE_CANVAS_DEFAULT_URL,
 ): string {
   const trimmed = configuredUrl?.trim();
-  if (trimmed && isUsableCanvasDefaultUrl(trimmed)) return trimmed.replace(/\/+$/, '');
-  return isDevelopment ? '' : PRODUCTION_CANVAS_URL;
+  if (trimmed && isUsableCanvasDefaultUrl(trimmed)) return trimmed.replace(/\/+$/, "");
+  return isDevelopment ? "" : PRODUCTION_CANVAS_URL;
 }
