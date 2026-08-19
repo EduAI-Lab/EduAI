@@ -130,4 +130,4 @@ The current results support the one-model-per-GPU 2B/9B topology. They do not es
 
 After testing, cmps02 GPU1 was restored to Qwen 2.5 32B, Core was restored to its original concurrency and rate-limit settings, and the temporary RAG fixture and stress-test files were removed.
 
-See the companion [data report](./FLEET_ROUTER_DATA_REPORT_2026-08-19.md) for the complete measurements and charts.
+See the companion [fleet and cmps data report](./FLEET_ROUTER_DATA_REPORT_2026-08-19.md#per-server-cmps-data) for the complete measurements, per-server tables, raw artifacts, and supporting-system data.

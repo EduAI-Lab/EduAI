@@ -79,6 +79,36 @@ xychart-beta
 
 **Series order:** cmps01, cmps02, cmps03.
 
+## Per-server cmps data
+
+All three servers completed the independent 2B/9B direct-vLLM ladder through concurrency 128 with zero request errors. Values below are the endpoint results at the highest common per-server step.
+
+| Server | Model | Requests at concurrency 128 | RPS | p50 ms | p95 ms | p99 ms | Errors |
+|---|---|---:|---:|---:|---:|---:|---:|
+| cmps01 | Qwen 3.5 2B | 256 | 368.88 | 250 | 438 | 445 | 0 |
+| cmps01 | Qwen 3.5 9B | 256 | 250.98 | 440 | 562 | 569 | 0 |
+| cmps02 | Qwen 3.5 2B | 256 | 306.59 | 352 | 463 | 488 | 0 |
+| cmps02 | Qwen 3.5 9B | 256 | 225.75 | 425 | 638 | 649 | 0 |
+| cmps03 | Qwen 3.5 2B | 256 | 59.07 | 1,959 | 3,854 | 3,881 | 0 |
+| cmps03 | Qwen 3.5 9B | 256 | 41.01 | 2,879 | 4,943 | 4,971 | 0 |
+
+The extended native-vLLM 1,000-request runs were completed on cmps01 and cmps03 before cmps02 was restored:
+
+| Server | Model | Successes | RPS | TTFT p95 ms | E2E p95 ms |
+|---|---|---:|---:|---:|---:|
+| cmps01 | Qwen 3.5 2B | 1,000/1,000 | 73.34 | 12,054 | 13,482 |
+| cmps01 | Qwen 3.5 9B | 1,000/1,000 | 17.48 | 51,644 | 56,938 |
+| cmps03 | Qwen 3.5 2B | 1,000/1,000 | 72.14 | 12,317 | 13,707 |
+| cmps03 | Qwen 3.5 9B | 1,000/1,000 | 16.43 | 54,919 | 60,601 |
+
+```mermaid
+xychart-beta
+    title "Per-server p95 latency at concurrency 128"
+    x-axis "Server/model" [cmps01-2B, cmps01-9B, cmps02-2B, cmps02-9B, cmps03-2B, cmps03-9B]
+    y-axis "p95 milliseconds" 0 --> 5000
+    bar [438, 562, 463, 638, 3854, 4943]
+```
+
 ## Authenticated RAG smoke data
 
 | Check | Baseline | Post-hardening public smoke |
