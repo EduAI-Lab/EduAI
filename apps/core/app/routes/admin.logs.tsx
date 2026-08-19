@@ -18,11 +18,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import {
-  listAuditLogs,
-  listSecurityLogs,
-  runAuditLogRetention,
-} from "~/lib/db.auditlog.server";
+import { listAuditLogs, listSecurityLogs, runAuditLogRetention } from "~/lib/db.auditlog.server";
 import { listSystemLogs, runSystemLogRetention } from "~/lib/db.systemlog.server";
 import {
   getLogRetentionPolicy,
@@ -87,7 +83,11 @@ function readOptionalQueryValue(searchParams: URLSearchParams, key: string) {
 }
 
 /** Parses positive integer query params with bounded fallback defaults. */
-function parsePositiveInt(value: string | null, fallback: number, max: number = Number.MAX_SAFE_INTEGER) {
+function parsePositiveInt(
+  value: string | null,
+  fallback: number,
+  max: number = Number.MAX_SAFE_INTEGER,
+) {
   if (value === null || value.trim() === "") {
     return fallback;
   }
@@ -377,7 +377,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     page,
     pageSize,
     sortDirection: direction,
-    category: categoryRaw && AUDIT_FILTER_CATEGORIES.has(categoryRaw) ? (categoryRaw as never) : undefined,
+    category:
+      categoryRaw && AUDIT_FILTER_CATEGORIES.has(categoryRaw) ? (categoryRaw as never) : undefined,
     actionCode: readOptionalQueryValue(searchParams, "actionCode"),
     actorRole: readOptionalQueryValue(searchParams, "actorRole"),
     entityType: readOptionalQueryValue(searchParams, "entityType"),

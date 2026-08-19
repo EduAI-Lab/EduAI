@@ -4,14 +4,17 @@
 # To run a hook by hand:      npx lefthook run pre-commit
 # To skip hooks for a commit: git commit --no-verify
 #
-# Only staged files are linted, so hook time stays proportional to the
-# change rather than to the repo. Formatting is deliberately not enforced
-# here — the repo has not been swept with `oxfmt --write` yet, so a format
-# gate would reject nearly every commit.
+# Only staged files are checked, so hook time stays proportional to the
+# change rather than to the repo. The repo has been swept with `oxfmt --write`
+# (#1512), so formatting is enforced here as well as in CI — catching drift at
+# commit time is cheaper than catching it after a push.
 
 pre-commit:
   parallel: true
   jobs:
+    - name: oxfmt
+      glob: "*.{js,jsx,mjs,cjs,ts,tsx}"
+      run: npx oxfmt --check {staged_files}
     - name: oxlint
       glob: "*.{js,jsx,mjs,cjs,ts,tsx}"
       # --quiet reports errors only. The repo still carries ~900 warnings, and

@@ -15,10 +15,7 @@ import {
   deactivateDroppedCanvasEnrollments,
   linkEnrollmentsFromStagingForCourse,
 } from "~/lib/canvas/enrollment-link.server";
-import {
-  deactivateCourseRoster,
-  syncCourseRoster,
-} from "~/lib/canvas/roster.server";
+import { deactivateCourseRoster, syncCourseRoster } from "~/lib/canvas/roster.server";
 import type {
   SyncCanvasCourseResult,
   SyncCanvasCoursesResult,
@@ -39,7 +36,7 @@ async function syncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
   fetchImpl: typeof fetch,
-): Promise<Omit<SyncCanvasCourseResult, 'canvasId'>> {
+): Promise<Omit<SyncCanvasCourseResult, "canvasId">> {
   const credentials = await requireCanvasCredentials(userId);
   const canvasCourse = await findCanvasCourseByExternalId(canvasCourseId, fetchImpl, userId);
 
@@ -86,7 +83,7 @@ async function syncSingleCanvasCourse(
 async function unsyncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
-): Promise<Omit<UnsyncCanvasCourseResult, 'canvasId'>> {
+): Promise<Omit<UnsyncCanvasCourseResult, "canvasId">> {
   const course = await prisma.course.findFirst({
     where: {
       externalSource: CANVAS_EXTERNAL_SOURCE,
@@ -187,7 +184,11 @@ export async function syncCanvasCourses(
     listTeacherCanvasCourses(credentials, fetchImpl),
   ]);
   const liveCanvasIds = liveCourses.map((course) => String(course.id));
-  const { toSync, toUnsync } = computeCanvasSyncDelta(currentlySynced, canvasCourseIds, liveCanvasIds);
+  const { toSync, toUnsync } = computeCanvasSyncDelta(
+    currentlySynced,
+    canvasCourseIds,
+    liveCanvasIds,
+  );
 
   const result: SyncCanvasCoursesResult = {
     synced: [],

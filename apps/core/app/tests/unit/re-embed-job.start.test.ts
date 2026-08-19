@@ -378,7 +378,12 @@ describe("startReEmbedJob consistency (#1112)", () => {
       status: "COMPLETED",
       completedAt: staleCompletedAt,
     });
-    update.mockResolvedValueOnce({ ...baseJob, id: "done_1", idempotencyKey: "k1", status: "PENDING" });
+    update.mockResolvedValueOnce({
+      ...baseJob,
+      id: "done_1",
+      idempotencyKey: "k1",
+      status: "PENDING",
+    });
     update.mockResolvedValueOnce({
       ...baseJob,
       id: "done_1",

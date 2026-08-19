@@ -3,37 +3,30 @@
  * `/courses/:courseId/banks/:bankId` lists questions in that Core bank and
  * lets instructors add existing course questions to it.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
-import { Button, Badge, Alert, AlertDescription } from '@eduai/ui';
-import { IconArrowLeft, IconLoader2 } from '@tabler/icons-react';
-import { useCourseFromRoute } from '../hooks/useCourseFromRoute';
-import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
-import { toast } from 'sonner';
-import { questionService } from '../services/questionService';
-import {
-  questionBankService,
-  type QuestionBank,
-} from '../services/questionBankService';
-import { QuestionBank as QuestionBankGrid } from '../components/question-bank/QuestionBank';
-import { AddQuestionsToBankDialog } from '../components/question-bank/AddQuestionsToBankDialog';
-import { QuestionModal } from '../components/questions/QuestionModal';
-import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
-import {
-  ListPaginationBar,
-  DEFAULT_LIST_PAGE_SIZE,
-} from '../components/shared/ListPaginationBar';
-import type { Question, QuestionVariantEntry } from '../types/question';
-import { Topic } from '../types/topic';
-import { courseService } from '../services/courseService';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import { Button, Badge, Alert, AlertDescription } from "@eduai/ui";
+import { IconArrowLeft, IconLoader2 } from "@tabler/icons-react";
+import { useCourseFromRoute } from "../hooks/useCourseFromRoute";
+import { useQmPermissionsForCourse } from "../hooks/useQmPermissions";
+import { toast } from "sonner";
+import { questionService } from "../services/questionService";
+import { questionBankService, type QuestionBank } from "../services/questionBankService";
+import { QuestionBank as QuestionBankGrid } from "../components/question-bank/QuestionBank";
+import { AddQuestionsToBankDialog } from "../components/question-bank/AddQuestionsToBankDialog";
+import { QuestionModal } from "../components/questions/QuestionModal";
+import { CourseNoAccessAlert } from "../components/rbac/CourseNoAccessAlert";
+import { ListPaginationBar, DEFAULT_LIST_PAGE_SIZE } from "../components/shared/ListPaginationBar";
+import type { Question, QuestionVariantEntry } from "../types/question";
+import { Topic } from "../types/topic";
+import { courseService } from "../services/courseService";
+import { DeleteConfirmationModal } from "../components/ui/DeleteConfirmationModal";
 
 export function BankDetailPage() {
   const { bankId } = useParams<{ bankId: string }>();
   const navigate = useNavigate();
   const { course, courseId, isLoading: isCourseLoading, notFound } = useCourseFromRoute();
-  const { hasCourseAccess, accessLoading, canCreateQuestion } =
-    useQmPermissionsForCourse(courseId);
+  const { hasCourseAccess, accessLoading, canCreateQuestion } = useQmPermissionsForCourse(courseId);
 
   const [bank, setBank] = useState<QuestionBank | null>(null);
   const [banksError, setBanksError] = useState<string | null>(null);
@@ -57,7 +50,7 @@ export function BankDetailPage() {
 
   const backToBanks = useCallback(() => {
     if (courseId) navigate(`/courses/${courseId}?tab=banks`);
-    else navigate('/courses');
+    else navigate("/courses");
   }, [courseId, navigate]);
 
   useEffect(() => {
@@ -75,14 +68,12 @@ export function BankDetailPage() {
         if (cancelled) return;
         const match = banks.find((b) => b.id === bankId) ?? null;
         setBank(match);
-        if (!match) setBanksError('Question bank not found for this course');
+        if (!match) setBanksError("Question bank not found for this course");
       } catch (error: any) {
         if (!cancelled) {
           setBank(null);
           setBanksError(
-            error?.response?.data?.error ||
-              error?.message ||
-              'Failed to load question bank',
+            error?.response?.data?.error || error?.message || "Failed to load question bank",
           );
         }
       } finally {
@@ -97,7 +88,10 @@ export function BankDetailPage() {
 
   useEffect(() => {
     if (!courseId) return;
-    void courseService.getCourseTopics(courseId).then(setTopics).catch(() => setTopics([]));
+    void courseService
+      .getCourseTopics(courseId)
+      .then(setTopics)
+      .catch(() => setTopics([]));
   }, [courseId]);
 
   useEffect(() => {
@@ -125,9 +119,7 @@ export function BankDetailPage() {
         if (!cancelled) {
           setQuestions([]);
           setQuestionsTotal(0);
-          setQuestionsError(
-            error?.response?.data?.error || 'Failed to load bank questions',
-          );
+          setQuestionsError(error?.response?.data?.error || "Failed to load bank questions");
         }
       } finally {
         if (!cancelled) setIsQuestionsLoading(false);
@@ -139,15 +131,11 @@ export function BankDetailPage() {
     };
   }, [courseId, bankId, questionsOffset, pageSize, refreshKey]);
 
-  const topicNameMap = useMemo(
-    () => new Map(topics.map((t) => [t.id, t.name])),
-    [topics],
-  );
+  const topicNameMap = useMemo(() => new Map(topics.map((t) => [t.id, t.name])), [topics]);
 
   const variantEntries = useMemo<QuestionVariantEntry[]>(() => {
     return questions.flatMap((question) => {
-      const resolveTopicName = (topicId: string) =>
-        topicNameMap.get(topicId) ?? `Topic ${topicId}`;
+      const resolveTopicName = (topicId: string) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
       return (question.variants || []).map((variant) => {
         const secondaryNames = (variant.secondaryTopicsId ?? [])
           .map((id) => resolveTopicName(id))
@@ -179,7 +167,7 @@ export function BankDetailPage() {
   if (notFound || !course || !courseId) {
     return (
       <div className="p-6">
-        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+        <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
       </div>
     );
   }
@@ -187,7 +175,7 @@ export function BankDetailPage() {
   if (!hasCourseAccess) {
     return (
       <div className="p-6">
-        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+        <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
       </div>
     );
   }
@@ -200,7 +188,7 @@ export function BankDetailPage() {
           Back to banks
         </Button>
         <Alert variant="destructive">
-          <AlertDescription>{banksError || 'Question bank not found'}</AlertDescription>
+          <AlertDescription>{banksError || "Question bank not found"}</AlertDescription>
         </Alert>
       </div>
     );
@@ -210,7 +198,13 @@ export function BankDetailPage() {
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-2">
-          <Button type="button" variant="ghost" size="sm" onClick={backToBanks} className="gap-1.5 -ml-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={backToBanks}
+            className="gap-1.5 -ml-2"
+          >
             <IconArrowLeft className="size-4" />
             Back to banks
           </Button>
@@ -242,11 +236,7 @@ export function BankDetailPage() {
         }
         onAddQuestion={() => setIsAddOpen(true)}
         onUploadQuestions={() => undefined}
-        onRemoveFromBank={
-          writesDisabled
-            ? undefined
-            : (entry) => setRemoveTarget(entry)
-        }
+        onRemoveFromBank={writesDisabled ? undefined : (entry) => setRemoveTarget(entry)}
         isLoading={isQuestionsLoading}
         courseName={course.name}
         emptyMessage="No questions in this bank yet. Add existing course questions to get started."
@@ -288,17 +278,14 @@ export function BankDetailPage() {
               bankId,
               removeTarget.questionId,
             );
-            toast('Removed from bank', {
+            toast("Removed from bank", {
               description: `Question #${removeTarget.questionId} was removed from ${bank.name}.`,
             });
             setRemoveTarget(null);
             setRefreshKey((k) => k + 1);
           } catch (error: any) {
-            toast.error('Could not remove question', {
-              description:
-                error?.response?.data?.error ||
-                error?.message ||
-                'Please try again.',
+            toast.error("Could not remove question", {
+              description: error?.response?.data?.error || error?.message || "Please try again.",
             });
             throw error;
           } finally {
@@ -309,7 +296,7 @@ export function BankDetailPage() {
         message={
           removeTarget
             ? `Remove question #${removeTarget.questionId} from “${bank.name}”? The question itself is kept in the course.`
-            : 'This question will be removed from the bank.'
+            : "This question will be removed from the bank."
         }
         confirmLabel="Remove"
         isLoading={isRemoving}

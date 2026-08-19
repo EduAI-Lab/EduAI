@@ -1,7 +1,7 @@
 /** Normalizes course codes for case- and whitespace-insensitive comparison (display/RBAC lookups only). */
 export function normalizeCourseCode(value) {
-  if (!value || typeof value !== 'string') return '';
-  return value.replace(/\s+/g, '').toLowerCase();
+  if (!value || typeof value !== "string") return "";
+  return value.replace(/\s+/g, "").toLowerCase();
 }
 
 /**
@@ -22,6 +22,6 @@ export function dedupeCoursesByCoreId(courses) {
   }
 
   return Array.from(byKey.values()).sort((a, b) =>
-    (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }),
+    (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }),
   );
 }

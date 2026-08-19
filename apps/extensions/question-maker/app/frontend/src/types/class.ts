@@ -1,6 +1,6 @@
-import { Course } from './question';
+import { Course } from "./question";
 
 export interface Class extends Course {
-    courseCode?: string | null;
-    subject?: string | null;
+  courseCode?: string | null;
+  subject?: string | null;
 }

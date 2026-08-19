@@ -33,10 +33,7 @@ export function useCourseCardPreferences() {
     [],
   );
 
-  const getCoursePreference = useCallback(
-    (courseId: string) => prefs[courseId],
-    [prefs],
-  );
+  const getCoursePreference = useCallback((courseId: string) => prefs[courseId], [prefs]);
 
   return { prefs, setCoursePreference, getCoursePreference };
 }

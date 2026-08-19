@@ -7,7 +7,10 @@ const test = require("node:test");
 const { parseIssueHours } = require("../scripts/parse-issue-hours");
 const { readBaseTime } = require("../scripts/read-base-time");
 const { extractReferencedIssueNumbers } = require("../scripts/link-issues-prs");
-const { collectPrAnalyticsByNumber, generateReports } = require("../scripts/generate-team-time-report");
+const {
+  collectPrAnalyticsByNumber,
+  generateReports,
+} = require("../scripts/generate-team-time-report");
 
 test("parseIssueHours accepts required valid formats", () => {
   const body = [
@@ -44,9 +47,11 @@ test("parseIssueHours excludes unnamed hours when multiple assignees exist", () 
 
 test("parseIssueHours flags invalid and duplicate hours", () => {
   const parsed = parseIssueHours(
-    ["Hours to complete: many hours", "Hours to complete: 1 hours [ariqmuldi]", "Hours to complete: 2 hrs [@ariqmuldi]"].join(
-      "\n",
-    ),
+    [
+      "Hours to complete: many hours",
+      "Hours to complete: 1 hours [ariqmuldi]",
+      "Hours to complete: 2 hrs [@ariqmuldi]",
+    ].join("\n"),
     { number: 3, assignees: [{ login: "ariqmuldi" }] },
   );
 
@@ -61,7 +66,11 @@ test("readBaseTime keeps the first duplicate and warns", () => {
   const csvPath = path.join(tempDir, "base-time.csv");
   fs.writeFileSync(
     csvPath,
-    ["github_username,base_hours,notes", "Whiteknight07,2,Meetings", "whiteknight07,3,Duplicate"].join("\n"),
+    [
+      "github_username,base_hours,notes",
+      "Whiteknight07,2,Meetings",
+      "whiteknight07,3,Duplicate",
+    ].join("\n"),
   );
 
   const result = readBaseTime(csvPath);
@@ -75,7 +84,10 @@ test("extractReferencedIssueNumbers links body references and branch names", () 
     headRefName: "issue-789-login-page",
   });
 
-  assert.deepEqual(issueNumbers.sort((a, b) => a - b), [123, 456, 789]);
+  assert.deepEqual(
+    issueNumbers.sort((a, b) => a - b),
+    [123, 456, 789],
+  );
 });
 
 test("collectPrAnalyticsByNumber extracts common timing metrics", () => {

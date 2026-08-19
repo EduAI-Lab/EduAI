@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { IconAlertCircle, IconLoader2, IconMessageCircle, IconPlus } from '@tabler/icons-react';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { IconAlertCircle, IconLoader2, IconMessageCircle, IconPlus } from "@tabler/icons-react";
 import {
   Badge,
   Button,
@@ -9,9 +9,9 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@eduai/ui';
-import { listChatSessions, type ApiChatSession } from '~/lib/student-chat-history';
-import { cn } from '~/lib/utils';
+} from "@eduai/ui";
+import { listChatSessions, type ApiChatSession } from "~/lib/student-chat-history";
+import { cn } from "~/lib/utils";
 
 type StudentChatHistoryPanelProps = {
   open: boolean;
@@ -24,20 +24,20 @@ type StudentChatHistoryPanelProps = {
 
 function relativeTime(iso: string): string {
   const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (diffMins < 1) return 'Just now';
+  if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   const diffHours = Math.floor(diffMins / 60);
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 const MODE_LABELS: Record<string, string> = {
-  teach: 'Teach',
-  guide: 'Guide',
-  custom: 'Custom',
+  teach: "Teach",
+  guide: "Guide",
+  custom: "Custom",
 };
 
 export function StudentChatHistoryPanel({
@@ -152,14 +152,14 @@ export function StudentChatHistoryPanel({
                   <button
                     key={session.chatId}
                     type="button"
-                    aria-current={isActive ? 'true' : undefined}
+                    aria-current={isActive ? "true" : undefined}
                     onClick={() => {
                       onSelect(session);
                       onOpenChange(false);
                     }}
                     className={cn(
-                      'flex items-center gap-3 border-b border-border px-5 py-3 text-left transition-colors hover:bg-muted/40',
-                      isActive && 'bg-muted/60',
+                      "flex items-center gap-3 border-b border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
+                      isActive && "bg-muted/60",
                     )}
                   >
                     <div className="min-w-0 flex-1 space-y-1.5">

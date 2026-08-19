@@ -103,9 +103,7 @@ describe("useApiKeys — localStorage migration", () => {
     );
 
     // localStorage is cleared after migration.
-    await waitFor(() =>
-      expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull(),
-    );
+    await waitFor(() => expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull());
   });
 
   it("skips migration when server already has settings", async () => {
@@ -114,14 +112,10 @@ describe("useApiKeys — localStorage migration", () => {
       JSON.stringify({ openai: { apiKey: "sk-old", isEnabled: true } }),
     );
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => [
-          { providerName: "openai", isEnabled: true, hasKey: true, baseUrl: null },
-        ],
-      });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ providerName: "openai", isEnabled: true, hasKey: true, baseUrl: null }],
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = renderHook(() => useApiKeys());

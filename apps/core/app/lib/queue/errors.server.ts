@@ -67,7 +67,10 @@ export function httpStatusForEnqueueError(error: unknown): number {
   return 500;
 }
 
-export function toQueueUnavailable(error: unknown, message = "Queue unavailable"): QueueUnavailableError {
+export function toQueueUnavailable(
+  error: unknown,
+  message = "Queue unavailable",
+): QueueUnavailableError {
   if (error instanceof QueueUnavailableError) return error;
   return new QueueUnavailableError(message, { cause: error });
 }

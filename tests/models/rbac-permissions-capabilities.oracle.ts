@@ -41,13 +41,7 @@ export type RbacCapabilitiesRow = {
 
 export type RbacCapabilitiesVerdict = { allowed: boolean };
 
-export type RbacAccess =
-  | "admin"
-  | "unit"
-  | "instructor"
-  | "ta"
-  | "student"
-  | null;
+export type RbacAccess = "admin" | "unit" | "instructor" | "ta" | "student" | null;
 
 export function rbacAccess(row: RbacCapabilitiesRow): RbacAccess {
   if (row.Access === "none") return null;

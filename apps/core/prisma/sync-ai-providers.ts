@@ -117,29 +117,78 @@ async function main() {
   });
 
   const openaiModels = [
-    { modelId: "gpt-4.1", name: "GPT-4.1", description: "Advanced GPT-4.1", maxTokens: 128000, inputPricing: 5, outputPricing: 15 },
-    { modelId: "gpt-4o", name: "GPT-4o", description: "Multimodal flagship", maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
-    { modelId: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and cheap", maxTokens: 128000, inputPricing: 0.15, outputPricing: 0.6 },
+    {
+      modelId: "gpt-4.1",
+      name: "GPT-4.1",
+      description: "Advanced GPT-4.1",
+      maxTokens: 128000,
+      inputPricing: 5,
+      outputPricing: 15,
+    },
+    {
+      modelId: "gpt-4o",
+      name: "GPT-4o",
+      description: "Multimodal flagship",
+      maxTokens: 128000,
+      inputPricing: 2.5,
+      outputPricing: 10,
+    },
+    {
+      modelId: "gpt-4o-mini",
+      name: "GPT-4o Mini",
+      description: "Fast and cheap",
+      maxTokens: 128000,
+      inputPricing: 0.15,
+      outputPricing: 0.6,
+    },
   ];
 
   for (const m of openaiModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: openai.id, modelId: m.modelId } },
       update: { isActive: true },
-      create: { ...m, type: "CHAT", supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: openai.id },
+      create: {
+        ...m,
+        type: "CHAT",
+        supportsImages: true,
+        supportsTools: true,
+        supportsStreaming: true,
+        providerId: openai.id,
+      },
     });
   }
 
   const googleModels = [
-    { modelId: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Advanced multimodal", maxTokens: 2097152, inputPricing: 1.25, outputPricing: 5 },
-    { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash", description: "Fast multimodal", maxTokens: 1048576, inputPricing: 0.075, outputPricing: 0.3 },
+    {
+      modelId: "gemini-2.5-pro",
+      name: "Gemini 2.5 Pro",
+      description: "Advanced multimodal",
+      maxTokens: 2097152,
+      inputPricing: 1.25,
+      outputPricing: 5,
+    },
+    {
+      modelId: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      description: "Fast multimodal",
+      maxTokens: 1048576,
+      inputPricing: 0.075,
+      outputPricing: 0.3,
+    },
   ];
 
   for (const m of googleModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
       update: { isActive: true },
-      create: { ...m, type: "CHAT", supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: google.id },
+      create: {
+        ...m,
+        type: "CHAT",
+        supportsImages: true,
+        supportsTools: true,
+        supportsStreaming: true,
+        providerId: google.id,
+      },
     });
   }
 

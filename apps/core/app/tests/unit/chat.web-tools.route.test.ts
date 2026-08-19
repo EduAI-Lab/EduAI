@@ -100,14 +100,22 @@ beforeEach(() => {
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 } as never);
   // Default: general (non-course) chat owned by the caller.
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-    id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null,
+    id: CHAT_ID,
+    userId: "u1",
+    adhdAssist: false,
+    systemPrompt: null,
   } as never);
   // Course-context backfill (tagging an existing chat with its course) calls
   // chat.update; echo the patched row so the chat stays resolved on that path.
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) =>
-      ({ id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null, ...args.data })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
+    data?: Record<string, unknown>;
+  }) => ({
+    id: CHAT_ID,
+    userId: "u1",
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 });
 
 afterEach(() => {
@@ -121,7 +129,9 @@ function webHeader(res: Response) {
 
 describe("chat.webToolsEnabled master switch", () => {
   it("web tools absent for an instructor when the master is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as never);
     // #657: chat is course-scoped — give the instructor a course context.
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
@@ -134,7 +144,9 @@ describe("chat.webToolsEnabled master switch", () => {
   });
 
   it("web tools present for a non-student when the master is on", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
       access: { level: "instructor", rank: 2 } as never,
@@ -146,13 +158,18 @@ describe("chat.webToolsEnabled master switch", () => {
   });
 
   it("web tools absent for a student when the master is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "s1", role: "STUDENT" },
+    } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
       access: { level: "student", rank: 0 } as never,
     });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-      id: CHAT_ID, userId: "s1", adhdAssist: false, systemPrompt: null,
+      id: CHAT_ID,
+      userId: "s1",
+      adhdAssist: false,
+      systemPrompt: null,
     } as never);
     policy({ "chat.webToolsEnabled": false });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));
@@ -161,13 +178,18 @@ describe("chat.webToolsEnabled master switch", () => {
   });
 
   it("web tools present for a student when the master is on (students follow the master)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "s1", role: "STUDENT" },
+    } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
       access: { level: "student", rank: 0 } as never,
     });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
-      id: CHAT_ID, userId: "s1", adhdAssist: false, systemPrompt: null,
+      id: CHAT_ID,
+      userId: "s1",
+      adhdAssist: false,
+      systemPrompt: null,
     } as never);
     policy({ "chat.webToolsEnabled": true });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));

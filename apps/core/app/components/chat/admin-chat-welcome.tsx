@@ -51,17 +51,13 @@ export function AdminChatWelcome({ selectedModelInfo, onSelectPrompt }: AdminCha
           </div>
 
           <div className="space-y-4">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground">
-              Admin Chatbot
-            </h1>
+            <h1 className="text-4xl font-bold tracking-tight text-foreground">Admin Chatbot</h1>
             {selectedModelInfo && (
-              <p className="text-lg text-muted-foreground">
-                Powered by {selectedModelInfo.name}
-              </p>
+              <p className="text-lg text-muted-foreground">Powered by {selectedModelInfo.name}</p>
             )}
             <p className="text-sm text-muted-foreground max-w-lg mx-auto">
-              Operational assistant for enrollments, users, bug reports, and course metadata.
-              Write actions require your explicit confirmation in chat.
+              Operational assistant for enrollments, users, bug reports, and course metadata. Write
+              actions require your explicit confirmation in chat.
             </p>
           </div>
         </div>
@@ -84,9 +80,7 @@ export function AdminChatWelcome({ selectedModelInfo, onSelectPrompt }: AdminCha
             >
               <div className="space-y-2">
                 <h4 className="font-medium text-sm">{item.title}</h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {item.description}
-                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
               </div>
             </PromptSuggestion>
           ))}

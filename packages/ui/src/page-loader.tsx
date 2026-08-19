@@ -1,5 +1,5 @@
 export interface PageLoaderProps {
-  className?: string
+  className?: string;
 }
 
 /**
@@ -14,5 +14,5 @@ export function PageLoader({ className }: PageLoaderProps) {
     >
       <p className="text-sm text-muted-foreground">Loading…</p>
     </div>
-  )
+  );
 }

@@ -1,14 +1,14 @@
-import { hasAttachmentContent } from '@eduai/types';
+import { hasAttachmentContent } from "@eduai/types";
 
 function parseActivityFallbackTitle(config) {
-  if (!config || typeof config !== 'object') {
+  if (!config || typeof config !== "object") {
     return null;
   }
 
-  if (typeof config.question === 'string' && config.question.trim().length > 0) {
+  if (typeof config.question === "string" && config.question.trim().length > 0) {
     return config.question.trim();
   }
-  if (typeof config.prompt === 'string' && config.prompt.trim().length > 0) {
+  if (typeof config.prompt === "string" && config.prompt.trim().length > 0) {
     return config.prompt.trim();
   }
   return null;
@@ -18,26 +18,26 @@ function resolveActivityTitle(activity) {
   if (!activity) {
     return null;
   }
-  if (typeof activity.title === 'string' && activity.title.trim().length > 0) {
+  if (typeof activity.title === "string" && activity.title.trim().length > 0) {
     return activity.title.trim();
   }
   return parseActivityFallbackTitle(activity.config);
 }
 
 const CORE_TO_UI_STATUS = {
-  UNHANDLED: 'unhandled',
-  IN_PROGRESS: 'in progress',
-  RESOLVED: 'resolved',
+  UNHANDLED: "unhandled",
+  IN_PROGRESS: "in progress",
+  RESOLVED: "resolved",
 };
 
 export const UI_TO_CORE_BUG_STATUS = {
-  unhandled: 'UNHANDLED',
-  'in progress': 'IN_PROGRESS',
-  resolved: 'RESOLVED',
+  unhandled: "UNHANDLED",
+  "in progress": "IN_PROGRESS",
+  resolved: "RESOLVED",
 };
 
 function parseCoreContext(context) {
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+  if (!context || typeof context !== "object" || Array.isArray(context)) {
     return {};
   }
   return context;
@@ -48,8 +48,8 @@ export function mapCoreAdminBugReportRow(report) {
   const context = parseCoreContext(report.context);
   const isAnonymous = Boolean(report.isAnonymous);
   const status =
-    CORE_TO_UI_STATUS[report.status] ?? String(report.status ?? 'UNHANDLED').toLowerCase();
-  const userId = report.userId ?? 'unknown';
+    CORE_TO_UI_STATUS[report.status] ?? String(report.status ?? "UNHANDLED").toLowerCase();
+  const userId = report.userId ?? "unknown";
 
   return {
     id: report.id,
@@ -68,7 +68,7 @@ export function mapCoreAdminBugReportRow(report) {
     userId,
     createdAt: report.createdAt,
     updatedAt: report.updatedAt,
-    reporterName: isAnonymous ? 'Anonymous' : (report.userName ?? null),
+    reporterName: isAnonymous ? "Anonymous" : (report.userName ?? null),
     reporterEmail: isAnonymous ? null : (report.userEmail ?? null),
     reporterRole: null,
     user: {
@@ -121,7 +121,7 @@ export function mapAdminBugReportRow(row) {
     userId: row.userId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    reporterName: isAnonymous ? 'Anonymous' : (user?.name ?? null),
+    reporterName: isAnonymous ? "Anonymous" : (user?.name ?? null),
     reporterEmail: isAnonymous ? null : (user?.email ?? null),
     reporterRole: user?.role ?? null,
     user: {

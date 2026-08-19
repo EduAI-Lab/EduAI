@@ -1,6 +1,10 @@
-import { prisma } from '../config/database.js';
-import { getCourseFromCore, getTopicByIdFromCore, getQuestionByIdFromCore } from '../services/coreApiService.js';
-import { logger } from '../utils/logger.js';
+import { prisma } from "../config/database.js";
+import {
+  getCourseFromCore,
+  getTopicByIdFromCore,
+  getQuestionByIdFromCore,
+} from "../services/coreApiService.js";
+import { logger } from "../utils/logger.js";
 
 /**
  * Daily reconciliation job: iterates all courses, topics, and variants that
@@ -10,7 +14,7 @@ import { logger } from '../utils/logger.js';
  * the next run. Only a strict 404 triggers cleanup.
  */
 export async function runReconciliation() {
-  logger.info('[reconcile] Starting daily reconciliation');
+  logger.info("[reconcile] Starting daily reconciliation");
 
   // Phase 1 — courses.core_course_id. A 404 here means the course was deleted
   // in Core, so the whole local course (and everything hanging off it — topics,
@@ -27,7 +31,9 @@ export async function runReconciliation() {
       const result = await getCourseFromCore(course.coreCourseId);
       if (result === null) {
         await prisma.course.delete({ where: { id: course.id } });
-        logger.info(`[reconcile] Deleted Course ${course.id} (Core 404, cascades to topics/questions/assessments)`);
+        logger.info(
+          `[reconcile] Deleted Course ${course.id} (Core 404, cascades to topics/questions/assessments)`,
+        );
       }
     } catch (err) {
       logger.warn(`[reconcile] Skipping Course ${course.id}: ${err.message}`);
@@ -73,5 +79,5 @@ export async function runReconciliation() {
     }
   }
 
-  logger.info('[reconcile] Reconciliation complete');
+  logger.info("[reconcile] Reconciliation complete");
 }

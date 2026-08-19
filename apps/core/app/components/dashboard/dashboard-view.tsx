@@ -1,12 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { Spinner } from "@eduai/ui";
 import { Link, useNavigate } from "react-router";
-import {
-  IconMessageCircle,
-  IconChevronRight,
-  IconBook,
-  IconUser,
-} from "@tabler/icons-react";
+import { IconMessageCircle, IconChevronRight, IconBook, IconUser } from "@tabler/icons-react";
 
 import {
   StatCard,
@@ -112,7 +107,10 @@ function CourseListPanel({
     return (
       <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0 animate-pulse">
+          <div
+            key={i}
+            className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0 animate-pulse"
+          >
             <div className="w-1 h-11 rounded-sm bg-muted flex-shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-3.5 bg-muted rounded w-24" />
@@ -128,7 +126,10 @@ function CourseListPanel({
     return (
       <div className="rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)] px-5 py-8 text-center">
         <p className="text-sm text-muted-foreground">No courses found.</p>
-        <Link to="/courses" className="mt-2 inline-block text-xs font-medium text-primary-text hover:underline">
+        <Link
+          to="/courses"
+          className="mt-2 inline-block text-xs font-medium text-primary-text hover:underline"
+        >
           Browse courses →
         </Link>
       </div>
@@ -151,7 +152,9 @@ function CourseListPanel({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">{course.code}</span>
-              <span className="text-[11px] text-muted-foreground">{termLabel(course.term, course.year)}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {termLabel(course.term, course.year)}
+              </span>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
@@ -175,14 +178,7 @@ function CourseListPanel({
   );
 }
 
-
-function RecentChatsPanel({
-  chats,
-  loading,
-}: {
-  chats: DashboardRecentChat[];
-  loading: boolean;
-}) {
+function RecentChatsPanel({ chats, loading }: { chats: DashboardRecentChat[]; loading: boolean }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<DashboardRecentChat | null>(null);
   const [transcript, setTranscript] = useState<ChatTranscript | null>(null);
@@ -210,7 +206,10 @@ function RecentChatsPanel({
     return (
       <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="px-5 py-[14px] border-b border-border last:border-b-0 animate-pulse space-y-2">
+          <div
+            key={i}
+            className="px-5 py-[14px] border-b border-border last:border-b-0 animate-pulse space-y-2"
+          >
             <div className="flex justify-between">
               <div className="h-3 bg-muted rounded w-16" />
               <div className="h-3 bg-muted rounded w-12" />
@@ -264,7 +263,12 @@ function RecentChatsPanel({
                       the wall clock and timezone, so suppress the expected
                       server/client hydration diff (React's canonical timestamp
                       case) rather than mismatch-warn on every dashboard load. */}
-                  <span suppressHydrationWarning className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">{relativeTime(chat.updatedAt)}</span>
+                  <span
+                    suppressHydrationWarning
+                    className="text-[11px] text-muted-foreground flex-shrink-0 ml-2"
+                  >
+                    {relativeTime(chat.updatedAt)}
+                  </span>
                 </div>
                 <p className="text-[13px] text-foreground leading-snug line-clamp-2">
                   {chat.preview ?? chat.title ?? "New conversation"}
@@ -333,12 +337,7 @@ export function DashboardView({
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {stats.map((s, index) => (
           <ScrollReveal key={s.label} index={index}>
-            <StatCard
-              label={s.label}
-              value={s.value}
-              trend={s.trend}
-              trendLabel={s.trendLabel}
-            />
+            <StatCard label={s.label} value={s.value} trend={s.trend} trendLabel={s.trendLabel} />
           </ScrollReveal>
         ))}
       </div>
@@ -352,49 +351,48 @@ export function DashboardView({
 
       {/* 2-column body */}
       <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
-
         {/* Left — courses or quick actions */}
         <ScrollReveal index={4}>
-        <div>
-          <div className="flex items-center justify-between mb-3.5">
-            <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
-            {!showQuickActions && (
-              <Link
-                to="/courses"
-                className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
-              >
-                Browse all <IconChevronRight size={13} />
-              </Link>
+          <div>
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
+              {!showQuickActions && (
+                <Link
+                  to="/courses"
+                  className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
+                >
+                  Browse all <IconChevronRight size={13} />
+                </Link>
+              )}
+            </div>
+            {showQuickActions ? (
+              <QuickActionsPanel actions={quickActions!} LinkComponent={Link} />
+            ) : (
+              <CourseListPanel
+                courses={courses ?? []}
+                loading={coursesLoading}
+                title={panelTitle}
+              />
             )}
           </div>
-          {showQuickActions ? (
-            <QuickActionsPanel actions={quickActions!} LinkComponent={Link} />
-          ) : (
-            <CourseListPanel
-              courses={courses ?? []}
-              loading={coursesLoading}
-              title={panelTitle}
-            />
-          )}
-        </div>
         </ScrollReveal>
 
         {/* Right — recent conversations */}
         <ScrollReveal index={5}>
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between mb-3.5">
-            <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
-            <Link
-              to="/chat"
-              className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
-            >
-              New chat <IconChevronRight size={13} />
-            </Link>
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
+              <Link
+                to="/chat"
+                className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
+              >
+                New chat <IconChevronRight size={13} />
+              </Link>
+            </div>
+            <div className="flex-1">
+              <RecentChatsPanel chats={recentChats} loading={recentChatsLoading} />
+            </div>
           </div>
-          <div className="flex-1">
-            <RecentChatsPanel chats={recentChats} loading={recentChatsLoading} />
-          </div>
-        </div>
         </ScrollReveal>
       </div>
     </div>

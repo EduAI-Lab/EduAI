@@ -8,11 +8,7 @@ import {
   type PaginatedResponse,
   type PaginationState,
 } from "~/hooks/api/pagination";
-import type {
-  CreateUserInput,
-  PlatformUser,
-  UpdateUserInput,
-} from "~/hooks/api/types";
+import type { CreateUserInput, PlatformUser, UpdateUserInput } from "~/hooks/api/types";
 
 /** Sort fields accepted by `GET /api/users`. */
 export type UserSortField =
@@ -69,10 +65,7 @@ export type UseUsersOptions = {
  * deliberately do not move as the admin searches.
  */
 export function useUsers(options: UseUsersOptions = {}) {
-  const initialQuery = useMemo(
-    () => defaultUsersQuery(options.pageSize),
-    [options.pageSize],
-  );
+  const initialQuery = useMemo(() => defaultUsersQuery(options.pageSize), [options.pageSize]);
   const [query, setQuery] = useState<UsersQuery>(initialQuery);
 
   const [users, setUsers] = useState<PlatformUser[]>([]);

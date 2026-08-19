@@ -228,7 +228,13 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   // 5. Create the AiJob row as PENDING (payload = the validated job). For a
   //    keyed job, bullJobId is set to the idempotencyKey right here — see the
   //    docstring above for why.
-  let aiJob: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null };
+  let aiJob: {
+    id: string;
+    type: JobType;
+    status: string;
+    createdAt: Date;
+    queueName: string | null;
+  };
   try {
     aiJob = await prisma.aiJob.create({
       data: {

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
 import {
   makeProfessor,
   makeStudent,
@@ -9,9 +9,9 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
@@ -31,32 +31,34 @@ import {
   listEduAiCourses,
   listEduAiCoursesServiceKey,
   listEduAiCourseEnrollmentsServiceKey,
-} from '../../src/services/eduaiClient.js';
-import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
-import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
+} from "../../src/services/eduaiClient.js";
+import { syncExternalCourseTopics } from "../../src/services/topicSync.js";
+import { syncCourseEnrollments } from "../../src/services/enrollmentSync.js";
 
 // Course routes call Core's policy service (instructors.canCreateCourses) via
 // requireInstructorPolicy. Core isn't reachable in the integration env, so the
 // real service fails closed (deny). Stub it to the flag's enabled default —
 // the deny/cache/stale-fallback behaviour is covered by policyService.test.js.
-vi.mock('../../src/services/policyService.js', () => ({
+vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn().mockResolvedValue(true),
-  getPolicies: vi.fn().mockResolvedValue({ 'instructors.canCreateCourses': true }),
+  getPolicies: vi.fn().mockResolvedValue({ "instructors.canCreateCourses": true }),
   invalidatePolicyCache: vi.fn(),
   __resetPolicyServiceState: vi.fn(),
 }));
 
-vi.mock('../../src/services/topicSync.js', () => ({
+vi.mock("../../src/services/topicSync.js", () => ({
   syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../src/services/enrollmentSync.js', () => ({
+vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
-  syncCourseEnrollments: vi.fn().mockResolvedValue({ synced: 2, created: 1, deleted: 0, errors: [] }),
+  syncCourseEnrollments: vi
+    .fn()
+    .mockResolvedValue({ synced: 2, created: 1, deleted: 0, errors: [] }),
 }));
 
-describe('Courses routes', () => {
+describe("Courses routes", () => {
   let prof;
   let seed; // { user, course, module, lesson, topic }
   let profApp;
@@ -86,9 +88,9 @@ describe('Courses routes', () => {
     // would otherwise leak enrollments across tests in this file.
     const defaultCoreCourse = {
       id: seed.course.coreOfferingId,
-      name: 'Test Course',
+      name: "Test Course",
       isPublished: true,
-      callerEnrollmentRole: 'NONE',
+      callerEnrollmentRole: "NONE",
     };
     // Unified contract (#1072): the service-key catalog is the field/publish
     // source for list routes; the cookie-scoped list only feeds the
@@ -107,7 +109,7 @@ describe('Courses routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: student.id,
-        role: 'STUDENT',
+        role: "STUDENT",
       },
     });
     return student;
@@ -119,7 +121,7 @@ describe('Courses routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: ta.id,
-        role: 'TA',
+        role: "TA",
       },
     });
     return ta;
@@ -127,24 +129,24 @@ describe('Courses routes', () => {
 
   // ── GET /api/courses ──────────────────────────────────────────────
 
-  describe('GET /api/courses', () => {
-    it('professor sees their courses', async () => {
-      const res = await request(profApp).get('/api/courses?page=1&pageSize=200');
+  describe("GET /api/courses", () => {
+    it("professor sees their courses", async () => {
+      const res = await request(profApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe(seed.course.id);
-      expect(res.body.data[0].title).toBe('Test Course');
+      expect(res.body.data[0].title).toBe("Test Course");
       // Professor courses have no progress object
       expect(res.body.data[0].progress).toBeUndefined();
     });
 
-    it('student sees published+enrolled courses with progress object', async () => {
+    it("student sees published+enrolled courses with progress object", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(studentApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -159,14 +161,14 @@ describe('Courses routes', () => {
       );
     });
 
-    it('TA sees TA-enrolled course (no progress, all publish states)', async () => {
+    it("TA sees TA-enrolled course (no progress, all publish states)", async () => {
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false },
+        { id: seed.course.coreOfferingId, name: "Test Course", isPublished: false },
       ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(taApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -175,22 +177,22 @@ describe('Courses routes', () => {
       expect(res.body.data[0].progress).toBeUndefined();
     });
 
-    it('TA sees zero courses when not enrolled in any', async () => {
+    it("TA sees zero courses when not enrolled in any", async () => {
       const ta = makeTA();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(taApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(0);
       expect(res.body.total).toBe(0);
     });
 
-    it('ADMIN sees every course offering, including ones they do not own (#781)', async () => {
+    it("ADMIN sees every course offering, including ones they do not own (#781)", async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
 
-      const res = await request(adminApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(adminApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data.map((c) => c.id)).toContain(seed.course.id);
@@ -201,74 +203,74 @@ describe('Courses routes', () => {
     // without a matching Core enrollment, so Core's cookie-scoped list
     // (`listEduAiCourses`) silently omits the course — reproduces the raw-HTTP
     // repro that motivated this fix.
-    it('STUDENT sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+    it("STUDENT sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]); // not in the caller's Core-scoped list
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: true },
+        { id: seed.course.coreOfferingId, name: "Test Course", isPublished: true },
       ]);
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(studentApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe(seed.course.id);
-      expect(res.body.data[0].title).toBe('Test Course');
+      expect(res.body.data[0].title).toBe("Test Course");
       expect(res.body.data[0].isPublished).toBe(true);
       expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
     });
 
-    it('STUDENT still sees no courses when the AT-enrolled course is unpublished in Core, even via the fallback (#1082 fail-closed)', async () => {
+    it("STUDENT still sees no courses when the AT-enrolled course is unpublished in Core, even via the fallback (#1082 fail-closed)", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false },
+        { id: seed.course.coreOfferingId, name: "Test Course", isPublished: false },
       ]);
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(studentApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(0);
       expect(res.body.total).toBe(0);
     });
 
-    it('STUDENT sees no courses when the fallback catalog also has no match (both-miss stays hidden)', async () => {
+    it("STUDENT sees no courses when the fallback catalog also has no match (both-miss stays hidden)", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([]);
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(studentApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(0);
       expect(res.body.total).toBe(0);
     });
 
-    it('TA sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+    it("TA sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false },
+        { id: seed.course.coreOfferingId, name: "Test Course", isPublished: false },
       ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(taApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe(seed.course.id);
-      expect(res.body.data[0].title).toBe('Test Course');
+      expect(res.body.data[0].title).toBe("Test Course");
     });
 
-    it('ADMIN sees Core courses with no local anchor yet — create-on-open (#1072 step 3 / #1074)', async () => {
-      const UNANCHORED_CORE_ID = 'core-cuid-unanchored';
+    it("ADMIN sees Core courses with no local anchor yet — create-on-open (#1072 step 3 / #1074)", async () => {
+      const UNANCHORED_CORE_ID = "core-cuid-unanchored";
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: UNANCHORED_CORE_ID, code: 'COSC 999', name: 'Not Yet Imported' },
+        { id: UNANCHORED_CORE_ID, code: "COSC 999", name: "Not Yet Imported" },
       ]);
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
@@ -278,7 +280,7 @@ describe('Courses routes', () => {
       });
       expect(before).toBeNull();
 
-      const res = await request(adminApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(adminApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
@@ -290,27 +292,27 @@ describe('Courses routes', () => {
       expect(after).not.toBeNull();
     });
 
-    it('returns 400 PAGINATION_REQUIRED when page/pageSize are omitted', async () => {
-      const res = await request(profApp).get('/api/courses');
+    it("returns 400 PAGINATION_REQUIRED when page/pageSize are omitted", async () => {
+      const res = await request(profApp).get("/api/courses");
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('PAGINATION_REQUIRED');
+      expect(res.body.code).toBe("PAGINATION_REQUIRED");
     });
   });
 
   // ── GET /api/courses/:id ──────────────────────────────────────────
 
-  describe('GET /api/courses/:id', () => {
-    it('returns course details for a member', async () => {
+  describe("GET /api/courses/:id", () => {
+    it("returns course details for a member", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(seed.course.id);
-      expect(res.body.title).toBe('Test Course');
+      expect(res.body.title).toBe("Test Course");
       expect(res.body.isPublished).toBe(true);
     });
 
-    it('TA enrolled in course can access course details', async () => {
+    it("TA enrolled in course can access course details", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
@@ -320,10 +322,10 @@ describe('Courses routes', () => {
       expect(res.body.id).toBe(seed.course.id);
     });
 
-    it('TA enrolled in course sees it even when unpublished', async () => {
+    it("TA enrolled in course sees it even when unpublished", async () => {
       vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
         id: seed.course.coreOfferingId,
-        name: 'Test Course',
+        name: "Test Course",
         isPublished: false,
       });
       const ta = await enrollTa();
@@ -335,7 +337,7 @@ describe('Courses routes', () => {
       expect(res.body.isPublished).toBe(false);
     });
 
-    it('returns 403 for non-member', async () => {
+    it("returns 403 for non-member", async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
 
@@ -344,13 +346,13 @@ describe('Courses routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 404 for non-existent course', async () => {
-      const res = await request(profApp).get('/api/courses/999999');
+    it("returns 404 for non-existent course", async () => {
+      const res = await request(profApp).get("/api/courses/999999");
 
       expect(res.status).toBe(404);
     });
 
-    it('auto-syncs enrollments from Core before checking membership (#1065)', async () => {
+    it("auto-syncs enrollments from Core before checking membership (#1065)", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
 
       expect(res.status).toBe(200);
@@ -360,8 +362,8 @@ describe('Courses routes', () => {
       );
     });
 
-    it('falls back to the local mirror when the enrollment auto-sync fails', async () => {
-      vi.mocked(syncCourseEnrollments).mockRejectedValueOnce(new Error('Core unavailable'));
+    it("falls back to the local mirror when the enrollment auto-sync fails", async () => {
+      vi.mocked(syncCourseEnrollments).mockRejectedValueOnce(new Error("Core unavailable"));
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
@@ -371,7 +373,7 @@ describe('Courses routes', () => {
       expect(res.body.id).toBe(seed.course.id);
     });
 
-    it('bounds the Core course-field lookup with a signal, not just the enrollment sync (#1173 review)', async () => {
+    it("bounds the Core course-field lookup with a signal, not just the enrollment sync (#1173 review)", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
 
       expect(res.status).toBe(200);
@@ -381,9 +383,9 @@ describe('Courses routes', () => {
       );
     });
 
-    it('falls back to the local mirror when the Core course-field lookup hangs, instead of hanging the request', async () => {
+    it("falls back to the local mirror when the Core course-field lookup hangs, instead of hanging the request", async () => {
       vi.mocked(fetchCoreCourseSafe).mockRejectedValueOnce(
-        new DOMException('The operation was aborted', 'TimeoutError'),
+        new DOMException("The operation was aborted", "TimeoutError"),
       );
 
       const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
@@ -391,17 +393,17 @@ describe('Courses routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(seed.course.id);
       expect(res.body.title).toBeNull();
-      expect(res.headers['x-core-status']).toBe('unavailable');
+      expect(res.headers["x-core-status"]).toBe("unavailable");
     });
   });
 
   // ── POST /api/courses ─────────────────────────────────────────────
 
-  describe('POST /api/courses', () => {
-    it('returns 403 — course creation is managed in EduAI Core (#632)', async () => {
+  describe("POST /api/courses", () => {
+    it("returns 403 — course creation is managed in EduAI Core (#632)", async () => {
       const res = await request(profApp)
-        .post('/api/courses')
-        .send({ title: 'New Course', description: 'A brand new course' });
+        .post("/api/courses")
+        .send({ title: "New Course", description: "A brand new course" });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toMatch(/EduAI Core/i);
@@ -410,20 +412,20 @@ describe('Courses routes', () => {
 
   // ── PATCH /api/courses/:id/publish ────────────────────────────────
 
-  describe('PATCH /api/courses/:id/publish', () => {
+  describe("PATCH /api/courses/:id/publish", () => {
     afterEach(() => {
       vi.unstubAllGlobals();
     });
 
-    it('publishes a course', async () => {
+    it("publishes a course", async () => {
       // Every course is Core-linked now (#1072 step 4) — publish writes
       // through to Core over the real `fetch`, so it must be stubbed.
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         vi.fn().mockResolvedValue({
           ok: true,
           status: 200,
-          text: () => Promise.resolve(''),
+          text: () => Promise.resolve(""),
           json: () => Promise.resolve({ id: seed.course.coreOfferingId, isPublished: true }),
         }),
       );
@@ -437,23 +439,23 @@ describe('Courses routes', () => {
 
   // ── PATCH /api/courses/:id/unpublish ──────────────────────────────
 
-  describe('PATCH /api/courses/:id/unpublish', () => {
+  describe("PATCH /api/courses/:id/unpublish", () => {
     afterEach(() => {
       vi.unstubAllGlobals();
     });
 
-    it('unpublishes a course and cascades to modules and lessons', async () => {
+    it("unpublishes a course and cascades to modules and lessons", async () => {
       // Every course is Core-linked now (#1072 step 4) — unpublish writes
       // through to Core over the real `fetch`, so it must be stubbed. The
       // read-back after unpublish goes through the module-mocked
       // `fetchCoreCourseSafe` (shared across this file), not the raw `fetch`
       // stub, so it needs its own override.
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         vi.fn().mockResolvedValue({
           ok: true,
           status: 200,
-          text: () => Promise.resolve(''),
+          text: () => Promise.resolve(""),
           json: () => Promise.resolve({ id: seed.course.coreOfferingId, isPublished: false }),
         }),
       );
@@ -483,86 +485,84 @@ describe('Courses routes', () => {
 
   // ── POST /api/courses/import-external (#578) ─────────────────────
 
-  describe('POST /api/courses/import-external', () => {
-    it('imports a Core course the instructor is enrolled in', async () => {
+  describe("POST /api/courses/import-external", () => {
+    it("imports a Core course the instructor is enrolled in", async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: 'core-course-1',
-        code: 'COSC 111',
-        name: 'Computing I',
-        term: 'Fall',
+        id: "core-course-1",
+        code: "COSC 111",
+        name: "Computing I",
+        term: "Fall",
         year: 2026,
       });
 
       const res = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .send({ externalCourseId: 'core-course-1' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .send({ externalCourseId: "core-course-1" });
 
       expect(res.status).toBe(201);
-      expect(res.body.coreOfferingId).toBe('core-course-1');
+      expect(res.body.coreOfferingId).toBe("core-course-1");
       expect(findEduAiCourseById).toHaveBeenCalledWith(
-        'core-course-1',
-        expect.objectContaining({ cookie: 'session=valid' }),
+        "core-course-1",
+        expect.objectContaining({ cookie: "session=valid" }),
       );
     });
 
-    it('is an idempotent ensure: re-importing an already-anchored course returns 200 with the same offering', async () => {
+    it("is an idempotent ensure: re-importing an already-anchored course returns 200 with the same offering", async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: 'core-course-1',
-        code: 'COSC 111',
-        name: 'Computing I',
-        term: 'W1',
+        id: "core-course-1",
+        code: "COSC 111",
+        name: "Computing I",
+        term: "W1",
         year: 2026,
       });
 
       const first = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .send({ externalCourseId: 'core-course-1' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .send({ externalCourseId: "core-course-1" });
       expect(first.status).toBe(201);
 
       // Second import (e.g. the caller raced the background mirror, or simply
       // retried) succeeds with the existing row rather than conflicting.
       const second = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .send({ externalCourseId: 'core-course-1' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .send({ externalCourseId: "core-course-1" });
       expect(second.status).toBe(200);
       expect(second.body.id).toBe(first.body.id);
-      expect(second.body.coreOfferingId).toBe('core-course-1');
+      expect(second.body.coreOfferingId).toBe("core-course-1");
     });
 
-    it('returns 403 when the Core course is not in the instructor scoped list (#578)', async () => {
+    it("returns 403 when the Core course is not in the instructor scoped list (#578)", async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue(null);
 
       const res = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .send({ externalCourseId: 'core-course-not-mine' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .send({ externalCourseId: "core-course-not-mine" });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+      expect(res.body.error).toBe("CORE_COURSE_NOT_AUTHORIZED");
     });
 
-    it('returns 400 without externalCourseId', async () => {
-      const res = await request(profApp)
-        .post('/api/courses/import-external')
-        .send({});
+    it("returns 400 without externalCourseId", async () => {
+      const res = await request(profApp).post("/api/courses/import-external").send({});
 
       expect(res.status).toBe(400);
     });
   });
 
-  describe('POST /api/courses/:courseId/sync-enrollments (#578)', () => {
-    it('syncs student enrollments for an EduAI-imported course the instructor owns', async () => {
+  describe("POST /api/courses/:courseId/sync-enrollments (#578)", () => {
+    it("syncs student enrollments for an EduAI-imported course the instructor owns", async () => {
       await prisma.courseOffering.update({
         where: { id: seed.course.id },
-        data: { coreOfferingId: 'core-1' },
+        data: { coreOfferingId: "core-1" },
       });
 
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/sync-enrollments`)
-        .set('Cookie', 'session=valid');
+        .set("Cookie", "session=valid");
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ synced: 2, created: 1, deleted: 0, errors: [] });
@@ -572,13 +572,13 @@ describe('Courses routes', () => {
       );
     });
 
-    it('returns 403 when the instructor is not assigned to the course', async () => {
+    it("returns 403 when the instructor is not assigned to the course", async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
 
       const res = await request(otherApp)
         .post(`/api/courses/${seed.course.id}/sync-enrollments`)
-        .set('Cookie', 'session=valid');
+        .set("Cookie", "session=valid");
 
       expect(res.status).toBe(403);
     });
@@ -592,7 +592,7 @@ describe('Courses routes', () => {
 
   // ── GET /api/courses/:courseId/submissions (enriched) ─────────────
 
-  describe('GET /api/courses/:courseId/submissions', () => {
+  describe("GET /api/courses/:courseId/submissions", () => {
     let activity;
 
     beforeEach(async () => {
@@ -600,11 +600,11 @@ describe('Courses routes', () => {
         data: {
           lessonId: seed.lesson.id,
           mainTopicId: seed.topic.id,
-          instructionsMd: 'Answer.',
+          instructionsMd: "Answer.",
           config: {
-            question: 'What is 2+2?',
-            questionType: 'MCQ',
-            options: ['3', '4', '5'],
+            question: "What is 2+2?",
+            questionType: "MCQ",
+            options: ["3", "4", "5"],
             answer: 1,
             hints: [],
           },
@@ -617,56 +617,56 @@ describe('Courses routes', () => {
         .send({ answerOption: 1 });
     });
 
-    it('enriches rows with lesson/question context and a human answer label', async () => {
+    it("enriches rows with lesson/question context and a human answer label", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/submissions`);
 
       expect(res.status).toBe(200);
       expect(res.body.length).toBe(1);
       const row = res.body[0];
-      expect(row.lessonTitle).toBe('Test Lesson');
-      expect(row.questionText).toBe('What is 2+2?');
+      expect(row.lessonTitle).toBe("Test Lesson");
+      expect(row.questionText).toBe("What is 2+2?");
       // answerOption 1 → options[1] === '4' (index mapped back to the label)
-      expect(row.answerLabel).toBe('4');
+      expect(row.answerLabel).toBe("4");
       // No Core service key wired in the test env → studentName degrades to null.
-      expect(row).toHaveProperty('studentName');
+      expect(row).toHaveProperty("studentName");
     });
 
-    it('enrolled TA can read submissions', async () => {
+    it("enrolled TA can read submissions", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/submissions`);
       expect(res.status).toBe(200);
     });
 
-    it('STUDENT gets 403', async () => {
+    it("STUDENT gets 403", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}/submissions`);
       expect(res.status).toBe(403);
     });
 
-    it('400 when take is not a number', async () => {
+    it("400 when take is not a number", async () => {
       const res = await request(profApp).get(
         `/api/courses/${seed.course.id}/submissions?take=lots`,
       );
       expect(res.status).toBe(400);
     });
 
-    it('400 when skip is not a number', async () => {
+    it("400 when skip is not a number", async () => {
       const res = await request(profApp).get(
         `/api/courses/${seed.course.id}/submissions?skip=lots`,
       );
       expect(res.status).toBe(400);
     });
 
-    it('400 when activityId is not a number', async () => {
+    it("400 when activityId is not a number", async () => {
       const res = await request(profApp).get(
         `/api/courses/${seed.course.id}/submissions?activityId=lots`,
       );
       expect(res.status).toBe(400);
     });
 
-    it('filters by a valid activityId', async () => {
+    it("filters by a valid activityId", async () => {
       const res = await request(profApp).get(
         `/api/courses/${seed.course.id}/submissions?activityId=${activity.id}`,
       );
@@ -674,24 +674,24 @@ describe('Courses routes', () => {
       expect(res.body.length).toBe(1);
     });
 
-    it('resolves studentName from the EduAI service-key enrollment lookup', async () => {
+    it("resolves studentName from the EduAI service-key enrollment lookup", async () => {
       const enrolledStudent = await prisma.submission.findFirst({
         where: { activityId: activity.id },
       });
       vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
-        { studentId: enrolledStudent.userId, studentName: 'Ada Lovelace' },
+        { studentId: enrolledStudent.userId, studentName: "Ada Lovelace" },
       ]);
 
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/submissions`);
 
       expect(res.status).toBe(200);
-      expect(res.body[0].studentName).toBe('Ada Lovelace');
+      expect(res.body[0].studentName).toBe("Ada Lovelace");
     });
   });
 
   // ── GET /api/courses/:courseId/feedback ────────────────────────────
 
-  describe('GET /api/courses/:courseId/feedback', () => {
+  describe("GET /api/courses/:courseId/feedback", () => {
     let activity;
     let student;
 
@@ -700,79 +700,75 @@ describe('Courses routes', () => {
         data: {
           lessonId: seed.lesson.id,
           mainTopicId: seed.topic.id,
-          instructionsMd: 'Answer.',
-          config: { question: 'What is 2+2?', questionType: 'MCQ', options: ['3', '4'] },
+          instructionsMd: "Answer.",
+          config: { question: "What is 2+2?", questionType: "MCQ", options: ["3", "4"] },
         },
       });
       student = await enrollStudent();
       await prisma.activityFeedback.create({
-        data: { activityId: activity.id, userId: student.id, rating: 5, note: 'Great!' },
+        data: { activityId: activity.id, userId: student.id, rating: 5, note: "Great!" },
       });
     });
 
-    it('returns 401 when unauthenticated', async () => {
-      const express = (await import('express')).default;
-      const { default: courseRoutes } = await import('../../src/routes/courses.js');
+    it("returns 401 when unauthenticated", async () => {
+      const express = (await import("express")).default;
+      const { default: courseRoutes } = await import("../../src/routes/courses.js");
       const bareApp = express();
       bareApp.use(express.json());
-      bareApp.use('/api', courseRoutes);
+      bareApp.use("/api", courseRoutes);
 
       const res = await request(bareApp).get(`/api/courses/${seed.course.id}/feedback`);
       expect(res.status).toBe(401);
     });
 
-    it('returns 400 for a non-numeric course id', async () => {
-      const res = await request(profApp).get('/api/courses/not-a-number/feedback');
+    it("returns 400 for a non-numeric course id", async () => {
+      const res = await request(profApp).get("/api/courses/not-a-number/feedback");
       expect(res.status).toBe(400);
     });
 
-    it('returns 404 for a non-existent course', async () => {
-      const res = await request(profApp).get('/api/courses/999999/feedback');
+    it("returns 404 for a non-existent course", async () => {
+      const res = await request(profApp).get("/api/courses/999999/feedback");
       expect(res.status).toBe(404);
     });
 
-    it('instructor reads course feedback', async () => {
+    it("instructor reads course feedback", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback`);
       expect(res.status).toBe(200);
       expect(res.body.length).toBe(1);
-      expect(res.body[0]).toMatchObject({ rating: 5, note: 'Great!', userId: student.id });
+      expect(res.body[0]).toMatchObject({ rating: 5, note: "Great!", userId: student.id });
     });
 
-    it('enrolled TA can read feedback', async () => {
+    it("enrolled TA can read feedback", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/feedback`);
       expect(res.status).toBe(200);
     });
 
-    it('STUDENT (non-TA) gets 403', async () => {
+    it("STUDENT (non-TA) gets 403", async () => {
       const studentApp = await createApp({ mockUser: student });
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}/feedback`);
       expect(res.status).toBe(403);
     });
 
-    it('400 when take is not a number', async () => {
-      const res = await request(profApp).get(
-        `/api/courses/${seed.course.id}/feedback?take=lots`,
-      );
+    it("400 when take is not a number", async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback?take=lots`);
       expect(res.status).toBe(400);
     });
 
-    it('400 when skip is not a number', async () => {
-      const res = await request(profApp).get(
-        `/api/courses/${seed.course.id}/feedback?skip=lots`,
-      );
+    it("400 when skip is not a number", async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback?skip=lots`);
       expect(res.status).toBe(400);
     });
 
-    it('400 when activityId is not a number', async () => {
+    it("400 when activityId is not a number", async () => {
       const res = await request(profApp).get(
         `/api/courses/${seed.course.id}/feedback?activityId=lots`,
       );
       expect(res.status).toBe(400);
     });
 
-    it('filters by studentId', async () => {
+    it("filters by studentId", async () => {
       const res = await request(profApp).get(
         `/api/courses/${seed.course.id}/feedback?studentId=${student.id}`,
       );
@@ -783,44 +779,42 @@ describe('Courses routes', () => {
 
   // ── POST /api/courses/:courseId/import (module/lesson cloning) ────
 
-  describe('POST /api/courses/:courseId/import', () => {
+  describe("POST /api/courses/:courseId/import", () => {
     let srcSeed;
 
     beforeEach(async () => {
       srcSeed = await seedMinimalCourse(prof.id);
     });
 
-    it('returns 400 for a non-numeric course id', async () => {
+    it("returns 400 for a non-numeric course id", async () => {
       const res = await request(profApp)
-        .post('/api/courses/not-a-number/import')
+        .post("/api/courses/not-a-number/import")
         .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
       expect(res.status).toBe(400);
     });
 
-    it('returns 400 for a non-numeric sourceCourseId', async () => {
+    it("returns 400 for a non-numeric sourceCourseId", async () => {
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/import`)
-        .send({ moduleIds: [srcSeed.module.id], sourceCourseId: 'abc' });
+        .send({ moduleIds: [srcSeed.module.id], sourceCourseId: "abc" });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/sourceCourseId/i);
     });
 
-    it('returns 400 when neither moduleIds nor lessonIds are provided', async () => {
-      const res = await request(profApp)
-        .post(`/api/courses/${seed.course.id}/import`)
-        .send({});
+    it("returns 400 when neither moduleIds nor lessonIds are provided", async () => {
+      const res = await request(profApp).post(`/api/courses/${seed.course.id}/import`).send({});
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/nothing to import/i);
     });
 
-    it('returns 404 when the destination course does not exist', async () => {
+    it("returns 404 when the destination course does not exist", async () => {
       const res = await request(profApp)
-        .post('/api/courses/999999/import')
+        .post("/api/courses/999999/import")
         .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
       expect(res.status).toBe(404);
     });
 
-    it('returns 403 when the caller is not authorized for the destination course', async () => {
+    it("returns 403 when the caller is not authorized for the destination course", async () => {
       const outsider = makeProfessor();
       const outsiderApp = await createApp({ mockUser: outsider });
 
@@ -831,8 +825,8 @@ describe('Courses routes', () => {
       expect(res.body.error).toMatch(/this course/i);
     });
 
-    describe('module import', () => {
-      it('returns 400 when sourceCourseId is missing', async () => {
+    describe("module import", () => {
+      it("returns 400 when sourceCourseId is missing", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ moduleIds: [srcSeed.module.id] });
@@ -840,7 +834,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/sourceCourseId required/i);
       });
 
-      it('returns 403 when the caller is not authorized for the source course', async () => {
+      it("returns 403 when the caller is not authorized for the source course", async () => {
         const otherProf = makeProfessor();
         const otherSeed = await seedMinimalCourse(otherProf.id);
 
@@ -851,7 +845,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/source course/i);
       });
 
-      it('returns 400 when a module does not belong to the source course', async () => {
+      it("returns 400 when a module does not belong to the source course", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ moduleIds: [seed.module.id], sourceCourseId: srcSeed.course.id });
@@ -859,7 +853,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/do not belong to source course/i);
       });
 
-      it('clones the module into the destination course', async () => {
+      it("clones the module into the destination course", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
@@ -874,8 +868,8 @@ describe('Courses routes', () => {
       });
     });
 
-    describe('lesson import', () => {
-      it('returns 400 when targetModuleId is missing', async () => {
+    describe("lesson import", () => {
+      it("returns 400 when targetModuleId is missing", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ lessonIds: [srcSeed.lesson.id] });
@@ -883,7 +877,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/targetModuleId required/i);
       });
 
-      it('returns 400 when targetModuleId does not belong to the destination course', async () => {
+      it("returns 400 when targetModuleId does not belong to the destination course", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ lessonIds: [srcSeed.lesson.id], targetModuleId: srcSeed.module.id });
@@ -891,7 +885,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/does not belong to destination course/i);
       });
 
-      it('returns 400 when a lesson id does not exist', async () => {
+      it("returns 400 when a lesson id does not exist", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ lessonIds: [999999], targetModuleId: seed.module.id });
@@ -899,7 +893,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/were not found/i);
       });
 
-      it('returns 403 when the caller is not authorized for the lesson source course', async () => {
+      it("returns 403 when the caller is not authorized for the lesson source course", async () => {
         const otherProf = makeProfessor();
         const otherSeed = await seedMinimalCourse(otherProf.id);
 
@@ -910,7 +904,7 @@ describe('Courses routes', () => {
         expect(res.body.error).toMatch(/lesson source course/i);
       });
 
-      it('clones the lesson into the destination module', async () => {
+      it("clones the lesson into the destination module", async () => {
         const res = await request(profApp)
           .post(`/api/courses/${seed.course.id}/import`)
           .send({ lessonIds: [srcSeed.lesson.id], targetModuleId: seed.module.id });
@@ -925,44 +919,44 @@ describe('Courses routes', () => {
 
   // ── GET /api/me/dashboard-stats (role-aware rollup) ───────────────
 
-  describe('GET /api/me/dashboard-stats', () => {
-    it('INSTRUCTOR gets their course rollup', async () => {
-      const res = await request(profApp).get('/api/me/dashboard-stats');
+  describe("GET /api/me/dashboard-stats", () => {
+    it("INSTRUCTOR gets their course rollup", async () => {
+      const res = await request(profApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('INSTRUCTOR');
+      expect(res.body.role).toBe("INSTRUCTOR");
       expect(res.body.yourCourses).toBe(1);
       expect(res.body.publishedCourses).toBe(1);
-      expect(res.body).toHaveProperty('submissionsToReview');
+      expect(res.body).toHaveProperty("submissionsToReview");
     });
 
-    it('STUDENT gets an enrolled/progress rollup', async () => {
+    it("STUDENT gets an enrolled/progress rollup", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
-      const res = await request(studentApp).get('/api/me/dashboard-stats');
+      const res = await request(studentApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('STUDENT');
+      expect(res.body.role).toBe("STUDENT");
       expect(res.body.enrolledCourses).toBe(1);
-      expect(res.body).toHaveProperty('correctAnswerPercentage');
+      expect(res.body).toHaveProperty("correctAnswerPercentage");
     });
 
-    it('TA gets a TA rollup', async () => {
+    it("TA gets a TA rollup", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
-      const res = await request(taApp).get('/api/me/dashboard-stats');
+      const res = await request(taApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('TA');
+      expect(res.body.role).toBe("TA");
       expect(res.body.yourCourses).toBe(1);
     });
 
-    it('ADMIN gets a platform rollup', async () => {
+    it("ADMIN gets a platform rollup", async () => {
       const adminApp = await createApp({ mockUser: makeAdmin() });
-      const res = await request(adminApp).get('/api/me/dashboard-stats');
+      const res = await request(adminApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('ADMIN');
+      expect(res.body.role).toBe("ADMIN");
       expect(res.body.totalCourses).toBe(1);
       expect(res.body.publishedCourses).toBe(1);
     });
@@ -970,33 +964,33 @@ describe('Courses routes', () => {
     // #1082: dashboard-stats counterpart of the GET /courses fallback tests
     // above — the publish count must read through the same service-key
     // fallback, not just the caller-facing list.
-    it('STUDENT rollup counts an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+    it("STUDENT rollup counts an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: true },
+        { id: seed.course.coreOfferingId, name: "Test Course", isPublished: true },
       ]);
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/me/dashboard-stats');
+      const res = await request(studentApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('STUDENT');
+      expect(res.body.role).toBe("STUDENT");
       expect(res.body.enrolledCourses).toBe(1);
     });
 
-    it('TA rollup counts an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+    it("TA rollup counts an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: true },
+        { id: seed.course.coreOfferingId, name: "Test Course", isPublished: true },
       ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/me/dashboard-stats');
+      const res = await request(taApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('TA');
+      expect(res.body.role).toBe("TA");
       expect(res.body.yourCourses).toBe(1);
       expect(res.body.publishedCourses).toBe(1);
     });
@@ -1005,11 +999,11 @@ describe('Courses routes', () => {
 
 // ── Core write-through: publish state propagation (#477) ──────────────────────
 
-describe('Course publish state — Core write-through (#477)', () => {
+describe("Course publish state — Core write-through (#477)", () => {
   let prof;
   let seed;
   let profApp;
-  const CORE_OFFERING_ID = 'core-cuid-abc123';
+  const CORE_OFFERING_ID = "core-cuid-abc123";
 
   beforeEach(async () => {
     await truncateAll();
@@ -1024,7 +1018,7 @@ describe('Course publish state — Core write-through (#477)', () => {
     });
 
     // setCoreCoursePublishState and listEduAiCourses check for this key before calling fetch.
-    process.env.EDUAI_API_KEY = 'test-key';
+    process.env.EDUAI_API_KEY = "test-key";
   });
 
   afterEach(() => {
@@ -1032,14 +1026,14 @@ describe('Course publish state — Core write-through (#477)', () => {
     delete process.env.EDUAI_API_KEY;
   });
 
-  it('publish — calls Core publish endpoint and reads isPublished back from Core', async () => {
+  it("publish — calls Core publish endpoint and reads isPublished back from Core", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      text: () => Promise.resolve(''),
+      text: () => Promise.resolve(""),
       json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal("fetch", mockFetch);
     // `fetchCoreCourseSafe` is module-mocked (shared across this file's
     // describe blocks) — it no longer goes through the raw `fetch` stub
     // above, so the read-back after publish must be set explicitly too.
@@ -1051,24 +1045,24 @@ describe('Course publish state — Core write-through (#477)', () => {
     expect(res.body.isPublished).toBe(true);
 
     // Verify Core was called with the right URL and method.
-    const coreCalls = mockFetch.mock.calls.filter(([url]) =>
-      typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
+    const coreCalls = mockFetch.mock.calls.filter(
+      ([url]) => typeof url === "string" && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
     );
     expect(coreCalls).toHaveLength(1);
-    expect(coreCalls[0][1].method).toBe('PATCH');
+    expect(coreCalls[0][1].method).toBe("PATCH");
 
     // No local `isPublished` column exists anymore (#1072 step 4) — Core is
     // the sole store; the response body above is the only place to check.
   });
 
-  it('unpublish — calls Core unpublish endpoint and cascades locally', async () => {
+  it("unpublish — calls Core unpublish endpoint and cascades locally", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      text: () => Promise.resolve(''),
+      text: () => Promise.resolve(""),
       json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal("fetch", mockFetch);
     // `fetchCoreCourseSafe` is module-mocked (shared across this file's
     // describe blocks) — it no longer goes through the raw `fetch` stub
     // above, so the read-back after unpublish must be set explicitly too.
@@ -1079,8 +1073,8 @@ describe('Course publish state — Core write-through (#477)', () => {
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
 
-    const coreCalls = mockFetch.mock.calls.filter(([url]) =>
-      typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
+    const coreCalls = mockFetch.mock.calls.filter(
+      ([url]) => typeof url === "string" && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
     );
     expect(coreCalls).toHaveLength(1);
 
@@ -1091,12 +1085,15 @@ describe('Course publish state — Core write-through (#477)', () => {
     expect(updatedLesson.isPublished).toBe(false);
   });
 
-  it('publish — surfaces Core errors as 500 without touching local DB', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false,
-      status: 403,
-      text: () => Promise.resolve('Forbidden'),
-    }));
+  it("publish — surfaces Core errors as 500 without touching local DB", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve("Forbidden"),
+      }),
+    );
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
 
@@ -1110,38 +1107,44 @@ describe('Course publish state — Core write-through (#477)', () => {
   // builds the response fails. The route must report the write's own result
   // rather than letting the failed read fall back to "unpublished" — a
   // successful publish must never come back looking like a failure.
-  it('publish — re-read failure after a successful write reports isPublished:true, not a false failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(''),
-      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
-    }));
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+  it("publish — re-read failure after a successful write reports isPublished:true, not a false failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(""),
+        json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
+      }),
+    );
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
     expect(res.body.corePublishStale).toBe(true);
-    expect(res.headers['x-core-status']).toBe('unavailable');
+    expect(res.headers["x-core-status"]).toBe("unavailable");
   });
 
-  it('unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(''),
-      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
-    }));
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+  it("unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(""),
+        json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
+      }),
+    );
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
     expect(res.body.corePublishStale).toBe(true);
-    expect(res.headers['x-core-status']).toBe('unavailable');
+    expect(res.headers["x-core-status"]).toBe("unavailable");
 
     const updatedModule = await prisma.module.findUnique({ where: { id: seed.module.id } });
     expect(updatedModule.isPublished).toBe(false);
@@ -1154,20 +1157,20 @@ describe('Course publish state — Core write-through (#477)', () => {
   // guard is dead code now, harmlessly so; left in place rather than removed
   // as part of this migration.
 
-  it('import — sets coreOfferingId; isPublished is read-through from the Core course, not stored locally (#1072 step 3)', async () => {
-    const EXTERNAL_COURSE_ID = 'core-cuid-xyz';
+  it("import — sets coreOfferingId; isPublished is read-through from the Core course, not stored locally (#1072 step 3)", async () => {
+    const EXTERNAL_COURSE_ID = "core-cuid-xyz";
     const coreCourse = {
       id: EXTERNAL_COURSE_ID,
-      code: 'COSC 999',
-      name: 'Published Course',
+      code: "COSC 999",
+      name: "Published Course",
       isPublished: true,
     };
 
     vi.mocked(findEduAiCourseById).mockResolvedValue(coreCourse);
 
     const res = await request(profApp)
-      .post('/api/courses/import-external')
-      .set('Cookie', 'session=valid')
+      .post("/api/courses/import-external")
+      .set("Cookie", "session=valid")
       .send({ externalCourseId: EXTERNAL_COURSE_ID });
 
     expect(res.status).toBe(201);
@@ -1175,7 +1178,7 @@ describe('Course publish state — Core write-through (#477)', () => {
     expect(res.body.isPublished).toBe(true);
     expect(findEduAiCourseById).toHaveBeenCalledWith(
       EXTERNAL_COURSE_ID,
-      expect.objectContaining({ cookie: 'session=valid' }),
+      expect.objectContaining({ cookie: "session=valid" }),
     );
 
     const imported = await prisma.courseOffering.findFirst({

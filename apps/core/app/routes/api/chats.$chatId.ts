@@ -43,7 +43,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // read). The owner's session-resume path (useChatSession) reads metadata
     // only, so don't pull the full transcript on that hot path. Bounded to a
     // cursor "load more" page instead of the whole transcript (#1042).
-    let messages: { messageId: string; role: string; content: unknown; position: number }[] | undefined;
+    let messages:
+      | { messageId: string; role: string; content: unknown; position: number }[]
+      | undefined;
     let nextCursor: string | null = null;
     if (!isOwner) {
       const url = new URL(request.url);
@@ -86,7 +88,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 }
-
 
 /**
  * DELETE /api/chats/:chatId (#302, §10) — owner-only; ADMIN may delete any

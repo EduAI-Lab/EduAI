@@ -71,9 +71,7 @@ export function materialVisibilityOracle(row: MaterialVisibilityRow): Verdict {
 
   // Remaining case: an enrolled STUDENT.
   const hiddenFromStudent =
-    row.VisibleToStudents === "false" ||
-    row.AvailableAt === "future" ||
-    row.Unpublished === "yes";
+    row.VisibleToStudents === "false" || row.AvailableAt === "future" || row.Unpublished === "yes";
   return hiddenFromStudent
     ? { outcome: "denied", reason: "hidden-from-student" }
     : { outcome: "visible" };

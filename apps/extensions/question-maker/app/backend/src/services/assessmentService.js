@@ -2,13 +2,13 @@
  * Assessment service encapsulating CRUD operations plus question/section associations.
  * Ensures user ownership via course joins and keeps question ordering metadata consistent.
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
   formatSemesterDisplay,
-  deriveSemesterDisplayForCourseId
-} from './courseListService.js';
+  deriveSemesterDisplayForCourseId,
+} from "./courseListService.js";
 
 /**
  * Overwrites the transitional `semester` column value with the display string
@@ -33,22 +33,22 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
   const { type, name, courseId, description, blueprintConfig } = assessmentData;
 
   if (!type || !name) {
-    throw new Error('Type and name are required');
+    throw new Error("Type and name are required");
   }
 
   if (!courseId) {
-    throw new Error('Course ID is required');
+    throw new Error("Course ID is required");
   }
 
   const parsedCourseId = Number(courseId);
 
   const course = await prisma.course.findFirst({
     where: { id: parsedCourseId, userId },
-    select: { id: true }
+    select: { id: true },
   });
 
   if (!course) {
-    throw new Error('Course not found');
+    throw new Error("Course not found");
   }
 
   const semesterDisplay = await deriveSemesterDisplayForCourseId(parsedCourseId, { cookie });
@@ -59,8 +59,8 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
       name,
       courseId: parsedCourseId,
       description: description?.trim() || null,
-      blueprintConfig: blueprintConfig || null
-    }
+      blueprintConfig: blueprintConfig || null,
+    },
   });
 
   return { ...assessment, semester: semesterDisplay };
@@ -92,30 +92,51 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
         course: { select: { id: true, coreCourseId: true } },
         variants: {
           select: {
-            id: true, questionText: true, difficulty: true, answer: true, choices: true,
-            selectAllThatApply: true, correctAnswers: true,
-            questionMetadataId: true, isAiGenerated: true, isDraft: true,
+            id: true,
+            questionText: true,
+            difficulty: true,
+            answer: true,
+            choices: true,
+            selectAllThatApply: true,
+            correctAnswers: true,
+            questionMetadataId: true,
+            isAiGenerated: true,
+            isDraft: true,
             questionMetadata: {
               select: {
-                id: true, description: true, type: true, questionOrder: true,
+                id: true,
+                description: true,
+                type: true,
+                questionOrder: true,
                 course: { select: { id: true } },
               },
             },
           },
         },
         sections: {
-          orderBy: { position: 'asc' },
+          orderBy: { position: "asc" },
           include: {
             sectionVariants: {
               include: {
                 variant: {
                   select: {
-                    id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
-                    selectAllThatApply: true, correctAnswers: true,
-                    questionMetadataId: true, isAiGenerated: true, isDraft: true,
+                    id: true,
+                    questionText: true,
+                    difficulty: true,
+                    reasoningLevel: true,
+                    answer: true,
+                    choices: true,
+                    selectAllThatApply: true,
+                    correctAnswers: true,
+                    questionMetadataId: true,
+                    isAiGenerated: true,
+                    isDraft: true,
                     questionMetadata: {
                       select: {
-                        id: true, description: true, type: true, questionOrder: true,
+                        id: true,
+                        description: true,
+                        type: true,
+                        questionOrder: true,
                         course: { select: { id: true } },
                       },
                     },
@@ -126,7 +147,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
           },
         },
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: appliedLimit,
       skip: appliedOffset,
     }),
@@ -151,16 +172,26 @@ export const getAssessmentById = async (assessmentId, userId) => {
       course: { select: { id: true, coreCourseId: true } },
       variants: {
         select: {
-          id: true, questionText: true, difficulty: true, answer: true, choices: true,
-          selectAllThatApply: true, correctAnswers: true,
-          questionMetadataId: true, isAiGenerated: true, isDraft: true,
+          id: true,
+          questionText: true,
+          difficulty: true,
+          answer: true,
+          choices: true,
+          selectAllThatApply: true,
+          correctAnswers: true,
+          questionMetadataId: true,
+          isAiGenerated: true,
+          isDraft: true,
           questionMetadata: {
             select: {
-              id: true, description: true, type: true, questionOrder: true,
-              course: { select: { id: true } }
-            }
-          }
-        }
+              id: true,
+              description: true,
+              type: true,
+              questionOrder: true,
+              course: { select: { id: true } },
+            },
+          },
+        },
       },
       sections: {
         include: {
@@ -168,26 +199,37 @@ export const getAssessmentById = async (assessmentId, userId) => {
             include: {
               variant: {
                 select: {
-                  id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
-                  selectAllThatApply: true, correctAnswers: true,
-                  questionMetadataId: true, isAiGenerated: true, isDraft: true,
+                  id: true,
+                  questionText: true,
+                  difficulty: true,
+                  reasoningLevel: true,
+                  answer: true,
+                  choices: true,
+                  selectAllThatApply: true,
+                  correctAnswers: true,
+                  questionMetadataId: true,
+                  isAiGenerated: true,
+                  isDraft: true,
                   questionMetadata: {
                     select: {
-                      id: true, description: true, type: true, questionOrder: true,
-                      course: { select: { id: true } }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+                      id: true,
+                      description: true,
+                      type: true,
+                      questionOrder: true,
+                      course: { select: { id: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!assessment) {
-    throw new Error('Assessment not found');
+    throw new Error("Assessment not found");
   }
 
   return withDerivedSemester(await enrichRowWithCourse(assessment));
@@ -196,39 +238,49 @@ export const getAssessmentById = async (assessmentId, userId) => {
 /** Updates assessment metadata/blueprint while enforcing ownership and valid course references. */
 export const updateAssessment = async (assessmentId, updateData, userId) => {
   const assessment = await prisma.assessments.findFirst({
-    where: { id: Number(assessmentId), course: { userId } }
+    where: { id: Number(assessmentId), course: { userId } },
   });
 
   if (!assessment) {
-    throw new Error('Assessment not found');
+    throw new Error("Assessment not found");
   }
 
   if (updateData.courseId) {
     const targetCourse = await prisma.course.findFirst({
       where: { id: Number(updateData.courseId), userId },
-      select: { id: true }
+      select: { id: true },
     });
 
     if (!targetCourse) {
-      throw new Error('Course not found');
+      throw new Error("Course not found");
     }
   }
 
   // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
   // even if a legacy caller still sends one.
-  const ALLOWED_ASSESSMENT_UPDATE_FIELDS = ['type', 'name', 'courseId', 'description', 'blueprintConfig'];
+  const ALLOWED_ASSESSMENT_UPDATE_FIELDS = [
+    "type",
+    "name",
+    "courseId",
+    "description",
+    "blueprintConfig",
+  ];
   const { semester: _ignoredSemester, ...updateFields } = updateData;
   const normalizedUpdates = {
     ...Object.fromEntries(
-      Object.entries(updateFields).filter(([key]) => ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key))
+      Object.entries(updateFields).filter(([key]) =>
+        ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key),
+      ),
     ),
     ...(updateData.courseId !== undefined && { courseId: Number(updateData.courseId) }),
-    description: updateData.description !== undefined
-      ? (updateData.description?.trim() || null)
-      : assessment.description,
-    blueprintConfig: updateData.blueprintConfig !== undefined
-      ? updateData.blueprintConfig
-      : assessment.blueprintConfig
+    description:
+      updateData.description !== undefined
+        ? updateData.description?.trim() || null
+        : assessment.description,
+    blueprintConfig:
+      updateData.blueprintConfig !== undefined
+        ? updateData.blueprintConfig
+        : assessment.blueprintConfig,
   };
 
   // `include: { course: true }` returns the POST-update course relation — if
@@ -238,7 +290,7 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
   const updated = await prisma.assessments.update({
     where: { id: assessment.id },
     data: normalizedUpdates,
-    include: { course: true }
+    include: { course: true },
   });
 
   return withDerivedSemester(await enrichRowWithCourse(updated));
@@ -254,16 +306,16 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
  */
 export const deleteAssessment = async (assessmentId, userId) => {
   const assessment = await prisma.assessments.findFirst({
-    where: { id: Number(assessmentId), course: { userId } }
+    where: { id: Number(assessmentId), course: { userId } },
   });
 
   if (!assessment) {
-    throw new Error('Assessment not found');
+    throw new Error("Assessment not found");
   }
 
   await prisma.variants.updateMany({
     where: { assessmentId: assessment.id },
-    data: { assessmentId: null }
+    data: { assessmentId: null },
   });
 
   await prisma.assessments.delete({ where: { id: assessment.id } });
@@ -275,25 +327,25 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
   assessmentId = Number(assessmentId);
   // Verify user owns the question
   const question = await prisma.questionMetadata.findFirst({
-    where: { id: Number(questionId), course: { userId } }
+    where: { id: Number(questionId), course: { userId } },
   });
 
   if (!question) {
-    throw new Error('Question not found');
+    throw new Error("Question not found");
   }
 
   // Verify assessment exists and belongs to user
   const assessment = await prisma.assessments.findFirst({
-    where: { id: assessmentId, course: { userId } }
+    where: { id: assessmentId, course: { userId } },
   });
   if (!assessment) {
-    throw new Error('Assessment not found');
+    throw new Error("Assessment not found");
   }
 
   // The question and assessment must live in the same course — owner scoping alone
   // would let a question from another course the user owns be linked here (#1).
   if (question.courseId !== assessment.courseId) {
-    throw new Error('Question not found');
+    throw new Error("Question not found");
   }
 
   // Update question order
@@ -302,7 +354,7 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
 
   const updated = await prisma.questionMetadata.update({
     where: { id: question.id },
-    data: { questionOrder: currentOrder }
+    data: { questionOrder: currentOrder },
   });
 
   return updated;
@@ -313,25 +365,25 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
   assessmentId = Number(assessmentId);
   // Verify user owns the question
   const question = await prisma.questionMetadata.findFirst({
-    where: { id: Number(questionId), course: { userId } }
+    where: { id: Number(questionId), course: { userId } },
   });
 
   if (!question) {
-    throw new Error('Question not found');
+    throw new Error("Question not found");
   }
 
   // Verify assessment belongs to the user
   const assessment = await prisma.assessments.findFirst({
-    where: { id: assessmentId, course: { userId } }
+    where: { id: assessmentId, course: { userId } },
   });
 
   if (!assessment) {
-    throw new Error('Assessment not found');
+    throw new Error("Assessment not found");
   }
 
   // The question and assessment must live in the same course (#1).
   if (question.courseId !== assessment.courseId) {
-    throw new Error('Question not found');
+    throw new Error("Question not found");
   }
 
   // Remove from question order
@@ -340,7 +392,7 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
 
   const updated = await prisma.questionMetadata.update({
     where: { id: question.id },
-    data: { questionOrder: currentOrder }
+    data: { questionOrder: currentOrder },
   });
 
   return updated;
@@ -351,10 +403,10 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
   assessmentId = Number(assessmentId);
   // Verify assessment exists and belongs to user
   const assessment = await prisma.assessments.findFirst({
-    where: { id: assessmentId, course: { userId } }
+    where: { id: assessmentId, course: { userId } },
   });
   if (!assessment) {
-    throw new Error('Assessment not found');
+    throw new Error("Assessment not found");
   }
 
   // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
@@ -392,11 +444,16 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
       variants: {
         where: { assessmentId: Number(assessmentId) },
         select: {
-          id: true, questionText: true, difficulty: true, answer: true, choices: true,
-          selectAllThatApply: true, correctAnswers: true,
-        }
-      }
-    }
+          id: true,
+          questionText: true,
+          difficulty: true,
+          answer: true,
+          choices: true,
+          selectAllThatApply: true,
+          correctAnswers: true,
+        },
+      },
+    },
   });
 
   // `findMany({ where: { id: { in } } })` doesn't preserve `in`-list order —

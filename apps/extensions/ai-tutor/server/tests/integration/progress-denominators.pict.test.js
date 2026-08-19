@@ -11,23 +11,23 @@
 //
 // Real Postgres via the ai-tutor Prisma client. No network calls.
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 import {
   calculateCourseProgress,
   calculateModuleProgress,
   calculateLessonProgress,
-} from '../../src/services/progressCalculation.js';
+} from "../../src/services/progressCalculation.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
-  readFileSync(path.join(repoRoot, 'tests/models/progress-denominators.cases.json'), 'utf8'),
+  readFileSync(path.join(repoRoot, "tests/models/progress-denominators.cases.json"), "utf8"),
 );
 const { expectedResult } = await import(
-  path.join(repoRoot, 'tests/models/progress-denominators.oracle.ts')
+  path.join(repoRoot, "tests/models/progress-denominators.oracle.ts")
 );
 
 beforeEach(async () => {
@@ -49,19 +49,19 @@ async function buildRow(row) {
 
   await prisma.module.update({
     where: { id: seed.module.id },
-    data: { isPublished: row.ModulePublished === 'yes' },
+    data: { isPublished: row.ModulePublished === "yes" },
   });
   await prisma.lesson.update({
     where: { id: seed.lesson.id },
-    data: { isPublished: row.LessonPublished === 'yes' },
+    data: { isPublished: row.LessonPublished === "yes" },
   });
 
   const activity = await prisma.activity.create({
     data: {
       lessonId: seed.lesson.id,
       mainTopicId: seed.topic.id,
-      instructionsMd: 'Instructions',
-      config: { question: 'Q?', questionType: 'MCQ' },
+      instructionsMd: "Instructions",
+      config: { question: "Q?", questionType: "MCQ" },
       position: 0,
     },
   });
@@ -86,13 +86,18 @@ async function buildRow(row) {
     });
   }
 
-  return { courseId: seed.course.id, moduleId: seed.module.id, lessonId: seed.lesson.id, userId: student.id };
+  return {
+    courseId: seed.course.id,
+    moduleId: seed.module.id,
+    lessonId: seed.lesson.id,
+    userId: student.id,
+  };
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'progress-denominators PICT row #$index $row.LessonPublished/$row.ModulePublished/$row.AttemptPattern',
+  "progress-denominators PICT row #$index $row.LessonPublished/$row.ModulePublished/$row.AttemptPattern",
   ({ row }) => {
-    it('course, module, and lesson scope all agree with the oracle and with each other', async () => {
+    it("course, module, and lesson scope all agree with the oracle and with each other", async () => {
       const seeded = await buildRow(row);
       const expected = expectedResult(row);
 
@@ -102,7 +107,11 @@ describe.each(rows.map((row, index) => ({ row, index })))(
         calculateLessonProgress(seeded.lessonId, seeded.userId),
       ]);
 
-      expect({ course, module, lesson }).toEqual({ course: expected, module: expected, lesson: expected });
+      expect({ course, module, lesson }).toEqual({
+        course: expected,
+        module: expected,
+        lesson: expected,
+      });
     });
   },
 );

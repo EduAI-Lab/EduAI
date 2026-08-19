@@ -136,7 +136,11 @@ export async function addEnrollment(
   actorRank: number,
 ) {
   if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
-    return { status: "422", error: "VALIDATION_ERROR", fields: { body: "userId and role required" } } as const;
+    return {
+      status: "422",
+      error: "VALIDATION_ERROR",
+      fields: { body: "userId and role required" },
+    } as const;
   }
 
   if (!canAddEnrollmentRole(actorRank, payload.role)) {
@@ -162,10 +166,7 @@ export async function addEnrollment(
     });
     return { status: "201", enrollment } as const;
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       // A row already exists for [courseId, userId]. If it's an inactive
       // (previously removed) enrollment, reactivate it with the requested role
       // rather than 409 — a removed TA/student must be re-addable, e.g. after a

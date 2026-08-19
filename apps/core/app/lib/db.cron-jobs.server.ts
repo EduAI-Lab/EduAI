@@ -68,7 +68,8 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
   },
   {
     name: "qm-reconcile",
-    description: "Nullify stale core_course_id / core_topic_id / core_question_id references on Core 404",
+    description:
+      "Nullify stale core_course_id / core_topic_id / core_question_id references on Core 404",
     schedule: "0 2 * * *",
     scheduleLabel: "Daily at 02:00 UTC (QM server)",
     script: "",
@@ -196,9 +197,7 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
   }));
 }
 
-export async function findRunningCronRun(
-  jobName: string,
-): Promise<{ id: string } | null> {
+export async function findRunningCronRun(jobName: string): Promise<{ id: string } | null> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM cron_job_runs
@@ -285,12 +284,18 @@ export function triggerCronJobAsync(
   if (execution === "CORE") {
     void import("~/lib/cron-notify-api-key-expiry.server")
       .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
-      .then(({ notified }) => finishCronRun(runId, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0))
+      .then(({ notified }) =>
+        finishCronRun(runId, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0),
+      )
       .catch((err: unknown) =>
-        finishCronRun(runId, "ERROR", `Core handler failed: ${redactErrorForConsole(err)}`, 1)
-          .catch((finishErr: unknown) =>
-            console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
-          ),
+        finishCronRun(
+          runId,
+          "ERROR",
+          `Core handler failed: ${redactErrorForConsole(err)}`,
+          1,
+        ).catch((finishErr: unknown) =>
+          console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+        ),
       );
     return;
   }
@@ -340,7 +345,8 @@ export function triggerCronJobAsync(
  * the Core web process only records the requested run in Postgres.
  */
 export async function dispatchManualCronRuns(): Promise<void> {
-  const claimed = globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
+  const claimed =
+    globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
   const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string }>>`
     SELECT id, "jobName"
     FROM cron_job_runs

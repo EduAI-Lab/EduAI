@@ -191,12 +191,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (
         !serviceAuth &&
         (!access ||
-          (access.rank < 2 &&
-            !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
+          (access.rank < 2 && !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
       ) {
         return forbidden();
       }
-
 
       const body = await request.json();
       const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
@@ -256,7 +254,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       if (
         !serviceAuth &&
-        (!access || !session?.user ||
+        (!access ||
+          !session?.user ||
           !(await canManageTopic(
             access,
             session.user.id,
@@ -267,7 +266,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ) {
         return forbidden();
       }
-
 
       const body = await request.json();
       const result = await updateCourseTopic(courseId, topicId, body);
@@ -329,7 +327,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
 
         if (
-          !access || !session?.user ||
+          !access ||
+          !session?.user ||
           !(await canManageTopic(
             access,
             session.user.id,

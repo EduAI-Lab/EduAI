@@ -138,10 +138,14 @@ describe("db.log-retention-policy.server", () => {
 
     // Running both cleanups together keeps observability storage policy consistent across log classes.
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ createdAt: expect.any(Object) }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ createdAt: expect.any(Object) }),
+      }),
     );
     expect(prisma.systemLog.deleteMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ createdAt: expect.any(Object) }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ createdAt: expect.any(Object) }),
+      }),
     );
     expect(result).toMatchObject({
       deletedAuditRows: 4,

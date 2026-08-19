@@ -60,8 +60,12 @@ function extractText(content: Prisma.JsonValue | null | undefined): string | nul
     if (typeof obj.content === "string" && obj.content.trim()) return obj.content.trim();
     if (Array.isArray(obj.parts)) {
       const text = obj.parts
-        .filter((p): p is { type: string; text: string } =>
-          !!p && typeof p === "object" && (p as any).type === "text" && typeof (p as any).text === "string",
+        .filter(
+          (p): p is { type: string; text: string } =>
+            !!p &&
+            typeof p === "object" &&
+            (p as any).type === "text" &&
+            typeof (p as any).text === "string",
         )
         .map((p) => p.text)
         .join(" ")
@@ -186,16 +190,10 @@ export async function listChats(
   const { courseId, userId, scope, limit = 30 } = options;
 
   const visibility =
-    scope === "own"
-      ? { userId: viewer.id }
-      : await buildChatVisibilityFilter(viewer);
+    scope === "own" ? { userId: viewer.id } : await buildChatVisibilityFilter(viewer);
 
   const where: Prisma.ChatWhereInput = {
-    AND: [
-      visibility,
-      ...(courseId ? [{ courseId }] : []),
-      ...(userId ? [{ userId }] : []),
-    ],
+    AND: [visibility, ...(courseId ? [{ courseId }] : []), ...(userId ? [{ userId }] : [])],
   };
 
   const chats = await prisma.chat.findMany({

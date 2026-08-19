@@ -5,11 +5,11 @@
  * (course.js → topicSyncService), so this router only exposes a read-only
  * sync-status report. Routes are per-course access gated (rbac-matrix §8, TA+).
  */
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { authenticateToken } from '../middleware/auth.js';
-import { requireCourseAccess } from '../middleware/courseAccess.js';
-import { getCourseTopicsFromCore } from '../services/coreApiService.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { authenticateToken } from "../middleware/auth.js";
+import { requireCourseAccess } from "../middleware/courseAccess.js";
+import { getCourseTopicsFromCore } from "../services/coreApiService.js";
 
 const router = express.Router();
 
@@ -26,9 +26,9 @@ const courseIdFromParam = (req) => req.params.courseId;
  * already-linked local topics (no dedicated sync-timestamp column exists), or null.
  */
 router.get(
-  '/sync-status/:courseId',
+  "/sync-status/:courseId",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  requireCourseAccess({ min: "ta", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
       const course = req.qmCourse;
@@ -39,7 +39,9 @@ router.get(
       const allLinked = localCount > 0 && linkedTopics.length === localCount;
 
       const lastSyncedAt = linkedTopics.length
-        ? new Date(Math.max(...linkedTopics.map((t) => new Date(t.updatedAt).getTime()))).toISOString()
+        ? new Date(
+            Math.max(...linkedTopics.map((t) => new Date(t.updatedAt).getTime())),
+          ).toISOString()
         : null;
 
       // Not linked to Core: nothing to sync against; report 0 core topics.
@@ -48,7 +50,11 @@ router.get(
         const data = await getCourseTopicsFromCore(course.coreCourseId, {
           cookie: req.headers.cookie,
         });
-        const coreTopics = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : [];
+        const coreTopics = Array.isArray(data?.topics)
+          ? data.topics
+          : Array.isArray(data)
+            ? data
+            : [];
         coreCount = coreTopics.length;
       }
 
@@ -66,7 +72,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 export default router;

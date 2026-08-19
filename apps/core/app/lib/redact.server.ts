@@ -441,9 +441,7 @@ export function sanitizeSensitiveData(
     } else {
       const sanitized: Record<string, unknown> = {};
       for (const [key, entry] of Object.entries(record)) {
-        sanitized[key] = shouldRedactKey(key)
-          ? REDACTED_VALUE
-          : sanitizeSensitiveData(entry, seen);
+        sanitized[key] = shouldRedactKey(key) ? REDACTED_VALUE : sanitizeSensitiveData(entry, seen);
       }
       result = sanitized;
     }

@@ -93,8 +93,7 @@ export function useChatProgress(args: {
   const frozenSelectedModelRef = useRef<string | null>(null);
 
   const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
-  const inFlightAssistant =
-    isLoading && lastMessage?.role === "assistant" ? lastMessage : null;
+  const inFlightAssistant = isLoading && lastMessage?.role === "assistant" ? lastMessage : null;
   const hasAssistantText = assistantMessageHasText(inFlightAssistant);
   const activeToolName = activeToolNameFromMessage(inFlightAssistant);
   const fingerprint = assistantTextFingerprint(inFlightAssistant);

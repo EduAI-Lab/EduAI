@@ -55,10 +55,7 @@ const ROOT_LOADER_DATA = {
  */
 function serverHandoffStream(): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const chunks = [
-    encoder.encode('[{"_1":2},"loaderData",{}]'),
-    encoder.encode('["tail"]'),
-  ];
+  const chunks = [encoder.encode('[{"_1":2},"loaderData",{}]'), encoder.encode('["tail"]')];
   let i = 0;
   return new ReadableStream({
     pull(controller) {
@@ -137,9 +134,7 @@ function entryContext(): EntryContext {
 
 /** Every `src`-less (i.e. inline) `<script>` in the document, tag and body. */
 function inlineScripts(html: string): { tag: string; body: string }[] {
-  const matches = html.matchAll(
-    /<script\b(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g,
-  );
+  const matches = html.matchAll(/<script\b(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g);
   return [...matches].map((m) => ({ tag: `<script${m[1]}>`, body: m[2] }));
 }
 
@@ -210,8 +205,7 @@ describe("CSP nonce on document inline scripts (#1219)", () => {
     )?.[1];
 
     const themeScripts = inlineScripts(html).filter(
-      ({ body }) =>
-        body.includes("colorScheme") || body.includes("classList"),
+      ({ body }) => body.includes("colorScheme") || body.includes("classList"),
     );
 
     expect(themeScripts.length).toBeGreaterThanOrEqual(1);

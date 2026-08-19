@@ -33,18 +33,22 @@
  * Related: services/topicSync.js, services/eduaiAuth.js
  */
 
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole, isCourseAdmin } from '../middleware/auth.js';
-import { mapTopic } from '../utils/mappers.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import { mapTopic } from "../utils/mappers.js";
 import {
   parsePaginationParams,
   paginated,
   parseSearchParam,
   searchWhere,
   PaginationError,
-} from '../utils/pagination.js';
-import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from '../services/topicSync.js';
+} from "../utils/pagination.js";
+import {
+  syncExternalCourseTopics,
+  AUTO_SYNC_TTL_MS,
+  AUTO_SYNC_TIMEOUT_MS,
+} from "../services/topicSync.js";
 
 const router = express.Router();
 
@@ -144,7 +148,7 @@ async function ensureCourseAccess(courseId, user) {
   const isInstructor = course.instructors.some((assignment) => assignment.userId === userId);
   const isStudent = course.enrollments.some((enrollment) => enrollment.userId === userId);
   // Platform admins can read any course's topics (admin ⊇ instructor).
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === "ADMIN";
 
   return { course, authorized: isAdmin || isInstructor || isStudent, isInstructor };
 }
@@ -165,22 +169,22 @@ async function ensureCourseAccess(courseId, user) {
  * fetch or local write) falls back to serving the local mirror rather than
  * failing the request — mirrors the tolerance pattern in jobs/reconcile.js.
  */
-router.get('/courses/:courseId/topics', async (req, res) => {
+router.get("/courses/:courseId/topics", async (req, res) => {
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
+    return res.status(400).json({ error: "Invalid course id" });
   }
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: "Authentication required" });
   }
 
   try {
     const { course, authorized } = await ensureCourseAccess(courseId, req.user);
     if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+      return res.status(404).json({ error: "Course not found" });
     }
     if (!authorized) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+      return res.status(403).json({ error: "Not authorized for this course" });
     }
 
     // #1207: `search` narrows in SQL on the topic name. Topic <Select>
@@ -188,7 +192,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
     // missing saved topic by id rather than assuming it is on the loaded page.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const search = parseSearchParam(req);
-    const searchFragment = searchWhere(search, ['name']);
+    const searchFragment = searchWhere(search, ["name"]);
     const scope = { courseOfferingId: courseId };
     const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
 
@@ -203,8 +207,10 @@ router.get('/courses/:courseId/topics', async (req, res) => {
           signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
         });
       } catch (e) {
-        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
-        console.warn(`[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+        const phase = e?.phase === "write" ? "local write" : "Core fetch";
+        console.warn(
+          `[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`,
+        );
       }
     }
 
@@ -212,7 +218,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       prisma.topic.count({ where: whereClause }),
       prisma.topic.findMany({
         where: whereClause,
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        orderBy: [{ name: "asc" }, { id: "asc" }],
         skip: pageParams.skip,
         take: pageParams.take,
       }),
@@ -235,49 +241,53 @@ router.get('/courses/:courseId/topics', async (req, res) => {
  * Why: blocked for imported courses — those topics are owned by EduAI and a
  * manual addition would be wiped on next sync (or worse, drift silently).
  */
-router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-  if (!name) {
-    return res.status(400).json({ error: 'name is required' });
-  }
-
-  try {
-    const { course } = await ensureCourseAccess(courseId, instructor);
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
-    }
-    if (!await isCourseAdmin(instructor, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+router.post(
+  "/courses/:courseId/topics",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
-    // Block manual topic creation for imported (external) courses
-    if (course.coreOfferingId) {
-      return res.status(403).json({
-        error: 'Topics for imported courses are managed by EduAI and cannot be added here',
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    try {
+      const { course } = await ensureCourseAccess(courseId, instructor);
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+      if (!(await isCourseAdmin(instructor, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
+
+      // Block manual topic creation for imported (external) courses
+      if (course.coreOfferingId) {
+        return res.status(403).json({
+          error: "Topics for imported courses are managed by EduAI and cannot be added here",
+        });
+      }
+
+      const topic = await prisma.topic.create({
+        data: {
+          name,
+          courseOfferingId: courseId,
+        },
       });
-    }
 
-    const topic = await prisma.topic.create({
-      data: {
-        name,
-        courseOfferingId: courseId,
-      },
-    });
-
-    res.status(201).json(topic);
-  } catch (e) {
-    if (e?.code === 'P2002') {
-      return res.status(409).json({ error: 'Topic name already exists for this course' });
+      res.status(201).json(topic);
+    } catch (e) {
+      if (e?.code === "P2002") {
+        return res.status(409).json({ error: "Topic name already exists for this course" });
+      }
+      res.status(500).json({ error: String(e) });
     }
-    res.status(500).json({ error: String(e) });
-  }
-});
+  },
+);
 
 export default router;
 
@@ -298,49 +308,54 @@ export default router;
  * Why: name-keyed additive sync preserves activity references even if a topic
  * is renamed upstream — the instructor can use `/topics/remap` to consolidate.
  */
-router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
-    }
-    if (!await isCourseAdmin(instructor, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+router.post(
+  "/courses/:courseId/topics/sync",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
-    if (!course.coreOfferingId) {
-      return res.status(400).json({ error: 'Course is not imported from EduAI' });
-    }
-
-    let upstreamNames = [];
     try {
-      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId);
-      upstreamNames = upstream || [];
-    } catch (e) {
-      const status = Number.isInteger(e?.status) ? e.status : 502;
-      return res.status(status).json({ error: e?.message || 'Failed to sync topics from EduAI' });
-    }
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+      if (!(await isCourseAdmin(instructor, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
+      }
 
-    const topics = await prisma.topic.findMany({
-      where: { courseOfferingId: courseId },
-      orderBy: { name: 'asc' },
-    });
-    const upstreamSet = new Set(upstreamNames);
-    const missingTopics = topics.filter((t) => !upstreamSet.has(t.name));
-    res.json({ ok: true, topics, missingTopics });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      if (!course.coreOfferingId) {
+        return res.status(400).json({ error: "Course is not imported from EduAI" });
+      }
+
+      let upstreamNames = [];
+      try {
+        const { topics: synced, upstreamNames: upstream } =
+          await syncExternalCourseTopics(courseId);
+        upstreamNames = upstream || [];
+      } catch (e) {
+        const status = Number.isInteger(e?.status) ? e.status : 502;
+        return res.status(status).json({ error: e?.message || "Failed to sync topics from EduAI" });
+      }
+
+      const topics = await prisma.topic.findMany({
+        where: { courseOfferingId: courseId },
+        orderBy: { name: "asc" },
+      });
+      const upstreamSet = new Set(upstreamNames);
+      const missingTopics = topics.filter((t) => !upstreamSet.has(t.name));
+      res.json({ ok: true, topics, missingTopics });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 /**
  * POST /courses/:courseId/topics/remap — move activities between topics.
@@ -373,207 +388,214 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
  * main-topic `updateMany` left per pair (each carries different `data`).
  * Requests whose pairs observe each other keep the per-pair path.
  */
-router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const instructor = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  const mappings = Array.isArray(req.body?.mappings) ? req.body.mappings : [];
-  const normalized = mappings
-    .map((m) => ({ fromTopicId: String(m?.fromTopicId ?? ''), toTopicId: String(m?.toTopicId ?? '') }))
-    .filter(
-      (m) =>
-        m.fromTopicId.length > 0 &&
-        m.toTopicId.length > 0 &&
-        m.fromTopicId !== m.toTopicId,
-    );
-
-  if (normalized.length === 0) {
-    return res.status(400).json({ error: 'No valid mappings provided' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-    if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!await isCourseAdmin(instructor, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
+router.post(
+  "/courses/:courseId/topics/remap",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
+  async (req, res) => {
+    const instructor = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
-    // Serializable: the reads this route batches (topic ownership, the
-    // `ActivitySecondaryTopic` snapshot) are now taken once for the whole
-    // request instead of once per pair, so a concurrent remap or activity
-    // edit committing mid-batch would otherwise be applied against a stale
-    // snapshot and silently reported as `{ ok: true }`. Under SSI that
-    // interleaving aborts with a serialization failure and the caller retries.
-    // Remap is a rare, admin-only cleanup call, so the contention cost is nil.
-    await prisma.$transaction(async (tx) => {
-      // Every topic id is known before the loop starts, so resolve them in one
-      // read instead of two `findUnique` calls per pair (#1372). Scoping the
-      // query to `courseOfferingId` collapses "no such topic" and "belongs to
-      // another course" into a single set — the per-pair checks below already
-      // treated those two states identically.
-      const allTopicIds = Array.from(
-        new Set(normalized.flatMap((m) => [m.fromTopicId, m.toTopicId])),
+    const mappings = Array.isArray(req.body?.mappings) ? req.body.mappings : [];
+    const normalized = mappings
+      .map((m) => ({
+        fromTopicId: String(m?.fromTopicId ?? ""),
+        toTopicId: String(m?.toTopicId ?? ""),
+      }))
+      .filter(
+        (m) => m.fromTopicId.length > 0 && m.toTopicId.length > 0 && m.fromTopicId !== m.toTopicId,
       );
-      const ownedTopics = await tx.topic.findMany({
-        where: { id: { in: allTopicIds }, courseOfferingId: courseId },
-        select: { id: true },
+
+    if (normalized.length === 0) {
+      return res.status(400).json({ error: "No valid mappings provided" });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
       });
-      const ownedTopicIds = new Set(ownedTopics.map((t) => t.id));
-
-      // Each iteration deletes its own `fromTopicId`, so a later pair naming a
-      // consumed topic has to keep failing the ownership check the way the
-      // per-pair `findUnique` made it. Track the deletes instead of re-reading.
-      const deletedTopicIds = new Set();
-      const isUsable = (id) => ownedTopicIds.has(id) && !deletedTopicIds.has(id);
-
-      // Reject unknown/foreign topics before touching the join table, so a bad
-      // request costs one read instead of the full preload it would roll back
-      // anyway. The per-pair `isUsable` checks below still run: they also cover
-      // "consumed by an earlier pair", which this pre-pass can't see.
-      for (const { fromTopicId, toTopicId } of normalized) {
-        if (!ownedTopicIds.has(fromTopicId)) {
-          throw new Error('fromTopicId does not belong to this course');
-        }
-        if (!ownedTopicIds.has(toTopicId)) {
-          throw new Error('toTopicId does not belong to this course');
-        }
+      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!(await isCourseAdmin(instructor, course))) {
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
-      // Best-effort topic delete. `Activity.mainTopicId` is the only restricting
-      // FK (`ActivitySecondaryTopic` cascades), so filtering on it reproduces
-      // "skip the ones still referenced" without letting a failed DELETE abort
-      // the transaction — a caught FK error still leaves Postgres in 25P02, so
-      // every later statement, or the COMMIT itself, would fail silently.
-      const deleteTopicIfUnused = async (ids) => {
-        if (ids.length === 0) return;
-        for (const chunk of chunkIds(ids)) {
-          const { count } = await tx.topic.deleteMany({
-            where: { id: { in: chunk }, mainActivities: { none: {} } },
+      // Serializable: the reads this route batches (topic ownership, the
+      // `ActivitySecondaryTopic` snapshot) are now taken once for the whole
+      // request instead of once per pair, so a concurrent remap or activity
+      // edit committing mid-batch would otherwise be applied against a stale
+      // snapshot and silently reported as `{ ok: true }`. Under SSI that
+      // interleaving aborts with a serialization failure and the caller retries.
+      // Remap is a rare, admin-only cleanup call, so the contention cost is nil.
+      await prisma.$transaction(
+        async (tx) => {
+          // Every topic id is known before the loop starts, so resolve them in one
+          // read instead of two `findUnique` calls per pair (#1372). Scoping the
+          // query to `courseOfferingId` collapses "no such topic" and "belongs to
+          // another course" into a single set — the per-pair checks below already
+          // treated those two states identically.
+          const allTopicIds = Array.from(
+            new Set(normalized.flatMap((m) => [m.fromTopicId, m.toTopicId])),
+          );
+          const ownedTopics = await tx.topic.findMany({
+            where: { id: { in: allTopicIds }, courseOfferingId: courseId },
+            select: { id: true },
           });
-          if (count === chunk.length) {
-            for (const id of chunk) deletedTopicIds.add(id);
-          } else {
-            // Partial: re-read to learn which ones actually went.
-            const left = await tx.topic.findMany({
-              where: { id: { in: chunk } },
-              select: { id: true },
+          const ownedTopicIds = new Set(ownedTopics.map((t) => t.id));
+
+          // Each iteration deletes its own `fromTopicId`, so a later pair naming a
+          // consumed topic has to keep failing the ownership check the way the
+          // per-pair `findUnique` made it. Track the deletes instead of re-reading.
+          const deletedTopicIds = new Set();
+          const isUsable = (id) => ownedTopicIds.has(id) && !deletedTopicIds.has(id);
+
+          // Reject unknown/foreign topics before touching the join table, so a bad
+          // request costs one read instead of the full preload it would roll back
+          // anyway. The per-pair `isUsable` checks below still run: they also cover
+          // "consumed by an earlier pair", which this pre-pass can't see.
+          for (const { fromTopicId, toTopicId } of normalized) {
+            if (!ownedTopicIds.has(fromTopicId)) {
+              throw new Error("fromTopicId does not belong to this course");
+            }
+            if (!ownedTopicIds.has(toTopicId)) {
+              throw new Error("toTopicId does not belong to this course");
+            }
+          }
+
+          // Best-effort topic delete. `Activity.mainTopicId` is the only restricting
+          // FK (`ActivitySecondaryTopic` cascades), so filtering on it reproduces
+          // "skip the ones still referenced" without letting a failed DELETE abort
+          // the transaction — a caught FK error still leaves Postgres in 25P02, so
+          // every later statement, or the COMMIT itself, would fail silently.
+          const deleteTopicIfUnused = async (ids) => {
+            if (ids.length === 0) return;
+            for (const chunk of chunkIds(ids)) {
+              const { count } = await tx.topic.deleteMany({
+                where: { id: { in: chunk }, mainActivities: { none: {} } },
+              });
+              if (count === chunk.length) {
+                for (const id of chunk) deletedTopicIds.add(id);
+              } else {
+                // Partial: re-read to learn which ones actually went.
+                const left = await tx.topic.findMany({
+                  where: { id: { in: chunk } },
+                  select: { id: true },
+                });
+                const survived = new Set(left.map((t) => t.id));
+                for (const id of chunk) if (!survived.has(id)) deletedTopicIds.add(id);
+              }
+            }
+          };
+
+          const preloaded = await preloadSecondaryTopics(tx, courseId, normalized);
+
+          if (preloaded) {
+            // Pairs are proven independent here, so no pair observes another's
+            // writes: every secondary-relation write collapses into one statement
+            // instead of four per pair (#1372). Only the main-topic reassignment
+            // stays per-pair — each carries different `data`.
+            const fromTopicIds = normalized.map((m) => m.fromTopicId);
+            const createRows = [];
+            const queuedRows = new Set();
+            const sourceActivityIds = new Set();
+
+            for (const { fromTopicId, toTopicId } of normalized) {
+              await tx.activity.updateMany({
+                where: {
+                  mainTopicId: fromTopicId,
+                  lesson: { module: { courseOfferingId: courseId } },
+                },
+                data: { mainTopicId: toTopicId },
+              });
+
+              const have = preloaded.targetByTopic.get(toTopicId) ?? new Set();
+              for (const activityId of preloaded.sourceByTopic.get(fromTopicId) ?? []) {
+                sourceActivityIds.add(activityId);
+                // Fan-in (`A→C`, `B→C`) reads the same snapshot twice, so dedupe
+                // the queued rows as well as the ones the snapshot already has.
+                const key = `${activityId} ${toTopicId}`;
+                if (have.has(activityId) || queuedRows.has(key)) continue;
+                queuedRows.add(key);
+                createRows.push({ activityId, topicId: toTopicId });
+              }
+            }
+
+            if (createRows.length > 0) {
+              await tx.activitySecondaryTopic.createMany({
+                data: createRows,
+                skipDuplicates: true,
+              });
+            }
+            for (const activityIds of chunkIds(Array.from(sourceActivityIds))) {
+              await tx.activitySecondaryTopic.deleteMany({
+                where: { topicId: { in: fromTopicIds }, activityId: { in: activityIds } },
+              });
+            }
+            await deleteTopicIfUnused(fromTopicIds);
+            return;
+          }
+
+          for (const { fromTopicId, toTopicId } of normalized) {
+            // Re-check: an earlier pair in this batch may have consumed the topic.
+            if (!isUsable(fromTopicId)) {
+              throw new Error("fromTopicId does not belong to this course");
+            }
+            if (!isUsable(toTopicId)) {
+              throw new Error("toTopicId does not belong to this course");
+            }
+
+            // Reassign main topics
+            await tx.activity.updateMany({
+              where: {
+                mainTopicId: fromTopicId,
+                lesson: { module: { courseOfferingId: courseId } },
+              },
+              data: { mainTopicId: toTopicId },
             });
-            const survived = new Set(left.map((t) => t.id));
-            for (const id of chunk) if (!survived.has(id)) deletedTopicIds.add(id);
-          }
-        }
-      };
 
-      const preloaded = await preloadSecondaryTopics(tx, courseId, normalized);
-
-      if (preloaded) {
-        // Pairs are proven independent here, so no pair observes another's
-        // writes: every secondary-relation write collapses into one statement
-        // instead of four per pair (#1372). Only the main-topic reassignment
-        // stays per-pair — each carries different `data`.
-        const fromTopicIds = normalized.map((m) => m.fromTopicId);
-        const createRows = [];
-        const queuedRows = new Set();
-        const sourceActivityIds = new Set();
-
-        for (const { fromTopicId, toTopicId } of normalized) {
-          await tx.activity.updateMany({
-            where: {
-              mainTopicId: fromTopicId,
-              lesson: { module: { courseOfferingId: courseId } },
-            },
-            data: { mainTopicId: toTopicId },
-          });
-
-          const have = preloaded.targetByTopic.get(toTopicId) ?? new Set();
-          for (const activityId of preloaded.sourceByTopic.get(fromTopicId) ?? []) {
-            sourceActivityIds.add(activityId);
-            // Fan-in (`A→C`, `B→C`) reads the same snapshot twice, so dedupe
-            // the queued rows as well as the ones the snapshot already has.
-            const key = `${activityId} ${toTopicId}`;
-            if (have.has(activityId) || queuedRows.has(key)) continue;
-            queuedRows.add(key);
-            createRows.push({ activityId, topicId: toTopicId });
-          }
-        }
-
-        if (createRows.length > 0) {
-          await tx.activitySecondaryTopic.createMany({
-            data: createRows,
-            skipDuplicates: true,
-          });
-        }
-        for (const activityIds of chunkIds(Array.from(sourceActivityIds))) {
-          await tx.activitySecondaryTopic.deleteMany({
-            where: { topicId: { in: fromTopicIds }, activityId: { in: activityIds } },
-          });
-        }
-        await deleteTopicIfUnused(fromTopicIds);
-        return;
-      }
-
-      for (const { fromTopicId, toTopicId } of normalized) {
-        // Re-check: an earlier pair in this batch may have consumed the topic.
-        if (!isUsable(fromTopicId)) {
-          throw new Error('fromTopicId does not belong to this course');
-        }
-        if (!isUsable(toTopicId)) {
-          throw new Error('toTopicId does not belong to this course');
-        }
-
-        // Reassign main topics
-        await tx.activity.updateMany({
-          where: {
-            mainTopicId: fromTopicId,
-            lesson: { module: { courseOfferingId: courseId } },
-          },
-          data: { mainTopicId: toTopicId },
-        });
-
-        // Reassign secondary topics: create missing target relations, then delete old relations
-        const secondary = await tx.activitySecondaryTopic.findMany({
-          where: {
-            topicId: fromTopicId,
-            activity: { lesson: { module: { courseOfferingId: courseId } } },
-          },
-          select: { activityId: true },
-        });
-        const activityIds = Array.from(new Set(secondary.map((s) => s.activityId)));
-
-        for (const chunk of chunkIds(activityIds)) {
-          // Create missing target relations
-          const existingTarget = await tx.activitySecondaryTopic.findMany({
-            where: { topicId: toTopicId, activityId: { in: chunk } },
-            select: { activityId: true },
-          });
-          const have = new Set(existingTarget.map((e) => e.activityId));
-          const toCreate = chunk.filter((id) => !have.has(id));
-          if (toCreate.length > 0) {
-            await tx.activitySecondaryTopic.createMany({
-              data: toCreate.map((id) => ({ activityId: id, topicId: toTopicId })),
-              skipDuplicates: true,
+            // Reassign secondary topics: create missing target relations, then delete old relations
+            const secondary = await tx.activitySecondaryTopic.findMany({
+              where: {
+                topicId: fromTopicId,
+                activity: { lesson: { module: { courseOfferingId: courseId } } },
+              },
+              select: { activityId: true },
             });
+            const activityIds = Array.from(new Set(secondary.map((s) => s.activityId)));
+
+            for (const chunk of chunkIds(activityIds)) {
+              // Create missing target relations
+              const existingTarget = await tx.activitySecondaryTopic.findMany({
+                where: { topicId: toTopicId, activityId: { in: chunk } },
+                select: { activityId: true },
+              });
+              const have = new Set(existingTarget.map((e) => e.activityId));
+              const toCreate = chunk.filter((id) => !have.has(id));
+              if (toCreate.length > 0) {
+                await tx.activitySecondaryTopic.createMany({
+                  data: toCreate.map((id) => ({ activityId: id, topicId: toTopicId })),
+                  skipDuplicates: true,
+                });
+              }
+
+              // Remove old relations
+              await tx.activitySecondaryTopic.deleteMany({
+                where: { topicId: fromTopicId, activityId: { in: chunk } },
+              });
+            }
+
+            // Delete the old topic now that it's unused
+            await deleteTopicIfUnused([fromTopicId]);
           }
+        },
+        { isolationLevel: "Serializable" },
+      );
 
-          // Remove old relations
-          await tx.activitySecondaryTopic.deleteMany({
-            where: { topicId: fromTopicId, activityId: { in: chunk } },
-          });
-        }
-
-        // Delete the old topic now that it's unused
-        await deleteTopicIfUnused([fromTopicId]);
-      }
-    }, { isolationLevel: 'Serializable' });
-
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);

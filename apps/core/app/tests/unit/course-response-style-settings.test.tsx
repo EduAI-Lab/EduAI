@@ -40,13 +40,8 @@ describe("CourseResponseStyleSettings", () => {
     fireEvent.click(screen.getByText("Concise"));
 
     expect(screen.getByText("Preview")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Three things to remember/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Concise" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByText(/Three things to remember/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Concise" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("toggles a tag back off, removing it from the preview", () => {
@@ -75,13 +70,7 @@ describe("CourseResponseStyleSettings", () => {
     mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
     const onSaved = vi.fn();
 
-    render(
-      <CourseResponseStyleSettings
-        courseId="course-1"
-        initialTags={[]}
-        onSaved={onSaved}
-      />,
-    );
+    render(<CourseResponseStyleSettings courseId="course-1" initialTags={[]} onSaved={onSaved} />);
 
     fireEvent.click(screen.getByText("Formal"));
     fireEvent.change(screen.getByPlaceholderText(/Prefer diagrams/), {
@@ -115,9 +104,7 @@ describe("CourseResponseStyleSettings", () => {
 
     fireEvent.click(screen.getByText("Save response style"));
 
-    await waitFor(() =>
-      expect(screen.getByText("Instructions too long")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Instructions too long")).toBeInTheDocument());
   });
 
   it("falls back to a generic message when the error body can't be parsed", async () => {
@@ -144,16 +131,12 @@ describe("CourseResponseStyleSettings", () => {
   });
 
   it("renders in embedded mode without the outer card header", () => {
-    render(
-      <CourseResponseStyleSettings courseId="course-1" initialTags={[]} embedded />,
-    );
+    render(<CourseResponseStyleSettings courseId="course-1" initialTags={[]} embedded />);
 
     expect(
       screen.getByText("Choose how the course chatbot should respond for students."),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/students see that AI is enabled/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/students see that AI is enabled/)).not.toBeInTheDocument();
   });
 });
 

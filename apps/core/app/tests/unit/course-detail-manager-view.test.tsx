@@ -24,9 +24,7 @@ import type { CourseMaterial } from "~/components/course-materials-upload";
 vi.mock("~/components/course-materials-upload", () => ({
   CourseMaterialsUpload: ({ onFileSelect }: { onFileSelect: (f: File) => void }) => (
     <div data-testid="upload-widget">
-      <button onClick={() => onFileSelect(new File(["x"], "notes.pdf"))}>
-        pick file
-      </button>
+      <button onClick={() => onFileSelect(new File(["x"], "notes.pdf"))}>pick file</button>
     </div>
   ),
 }));
@@ -50,7 +48,11 @@ vi.mock("~/components/canvas/canvas-material-sync-dialog", () => ({
 }));
 
 const searchCandidates = vi.fn();
-let candidatesReturn = { candidates: [] as { id: string; name: string; email: string }[], loading: false, search: searchCandidates };
+let candidatesReturn = {
+  candidates: [] as { id: string; name: string; email: string }[],
+  loading: false,
+  search: searchCandidates,
+};
 vi.mock("~/hooks/api/use-student-candidates", () => ({
   useStudentCandidates: (...args: unknown[]) => candidatesReturnFn(...args),
 }));
@@ -284,16 +286,18 @@ describe("CourseDetailManagerView — materials tab", () => {
   });
 
   it("shows an error message when the rename request fails", async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: "boom" }),
+    });
     renderView();
     fireEvent.click(screen.getByRole("button", { name: /rename material/i }));
     fireEvent.change(screen.getByPlaceholderText("Material name"), {
       target: { value: "New title" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(screen.getByText(/could not rename material/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/could not rename material/i)).toBeInTheDocument());
   });
 
   it("opens the student-visibility dialog, toggles visibility, and saves", async () => {
@@ -509,9 +513,7 @@ describe("CourseDetailManagerView — staff tab", () => {
     renderView({ onRemoveTA });
     clickTab(/staff/i);
     fireEvent.click(screen.getByRole("button", { name: /remove ta/i }));
-    await waitFor(() =>
-      expect(screen.getByText(/could not remove ta/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/could not remove ta/i)).toBeInTheDocument());
   });
 
   it("shows the no-TAs-assigned empty state on the staff tab", () => {
@@ -536,9 +538,7 @@ describe("CourseDetailManagerView — staff tab", () => {
 
     fireEvent.click(panel.getByRole("button", { name: /add 1 ta/i }));
     await waitFor(() => expect(props.onAddTA).toHaveBeenCalledWith("user-newta"));
-    await waitFor(() =>
-      expect(panel.getByText(/1 ta added successfully/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(panel.getByText(/1 ta added successfully/i)).toBeInTheDocument());
   });
 
   it("reports a partial failure when adding TAs", async () => {
@@ -555,9 +555,7 @@ describe("CourseDetailManagerView — staff tab", () => {
     fireEvent.click(combos[combos.length - 1]);
     fireEvent.click(screen.getByText("New TA"));
     fireEvent.click(panel.getByRole("button", { name: /add 1 ta/i }));
-    await waitFor(() =>
-      expect(panel.getByText(/1 of 1 tas failed to add/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(panel.getByText(/1 of 1 tas failed to add/i)).toBeInTheDocument());
   });
 });
 

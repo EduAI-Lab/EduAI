@@ -1,8 +1,8 @@
-import type { Alignment, Side } from 'driver.js';
+import type { Alignment, Side } from "driver.js";
 
-export type AppTourId = 'student-journey' | 'student-lesson-help';
+export type AppTourId = "student-journey" | "student-lesson-help";
 
-export type TourMemoryKey = 'selectedCourseRoute' | 'selectedModuleRoute' | 'selectedLessonRoute';
+export type TourMemoryKey = "selectedCourseRoute" | "selectedModuleRoute" | "selectedLessonRoute";
 
 export type TourContextState = {
   currentPath: string;

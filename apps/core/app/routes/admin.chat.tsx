@@ -56,20 +56,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function AdminChatPage() {
   const { chatModels, user } = useLoaderData<typeof loader>();
 
-  const [selectedModel, setSelectedModel] = useState(
-    chatModels.length > 0 ? chatModels[0].id : "",
-  );
+  const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : "");
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [webToolsEnabled] = useState(false);
-  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
-    Record<string, string>
-  >({});
-  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
-    string | null
-  >(null);
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<Record<string, string>>({});
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<string | null>(null);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const { assistive, setAssistive } = useAssistiveUi();
 
@@ -132,8 +126,7 @@ export default function AdminChatPage() {
       // Same X-Routed-Model wiring as learning ChatScreen so timed progress
       // estimates use the actual routed model (#1171).
       const routedHeader = response.headers.get("X-Routed-Model")?.trim();
-      const routed =
-        routedHeader && routedHeader.length > 0 ? routedHeader : null;
+      const routed = routedHeader && routedHeader.length > 0 ? routedHeader : null;
       pendingRoutedRegistryIdRef.current = routed;
       setStreamingRoutedRegistryId(routed);
 

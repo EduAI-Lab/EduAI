@@ -54,7 +54,9 @@ describe("auth/login loader", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "STUDENT" },
     } as never);
-    const res = (await loader(makeLoaderArgs("http://localhost/auth/login?redirect=/dashboard"))) as Response;
+    const res = (await loader(
+      makeLoaderArgs("http://localhost/auth/login?redirect=/dashboard"),
+    )) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/dashboard");
   });
@@ -79,15 +81,19 @@ describe("auth/login loader", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
     vi.mocked(getPolicy).mockResolvedValue(false);
     const result = await loader(makeLoaderArgs());
-    expect(result).toEqual({ redirectTo: "/dashboard", allowRegistration: false, forceReauth: false });
+    expect(result).toEqual({
+      redirectTo: "/dashboard",
+      allowRegistration: false,
+      forceReauth: false,
+    });
   });
 });
 
 describe("auth/login action", () => {
   it("returns fieldErrors for invalid input", async () => {
-    const result = (await action(
-      makeActionArgs({ email: "not-an-email", password: "" }),
-    )) as { fieldErrors?: Record<string, string> };
+    const result = (await action(makeActionArgs({ email: "not-an-email", password: "" }))) as {
+      fieldErrors?: Record<string, string>;
+    };
     expect(result.fieldErrors).toBeTruthy();
     expect(auth.handler).not.toHaveBeenCalled();
   });
@@ -106,10 +112,10 @@ describe("auth/login action", () => {
   });
 
   it("redirects with forwarded cookies and logs LOGIN_SUCCESS on success", async () => {
-    const authResponse = new Response(
-      JSON.stringify({ user: { id: "u1", role: "STUDENT" } }),
-      { status: 200, headers: { "Set-Cookie": "better-auth.session=abc; Path=/" } },
-    );
+    const authResponse = new Response(JSON.stringify({ user: { id: "u1", role: "STUDENT" } }), {
+      status: 200,
+      headers: { "Set-Cookie": "better-auth.session=abc; Path=/" },
+    });
     vi.mocked(auth.handler).mockResolvedValue(authResponse);
 
     const res = (await action(

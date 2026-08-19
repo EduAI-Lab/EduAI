@@ -159,9 +159,7 @@ describe("SettingsView — server API key management (ADMIN)", () => {
   it("loads server keys on mount and renders them", async () => {
     vi.mocked(authClient.apiKey.list).mockResolvedValue({
       data: {
-        apiKeys: [
-          { id: "k1", name: "My Key", prefix: "eduai", start: "abcdefgh", enabled: true },
-        ],
+        apiKeys: [{ id: "k1", name: "My Key", prefix: "eduai", start: "abcdefgh", enabled: true }],
       },
       error: null,
     } as never);
@@ -200,9 +198,7 @@ describe("SettingsView — server API key management (ADMIN)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /create/i }));
 
-    await waitFor(() =>
-      expect(screen.getByText("eduai-plaintext-secret")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("eduai-plaintext-secret")).toBeInTheDocument());
     expect(authClient.apiKey.create).toHaveBeenCalledWith(
       expect.objectContaining({ name: "My Integration", prefix: "eduai" }),
     );

@@ -10,10 +10,7 @@
  *   RESEARCH_LLM_EVAL_LIMIT     optional cap
  */
 import { readFileSync } from "node:fs";
-import {
-  classifyPromptForTier,
-  tierFromLlmClassification,
-} from "~/lib/ai/routing/llm-classifier";
+import { classifyPromptForTier, tierFromLlmClassification } from "~/lib/ai/routing/llm-classifier";
 import { DEFAULT_LABELS_OUT } from "./paths.mjs";
 
 function readEnv(name: string): string | undefined {
@@ -96,9 +93,7 @@ async function main() {
       }
     } catch (err) {
       errors++;
-      console.log(
-        `  [ERR] ${row.prompt_id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      console.log(`  [ERR] ${row.prompt_id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

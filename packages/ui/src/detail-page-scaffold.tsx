@@ -1,4 +1,4 @@
-import type * as React from "react"
+import type * as React from "react";
 
 /**
  * The 3 observed outer-wrapper variants across the 8 detail surfaces
@@ -11,19 +11,19 @@ const PADDING_CLASSES = {
   none: "flex flex-col gap-6",
   qm: "flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6",
   app: "flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6",
-} as const
+} as const;
 
 export interface DetailPageScaffoldProps {
   /** The page's hero — CourseHeroCard, ModuleHero, etc. Scaffold does not own it. */
-  hero: React.ReactNode
+  hero: React.ReactNode;
   /** Everything else: tab shells, content grids, sibling dialogs/modals. */
-  children: React.ReactNode
+  children: React.ReactNode;
   /** Selects the outer wrapper classes. Defaults to "none". */
-  padding?: keyof typeof PADDING_CLASSES
+  padding?: keyof typeof PADDING_CLASSES;
   /** Passthrough for e.g. Core student view's `courseThemeVars(accentColor)`. */
-  style?: React.CSSProperties
+  style?: React.CSSProperties;
   /** Rendered before the hero — e.g. QM's `CourseNoAccessAlert`. */
-  beforeHero?: React.ReactNode
+  beforeHero?: React.ReactNode;
 }
 
 export function DetailPageScaffold({
@@ -39,5 +39,5 @@ export function DetailPageScaffold({
       {hero}
       {children}
     </div>
-  )
+  );
 }

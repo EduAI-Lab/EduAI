@@ -5,11 +5,11 @@
  * (ADMIN, UNIT_ADMIN, INSTRUCTOR — TA excluded). Service scoping keys off the
  * authorized course's owner id (`req.qmCourse.userId`).
  */
-import express from 'express';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { QM_AUTHORIZED } from '../middleware/roles.js';
-import { requireCourseAccess } from '../middleware/courseAccess.js';
-import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
+import express from "express";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { QM_AUTHORIZED } from "../middleware/roles.js";
+import { requireCourseAccess } from "../middleware/courseAccess.js";
+import { requireAssessmentAccess } from "../middleware/resourceAccess.js";
 import {
   setAssessmentStudyRole,
   getBlueprintSnapshot,
@@ -17,26 +17,28 @@ import {
   assembleEquivalentExamVariants,
   assembleExamVariantsByMetadataSimilarity,
   generateBankVariantsForQuestions,
-  reviewVariantExamWithAi
-} from '../services/assessmentVariantService.js';
+  reviewVariantExamWithAi,
+} from "../services/assessmentVariantService.js";
 
 const router = express.Router();
 
-
-const writeByCourseBody = requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.courseId });
+const writeByCourseBody = requireCourseAccess({
+  min: "instructor",
+  getCourseId: (req) => req.body.courseId,
+});
 
 /** Body fields the role endpoint is allowed to touch — everything else is rejected (#5). */
-const ROLE_ALLOWED_FIELDS = ['studyRole'];
+const ROLE_ALLOWED_FIELDS = ["studyRole"];
 
 /** PATCH /api/assessment-variant/assessments/:id/role — set blueprintConfig.studyRole (instructor-only). */
 router.patch(
-  '/assessments/:id/role',
+  "/assessments/:id/role",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireAssessmentAccess({ min: 'instructor' }),
+  requireAssessmentAccess({ min: "instructor" }),
   async (req, res, next) => {
     try {
-      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const body = req.body && typeof req.body === "object" ? req.body : {};
 
       // Whitelist the writable fields so arbitrary JSON can't be injected into
       // blueprintConfig (#5). studyRole's enum is validated in the service layer.
@@ -44,41 +46,45 @@ router.patch(
       if (unknownKeys.length > 0) {
         return res.status(400).json({
           success: false,
-          error: `Unsupported field(s): ${unknownKeys.join(', ')}. Allowed: ${ROLE_ALLOWED_FIELDS.join(', ')}`
+          error: `Unsupported field(s): ${unknownKeys.join(", ")}. Allowed: ${ROLE_ALLOWED_FIELDS.join(", ")}`,
         });
       }
 
-      if (!('studyRole' in body)) {
+      if (!("studyRole" in body)) {
         return res.status(400).json({
           success: false,
-          error: 'studyRole is required (string or null to clear)'
+          error: "studyRole is required (string or null to clear)",
         });
       }
       const studyRole = body.studyRole;
-      if (studyRole !== null && typeof studyRole !== 'string') {
+      if (studyRole !== null && typeof studyRole !== "string") {
         return res.status(400).json({
           success: false,
-          error: 'studyRole must be a string or null'
+          error: "studyRole must be a string or null",
         });
       }
-      const assessment = await setAssessmentStudyRole(Number(req.params.id), req.qmCourse.userId, studyRole);
+      const assessment = await setAssessmentStudyRole(
+        Number(req.params.id),
+        req.qmCourse.userId,
+        studyRole,
+      );
       res.json({ success: true, data: assessment });
     } catch (error) {
       // The service enforces the studyRole enum; surface that as a 400 (#5).
-      if (error?.message === 'Invalid studyRole') {
-        return res.status(400).json({ success: false, error: 'Invalid studyRole' });
+      if (error?.message === "Invalid studyRole") {
+        return res.status(400).json({ success: false, error: "Invalid studyRole" });
       }
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/assessment-variant/assessments/:id/blueprint-snapshot — ordered slots + aggregates (TA view). */
 router.get(
-  '/assessments/:id/blueprint-snapshot',
+  "/assessments/:id/blueprint-snapshot",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireAssessmentAccess({ min: 'ta' }),
+  requireAssessmentAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const snapshot = await getBlueprintSnapshot(Number(req.params.id), req.qmCourse.userId);
@@ -86,151 +92,186 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/assessment-variant/assessments/:id/variant-readiness (TA view; course derived from :id). */
 router.get(
-  '/assessments/:id/variant-readiness',
+  "/assessments/:id/variant-readiness",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireAssessmentAccess({ min: 'ta' }),
+  requireAssessmentAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       // Course is derived from the authorized assessment (req.qmCourse), not the
       // client-supplied ?courseId= which the access gate has already resolved.
       const data = await getBaselineVariantReadiness(req.qmCourse.userId, {
         assessmentId: Number(req.params.id),
-        courseId: req.qmCourse.id
+        courseId: req.qmCourse.id,
       });
       res.json({ success: true, data });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** POST /api/assessment-variant/assemble-variants (instructor-only). */
-router.post('/assemble-variants', authenticateToken, requireRole(QM_AUTHORIZED), writeByCourseBody, async (req, res, next) => {
-  try {
-    const {
-      referenceAssessmentId,
-      examLabels,
-      namePrefix,
-      includeDrafts,
-      assessmentTypeOverride
-    } = req.body;
+router.post(
+  "/assemble-variants",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  writeByCourseBody,
+  async (req, res, next) => {
+    try {
+      const {
+        referenceAssessmentId,
+        examLabels,
+        namePrefix,
+        includeDrafts,
+        assessmentTypeOverride,
+      } = req.body;
 
-    if (!referenceAssessmentId) {
-      return res.status(400).json({
-        success: false,
-        error: 'referenceAssessmentId and courseId are required'
+      if (!referenceAssessmentId) {
+        return res.status(400).json({
+          success: false,
+          error: "referenceAssessmentId and courseId are required",
+        });
+      }
+
+      const result = await assembleEquivalentExamVariants(req.qmCourse.userId, {
+        referenceAssessmentId: Number(referenceAssessmentId),
+        courseId: req.qmCourse.id,
+        examLabels: Array.isArray(examLabels) ? examLabels : undefined,
+        namePrefix: typeof namePrefix === "string" ? namePrefix : null,
+        includeDrafts: Boolean(includeDrafts),
+        assessmentTypeOverride: assessmentTypeOverride || null,
       });
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
     }
-
-    const result = await assembleEquivalentExamVariants(req.qmCourse.userId, {
-      referenceAssessmentId: Number(referenceAssessmentId),
-      courseId: req.qmCourse.id,
-      examLabels: Array.isArray(examLabels) ? examLabels : undefined,
-      namePrefix: typeof namePrefix === 'string' ? namePrefix : null,
-      includeDrafts: Boolean(includeDrafts),
-      assessmentTypeOverride: assessmentTypeOverride || null
-    });
-
-    res.status(201).json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/assessment-variant/assemble-by-metadata (instructor-only). */
-router.post('/assemble-by-metadata', authenticateToken, requireRole(QM_AUTHORIZED), writeByCourseBody, async (req, res, next) => {
-  try {
-    const {
-      referenceAssessmentId,
-      examLabels,
-      namePrefix,
-      includeDrafts,
-      assessmentTypeOverride
-    } = req.body;
+router.post(
+  "/assemble-by-metadata",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  writeByCourseBody,
+  async (req, res, next) => {
+    try {
+      const {
+        referenceAssessmentId,
+        examLabels,
+        namePrefix,
+        includeDrafts,
+        assessmentTypeOverride,
+      } = req.body;
 
-    if (!referenceAssessmentId) {
-      return res.status(400).json({
-        success: false,
-        error: 'referenceAssessmentId and courseId are required'
+      if (!referenceAssessmentId) {
+        return res.status(400).json({
+          success: false,
+          error: "referenceAssessmentId and courseId are required",
+        });
+      }
+
+      const result = await assembleExamVariantsByMetadataSimilarity(req.qmCourse.userId, {
+        referenceAssessmentId: Number(referenceAssessmentId),
+        courseId: req.qmCourse.id,
+        examLabels: Array.isArray(examLabels) ? examLabels : undefined,
+        namePrefix: typeof namePrefix === "string" ? namePrefix : null,
+        includeDrafts: includeDrafts !== false,
+        assessmentTypeOverride: assessmentTypeOverride || null,
       });
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
     }
-
-    const result = await assembleExamVariantsByMetadataSimilarity(req.qmCourse.userId, {
-      referenceAssessmentId: Number(referenceAssessmentId),
-      courseId: req.qmCourse.id,
-      examLabels: Array.isArray(examLabels) ? examLabels : undefined,
-      namePrefix: typeof namePrefix === 'string' ? namePrefix : null,
-      includeDrafts: includeDrafts !== false,
-      assessmentTypeOverride: assessmentTypeOverride || null
-    });
-
-    res.status(201).json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/assessment-variant/generate-bank-variants (instructor-only). */
-router.post('/generate-bank-variants', authenticateToken, requireRole(QM_AUTHORIZED), writeByCourseBody, async (req, res, next) => {
-  try {
-    const { questionIds, model, apiKeys, variantsToAdd, variantPromptInstructions } = req.body;
+router.post(
+  "/generate-bank-variants",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  writeByCourseBody,
+  async (req, res, next) => {
+    try {
+      const { questionIds, model, apiKeys, variantsToAdd, variantPromptInstructions } = req.body;
 
-    if (!Array.isArray(questionIds) || questionIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'courseId and questionIds (non-empty array) are required'
+      if (!Array.isArray(questionIds) || questionIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "courseId and questionIds (non-empty array) are required",
+        });
+      }
+
+      const result = await generateBankVariantsForQuestions(req.qmCourse.userId, {
+        questionIds: questionIds.map(Number),
+        courseId: req.qmCourse.id,
+        model: typeof model === "string" ? model : undefined,
+        apiKeys: apiKeys && typeof apiKeys === "object" ? apiKeys : {},
+        variantsToAdd: variantsToAdd != null ? Number(variantsToAdd) : 1,
+        variantPromptInstructions:
+          typeof variantPromptInstructions === "string" ? variantPromptInstructions : null,
+        cookie: req.headers.cookie ?? "",
       });
+
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
     }
-
-    const result = await generateBankVariantsForQuestions(req.qmCourse.userId, {
-      questionIds: questionIds.map(Number),
-      courseId: req.qmCourse.id,
-      model: typeof model === 'string' ? model : undefined,
-      apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
-      variantsToAdd: variantsToAdd != null ? Number(variantsToAdd) : 1,
-      variantPromptInstructions: typeof variantPromptInstructions === 'string' ? variantPromptInstructions : null,
-      cookie: req.headers.cookie ?? '',
-    });
-
-    res.status(201).json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/assessment-variant/review-variant-ai (instructor-only). */
-router.post('/review-variant-ai', authenticateToken, requireRole(QM_AUTHORIZED), writeByCourseBody, async (req, res, next) => {
-  try {
-    const { baselineAssessmentId, variantAssessmentId, model, apiKeys, rubricText, applyUsabilityPenalty, includeOverallSummary } = req.body;
-    if (!baselineAssessmentId || !variantAssessmentId) {
-      return res.status(400).json({
-        success: false,
-        error: 'baselineAssessmentId, variantAssessmentId, and courseId are required'
+router.post(
+  "/review-variant-ai",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  writeByCourseBody,
+  async (req, res, next) => {
+    try {
+      const {
+        baselineAssessmentId,
+        variantAssessmentId,
+        model,
+        apiKeys,
+        rubricText,
+        applyUsabilityPenalty,
+        includeOverallSummary,
+      } = req.body;
+      if (!baselineAssessmentId || !variantAssessmentId) {
+        return res.status(400).json({
+          success: false,
+          error: "baselineAssessmentId, variantAssessmentId, and courseId are required",
+        });
+      }
+
+      const data = await reviewVariantExamWithAi(req.qmCourse.userId, {
+        baselineAssessmentId: Number(baselineAssessmentId),
+        variantAssessmentId: Number(variantAssessmentId),
+        courseId: req.qmCourse.id,
+        model: typeof model === "string" ? model : undefined,
+        apiKeys: apiKeys && typeof apiKeys === "object" ? apiKeys : {},
+        rubricText: typeof rubricText === "string" ? rubricText : "",
+        applyUsabilityPenalty:
+          typeof applyUsabilityPenalty === "boolean" ? applyUsabilityPenalty : undefined,
+        includeOverallSummary:
+          typeof includeOverallSummary === "boolean" ? includeOverallSummary : undefined,
+        cookie: req.headers.cookie ?? "",
       });
+
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
     }
-
-    const data = await reviewVariantExamWithAi(req.qmCourse.userId, {
-      baselineAssessmentId: Number(baselineAssessmentId),
-      variantAssessmentId: Number(variantAssessmentId),
-      courseId: req.qmCourse.id,
-      model: typeof model === 'string' ? model : undefined,
-      apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
-      rubricText: typeof rubricText === 'string' ? rubricText : '',
-      applyUsabilityPenalty: typeof applyUsabilityPenalty === 'boolean' ? applyUsabilityPenalty : undefined,
-      includeOverallSummary: typeof includeOverallSummary === 'boolean' ? includeOverallSummary : undefined,
-      cookie: req.headers.cookie ?? '',
-    });
-
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 export default router;

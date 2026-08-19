@@ -26,9 +26,7 @@ export function resolveCourseChangeAction({
     return { kind: "update", courseCode: nextCourseCode };
   }
 
-  const query = nextCourseCode
-    ? `?courseCode=${encodeURIComponent(nextCourseCode)}`
-    : "";
+  const query = nextCourseCode ? `?courseCode=${encodeURIComponent(nextCourseCode)}` : "";
 
   return {
     kind: "new-chat",
