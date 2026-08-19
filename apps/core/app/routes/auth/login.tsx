@@ -6,12 +6,31 @@ import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
-import { auth } from "~/lib/auth/server";
+import { auth, authBaseURL } from "~/lib/auth/server";
 import { validateRedirectUrl } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+
+/**
+ * Remove a legacy host-only session cookie after issuing the configured
+ * cross-subdomain cookie. Cookies with the same name but different Domain
+ * attributes coexist, and browsers send the host-only one first; an old
+ * token could therefore mask the newly-created shared session on /dashboard.
+ */
+function appendHostOnlySessionCookieDeletion(headers: Headers): void {
+  if (!process.env.COOKIE_DOMAIN?.trim()) return;
+
+  const cookieName = authBaseURL.startsWith("https://")
+    ? "__Secure-better-auth.session_token"
+    : "better-auth.session_token";
+  const secure = authBaseURL.startsWith("https://") ? "; Secure" : "";
+  headers.append(
+    "Set-Cookie",
+    `${cookieName}=; Max-Age=0; Path=/; HttpOnly${secure}; SameSite=Lax`,
+  );
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -92,6 +111,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
+    appendHostOnlySessionCookieDeletion(headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
     // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
