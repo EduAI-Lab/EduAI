@@ -152,4 +152,14 @@ export const teamMembers: TeamMember[] = [
     techStack: ["React", "TypeScript", "C", "Node.js", "Redis", "MongoDB"],
     codeSnippet: "if (living) { code(); } else { prompt(); }",
   },
+  {
+    id: 14,
+    name: "Evan Bowness",
+    image: "/evan.jpeg",
+    biography:
+      "Evan is a third-year Computer Science student at UBC Okanagan interested in system design and architecture. His background includes work in the Minecraft modding community, and writing enterprise software using VB.net, Python, FastAPI, and Next.js. You can find his personal site at evanbowness.dev.",
+    contribution: "Worked on the monorepo migration, platform centralization, backend test suites, documentation, and bugfixes.",
+    techStack: ["Java", "React", "C#", "Python", "C++", "Prisma"],
+    codeSnippet: "if fps != 60 { fps = 60 }",
+  },
 ]
