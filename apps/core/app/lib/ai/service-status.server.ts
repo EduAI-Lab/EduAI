@@ -47,6 +47,10 @@ const DEFAULT_WAITING_THRESHOLD = 4;
 const DEFAULT_CACHE_PCT_THRESHOLD = 0.9;
 
 function nonNegativeNumber(raw: string | undefined, fallback: number): number {
+  // Guard empty / whitespace first: Number("") and Number("  ") are 0 (finite,
+  // >= 0), so a blank env line (`VLLM_DEGRADED_WAITING=`) would otherwise pin the
+  // threshold to 0 and flag the fleet degraded under any load. Treat blank as unset.
+  if (raw == null || raw.trim() === "") return fallback;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
