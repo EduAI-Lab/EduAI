@@ -40,7 +40,9 @@ export const MIN_METADATA_SCORE = 75;
 /** The fallback candidate, when seeded, always matches on every dimension. */
 export const FALLBACK_SCORE = 185;
 
-export type Verdict = { found: false } | { found: true; winner: "primary" | "fallback"; score: number };
+export type Verdict =
+  | { found: false }
+  | { found: true; winner: "primary" | "fallback"; score: number };
 
 export function metadataSimilarityAssemblyOracle(row: MetadataSimilarityAssemblyRow): Verdict {
   if (row.AlreadyUsed === "yes") {

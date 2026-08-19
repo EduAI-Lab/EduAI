@@ -27,13 +27,15 @@ export type ExtractQuestionsWithEduAiRow = {
 export type Verdict = { threw: true } | { threw: false; count: number };
 
 export function extractQuestionsWithEduAiOracle(row: ExtractQuestionsWithEduAiRow): Verdict {
-  const outcomes: ChunkOutcome[] = row.ChunkCount === "one" ? [row.Chunk1Outcome] : [row.Chunk1Outcome, row.Chunk2Outcome];
+  const outcomes: ChunkOutcome[] =
+    row.ChunkCount === "one" ? [row.Chunk1Outcome] : [row.Chunk1Outcome, row.Chunk2Outcome];
 
   for (const outcome of outcomes) {
     if (outcome === "retry-fails") return { threw: true };
   }
 
   const rawCount = outcomes.length; // one sanitized question per successful chunk, by world-builder construction
-  const finalCount = row.ChunkCount === "two" && row.DuplicateBetweenChunks === "yes" ? 1 : rawCount;
+  const finalCount =
+    row.ChunkCount === "two" && row.DuplicateBetweenChunks === "yes" ? 1 : rawCount;
   return { threw: false, count: finalCount };
 }

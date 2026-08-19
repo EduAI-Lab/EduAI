@@ -2,16 +2,16 @@
  * QM tooltip wrapper — keeps the legacy `content` prop API used across pages.
  * Styled with redesign tokens via semantic classes.
  */
-import * as React from 'react';
-import { createPortal } from 'react-dom';
-import { cn } from '@/lib/utils';
+import * as React from "react";
+import { createPortal } from "react-dom";
+import { cn } from "@/lib/utils";
 
 const PADDING = 8;
 
 interface TooltipProps {
   children: React.ReactElement;
   content: string;
-  side?: 'top' | 'bottom' | 'left' | 'right';
+  side?: "top" | "bottom" | "left" | "right";
   className?: string;
   multiline?: boolean;
 }
@@ -19,7 +19,7 @@ interface TooltipProps {
 export const Tooltip = ({
   children,
   content,
-  side = 'top',
+  side = "top",
   className,
   multiline = false,
 }: TooltipProps) => {
@@ -48,17 +48,17 @@ export const Tooltip = ({
     let left = Math.round(triggerCenterX - tw / 2);
 
     switch (side) {
-      case 'top':
+      case "top":
         top = triggerRect.top - th - PADDING;
         break;
-      case 'bottom':
+      case "bottom":
         top = triggerRect.bottom + PADDING;
         break;
-      case 'left':
+      case "left":
         left = triggerRect.left - tw - PADDING;
         top = Math.round(triggerCenterY - th / 2);
         break;
-      case 'right':
+      case "right":
         left = triggerRect.right + PADDING;
         top = Math.round(triggerCenterY - th / 2);
         break;
@@ -66,7 +66,7 @@ export const Tooltip = ({
         top = triggerRect.bottom + PADDING;
     }
 
-    if (side === 'top' || side === 'bottom') {
+    if (side === "top" || side === "bottom") {
       left = Math.round(triggerCenterX - tw / 2);
     }
 
@@ -85,14 +85,12 @@ export const Tooltip = ({
     <div
       ref={tooltipRef}
       className={cn(
-        'pointer-events-none fixed z-[100] rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground shadow-lg',
-        multiline ? 'max-w-xs break-words' : 'whitespace-nowrap',
+        "pointer-events-none fixed z-[100] rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground shadow-lg",
+        multiline ? "max-w-xs break-words" : "whitespace-nowrap",
         className,
       )}
       style={
-        position === null
-          ? { top: -9999, left: -9999 }
-          : { top: position.top, left: position.left }
+        position === null ? { top: -9999, left: -9999 } : { top: position.top, left: position.left }
       }
       role="tooltip"
     >
@@ -108,7 +106,7 @@ export const Tooltip = ({
   return (
     <div
       ref={triggerRef}
-      className={cn('relative inline-block', className)}
+      className={cn("relative inline-block", className)}
       onMouseEnter={openTooltip}
       onMouseLeave={() => setIsVisible(false)}
     >

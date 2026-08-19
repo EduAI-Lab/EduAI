@@ -3,7 +3,7 @@
  * Shared by activities wiring + callEduAI so trim/omit stay in sync (#1021).
  */
 export function trimNonEmpty(value) {
-  if (typeof value !== 'string') return null;
+  if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }

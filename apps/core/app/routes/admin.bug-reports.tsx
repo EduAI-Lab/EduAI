@@ -42,7 +42,9 @@ export default function BugReportsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -64,9 +66,7 @@ export default function BugReportsPage() {
         showSourceColumn
         description="Triage platform bug reports from every EduAI app."
         notice={
-          truncated
-            ? `Showing the ${reports.length} most recent of ${total} reports.`
-            : undefined
+          truncated ? `Showing the ${reports.length} most recent of ${total} reports.` : undefined
         }
       />
     </CoreAppShell>

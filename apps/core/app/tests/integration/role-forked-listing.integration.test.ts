@@ -37,39 +37,36 @@ afterAll(async () => {
 describe.each(rows.map((row, index) => [index, row] as const))(
   "role-forked-listing Core PICT row #%i",
   (index, row) => {
-    it(
-      `${row.PlatformRole}/${row.Enrollment}/${row.Published}/${row.UnitMatch} matches oracle`,
-      async () => {
-        const expected = courseVisibleOracle(row);
+    it(`${row.PlatformRole}/${row.Enrollment}/${row.Published}/${row.UnitMatch} matches oracle`, async () => {
+      const expected = courseVisibleOracle(row);
 
-        const course = await seedCourse({
-          department: DEPARTMENT,
-          isPublished: row.Published === "yes",
-        });
-        courseIds.push(course.id);
+      const course = await seedCourse({
+        department: DEPARTMENT,
+        isPublished: row.Published === "yes",
+      });
+      courseIds.push(course.id);
 
-        const authorizedUnits =
-          row.PlatformRole === "UNIT_ADMIN"
-            ? [row.UnitMatch === "in-unit" ? DEPARTMENT : OTHER_DEPARTMENT]
-            : [];
-        const viewer = await seedUser({ role: row.PlatformRole, authorizedUnits });
-        userIds.push(viewer.id);
+      const authorizedUnits =
+        row.PlatformRole === "UNIT_ADMIN"
+          ? [row.UnitMatch === "in-unit" ? DEPARTMENT : OTHER_DEPARTMENT]
+          : [];
+      const viewer = await seedUser({ role: row.PlatformRole, authorizedUnits });
+      userIds.push(viewer.id);
 
-        if (row.Enrollment !== "none") {
-          const enrollmentRole =
-            row.Enrollment === "student" ? "STUDENT" : row.Enrollment === "ta" ? "TA" : "INSTRUCTOR";
-          await enroll(course.id, viewer.id, enrollmentRole, true);
-        }
+      if (row.Enrollment !== "none") {
+        const enrollmentRole =
+          row.Enrollment === "student" ? "STUDENT" : row.Enrollment === "ta" ? "TA" : "INSTRUCTOR";
+        await enroll(course.id, viewer.id, enrollmentRole, true);
+      }
 
-        const filter = await buildCourseListFilter(viewer);
-        const visibleCourses = await prisma.course.findMany({
-          where: filter,
-          select: { id: true },
-        });
-        const visible = visibleCourses.some((c) => c.id === course.id);
+      const filter = await buildCourseListFilter(viewer);
+      const visibleCourses = await prisma.course.findMany({
+        where: filter,
+        select: { id: true },
+      });
+      const visible = visibleCourses.some((c) => c.id === course.id);
 
-        expect(visible).toBe(expected);
-      },
-    );
+      expect(visible).toBe(expected);
+    });
   },
 );

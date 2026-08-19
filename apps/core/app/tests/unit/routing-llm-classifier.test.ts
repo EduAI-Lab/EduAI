@@ -23,9 +23,7 @@ describe("tierFromLlmClassification", () => {
 
   it("maps medium complexity to tier 1 on local vLLM for chat task", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
-    expect(
-      tierFromLlmClassification({ ...base, complexity: "medium" }),
-    ).toBe(1);
+    expect(tierFromLlmClassification({ ...base, complexity: "medium" })).toBe(1);
   });
 
   it("maps medium coding task to tier 3 on local vLLM", () => {
@@ -42,23 +40,17 @@ describe("tierFromLlmClassification", () => {
   it("keeps tier 1 when confidence is below threshold on local vLLM", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
     process.env.ROUTING_LLM_MIN_CONFIDENCE = "80";
-    expect(
-      tierFromLlmClassification({ ...base, complexity: "low", confidence: 50 }),
-    ).toBe(1);
+    expect(tierFromLlmClassification({ ...base, complexity: "low", confidence: 50 })).toBe(1);
   });
 
   it("maps high complexity to tier 3", () => {
-    expect(
-      tierFromLlmClassification({ ...base, complexity: "high" }),
-    ).toBe(3);
+    expect(tierFromLlmClassification({ ...base, complexity: "high" })).toBe(3);
   });
 });
 
 describe("parseClassifierJson", () => {
   it("parses bare JSON object", () => {
-    const out = parseClassifierJson(
-      '{"task":"coding","complexity":"medium","confidence":85}',
-    );
+    const out = parseClassifierJson('{"task":"coding","complexity":"medium","confidence":85}');
     expect(out.task).toBe("coding");
     expect(out.complexity).toBe("medium");
     expect(out.confidence).toBe(85);

@@ -11,10 +11,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-import {
-  DEFAULT_UI_PREFERENCES,
-  type UiDensity,
-} from "~/lib/ui-preferences";
+import { DEFAULT_UI_PREFERENCES, type UiDensity } from "~/lib/ui-preferences";
 
 type UiPreferencesContextValue = {
   motionReduced: boolean;

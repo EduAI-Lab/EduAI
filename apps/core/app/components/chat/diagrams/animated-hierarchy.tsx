@@ -14,10 +14,7 @@ export function AnimatedHierarchy({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const { stages, selected, setSelected, detail } = useDiagramStageUi(
-    "hierarchy",
-    payload,
-  );
+  const { stages, selected, setSelected, detail } = useDiagramStageUi("hierarchy", payload);
   const root = stages[0] ?? { label: "Whole", detail: "" };
   const children = stages.slice(1);
 

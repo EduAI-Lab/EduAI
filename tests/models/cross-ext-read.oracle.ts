@@ -31,13 +31,7 @@ export type CrossExtReadVerdict = {
   /** Resolved payload present (course/topic/role). publish-state uses `published`. */
   outcome: "resolved" | "null" | "published-false" | "published-true";
   coreStatus: "ok" | "unavailable";
-  reason:
-    | "ok"
-    | "core-down"
-    | "absent"
-    | "soft-deleted"
-    | "silent-omission"
-    | "not-enrolled";
+  reason: "ok" | "core-down" | "absent" | "soft-deleted" | "silent-omission" | "not-enrolled";
 };
 
 /**

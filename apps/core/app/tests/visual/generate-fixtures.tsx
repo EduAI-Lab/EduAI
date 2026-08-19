@@ -45,7 +45,9 @@ function renderVisible(node: ReactNode): string {
   // opacity-100 in the static HTML — renderToStaticMarkup never runs effects,
   // so the default opacity-0 intro would otherwise stay invisible in Chromium.
   return renderToStaticMarkup(
-    <DiagramReducedMotionContext.Provider value={true}>{node}</DiagramReducedMotionContext.Provider>,
+    <DiagramReducedMotionContext.Provider value={true}>
+      {node}
+    </DiagramReducedMotionContext.Provider>,
   ).replaceAll("opacity-0 scale-95", "opacity-100 scale-100");
 }
 
@@ -53,9 +55,7 @@ const fixtures: Record<string, string> = {
   "process-flow": renderVisible(<AnimatedProcessFlow payload={processFlowPayload} />),
   hierarchy: renderVisible(<AnimatedHierarchy payload={hierarchyPayload} />),
   compare: renderVisible(<AnimatedCompare payload={comparePayload} />),
-  "gradient-descent": renderVisible(
-    <AnimatedGradientDescent payload={gradientDescentPayload} />,
-  ),
+  "gradient-descent": renderVisible(<AnimatedGradientDescent payload={gradientDescentPayload} />),
 };
 
 for (const [name, html] of Object.entries(fixtures)) {

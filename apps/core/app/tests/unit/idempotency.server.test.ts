@@ -366,10 +366,7 @@ describe("withIdempotency", () => {
       body: JSON.stringify({}),
     });
 
-    await withIdempotency(
-      { request, route: "POST /api/users", actorId: "admin-1" },
-      handler,
-    );
+    await withIdempotency({ request, route: "POST /api/users", actorId: "admin-1" }, handler);
     expect(prismaMock.idempotencyRecord.deleteMany).toHaveBeenCalled();
   });
 
@@ -424,10 +421,7 @@ describe("withIdempotency", () => {
     });
 
     await expect(
-      withIdempotency(
-        { request, route: "POST /api/questions", actorId: "instructor-1" },
-        handler,
-      ),
+      withIdempotency({ request, route: "POST /api/questions", actorId: "instructor-1" }, handler),
     ).rejects.toThrow("database unavailable");
     expect(prismaMock.idempotencyRecord.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.idempotencyRecord.deleteMany).not.toHaveBeenCalled();

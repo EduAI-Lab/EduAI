@@ -17,10 +17,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
-  const needsOnboarding = await userNeedsStudentIdOnboarding(
-    session.user.id,
-    session.user.role,
-  );
+  const needsOnboarding = await userNeedsStudentIdOnboarding(session.user.id, session.user.role);
 
   if (!needsOnboarding) {
     return redirect("/dashboard");
@@ -80,14 +77,31 @@ export default function StudentIdOnboardingPage() {
       style={{ background: "var(--background)" }}
     >
       {/* Gold top bar */}
-      <div className="fixed top-0 left-0 right-0 h-[3px] z-10" style={{ background: "var(--gold)" }} />
+      <div
+        className="fixed top-0 left-0 right-0 h-[3px] z-10"
+        style={{ background: "var(--gold)" }}
+      />
 
       {/* Logo (fixed top-left) */}
       <div className="fixed top-4 left-6 flex items-center gap-2">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ stroke: "var(--primary)" }}>
-          <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ stroke: "var(--primary)" }}
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3a9 9 0 0 1 0 18" />
+          <path d="M3 12h18" />
+          <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
         </svg>
-        <span className="text-[15px] font-bold" style={{ color: "var(--primary)" }}>EduAI</span>
+        <span className="text-[15px] font-bold" style={{ color: "var(--primary)" }}>
+          EduAI
+        </span>
       </div>
 
       <div className="w-full max-w-[460px] mx-4">

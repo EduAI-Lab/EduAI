@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Spinner } from '@eduai/ui';
+import { useState } from "react";
+import { Spinner } from "@eduai/ui";
 import {
   Badge,
   Button,
@@ -10,10 +10,10 @@ import {
   CardTitle,
   Input,
   Label,
-} from '@eduai/ui';
-import { IconCheck, IconExternalLink, IconTrash } from '@tabler/icons-react';
-import { useApiKeys } from '~/hooks/use-api-keys';
-import { PROVIDERS, maskApiKey, type ProviderId } from '~/lib/provider-keys';
+} from "@eduai/ui";
+import { IconCheck, IconExternalLink, IconTrash } from "@tabler/icons-react";
+import { useApiKeys } from "~/hooks/use-api-keys";
+import { PROVIDERS, maskApiKey, type ProviderId } from "~/lib/provider-keys";
 
 /**
  * Settings → Providers. BYOK key management, moved out of the chat's old
@@ -28,20 +28,20 @@ export function ProvidersSettings() {
   const [errors, setErrors] = useState<Record<string, string | null>>({});
 
   const save = async (provider: ProviderId) => {
-    const draft = (drafts[provider] ?? '').trim();
+    const draft = (drafts[provider] ?? "").trim();
     if (!draft) return;
     setValidating(provider);
     setErrors((e) => ({ ...e, [provider]: null }));
     try {
       const result = await validateKey(provider, draft);
       if (!result.valid) {
-        setErrors((e) => ({ ...e, [provider]: result.error || 'Invalid API key' }));
+        setErrors((e) => ({ ...e, [provider]: result.error || "Invalid API key" }));
         return;
       }
       setKey(provider, draft);
-      setDrafts((d) => ({ ...d, [provider]: '' }));
+      setDrafts((d) => ({ ...d, [provider]: "" }));
     } catch {
-      setErrors((e) => ({ ...e, [provider]: 'Could not validate API key' }));
+      setErrors((e) => ({ ...e, [provider]: "Could not validate API key" }));
     } finally {
       setValidating(null);
     }
@@ -96,7 +96,7 @@ export function ProvidersSettings() {
                   <div className="flex gap-2">
                     <Input
                       type="password"
-                      value={drafts[p.id] ?? ''}
+                      value={drafts[p.id] ?? ""}
                       onChange={(e) => {
                         const value = e.target.value;
                         setDrafts((d) => ({ ...d, [p.id]: value }));
@@ -117,7 +117,7 @@ export function ProvidersSettings() {
                           <Spinner /> Checking…
                         </>
                       ) : (
-                        'Save'
+                        "Save"
                       )}
                     </Button>
                   </div>

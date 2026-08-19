@@ -1,9 +1,6 @@
 import { useId } from "react";
 import { AnimatedDiagramShell } from "~/components/chat/diagrams/animated-diagram-shell";
-import {
-  StageChipButton,
-  useDiagramStageUi,
-} from "~/components/chat/diagrams/diagram-stage-ui";
+import { StageChipButton, useDiagramStageUi } from "~/components/chat/diagrams/diagram-stage-ui";
 import type { EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
 import { cn } from "~/lib/utils";
 
@@ -18,10 +15,7 @@ export function AnimatedGradientDescent({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const { stages, selected, setSelected, detail } = useDiagramStageUi(
-    "gradient-descent",
-    payload,
-  );
+  const { stages, selected, setSelected, detail } = useDiagramStageUi("gradient-descent", payload);
   const fillId = `gd-fill-${useId().replace(/:/g, "")}`;
 
   return (
@@ -84,11 +78,7 @@ function GradientDescentSvg({
   const active = markers[Math.min(selected, markers.length - 1)] ?? markers[0]!;
 
   return (
-    <svg
-      key={playKey}
-      viewBox="0 0 320 180"
-      className="h-auto w-full max-w-md"
-    >
+    <svg key={playKey} viewBox="0 0 320 180" className="h-auto w-full max-w-md">
       <defs>
         <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="currentColor" stopOpacity="0.08" />
@@ -136,9 +126,7 @@ function GradientDescentSvg({
       <circle
         r="7"
         className={cn("fill-primary stroke-background")}
-        {...(reducedMotion
-          ? { cx: active.cx, cy: active.cy }
-          : { cx: 70, cy: 48 })}
+        {...(reducedMotion ? { cx: active.cx, cy: active.cy } : { cx: 70, cy: 48 })}
       >
         {!reducedMotion && (
           <animateMotion

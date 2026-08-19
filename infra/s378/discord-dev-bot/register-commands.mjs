@@ -1,8 +1,4 @@
-import {
-  REST,
-  Routes,
-  SlashCommandBuilder,
-} from "discord.js";
+import { REST, Routes, SlashCommandBuilder } from "discord.js";
 import { loadConfig } from "./config.mjs";
 
 const config = loadConfig();
@@ -24,9 +20,8 @@ const commands = [
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
-await rest.put(
-  Routes.applicationGuildCommands(config.applicationId, config.guildId),
-  { body: commands },
-);
+await rest.put(Routes.applicationGuildCommands(config.applicationId, config.guildId), {
+  body: commands,
+});
 
 console.log(`Registered ${commands.length} guild commands.`);

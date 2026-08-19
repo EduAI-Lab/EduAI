@@ -50,10 +50,7 @@ vi.mock("~/lib/db.cron-jobs.server", () => ({
   dispatchManualCronRuns: mockDispatchManualCronRuns,
 }));
 
-const {
-  refreshCronSchedules,
-  stopCronScheduler,
-} = await import("~/lib/cron-scheduler.server");
+const { refreshCronSchedules, stopCronScheduler } = await import("~/lib/cron-scheduler.server");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -72,16 +69,12 @@ describe("refreshCronSchedules", () => {
     // backup-nightly (script) + notify-api-key-expiry (CORE) = 2 scheduled tasks.
     // ai-tutor-reconcile has no script and is not CORE, so it's skipped.
     expect(mockCronSchedule).toHaveBeenCalledTimes(2);
-    expect(mockCronSchedule).toHaveBeenCalledWith(
-      "0 2 * * *",
-      expect.any(Function),
-      { timezone: "UTC" },
-    );
-    expect(mockCronSchedule).toHaveBeenCalledWith(
-      "0 4 * * *",
-      expect.any(Function),
-      { timezone: "UTC" },
-    );
+    expect(mockCronSchedule).toHaveBeenCalledWith("0 2 * * *", expect.any(Function), {
+      timezone: "UTC",
+    });
+    expect(mockCronSchedule).toHaveBeenCalledWith("0 4 * * *", expect.any(Function), {
+      timezone: "UTC",
+    });
   });
 
   it("applies a database schedule override instead of the job's default schedule", async () => {
@@ -89,16 +82,12 @@ describe("refreshCronSchedules", () => {
 
     await refreshCronSchedules();
 
-    expect(mockCronSchedule).toHaveBeenCalledWith(
-      "0 5 * * *",
-      expect.any(Function),
-      { timezone: "UTC" },
-    );
-    expect(mockCronSchedule).not.toHaveBeenCalledWith(
-      "0 2 * * *",
-      expect.any(Function),
-      { timezone: "UTC" },
-    );
+    expect(mockCronSchedule).toHaveBeenCalledWith("0 5 * * *", expect.any(Function), {
+      timezone: "UTC",
+    });
+    expect(mockCronSchedule).not.toHaveBeenCalledWith("0 2 * * *", expect.any(Function), {
+      timezone: "UTC",
+    });
   });
 
   it("is idempotent — a second call with unchanged schedules does not re-schedule", async () => {
@@ -119,11 +108,9 @@ describe("refreshCronSchedules", () => {
     await refreshCronSchedules();
 
     expect(mockCronSchedule).toHaveBeenCalledTimes(1);
-    expect(mockCronSchedule).toHaveBeenCalledWith(
-      "0 6 * * *",
-      expect.any(Function),
-      { timezone: "UTC" },
-    );
+    expect(mockCronSchedule).toHaveBeenCalledWith("0 6 * * *", expect.any(Function), {
+      timezone: "UTC",
+    });
   });
 
   it("continues scheduling remaining jobs when one job fails to schedule", async () => {

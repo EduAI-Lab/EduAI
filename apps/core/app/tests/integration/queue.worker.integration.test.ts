@@ -6,11 +6,7 @@ import redis from "~/lib/queue/connection.server";
 import { enqueue } from "~/lib/queue/enqueue.server";
 import type { JobPayload } from "~/lib/queue/job-schema";
 import { getQueue } from "~/lib/queue/queues.server";
-import {
-  closeAiJobWorkers,
-  createAiJobWorker,
-  type AiJobResult,
-} from "~/lib/queue/worker.server";
+import { closeAiJobWorkers, createAiJobWorker, type AiJobResult } from "~/lib/queue/worker.server";
 
 const queueName = "ai-jobs-chat" as const;
 const queue = getQueue(queueName);

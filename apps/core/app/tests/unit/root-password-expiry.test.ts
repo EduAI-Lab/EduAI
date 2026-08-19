@@ -42,9 +42,7 @@ describe("root middleware — password expiry on /api/* (AUTH-06)", () => {
     const res = await passwordExpiryMiddleware(makeArgs("/api/chat"), next);
 
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual(
-      expect.objectContaining({ error: "PASSWORD_EXPIRED" }),
-    );
+    expect(await res.json()).toEqual(expect.objectContaining({ error: "PASSWORD_EXPIRED" }));
     expect(next).not.toHaveBeenCalled();
   });
 

@@ -17,10 +17,7 @@ export function AnimatedProcessFlow({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const { stages, selected, setSelected, detail } = useDiagramStageUi(
-    "process-flow",
-    payload,
-  );
+  const { stages, selected, setSelected, detail } = useDiagramStageUi("process-flow", payload);
   const [highlight, setHighlight] = useState(0);
   const stageKey = diagramStageResetKey(payload.title, stages);
 
@@ -90,10 +87,7 @@ function ProcessFlowTrack({
       {stages.map((stage, i) => (
         <li key={`${stage.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
           {i > 0 ? (
-            <span
-              aria-hidden
-              className="hidden text-muted-foreground/50 sm:inline"
-            >
+            <span aria-hidden className="hidden text-muted-foreground/50 sm:inline">
               →
             </span>
           ) : null}

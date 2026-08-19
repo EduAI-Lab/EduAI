@@ -8,10 +8,7 @@ import {
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
-import {
-  createQuestion,
-  listQuestions,
-} from "~/lib/questions/server";
+import { createQuestion, listQuestions } from "~/lib/questions/server";
 import { withIdempotency } from "~/lib/idempotency.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
@@ -84,12 +81,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const topicId = url.searchParams.get("topicId") ?? undefined;
   const testableParam = url.searchParams.get("testable");
-  const testable =
-    testableParam === "true" ? true : testableParam === "false" ? false : undefined;
+  const testable = testableParam === "true" ? true : testableParam === "false" ? false : undefined;
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 500);
   const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
 
-  const result = await listQuestions({ courseId, topicId, testable, limit, offset, includeDeleted });
+  const result = await listQuestions({
+    courseId,
+    topicId,
+    testable,
+    limit,
+    offset,
+    includeDeleted,
+  });
 
   // §19: enforce answer visibility at the serialization layer on every
   // question response path (defensive — student-level access is already 403).
@@ -123,10 +126,7 @@ export async function action({ request }: ActionFunctionArgs) {
       : null;
 
   if (typeof bodyPreview?.courseId === "string" && bodyPreview.courseId) {
-    const { course, access } = await resolveCourseAccessGate(
-      session.user,
-      bodyPreview.courseId,
-    );
+    const { course, access } = await resolveCourseAccessGate(session.user, bodyPreview.courseId);
     if (!course) {
       return json(404, { error: "COURSE_NOT_FOUND" });
     }
@@ -147,9 +147,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       if ("error" in result) {
         const status =
-          result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND"
-            ? 404
-            : 422;
+          result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND" ? 404 : 422;
         return json(status, result);
       }
 

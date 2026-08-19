@@ -70,9 +70,7 @@ describe("CourseCardCustomizePopover", () => {
     fireEvent.change(screen.getByLabelText(/Nickname/), { target: { value: "Ignored" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await waitFor(() =>
-      expect(screen.queryByText("Course appearance")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("Course appearance")).not.toBeInTheDocument());
     expect(onApply).not.toHaveBeenCalled();
   });
 
@@ -83,9 +81,7 @@ describe("CourseCardCustomizePopover", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
-    await waitFor(() =>
-      expect(screen.queryByText("Course appearance")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("Course appearance")).not.toBeInTheDocument());
     expect(onApply).not.toHaveBeenCalled();
   });
 

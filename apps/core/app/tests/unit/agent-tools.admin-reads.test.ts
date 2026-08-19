@@ -156,7 +156,10 @@ describe("listAdminCanvasCourses", () => {
 
 describe("thin course/platform delegations", () => {
   it("readAdminCourseRagSettings delegates to getAdminCourseRagSettings", async () => {
-    vi.mocked(getAdminCourseRagSettings).mockResolvedValue({ dataSource: "database", settings: {} } as never);
+    vi.mocked(getAdminCourseRagSettings).mockResolvedValue({
+      dataSource: "database",
+      settings: {},
+    } as never);
     const opts = { courseId: "c1" };
     const result = await readAdminCourseRagSettings(ADMIN, opts);
     expect(getAdminCourseRagSettings).toHaveBeenCalledWith(ADMIN, opts);
@@ -212,7 +215,11 @@ describe("thin course/platform delegations", () => {
   });
 
   it("readAdminUnitChats delegates to listAdminUnitChats", async () => {
-    vi.mocked(listAdminUnitChats).mockResolvedValue({ department: "CS", chats: [], count: 0 } as never);
+    vi.mocked(listAdminUnitChats).mockResolvedValue({
+      department: "CS",
+      chats: [],
+      count: 0,
+    } as never);
     const result = await readAdminUnitChats(ADMIN, "CS", 20);
     expect(listAdminUnitChats).toHaveBeenCalledWith(ADMIN, "CS", 20);
     expect(result).toEqual({ department: "CS", chats: [], count: 0 });
@@ -240,7 +247,11 @@ describe("thin course/platform delegations", () => {
   });
 
   it("readAdminCronJobRuns delegates to getAdminCronJobRuns", async () => {
-    vi.mocked(getAdminCronJobRuns).mockResolvedValue({ jobName: "j1", runs: [], count: 0 } as never);
+    vi.mocked(getAdminCronJobRuns).mockResolvedValue({
+      jobName: "j1",
+      runs: [],
+      count: 0,
+    } as never);
     const result = await readAdminCronJobRuns(ADMIN, "j1");
     expect(getAdminCronJobRuns).toHaveBeenCalledWith(ADMIN, "j1");
     expect(result).toEqual({ jobName: "j1", runs: [], count: 0 });

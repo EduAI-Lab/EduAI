@@ -10,18 +10,14 @@ const COURSES = [
 
 describe("CourseSwitcher", () => {
   it("shows the current course label", () => {
-    render(
-      <CourseSwitcher courses={COURSES} currentId={2} onSelect={() => {}} />,
-    );
+    render(<CourseSwitcher courses={COURSES} currentId={2} onSelect={() => {}} />);
     expect(screen.getByText("MATH 200")).toBeInTheDocument();
     // The dropdown arrow is its own control, separate from the label.
     expect(screen.getByLabelText("Switch course")).toBeInTheDocument();
   });
 
   it("falls back to a placeholder when the current id is unknown", () => {
-    render(
-      <CourseSwitcher courses={COURSES} currentId={999} onSelect={() => {}} />,
-    );
+    render(<CourseSwitcher courses={COURSES} currentId={999} onSelect={() => {}} />);
     expect(screen.getByText("Select course")).toBeInTheDocument();
   });
 

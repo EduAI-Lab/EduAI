@@ -1,7 +1,7 @@
-import { expect, type APIRequestContext } from '@playwright/test';
-import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
-import { createAdmin } from './auth';
-import { atListData } from './at-pagination';
+import { expect, type APIRequestContext } from "@playwright/test";
+import { AI_TUTOR_API_URL, CORE_URL } from "../../playwright.config";
+import { createAdmin } from "./auth";
+import { atListData } from "./at-pagination";
 
 const AT = AI_TUTOR_API_URL;
 const RUN_SUFFIX = Date.now().toString().slice(-5);
@@ -13,13 +13,13 @@ type PlaywrightRequestFixture = {
 function coreCourseForm(instrId: string, overrides: Record<string, string> = {}) {
   const { code: codeBase, ...rest } = overrides;
   return {
-    name: 'E2E AT Course',
-    code: `${codeBase ?? 'AT-E2E'}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
-    section: '001',
-    term: 'W1',
-    year: '2026',
-    startDate: '2026-09-08',
-    department: 'COSC',
+    name: "E2E AT Course",
+    code: `${codeBase ?? "AT-E2E"}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
+    section: "001",
+    term: "W1",
+    year: "2026",
+    startDate: "2026-09-08",
+    department: "COSC",
     instructorUserIds: instrId,
     ...rest,
   };
@@ -34,7 +34,7 @@ export async function importAtCourseForInstructor(
   const adminCtx = await playwright.request.newContext();
 
   try {
-    await createAdmin(adminCtx, { prefix: 'at-course-admin' });
+    await createAdmin(adminCtx, { prefix: "at-course-admin" });
     const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
 
     const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {

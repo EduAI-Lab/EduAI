@@ -22,7 +22,8 @@ function runGhJson(args, options = {}) {
 function extractReferencedIssueNumbers(pr) {
   const issueNumbers = new Set();
   const body = String(pr.body || "");
-  const referencePattern = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|related\s+to)\s+(?:[\w.-]+\/[\w.-]+)?#(\d+)\b/gi;
+  const referencePattern =
+    /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|related\s+to)\s+(?:[\w.-]+\/[\w.-]+)?#(\d+)\b/gi;
   let match = referencePattern.exec(body);
 
   while (match) {
@@ -154,7 +155,14 @@ function getProjectItemTimestamps(projectItemId) {
   `;
 
   try {
-    const result = runGhJson(["api", "graphql", "-f", `id=${projectItemId}`, "-f", `query=${query}`]);
+    const result = runGhJson([
+      "api",
+      "graphql",
+      "-f",
+      `id=${projectItemId}`,
+      "-f",
+      `query=${query}`,
+    ]);
     const item = result?.data?.node;
     const content = item?.content || {};
     return {
@@ -214,7 +222,9 @@ function getPullRequestDetails(owner, repo, prNumber) {
 
 function getPullRequestIssueComments(owner, repo, prNumber) {
   try {
-    return runGhJson(["api", `repos/${owner}/${repo}/issues/${prNumber}/comments`, "--paginate"]) || [];
+    return (
+      runGhJson(["api", `repos/${owner}/${repo}/issues/${prNumber}/comments`, "--paginate"]) || []
+    );
   } catch (error) {
     return [];
   }
@@ -227,9 +237,13 @@ function linkIssuesToPrs({ owner, repo, issues, pullRequests }) {
 
   pullRequests.forEach((pr) => {
     const referencedNumbers = new Set(extractReferencedIssueNumbers(pr));
-    getClosingIssueNumbers(owner, repo, pr.number).forEach((number) => referencedNumbers.add(number));
+    getClosingIssueNumbers(owner, repo, pr.number).forEach((number) =>
+      referencedNumbers.add(number),
+    );
 
-    const matchedNumbers = Array.from(referencedNumbers).filter((number) => issueNumberSet.has(number));
+    const matchedNumbers = Array.from(referencedNumbers).filter((number) =>
+      issueNumberSet.has(number),
+    );
     if (matchedNumbers.length === 0) {
       unlinkedPrs.push(pr);
       return;

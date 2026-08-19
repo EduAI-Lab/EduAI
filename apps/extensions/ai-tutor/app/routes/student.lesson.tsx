@@ -27,9 +27,9 @@
  * Related: components/StudentAiChat, components/lessons/LessonActivityView,
  *          components/StudentActivityFeedbackCard, components/bug-report/useBugReport
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconSparkles } from '@tabler/icons-react';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconSparkles } from "@tabler/icons-react";
+import { toast } from "sonner";
 import {
   Button,
   Dialog,
@@ -42,23 +42,23 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
   useIsMobile,
-} from '@eduai/ui';
-import { contentExcerpt } from '../components/lessons/LessonCard';
-import { ModuleHero } from '../components/lessons/ModuleHero';
-import { LessonActivityView } from '../components/lessons/LessonActivityView';
-import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
-import api from '../lib/api';
-import type { Activity, Course, Lesson, Module, ModuleDetail } from '../lib/types';
-import type { Route } from './+types/student.lesson';
-import { requireClientUser } from '~/lib/client-auth';
-import { useLocalUser } from '~/hooks/useLocalUser';
-import { useBugReport } from '~/components/bug-report/useBugReport';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { splitTitle } from '~/lib/course-title';
-import { accentForCourse } from '~/lib/course-display';
-import { KNOWLEDGE_LEVELS } from '~/lib/knowledge-levels';
-import { cn } from '~/lib/utils';
+} from "@eduai/ui";
+import { contentExcerpt } from "../components/lessons/LessonCard";
+import { ModuleHero } from "../components/lessons/ModuleHero";
+import { LessonActivityView } from "../components/lessons/LessonActivityView";
+import StudentAiChat, { type StudentAiChatHandle } from "../components/StudentAiChat";
+import api from "../lib/api";
+import type { Activity, Course, Lesson, Module, ModuleDetail } from "../lib/types";
+import type { Route } from "./+types/student.lesson";
+import { requireClientUser } from "~/lib/client-auth";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import { useBugReport } from "~/components/bug-report/useBugReport";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { splitTitle } from "~/lib/course-title";
+import { accentForCourse } from "~/lib/course-display";
+import { KNOWLEDGE_LEVELS } from "~/lib/knowledge-levels";
+import { cn } from "~/lib/utils";
 
 /**
  * Activities the player holds at once (#1207). Comfortably larger than any
@@ -93,7 +93,7 @@ type FeedbackApi = typeof api & {
 function createFeedbackState(): StudentFeedbackState {
   return {
     rating: null,
-    note: '',
+    note: "",
     promptShown: false,
     promptVisible: false,
     submitted: false,
@@ -109,10 +109,10 @@ function createFeedbackState(): StudentFeedbackState {
  * sequential because their IDs come out of the lesson row.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['STUDENT', 'TA']);
+  await requireClientUser(["STUDENT", "TA"]);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
-    throw new Response('Invalid lesson id', { status: 400 });
+    throw new Response("Invalid lesson id", { status: 400 });
   }
 
   const [lesson, activitiesPage] = await Promise.all([
@@ -172,7 +172,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const [loadedPage, setLoadedPage] = useState(1);
   const [idx, setIdx] = useState(0);
   const [mcq, setMcq] = useState<number | null>(null);
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [wasCorrect, setWasCorrect] = useState(false);
@@ -180,7 +180,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   // Pre-chat context for AI guidance
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
-  const [tempKnowledgeLevel, setTempKnowledgeLevel] = useState('');
+  const [tempKnowledgeLevel, setTempKnowledgeLevel] = useState("");
   const [knowledgeLevels, setKnowledgeLevels] = useState<Record<number, string>>({});
   const [topicSelection, setTopicSelection] = useState<Record<number, number>>({});
   const [feedbackByActivity, setFeedbackByActivity] = useState<
@@ -248,7 +248,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       setActivitiesLoadFailed(false);
     } catch (error) {
       if (lessonIdRef.current !== lessonId) return;
-      console.error('Failed to load more activities', error);
+      console.error("Failed to load more activities", error);
       // Surface it: without this the student just hits an invisible wall at the
       // page boundary. `canNext` stops at the loaded edge while this is set, and
       // the next move (Prev, then Next) re-runs the effect and retries.
@@ -277,7 +277,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const canPrev = idx > 0;
 
   const questionChunks = useMemo(
-    () => (activity?.question || '').split(/\n/),
+    () => (activity?.question || "").split(/\n/),
     [activity?.question],
   );
 
@@ -288,7 +288,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const currentFeedback = activity
     ? (feedbackByActivity[activity.id] ?? createFeedbackState())
     : createFeedbackState();
-  const studentAnswer = activity ? (activity.type === 'MCQ' ? mcq : text) : null;
+  const studentAnswer = activity ? (activity.type === "MCQ" ? mcq : text) : null;
   const isUserReady = Boolean(user);
 
   // Reset per-activity scratch state (answer inputs, last result, modal) the
@@ -299,10 +299,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setPrevActivityId(currentActivityId);
     setWasCorrect(false);
     setResult(null);
-    setTempKnowledgeLevel('');
+    setTempKnowledgeLevel("");
     setShowKnowledgeModal(false);
     setMcq(null);
-    setText('');
+    setText("");
   }
 
   const submit = async () => {
@@ -310,15 +310,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setSubmitting(true);
     try {
       const payload: any = { userId: user.id };
-      if (activity.type === 'MCQ') payload.answerOption = mcq;
+      if (activity.type === "MCQ") payload.answerOption = mcq;
       else payload.answerText = text;
       const res = await api.submitAnswer(activity.id, payload);
-      setResult(res.isCorrect ? 'Correct!' : 'Not quite. Keep going!');
+      setResult(res.isCorrect ? "Correct!" : "Not quite. Keep going!");
 
       setOrderedActivities((prev) =>
         prev.map((a, i) =>
           i === idx
-            ? { ...a, completionStatus: res.isCorrect ? ('correct' as const) : undefined }
+            ? { ...a, completionStatus: res.isCorrect ? ("correct" as const) : undefined }
             : a,
         ),
       );
@@ -351,7 +351,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         };
       });
     } catch (e) {
-      setResult('There was a problem submitting.');
+      setResult("There was a problem submitting.");
       setWasCorrect(false);
     } finally {
       setSubmitting(false);
@@ -360,10 +360,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   const resetForNavigation = useCallback(() => {
     setMcq(null);
-    setText('');
+    setText("");
     setResult(null);
     setWasCorrect(false);
-    setTempKnowledgeLevel('');
+    setTempKnowledgeLevel("");
   }, []);
 
   // Direct set from the chat's inline chips — no dialog, no wall.
@@ -376,7 +376,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   );
 
   const handleAdjustKnowledgeLevel = useCallback(() => {
-    setTempKnowledgeLevel(currentKnowledgeLevel ?? '');
+    setTempKnowledgeLevel(currentKnowledgeLevel ?? "");
     setShowKnowledgeModal(true);
   }, [currentKnowledgeLevel]);
 
@@ -445,8 +445,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
     try {
       const feedbackApi = api as FeedbackApi;
-      if (typeof feedbackApi.submitActivityFeedback !== 'function') {
-        throw new Error('Feedback service not available');
+      if (typeof feedbackApi.submitActivityFeedback !== "function") {
+        throw new Error("Feedback service not available");
       }
 
       await feedbackApi.submitActivityFeedback(activity.id, {
@@ -466,7 +466,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       updateFeedbackState((current) => ({
         ...current,
         saving: false,
-        error: 'Could not save feedback right now. Please try again.',
+        error: "Could not save feedback right now. Please try again.",
       }));
     }
   }, [activity, currentFeedback.note, currentFeedback.rating, updateFeedbackState]);
@@ -521,15 +521,15 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     : [];
 
   const breadcrumbItems = [
-    { label: 'Courses', href: '/student' },
+    { label: "Courses", href: "/student" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         course?.id != null ? (
           <CourseSwitcher
             courseId={course.id}
             basePath="/student"
-            currentTitle={course?.title || 'Course'}
+            currentTitle={course?.title || "Course"}
           />
         ) : undefined,
     },
@@ -541,10 +541,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
             href: `/student/module/${lesson.moduleId}`,
           },
         ]
-      : [{ label: 'Module' }]),
+      : [{ label: "Module" }]),
     lesson?.title
       ? { label: splitTitle(lesson.title).label, title: lesson.title }
-      : { label: 'Lesson' },
+      : { label: "Lesson" },
   ];
 
   useShellBreadcrumbs(breadcrumbItems);
@@ -592,7 +592,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   const aiTutorPanel = (
     <StudentAiChat
-      key={activity?.id ?? 'none'}
+      key={activity?.id ?? "none"}
       ref={chatRef}
       activity={activity}
       isUserReady={isUserReady}
@@ -613,7 +613,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         <ModuleHero
           orderText={orderText}
           eyebrow="Lesson"
-          title={lesson?.title || 'Lesson'}
+          title={lesson?.title || "Lesson"}
           description={
             (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
             module?.title ||
@@ -627,7 +627,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                     // The lesson total, matching the "Question N of M" counter
                     // on the card below — the loaded slice would disagree with
                     // it, and its denominator would grow as pages append.
-                    label: `of ${activitiesTotal} question${activitiesTotal === 1 ? '' : 's'}`,
+                    label: `of ${activitiesTotal} question${activitiesTotal === 1 ? "" : "s"}`,
                     value: idx + 1,
                     accent: true,
                   },
@@ -637,9 +637,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           progress={
             activitiesTotal > 0
               ? {
-                  completed: orderedActivities.filter(
-                    (a) => a.completionStatus === 'correct',
-                  ).length,
+                  completed: orderedActivities.filter((a) => a.completionStatus === "correct")
+                    .length,
                   total: activitiesTotal,
                 }
               : null
@@ -699,10 +698,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                   type="button"
                   onClick={() => setTempKnowledgeLevel(level.value)}
                   className={cn(
-                    'rounded-[var(--radius-lg)] border-2 p-4 text-left transition-colors',
+                    "rounded-[var(--radius-lg)] border-2 p-4 text-left transition-colors",
                     tempKnowledgeLevel === level.value
-                      ? 'border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary'
-                      : 'border-border hover:border-muted-foreground/30',
+                      ? "border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary"
+                      : "border-border hover:border-muted-foreground/30",
                   )}
                 >
                   <div className="text-sm font-semibold text-foreground">{level.label}</div>
@@ -716,7 +715,11 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
             <Button variant="secondary" onClick={handleCancelKnowledge}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleConfirmKnowledge} disabled={!tempKnowledgeLevel}>
+            <Button
+              variant="primary"
+              onClick={handleConfirmKnowledge}
+              disabled={!tempKnowledgeLevel}
+            >
               Start guidance
             </Button>
           </DialogFooter>

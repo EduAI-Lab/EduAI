@@ -14,7 +14,10 @@ export function inferHybridWebToolMode(question: string): HybridWebToolMode | nu
   if (!trimmed) return null;
 
   const lower = trimmed.toLowerCase();
-  if (URL_IN_PROMPT.test(trimmed) && (lower.includes("fetch") || lower.includes("page at") || lower.includes("headings"))) {
+  if (
+    URL_IN_PROMPT.test(trimmed) &&
+    (lower.includes("fetch") || lower.includes("page at") || lower.includes("headings"))
+  ) {
     return "fetchPage";
   }
 

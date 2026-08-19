@@ -3,11 +3,11 @@
  * variables and retrying the initial connection so the server can still start
  * listening while Postgres (e.g. a Docker Compose dependency) finishes booting.
  */
-import { PrismaClient } from '@eduai/question-maker-prisma-client';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { logger } from '../utils/logger.js';
+import { PrismaClient } from "@eduai/question-maker-prisma-client";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { logger } from "../utils/logger.js";
 
 // Get the directory of the current file
 const __filename = fileURLToPath(import.meta.url);
@@ -15,20 +15,22 @@ const __dirname = dirname(__filename);
 
 // Load .env file from the project root (4 levels up from app/backend/src/config/database.js)
 // app/backend/src/config -> app/backend/src -> app/backend -> app -> root
-const projectRoot = join(__dirname, '../../../../');
-const envPath = join(projectRoot, '.env');
+const projectRoot = join(__dirname, "../../../../");
+const envPath = join(projectRoot, ".env");
 
 // Load environment variables
 const result = dotenv.config({ path: envPath });
 
 // Check if .env file was loaded and DATABASE_URL exists
 if (result.error) {
-  logger.warn({ err: result.error, envPath }, 'Could not load .env file');
+  logger.warn({ err: result.error, envPath }, "Could not load .env file");
 }
 
 if (!process.env.DATABASE_URL) {
-  logger.error({ envPath, projectRoot }, 'DATABASE_URL is not set');
-  throw new Error('DATABASE_URL environment variable is required. Please set it in your .env file.');
+  logger.error({ envPath, projectRoot }, "DATABASE_URL is not set");
+  throw new Error(
+    "DATABASE_URL environment variable is required. Please set it in your .env file.",
+  );
 }
 
 export const prisma = new PrismaClient();
@@ -44,25 +46,31 @@ const retryConnection = async (maxRetries = 10, initialDelay = 1000) => {
   while (attempt < maxRetries) {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      logger.info('Database connection successful');
+      logger.info("Database connection successful");
       return;
     } catch (error) {
       attempt++;
       const isLastAttempt = attempt >= maxRetries;
 
       if (isLastAttempt) {
-        logger.error({ err: error, attempts: maxRetries }, 'Database connection failed after max retries');
+        logger.error(
+          { err: error, attempts: maxRetries },
+          "Database connection failed after max retries",
+        );
         throw error;
       }
 
-      logger.warn({
-        err: error,
-        attempt,
-        maxRetries,
-        retryDelay: delay
-      }, 'Database connection attempt failed, retrying');
+      logger.warn(
+        {
+          err: error,
+          attempt,
+          maxRetries,
+          retryDelay: delay,
+        },
+        "Database connection attempt failed, retrying",
+      );
 
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
 
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
       delay = Math.min(delay * 2, 60000);
@@ -76,11 +84,7 @@ const retryConnection = async (maxRetries = 10, initialDelay = 1000) => {
  * Migrations are applied out-of-band via `prisma migrate deploy` (see package.json).
  */
 export const connectDatabase = async (options = {}) => {
-  const {
-    retryOnFailure = true,
-    maxRetries = 10,
-    allowFailure = false
-  } = options;
+  const { retryOnFailure = true, maxRetries = 10, allowFailure = false } = options;
 
   try {
     if (retryOnFailure) {
@@ -90,7 +94,10 @@ export const connectDatabase = async (options = {}) => {
     }
   } catch (error) {
     if (allowFailure) {
-      logger.warn({ err: error }, 'Database connection failed, but continuing anyway. Prisma will reconnect on the next query.');
+      logger.warn(
+        { err: error },
+        "Database connection failed, but continuing anyway. Prisma will reconnect on the next query.",
+      );
       return;
     }
 

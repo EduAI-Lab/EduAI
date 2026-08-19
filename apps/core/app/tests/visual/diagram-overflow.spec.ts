@@ -77,9 +77,7 @@ function resolveRootCssPath(): string {
     string,
     { css?: string[] }
   >;
-  const rootEntry = Object.entries(manifest).find(([key]) =>
-    key.startsWith("app/root.tsx"),
-  )?.[1];
+  const rootEntry = Object.entries(manifest).find(([key]) => key.startsWith("app/root.tsx"))?.[1];
   const cssFile = rootEntry?.css?.[0];
   if (!cssFile) {
     throw new Error(
@@ -131,9 +129,7 @@ function pageHtml(bodyHtml: string): string {
  * column markup — see generate-fixtures.tsx's chat-message fixtures).
  */
 function chatScrollPaneHtml(bodyHtml: string, withOverflowXHidden: boolean): string {
-  const paneClass = withOverflowXHidden
-    ? CHAT_SCROLL_PANE_CLASS
-    : CHAT_SCROLL_PANE_CLASS_PRE_1320;
+  const paneClass = withOverflowXHidden ? CHAT_SCROLL_PANE_CLASS : CHAT_SCROLL_PANE_CLASS_PRE_1320;
   return `<!doctype html>
 <html>
   <head>
@@ -241,7 +237,7 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     // into view. Use behavior:"instant" — the production pane class includes
     // scroll-smooth, so assigning scrollLeft animates and a same-tick
     // boundingBox() still sees the un-scrolled 650px right edge (CI #1422).
-    const lastChip = page.locator('[data-eduai-diagram] button[aria-pressed]').last();
+    const lastChip = page.locator("[data-eduai-diagram] button[aria-pressed]").last();
     await expect(lastChip).toHaveText("Wipe counter");
     const { beforeRight, afterRight, scrollLeft } = await page.evaluate(() => {
       const scroll = document.querySelector("#scroll")!;
@@ -280,7 +276,9 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     // `overflow-x: auto` container is a no-op here.
     const box = (await page.locator("#scroll").boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    const scrollLeftAfterWheel = await page.evaluate(() => document.querySelector("#scroll")!.scrollLeft);
+    const scrollLeftAfterWheel = await page.evaluate(
+      () => document.querySelector("#scroll")!.scrollLeft,
+    );
     await page.mouse.wheel(600, 0);
     await page.waitForTimeout(50);
     const scrollLeftAfterWheelAttempt = await page.evaluate(
@@ -296,7 +294,7 @@ test.describe("chat scroll container overflow-x (#1320 root cause)", () => {
     // arbitrarily oversized content fit. Full visibility for real payloads
     // comes from those payloads never reaching this size (see the two
     // describe blocks above), not from this CSS property alone.
-    const lastChip = page.locator('[data-eduai-diagram] button[aria-pressed]').last();
+    const lastChip = page.locator("[data-eduai-diagram] button[aria-pressed]").last();
     await expect(lastChip).toHaveText("Wipe counter");
     const lastChipBox = await lastChip.boundingBox();
     expect(
@@ -331,9 +329,7 @@ test.describe("diagram containment in a narrow chat column", () => {
     const shellBox = await page.locator("[data-eduai-diagram]").boundingBox();
     expect(shellBox).not.toBeNull();
     expect(shellBox!.x).toBeGreaterThanOrEqual(columnBox!.x - 1);
-    expect(shellBox!.x + shellBox!.width).toBeLessThanOrEqual(
-      columnBox!.x + columnBox!.width + 1,
-    );
+    expect(shellBox!.x + shellBox!.width).toBeLessThanOrEqual(columnBox!.x + columnBox!.width + 1);
 
     // #1422 review: select the expected content explicitly (every catalog
     // diagram's stage/node/pane is a `<button aria-pressed>`, per
@@ -341,7 +337,7 @@ test.describe("diagram containment in a narrow chat column", () => {
     // descendant and filtering out zero-sized boxes — that filter let a
     // clipped-to-nothing stage chip silently disappear from the assertion
     // instead of failing it.
-    const expectedChips = page.locator('[data-eduai-diagram] button[aria-pressed]');
+    const expectedChips = page.locator("[data-eduai-diagram] button[aria-pressed]");
     await expect(expectedChips).toHaveCount(expectedStageCount);
 
     const chipBoxes = await expectedChips.evaluateAll((els) =>
@@ -370,7 +366,9 @@ test.describe("diagram containment in a narrow chat column", () => {
       );
       // ...and inside the shell's own clip rectangle, since the shell (not
       // the column) is what actually clips via overflow-hidden.
-      expect(box.x, `"${box.text}": left edge vs shell clip`).toBeGreaterThanOrEqual(shellBox!.x - 1);
+      expect(box.x, `"${box.text}": left edge vs shell clip`).toBeGreaterThanOrEqual(
+        shellBox!.x - 1,
+      );
       expect(box.x + box.width, `"${box.text}": right edge vs shell clip`).toBeLessThanOrEqual(
         shellBox!.x + shellBox!.width + 1,
       );
@@ -426,7 +424,7 @@ test.describe("diagram containment regression guard in the real chat-message anc
     // #1422 review: select the expected content explicitly instead of
     // enumerating every descendant and filtering out zero-sized boxes, which
     // would let a clipped-to-nothing stage chip silently pass.
-    const expectedChips = page.locator('[data-eduai-diagram] button[aria-pressed]');
+    const expectedChips = page.locator("[data-eduai-diagram] button[aria-pressed]");
     await expect(expectedChips).toHaveCount(expectedStageCount);
 
     const chipBoxes = await expectedChips.evaluateAll((els) =>
@@ -450,7 +448,9 @@ test.describe("diagram containment regression guard in the real chat-message anc
       expect(Number(box.opacity), `"${box.text}": computed opacity`).toBe(1);
       expect(box.visibility, `"${box.text}": computed visibility`).toBe("visible");
       expect(box.left, `"${box.text}": left edge in viewport`).toBeGreaterThanOrEqual(-1);
-      expect(box.right, `"${box.text}": right edge in viewport`).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
+      expect(box.right, `"${box.text}": right edge in viewport`).toBeLessThanOrEqual(
+        COLUMN_WIDTH + 1,
+      );
       expect(
         box.right,
         `"${box.text}": must not be clipped by the diagram shell's overflow-hidden`,
@@ -527,9 +527,7 @@ test.describe("diagram containment during animation playback", () => {
         };
       });
 
-      expect(docScrollWidth, `frame ${i}: page scrollWidth`).toBeLessThanOrEqual(
-        COLUMN_WIDTH + 1,
-      );
+      expect(docScrollWidth, `frame ${i}: page scrollWidth`).toBeLessThanOrEqual(COLUMN_WIDTH + 1);
       expect(maxRight, `frame ${i}: moving marker right edge`).toBeLessThanOrEqual(
         columnBox!.x + columnBox!.width + 1,
       );

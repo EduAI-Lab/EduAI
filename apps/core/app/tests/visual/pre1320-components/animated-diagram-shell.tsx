@@ -19,10 +19,7 @@ type AnimatedDiagramShellProps = {
   caption?: string;
   /** Detail panel under the diagram (e.g. selected stage explanation). */
   detail?: ReactNode;
-  children: (ctx: {
-    playKey: number;
-    reducedMotion: boolean;
-  }) => ReactNode;
+  children: (ctx: { playKey: number; reducedMotion: boolean }) => ReactNode;
 };
 
 /** Shared chrome: title, Replay, reduced-motion detection. */

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 import {
   CourseCard,
   CourseListView,
@@ -7,11 +7,11 @@ import {
   defaultColorIndexForCourse,
   type CourseFilterGroup,
   EmptyState,
-} from '@eduai/ui';
-import { IconBooks, IconSearch } from '@tabler/icons-react';
-import { Course } from '@/types/question';
-import { getDepartmentLabel } from '@/lib/units';
-import { CardGridSkeleton } from '@/components/shared/Skeletons';
+} from "@eduai/ui";
+import { IconBooks, IconSearch } from "@tabler/icons-react";
+import { Course } from "@/types/question";
+import { getDepartmentLabel } from "@/lib/units";
+import { CardGridSkeleton } from "@/components/shared/Skeletons";
 
 /** Short "last synced" label from a course's Core metadata timestamp. */
 function syncedLabel(updatedAt?: string): string | undefined {
@@ -20,10 +20,10 @@ function syncedLabel(updatedAt?: string): string | undefined {
   if (Number.isNaN(date.getTime())) return undefined;
   const diffMs = Date.now() - date.getTime();
   const day = 24 * 60 * 60 * 1000;
-  if (diffMs < day) return 'Synced today';
-  if (diffMs < 2 * day) return 'Synced yesterday';
+  if (diffMs < day) return "Synced today";
+  if (diffMs < 2 * day) return "Synced yesterday";
   if (diffMs < 7 * day) return `Synced ${Math.floor(diffMs / day)}d ago`;
-  return `Synced ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  return `Synced ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
 export type CoursesGridProps = {
@@ -75,7 +75,7 @@ export function CoursesGrid({
     // for legacy unlinked rows.
     const colorIndex = defaultColorIndexForCourse(course.coreCourseId ?? String(course.id));
     const synced = syncedLabel(course.updatedAt);
-    const extraBadges = [course.coreCourseId ? 'EduAI Core' : 'Local', synced].filter(
+    const extraBadges = [course.coreCourseId ? "EduAI Core" : "Local", synced].filter(
       (b): b is string => Boolean(b),
     );
 
@@ -86,23 +86,23 @@ export function CoursesGrid({
           onSelectCourse(course);
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             onSelectCourse(course);
           }
         }}
         role="button"
         tabIndex={0}
-        data-tour-id={course.id === highlightId ? 'course-select' : undefined}
+        data-tour-id={course.id === highlightId ? "course-select" : undefined}
         data-course-id={course.id}
         className="cursor-pointer rounded-[var(--radius-xl)] focus:outline-none focus:ring-2 focus:ring-primary"
       >
         <CourseCard
           id={String(course.id)}
           code={course.code || course.name}
-          name={course.code ? course.name : ''}
+          name={course.code ? course.name : ""}
           description={course.description ?? undefined}
-          term={course.term || ''}
+          term={course.term || ""}
           year={course.year}
           isPublished={course.isPublished ?? false}
           department={showDepartment ? course.department : undefined}
@@ -124,7 +124,7 @@ export function CoursesGrid({
       loadingSlot={<CardGridSkeleton count={6} columns={3} />}
       getKey={(course) => course.id}
       getTermInfo={(course) => ({ term: course.term, year: course.year })}
-      getSearchText={(course) => `${course.name ?? ''} ${course.code ?? ''}`}
+      getSearchText={(course) => `${course.name ?? ""} ${course.code ?? ""}`}
       filterGroups={filterGroups}
       matchesFilter={matchesFilter}
       filters={filters}
@@ -134,7 +134,7 @@ export function CoursesGrid({
           bare={false}
           icon={<IconBooks className="size-6" />}
           title="No courses yet"
-          description={emptyHint || 'Courses you can access from EduAI Core will appear here.'}
+          description={emptyHint || "Courses you can access from EduAI Core will appear here."}
         />
       }
       noResultsState={

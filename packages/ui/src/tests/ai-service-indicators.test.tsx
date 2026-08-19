@@ -5,21 +5,14 @@ import { AIServiceIndicators } from "../ai-service-indicators";
 
 describe("AIServiceIndicators", () => {
   it("reports each service state independently", () => {
-    render(
-      <AIServiceIndicators
-        cloud={{ state: "online" }}
-        ubc={{ state: "offline" }}
-      />,
-    );
+    render(<AIServiceIndicators cloud={{ state: "online" }} ubc={{ state: "offline" }} />);
     // Each chip's aria-label reflects only its own state — no cross-dependency.
     expect(screen.getByLabelText("Cloud AI: Online")).toBeInTheDocument();
     expect(screen.getByLabelText("UBC-hosted AI: Offline")).toBeInTheDocument();
   });
 
   it("renders loading and unknown states", () => {
-    render(
-      <AIServiceIndicators cloud={{ state: "loading" }} ubc={{ state: "unknown" }} />,
-    );
+    render(<AIServiceIndicators cloud={{ state: "loading" }} ubc={{ state: "unknown" }} />);
     expect(screen.getByLabelText("Cloud AI: Checking…")).toBeInTheDocument();
     expect(screen.getByLabelText("UBC-hosted AI: Unknown")).toBeInTheDocument();
   });

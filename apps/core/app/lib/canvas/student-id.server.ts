@@ -1,6 +1,11 @@
 import { createHmac } from "node:crypto";
 
-import { decrypt, encrypt, isEncrypted, CanvasCredentialDecryptError } from "~/lib/canvas/encryption";
+import {
+  decrypt,
+  encrypt,
+  isEncrypted,
+  CanvasCredentialDecryptError,
+} from "~/lib/canvas/encryption";
 
 /** Normalizes a student number / Canvas sis_user_id for comparison. */
 export function normalizeStudentId(value: string | null | undefined): string | null {
@@ -144,9 +149,7 @@ export function rosterSisUserIdMatchForUser(input: {
     return {
       OR: [
         { sisUserIdLookup: input.studentIdLookup },
-        ...(normalizedStudentId
-          ? [{ sisUserId: normalizedStudentId, sisUserIdLookup: null }]
-          : []),
+        ...(normalizedStudentId ? [{ sisUserId: normalizedStudentId, sisUserIdLookup: null }] : []),
       ],
     };
   }

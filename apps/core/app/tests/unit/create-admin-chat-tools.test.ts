@@ -188,7 +188,10 @@ const call = { toolCallId: "test", messages: [] };
  * next call — turnId is null in `ctx`, so a fresh preview is always confirmable
  * immediately (see admin-write-confirmation.server: same-turn rejection only applies
  * when the preview was bound to a non-null turnId). */
-async function runWrite(tool: { execute: (args: never, call: never) => PromiseLike<unknown> }, args: Record<string, unknown>) {
+async function runWrite(
+  tool: { execute: (args: never, call: never) => PromiseLike<unknown> },
+  args: Record<string, unknown>,
+) {
   const preview = await tool.execute({ ...args, confirmed: false } as never, call as never);
   expect(preview).toMatchObject({ writeSucceeded: false, error: "CONFIRMATION_REQUIRED" });
   return tool.execute({ ...args, confirmed: true } as never, call as never);
@@ -196,9 +199,8 @@ async function runWrite(tool: { execute: (args: never, call: never) => PromiseLi
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  const { resetWritePreviewsForTests } = await import(
-    "~/lib/agent-tools/admin-write-confirmation.server"
-  );
+  const { resetWritePreviewsForTests } =
+    await import("~/lib/agent-tools/admin-write-confirmation.server");
   resetWritePreviewsForTests();
 });
 
@@ -232,7 +234,10 @@ describe("createAdminChatTools read execute", () => {
     });
 
     const tools = createAdminChatTools(ctx);
-    const result = await tools.listCourseTopics.execute({ courseCode: "COSC 111" }, { toolCallId: "test", messages: [] });
+    const result = await tools.listCourseTopics.execute(
+      { courseCode: "COSC 111" },
+      { toolCallId: "test", messages: [] },
+    );
     expect(resolveAdminCourseId).toHaveBeenCalled();
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
@@ -346,21 +351,16 @@ describe("createAdminChatTools write execute", () => {
 
 describe("runConfirmedAdminWriteTool", () => {
   beforeEach(async () => {
-    const { resetWritePreviewsForTests } = await import(
-      "~/lib/agent-tools/admin-write-confirmation.server"
-    );
+    const { resetWritePreviewsForTests } =
+      await import("~/lib/agent-tools/admin-write-confirmation.server");
     resetWritePreviewsForTests();
   });
 
   it("registers a preview and does not mutate when confirmed is false", async () => {
     const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
-    const result = await runConfirmedAdminWriteTool(
-      "createUser",
-      ADMIN,
-      false,
-      run,
-      { email: "a@test.com" },
-    );
+    const result = await runConfirmedAdminWriteTool("createUser", ADMIN, false, run, {
+      email: "a@test.com",
+    });
     expect(run).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       writeSucceeded: false,
@@ -370,13 +370,9 @@ describe("runConfirmedAdminWriteTool", () => {
 
   it("rejects confirmed=true without a matching preview", async () => {
     const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
-    const result = await runConfirmedAdminWriteTool(
-      "createUser",
-      ADMIN,
-      true,
-      run,
-      { email: "a@test.com" },
-    );
+    const result = await runConfirmedAdminWriteTool("createUser", ADMIN, true, run, {
+      email: "a@test.com",
+    });
     expect(run).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       writeSucceeded: false,
@@ -453,13 +449,9 @@ describe("runConfirmedAdminWriteTool", () => {
       { email: "a@test.com" },
     );
     const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
-    const result = await runConfirmedAdminWriteTool(
-      "createUser",
-      ADMIN,
-      true,
-      run,
-      { email: "b@test.com" },
-    );
+    const result = await runConfirmedAdminWriteTool("createUser", ADMIN, true, run, {
+      email: "b@test.com",
+    });
     expect(run).not.toHaveBeenCalled();
     expect(result).toMatchObject({ error: "CONFIRMATION_REQUIRED" });
   });
@@ -637,7 +629,9 @@ describe("createAdminChatTools course-scoped reads (courseOpts passthrough)", ()
   });
 
   it("getCourseEmbeddingSettings", async () => {
-    vi.mocked(getAdminCourseEmbeddingSettings).mockResolvedValue({ embeddingProvider: "openai" } as never);
+    vi.mocked(getAdminCourseEmbeddingSettings).mockResolvedValue({
+      embeddingProvider: "openai",
+    } as never);
     const tools = createAdminChatTools(ctx);
     const result = await tools.getCourseEmbeddingSettings.execute(
       { courseId: "course-5", courseCode: "COSC 222" },
@@ -726,7 +720,11 @@ describe("createAdminChatTools resolveCourse-based reads", () => {
       courseCode: "COSC 111",
     });
     vi.mocked(listAdminCourseTopics).mockResolvedValue({ topics: [] } as never);
-    const noCodeCtx = { user: ADMIN, effectiveCourseId: "course-1", effectiveCourseCode: undefined };
+    const noCodeCtx = {
+      user: ADMIN,
+      effectiveCourseId: "course-1",
+      effectiveCourseCode: undefined,
+    };
     const tools = createAdminChatTools(noCodeCtx);
     await tools.listCourseTopics.execute({ courseId: "course-1" }, call as never);
     expect(resolveAdminCourseId).toHaveBeenCalledWith(ADMIN, {
@@ -739,10 +737,7 @@ describe("createAdminChatTools resolveCourse-based reads", () => {
   it("listCourseTopics short-circuits on a resolveCourse error without calling the list fn", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ error: "COURSE_NOT_FOUND" });
     const tools = createAdminChatTools(ctx);
-    const result = await tools.listCourseTopics.execute(
-      { courseId: "missing" },
-      call as never,
-    );
+    const result = await tools.listCourseTopics.execute({ courseId: "missing" }, call as never);
     expect(result).toEqual({ error: "COURSE_NOT_FOUND" });
     expect(listAdminCourseTopics).not.toHaveBeenCalled();
   });
@@ -765,9 +760,18 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
   it("updateCourseEnrollment", async () => {
     vi.mocked(updateAdminEnrollmentRole).mockResolvedValue({ writeSucceeded: true } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { courseId: "course-5", courseCode: "COSC 222", enrollmentId: "enr-1", role: "TA" };
+    const args = {
+      courseId: "course-5",
+      courseCode: "COSC 222",
+      enrollmentId: "enr-1",
+      role: "TA",
+    };
     const result = await runWrite(tools.updateCourseEnrollment, args);
-    expect(updateAdminEnrollmentRole).toHaveBeenCalledWith(ADMIN, { ...courseOpts, enrollmentId: "enr-1", role: "TA" });
+    expect(updateAdminEnrollmentRole).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      enrollmentId: "enr-1",
+      role: "TA",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -776,7 +780,10 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", enrollmentId: "enr-1" };
     const result = await runWrite(tools.deactivateCourseEnrollment, args);
-    expect(deactivateAdminEnrollment).toHaveBeenCalledWith(ADMIN, { ...courseOpts, enrollmentId: "enr-1" });
+    expect(deactivateAdminEnrollment).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      enrollmentId: "enr-1",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -794,32 +801,58 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", name: "New Topic" };
     const result = await runWrite(tools.createCourseTopic, args);
-    expect(createAdminCourseTopic).toHaveBeenCalledWith(ADMIN, { ...courseOpts, name: "New Topic" });
+    expect(createAdminCourseTopic).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      name: "New Topic",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
   it("updateCourseTopic", async () => {
     vi.mocked(updateAdminCourseTopic).mockResolvedValue({ writeSucceeded: true } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { courseId: "course-5", courseCode: "COSC 222", topicId: "topic-1", name: "Renamed" };
+    const args = {
+      courseId: "course-5",
+      courseCode: "COSC 222",
+      topicId: "topic-1",
+      name: "Renamed",
+    };
     const result = await runWrite(tools.updateCourseTopic, args);
-    expect(updateAdminCourseTopic).toHaveBeenCalledWith(ADMIN, { ...courseOpts, topicId: "topic-1", name: "Renamed" });
+    expect(updateAdminCourseTopic).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      topicId: "topic-1",
+      name: "Renamed",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
   it("deleteCourseTopic", async () => {
     vi.mocked(deleteAdminCourseTopic).mockResolvedValue({ writeSucceeded: true } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { courseId: "course-5", courseCode: "COSC 222", topicId: "topic-1", name: undefined };
+    const args = {
+      courseId: "course-5",
+      courseCode: "COSC 222",
+      topicId: "topic-1",
+      name: undefined,
+    };
     const result = await runWrite(tools.deleteCourseTopic, args);
-    expect(deleteAdminCourseTopic).toHaveBeenCalledWith(ADMIN, { ...courseOpts, topicId: "topic-1", name: undefined });
+    expect(deleteAdminCourseTopic).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      topicId: "topic-1",
+      name: undefined,
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
   it("createInvitation (confirmed=true path)", async () => {
     vi.mocked(createAdminInvitationMutation).mockResolvedValue({ writeSucceeded: true } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { email: "invite@test.com", name: "Invitee", role: "INSTRUCTOR", authorizedUnits: undefined };
+    const args = {
+      email: "invite@test.com",
+      name: "Invitee",
+      role: "INSTRUCTOR",
+      authorizedUnits: undefined,
+    };
     const result = await runWrite(tools.createInvitation, args);
     expect(createAdminInvitationMutation).toHaveBeenCalledWith(ADMIN, {
       email: "invite@test.com",
@@ -870,7 +903,11 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
   it("syncCanvasCourses", async () => {
     vi.mocked(syncAdminCanvasCourses).mockResolvedValue({ writeSucceeded: true } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { instructorUserId: "inst-1", instructorEmail: undefined, canvasCourseIds: ["c1", "c2"] };
+    const args = {
+      instructorUserId: "inst-1",
+      instructorEmail: undefined,
+      canvasCourseIds: ["c1", "c2"],
+    };
     const result = await runWrite(tools.syncCanvasCourses, args);
     expect(syncAdminCanvasCourses).toHaveBeenCalledWith(ADMIN, {
       instructorUserId: "inst-1",
@@ -935,7 +972,9 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", name: "Renamed Course" };
     const result = await runWrite(tools.updateCourse, args);
-    expect(updateAdminCourseMutation).toHaveBeenCalledWith(ADMIN, courseOpts, { name: "Renamed Course" });
+    expect(updateAdminCourseMutation).toHaveBeenCalledWith(ADMIN, courseOpts, {
+      name: "Renamed Course",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -967,9 +1006,16 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
   });
 
   it("updateCourseRagSettings", async () => {
-    vi.mocked(updateAdminCourseRagSettingsMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    vi.mocked(updateAdminCourseRagSettingsMutation).mockResolvedValue({
+      writeSucceeded: true,
+    } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { courseId: "course-5", courseCode: "COSC 222", ragTopK: 8, ragSimilarityThreshold: 0.7 };
+    const args = {
+      courseId: "course-5",
+      courseCode: "COSC 222",
+      ragTopK: 8,
+      ragSimilarityThreshold: 0.7,
+    };
     const result = await runWrite(tools.updateCourseRagSettings, args);
     expect(updateAdminCourseRagSettingsMutation).toHaveBeenCalledWith(ADMIN, courseOpts, {
       ragTopK: 8,
@@ -979,9 +1025,16 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
   });
 
   it("renameCourseMaterial", async () => {
-    vi.mocked(renameAdminCourseMaterialMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    vi.mocked(renameAdminCourseMaterialMutation).mockResolvedValue({
+      writeSucceeded: true,
+    } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { courseId: "course-5", courseCode: "COSC 222", materialId: "mat-1", name: "Renamed" };
+    const args = {
+      courseId: "course-5",
+      courseCode: "COSC 222",
+      materialId: "mat-1",
+      name: "Renamed",
+    };
     const result = await runWrite(tools.renameCourseMaterial, args);
     expect(renameAdminCourseMaterialMutation).toHaveBeenCalledWith(ADMIN, {
       ...courseOpts,
@@ -992,18 +1045,30 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
   });
 
   it("deleteCourseMaterial", async () => {
-    vi.mocked(deleteAdminCourseMaterialMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    vi.mocked(deleteAdminCourseMaterialMutation).mockResolvedValue({
+      writeSucceeded: true,
+    } as never);
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", materialId: "mat-1" };
     const result = await runWrite(tools.deleteCourseMaterial, args);
-    expect(deleteAdminCourseMaterialMutation).toHaveBeenCalledWith(ADMIN, { ...courseOpts, materialId: "mat-1" });
+    expect(deleteAdminCourseMaterialMutation).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      materialId: "mat-1",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
   it("updateCourseEmbeddingSettings", async () => {
-    vi.mocked(updateAdminCourseEmbeddingSettingsMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    vi.mocked(updateAdminCourseEmbeddingSettingsMutation).mockResolvedValue({
+      writeSucceeded: true,
+    } as never);
     const tools = createAdminChatTools(ctx);
-    const args = { courseId: "course-5", courseCode: "COSC 222", embeddingProvider: "openai", embeddingModel: "text-embedding-3-small" };
+    const args = {
+      courseId: "course-5",
+      courseCode: "COSC 222",
+      embeddingProvider: "openai",
+      embeddingModel: "text-embedding-3-small",
+    };
     const result = await runWrite(tools.updateCourseEmbeddingSettings, args);
     expect(updateAdminCourseEmbeddingSettingsMutation).toHaveBeenCalledWith(ADMIN, courseOpts, {
       embeddingProvider: "openai",
@@ -1022,11 +1087,16 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
   });
 
   it("syncCanvasMaterials", async () => {
-    vi.mocked(syncAdminCanvasMaterialsMutation).mockResolvedValue({ writeSucceeded: true } as never);
+    vi.mocked(syncAdminCanvasMaterialsMutation).mockResolvedValue({
+      writeSucceeded: true,
+    } as never);
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", canvasFileIds: ["f1"] };
     const result = await runWrite(tools.syncCanvasMaterials, args);
-    expect(syncAdminCanvasMaterialsMutation).toHaveBeenCalledWith(ADMIN, { ...courseOpts, canvasFileIds: ["f1"] });
+    expect(syncAdminCanvasMaterialsMutation).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      canvasFileIds: ["f1"],
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -1035,7 +1105,10 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", userId: "user-1" };
     const result = await runWrite(tools.addCourseTA, args);
-    expect(addAdminCourseTAMutation).toHaveBeenCalledWith(ADMIN, { ...courseOpts, userId: "user-1" });
+    expect(addAdminCourseTAMutation).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      userId: "user-1",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -1044,7 +1117,10 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const tools = createAdminChatTools(ctx);
     const args = { courseId: "course-5", courseCode: "COSC 222", userId: "user-1" };
     const result = await runWrite(tools.removeCourseTA, args);
-    expect(removeAdminCourseTAMutation).toHaveBeenCalledWith(ADMIN, { ...courseOpts, userId: "user-1" });
+    expect(removeAdminCourseTAMutation).toHaveBeenCalledWith(ADMIN, {
+      ...courseOpts,
+      userId: "user-1",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -1070,7 +1146,9 @@ describe("createAdminChatTools write tools — confirmed flow", () => {
     const tools = createAdminChatTools(ctx);
     const args = { providerId: "prov-1", displayName: "Updated" };
     const result = await runWrite(tools.updateAiProvider, args);
-    expect(updateAdminAiProviderMutation).toHaveBeenCalledWith(ADMIN, "prov-1", { displayName: "Updated" });
+    expect(updateAdminAiProviderMutation).toHaveBeenCalledWith(ADMIN, "prov-1", {
+      displayName: "Updated",
+    });
     expect(result).toEqual({ writeSucceeded: true });
   });
 
@@ -1180,7 +1258,10 @@ describe("createAdminChatTools idempotent write tools", () => {
   });
 
   it("triggerCronJob runs triggerAdminCronJobMutation through runIdempotentAdminMutation", async () => {
-    vi.mocked(triggerAdminCronJobMutation).mockResolvedValue({ writeSucceeded: true, ok: true } as never);
+    vi.mocked(triggerAdminCronJobMutation).mockResolvedValue({
+      writeSucceeded: true,
+      ok: true,
+    } as never);
     const tools = createAdminChatTools(ctx);
     const args = { jobName: "cleanup-invitations", idempotencyKey: "trigger-1" };
     const result = await runWrite(tools.triggerCronJob, args);
@@ -1200,7 +1281,10 @@ describe("createAdminChatTools user-resolution write tools", () => {
     const tools = createAdminChatTools(ctx);
     const args = { userId: "user-1", userEmail: undefined, name: "Updated Name" };
     const result = await runWrite(tools.updateUser, args);
-    expect(resolveAdminUserId).toHaveBeenCalledWith(ADMIN, { userId: "user-1", userEmail: undefined });
+    expect(resolveAdminUserId).toHaveBeenCalledWith(ADMIN, {
+      userId: "user-1",
+      userEmail: undefined,
+    });
     expect(updateAdminUser).toHaveBeenCalledWith(ADMIN, "user-1", { name: "Updated Name" });
     expect(result).toEqual({ writeSucceeded: true });
   });
@@ -1234,7 +1318,10 @@ describe("createAdminChatTools user-resolution write tools", () => {
     const tools = createAdminChatTools(ctx);
     const args = { userId: undefined, userEmail: "delete@test.com" };
     const result = await runWrite(tools.deleteUser, args);
-    expect(resolveAdminUserId).toHaveBeenCalledWith(ADMIN, { userId: undefined, userEmail: "delete@test.com" });
+    expect(resolveAdminUserId).toHaveBeenCalledWith(ADMIN, {
+      userId: undefined,
+      userEmail: "delete@test.com",
+    });
     expect(deleteAdminUser).toHaveBeenCalledWith(ADMIN, "user-2");
     expect(result).toMatchObject({ writeSucceeded: true, ok: true });
   });

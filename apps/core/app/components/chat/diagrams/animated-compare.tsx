@@ -14,10 +14,7 @@ export function AnimatedCompare({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const { stages, selected, setSelected, detail } = useDiagramStageUi(
-    "compare",
-    payload,
-  );
+  const { stages, selected, setSelected, detail } = useDiagramStageUi("compare", payload);
 
   return (
     <AnimatedDiagramShell

@@ -39,9 +39,7 @@ function getCookieDomain(): string | undefined {
 
 function readThemeCookie(): Theme | null {
   if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith(`${THEME_COOKIE_NAME}=`));
+  const match = document.cookie.split("; ").find((row) => row.startsWith(`${THEME_COOKIE_NAME}=`));
   if (!match) return null;
   const value = decodeURIComponent(match.split("=")[1] ?? "");
   return value === "light" || value === "dark" || value === "system" ? value : null;
@@ -126,8 +124,7 @@ function applyTheme(theme: Theme): void {
   const html = document.documentElement;
   const isDark =
     theme === "dark" ||
-    (theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   html.classList.toggle("dark", isDark);
 }
 

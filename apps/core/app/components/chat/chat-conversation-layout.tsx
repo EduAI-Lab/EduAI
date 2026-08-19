@@ -125,8 +125,8 @@ export function ChatConversationLayout({
                 )}
               >
                 <p className="text-center text-xs text-muted-foreground">
-                  Instructors, teaching assistants, and platform admins can view this
-                  course chat history.
+                  Instructors, teaching assistants, and platform admins can view this course chat
+                  history.
                 </p>
               </div>
             )}
@@ -178,21 +178,11 @@ export function ChatConversationLayout({
                         message={message as Message}
                         isStreaming={isStreamingMessage}
                         answeredByLabel={answeredByLabel}
-                        highlightRole={resolveMessageHighlightRole(
-                          index,
-                          messages,
-                          assistive,
-                        )}
+                        highlightRole={resolveMessageHighlightRole(index, messages, assistive)}
                         webToolsEnabled={webToolsEnabled}
                         assistiveDisplay={adhdAssist}
-                        showContinue={
-                          cappedMessageIds?.has(message.id) ?? false
-                        }
-                        onContinue={
-                          onContinue
-                            ? () => onContinue(message.id)
-                            : undefined
-                        }
+                        showContinue={cappedMessageIds?.has(message.id) ?? false}
+                        onContinue={onContinue ? () => onContinue(message.id) : undefined}
                         continueDisabled={isLoading}
                       />
                     );

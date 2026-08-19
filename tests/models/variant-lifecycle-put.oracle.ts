@@ -50,7 +50,10 @@ function isNonOwnerTa(row: VariantLifecyclePutRow): boolean {
   return row.AccessLevel === "ta" && row.Ownership === "other";
 }
 
-export type Verdict = { status: 200 } | { status: 403; reason: "approve" | "not-own" } | { status: 409 };
+export type Verdict =
+  | { status: 200 }
+  | { status: 403; reason: "approve" | "not-own" }
+  | { status: 409 };
 
 export function variantLifecyclePutOracle(row: VariantLifecyclePutRow): Verdict {
   if (row.CurrentIsDraft === "approved") {
@@ -60,7 +63,9 @@ export function variantLifecyclePutOracle(row: VariantLifecyclePutRow): Verdict 
   }
 
   // Draft.
-  if (row.RequestedIsDraft === "false" && !isInstructorPlus(row)) return { status: 403, reason: "approve" };
-  if (row.AccessLevel === "ta" && row.Ownership === "other") return { status: 403, reason: "not-own" };
+  if (row.RequestedIsDraft === "false" && !isInstructorPlus(row))
+    return { status: 403, reason: "approve" };
+  if (row.AccessLevel === "ta" && row.Ownership === "other")
+    return { status: 403, reason: "not-own" };
   return { status: 200 };
 }

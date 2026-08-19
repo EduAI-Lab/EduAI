@@ -24,11 +24,7 @@ const prisma = new PrismaClient();
 const RESPONSE_COMPLIANCE = "response_compliance";
 
 /** #521 client UI events — carry behavioural metrics (durationMs/success), never text. */
-const BEHAVIORAL_EVENT_TYPES = [
-  "task_initiation",
-  "re_orientation",
-  "session_completion",
-] as const;
+const BEHAVIORAL_EVENT_TYPES = ["task_initiation", "re_orientation", "session_completion"] as const;
 
 const REPORTED_EVENT_TYPES = [RESPONSE_COMPLIANCE, ...BEHAVIORAL_EVENT_TYPES];
 

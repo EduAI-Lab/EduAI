@@ -6,10 +6,10 @@
  * ring + tinted icon tile + a corner check, so the choice reads at a glance without the
  * old blue/cyan/gold rainbow. Unselected cards stay neutral. Tabler icons only (DS rule).
  */
-import { RadioGroup, RadioGroupItem, Label, cn } from '@eduai/ui';
-import { IconListCheck, IconAbc, IconFileText, IconCheck } from '@tabler/icons-react';
+import { RadioGroup, RadioGroupItem, Label, cn } from "@eduai/ui";
+import { IconListCheck, IconAbc, IconFileText, IconCheck } from "@tabler/icons-react";
 
-import type { QuestionType } from '../../types/question';
+import type { QuestionType } from "../../types/question";
 
 interface QuestionTypeSelectorProps {
   value: QuestionType;
@@ -26,26 +26,30 @@ interface TypeOption {
 
 const OPTIONS: TypeOption[] = [
   {
-    value: 'MCQ',
-    label: 'Multiple choice',
-    hint: 'Lettered options, one correct',
+    value: "MCQ",
+    label: "Multiple choice",
+    hint: "Lettered options, one correct",
     Icon: IconListCheck,
   },
   {
-    value: 'SA',
-    label: 'Short answer',
-    hint: 'A brief written response',
+    value: "SA",
+    label: "Short answer",
+    hint: "A brief written response",
     Icon: IconAbc,
   },
   {
-    value: 'LA',
-    label: 'Long answer',
-    hint: 'An extended / essay response',
+    value: "LA",
+    label: "Long answer",
+    hint: "An extended / essay response",
     Icon: IconFileText,
   },
 ];
 
-export function QuestionTypeSelector({ value, onChange, disabled = false }: QuestionTypeSelectorProps) {
+export function QuestionTypeSelector({
+  value,
+  onChange,
+  disabled = false,
+}: QuestionTypeSelectorProps) {
   return (
     <RadioGroup
       value={value}
@@ -61,12 +65,12 @@ export function QuestionTypeSelector({ value, onChange, disabled = false }: Ques
             key={optValue}
             htmlFor={id}
             className={cn(
-              'group relative flex cursor-pointer flex-col gap-3 rounded-[var(--radius-lg)] border bg-card p-4 shadow-[var(--shadow-2xs)] transition-all',
-              'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 focus-within:ring-offset-background',
+              "group relative flex cursor-pointer flex-col gap-3 rounded-[var(--radius-lg)] border bg-card p-4 shadow-[var(--shadow-2xs)] transition-all",
+              "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 focus-within:ring-offset-background",
               selected
-                ? 'border-secondary bg-secondary/[0.06] ring-1 ring-inset ring-secondary'
-                : 'border-border hover:border-secondary/50 hover:bg-muted/40',
-              disabled && 'cursor-not-allowed opacity-60',
+                ? "border-secondary bg-secondary/[0.06] ring-1 ring-inset ring-secondary"
+                : "border-border hover:border-secondary/50 hover:bg-muted/40",
+              disabled && "cursor-not-allowed opacity-60",
             )}
           >
             <RadioGroupItem id={id} value={optValue} className="sr-only" />
@@ -74,8 +78,8 @@ export function QuestionTypeSelector({ value, onChange, disabled = false }: Ques
             {/* Selected check, top-right */}
             <span
               className={cn(
-                'absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-secondary text-secondary-foreground transition-opacity',
-                selected ? 'opacity-100' : 'opacity-0',
+                "absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-secondary text-secondary-foreground transition-opacity",
+                selected ? "opacity-100" : "opacity-0",
               )}
               aria-hidden
             >
@@ -84,8 +88,10 @@ export function QuestionTypeSelector({ value, onChange, disabled = false }: Ques
 
             <span
               className={cn(
-                'flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors',
-                selected ? 'bg-secondary/15 text-secondary' : 'bg-muted text-muted-foreground group-hover:text-foreground',
+                "flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+                selected
+                  ? "bg-secondary/15 text-secondary"
+                  : "bg-muted text-muted-foreground group-hover:text-foreground",
               )}
             >
               <Icon className="size-5" aria-hidden />

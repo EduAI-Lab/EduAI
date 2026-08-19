@@ -80,14 +80,21 @@ describe("listAccessibleCourseTopics", () => {
       access: { level: "student", rank: 0 },
     });
     vi.mocked(getCourseTopics).mockResolvedValue([
-      { id: "t1", courseId: "c1", name: "Loops", createdAt: new Date(), updatedAt: new Date(), createdBy: null, deletedAt: null, deletedBy: null },
+      {
+        id: "t1",
+        courseId: "c1",
+        name: "Loops",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdBy: null,
+        deletedAt: null,
+        deletedBy: null,
+      },
     ]);
 
     const result = await listAccessibleCourseTopics(USER, "c1");
     expect(result).toEqual({
-      topics: [
-        expect.objectContaining({ id: "t1", name: "Loops" }),
-      ],
+      topics: [expect.objectContaining({ id: "t1", name: "Loops" })],
     });
   });
 });

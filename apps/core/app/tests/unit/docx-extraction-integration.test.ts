@@ -10,8 +10,7 @@ import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { extractDocxText } from "~/lib/ai/file-processing";
 
-const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 async function buildRealDocx(text: string): Promise<Buffer> {
   const zip = new JSZip();
@@ -29,7 +28,8 @@ describe("extractDocxText (real mammoth, unmocked)", () => {
       name: "notes.docx",
       type: DOCX_MIME,
       size: buffer.byteLength,
-      arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      arrayBuffer: async () =>
+        buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
     };
 
     const result = await extractDocxText(file as any);

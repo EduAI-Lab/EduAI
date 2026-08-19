@@ -13,21 +13,12 @@ import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { PageHeading } from "@eduai/ui";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@eduai/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
 import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
-import type {
-  RoutingModelSettingKey,
-  RoutingModelSettings,
-} from "~/lib/routing-model-settings";
+import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing-model-settings";
 import {
   buildOllamaModelCreatePayload,
   buildVllmModelCreatePayload,
@@ -71,10 +62,7 @@ export type AiModelsAdminViewProps = {
   onToggleModelActive: (model: AIModel) => Promise<void>;
   routingModelSettings: RoutingModelSettings;
   routingModelDefinitions: RoutingModelSettingDefinition[];
-  onToggleRoutingModel: (
-    key: RoutingModelSettingKey,
-    value: boolean,
-  ) => Promise<void>;
+  onToggleRoutingModel: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
 };
 
 export function AiModelsAdminView({
@@ -129,11 +117,7 @@ export function AiModelsAdminView({
   );
 
   const registerDiscoveredModels = useCallback(
-    async (
-      provider: AIProvider,
-      providerLabel: string,
-      payloads: Record<string, unknown>[],
-    ) => {
+    async (provider: AIProvider, providerLabel: string, payloads: Record<string, unknown>[]) => {
       // Dedupe against the provider's full model set, not the page on screen.
       const existing = await fetchModelsByProvider(provider.id);
       const result = await syncLocalModels(existing, provider.id, payloads, onCreateModel);
@@ -318,10 +302,7 @@ export function AiModelsAdminView({
     }
   };
 
-  const handleToggleRoutingModel = async (
-    key: RoutingModelSettingKey,
-    value: boolean,
-  ) => {
+  const handleToggleRoutingModel = async (key: RoutingModelSettingKey, value: boolean) => {
     try {
       await onToggleRoutingModel(key, value);
     } catch (err) {
@@ -368,9 +349,7 @@ export function AiModelsAdminView({
                     <div className="flex items-center justify-between">
                       <div>
                         <CardTitle>AI Models</CardTitle>
-                        <CardDescription>
-                          Manage AI models across all providers
-                        </CardDescription>
+                        <CardDescription>Manage AI models across all providers</CardDescription>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {ollamaProvider && (
@@ -379,7 +358,9 @@ export function AiModelsAdminView({
                             onClick={() => void handleSyncOllamaFromTab()}
                             disabled={syncingProvider !== null}
                           >
-                            {syncingProvider === "ollama" ? "Syncing Ollama…" : "Sync Ollama models"}
+                            {syncingProvider === "ollama"
+                              ? "Syncing Ollama…"
+                              : "Sync Ollama models"}
                           </Button>
                         )}
                         {vllmProvider && (
@@ -542,9 +523,7 @@ export function AiModelsAdminView({
       <ProviderFormDialog
         open={providerDialogOpen}
         onOpenChange={setProviderDialogOpen}
-        provider={
-          editingProvider ? { ...editingProvider, models: undefined } : editingProvider
-        }
+        provider={editingProvider ? { ...editingProvider, models: undefined } : editingProvider}
         onSubmit={handleProviderSubmit}
       />
     </div>

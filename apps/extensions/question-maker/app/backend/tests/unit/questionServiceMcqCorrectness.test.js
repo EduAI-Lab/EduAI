@@ -2,21 +2,17 @@
  * Unit tests: createVariant / updateVariant persist multi-correct MCQ fields
  * via normalizeMcqCorrectness. Prisma is mocked — no DB required.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  mockMetaFindFirst,
-  mockVariantCreate,
-  mockVariantFindFirst,
-  mockVariantUpdate,
-} = vi.hoisted(() => ({
-  mockMetaFindFirst: vi.fn(),
-  mockVariantCreate: vi.fn(),
-  mockVariantFindFirst: vi.fn(),
-  mockVariantUpdate: vi.fn(),
-}));
+const { mockMetaFindFirst, mockVariantCreate, mockVariantFindFirst, mockVariantUpdate } =
+  vi.hoisted(() => ({
+    mockMetaFindFirst: vi.fn(),
+    mockVariantCreate: vi.fn(),
+    mockVariantFindFirst: vi.fn(),
+    mockVariantUpdate: vi.fn(),
+  }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     questionMetadata: { findFirst: mockMetaFindFirst },
     variants: {
@@ -27,86 +23,98 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-vi.mock('../../src/services/courseListService.js', () => ({
+vi.mock("../../src/services/courseListService.js", () => ({
   enrichRowsWithCourse: vi.fn(async (rows) => rows),
   enrichRowWithCourse: vi.fn(async (row) => row),
   formatSemesterDisplay: vi.fn(() => null),
 }));
 
-const { createVariant, updateVariant } = await import('../../src/services/questionService.js');
+const { createVariant, updateVariant } = await import("../../src/services/questionService.js");
 
-const USER_ID = 'cuid-user-1';
+const USER_ID = "cuid-user-1";
 const CHOICES = [
-  { letter: 'A', text: 'Alpha' },
-  { letter: 'B', text: 'Beta' },
-  { letter: 'C', text: 'Gamma' },
+  { letter: "A", text: "Alpha" },
+  { letter: "B", text: "Beta" },
+  { letter: "C", text: "Gamma" },
 ];
 
-describe('questionService MCQ multi-correct persistence', () => {
+describe("questionService MCQ multi-correct persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('createVariant', () => {
-    it('multi-correct: sorts correctAnswers, sets answer to first sorted, flag true', async () => {
-      mockMetaFindFirst.mockResolvedValue({ id: 10, type: 'MCQ' });
+  describe("createVariant", () => {
+    it("multi-correct: sorts correctAnswers, sets answer to first sorted, flag true", async () => {
+      mockMetaFindFirst.mockResolvedValue({ id: 10, type: "MCQ" });
       mockVariantCreate.mockResolvedValue({ id: 1 });
 
-      await createVariant(10, {
-        questionText: 'Pick all that apply',
-        difficulty: 'medium',
-        answer: null,
-        choices: CHOICES,
-        selectAllThatApply: true,
-        correctAnswers: ['C', 'A'],
-      }, USER_ID);
+      await createVariant(
+        10,
+        {
+          questionText: "Pick all that apply",
+          difficulty: "medium",
+          answer: null,
+          choices: CHOICES,
+          selectAllThatApply: true,
+          correctAnswers: ["C", "A"],
+        },
+        USER_ID,
+      );
 
       expect(mockVariantCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          answer: 'A',
-          correctAnswers: ['A', 'C'],
+          answer: "A",
+          correctAnswers: ["A", "C"],
           selectAllThatApply: true,
           choices: CHOICES,
         }),
       });
     });
 
-    it('single-correct: flag false and correctAnswers null', async () => {
-      mockMetaFindFirst.mockResolvedValue({ id: 10, type: 'MCQ' });
+    it("single-correct: flag false and correctAnswers null", async () => {
+      mockMetaFindFirst.mockResolvedValue({ id: 10, type: "MCQ" });
       mockVariantCreate.mockResolvedValue({ id: 2 });
 
-      await createVariant(10, {
-        questionText: 'Pick one',
-        difficulty: 'easy',
-        answer: 'B',
-        choices: CHOICES,
-        selectAllThatApply: false,
-        correctAnswers: ['A', 'B'],
-      }, USER_ID);
+      await createVariant(
+        10,
+        {
+          questionText: "Pick one",
+          difficulty: "easy",
+          answer: "B",
+          choices: CHOICES,
+          selectAllThatApply: false,
+          correctAnswers: ["A", "B"],
+        },
+        USER_ID,
+      );
 
       expect(mockVariantCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          answer: 'B',
+          answer: "B",
           selectAllThatApply: false,
           correctAnswers: null,
         }),
       });
     });
 
-    it('non-MCQ: leaves selectAllThatApply false and correctAnswers null', async () => {
-      mockMetaFindFirst.mockResolvedValue({ id: 11, type: 'SA' });
+    it("non-MCQ: leaves selectAllThatApply false and correctAnswers null", async () => {
+      mockMetaFindFirst.mockResolvedValue({ id: 11, type: "SA" });
       mockVariantCreate.mockResolvedValue({ id: 3 });
 
-      await createVariant(11, {
-        questionText: 'Explain photosynthesis',
-        answer: 'Light to chemical energy',
-        selectAllThatApply: true,
-        correctAnswers: ['A'],
-      }, USER_ID);
+      await createVariant(
+        11,
+        {
+          questionText: "Explain photosynthesis",
+          answer: "Light to chemical energy",
+          selectAllThatApply: true,
+          correctAnswers: ["A"],
+        },
+        USER_ID,
+      );
 
       expect(mockVariantCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          answer: 'Light to chemical energy',
+          answer: "Light to chemical energy",
           selectAllThatApply: false,
           correctAnswers: null,
           choices: null,
@@ -115,36 +123,40 @@ describe('questionService MCQ multi-correct persistence', () => {
     });
   });
 
-  describe('updateVariant', () => {
-    it('multi-correct update normalizes and persists both fields', async () => {
+  describe("updateVariant", () => {
+    it("multi-correct update normalizes and persists both fields", async () => {
       mockVariantFindFirst.mockResolvedValue({
         id: 5,
         isDraft: true,
-        answer: 'A',
+        answer: "A",
         choices: CHOICES,
         selectAllThatApply: false,
         correctAnswers: null,
-        questionMetadata: { id: 10, type: 'MCQ' },
+        questionMetadata: { id: 10, type: "MCQ" },
       });
       mockVariantUpdate.mockResolvedValue({ id: 5 });
 
-      await updateVariant(5, {
-        selectAllThatApply: true,
-        correctAnswers: ['C', 'A'],
-      }, USER_ID);
+      await updateVariant(
+        5,
+        {
+          selectAllThatApply: true,
+          correctAnswers: ["C", "A"],
+        },
+        USER_ID,
+      );
 
       expect(mockVariantUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            answer: 'A',
-            correctAnswers: ['A', 'C'],
+            answer: "A",
+            correctAnswers: ["A", "C"],
             selectAllThatApply: true,
           }),
         }),
       );
     });
 
-    it('choices-only edit does not re-normalize stored answer', async () => {
+    it("choices-only edit does not re-normalize stored answer", async () => {
       mockVariantFindFirst.mockResolvedValue({
         id: 6,
         isDraft: true,
@@ -152,25 +164,29 @@ describe('questionService MCQ multi-correct persistence', () => {
         choices: CHOICES,
         selectAllThatApply: false,
         correctAnswers: null,
-        questionMetadata: { id: 10, type: 'MCQ' },
+        questionMetadata: { id: 10, type: "MCQ" },
       });
       mockVariantUpdate.mockResolvedValue({ id: 6 });
 
-      await updateVariant(6, {
-        choices: [
-          { letter: 'A', text: 'Alpha edited' },
-          { letter: 'B', text: 'Beta' },
-          { letter: 'C', text: 'Gamma' },
-        ],
-      }, USER_ID);
+      await updateVariant(
+        6,
+        {
+          choices: [
+            { letter: "A", text: "Alpha edited" },
+            { letter: "B", text: "Beta" },
+            { letter: "C", text: "Gamma" },
+          ],
+        },
+        USER_ID,
+      );
 
       expect(mockVariantUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             choices: [
-              { letter: 'A', text: 'Alpha edited' },
-              { letter: 'B', text: 'Beta' },
-              { letter: 'C', text: 'Gamma' },
+              { letter: "A", text: "Alpha edited" },
+              { letter: "B", text: "Beta" },
+              { letter: "C", text: "Gamma" },
             ],
           }),
         }),
@@ -181,28 +197,32 @@ describe('questionService MCQ multi-correct persistence', () => {
       expect(data.correctAnswers).toBeUndefined();
     });
 
-    it('non-MCQ update forces selectAllThatApply false and correctAnswers null', async () => {
+    it("non-MCQ update forces selectAllThatApply false and correctAnswers null", async () => {
       mockVariantFindFirst.mockResolvedValue({
         id: 7,
         isDraft: true,
-        answer: 'text',
+        answer: "text",
         choices: null,
         selectAllThatApply: false,
         correctAnswers: null,
-        questionMetadata: { id: 11, type: 'SA' },
+        questionMetadata: { id: 11, type: "SA" },
       });
       mockVariantUpdate.mockResolvedValue({ id: 7 });
 
-      await updateVariant(7, {
-        selectAllThatApply: true,
-        correctAnswers: ['A', 'B'],
-        answer: 'Updated SA',
-      }, USER_ID);
+      await updateVariant(
+        7,
+        {
+          selectAllThatApply: true,
+          correctAnswers: ["A", "B"],
+          answer: "Updated SA",
+        },
+        USER_ID,
+      );
 
       expect(mockVariantUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            answer: 'Updated SA',
+            answer: "Updated SA",
             selectAllThatApply: false,
             correctAnswers: null,
           }),

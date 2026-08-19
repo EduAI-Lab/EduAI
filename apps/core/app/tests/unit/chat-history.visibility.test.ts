@@ -221,10 +221,7 @@ describe("listChats", () => {
   it("combines courseId and userId narrowing with the visibility filter", async () => {
     prismaMock.chat.findMany.mockResolvedValue([]);
 
-    await listChats(
-      { id: "admin-1", role: "ADMIN" },
-      { courseId: "c1", userId: "owner-1" },
-    );
+    await listChats({ id: "admin-1", role: "ADMIN" }, { courseId: "c1", userId: "owner-1" });
 
     expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -318,7 +315,12 @@ describe("listChats", () => {
       { chatId: "chat-obj", content: { content: "from object field" } },
       {
         chatId: "chat-parts",
-        content: { parts: [{ type: "text", text: "part one" }, { type: "text", text: "part two" }] },
+        content: {
+          parts: [
+            { type: "text", text: "part one" },
+            { type: "text", text: "part two" },
+          ],
+        },
       },
       { chatId: "chat-none", content: null },
       { chatId: "chat-long", content: longText },

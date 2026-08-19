@@ -5,14 +5,7 @@
 import { IconEdit, IconTrash } from "@tabler/icons-react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,10 +68,7 @@ export function ProvidersTable({
         <TableBody>
           {providers.length === 0 && (
             <TableRow>
-              <TableCell
-                colSpan={6}
-                className="h-24 text-center text-muted-foreground"
-              >
+              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                 No providers found.
               </TableCell>
             </TableRow>
@@ -88,9 +78,7 @@ export function ProvidersTable({
               <TableCell>
                 <div>
                   <div className="font-medium">{provider.displayName}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {provider.description}
-                  </div>
+                  <div className="text-sm text-muted-foreground">{provider.description}</div>
                 </div>
               </TableCell>
               <TableCell>
@@ -105,9 +93,7 @@ export function ProvidersTable({
               </TableCell>
               <TableCell>
                 {provider.envVarName ? (
-                  <code className="text-xs bg-muted px-2 py-1 rounded">
-                    {provider.envVarName}
-                  </code>
+                  <code className="text-xs bg-muted px-2 py-1 rounded">{provider.envVarName}</code>
                 ) : (
                   <span className="text-muted-foreground">None</span>
                 )}
@@ -118,18 +104,12 @@ export function ProvidersTable({
                     checked={provider.isActive}
                     onCheckedChange={() => onToggleActive(provider)}
                   />
-                  <span className="text-sm">
-                    {provider.isActive ? "Active" : "Inactive"}
-                  </span>
+                  <span className="text-sm">{provider.isActive ? "Active" : "Inactive"}</span>
                 </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onEdit(provider)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => onEdit(provider)}>
                     <IconEdit className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
@@ -143,8 +123,8 @@ export function ProvidersTable({
                         <AlertDialogTitle>Delete Provider</AlertDialogTitle>
                         <AlertDialogDescription>
                           Are you sure you want to delete &ldquo;
-                          {provider.displayName}&rdquo;? This will also delete
-                          all associated models.
+                          {provider.displayName}&rdquo;? This will also delete all associated
+                          models.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>

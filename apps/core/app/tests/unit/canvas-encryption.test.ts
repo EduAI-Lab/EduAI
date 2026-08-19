@@ -64,9 +64,8 @@ describe("canvas encryption", () => {
 
   it("throws instead of returning ciphertext when the key was rotated", async () => {
     vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
-    const { encrypt, decrypt, CanvasCredentialDecryptError } = await import(
-      "~/lib/canvas/encryption"
-    );
+    const { encrypt, decrypt, CanvasCredentialDecryptError } =
+      await import("~/lib/canvas/encryption");
 
     const blob = encrypt("canvas-token");
 
@@ -87,9 +86,8 @@ describe("canvas encryption", () => {
 
   it("throws instead of returning ciphertext when the auth tag fails verification", async () => {
     vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
-    const { encrypt, decrypt, CanvasCredentialDecryptError } = await import(
-      "~/lib/canvas/encryption"
-    );
+    const { encrypt, decrypt, CanvasCredentialDecryptError } =
+      await import("~/lib/canvas/encryption");
 
     const blob = encrypt("canvas-token");
     const [salt, iv, tag, ciphertext] = blob.split(":");

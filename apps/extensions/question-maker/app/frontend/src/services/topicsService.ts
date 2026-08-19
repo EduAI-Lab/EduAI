@@ -5,7 +5,7 @@
  * (exposed via `courseService.syncTopicsFromCore`). This service only wraps the
  * read-only sync-status report so the Topics tab can render a sync banner.
  */
-import api from './api';
+import api from "./api";
 
 export interface TopicSyncStatus {
   /** True when local QM topics match Core (same count AND all locally linked). */

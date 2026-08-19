@@ -1,4 +1,4 @@
-import type { Role } from './types';
+import type { Role } from "./types";
 
 /**
  * All supported roles land on the shared, role-aware Dashboard (`/dashboard`)
@@ -7,5 +7,5 @@ import type { Role } from './types';
  * itself, not by routing to a different URL per role.
  */
 export function routeForRole(_role: Role): string {
-  return '/dashboard';
+  return "/dashboard";
 }

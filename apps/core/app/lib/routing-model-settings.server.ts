@@ -21,9 +21,7 @@ export async function getRoutingModelSettings(): Promise<RoutingModelSettings> {
     return cache.value;
   }
 
-  const keys = Object.keys(
-    ROUTING_MODEL_SETTING_DEFINITIONS,
-  ) as RoutingModelSettingKey[];
+  const keys = Object.keys(ROUTING_MODEL_SETTING_DEFINITIONS) as RoutingModelSettingKey[];
   const rows = await prisma.systemConfig.findMany({
     where: { key: { in: keys.map((key) => KEY_PREFIX + key) } },
     select: { key: true, value: true },

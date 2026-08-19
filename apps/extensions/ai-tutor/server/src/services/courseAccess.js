@@ -20,18 +20,23 @@
  *     no rows. This is deliberate fail-closed behaviour, not a bug to "fix".
  * Related: routes/courses.js, services/courseResolver.js, utils/courseSearch.js
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 /** Roles AI Tutor understands on a course surface. */
 export function isSupportedCourseRole(role) {
-  return role === 'STUDENT' || role === 'INSTRUCTOR' || role === 'TA' || role === 'ADMIN'
-    || role === 'UNIT_ADMIN';
+  return (
+    role === "STUDENT" ||
+    role === "INSTRUCTOR" ||
+    role === "TA" ||
+    role === "ADMIN" ||
+    role === "UNIT_ADMIN"
+  );
 }
 
 /** True when the user holds a TA enrollment on any course. */
 export async function userHasTaEnrollment(userId) {
   const count = await prisma.courseEnrollment.count({
-    where: { userId, role: 'TA' },
+    where: { userId, role: "TA" },
   });
   return count > 0;
 }
@@ -62,10 +67,10 @@ export async function userHasInstructorOfRecordStatus(userId) {
  * }>}
  */
 export async function resolveCourseAccess(authUser, { catalogCourses, publishedCoreIds }) {
-  if (authUser.role === 'ADMIN') {
+  if (authUser.role === "ADMIN") {
     // Platform admins see Core's full course catalog (#1074) — no local scoping.
     return {
-      kind: 'admin',
+      kind: "admin",
       where: undefined,
       isEmpty: false,
       taOfferingIdSet: new Set(),
@@ -73,9 +78,9 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
     };
   }
 
-  if (authUser.role === 'INSTRUCTOR') {
+  if (authUser.role === "INSTRUCTOR") {
     return {
-      kind: 'instructor',
+      kind: "instructor",
       where: { instructors: { some: { userId: authUser.id } } },
       isEmpty: false,
       taOfferingIdSet: new Set(),
@@ -83,7 +88,7 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
     };
   }
 
-  if (authUser.role === 'UNIT_ADMIN') {
+  if (authUser.role === "UNIT_ADMIN") {
     // UNIT_ADMINs see every course in their authorized units (regardless of
     // publish state), plus any course they personally lead — so the courses
     // they create or import are always visible even before a department is set.
@@ -94,11 +99,14 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
     // `coreUnavailable` the department set is empty, so the branch degrades to
     // "courses I personally lead" rather than erroring.
     const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
-    const deptCoreIds = units.length > 0
-      ? catalogCourses.filter((c) => c?.department && units.includes(c.department)).map((c) => c.id)
-      : [];
+    const deptCoreIds =
+      units.length > 0
+        ? catalogCourses
+            .filter((c) => c?.department && units.includes(c.department))
+            .map((c) => c.id)
+        : [];
     return {
-      kind: 'unitAdmin',
+      kind: "unitAdmin",
       where: {
         OR: [
           ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
@@ -111,10 +119,12 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
     };
   }
 
-  const isStudentWithElevatedStanding = authUser.role === 'STUDENT'
-    && (await userHasTaEnrollment(authUser.id) || await userHasInstructorOfRecordStatus(authUser.id));
+  const isStudentWithElevatedStanding =
+    authUser.role === "STUDENT" &&
+    ((await userHasTaEnrollment(authUser.id)) ||
+      (await userHasInstructorOfRecordStatus(authUser.id)));
 
-  if (authUser.role === 'TA' || isStudentWithElevatedStanding) {
+  if (authUser.role === "TA" || isStudentWithElevatedStanding) {
     // TAs see all TA-enrolled courses regardless of publish state (no progress),
     // plus published student-enrolled courses (with progress). The publish gate
     // reads through Core (#819) rather than the possibly-stale local column,
@@ -134,11 +144,11 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
       }),
     ]);
     const taOfferingIds = allEnrollments
-      .filter((e) => e.role === 'TA')
+      .filter((e) => e.role === "TA")
       .map((e) => e.courseOfferingId);
     const instructorOfferingIds = instructorRows.map((r) => r.courseOfferingId);
     const studentOfferingIds = allEnrollments
-      .filter((e) => e.role === 'STUDENT')
+      .filter((e) => e.role === "STUDENT")
       .map((e) => e.courseOfferingId);
 
     // #1043/#1386: TA-enrolled + instructor-of-record courses (any publish
@@ -157,7 +167,7 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
     ];
 
     return {
-      kind: 'taUnion',
+      kind: "taUnion",
       where: { OR },
       isEmpty: OR.length === 0,
       taOfferingIdSet: new Set(noProgressOfferingIds),
@@ -175,7 +185,7 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
   // `coreOfferingId in publishedCoreIds` SQL predicate, so skip/take and `total`
   // are honest.
   return {
-    kind: 'student',
+    kind: "student",
     where: {
       enrollments: { some: { userId: authUser.id } },
       coreOfferingId: { in: publishedCoreIds },

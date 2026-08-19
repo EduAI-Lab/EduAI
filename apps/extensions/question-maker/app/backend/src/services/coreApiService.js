@@ -3,10 +3,10 @@
  * Each function maps to one Core endpoint and throws on non-success responses
  * (status stored on the error as .status, parsed body as .body).
  */
-import { config } from '../config/settings.js';
+import { config } from "../config/settings.js";
 
 function serviceHeaders({ cookie } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { "Content-Type": "application/json" };
   if (config.eduaiApiKey) {
     headers.Authorization = `Bearer ${config.eduaiApiKey}`;
   } else if (cookie) {
@@ -34,9 +34,9 @@ function authHeaderVariants({ cookie, preferCookie = false } = {}) {
 function isRetryableAuthFailure(status, body) {
   return (
     (status === 401 || status === 403) &&
-    (body?.error === 'INVALID_SERVICE_KEY' ||
-      body?.error === 'Unauthorized' ||
-      body?.error === 'Forbidden')
+    (body?.error === "INVALID_SERVICE_KEY" ||
+      body?.error === "Unauthorized" ||
+      body?.error === "Forbidden")
   );
 }
 
@@ -56,7 +56,7 @@ async function readServiceKeyPage(path) {
   const res = await fetch(`${config.coreUrl}${path}`, { headers: serviceHeaders() });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core courses fetch failed', res.status, body);
+    throw coreError(body.error || "Core courses fetch failed", res.status, body);
   }
   return res.json();
 }
@@ -74,7 +74,7 @@ async function fetchCoursePages(
       page: String(pageNumber),
       pageSize: String(Math.min(pageSize, CORE_PAGE_SIZE)),
     });
-    if (search) params.set('search', search);
+    if (search) params.set("search", search);
     // `serviceKeyOnly` keeps the pre-#1041 behaviour of the service-key catalog
     // read: send `serviceHeaders()` and let Core answer, rather than refusing
     // to call when no key is configured (`fetchFromCore` throws 503 there).
@@ -83,7 +83,7 @@ async function fetchCoursePages(
       : await fetchFromCore(`/api/courses?${params}`, authOptions);
     return {
       courses: Array.isArray(data?.data) ? data.data : [],
-      total: typeof data?.total === 'number' ? data.total : 0,
+      total: typeof data?.total === "number" ? data.total : 0,
     };
   };
 
@@ -99,7 +99,7 @@ async function fetchCoursePages(
     // in Core", so this fails instead of silently capping.
     throw coreError(
       `Core returned ${first.total} courses, past the ${CORE_MAX_PAGES}×${size} page-walk cap; ` +
-        'refusing to return a partial catalog.',
+        "refusing to return a partial catalog.",
       502,
     );
   }
@@ -117,7 +117,7 @@ async function fetchCoursePages(
  */
 async function fetchFromCore(
   path,
-  { method = 'GET', body, cookie, preferCookie = false, cookieOnly = false } = {},
+  { method = "GET", body, cookie, preferCookie = false, cookieOnly = false } = {},
 ) {
   const url = `${config.coreUrl}${path}`;
   let variants = authHeaderVariants({ cookie, preferCookie });
@@ -126,8 +126,8 @@ async function fetchFromCore(
   }
 
   if (variants.length === 0) {
-    throw coreError('EDUAI_API_KEY not configured and no session cookie available', 503, {
-      error: 'CORE_SERVICE_UNAVAILABLE',
+    throw coreError("EDUAI_API_KEY not configured and no session cookie available", 503, {
+      error: "CORE_SERVICE_UNAVAILABLE",
     });
   }
 
@@ -135,7 +135,7 @@ async function fetchFromCore(
   for (const authHeaders of variants) {
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       // Omit the key entirely rather than passing `body: undefined`: `method`
       // defaults to GET here, and a GET carrying a body key is rejected.
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -143,7 +143,7 @@ async function fetchFromCore(
     if (res.ok) return res.json();
 
     const errBody = await res.json().catch(() => ({}));
-    const err = coreError(errBody.error || 'Core request failed', res.status, errBody);
+    const err = coreError(errBody.error || "Core request failed", res.status, errBody);
     if (variants.length > 1 && isRetryableAuthFailure(res.status, errBody)) {
       lastError = err;
       continue;
@@ -160,7 +160,7 @@ function coreError(message, status, body) {
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */
 export async function getCourseTopicsFromCore(coreCourseId, opts = {}) {
-  const cookie = opts.cookie ?? '';
+  const cookie = opts.cookie ?? "";
   return fetchFromCore(`/api/courses/${coreCourseId}/topics`, {
     cookie,
     preferCookie: Boolean(cookie),
@@ -174,20 +174,24 @@ export async function getCourseTopicsFromCore(coreCourseId, opts = {}) {
  */
 export async function pushTopicToCore(coreCourseId, name) {
   const res = await fetch(`${config.coreUrl}/api/courses/${coreCourseId}/topics`, {
-    method: 'POST',
+    method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify({ name }),
   });
   if (res.status === 409) {
     const body = await res.json().catch(() => ({}));
     if (!body.existingId) {
-      throw coreError('Topic exists in Core but has been deleted; restore it there before syncing', 409, body);
+      throw coreError(
+        "Topic exists in Core but has been deleted; restore it there before syncing",
+        409,
+        body,
+      );
     }
     return { id: body.existingId };
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core topic push failed', res.status, body);
+    throw coreError(body.error || "Core topic push failed", res.status, body);
   }
   const data = await res.json();
   return { id: data.id };
@@ -200,16 +204,16 @@ export async function pushTopicToCore(coreCourseId, name) {
  */
 export async function pushQuestionToCore(payload, cookieHeader) {
   const res = await fetch(`${config.coreUrl}/api/questions`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      cookie: cookieHeader ?? '',
+      "Content-Type": "application/json",
+      cookie: cookieHeader ?? "",
     },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core question push failed', res.status, body);
+    throw coreError(body.error || "Core question push failed", res.status, body);
   }
   return res.json();
 }
@@ -220,14 +224,14 @@ export async function pushQuestionToCore(payload, cookieHeader) {
  */
 export async function patchQuestionTestableOnCore(coreQuestionId, testable) {
   const res = await fetch(`${config.coreUrl}/api/questions/${coreQuestionId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: serviceHeaders(),
     body: JSON.stringify({ testable }),
   });
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core question patch failed', res.status, body);
+    throw coreError(body.error || "Core question patch failed", res.status, body);
   }
   return res.json();
 }
@@ -284,10 +288,7 @@ export async function getCourseFromCore(coreCourseId, opts = {}) {
  * visible set pass `all: true` and pay for the page-walk explicitly.
  */
 export async function listCoursesFromCore(cookieHeader, options = {}) {
-  return fetchCoursePages(
-    { cookie: cookieHeader, preferCookie: true, cookieOnly: true },
-    options,
-  );
+  return fetchCoursePages({ cookie: cookieHeader, preferCookie: true, cookieOnly: true }, options);
 }
 
 /**
@@ -341,11 +342,11 @@ export async function getQuestionByIdFromCore(coreQuestionId) {
  */
 export async function getMyProfileFromCore(cookieHeader) {
   const res = await fetch(`${config.coreUrl}/api/me`, {
-    headers: { cookie: cookieHeader ?? '' },
+    headers: { cookie: cookieHeader ?? "" },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core profile fetch failed', res.status, body);
+    throw coreError(body.error || "Core profile fetch failed", res.status, body);
   }
   return res.json();
 }
@@ -366,14 +367,18 @@ export async function getAllCoursesFromCore() {
  * GET /api/courses?ids= — resolve a known set of Core courses in one unpaged
  * lookup (#1125). Chunked, since Core caps the id list.
  */
-export async function getCoursesByIdsFromCore(ids, authOptions = {}, { serviceKeyOnly = false } = {}) {
+export async function getCoursesByIdsFromCore(
+  ids,
+  authOptions = {},
+  { serviceKeyOnly = false } = {},
+) {
   const unique = [...new Set((ids ?? []).filter(Boolean))];
   if (unique.length === 0) return [];
 
   const courses = [];
   for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
     const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
-    const path = `/api/courses?ids=${encodeURIComponent(chunk.join(','))}`;
+    const path = `/api/courses?ids=${encodeURIComponent(chunk.join(","))}`;
     const data = serviceKeyOnly
       ? await readServiceKeyPage(path)
       : await fetchFromCore(path, authOptions);
@@ -383,9 +388,13 @@ export async function getCoursesByIdsFromCore(ids, authOptions = {}, { serviceKe
 }
 
 /** GET /api/courses?search= — Core-side course search (#1125). */
-export async function searchCoursesFromCore(search, authOptions = {}, { serviceKeyOnly = false } = {}) {
+export async function searchCoursesFromCore(
+  search,
+  authOptions = {},
+  { serviceKeyOnly = false } = {},
+) {
   const params = new URLSearchParams({
-    page: '1',
+    page: "1",
     pageSize: String(CORE_PAGE_SIZE),
     search,
   });
@@ -404,7 +413,7 @@ export async function listQuestionBanksFromCore(coreCourseId, opts = {}) {
 /** POST /api/courses/:courseId/banks */
 export async function createQuestionBankOnCore(coreCourseId, payload, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks`, {
-    method: 'POST',
+    method: "POST",
     body: payload,
     ...opts,
   });
@@ -413,7 +422,7 @@ export async function createQuestionBankOnCore(coreCourseId, payload, opts = {})
 /** PUT /api/courses/:courseId/banks/:bankId */
 export async function updateQuestionBankOnCore(coreCourseId, bankId, payload, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}`, {
-    method: 'PUT',
+    method: "PUT",
     body: payload,
     ...opts,
   });
@@ -422,7 +431,7 @@ export async function updateQuestionBankOnCore(coreCourseId, bankId, payload, op
 /** DELETE /api/courses/:courseId/banks/:bankId */
 export async function deleteQuestionBankOnCore(coreCourseId, bankId, payload = {}, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}`, {
-    method: 'DELETE',
+    method: "DELETE",
     body: payload,
     ...opts,
   });
@@ -436,16 +445,21 @@ export async function listQuestionBankMembershipsFromCore(coreCourseId, bankId, 
 /** POST /api/courses/:courseId/banks/:bankId/questions */
 export async function addQuestionBankMembershipOnCore(coreCourseId, bankId, payload, opts = {}) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, {
-    method: 'POST',
+    method: "POST",
     body: payload,
     ...opts,
   });
 }
 
 /** POST bulk memberships — body `{ memberships: [...] }` */
-export async function addQuestionBankMembershipsOnCore(coreCourseId, bankId, memberships, opts = {}) {
+export async function addQuestionBankMembershipsOnCore(
+  coreCourseId,
+  bankId,
+  memberships,
+  opts = {},
+) {
   return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, {
-    method: 'POST',
+    method: "POST",
     body: { memberships },
     ...opts,
   });
@@ -456,12 +470,12 @@ export async function removeQuestionBankMembershipOnCore(
   coreCourseId,
   bankId,
   externalQuestionId,
-  source = 'question-maker',
+  source = "question-maker",
   opts = {},
 ) {
   const qs = `?source=${encodeURIComponent(source)}`;
   return fetchFromCore(
     `/api/courses/${coreCourseId}/banks/${bankId}/questions/${externalQuestionId}${qs}`,
-    { method: 'DELETE', ...opts },
+    { method: "DELETE", ...opts },
   );
 }
