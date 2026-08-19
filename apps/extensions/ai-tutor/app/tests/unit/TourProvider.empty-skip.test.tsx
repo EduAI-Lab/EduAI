@@ -42,7 +42,7 @@ function Consumer() {
   const { startTour, isRunning } = useAppTour();
   return (
     <>
-      <button type="button" onClick={() => startTour("test-tour")}>
+      <button type="button" onClick={() => startTour("student-journey")}>
         start
       </button>
       <span data-testid="running">{String(isRunning)}</span>
@@ -62,7 +62,11 @@ function renderProvider(path = "/student") {
 
 function setTour(steps: AppTourDefinition["steps"]) {
   for (const key of Object.keys(hoisted.tours)) delete hoisted.tours[key];
-  hoisted.tours["test-tour"] = { id: "test-tour", steps } as AppTourDefinition;
+  hoisted.tours["student-journey"] = {
+    id: "student-journey",
+    completionKey: "student-journey-complete",
+    steps,
+  } as AppTourDefinition;
 }
 
 describe("TourProvider empty-state skip (#1572)", () => {
@@ -77,6 +81,7 @@ describe("TourProvider empty-state skip (#1572)", () => {
     // and the "no step left → complete" arms of the skip branch.
     setTour([
       {
+        id: "modules",
         title: "Modules",
         description: "open the first module",
         target: '[data-tour="student-module-card-first"]',
@@ -84,6 +89,7 @@ describe("TourProvider empty-state skip (#1572)", () => {
         route: "/student",
       },
       {
+        id: "lessons",
         title: "Lessons",
         description: "open the first lesson",
         target: '[data-tour="student-lesson-card-first"]',
@@ -101,7 +107,7 @@ describe("TourProvider empty-state skip (#1572)", () => {
 
     await waitFor(() => expect(hoisted.markTourCompleted).toHaveBeenCalledTimes(1));
     expect(hoisted.markTourCompleted).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "test-tour" }),
+      expect.objectContaining({ id: "student-journey" }),
     );
     await waitFor(() => expect(screen.getByTestId("running").textContent).toBe("false"));
   });
@@ -109,6 +115,7 @@ describe("TourProvider empty-state skip (#1572)", () => {
   it("completes immediately when the only step is empty-gated", async () => {
     setTour([
       {
+        id: "modules",
         title: "Modules",
         description: "open the first module",
         target: '[data-tour="student-module-card-first"]',
