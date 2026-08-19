@@ -1,12 +1,12 @@
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 export const ATTEMPT_NUMBER_MAX_RETRIES = 3;
 
-const ATTEMPT_NUMBER_CONSTRAINT = 'Submission_userId_activityId_attemptNumber_key';
-const ATTEMPT_NUMBER_FIELDS = ['userId', 'activityId', 'attemptNumber'];
+const ATTEMPT_NUMBER_CONSTRAINT = "Submission_userId_activityId_attemptNumber_key";
+const ATTEMPT_NUMBER_FIELDS = ["userId", "activityId", "attemptNumber"];
 
 export function isAttemptNumberConflict(error) {
-  if (error?.code !== 'P2002') return false;
+  if (error?.code !== "P2002") return false;
 
   const target = error.meta?.target;
   if (target === ATTEMPT_NUMBER_CONSTRAINT) return true;
@@ -15,10 +15,7 @@ export function isAttemptNumberConflict(error) {
   return target.every((field, index) => field === ATTEMPT_NUMBER_FIELDS[index]);
 }
 
-export async function withAttemptNumberRetry(
-  operation,
-  maxRetries = ATTEMPT_NUMBER_MAX_RETRIES,
-) {
+export async function withAttemptNumberRetry(operation, maxRetries = ATTEMPT_NUMBER_MAX_RETRIES) {
   for (let retryCount = 0; ; retryCount += 1) {
     try {
       return await operation();
