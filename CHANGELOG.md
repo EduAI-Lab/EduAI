@@ -4,6 +4,7 @@
 
 ### Added
 
+- [core] feat: The top-right AI model monitor now reports a third **degraded** health tier (operational / degraded / outage) across Core, Question Maker, and AI Tutor. The UBC-hosted chip aggregates liveness and load across the whole vLLM fleet — degraded when only some fleet hosts are reachable, or the reachable hosts are under heavy load read from each host's Prometheus `/metrics` (`vllm:num_requests_waiting`, `vllm:gpu_cache_usage_perc`) with env-tunable thresholds (`VLLM_DEGRADED_WAITING`, `VLLM_DEGRADED_CACHE_PCT`). AI Tutor inherits the state through its Core proxy, and Question Maker's status hook is unified onto the shared `useAiServiceStatus` polling loop. Closes #1551. (@yta3216, 2026-08-18) — #PR
 - [core] feat: Add production deployment runbook and bootstrap artifacts for Core at `my.eduai.ok.ubc.ca`, including a dedicated release layout, database/provisioning checklist, scoped service helper, systemd unit, Apache template, and local OpenAI-compatible CMPS embeddings via `mxbai-embed-large`. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 
 ### Changed
