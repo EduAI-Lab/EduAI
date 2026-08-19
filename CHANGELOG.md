@@ -9,7 +9,7 @@
 ### Changed
 
 - [monorepo] perf: Batch the per-row enrollment upsert loops in Core's Canvas enrollment link and AI Tutor's enrollment mirror and sync so each writes a bounded number of `createMany`/`updateMany` calls instead of one round trip per roster row. Closes #1451. (@abdullahmoh21, 2026-08-18) — [#1566](https://github.com/EduAI-Lab/EduAI/pull/1566)
-
+- [core] perf: Move the AI-service status poller into a shared `useAiStatus` store that pauses while the tab is hidden and refreshes once on becoming visible, so a backgrounded tab stops issuing provider probes every 60s. Closes #1454. (@abdullahmoh21, 2026-08-18) — [#1562](https://github.com/EduAI-Lab/EduAI/pull/1562)
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 ## [Week 15 — August 10–16, 2026]
 
@@ -24,6 +24,7 @@
 ### Fixed
 ### Fixed
 
+- [core] fix: Course detail manager-view treated `canManageTopics` (TA + `tas.canManageTopics`) as permission to delete/rename any material. Client delete/rename now mirrors backend `canDeleteMaterial` / own-upload for TA, independent of the topics policy. PICT known-divergence `it.fails` for that cell removed. Closes #1390. (@GlowyBlack, 2026-08-15) — #PR
 - [core] fix: `addAdminCourseTA` wrapped `addCourseTA`'s already-shaped `{ ta: {...} }` result a second time, producing a double-nested `{ ok: true, ta: { ta: {...} } }` instead of a flat `ta` — any consumer reading `response.ta.<field>` got `undefined`. Separately, `convertHtmlToMarkdown`'s `<ol>` handler used a function replacer that referenced `$1` (only meaningful in string replacers), so every ordered-list item in DOCX/HTML uploads rendered as the literal text `"$1"` instead of its content. Closes #1447, #1449. (@evanbones, 2026-08-12) — #PR
 
 - [question-maker] fix: Stop `useBugReportCapture`'s `html2canvas` screenshot loop from running on a 10s `setInterval` for every authenticated user on every page — capture is now on-demand only, triggered once when the bug-report dialog opens, with the cached image submitted with the report and concurrent calls deduped into one in-flight `html2canvas` run via a promise ref. Closes #1333. (@saadtab01, 2026-08-11) — [#1472](https://github.com/EduAI-Lab/EduAI/pull/1472)
