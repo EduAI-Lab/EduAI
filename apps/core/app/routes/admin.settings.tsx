@@ -87,6 +87,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     user: session.user,
     environmentHealth: getEnvironmentHealth(),
+    // Caps are edited on this page, so they load with the document. Policy
+    // toggles stay on usePolicies() because those are live client updates.
     chatDailyLimits: await getChatDailyLimitSettings(),
   };
 }

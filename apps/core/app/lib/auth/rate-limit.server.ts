@@ -33,9 +33,12 @@ export function getChatRateLimitConfig(): ChatRateLimitConfig {
   };
 }
 
-// Bound the process-local fallback (#990). The stale window is comfortably
-// larger than configured request windows, and hot-key eviction targets 90% of
-// the cap so sustained traffic does not trigger a sweep on every insert.
+// Bound the process-local fallback (#990). The stale window (1 hour) is
+// larger than the ~60s burst limiter. The local-chatbot daily cap (#1547)
+// reuses this store with a 24-hour window: if Redis is down and the store
+// exceeds MAX_STORE_KEYS, a chat-daily:* key idle between 1h and 24h can
+// be evicted, which resets that user's count. That fails open (more
+// messages, not fewer). Redis stays authoritative when it is healthy.
 const MAX_STORE_KEYS = parseEnvInt(process.env.RATE_LIMIT_MAX_KEYS, 50_000);
 const STALE_ENTRY_MS = 60 * 60_000;
 const EVICTION_TARGET_KEYS = Math.floor(MAX_STORE_KEYS * 0.9);

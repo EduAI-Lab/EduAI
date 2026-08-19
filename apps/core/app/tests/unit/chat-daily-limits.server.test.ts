@@ -1,12 +1,13 @@
 // @vitest-environment node
 
+vi.unmock("~/lib/chat-daily-limits.server");
+
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import { CHAT_DAILY_WINDOW_MS, defaultChatDailyLimitSettings } from "~/lib/chat-daily-limits";
 import {
-  CHAT_DAILY_WINDOW_MS,
-  defaultChatDailyLimitSettings,
-} from "~/lib/chat-daily-limits";
-import {
+  ChatDailyLimitSettingsUnavailableError,
   consumeLocalChatDailyCap,
   getChatDailyLimitSettings,
   invalidateChatDailyLimitSettingsCache,
@@ -19,39 +20,22 @@ const prismaMock = vi.hoisted(() => ({
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
-const originalStudentDailyLimit = process.env.CHAT_DAILY_STUDENT_LIMIT;
-const originalInstructorDailyLimit = process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
-
-function restoreDailyLimitEnv() {
-  if (originalStudentDailyLimit === undefined) delete process.env.CHAT_DAILY_STUDENT_LIMIT;
-  else process.env.CHAT_DAILY_STUDENT_LIMIT = originalStudentDailyLimit;
-  if (originalInstructorDailyLimit === undefined) {
-    delete process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
-  } else {
-    process.env.CHAT_DAILY_INSTRUCTOR_LIMIT = originalInstructorDailyLimit;
-  }
-}
-
 describe("chat-daily-limits.server", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetRateLimitsForTests();
-    delete process.env.CHAT_DAILY_STUDENT_LIMIT;
-    delete process.env.CHAT_DAILY_INSTRUCTOR_LIMIT;
     invalidateChatDailyLimitSettingsCache();
     prismaMock.systemConfig.findMany.mockResolvedValue([]);
     prismaMock.systemConfig.upsert.mockResolvedValue({});
   });
 
   afterEach(() => {
-    restoreDailyLimitEnv();
     invalidateChatDailyLimitSettingsCache();
+    vi.useRealTimers();
   });
 
   it("defaults to 50 student / 200 instructor messages per day", async () => {
-    await expect(getChatDailyLimitSettings()).resolves.toEqual(
-      defaultChatDailyLimitSettings(),
-    );
+    await expect(getChatDailyLimitSettings()).resolves.toEqual(defaultChatDailyLimitSettings());
   });
 
   it("applies persisted admin overrides", async () => {
@@ -81,6 +65,32 @@ describe("chat-daily-limits.server", () => {
     expect(prismaMock.systemConfig.upsert).toHaveBeenCalledTimes(2);
     expect(saved).toEqual({ studentLimit: 25, instructorLimit: 200 });
   });
+
+  it("keeps last-known settings when Postgres fails after the cache TTL", async () => {
+    prismaMock.systemConfig.findMany.mockResolvedValue([
+      { key: "chat.daily.studentLimit", value: "1" },
+      { key: "chat.daily.instructorLimit", value: "2" },
+    ]);
+    await expect(getChatDailyLimitSettings()).resolves.toEqual({
+      studentLimit: 1,
+      instructorLimit: 2,
+    });
+
+    prismaMock.systemConfig.findMany.mockRejectedValue(new Error("db down"));
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 11_000);
+    await expect(getChatDailyLimitSettings()).resolves.toEqual({
+      studentLimit: 1,
+      instructorLimit: 2,
+    });
+  });
+
+  it("throws when settings have never loaded and Postgres is down", async () => {
+    prismaMock.systemConfig.findMany.mockRejectedValue(new Error("db down"));
+    await expect(getChatDailyLimitSettings()).rejects.toBeInstanceOf(
+      ChatDailyLimitSettingsUnavailableError,
+    );
+  });
 });
 
 describe("consumeLocalChatDailyCap", () => {
@@ -99,11 +109,23 @@ describe("consumeLocalChatDailyCap", () => {
     ).resolves.toBeNull();
   });
 
-  it("enforces the student daily cap on local models", async () => {
-    const settings = { studentLimit: 1, instructorLimit: 200 };
+  it("skips Auto sentinels until routing has resolved a provider", async () => {
     await expect(
       consumeLocalChatDailyCap({
-        userId: "student-1",
+        userId: "user-1",
+        role: "STUDENT",
+        model: "auto",
+        settings: defaultChatDailyLimitSettings(),
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("enforces the student daily cap on local models", async () => {
+    const settings = { studentLimit: 1, instructorLimit: 200 };
+    const userId = `student-${randomUUID()}`;
+    await expect(
+      consumeLocalChatDailyCap({
+        userId,
         role: "STUDENT",
         model: "vllm:test-model",
         settings,
@@ -111,7 +133,7 @@ describe("consumeLocalChatDailyCap", () => {
     ).resolves.toEqual({ limited: false, retryAfter: 0 });
     await expect(
       consumeLocalChatDailyCap({
-        userId: "student-1",
+        userId,
         role: "STUDENT",
         model: "vllm:test-model",
         settings,
@@ -119,28 +141,29 @@ describe("consumeLocalChatDailyCap", () => {
     ).resolves.toMatchObject({ limited: true });
   });
 
-  it("uses the instructor cap for staff roles", async () => {
+  it("uses the instructor cap for staff roles including UNIT_ADMIN", async () => {
     const settings = { studentLimit: 1, instructorLimit: 2 };
+    const userId = `unit-admin-${randomUUID()}`;
     await expect(
       consumeLocalChatDailyCap({
-        userId: "instr-1",
-        role: "INSTRUCTOR",
+        userId,
+        role: "UNIT_ADMIN",
         model: "vllm:test-model",
         settings,
       }),
     ).resolves.toMatchObject({ limited: false });
     await expect(
       consumeLocalChatDailyCap({
-        userId: "instr-1",
-        role: "INSTRUCTOR",
+        userId,
+        role: "UNIT_ADMIN",
         model: "vllm:test-model",
         settings,
       }),
     ).resolves.toMatchObject({ limited: false });
     await expect(
       consumeLocalChatDailyCap({
-        userId: "instr-1",
-        role: "INSTRUCTOR",
+        userId,
+        role: "UNIT_ADMIN",
         model: "vllm:test-model",
         settings,
       }),

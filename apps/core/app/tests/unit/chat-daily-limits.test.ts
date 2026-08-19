@@ -7,10 +7,10 @@ import {
 } from "~/lib/chat-daily-limits";
 
 describe("isLocalChatbotModel", () => {
-  it("treats auto routing and local providers as the local chatbot", () => {
-    expect(isLocalChatbotModel(undefined)).toBe(true);
-    expect(isLocalChatbotModel("auto")).toBe(true);
-    expect(isLocalChatbotModel("auto-llm")).toBe(true);
+  it("counts only concrete local providers, not Auto sentinels", () => {
+    expect(isLocalChatbotModel(undefined)).toBe(false);
+    expect(isLocalChatbotModel("auto")).toBe(false);
+    expect(isLocalChatbotModel("auto-llm")).toBe(false);
     expect(isLocalChatbotModel("vllm:qwen2.5-7b-instruct")).toBe(true);
     expect(isLocalChatbotModel("ollama:llama3")).toBe(true);
   });
@@ -24,12 +24,13 @@ describe("isLocalChatbotModel", () => {
 describe("dailyLimitForRole", () => {
   const settings = defaultChatDailyLimitSettings();
 
-  it("defaults students to 50 and instructors to 200", () => {
+  it("defaults students to 50 and staff roles to 200", () => {
     expect(settings.studentLimit).toBe(50);
     expect(settings.instructorLimit).toBe(200);
     expect(dailyLimitForRole("STUDENT", settings)).toBe(50);
     expect(dailyLimitForRole("INSTRUCTOR", settings)).toBe(200);
     expect(dailyLimitForRole("ADMIN", settings)).toBe(200);
+    expect(dailyLimitForRole("UNIT_ADMIN", settings)).toBe(200);
   });
 });
 

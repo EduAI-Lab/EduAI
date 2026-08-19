@@ -39,9 +39,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const { response: adminGuard, session } = await requireAdmin(request);
   if (adminGuard) return adminGuard;
-  if (!session?.user) {
-    return json({ error: "Forbidden: Admins only" }, 403);
-  }
 
   const parsed = UpdateChatDailyLimitSettingsSchema.safeParse(
     await request.json().catch(() => null),

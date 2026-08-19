@@ -5,10 +5,7 @@
  * A cap of 0 means that role is not daily-capped.
  */
 
-import {
-  LOCAL_INFERENCE_PROVIDERS,
-  parseModelIdentifier,
-} from "~/lib/ai/provider-types";
+import { LOCAL_INFERENCE_PROVIDERS, parseModelIdentifier } from "~/lib/ai/provider-types";
 
 export const CHAT_DAILY_LIMIT_PREFIX = "chat.daily.";
 export const CHAT_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -77,9 +74,11 @@ export function normalizeChatDailyLimitSettings(
 }
 
 export function isLocalChatbotModel(model: string | undefined): boolean {
-  if (!model || model === "auto" || model === "auto-llm") return true;
+  // Only concrete local providers count. Auto/unknown ids are decided after
+  // routing resolves to a provider:model id.
+  if (!model) return false;
   const parsed = parseModelIdentifier(model);
-  if (!parsed) return true;
+  if (!parsed) return false;
   return LOCAL_INFERENCE_PROVIDERS.includes(parsed.providerId);
 }
 
@@ -87,8 +86,18 @@ export function dailyLimitForRole(
   role: string | undefined,
   settings: ChatDailyLimitSettings,
 ): number {
-  if (role === "STUDENT") return settings.studentLimit;
-  return settings.instructorLimit;
+  switch (role) {
+    case "STUDENT":
+      return settings.studentLimit;
+    case "INSTRUCTOR":
+    case "ADMIN":
+    case "UNIT_ADMIN":
+      return settings.instructorLimit;
+    default:
+      // A new UserRole should pick a case above. Until then, unknown/missing
+      // roles follow the staff cap rather than the tighter student one.
+      return settings.instructorLimit;
+  }
 }
 
 export function chatDailyLimitKey(userId: string): string {

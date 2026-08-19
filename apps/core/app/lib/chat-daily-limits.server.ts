@@ -19,6 +19,13 @@ const CACHE_TTL_MS = 10 * 1000;
 
 let cache: { value: ChatDailyLimitSettings; expiresAt: number } | null = null;
 
+export class ChatDailyLimitSettingsUnavailableError extends Error {
+  constructor(message = "Local chatbot daily cap settings are unavailable") {
+    super(message);
+    this.name = "ChatDailyLimitSettingsUnavailableError";
+  }
+}
+
 export function invalidateChatDailyLimitSettingsCache(): void {
   cache = null;
 }
@@ -28,18 +35,8 @@ export async function getChatDailyLimitSettings(): Promise<ChatDailyLimitSetting
     return cache.value;
   }
 
-  const value = defaultChatDailyLimitSettings();
-  // Vitest sets these high so reused identities such as `user-1` do not share
-  // a 50/day Redis bucket across unrelated chat route files. Admin rows win.
-  value.studentLimit = parseChatDailyLimit(
-    process.env.CHAT_DAILY_STUDENT_LIMIT,
-    value.studentLimit,
-  );
-  value.instructorLimit = parseChatDailyLimit(
-    process.env.CHAT_DAILY_INSTRUCTOR_LIMIT,
-    value.instructorLimit,
-  );
   try {
+    const value = defaultChatDailyLimitSettings();
     const keys = CHAT_DAILY_LIMIT_KEYS.map((key) => CHAT_DAILY_LIMIT_PREFIX + key);
     const rows = await prisma.systemConfig.findMany({
       where: { key: { in: keys } },
@@ -51,12 +48,16 @@ export async function getChatDailyLimitSettings(): Promise<ChatDailyLimitSetting
         value[key] = parseChatDailyLimit(row.value, value[key]);
       }
     }
-  } catch {
+    cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
     return value;
+  } catch (error) {
+    // Keep the last successful admin override if Postgres flakes after the
+    // 10s TTL. Falling back to 50/200 would reopen a tightened cap.
+    if (cache) return cache.value;
+    throw new ChatDailyLimitSettingsUnavailableError(
+      error instanceof Error ? error.message : undefined,
+    );
   }
-
-  cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
-  return value;
 }
 
 export async function setChatDailyLimitSettings(
@@ -94,6 +95,7 @@ async function upsertChatDailyLimitSetting(
 /**
  * Apply the admin daily cap for the local chatbot. Returns null when this
  * request is not a local-chatbot turn or the role's cap is 0 (uncapped).
+ * Callers must pass the post-routing model id, not Auto.
  */
 export async function consumeLocalChatDailyCap(options: {
   userId: string;
@@ -107,9 +109,5 @@ export async function consumeLocalChatDailyCap(options: {
   const limit = dailyLimitForRole(options.role, settings);
   if (limit <= 0) return null;
 
-  return checkRateLimit(
-    chatDailyLimitKey(options.userId),
-    limit,
-    CHAT_DAILY_WINDOW_MS,
-  );
+  return checkRateLimit(chatDailyLimitKey(options.userId), limit, CHAT_DAILY_WINDOW_MS);
 }

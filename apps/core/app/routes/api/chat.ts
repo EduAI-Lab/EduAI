@@ -107,7 +107,10 @@ import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.serve
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
-import { consumeLocalChatDailyCap } from "~/lib/chat-daily-limits.server";
+import {
+  ChatDailyLimitSettingsUnavailableError,
+  consumeLocalChatDailyCap,
+} from "~/lib/chat-daily-limits.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs } from "react-router";
 import {
@@ -749,31 +752,6 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const dailyCap = await consumeLocalChatDailyCap({
-      userId: actingUser.id,
-      role: actingUser.role ?? undefined,
-      model,
-    });
-    if (dailyCap?.limited) {
-      const requestContext = getRequestContext(request);
-      fireAndForget(
-        logSecurityEvent({
-          ...getActorContext({ id: actingUser.id, role: actingUser.role }),
-          ...requestContext,
-          actionCode: "RATE_LIMIT_EXCEEDED",
-          outcome: "DENIED",
-          entityType: "Chat",
-          details: { userId: actingUser.id, scope: "daily" },
-        }),
-      );
-      return chatApiReject(
-        429,
-        { error: "RATE_LIMITED", retryAfter: dailyCap.retryAfter },
-        { chatMode, userId: actingUser.id },
-        { "Retry-After": String(dailyCap.retryAfter) },
-      );
-    }
-
     const normalizedIncomingMessages = filterIncomingClientMessages(
       rawMessages.map((m) => normalizeMessage(m)).filter((m): m is GenericMessage => m !== null),
     );
@@ -1376,6 +1354,49 @@ export async function action({ request }: ActionFunctionArgs) {
             status: 400,
             headers: { "Content-Type": "application/json" },
           },
+        );
+      }
+    }
+
+    // Charge the resolved provider:model, not Auto. Skip regenerateOnly
+    // previews so a content preview does not spend a daily token.
+    if (!regenerateOnly) {
+      let dailyCap;
+      try {
+        dailyCap = await consumeLocalChatDailyCap({
+          userId: actingUser.id,
+          role: actingUser.role ?? undefined,
+          model: resolvedModelId,
+        });
+      } catch (error) {
+        if (error instanceof ChatDailyLimitSettingsUnavailableError) {
+          return chatApiReject(
+            503,
+            {
+              error: "Daily message limits could not be loaded. Please try again shortly.",
+            },
+            { chatMode, userId: actingUser.id },
+          );
+        }
+        throw error;
+      }
+      if (dailyCap?.limited) {
+        const requestContext = getRequestContext(request);
+        fireAndForget(
+          logSecurityEvent({
+            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+            ...requestContext,
+            actionCode: "RATE_LIMIT_EXCEEDED",
+            outcome: "DENIED",
+            entityType: "Chat",
+            details: { userId: actingUser.id, scope: "daily" },
+          }),
+        );
+        return chatApiReject(
+          429,
+          { error: "RATE_LIMITED", retryAfter: dailyCap.retryAfter },
+          { chatMode, userId: actingUser.id },
+          { "Retry-After": String(dailyCap.retryAfter) },
         );
       }
     }

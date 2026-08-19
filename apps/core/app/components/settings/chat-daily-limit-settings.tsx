@@ -10,10 +10,7 @@ import {
   Input,
   Label,
 } from "@eduai/ui";
-import {
-  CHAT_DAILY_LIMIT_DEFINITIONS,
-  type ChatDailyLimitSettings,
-} from "~/lib/chat-daily-limits";
+import { CHAT_DAILY_LIMIT_DEFINITIONS, type ChatDailyLimitSettings } from "~/lib/chat-daily-limits";
 
 type ChatDailyLimitSettingsCardProps = {
   initialSettings: ChatDailyLimitSettings;
@@ -37,9 +34,7 @@ export function ChatDailyLimitSettingsCard({
       await onSave(draft);
       setSaved(true);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to save daily chat limits",
-      );
+      setError(err instanceof Error ? err.message : "Failed to save daily chat limits");
     } finally {
       setSaving(false);
     }
@@ -50,9 +45,8 @@ export function ChatDailyLimitSettingsCard({
       <CardHeader>
         <CardTitle>Local chatbot daily caps</CardTitle>
         <CardDescription>
-          Per-user 24-hour limits for the local chatbot. Administrators can
-          change these defaults. Cloud providers with a user-supplied key are
-          not counted here.
+          Per-user 24-hour limits for the local chatbot. Administrators can change these defaults.
+          Cloud providers with a user-supplied key are not counted here.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
@@ -98,9 +92,7 @@ export function ChatDailyLimitSettingsCard({
               const next = Number(event.target.value);
               setDraft((current) => ({
                 ...current,
-                instructorLimit: Number.isFinite(next)
-                  ? Math.max(0, Math.floor(next))
-                  : 0,
+                instructorLimit: Number.isFinite(next) ? Math.max(0, Math.floor(next)) : 0,
               }));
             }}
           />

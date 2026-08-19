@@ -21,8 +21,6 @@ export default defineConfig({
       // Keep unrelated unit files from sharing a small Redis bucket; focused
       // limiter suites override this with their own explicit thresholds.
       CHAT_RATE_LIMIT: "1000000",
-      CHAT_DAILY_STUDENT_LIMIT: "1000000",
-      CHAT_DAILY_INSTRUCTOR_LIMIT: "1000000",
     },
   },
 });
