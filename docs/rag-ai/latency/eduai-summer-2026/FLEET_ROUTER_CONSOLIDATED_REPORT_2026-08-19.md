@@ -58,7 +58,24 @@ xychart-beta
 
 **Series order:** cmps01, cmps02, cmps03. The near-overlap at higher concurrency shows that the fleet router was sharing Chat API work rather than concentrating it on one server.
 
-## 2. Latency and throughput
+## 2. Post-hardening validation result
+
+The router improvements were deployed temporarily to the development Core service and tested before the environment was restored. The hardened router completed every direct-Core ladder level successfully:
+
+| Level | Result | p50 | p95 | RPS |
+|---:|---:|---:|---:|---:|
+| 16 | 16/16 HTTP 200 | 1.33 s | 2.11 s | 7.57 |
+| 32 | 32/32 HTTP 200 | 1.80 s | 2.59 s | 12.31 |
+| 64 | 64/64 HTTP 200 | 3.13 s | 3.54 s | 17.70 |
+| 128 | 128/128 HTTP 200 | 4.99 s | 6.86 s | 18.44 |
+| 256 | 256/256 HTTP 200 | 9.77 s | 13.37 s | 18.94 |
+| 512 | 512/512 HTTP 200 | 17.45 s | 19.70 s | 25.51 |
+| 768 | 768/768 HTTP 200 | 26.51 s | 30.09 s | 25.29 |
+| 1,000 | **1,000/1,000 HTTP 200** | 35.04 s | 43.39 s | 22.81 |
+
+The post-change authenticated smoke test also confirmed that the follow-up reused the same `chatId`, retained the RAG citation, and stayed on the same fleet server through deterministic affinity. The direct-Core ladder bypassed the public reverse proxy to isolate router and application capacity. A separate post-change public smoke succeeded and returned the expected `chatId`, citation/RAG metadata, and `X-Fleet-Server`; the broader public ladder was not repeated because its earlier high-concurrency results were confounded by ingress 502s and cumulative rate limiting.
+
+## 3. Latency and throughput
 
 The controlled direct-Core run completed every level successfully. Latency rises predictably as concurrency increases, while throughput reaches approximately 25 RPS around 512–768 concurrent requests and remains 22.8 RPS at 1,000.
 
@@ -98,7 +115,7 @@ xychart-beta
 | 768 | 100% | 26.51 s | 30.09 s | 25.29 RPS |
 | 1,000 | 100% | 35.04 s | 43.39 s | 22.81 RPS |
 
-## 3. Success rate
+## 4. Success rate
 
 ```mermaid
 xychart-beta
@@ -111,7 +128,7 @@ xychart-beta
 
 **Series order:** baseline public path, post-hardening direct Core path. The direct-Core result is the important fleet/router capacity signal: no request failures were observed through 1,000 concurrent users.
 
-## 4. Fleet distribution
+## 5. Fleet distribution
 
 At concurrency 1,000, the post-hardening direct run distributed requests almost evenly across the three servers:
 
@@ -125,7 +142,7 @@ xychart-beta
 
 The 2B/9B split was exactly balanced: 500 requests per model at the 1,000-user level. This indicates that model-aware eligibility and round-robin distribution were functioning as intended during the controlled run.
 
-## 5. RAG and context validation
+## 6. RAG and context validation
 
 The authenticated smoke test verified:
 
@@ -139,7 +156,7 @@ The authenticated smoke test verified:
 
 The important architectural result is that context correctness does not depend on a user remaining on one inference server. Core persists messages and reconstructs the conversation context. Affinity is still valuable because it can improve prefix/KV-cache locality and reduce unnecessary cross-host movement.
 
-## 6. What changed in the router
+## 7. What changed in the router
 
 The hardening work added:
 
@@ -149,7 +166,7 @@ The hardening work added:
 4. RAG duration metadata in response JSON and headers for future per-request latency analysis.
 5. Unit coverage for affinity and host ejection, plus a repeatable authenticated RAG stress harness.
 
-## 7. Public-path bottleneck
+## 8. Public-path bottleneck
 
 The public baseline was healthy through 256 concurrent users. At 512, the test recorded 108 fetch failures and 4 HTTP 502 responses. At 768 and 1,000, the result was further distorted by the original `CHAT_RATE_LIMIT=20` window being reused across the same authenticated user and across ladder levels.
 
@@ -161,7 +178,7 @@ The next production-sizing exercise should test the public ingress independently
 - concurrent real-user sessions rather than one shared identity;
 - separate Core, proxy, Redis, database, and vLLM dashboards.
 
-## 8. Supporting systems
+## 9. Supporting systems
 
 The post-run snapshot showed:
 
@@ -172,13 +189,13 @@ The post-run snapshot showed:
 
 These observations are useful health checks, but not a substitute for time-series capacity metrics.
 
-## 9. Restoration and evidence
+## 10. Restoration and evidence
 
 After testing, cmps02 GPU1 was restored to `Qwen/Qwen2.5-32B-Instruct-AWQ` served as `qwen2.5-32b-instruct`. Core was restored to its original `AI_MAX_INFLIGHT=8` and `CHAT_RATE_LIMIT=20` configuration. The temporary RAG course, model settings, cookies, and host-side test files were removed. Core was rebuilt and the public endpoint returned HTTP 200.
 
 Raw machine-readable evidence is available in [`artifacts/`](./artifacts/), and the detailed test log is [FLEET_ROUTER_STRESS_2026-08-18.md](./FLEET_ROUTER_STRESS_2026-08-18.md).
 
-## 10. Overall assessment
+## 11. Overall assessment
 
 **Fleet/router capacity:** strong in the controlled direct-Core test through 1,000 concurrent requests.  
 **Public production readiness:** not yet fully demonstrated; ingress, admission, rate-limit, and observability limits need independent sizing.  
