@@ -105,7 +105,8 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
 | `BETTER_AUTH_DISABLE_RATE_LIMIT` | optional | loadtest / integration tests | Set `1` to turn off Better Auth's per-IP sign-in limiter. Core integration tests set this in `app/tests/setup.env.ts`. The #919 harness sets it in `.env.loadtest` so 500 loopback VUs are not measuring "how fast does the auth limiter trip." |
-| `LOADTEST_BASE_URL` | optional (default `http://localhost:4100`) | loadtest | k6 target. Must stay on the isolated loopback instance — never `dev.eduai.ok.ubc.ca`. |
+| `LOADTEST_BASE_URL` | optional (default `http://127.0.0.1:4100`) | loadtest | k6 target. Loopback only unless `LOADTEST_ALLOW_REMOTE=1`. Live hosts `dev.eduai.ok.ubc.ca` / `my.eduai.ok.ubc.ca` are always refused. |
+| `LOADTEST_ALLOW_REMOTE` | optional | loadtest | Set `1` to allow a non-loopback `LOADTEST_BASE_URL` for a **dedicated** load-test host. Does not unlock the live study/prod hosts. |
 | `LOADTEST_VUS` | optional (default `500`) | loadtest | How many `loadtest.vu-NNN@eduai.local` accounts `seed-loadtest-users.ts` creates. |
 | `LOADTEST_UNIQUE_USERS` | optional | loadtest | Set `0` to round-robin the five demo students instead of one account per VU. |
 | `HOST` | optional (loadtest default `127.0.0.1`) | loadtest | Bind address for the mock LLM and `react-router-serve` during a harness run. |

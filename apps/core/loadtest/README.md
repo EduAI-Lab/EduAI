@@ -9,11 +9,12 @@ Chromium *and* the protocol-level engine in one tool.
 ## Safety — read before running
 
 - **Local only, by design.** Every script here defaults to
-  `http://localhost:4100`, a dedicated app instance with its own DB and a
-  mocked LLM/embedding backend. **Never point `LOADTEST_BASE_URL` at
-  `dev.eduai.ok.ubc.ca` or any shared host** — that server runs live ADHD
-  Assist study sessions with real participants, and a 500-VU ramp will
-  degrade or crash it.
+  `http://127.0.0.1:4100` (IPv4 loopback — not `localhost`, which can
+  resolve to `::1` and miss the IPv4-only bind). k6 **refuses** a
+  non-loopback `LOADTEST_BASE_URL` unless you set `LOADTEST_ALLOW_REMOTE=1`
+  for a dedicated load-test host. `dev.eduai.ok.ubc.ca` / `my.eduai.ok.ubc.ca`
+  are blocked even with that flag — those hosts run live traffic, and a
+  500-VU ramp would degrade real participants.
 - **No real model calls.** `VLLM_BASE_URL`/`OLLAMA_BASE_URL` point at
   `loadtest/mock-llm/server.mjs`, a canned-response stand-in. This is
   intentional — real OpenAI/Google keys would incur real cost per simulated
@@ -112,7 +113,7 @@ and the script polls `document.body.innerText` instead of a Playwright
 
 k6 prints a summary at the end of every run (thresholds pass/fail, percentiles,
 error rate). With `loadtest:stress:grafana`, the same numbers are visible
-live at `http://localhost:3300/d/eduai-k6-loadtest`. A failed threshold means
+live at `http://127.0.0.1:3300/d/eduai-k6-loadtest`. A failed threshold means
 the platform did not hold up at that VU count — the summary tells you which
 dimension (latency vs. errors vs. rate-limit isolation) broke first, which is
 the input EPIC #63 Phase 3 needs for the actual capacity-tuning work.

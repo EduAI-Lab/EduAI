@@ -4,10 +4,10 @@
 // live-participant environment.
 //
 //   k6 run loadtest/k6/stress-500.js
-//   k6 run -e LOADTEST_BASE_URL=http://localhost:4100 loadtest/k6/stress-500.js
+//   k6 run -e LOADTEST_BASE_URL=http://127.0.0.1:4100 loadtest/k6/stress-500.js
 //
 // For live dashboards: `npm run loadtest:monitoring:up` first, then add
-//   --out influxdb=http://localhost:8086/k6
+//   --out influxdb=http://127.0.0.1:8086/k6
 import { chatFlow } from './scenarios/chat-flow.js';
 import { rateLimitCheck } from './scenarios/rate-limit-check.js';
 

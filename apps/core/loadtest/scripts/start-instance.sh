@@ -41,6 +41,6 @@ echo "==> Starting app instance on 127.0.0.1:$PORT (production build)..."
 (cd .. && HOST=127.0.0.1 npx react-router-serve ./build/server/index.js) &
 APP_PID=$!
 
-echo "==> Ready: app on http://localhost:${PORT}, mock LLM on http://localhost:8801"
+echo "==> Ready: app on http://127.0.0.1:${PORT}, mock LLM on http://127.0.0.1:8801"
 echo "==> Press Ctrl-C to stop."
 wait

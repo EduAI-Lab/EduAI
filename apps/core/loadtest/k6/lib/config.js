@@ -2,7 +2,12 @@
 // Every value can be overridden with `k6 run -e KEY=value` so the same
 // scripts work for a 10-VU smoke test and the full 500-VU run.
 
-export const BASE_URL = __ENV.LOADTEST_BASE_URL || 'http://localhost:4100';
+import { resolveLoadtestBaseUrl } from './base-url.js';
+
+export const BASE_URL = resolveLoadtestBaseUrl(
+  __ENV.LOADTEST_BASE_URL,
+  __ENV.LOADTEST_ALLOW_REMOTE,
+);
 
 // Seeded by `apps/core/prisma/seed.ts` — see loadtest/README.md for how the
 // isolated DB is provisioned. All demo accounts share one password.
