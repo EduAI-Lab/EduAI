@@ -6,6 +6,10 @@ Fixture: temporary course `FLEET-ROUTER-STRESS-20260818` (removed after testing)
 Models: `qwen3.5-2b-instruct` and `qwen3.5-9b-instruct`, alternating evenly  
 Artifacts: [`artifacts/`](./artifacts/)
 
+## Summary
+
+We completed an authenticated RAG fleet stress test from 16 to 1000 concurrent users using an even Qwen 3.5 2B/9B split. The direct Core path handled all 1000 requests successfully, while the public webapp path exposed reverse-proxy and rate-limit bottlenecks above 256 users. Router hardening added deterministic chat affinity, failed-host ejection, configurable health checks, and RAG timing metadata. The test fixture and temporary settings were removed afterward, cmps02 GPU1 was restored to Qwen 2.5 32B, and the implementation was documented in GitHub issue #1581 and draft PR #1582.
+
 ## Smoke validation
 
 The authenticated first turn returned HTTP 200, a `chatId`, `X-Fleet-Server`, one RAG chunk, a similarity score, and a response citing `Fleet router RAG stress fixture`. The follow-up reused the same `chatId` and succeeded on a second server in the baseline run. This confirms that conversation context is persisted by Core/DB rather than held only in the inference server.
