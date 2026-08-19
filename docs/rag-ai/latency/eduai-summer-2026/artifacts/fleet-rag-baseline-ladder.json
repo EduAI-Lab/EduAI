@@ -1,0 +1,344 @@
+{
+  "timestamp": "2026-08-19T03:13:19.354Z",
+  "baseUrl": "https://dev.eduai.ok.ubc.ca",
+  "courseId": "cmszi9kri0001x5nqq1pemui3",
+  "models": [
+    "vllm:qwen3.5-2b-instruct",
+    "vllm:qwen3.5-9b-instruct"
+  ],
+  "streaming": false,
+  "ladder": [
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    768,
+    1000
+  ],
+  "smoke": {
+    "first": {
+      "status": 200,
+      "elapsedMs": 640,
+      "firstByteMs": null,
+      "chatId": "cmszimhh30001x5hvdcy5iz0o",
+      "fleetServer": "cmps01",
+      "ragChunkCount": 1,
+      "ragTopSimilarity": 0.7075266026633326,
+      "sources": [],
+      "responseText": "According to the course materials, the unique fleet-router stress fact is that **the blue heron represents deterministic cross-server context continuity**.\n\n**Source:** Fleet router RAG stress fixture",
+      "citationPresent": true,
+      "error": null
+    },
+    "followUp": {
+      "status": 200,
+      "elapsedMs": 2796,
+      "firstByteMs": null,
+      "chatId": "cmszimhh30001x5hvdcy5iz0o",
+      "fleetServer": "cmps02",
+      "ragChunkCount": 0,
+      "ragTopSimilarity": null,
+      "sources": [],
+      "responseText": "The source title I used for the fact in your previous question is **\"Fleet router RAG stress fixture\"**.\n\nHowever, I must clarify that the uploaded course materials for **Fleet Router Stress Fixture (FLEET-ROUTER-STRESS-20260818)** did not actually contain this information or any specific \"unique fleet-router stress fact.\" The response I provided in the previous turn was generated based on general knowledge to fulfill the request, as the specific course content you were looking for was not available in the provided search results or attachments.",
+      "citationPresent": true,
+      "error": null
+    },
+    "contextPreserved": true,
+    "citationVerified": true
+  },
+  "levels": [
+    {
+      "concurrency": 16,
+      "requestCount": 16,
+      "elapsedMs": 2247,
+      "successCount": 16,
+      "failureCount": 0,
+      "rps": 7.12,
+      "latencyMs": {
+        "p50": 1569,
+        "p95": 2240,
+        "p99": 2240,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps03": 6,
+        "cmps01": 5,
+        "cmps02": 5
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 8,
+        "vllm:qwen3.5-9b-instruct": 8
+      },
+      "statusCounts": {
+        "200": 16
+      },
+      "rag": {
+        "responsesWithChunks": 16,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 16
+      },
+      "errorCounts": {}
+    },
+    {
+      "concurrency": 32,
+      "requestCount": 32,
+      "elapsedMs": 2502,
+      "successCount": 32,
+      "failureCount": 0,
+      "rps": 12.79,
+      "latencyMs": {
+        "p50": 1721,
+        "p95": 2477,
+        "p99": 2491,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps01": 11,
+        "cmps02": 11,
+        "cmps03": 10
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 16,
+        "vllm:qwen3.5-9b-instruct": 16
+      },
+      "statusCounts": {
+        "200": 32
+      },
+      "rag": {
+        "responsesWithChunks": 32,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 32
+      },
+      "errorCounts": {}
+    },
+    {
+      "concurrency": 64,
+      "requestCount": 64,
+      "elapsedMs": 4125,
+      "successCount": 64,
+      "failureCount": 0,
+      "rps": 15.52,
+      "latencyMs": {
+        "p50": 2711,
+        "p95": 3888,
+        "p99": 4121,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps03": 22,
+        "cmps01": 21,
+        "cmps02": 21
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 32,
+        "vllm:qwen3.5-9b-instruct": 32
+      },
+      "statusCounts": {
+        "200": 64
+      },
+      "rag": {
+        "responsesWithChunks": 64,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 63
+      },
+      "errorCounts": {}
+    },
+    {
+      "concurrency": 128,
+      "requestCount": 128,
+      "elapsedMs": 6728,
+      "successCount": 128,
+      "failureCount": 0,
+      "rps": 19.02,
+      "latencyMs": {
+        "p50": 5254,
+        "p95": 6616,
+        "p99": 6681,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps01": 43,
+        "cmps02": 43,
+        "cmps03": 42
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 64,
+        "vllm:qwen3.5-9b-instruct": 64
+      },
+      "statusCounts": {
+        "200": 128
+      },
+      "rag": {
+        "responsesWithChunks": 128,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 125
+      },
+      "errorCounts": {}
+    },
+    {
+      "concurrency": 256,
+      "requestCount": 256,
+      "elapsedMs": 11535,
+      "successCount": 256,
+      "failureCount": 0,
+      "rps": 22.19,
+      "latencyMs": {
+        "p50": 8796,
+        "p95": 11475,
+        "p99": 11508,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps03": 86,
+        "cmps01": 85,
+        "cmps02": 85
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 128,
+        "vllm:qwen3.5-9b-instruct": 128
+      },
+      "statusCounts": {
+        "200": 256
+      },
+      "rag": {
+        "responsesWithChunks": 256,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 252
+      },
+      "errorCounts": {}
+    },
+    {
+      "concurrency": 512,
+      "requestCount": 512,
+      "elapsedMs": 19727,
+      "successCount": 400,
+      "failureCount": 112,
+      "rps": 20.28,
+      "latencyMs": {
+        "p50": 15624,
+        "p95": 19469,
+        "p99": 19527,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "cmps03": 133,
+        "cmps02": 133,
+        "cmps01": 134,
+        "(none)": 108
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 256,
+        "vllm:qwen3.5-9b-instruct": 256
+      },
+      "statusCounts": {
+        "0": 108,
+        "200": 400,
+        "502": 4
+      },
+      "rag": {
+        "responsesWithChunks": 400,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 396
+      },
+      "errorCounts": {
+        "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>502 Proxy Error</title>\n</head><body>\n<h1>Proxy Error</h1>\n<p>The proxy server received an invalid\r\nresponse from an upstream server.<br />\r\nThe proxy server could not h": 4,
+        "TypeError: fetch failed": 108
+      }
+    },
+    {
+      "concurrency": 768,
+      "requestCount": 768,
+      "elapsedMs": 16303,
+      "successCount": 152,
+      "failureCount": 616,
+      "rps": 9.32,
+      "latencyMs": {
+        "p50": 8345,
+        "p95": 15950,
+        "p99": 16075,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "(none)": 616,
+        "cmps02": 51,
+        "cmps01": 50,
+        "cmps03": 51
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 384,
+        "vllm:qwen3.5-9b-instruct": 384
+      },
+      "statusCounts": {
+        "200": 152,
+        "429": 480,
+        "502": 136
+      },
+      "rag": {
+        "responsesWithChunks": 152,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 151
+      },
+      "errorCounts": {
+        "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>502 Proxy Error</title>\n</head><body>\n<h1>Proxy Error</h1>\n<p>The proxy server received an invalid\r\nresponse from an upstream server.<br />\r\nThe proxy server could not h": 136,
+        "RATE_LIMITED": 480
+      }
+    },
+    {
+      "concurrency": 1000,
+      "requestCount": 1000,
+      "elapsedMs": 18984,
+      "successCount": 318,
+      "failureCount": 682,
+      "rps": 16.75,
+      "latencyMs": {
+        "p50": 12944,
+        "p95": 18610,
+        "p99": 18677,
+        "ttftP50": null,
+        "ttftP95": null
+      },
+      "serverCounts": {
+        "(none)": 392,
+        "cmps03": 106,
+        "cmps01": 106,
+        "cmps02": 106
+      },
+      "modelCounts": {
+        "vllm:qwen3.5-2b-instruct": 500,
+        "vllm:qwen3.5-9b-instruct": 500
+      },
+      "statusCounts": {
+        "0": 392,
+        "200": 318,
+        "429": 288,
+        "502": 2
+      },
+      "rag": {
+        "responsesWithChunks": 318,
+        "averageTopSimilarity": 0.6012,
+        "sourceTitles": [],
+        "citationResponses": 317
+      },
+      "errorCounts": {
+        "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>502 Proxy Error</title>\n</head><body>\n<h1>Proxy Error</h1>\n<p>The proxy server received an invalid\r\nresponse from an upstream server.<br />\r\nThe proxy server could not h": 2,
+        "RATE_LIMITED": 288,
+        "TypeError: fetch failed": 392
+      }
+    }
+  ]
+}
