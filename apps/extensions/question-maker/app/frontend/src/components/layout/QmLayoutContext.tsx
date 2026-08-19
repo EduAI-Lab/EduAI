@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 type QmLayoutContextValue = {
   profileOpen: boolean;
@@ -37,7 +37,7 @@ export function QmLayoutProvider({ children }: { children: ReactNode }) {
 export function useQmLayout() {
   const ctx = useContext(QmLayoutContext);
   if (!ctx) {
-    throw new Error('useQmLayout must be used within QmLayoutProvider');
+    throw new Error("useQmLayout must be used within QmLayoutProvider");
   }
   return ctx;
 }

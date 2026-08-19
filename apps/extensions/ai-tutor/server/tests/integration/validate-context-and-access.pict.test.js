@@ -13,25 +13,32 @@
 //
 // Real Postgres via the ai-tutor Prisma client.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { makeProfessor, makeStudent, makeAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import {
+  makeProfessor,
+  makeStudent,
+  makeAdmin,
+  truncateAll,
+  seedMinimalCourse,
+  prisma,
+} from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, postCoreBugReport: vi.fn().mockResolvedValue({ ok: true }) };
 });
 
-import { createBugReport, BugReportError } from '../../src/services/bugReports.js';
+import { createBugReport, BugReportError } from "../../src/services/bugReports.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
-  readFileSync(path.join(repoRoot, 'tests/models/validate-context-and-access.cases.json'), 'utf8'),
+  readFileSync(path.join(repoRoot, "tests/models/validate-context-and-access.cases.json"), "utf8"),
 );
 const { validateContextAndAccessOracle } = await import(
-  path.join(repoRoot, 'tests/models/validate-context-and-access.oracle.ts')
+  path.join(repoRoot, "tests/models/validate-context-and-access.oracle.ts")
 );
 
 const MISSING_ID = 999_999_999;
@@ -54,8 +61,8 @@ async function buildRow(row) {
     data: {
       lessonId: seedA.lesson.id,
       mainTopicId: seedA.topic.id,
-      instructionsMd: 'Instructions',
-      config: { question: 'Q?', questionType: 'MCQ' },
+      instructionsMd: "Instructions",
+      config: { question: "Q?", questionType: "MCQ" },
     },
   });
 
@@ -63,46 +70,46 @@ async function buildRow(row) {
   const seedB = await seedMinimalCourse(profB.id);
 
   let context;
-  if (row.ContextDepth === 'none') {
+  if (row.ContextDepth === "none") {
     context = undefined;
-  } else if (row.ContextDepth === 'course') {
-    context = { courseOfferingId: row.Existence === 'missing' ? MISSING_ID : seedA.course.id };
-  } else if (row.ContextDepth === 'module') {
+  } else if (row.ContextDepth === "course") {
+    context = { courseOfferingId: row.Existence === "missing" ? MISSING_ID : seedA.course.id };
+  } else if (row.ContextDepth === "module") {
     context = {
-      courseOfferingId: row.Consistency === 'inconsistent' ? seedB.course.id : seedA.course.id,
-      moduleId: row.Existence === 'missing' ? MISSING_ID : seedA.module.id,
+      courseOfferingId: row.Consistency === "inconsistent" ? seedB.course.id : seedA.course.id,
+      moduleId: row.Existence === "missing" ? MISSING_ID : seedA.module.id,
     };
-  } else if (row.ContextDepth === 'lesson') {
+  } else if (row.ContextDepth === "lesson") {
     context = {
       courseOfferingId: seedA.course.id,
-      moduleId: row.Consistency === 'inconsistent' ? seedB.module.id : seedA.module.id,
-      lessonId: row.Existence === 'missing' ? MISSING_ID : seedA.lesson.id,
+      moduleId: row.Consistency === "inconsistent" ? seedB.module.id : seedA.module.id,
+      lessonId: row.Existence === "missing" ? MISSING_ID : seedA.lesson.id,
     };
   } else {
     context = {
       courseOfferingId: seedA.course.id,
       moduleId: seedA.module.id,
-      lessonId: row.Consistency === 'inconsistent' ? seedB.lesson.id : seedA.lesson.id,
-      activityId: row.Existence === 'missing' ? MISSING_ID : activityA.id,
+      lessonId: row.Consistency === "inconsistent" ? seedB.lesson.id : seedA.lesson.id,
+      activityId: row.Existence === "missing" ? MISSING_ID : activityA.id,
     };
   }
 
   let user;
   switch (row.Role) {
-    case 'STUDENT': {
+    case "STUDENT": {
       const student = makeStudent();
-      if (row.Authorized === 'yes') {
+      if (row.Authorized === "yes") {
         await prisma.courseEnrollment.create({
-          data: { courseOfferingId: seedA.course.id, userId: student.id, role: 'STUDENT' },
+          data: { courseOfferingId: seedA.course.id, userId: student.id, role: "STUDENT" },
         });
       }
       user = student;
       break;
     }
-    case 'INSTRUCTOR':
-      user = row.Authorized === 'yes' ? profA : profB; // profB instructs seedB, not seedA
+    case "INSTRUCTOR":
+      user = row.Authorized === "yes" ? profA : profB; // profB instructs seedB, not seedA
       break;
-    case 'OTHER':
+    case "OTHER":
       user = makeAdmin();
       break;
   }
@@ -111,11 +118,11 @@ async function buildRow(row) {
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'validateContextAndAccess PICT row #$index $row.ContextDepth/$row.Existence/$row.Consistency/$row.Role/$row.Authorized',
+  "validateContextAndAccess PICT row #$index $row.ContextDepth/$row.Existence/$row.Consistency/$row.Role/$row.Authorized",
   ({ row }) => {
-    it('matches the oracle', async () => {
+    it("matches the oracle", async () => {
       const { user, context } = await buildRow(row);
-      const payload = { description: 'A sufficiently long bug description.', context };
+      const payload = { description: "A sufficiently long bug description.", context };
       const expected = validateContextAndAccessOracle(row);
 
       if (expected.ok) {

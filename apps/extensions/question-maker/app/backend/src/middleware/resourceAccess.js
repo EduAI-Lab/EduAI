@@ -9,8 +9,8 @@
  * insufficient access, then attaches the resource, `req.qmCourse`, and
  * `req.courseAccess` for downstream handlers.
  */
-import { prisma } from '../config/database.js';
-import { resolveAccessForCourse, minRank } from './courseAccess.js';
+import { prisma } from "../config/database.js";
+import { resolveAccessForCourse, minRank } from "./courseAccess.js";
 
 /**
  * Parse a route id into a positive integer, or null when it isn't one. The schema PKs
@@ -29,17 +29,17 @@ function makeGuard({ min, attachAs, loader }) {
   return async (req, res, next) => {
     try {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
+        return res.status(401).json({ success: false, error: "Authentication required" });
       }
 
       const { resource, course } = (await loader(req)) ?? {};
       if (!resource || !course) {
-        return res.status(404).json({ success: false, error: 'Resource not found' });
+        return res.status(404).json({ success: false, error: "Resource not found" });
       }
 
       const access = await resolveAccessForCourse(req.user, course, { cookie: req.headers.cookie });
       if (!access || access.rank < required) {
-        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
       }
 
       req[attachAs] = resource;
@@ -63,25 +63,30 @@ function resourceLoader(delegate, include, getCourse, param) {
 }
 
 /** Gate a variant route (`:variantId`); attaches `req.variant`. */
-export function requireVariantAccess({ min } = { min: 'ta' }) {
+export function requireVariantAccess({ min } = { min: "ta" }) {
   return makeGuard({
     min,
-    attachAs: 'variant',
+    attachAs: "variant",
     loader: resourceLoader(
       prisma.variants,
       { questionMetadata: { include: { course: true } } },
       (variant) => variant?.questionMetadata?.course,
-      'variantId'
+      "variantId",
     ),
   });
 }
 
 /** Gate a question route; attaches `req.question`. Defaults to the `:id` param. */
-export function requireQuestionAccess({ min = 'ta', param = 'id' } = {}) {
+export function requireQuestionAccess({ min = "ta", param = "id" } = {}) {
   return makeGuard({
     min,
-    attachAs: 'question',
-    loader: resourceLoader(prisma.questionMetadata, { course: true }, (question) => question?.course, param),
+    attachAs: "question",
+    loader: resourceLoader(
+      prisma.questionMetadata,
+      { course: true },
+      (question) => question?.course,
+      param,
+    ),
   });
 }
 
@@ -90,10 +95,15 @@ export function requireQuestionAccess({ min = 'ta', param = 'id' } = {}) {
  * param. Section write routes gate on their parent `:assessmentId` (sections
  * inherit assessment access per §17), so a dedicated section guard isn't needed.
  */
-export function requireAssessmentAccess({ min, param = 'id' } = {}) {
+export function requireAssessmentAccess({ min, param = "id" } = {}) {
   return makeGuard({
     min,
-    attachAs: 'assessment',
-    loader: resourceLoader(prisma.assessments, { course: true }, (assessment) => assessment?.course, param),
+    attachAs: "assessment",
+    loader: resourceLoader(
+      prisma.assessments,
+      { course: true },
+      (assessment) => assessment?.course,
+      param,
+    ),
   });
 }

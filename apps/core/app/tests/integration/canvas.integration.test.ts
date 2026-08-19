@@ -397,9 +397,7 @@ describe("Canvas API — courses and sync", { timeout: 15_000 }, () => {
       where: { isActive: true },
     });
     expect(rosterRows.length).toBeGreaterThan(0);
-    expect(
-      rosterRows.some((row) => readStoredStudentId(row.sisUserId) === "10000001"),
-    ).toBe(true);
+    expect(rosterRows.some((row) => readStoredStudentId(row.sisUserId) === "10000001")).toBe(true);
   });
 
   it("syncs selected courses and links enrollments by studentId", async () => {

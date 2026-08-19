@@ -1,6 +1,6 @@
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -9,9 +9,9 @@ function createPromptSlug(name) {
     name
       .toLowerCase()
       .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 48) || 'prompt'
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "prompt"
   );
 }
 
@@ -39,10 +39,10 @@ async function resolveUniquePromptSlug(name) {
   return `${baseSlug}-${suffix}`;
 }
 
-router.get('/prompts', requireRole('INSTRUCTOR'), async (req, res) => {
+router.get("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
   try {
     const prompts = await prisma.promptTemplate.findMany({
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { updatedAt: "desc" },
     });
     res.json(prompts);
   } catch (e) {
@@ -50,11 +50,11 @@ router.get('/prompts', requireRole('INSTRUCTOR'), async (req, res) => {
   }
 });
 
-router.post('/prompts', requireRole('INSTRUCTOR'), async (req, res) => {
+router.post("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
   const { name, systemPrompt, temperature, topP } = req.body || {};
 
   if (!name || !systemPrompt) {
-    return res.status(400).json({ error: 'name and systemPrompt are required' });
+    return res.status(400).json({ error: "name and systemPrompt are required" });
   }
 
   try {
@@ -64,8 +64,8 @@ router.post('/prompts', requireRole('INSTRUCTOR'), async (req, res) => {
         name,
         slug,
         systemPrompt,
-        temperature: typeof temperature === 'number' ? temperature : null,
-        topP: typeof topP === 'number' ? topP : null,
+        temperature: typeof temperature === "number" ? temperature : null,
+        topP: typeof topP === "number" ? topP : null,
       },
     });
     res.status(201).json(prompt);

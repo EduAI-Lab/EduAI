@@ -38,9 +38,7 @@ const TYPE_ALIASES: Record<string, EduaiDiagramCanonicalId> = {
  * Does not fall back to process-flow — use for parse gating so bare labels
  * like "Start" are not swallowed as type ids.
  */
-export function matchExplicitDiagramTypeId(
-  raw: string,
-): EduaiDiagramCanonicalId | null {
+export function matchExplicitDiagramTypeId(raw: string): EduaiDiagramCanonicalId | null {
   const explicit = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!explicit) return null;
   if ((EDUAI_DIAGRAM_CANONICAL_IDS as readonly string[]).includes(explicit)) {
@@ -72,5 +70,4 @@ export function hasEduaiDiagramFence(text: string): boolean {
 }
 
 /** Global regex for splitting / extracting eduai-diagram fences (reset lastIndex). */
-export const EDUAI_DIAGRAM_FENCE_GLOBAL =
-  /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/gi;
+export const EDUAI_DIAGRAM_FENCE_GLOBAL = /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/gi;

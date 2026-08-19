@@ -18,10 +18,7 @@ import {
   resolveCourseAccessGate,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
-import {
-  getCourseRagSettings,
-  invalidateCourseRagSettingsCache,
-} from "~/lib/courses/server";
+import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { UpdateCourseRagSettingsSchema } from "~/lib/courses/schemas";
 import prisma from "~/lib/prisma.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
@@ -48,10 +45,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // Wide row: the response echoes `course.courseScopeGuardrailEnabled`, which
   // is outside GATE_COURSE_SELECT.
-  const { course, access } = await resolveCourseAccessWithCourse(
-    session.user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
@@ -133,10 +127,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  const { course, access } = await resolveCourseAccessGate(
-    session.user,
-    courseId,
-  );
+  const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,

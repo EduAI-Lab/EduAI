@@ -303,9 +303,7 @@ describe("assistantMessageHasText / activeToolNameFromMessage", () => {
         parts: [{ type: "text", text: "Hello" }],
       }),
     ).toBe(true);
-    expect(
-      assistantMessageHasText({ role: "assistant", content: "  hi  " }),
-    ).toBe(true);
+    expect(assistantMessageHasText({ role: "assistant", content: "  hi  " })).toBe(true);
     expect(
       assistantMessageHasText({
         role: "assistant",
@@ -395,13 +393,9 @@ describe("shouldApplyAssistiveDisplayTransform", () => {
 
   it("applies mid-stream once Next? (terminal) is present — not Top+Next only", () => {
     expect(shouldApplyAssistiveDisplayTransform(complete, true)).toBe(true);
-    expect(
-      shouldApplyAssistiveDisplayTransform("**Next?** Want to continue?", true),
-    ).toBe(true);
+    expect(shouldApplyAssistiveDisplayTransform("**Next?** Want to continue?", true)).toBe(true);
     // Top summary alone: progressive relabel happens separately; full reorder waits.
-    expect(
-      shouldApplyAssistiveDisplayTransform("**Top summary**\n- Point", true),
-    ).toBe(false);
+    expect(shouldApplyAssistiveDisplayTransform("**Top summary**\n- Point", true)).toBe(false);
     expect(shouldApplyAssistiveDisplayTransform("hello", true)).toBe(false);
   });
 
@@ -437,9 +431,7 @@ A — done
 \`\`\`js
 console.log("still open`;
     expect(hasIncompleteEduaiDiagramFence(withTrailingCode)).toBe(false);
-    expect(shouldApplyAssistiveDisplayTransform(withTrailingCode, true)).toBe(
-      true,
-    );
+    expect(shouldApplyAssistiveDisplayTransform(withTrailingCode, true)).toBe(true);
   });
 });
 

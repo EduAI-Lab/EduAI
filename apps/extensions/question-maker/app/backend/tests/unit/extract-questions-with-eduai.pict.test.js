@@ -11,39 +11,39 @@
  * tests/models/extract-questions-with-eduai.pict). Shared cases/oracle
  * loading comes from tests/helpers/pictModel.js (#1188).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadPictModel } from '../helpers/pictModel.js';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadPictModel } from "../helpers/pictModel.js";
 
 const generateQuestions = vi.fn();
 const courseFindUnique = vi.fn();
 const topicsFindMany = vi.fn();
 const enrichCourseDetail = vi.fn();
 
-vi.mock('../../src/services/eduaiService.js', () => ({
+vi.mock("../../src/services/eduaiService.js", () => ({
   default: { isConfigured: () => true, generateQuestions },
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     course: { findUnique: courseFindUnique },
     topics: { findMany: topicsFindMany },
   },
 }));
 
-vi.mock('../../src/services/courseListService.js', () => ({ enrichCourseDetail }));
+vi.mock("../../src/services/courseListService.js", () => ({ enrichCourseDetail }));
 
-vi.mock('../../src/services/extractionUtils.js', async (importOriginal) => {
+vi.mock("../../src/services/extractionUtils.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, chunkByQuestionBlocks: vi.fn() };
 });
 
-const { extractQuestionsFromText } = await import('../../src/services/aiService.js');
-const { chunkByQuestionBlocks } = await import('../../src/services/extractionUtils.js');
+const { extractQuestionsFromText } = await import("../../src/services/aiService.js");
+const { chunkByQuestionBlocks } = await import("../../src/services/extractionUtils.js");
 
-const { rows, oracle } = await loadPictModel('extract-questions-with-eduai');
+const { rows, oracle } = await loadPictModel("extract-questions-with-eduai");
 const { extractQuestionsWithEduAiOracle } = oracle;
 
-const DUPLICATE_CONTENT = 'Duplicate question text appearing in both chunks';
+const DUPLICATE_CONTENT = "Duplicate question text appearing in both chunks";
 
 beforeEach(() => {
   generateQuestions.mockReset();
@@ -51,34 +51,42 @@ beforeEach(() => {
   topicsFindMany.mockReset();
   enrichCourseDetail.mockReset();
 
-  courseFindUnique.mockResolvedValue({ id: 1, coreCourseId: 'cuid-core-course' });
-  enrichCourseDetail.mockResolvedValue({ id: 1, coreCourseId: 'cuid-core-course', code: 'COSC 101' });
+  courseFindUnique.mockResolvedValue({ id: 1, coreCourseId: "cuid-core-course" });
+  enrichCourseDetail.mockResolvedValue({
+    id: 1,
+    coreCourseId: "cuid-core-course",
+    code: "COSC 101",
+  });
 });
 
 /** Per-attempt resolved values for one chunk's extraction, per ChunkOutcome. */
 function planChunkAttempts(outcome, content) {
-  if (outcome === 'success') return [[{ content }]];
-  if (outcome === 'retry-succeeds') return [[], [{ content }]];
+  if (outcome === "success") return [[{ content }]];
+  if (outcome === "retry-succeeds") return [[], [{ content }]];
   return [[], []]; // retry-fails: both attempts come up empty
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'extractQuestionsWithEduAI PICT row #$index $row.ChunkCount/$row.Chunk1Outcome/$row.Chunk2Outcome/$row.DuplicateBetweenChunks/$row.TopicsPresent',
+  "extractQuestionsWithEduAI PICT row #$index $row.ChunkCount/$row.Chunk1Outcome/$row.Chunk2Outcome/$row.DuplicateBetweenChunks/$row.TopicsPresent",
   ({ row }) => {
-    it('matches the oracle', async () => {
-      topicsFindMany.mockResolvedValue(row.TopicsPresent === 'yes' ? [{ id: 1, name: 'Recursion' }] : []);
+    it("matches the oracle", async () => {
+      topicsFindMany.mockResolvedValue(
+        row.TopicsPresent === "yes" ? [{ id: 1, name: "Recursion" }] : [],
+      );
 
-      const chunk1Content = row.DuplicateBetweenChunks === 'yes' ? DUPLICATE_CONTENT : 'Chunk 1 unique question';
-      const chunk2Content = row.DuplicateBetweenChunks === 'yes' ? DUPLICATE_CONTENT : 'Chunk 2 unique question';
+      const chunk1Content =
+        row.DuplicateBetweenChunks === "yes" ? DUPLICATE_CONTENT : "Chunk 1 unique question";
+      const chunk2Content =
+        row.DuplicateBetweenChunks === "yes" ? DUPLICATE_CONTENT : "Chunk 2 unique question";
 
-      const chunks = row.ChunkCount === 'one' ? ['CHUNK_1_TEXT'] : ['CHUNK_1_TEXT', 'CHUNK_2_TEXT'];
+      const chunks = row.ChunkCount === "one" ? ["CHUNK_1_TEXT"] : ["CHUNK_1_TEXT", "CHUNK_2_TEXT"];
       chunkByQuestionBlocks.mockReturnValue({ chunks, blockCountsPerChunk: chunks.map(() => 1) });
 
       // The real code only reaches chunk 2 if chunk 1 didn't abort the whole
       // call (retry-fails throws out of the loop) — mirror that here so the
       // mock queue never expects a call that wouldn't actually happen.
       const queue = [...planChunkAttempts(row.Chunk1Outcome, chunk1Content)];
-      if (row.ChunkCount === 'two' && row.Chunk1Outcome !== 'retry-fails') {
+      if (row.ChunkCount === "two" && row.Chunk1Outcome !== "retry-fails") {
         queue.push(...planChunkAttempts(row.Chunk2Outcome, chunk2Content));
       }
       let callIndex = 0;
@@ -87,16 +95,16 @@ describe.each(rows.map((row, index) => ({ row, index })))(
       const expected = extractQuestionsWithEduAiOracle(row);
 
       if (expected.threw) {
-        await expect(extractQuestionsFromText('raw text', 1, 'model', {}, {})).rejects.toThrow();
+        await expect(extractQuestionsFromText("raw text", 1, "model", {}, {})).rejects.toThrow();
         return;
       }
 
-      const result = await extractQuestionsFromText('raw text', 1, 'model', {}, {});
+      const result = await extractQuestionsFromText("raw text", 1, "model", {}, {});
       expect(result).toHaveLength(expected.count);
 
       const firstCallArgs = generateQuestions.mock.calls[0][0];
-      const promptHasTopics = firstCallArgs.userPromptOverride.includes('Course topics:');
-      expect(promptHasTopics).toBe(row.TopicsPresent === 'yes');
+      const promptHasTopics = firstCallArgs.userPromptOverride.includes("Course topics:");
+      expect(promptHasTopics).toBe(row.TopicsPresent === "yes");
     });
   },
 );

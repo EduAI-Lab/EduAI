@@ -25,10 +25,10 @@ export async function teachingInstructorFetch(user, prisma, { handlers } = {}) {
     .filter((c) => c.coreCourseId)
     .map((c) => ({
       id: c.coreCourseId,
-      callerEnrollmentRole: 'INSTRUCTOR',
+      callerEnrollmentRole: "INSTRUCTOR",
       name: `Stub ${c.coreCourseId}`,
-      code: 'STUB',
-      department: 'COSC',
+      code: "STUB",
+      department: "COSC",
     }));
   const coreById = new Map(coreCourses.map((c) => [c.id, c]));
 
@@ -39,9 +39,9 @@ export async function teachingInstructorFetch(user, prisma, { handlers } = {}) {
     }
 
     const target = String(url);
-    const path = target.split('?')[0];
+    const path = target.split("?")[0];
 
-    if (path.endsWith('/api/sessions/validate')) {
+    if (path.endsWith("/api/sessions/validate")) {
       return { ok: true, json: async () => ({ user }) };
     }
 
@@ -50,17 +50,17 @@ export async function teachingInstructorFetch(user, prisma, { handlers } = {}) {
       return {
         ok: true,
         json: async () => ({
-          enrollments: [{ studentId: user.id, role: 'INSTRUCTOR', isActive: true }],
+          enrollments: [{ studentId: user.id, role: "INSTRUCTOR", isActive: true }],
         }),
       };
     }
 
-    if (path.endsWith('/api/courses')) {
+    if (path.endsWith("/api/courses")) {
       // `?ids=` lookups and full list walks both land here.
-      const idsParam = new URL(target).searchParams.get('ids');
+      const idsParam = new URL(target).searchParams.get("ids");
       if (idsParam) {
-        const ids = idsParam.split(',').filter(Boolean);
-        const rows = ids.map((id) => coreById.get(id) ?? { id, name: 'Stub', code: 'STUB' });
+        const ids = idsParam.split(",").filter(Boolean);
+        const rows = ids.map((id) => coreById.get(id) ?? { id, name: "Stub", code: "STUB" });
         return { ok: true, json: async () => coursePage(rows) };
       }
       return { ok: true, json: async () => coursePage(coreCourses) };
@@ -70,9 +70,9 @@ export async function teachingInstructorFetch(user, prisma, { handlers } = {}) {
     if (detailMatch) {
       const row = coreById.get(detailMatch[1]) ?? {
         id: detailMatch[1],
-        name: 'Stub',
-        code: 'STUB',
-        department: 'COSC',
+        name: "Stub",
+        code: "STUB",
+        department: "COSC",
       };
       return { ok: true, json: async () => row };
     }

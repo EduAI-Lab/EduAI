@@ -1,5 +1,5 @@
-import { useEffect, useRef, useCallback } from 'react';
-import html2canvas from 'html2canvas';
+import { useEffect, useRef, useCallback } from "react";
+import html2canvas from "html2canvas";
 
 interface ConsoleEntry {
   level: string;
@@ -36,7 +36,7 @@ export function useBugReportCapture(enabled: boolean) {
   } | null>(null);
 
   useEffect(() => {
-    if (!enabled || typeof window === 'undefined') {
+    if (!enabled || typeof window === "undefined") {
       if (originalsRef.current && patchedRef.current) {
         console.log = originalsRef.current.log;
         console.warn = originalsRef.current.warn;
@@ -65,7 +65,7 @@ export function useBugReportCapture(enabled: boolean) {
       log: origLog,
       warn: origWarn,
       error: origError,
-      fetch: origFetch
+      fetch: origFetch,
     };
 
     function addConsoleEntry(level: string, args: unknown[]) {
@@ -74,13 +74,13 @@ export function useBugReportCapture(enabled: boolean) {
         message: args
           .map((a) => {
             try {
-              return typeof a === 'string' ? a : JSON.stringify(a);
+              return typeof a === "string" ? a : JSON.stringify(a);
             } catch {
               return String(a);
             }
           })
-          .join(' '),
-        timestamp: new Date().toISOString()
+          .join(" "),
+        timestamp: new Date().toISOString(),
       };
       consoleBuffer.current.push(entry);
       if (consoleBuffer.current.length > MAX_CONSOLE_ENTRIES) {
@@ -89,22 +89,21 @@ export function useBugReportCapture(enabled: boolean) {
     }
 
     console.log = (...args: unknown[]) => {
-      addConsoleEntry('log', args);
+      addConsoleEntry("log", args);
       origLog.apply(console, args);
     };
     console.warn = (...args: unknown[]) => {
-      addConsoleEntry('warn', args);
+      addConsoleEntry("warn", args);
       origWarn.apply(console, args);
     };
     console.error = (...args: unknown[]) => {
-      addConsoleEntry('error', args);
+      addConsoleEntry("error", args);
       origError.apply(console, args);
     };
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const method = init?.method || 'GET';
-      const url =
-        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method || "GET";
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const start = performance.now();
       let status: number | null = null;
 
@@ -118,7 +117,7 @@ export function useBugReportCapture(enabled: boolean) {
           url,
           status,
           durationMs: Math.round(performance.now() - start),
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         };
         networkBuffer.current.push(entry);
         if (networkBuffer.current.length > MAX_NETWORK_ENTRIES) {
@@ -140,7 +139,7 @@ export function useBugReportCapture(enabled: boolean) {
   }, [enabled]);
 
   const captureScreenshot = useCallback(async () => {
-    if (!enabled || typeof window === 'undefined') return;
+    if (!enabled || typeof window === "undefined") return;
     if (capturePromiseRef.current) return capturePromiseRef.current;
 
     const generation = captureGenerationRef.current;
@@ -150,11 +149,11 @@ export function useBugReportCapture(enabled: boolean) {
         const canvas = await html2canvas(document.body, {
           logging: false,
           useCORS: true,
-          scale: 0.5
+          scale: 0.5,
         });
         // JPEG keeps the report below Core's screenshot size cap.
         if (captureGenerationRef.current === generation) {
-          screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
+          screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
         }
       } catch {
         // ignore capture failures
@@ -172,7 +171,7 @@ export function useBugReportCapture(enabled: boolean) {
     return {
       consoleLogs: JSON.stringify(consoleBuffer.current),
       networkLogs: JSON.stringify(networkBuffer.current),
-      screenshot: screenshotRef.current
+      screenshot: screenshotRef.current,
     };
   }, []);
 

@@ -1,12 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarProvider,
-  SidebarTrigger,
-} from "../ui/sidebar";
+import { Sidebar, SidebarContent, SidebarProvider, SidebarTrigger } from "../ui/sidebar";
 
 describe("SidebarTrigger", () => {
   it("exposes aria-expanded reflecting the open state", () => {

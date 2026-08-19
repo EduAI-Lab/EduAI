@@ -1,6 +1,6 @@
-import { expect, type APIRequestContext } from '@playwright/test';
-import { CORE_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { createAdmin, createInstructor } from './auth';
+import { expect, type APIRequestContext } from "@playwright/test";
+import { CORE_URL, QM_BACKEND_URL } from "../../playwright.config";
+import { createAdmin, createInstructor } from "./auth";
 
 const QM = QM_BACKEND_URL;
 const RUN_SUFFIX = Date.now().toString().slice(-5);
@@ -37,15 +37,15 @@ export async function importQmCourseForInstructor(
 function coreCourseForm(instrId: string, overrides: Record<string, string> = {}) {
   const { code: codeBase, ...rest } = overrides;
   return {
-    name: 'E2E QM Course',
-    code: `${codeBase ?? 'QM-E2E'}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
-    section: '001',
-    term: 'W1',
-    year: '2026',
+    name: "E2E QM Course",
+    code: `${codeBase ?? "QM-E2E"}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
+    section: "001",
+    term: "W1",
+    year: "2026",
     // September start — must agree with `term` above (August maps to S2 via
     // `termFromMonth`, the exact literal/startDate mismatch #1011 outlaws).
-    startDate: '2026-09-08',
-    department: 'COSC',
+    startDate: "2026-09-08",
+    department: "COSC",
     instructorUserIds: instrId,
     ...rest,
   };
@@ -65,7 +65,7 @@ export async function createQmCourseForInstructor(
   const adminCtx = await playwright.request.newContext();
 
   try {
-    await createAdmin(adminCtx, { prefix: 'qm-course-admin' });
+    await createAdmin(adminCtx, { prefix: "qm-course-admin" });
     const { id: instrId } = await (await instrCtx.get(`${CORE_URL}/api/me`)).json();
 
     const coreRes = await adminCtx.post(`${CORE_URL}/api/courses`, {

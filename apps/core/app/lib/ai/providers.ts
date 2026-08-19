@@ -3,15 +3,15 @@
  * Dynamic provider management with user-provided API keys
  */
 
-import { createProviderRegistry } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOllama } from 'ollama-ai-provider';
-import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
-import { resolveAllowedOllamaBaseUrl } from '~/lib/ai/ollama-url.server';
-import { resolveVllmApiKey } from '~/lib/ai/vllm-api-key.server';
-import { resolveAllowedVllmBaseUrl } from '~/lib/ai/vllm-url.server';
-import { vllmThinkingDisabledFetch } from '~/lib/ai/vllm-thinking.server';
+import { createProviderRegistry } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOllama } from "ollama-ai-provider";
+import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
+import { resolveAllowedOllamaBaseUrl } from "~/lib/ai/ollama-url.server";
+import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
+import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
+import { vllmThinkingDisabledFetch } from "~/lib/ai/vllm-thinking.server";
 import {
   LOCAL_INFERENCE_PROVIDERS,
   mergeLocalInferenceFromEnv,
@@ -20,7 +20,7 @@ import {
   type ProviderConfig,
   type SupportedProvider,
   type UserProviderSettings,
-} from './provider-types';
+} from "./provider-types";
 
 export type { ProviderConfig, SupportedProvider, UserProviderSettings };
 export {
@@ -111,9 +111,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
       providers.ollama = createOllama({
         baseURL,
         // Never attach cmps01 internal key for client-supplied base URLs (IP allowlist bypass).
-        headers: clientOllamaBaseUrl
-          ? {}
-          : cmps01InternalAuthHeadersForUrl(baseURL),
+        headers: clientOllamaBaseUrl ? {} : cmps01InternalAuthHeadersForUrl(baseURL),
       });
     }
   }
@@ -131,8 +129,8 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     });
 
     if (baseURL) {
-      baseURL = baseURL.replace(/\/$/, '');
-      if (!baseURL.endsWith('/v1')) {
+      baseURL = baseURL.replace(/\/$/, "");
+      if (!baseURL.endsWith("/v1")) {
         baseURL = `${baseURL}/v1`;
       }
 
@@ -150,7 +148,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   }
 
   // Create and return the registry
-  return createProviderRegistry(providers, { separator: ':' });
+  return createProviderRegistry(providers, { separator: ":" });
 }
 
 /**
@@ -158,16 +156,16 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
  */
 export function validateProviderConfig(
   providerId: SupportedProvider,
-  settings: { apiKey?: string; baseUrl?: string }
+  settings: { apiKey?: string; baseUrl?: string },
 ): { isValid: boolean; error?: string } {
   const config = PROVIDER_CONFIGS[providerId];
 
   if (!config) {
-    return { isValid: false, error: 'Unsupported provider' };
+    return { isValid: false, error: "Unsupported provider" };
   }
 
   if (config.requiresApiKey && !settings.apiKey) {
-    return { isValid: false, error: 'API key is required for this provider' };
+    return { isValid: false, error: "API key is required for this provider" };
   }
 
   return { isValid: true };
@@ -192,7 +190,7 @@ export function getProviderConfig(providerId: SupportedProvider): ProviderConfig
  */
 export function isProviderConfigured(
   providerId: SupportedProvider,
-  userSettings: UserProviderSettings
+  userSettings: UserProviderSettings,
 ): boolean {
   const userConfig = userSettings[providerId];
   const providerConfig = PROVIDER_CONFIGS[providerId];
@@ -215,14 +213,12 @@ export function getModelIdentifier(providerId: SupportedProvider, modelId: strin
 }
 
 /** Providers that would be registered from current settings (for error messages). */
-export function listEnabledRegistryProviders(
-  userSettings: UserProviderSettings,
-): string[] {
+export function listEnabledRegistryProviders(userSettings: UserProviderSettings): string[] {
   const ids: string[] = [];
-  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
-  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
-  if (userSettings.ollama?.isEnabled) ids.push('ollama');
-  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey())) ids.push('vllm');
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push("openai");
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push("google");
+  if (userSettings.ollama?.isEnabled) ids.push("ollama");
+  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey()))
+    ids.push("vllm");
   return ids;
 }
-

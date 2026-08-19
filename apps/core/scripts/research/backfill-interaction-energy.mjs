@@ -23,10 +23,7 @@ import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { PrismaClient } from "@prisma/client";
-import {
-  indexInteractions,
-  takeMatch,
-} from "./backfill-match.mjs";
+import { indexInteractions, takeMatch } from "./backfill-match.mjs";
 
 function readEnv(name) {
   const v = process.env[name];
@@ -47,7 +44,7 @@ async function loadJsonl(path) {
 function loadExport(path) {
   const raw = readFileSync(path, "utf8");
   const json = JSON.parse(raw);
-  return Array.isArray(json) ? json : json.rows ?? [];
+  return Array.isArray(json) ? json : (json.rows ?? []);
 }
 
 async function loadInteractionsFromDb({ since, until }) {
@@ -89,9 +86,7 @@ function summarize(rows) {
   const matched = rows.filter((r) => r._interaction_match).length;
   const withEnergy = rows.filter((r) => r.energy_joules != null).length;
   const withTokens = rows.filter(
-    (r) =>
-      (r.prompt_tokens != null && r.completion_tokens != null) ||
-      r.total_tokens != null,
+    (r) => (r.prompt_tokens != null && r.completion_tokens != null) || r.total_tokens != null,
   ).length;
   return { total: rows.length, matched, withEnergy, withTokens };
 }
@@ -160,11 +155,7 @@ async function main() {
   }
 
   const stats = summarize(enriched);
-  writeFileSync(
-    outPath,
-    enriched.map((r) => JSON.stringify(r)).join("\n") + "\n",
-    "utf8",
-  );
+  writeFileSync(outPath, enriched.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
 
   const summaryPath = outPath.replace(/\.jsonl$/, "-summary.txt");
   const summary = [
@@ -185,7 +176,9 @@ async function main() {
 
   console.log(summary);
   if (stats.matched === 0) {
-    console.warn("WARNING: no rows matched — check RESEARCH_BACKFILL_SINCE/UNTIL or export window.");
+    console.warn(
+      "WARNING: no rows matched — check RESEARCH_BACKFILL_SINCE/UNTIL or export window.",
+    );
   }
 }
 

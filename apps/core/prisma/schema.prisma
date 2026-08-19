@@ -1021,6 +1021,13 @@ enum CronJobStatus {
   ERROR
 }
 
+enum CronJobTriggerSource {
+  SCHEDULE
+  ADMIN_UI
+  ADMIN_CHAT
+  UNKNOWN
+}
+
 model CronJobRun {
   id         String        @id @default(cuid())
   jobName    String
@@ -1029,6 +1036,8 @@ model CronJobRun {
   finishedAt DateTime?
   message    String?
   exitCode   Int?
+  triggerSource CronJobTriggerSource @default(UNKNOWN)
+  triggeredByUserId String?
   createdAt  DateTime      @default(now())
 
   @@index([jobName, startedAt])

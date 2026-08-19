@@ -32,7 +32,9 @@ vi.mock("~/lib/rbac/resolve-course-access.server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    course: { findUnique: vi.fn().mockResolvedValue({ id: "c1", instructorId: "u1", department: "COSC" }) },
+    course: {
+      findUnique: vi.fn().mockResolvedValue({ id: "c1", instructorId: "u1", department: "COSC" }),
+    },
     user: { findUnique: vi.fn().mockResolvedValue({ authorizedUnits: [] }) },
   },
 }));
@@ -44,7 +46,11 @@ import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 
 function loaderArgs(role: string) {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role } } as never);
-  return { request: new Request("http://localhost/api/courses/c1/tas"), params: { courseId: "c1" }, context: {} as never } as any;
+  return {
+    request: new Request("http://localhost/api/courses/c1/tas"),
+    params: { courseId: "c1" },
+    context: {} as never,
+  } as any;
 }
 
 function postArgs(role: string) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -11,11 +11,11 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@eduai/ui';
-import { toast } from 'sonner';
+} from "@eduai/ui";
+import { toast } from "sonner";
 
-import api from '~/lib/api';
-import type { EduAiApiKeyStatus } from '~/lib/types';
+import api from "~/lib/api";
+import type { EduAiApiKeyStatus } from "~/lib/types";
 import {
   DEFAULT_POLICY,
   buildFallbackSummary,
@@ -29,7 +29,7 @@ import {
   type AdminAiModelPolicy,
   type AdminSettingsLoaderData,
   type CostTier,
-} from '~/lib/admin-settings';
+} from "~/lib/admin-settings";
 
 // `costTierClassName` (shared with admin-settings) still returns a legacy
 // `.tag` className; here we only borrow the label text via `formatCostTier`
@@ -37,10 +37,10 @@ import {
 // admin.tsx / settings-view.tsx.
 function costTierBadgeVariant(
   costTier: CostTier | null | undefined,
-): 'default' | 'secondary' | 'outline' {
-  if (costTier === 'LOW') return 'secondary';
-  if (costTier === 'HIGH') return 'default';
-  return 'outline';
+): "default" | "secondary" | "outline" {
+  if (costTier === "LOW") return "secondary";
+  if (costTier === "HIGH") return "default";
+  return "outline";
 }
 
 type AdminSettingsPanelProps = {
@@ -57,7 +57,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
     normalizePolicy(loaderData.aiPolicy ?? DEFAULT_POLICY, loaderData.aiModels),
   );
   const [aiModels] = useState<AdminAiModelOption[]>(loaderData.aiModels);
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -80,10 +80,10 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
     try {
       const next = await api.setEduAiApiKey(apiKey);
       setStatus(next);
-      setApiKey('');
-      toast.success('Saved. This key will be used instead of the default one.');
+      setApiKey("");
+      toast.success("Saved. This key will be used instead of the default one.");
     } catch {
-      toast.error('Could not save key. Please try again.');
+      toast.error("Could not save key. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -94,9 +94,9 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
     try {
       const next = await api.clearEduAiApiKey();
       setStatus(next);
-      toast.success('Cleared. The default key will be used instead.');
+      toast.success("Cleared. The default key will be used instead.");
     } catch {
-      toast.error('Could not clear the key. Please try again.');
+      toast.error("Could not clear the key. Please try again.");
     } finally {
       setClearing(false);
     }
@@ -122,8 +122,8 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
   };
 
   const saveAiPolicy = async () => {
-    if (!aiPolicyAvailable || typeof settingsApi.setAdminAiModelPolicy !== 'function') {
-      toast.error('AI model settings cannot be saved right now. Please try again later.');
+    if (!aiPolicyAvailable || typeof settingsApi.setAdminAiModelPolicy !== "function") {
+      toast.error("AI model settings cannot be saved right now. Please try again later.");
       return;
     }
 
@@ -133,9 +133,9 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
       const normalized = normalizePolicy(saved, aiModels);
       setAiPolicy(normalized);
       setInitialAiPolicy(normalized);
-      toast.success('AI loop settings saved.');
+      toast.success("AI loop settings saved.");
     } catch {
-      toast.error('Could not save AI loop settings. Please try again.');
+      toast.error("Could not save AI loop settings. Please try again.");
     } finally {
       setSavingAiPolicy(false);
     }
@@ -219,8 +219,8 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                         key={model.id}
                         className={`flex flex-col gap-3 rounded-2xl border px-4 py-4 transition-colors sm:flex-row sm:items-start sm:justify-between ${
                           isAllowed
-                            ? 'border-primary/40 bg-primary/5'
-                            : 'border-border/70 bg-background/60 hover:border-primary/20'
+                            ? "border-primary/40 bg-primary/5"
+                            : "border-border/70 bg-background/60 hover:border-primary/20"
                         }`}
                       >
                         <div className="flex gap-3">
@@ -232,14 +232,18 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                           />
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold text-foreground">{model.modelName}</span>
+                              <span className="font-semibold text-foreground">
+                                {model.modelName}
+                              </span>
                               <Badge variant="outline">
                                 {model.provider ?? inferProvider(model.modelId)}
                               </Badge>
                               <Badge variant={costTierBadgeVariant(model.costTier)}>
                                 {formatCostTier(model.costTier)}
                               </Badge>
-                              {isTutorDefault ? <Badge variant="default">Tutor default</Badge> : null}
+                              {isTutorDefault ? (
+                                <Badge variant="default">Tutor default</Badge>
+                              ) : null}
                               {isSupervisorDefault ? (
                                 <Badge variant="secondary">Supervisor default</Badge>
                               ) : null}
@@ -247,7 +251,9 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                             <p className="text-sm text-muted-foreground">
                               {model.summary ?? buildFallbackSummary(model)}
                             </p>
-                            <p className="text-xs text-muted-foreground font-mono">{model.modelId}</p>
+                            <p className="text-xs text-muted-foreground font-mono">
+                              {model.modelId}
+                            </p>
                           </div>
                         </div>
                       </label>
@@ -285,13 +291,13 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                       }))
                     }
                     className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
-                      aiPolicy.dualLoopEnabled ? 'bg-primary' : 'bg-secondary'
+                      aiPolicy.dualLoopEnabled ? "bg-primary" : "bg-secondary"
                     }`}
                     aria-pressed={aiPolicy.dualLoopEnabled}
                   >
                     <span
                       className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
-                        aiPolicy.dualLoopEnabled ? 'translate-x-7' : 'translate-x-1'
+                        aiPolicy.dualLoopEnabled ? "translate-x-7" : "translate-x-1"
                       }`}
                     />
                   </button>
@@ -316,8 +322,8 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                     <SelectValue
                       placeholder={
                         hasAllowedTutorModels
-                          ? 'Select a model'
-                          : 'Choose allowed tutor models first'
+                          ? "Select a model"
+                          : "Choose allowed tutor models first"
                       }
                     />
                   </SelectTrigger>
@@ -349,7 +355,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue
-                      placeholder={aiModels.length ? 'Select a model' : 'No models available'}
+                      placeholder={aiModels.length ? "Select a model" : "No models available"}
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -410,7 +416,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                   }
                   variant="primary"
                 >
-                  {savingAiPolicy ? 'Saving…' : 'Save loop settings'}
+                  {savingAiPolicy ? "Saving…" : "Save loop settings"}
                 </Button>
                 <Button
                   type="button"
@@ -451,29 +457,34 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
               <Input
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                type={showKey ? 'text' : 'password'}
+                type={showKey ? "text" : "password"}
                 className="flex-1"
                 placeholder="Paste EDUAI API key"
                 autoComplete="off"
               />
               <Button type="button" onClick={() => setShowKey((v) => !v)} variant="secondary">
-                {showKey ? 'Hide' : 'Show'}
+                {showKey ? "Hide" : "Show"}
               </Button>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
-            <Button type="button" onClick={save} disabled={saving || !apiKey.trim()} variant="primary">
-              {saving ? 'Saving…' : 'Save key'}
+            <Button
+              type="button"
+              onClick={save}
+              disabled={saving || !apiKey.trim()}
+              variant="primary"
+            >
+              {saving ? "Saving…" : "Save key"}
             </Button>
             <Button
               type="button"
               onClick={clear}
               disabled={clearing || !status.hasAdminOverride}
               variant="secondary"
-              title={!status.hasAdminOverride ? 'No key to clear' : undefined}
+              title={!status.hasAdminOverride ? "No key to clear" : undefined}
             >
-              {clearing ? 'Clearing…' : 'Clear key'}
+              {clearing ? "Clearing…" : "Clear key"}
             </Button>
           </div>
         </div>

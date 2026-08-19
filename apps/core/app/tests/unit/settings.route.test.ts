@@ -91,9 +91,9 @@ describe("settings loader", () => {
     } as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ studentId: null } as never);
 
-    const result = (await loader(
-      makeLoaderArgs("http://localhost/settings?expired=1"),
-    )) as { passwordExpired: boolean };
+    const result = (await loader(makeLoaderArgs("http://localhost/settings?expired=1"))) as {
+      passwordExpired: boolean;
+    };
     expect(result.passwordExpired).toBe(true);
   });
 
@@ -136,9 +136,7 @@ describe("settings action", () => {
       user: { id: "u1", role: "INSTRUCTOR" },
     } as never);
     vi.mocked(prisma.aIProvider.findUnique).mockResolvedValue(null);
-    const result = await action(
-      makeActionArgs({ _action: "setExpiry", providerName: "openai" }),
-    );
+    const result = await action(makeActionArgs({ _action: "setExpiry", providerName: "openai" }));
     expect(result).toEqual({ ok: false });
   });
 

@@ -8,7 +8,7 @@
  * `Number.isInteger` (courseAccess.resolveCourseAccessWithCourse); the resource
  * loaders must do the same.
  */
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from "vitest";
 
 const { mockVariantFindOne, mockQuestionFindOne, mockAssessmentFindOne } = vi.hoisted(() => ({
   mockVariantFindOne: vi.fn(),
@@ -16,18 +16,24 @@ const { mockVariantFindOne, mockQuestionFindOne, mockAssessmentFindOne } = vi.ho
   mockAssessmentFindOne: vi.fn(),
 }));
 
-vi.mock('../../src/config/settings.js', () => {
-  const cfg = { coreUrl: 'http://core.test', eduaiApiKey: 'k', corsOrigins: ['*'], nodeEnv: 'test', logLevel: 'silent' };
+vi.mock("../../src/config/settings.js", () => {
+  const cfg = {
+    coreUrl: "http://core.test",
+    eduaiApiKey: "k",
+    corsOrigins: ["*"],
+    nodeEnv: "test",
+    logLevel: "silent",
+  };
   return { config: cfg, default: cfg };
 });
 
-vi.mock('../../src/services/coreApiService.js', () => ({
+vi.mock("../../src/services/coreApiService.js", () => ({
   getCourseEnrollmentsFromCore: vi.fn(),
   getCourseFromCore: vi.fn(),
   getMyProfileFromCore: vi.fn(),
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     variants: { findUnique: mockVariantFindOne },
     questionMetadata: { findUnique: mockQuestionFindOne },
@@ -36,66 +42,71 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-const { requireVariantAccess, requireQuestionAccess, requireAssessmentAccess } = await import(
-  '../../src/middleware/resourceAccess.js'
-);
+const { requireVariantAccess, requireQuestionAccess, requireAssessmentAccess } =
+  await import("../../src/middleware/resourceAccess.js");
 
 function mockRes() {
   return {
     statusCode: null,
     payload: null,
-    status(code) { this.statusCode = code; return this; },
-    json(body) { this.payload = body; return this; },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.payload = body;
+      return this;
+    },
   };
 }
 
-const USER = { id: 'cuid-user', role: 'INSTRUCTOR' };
+const USER = { id: "cuid-user", role: "INSTRUCTOR" };
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('resource loaders reject non-integer ids before querying (#5)', () => {
-  it('variant route: id 0 → 404, no DB query', async () => {
-    const req = { user: USER, params: { variantId: '0' }, headers: {} };
+describe("resource loaders reject non-integer ids before querying (#5)", () => {
+  it("variant route: id 0 → 404, no DB query", async () => {
+    const req = { user: USER, params: { variantId: "0" }, headers: {} };
     const res = mockRes();
     const next = vi.fn();
 
-    await requireVariantAccess({ min: 'ta' })(req, res, next);
+    await requireVariantAccess({ min: "ta" })(req, res, next);
 
     expect(res.statusCode).toBe(404);
     expect(mockVariantFindOne).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('variant route: non-numeric variantId → 404, no DB query', async () => {
-    const req = { user: USER, params: { variantId: 'abc' }, headers: {} };
+  it("variant route: non-numeric variantId → 404, no DB query", async () => {
+    const req = { user: USER, params: { variantId: "abc" }, headers: {} };
     const res = mockRes();
     const next = vi.fn();
 
-    await requireVariantAccess({ min: 'ta' })(req, res, next);
+    await requireVariantAccess({ min: "ta" })(req, res, next);
 
     expect(res.statusCode).toBe(404);
     expect(mockVariantFindOne).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('question route: non-numeric id → 404, no DB query', async () => {
-    const req = { user: USER, params: { id: 'not-a-number' }, headers: {} };
+  it("question route: non-numeric id → 404, no DB query", async () => {
+    const req = { user: USER, params: { id: "not-a-number" }, headers: {} };
     const res = mockRes();
     const next = vi.fn();
 
-    await requireQuestionAccess({ min: 'ta' })(req, res, next);
+    await requireQuestionAccess({ min: "ta" })(req, res, next);
 
     expect(res.statusCode).toBe(404);
     expect(mockQuestionFindOne).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('assessment route: non-numeric id → 404, no DB query', async () => {
-    const req = { user: USER, params: { id: 'xyz' }, headers: {} };
+  it("assessment route: non-numeric id → 404, no DB query", async () => {
+    const req = { user: USER, params: { id: "xyz" }, headers: {} };
     const res = mockRes();
     const next = vi.fn();
 
-    await requireAssessmentAccess({ min: 'ta' })(req, res, next);
+    await requireAssessmentAccess({ min: "ta" })(req, res, next);
 
     expect(res.statusCode).toBe(404);
     expect(mockAssessmentFindOne).not.toHaveBeenCalled();

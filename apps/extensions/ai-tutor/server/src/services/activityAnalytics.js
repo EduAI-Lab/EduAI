@@ -20,7 +20,7 @@
  *   `server/prisma/schema.prisma`.
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 /**
  * Convert raw engagement signals into the coarse difficulty label shown to instructors.
@@ -41,7 +41,7 @@ export function calculateDifficulty({
   const normalizedStudentCount = Math.max(studentCount || 0, 1);
   const helpPerStudent = helpRequestCount / normalizedStudentCount;
   const incorrectRate = submissionCount > 0 ? incorrectSubmissionCount / submissionCount : 0;
-  const ratingPenalty = typeof averageRating === 'number' ? (5 - averageRating) / 4 : 0;
+  const ratingPenalty = typeof averageRating === "number" ? (5 - averageRating) / 4 : 0;
 
   // These coefficients are a product-policy dial: incorrect answers dominate,
   // help-seeking is a secondary signal, and ratings only nudge the result.
@@ -50,7 +50,7 @@ export function calculateDifficulty({
     Math.min(100, Math.round(helpPerStudent * 15 + incorrectRate * 45 + ratingPenalty * 25)),
   );
 
-  const difficultyLabel = difficultyScore >= 65 ? 'HIGH' : difficultyScore >= 35 ? 'MEDIUM' : 'LOW';
+  const difficultyLabel = difficultyScore >= 65 ? "HIGH" : difficultyScore >= 35 ? "MEDIUM" : "LOW";
 
   return { difficultyScore, difficultyLabel };
 }

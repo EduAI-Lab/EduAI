@@ -1,13 +1,13 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { render, screen } from '@testing-library/react';
-import { AuthProvider, useLocalUser } from '~/hooks/useLocalUser';
-import type { AuthUser } from '~/hooks/useLocalUser';
+import { renderHook, act, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import { AuthProvider, useLocalUser } from "~/hooks/useLocalUser";
+import type { AuthUser } from "~/hooks/useLocalUser";
 
 // Mock the api module. `ApiNetworkError` is re-exported from the real module
 // (not stubbed) so `err instanceof ApiNetworkError` checks in useLocalUser
 // still work against errors thrown by the mocked `me()`.
-vi.mock('~/lib/api', async () => {
-  const actual = await vi.importActual<typeof import('~/lib/api')>('~/lib/api');
+vi.mock("~/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("~/lib/api")>("~/lib/api");
   return {
     ApiNetworkError: actual.ApiNetworkError,
     default: {
@@ -17,7 +17,7 @@ vi.mock('~/lib/api', async () => {
   };
 });
 
-import api, { ApiNetworkError } from '~/lib/api';
+import api, { ApiNetworkError } from "~/lib/api";
 
 // Reset call history (not the mockResolvedValue default) between tests so
 // call-count assertions aren't polluted by earlier tests' `api.me()` calls.
@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-const testUser: AuthUser = { id: 'test-1', name: 'Test User', role: 'STUDENT' };
+const testUser: AuthUser = { id: "test-1", name: "Test User", role: "STUDENT" };
 
 function makeWrapper(initialUser: AuthUser | null) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -33,43 +33,43 @@ function makeWrapper(initialUser: AuthUser | null) {
   };
 }
 
-describe('useLocalUser', () => {
-  it('throws when used outside AuthProvider', () => {
+describe("useLocalUser", () => {
+  it("throws when used outside AuthProvider", () => {
     // Suppress React error boundary console output
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     expect(() => {
       renderHook(() => useLocalUser());
-    }).toThrow('useLocalUser must be used within an AuthProvider');
+    }).toThrow("useLocalUser must be used within an AuthProvider");
 
     spy.mockRestore();
   });
 
-  it('returns context value when used inside AuthProvider', () => {
+  it("returns context value when used inside AuthProvider", () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),
     });
 
     expect(result.current.user).toEqual(testUser);
-    expect(typeof result.current.saveAuth).toBe('function');
-    expect(typeof result.current.logout).toBe('function');
-    expect(typeof result.current.setUser).toBe('function');
+    expect(typeof result.current.saveAuth).toBe("function");
+    expect(typeof result.current.logout).toBe("function");
+    expect(typeof result.current.setUser).toBe("function");
   });
 });
 
-describe('AuthProvider', () => {
-  it('renders children', () => {
+describe("AuthProvider", () => {
+  it("renders children", () => {
     render(
       <AuthProvider initialUser={null}>
         <div data-testid="child">Hello</div>
       </AuthProvider>,
     );
 
-    expect(screen.getByTestId('child')).toBeInTheDocument();
-    expect(screen.getByTestId('child')).toHaveTextContent('Hello');
+    expect(screen.getByTestId("child")).toBeInTheDocument();
+    expect(screen.getByTestId("child")).toHaveTextContent("Hello");
   });
 
-  it('with initialUser sets user immediately', () => {
+  it("with initialUser sets user immediately", () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),
     });
@@ -77,7 +77,7 @@ describe('AuthProvider', () => {
     expect(result.current.user).toEqual(testUser);
   });
 
-  it('with initialUser has isInitializing=false', () => {
+  it("with initialUser has isInitializing=false", () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),
     });
@@ -85,7 +85,7 @@ describe('AuthProvider', () => {
     expect(result.current.isInitializing).toBe(false);
   });
 
-  it('without initialUser starts with isInitializing=true', async () => {
+  it("without initialUser starts with isInitializing=true", async () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(null),
     });
@@ -99,13 +99,13 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('retries on ApiNetworkError instead of treating the caller as logged out', async () => {
+  it("retries on ApiNetworkError instead of treating the caller as logged out", async () => {
     const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
     meMock
       .mockRejectedValueOnce(new ApiNetworkError())
       .mockRejectedValueOnce(new ApiNetworkError())
       .mockResolvedValueOnce({
-        user: { id: 'retry-1', name: 'Retry User', role: 'STUDENT' },
+        user: { id: "retry-1", name: "Retry User", role: "STUDENT" },
       });
 
     const { result } = renderHook(() => useLocalUser(), {
@@ -121,17 +121,17 @@ describe('AuthProvider', () => {
 
     expect(meMock).toHaveBeenCalledTimes(3);
     expect(result.current.user).toEqual({
-      id: 'retry-1',
-      name: 'Retry User',
+      id: "retry-1",
+      name: "Retry User",
       email: undefined,
-      role: 'STUDENT',
+      role: "STUDENT",
       authorizedUnits: undefined,
     });
   });
 
-  it('gives up and treats the caller as logged out on a non-network error', async () => {
+  it("gives up and treats the caller as logged out on a non-network error", async () => {
     const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
-    meMock.mockRejectedValueOnce(new Error('Authentication required'));
+    meMock.mockRejectedValueOnce(new Error("Authentication required"));
 
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(null),
@@ -145,12 +145,12 @@ describe('AuthProvider', () => {
     expect(result.current.user).toBeNull();
   });
 
-  it('saveAuth updates the user', () => {
+  it("saveAuth updates the user", () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),
     });
 
-    const newUser: AuthUser = { id: 'test-2', name: 'New User', role: 'INSTRUCTOR' };
+    const newUser: AuthUser = { id: "test-2", name: "New User", role: "INSTRUCTOR" };
 
     act(() => {
       result.current.saveAuth(newUser);
@@ -159,7 +159,7 @@ describe('AuthProvider', () => {
     expect(result.current.user).toEqual(newUser);
   });
 
-  it('logout sets user to null', async () => {
+  it("logout sets user to null", async () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),
     });
@@ -173,7 +173,7 @@ describe('AuthProvider', () => {
     expect(result.current.user).toBeNull();
   });
 
-  it('after logout, user is null and can saveAuth again', async () => {
+  it("after logout, user is null and can saveAuth again", async () => {
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),
     });
@@ -186,7 +186,7 @@ describe('AuthProvider', () => {
     expect(result.current.user).toBeNull();
 
     // Save a new user after logout
-    const newUser: AuthUser = { id: 'test-3', name: 'Another User', role: 'TA' };
+    const newUser: AuthUser = { id: "test-3", name: "Another User", role: "TA" };
 
     act(() => {
       result.current.saveAuth(newUser);

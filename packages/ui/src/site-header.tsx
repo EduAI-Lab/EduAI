@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState } from "react";
 
-import { Separator } from "./ui/separator"
-import { SidebarTrigger, useSidebar } from "./ui/sidebar"
+import { Separator } from "./ui/separator";
+import { SidebarTrigger, useSidebar } from "./ui/sidebar";
 
 export interface SiteHeaderProps {
-  title?: string
-  actions?: React.ReactNode
-  leadingActions?: React.ReactNode
-  breadcrumbs?: React.ReactNode
+  title?: string;
+  actions?: React.ReactNode;
+  leadingActions?: React.ReactNode;
+  breadcrumbs?: React.ReactNode;
 }
 
 /**
@@ -20,22 +20,22 @@ export interface SiteHeaderProps {
  * common case) get `false` forever — zero behavior change for them.
  */
 function useAssistiveFocusModeActive(): boolean {
-  const [active, setActive] = useState(false)
+  const [active, setActive] = useState(false);
 
   useEffect(() => {
-    const root = document.documentElement
-    const sync = () => setActive(root.hasAttribute("data-assistive-focus-mode"))
-    sync()
+    const root = document.documentElement;
+    const sync = () => setActive(root.hasAttribute("data-assistive-focus-mode"));
+    sync();
 
-    const observer = new MutationObserver(sync)
+    const observer = new MutationObserver(sync);
     observer.observe(root, {
       attributes: true,
       attributeFilter: ["data-assistive-focus-mode"],
-    })
-    return () => observer.disconnect()
-  }, [])
+    });
+    return () => observer.disconnect();
+  }, []);
 
-  return active
+  return active;
 }
 
 /**
@@ -47,28 +47,20 @@ function useAssistiveFocusModeActive(): boolean {
  * too would be redundant.
  */
 function HeaderSidebarTrigger() {
-  const { isMobile, state } = useSidebar()
-  const focusModeActive = useAssistiveFocusModeActive()
+  const { isMobile, state } = useSidebar();
+  const focusModeActive = useAssistiveFocusModeActive();
   if (!isMobile && state === "expanded" && !focusModeActive) {
-    return null
+    return null;
   }
   return (
     <>
       <SidebarTrigger className="-ml-1" />
-      <Separator
-        orientation="vertical"
-        className="mx-2 data-[orientation=vertical]:h-4"
-      />
+      <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
     </>
-  )
+  );
 }
 
-export function SiteHeader({
-  title,
-  actions,
-  leadingActions,
-  breadcrumbs,
-}: SiteHeaderProps) {
+export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: SiteHeaderProps) {
   return (
     <header className="sticky top-0 z-20 flex h-[var(--header-height)] shrink-0 items-center border-b bg-background">
       <div className="flex h-full w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
@@ -79,8 +71,7 @@ export function SiteHeader({
             <div
               className="min-w-0 flex-1 overflow-hidden"
               style={{
-                maskImage:
-                  "linear-gradient(to right, black calc(100% - 3rem), transparent)",
+                maskImage: "linear-gradient(to right, black calc(100% - 3rem), transparent)",
               }}
             >
               {breadcrumbs}
@@ -90,14 +81,12 @@ export function SiteHeader({
           <h1 className="text-sm font-normal text-foreground">{title}</h1>
         )}
         {leadingActions ? (
-          <div className="flex h-full shrink-0 items-center gap-1.5">
-            {leadingActions}
-          </div>
+          <div className="flex h-full shrink-0 items-center gap-1.5">{leadingActions}</div>
         ) : null}
         <div className="ml-auto flex h-full items-center gap-3 overflow-x-auto sm:gap-4">
           {actions}
         </div>
       </div>
     </header>
-  )
+  );
 }

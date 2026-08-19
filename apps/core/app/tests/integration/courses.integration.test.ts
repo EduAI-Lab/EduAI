@@ -12,13 +12,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { getCourses, createCourse, getCourseFacets } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
-import {
-  seedUser,
-  seedCourse,
-  enroll,
-  mockSession,
-  cleanupRbac,
-} from "../helpers/rbac";
+import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
 import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
 
 // ---------------------------------------------------------------------------
@@ -48,7 +42,12 @@ const ADMIN_SESSION = {
   user: { id: "", role: "ADMIN", email: "admin-courses@test.com", name: "Admin" },
 };
 const INSTRUCTOR_SESSION = {
-  user: { id: "", role: "INSTRUCTOR", email: "integration-courses-test@example.com", name: "Integration Professor" },
+  user: {
+    id: "",
+    role: "INSTRUCTOR",
+    email: "integration-courses-test@example.com",
+    name: "Integration Professor",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -296,13 +295,62 @@ describe("GET /api/courses — search & filters before pagination (#1263)", () =
   // is the premise every "beyond page 1" assertion relies on. All totals are
   // deterministic because each test scopes a fresh INSTRUCTOR to exactly these.
   const FIXTURE: ListRow[] = [
-    { name: "Old Term Course", code: "AAA 050", term: "W1", year: 2025, department: "COSC", isPublished: true },
-    { name: "Filler One", code: "AAA 100", term: "W1", year: 2026, department: "COSC", isPublished: true },
-    { name: "Filler Two", code: "AAA 200", term: "W1", year: 2026, department: "COSC", isPublished: true },
-    { name: "Term Target Course", code: "ZZZ 100", term: "W2", year: 2026, department: "COSC", isPublished: true },
-    { name: "Status Draft Course", code: "ZZZ 200", term: "W1", year: 2026, department: "COSC", isPublished: false },
-    { name: "Department Math Course", code: "ZZZ 300", term: "W1", year: 2026, department: "MATH", isPublished: true },
-    { name: "Search Target Course", code: "ZZZ 400", term: "W1", year: 2026, department: "COSC", isPublished: true },
+    {
+      name: "Old Term Course",
+      code: "AAA 050",
+      term: "W1",
+      year: 2025,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Filler One",
+      code: "AAA 100",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Filler Two",
+      code: "AAA 200",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Term Target Course",
+      code: "ZZZ 100",
+      term: "W2",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Status Draft Course",
+      code: "ZZZ 200",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: false,
+    },
+    {
+      name: "Department Math Course",
+      code: "ZZZ 300",
+      term: "W1",
+      year: 2026,
+      department: "MATH",
+      isPublished: true,
+    },
+    {
+      name: "Search Target Course",
+      code: "ZZZ 400",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
   ];
 
   async function seedScopedList(rows: ListRow[]) {
@@ -486,13 +534,40 @@ describe("GET /api/courses — search & filters before pagination (#1263)", () =
   it("ANDs filters with the UNIT_ADMIN authorized-unit scope", async () => {
     const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
     const coscDraft = await prisma.course.create({
-      data: { name: "COSC Draft", code: "ZZU 001", section: "001", term: "W1", year: 2026, startDate: new Date("2026-09-01"), department: "COSC", isPublished: false },
+      data: {
+        name: "COSC Draft",
+        code: "ZZU 001",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+        department: "COSC",
+        isPublished: false,
+      },
     });
     const coscPublished = await prisma.course.create({
-      data: { name: "COSC Published", code: "ZZU 002", section: "001", term: "W1", year: 2026, startDate: new Date("2026-09-01"), department: "COSC", isPublished: true },
+      data: {
+        name: "COSC Published",
+        code: "ZZU 002",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+        department: "COSC",
+        isPublished: true,
+      },
     });
     const mathDraft = await prisma.course.create({
-      data: { name: "MATH Draft", code: "ZZU 003", section: "001", term: "W1", year: 2026, startDate: new Date("2026-09-01"), department: "MATH", isPublished: false },
+      data: {
+        name: "MATH Draft",
+        code: "ZZU 003",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+        department: "MATH",
+        isPublished: false,
+      },
     });
 
     try {
@@ -522,9 +597,30 @@ describe("GET /api/courses/facets (#1263)", () => {
   async function seedInstructorFixture() {
     const instructor = await seedUser({ role: "INSTRUCTOR" });
     const rows = [
-      { name: "Published CosC", code: "AAA 001", term: "W1", year: 2026, department: "COSC", isPublished: true },
-      { name: "Draft CosC", code: "ZZZ 001", term: "W2", year: 2026, department: "COSC", isPublished: false },
-      { name: "Math Course", code: "ZZZ 002", term: "W1", year: 2025, department: "MATH", isPublished: true },
+      {
+        name: "Published CosC",
+        code: "AAA 001",
+        term: "W1",
+        year: 2026,
+        department: "COSC",
+        isPublished: true,
+      },
+      {
+        name: "Draft CosC",
+        code: "ZZZ 001",
+        term: "W2",
+        year: 2026,
+        department: "COSC",
+        isPublished: false,
+      },
+      {
+        name: "Math Course",
+        code: "ZZZ 002",
+        term: "W1",
+        year: 2025,
+        department: "MATH",
+        isPublished: true,
+      },
     ];
     const ids: string[] = [];
     for (const row of rows) {
@@ -537,8 +633,7 @@ describe("GET /api/courses/facets (#1263)", () => {
     return { instructor, ids };
   }
 
-  const facetsRequest = () =>
-    new Request("http://localhost/api/courses/facets", { method: "GET" });
+  const facetsRequest = () => new Request("http://localhost/api/courses/facets", { method: "GET" });
 
   it("returns status/term/department values from the whole accessible set, most-recent-first terms", async () => {
     const { instructor, ids } = await seedInstructorFixture();
@@ -591,16 +686,18 @@ describe("POST /api/courses", () => {
     invalidatePolicyCache();
     try {
       vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
-      const res = await createCourse(makeFormDataPost({
-        name: "Forbidden Course",
-        code: "FB 001",
-        section: "001",
-        term: "W1",
-        year: 2025,
-        startDate: "2025-09-01",
-        department: "COSC",
-        instructorUserIds: instructorId,
-      }));
+      const res = await createCourse(
+        makeFormDataPost({
+          name: "Forbidden Course",
+          code: "FB 001",
+          section: "001",
+          term: "W1",
+          year: 2025,
+          startDate: "2025-09-01",
+          department: "COSC",
+          instructorUserIds: instructorId,
+        }),
+      );
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "Forbidden" });
     } finally {
@@ -611,9 +708,11 @@ describe("POST /api/courses", () => {
 
   it("returns 422 when required fields are missing", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
-    const res = await createCourse(makeFormDataPost({
-      name: "No Code Course",
-    }));
+    const res = await createCourse(
+      makeFormDataPost({
+        name: "No Code Course",
+      }),
+    );
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body).toHaveProperty("error", "VALIDATION_ERROR");
@@ -621,16 +720,18 @@ describe("POST /api/courses", () => {
 
   it("returns 422 when instructorUserIds do not resolve to INSTRUCTOR users", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
-    const res = await createCourse(makeFormDataPost({
-      name: "Bad Instructor Course",
-      code: "BI 001",
-      section: "001",
-      term: "W1",
-      year: 2025,
-      startDate: "2025-09-01",
-      department: "COSC",
-      instructorUserIds: adminId,
-    }));
+    const res = await createCourse(
+      makeFormDataPost({
+        name: "Bad Instructor Course",
+        code: "BI 001",
+        section: "001",
+        term: "W1",
+        year: 2025,
+        startDate: "2025-09-01",
+        department: "COSC",
+        instructorUserIds: adminId,
+      }),
+    );
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body).toHaveProperty("error", "INVALID_INSTRUCTOR");
@@ -638,18 +739,20 @@ describe("POST /api/courses", () => {
 
   it("creates course and INSTRUCTOR enrollment in a transaction", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
-    const res = await createCourse(makeFormDataPost({
-      name: "Transaction Test Course",
-      code: "TX 001",
-      section: "002",
-      term: "W2",
-      // Academic-year label: a Jan-start W2 course attributes to the
-      // previous year (#1088) — 2026-01-01 is the second half of 2025.
-      year: 2025,
-      startDate: "2026-01-01",
-      department: "COSC",
-      instructorUserIds: instructorId,
-    }));
+    const res = await createCourse(
+      makeFormDataPost({
+        name: "Transaction Test Course",
+        code: "TX 001",
+        section: "002",
+        term: "W2",
+        // Academic-year label: a Jan-start W2 course attributes to the
+        // previous year (#1088) — 2026-01-01 is the second half of 2025.
+        year: 2025,
+        startDate: "2026-01-01",
+        department: "COSC",
+        instructorUserIds: instructorId,
+      }),
+    );
 
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -665,14 +768,16 @@ describe("POST /api/courses", () => {
 
   it("returns 422 with no instructorUserIds and creates no Course", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
-    const res = await createCourse(makeFormDataPost({
-      name: "No Instructor Course",
-      code: "NI 001",
-      section: "001",
-      term: "W1",
-      year: 2026,
-      startDate: "2026-09-01",
-    }));
+    const res = await createCourse(
+      makeFormDataPost({
+        name: "No Instructor Course",
+        code: "NI 001",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: "2026-09-01",
+      }),
+    );
     // Schema requires >= 1 instructor id → validation failure, nothing persisted.
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -685,16 +790,18 @@ describe("POST /api/courses", () => {
     const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["MATH"] });
     try {
       mockSession(unitAdmin);
-      const res = await createCourse(makeFormDataPost({
-        name: "Wrong Unit Course",
-        code: "WU 001",
-        section: "001",
-        term: "W1",
-        year: 2026,
-        startDate: "2026-09-01",
-        department: "COSC",
-        instructorUserIds: instructorId,
-      }));
+      const res = await createCourse(
+        makeFormDataPost({
+          name: "Wrong Unit Course",
+          code: "WU 001",
+          section: "001",
+          term: "W1",
+          year: 2026,
+          startDate: "2026-09-01",
+          department: "COSC",
+          instructorUserIds: instructorId,
+        }),
+      );
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "DEPARTMENT_NOT_AUTHORIZED" });
     } finally {
@@ -706,16 +813,18 @@ describe("POST /api/courses", () => {
     const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
     try {
       mockSession(unitAdmin);
-      const res = await createCourse(makeFormDataPost({
-        name: "Unit Admin Course",
-        code: "UA 001",
-        section: "001",
-        term: "W1",
-        year: 2026,
-        startDate: "2026-09-01",
-        department: "COSC",
-        instructorUserIds: instructorId,
-      }));
+      const res = await createCourse(
+        makeFormDataPost({
+          name: "Unit Admin Course",
+          code: "UA 001",
+          section: "001",
+          term: "W1",
+          year: 2026,
+          startDate: "2026-09-01",
+          department: "COSC",
+          instructorUserIds: instructorId,
+        }),
+      );
       expect(res.status).toBe(201);
       const body = await res.json();
       createdCourseIds.push(body.id);
@@ -757,4 +866,3 @@ describe("DELETE /api/courses/:id", () => {
     }
   });
 });
-

@@ -46,9 +46,7 @@ const MAX_COURSE_SCOPE_MESSAGE_CHARS = 4_000;
 const COURSE_SCOPE_HISTORY_OMISSION = " … ";
 
 function classifierModelId(): string {
-  return (
-    process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct"
-  );
+  return process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
 }
 
 function courseScopeMinConfidence(): number {
@@ -77,15 +75,11 @@ export function parseCourseScopeJson(text: string): CourseScopeClassification {
   const trimmed = text.trim();
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error(
-      "Course-scope classifier response contained no JSON object",
-    );
+    throw new Error("Course-scope classifier response contained no JSON object");
   }
   const parsed = courseScopeSchema.safeParse(JSON.parse(jsonMatch[0]));
   if (!parsed.success) {
-    throw new Error(
-      `Course-scope classifier JSON invalid: ${parsed.error.message}`,
-    );
+    throw new Error(`Course-scope classifier JSON invalid: ${parsed.error.message}`);
   }
   return parsed.data;
 }
@@ -99,9 +93,7 @@ function formatCourseTopics(topics: string[]): string {
  * Always-on Layer A policy. This remains active when an instructor disables
  * the stricter classifier so course chat still behaves as course chat.
  */
-export function buildCourseScopePolicyPrompt(
-  context: CourseScopeContext,
-): string {
+export function buildCourseScopePolicyPrompt(context: CourseScopeContext): string {
   return `COURSE-SCOPE POLICY
 You are the assistant for this course:
 - Name: ${context.courseName}
@@ -119,9 +111,7 @@ relationship to the course is plausible or uncertain, answer helpfully rather
 than refusing.`;
 }
 
-export function buildCourseScopeClassifierPrompt(
-  context: CourseScopeContext,
-): string {
+export function buildCourseScopeClassifierPrompt(context: CourseScopeContext): string {
   return `You are a scope-enforcement classifier for a university course AI assistant.
 Course: ${context.courseName} (${context.courseCode ?? "no code"}).
 Course description: ${context.courseDescription?.trim() || "none"}.
@@ -221,10 +211,7 @@ export function buildCourseScopeClassifierUserPrompt(
 
   const payload = JSON.stringify({
     recentConversation: boundedHistory,
-    latestStudentMessage: boundCourseScopeText(
-      message,
-      MAX_COURSE_SCOPE_MESSAGE_CHARS,
-    ),
+    latestStudentMessage: boundCourseScopeText(message, MAX_COURSE_SCOPE_MESSAGE_CHARS),
   });
 
   // Wrap the untrusted JSON in an explicit tag the system prompt instructs
@@ -263,9 +250,7 @@ export async function classifyCourseScope(
 }
 
 /** Static, no-model-call redirect — keeps the guardrail's total extra output to just the classifier label. */
-export function buildCourseScopeRedirectMessage(
-  courseName: string | null,
-): string {
+export function buildCourseScopeRedirectMessage(courseName: string | null): string {
   const name = courseName?.trim() || "this course";
   return `That looks outside the scope of ${name}. I'm here to help with course content, so let's get back on track — ask me about lecture material, assignments, or anything else from the course and I'll do my best to help.`;
 }
@@ -284,9 +269,7 @@ export function shouldSkipCourseScopeCheck(message: string): boolean {
   if (!trimmed) return true;
   // Strip greeting words, then anything except Unicode letters/numbers. ASCII-
   // only cleanup incorrectly treated substantive non-Latin questions as empty.
-  const residue = trimmed
-    .replace(GREETING_WORDS, "")
-    .replace(/[^\p{L}\p{N}]/gu, "");
+  const residue = trimmed.replace(GREETING_WORDS, "").replace(/[^\p{L}\p{N}]/gu, "");
   return residue.length === 0;
 }
 
@@ -300,9 +283,7 @@ export type CourseScopeFailOpenCause = "timeout" | "parse" | "provider_error";
  * requested JSON-only output format; provider_error covers everything else
  * (host unreachable, non-2xx, etc.).
  */
-export function classifyCourseScopeFailOpenCause(
-  err: unknown,
-): CourseScopeFailOpenCause {
+export function classifyCourseScopeFailOpenCause(err: unknown): CourseScopeFailOpenCause {
   if (err instanceof Error) {
     // AbortSignal.timeout() rejects with a DOMException named "TimeoutError"
     // (or "AbortError" on some runtimes/versions).
@@ -319,10 +300,7 @@ export function classifyCourseScopeFailOpenCause(
 export function shouldBlockCourseScopeClassification(
   classification: CourseScopeClassification,
 ): boolean {
-  return (
-    !classification.onTopic &&
-    classification.confidence >= courseScopeMinConfidence()
-  );
+  return !classification.onTopic && classification.confidence >= courseScopeMinConfidence();
 }
 
 /**
@@ -355,10 +333,7 @@ export async function resolveCourseScopeVerdict(input: {
   } catch (err) {
     // Always surface fail-open — silent chatApiDebug made production misses invisible.
     const cause = classifyCourseScopeFailOpenCause(err);
-    console.warn(
-      `[course-scope] classifier failed (${cause}); failing open`,
-      err,
-    );
+    console.warn(`[course-scope] classifier failed (${cause}); failing open`, err);
     // With a 1s default timeout this can fire on a large share of production
     // turns silently; persist it (split by cause) so the fail-open rate is
     // observable in the system log instead of only in console output.

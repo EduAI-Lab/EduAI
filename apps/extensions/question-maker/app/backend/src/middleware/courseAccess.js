@@ -15,25 +15,25 @@
  * (returns null). Platform ADMIN short-circuits; UNIT_ADMIN uses the unit lock
  * when department data is available.
  */
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   getCourseEnrollmentsFromCore,
   getCourseFromCore,
   getMyProfileFromCore,
-} from '../services/coreApiService.js';
+} from "../services/coreApiService.js";
 
 /** Resolved access levels and their numeric ranks (shared contract §3). */
 export const LEVELS = {
-  admin: { level: 'admin', rank: 4 },
-  unit: { level: 'unit', rank: 3 },
-  instructor: { level: 'instructor', rank: 2 },
-  ta: { level: 'ta', rank: 1 },
-  student: { level: 'student', rank: 0 },
+  admin: { level: "admin", rank: 4 },
+  unit: { level: "unit", rank: 3 },
+  instructor: { level: "instructor", rank: 2 },
+  ta: { level: "ta", rank: 1 },
+  student: { level: "student", rank: 0 },
 };
 
 /** Map a `min` option (level name or numeric rank) to a numeric rank. */
 export function minRank(min) {
-  if (typeof min === 'number') return min;
+  if (typeof min === "number") return min;
   return LEVELS[min]?.rank ?? LEVELS.instructor.rank;
 }
 
@@ -67,7 +67,7 @@ export async function getAuthorizedUnits(reqUser, cookie) {
 export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   if (!course) return null;
 
-  if (reqUser.role === 'ADMIN') return LEVELS.admin;
+  if (reqUser.role === "ADMIN") return LEVELS.admin;
 
   // Course not yet linked to Core: no enrollment/unit data can authorize anyone.
   if (!course.coreCourseId) {
@@ -75,7 +75,7 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   }
 
   // UNIT_ADMIN unit lock (§19): a null department is never a match.
-  if (reqUser.role === 'UNIT_ADMIN') {
+  if (reqUser.role === "UNIT_ADMIN") {
     let coreCourse = null;
     try {
       // Unified contract (#1072): `department` is a FIELD read — service-key
@@ -122,11 +122,11 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   }
 
   switch (mine.role) {
-    case 'INSTRUCTOR':
+    case "INSTRUCTOR":
       return LEVELS.instructor;
-    case 'TA':
+    case "TA":
       return LEVELS.ta;
-    case 'STUDENT':
+    case "STUDENT":
       return LEVELS.student;
     default:
       return null;
@@ -174,12 +174,12 @@ export function requireCourseAccess({ min, getCourseId }) {
   return async (req, res, next) => {
     try {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
+        return res.status(401).json({ success: false, error: "Authentication required" });
       }
 
       const courseId = await getCourseId(req);
-      if (courseId === null || courseId === undefined || courseId === '') {
-        return res.status(404).json({ success: false, error: 'Course not found' });
+      if (courseId === null || courseId === undefined || courseId === "") {
+        return res.status(404).json({ success: false, error: "Course not found" });
       }
 
       const { course, access } = await resolveCourseAccessWithCourse(req.user, courseId, {
@@ -187,10 +187,10 @@ export function requireCourseAccess({ min, getCourseId }) {
       });
 
       if (!course) {
-        return res.status(404).json({ success: false, error: 'Course not found' });
+        return res.status(404).json({ success: false, error: "Course not found" });
       }
       if (!access || access.rank < required) {
-        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
       }
 
       req.courseAccess = access;

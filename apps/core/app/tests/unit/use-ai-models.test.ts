@@ -123,9 +123,13 @@ describe("useAiModels", () => {
       await result.current.createModel({ modelId: "new" });
     });
 
-    expect(vi.mocked(apiFetch).mock.calls.some(([url, init]) =>
-      url === "/api/ai-models" && (init as RequestInit)?.method === "POST",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.some(
+          ([url, init]) => url === "/api/ai-models" && (init as RequestInit)?.method === "POST",
+        ),
+    ).toBe(true);
     expect(listUrls().length).toBeGreaterThan(before);
   });
 
@@ -139,9 +143,14 @@ describe("useAiModels", () => {
       await result.current.updateModel("model-1", { name: "Renamed" });
     });
 
-    expect(vi.mocked(apiFetch).mock.calls.some(([url, init]) =>
-      url === "/api/ai-models/model-1" && (init as RequestInit)?.method === "PATCH",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.some(
+          ([url, init]) =>
+            url === "/api/ai-models/model-1" && (init as RequestInit)?.method === "PATCH",
+        ),
+    ).toBe(true);
     expect(listUrls().length).toBeGreaterThan(before);
   });
 
@@ -155,9 +164,14 @@ describe("useAiModels", () => {
       await result.current.deleteModel("model-1");
     });
 
-    expect(vi.mocked(apiFetch).mock.calls.some(([url, init]) =>
-      url === "/api/ai-models/model-1" && (init as RequestInit)?.method === "DELETE",
-    )).toBe(true);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.some(
+          ([url, init]) =>
+            url === "/api/ai-models/model-1" && (init as RequestInit)?.method === "DELETE",
+        ),
+    ).toBe(true);
     expect(listUrls().length).toBeGreaterThan(before);
   });
 
@@ -170,10 +184,9 @@ describe("useAiModels", () => {
       await result.current.toggleModelActive({ ...model, isActive: true });
     });
 
-    const patch = vi
-      .mocked(apiFetch)
-      .mock.calls.find(([url]) => url === "/api/ai-models/model-1");
-    expect(JSON.parse((patch?.[1] as RequestInit).body as string)).toEqual({ isActive: false });
+    const patch = vi.mocked(apiFetch).mock.calls.find(([url]) => url === "/api/ai-models/model-1");
+    expect(patch).toBeDefined();
+    expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({ isActive: false });
   });
 });
 

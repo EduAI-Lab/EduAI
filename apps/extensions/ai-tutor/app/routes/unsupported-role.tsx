@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { IconInfoCircle } from '@tabler/icons-react';
-import { Button, Card } from '@eduai/ui';
-import { useLocalUser } from '../hooks/useLocalUser';
-import { routeForRole } from '../lib/role-routing';
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { IconInfoCircle } from "@tabler/icons-react";
+import { Button, Card } from "@eduai/ui";
+import { useLocalUser } from "../hooks/useLocalUser";
+import { routeForRole } from "../lib/role-routing";
 
 export default function UnsupportedRolePage() {
   const navigate = useNavigate();
@@ -11,7 +11,7 @@ export default function UnsupportedRolePage() {
 
   useEffect(() => {
     if (!user) {
-      navigate('/', { replace: true });
+      navigate("/", { replace: true });
       return;
     }
 
@@ -20,7 +20,7 @@ export default function UnsupportedRolePage() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/', { replace: true });
+    navigate("/", { replace: true });
   };
 
   return (
@@ -34,8 +34,8 @@ export default function UnsupportedRolePage() {
           <div className="flex flex-col gap-3">
             <h1 className="text-3xl font-bold text-foreground">Your role is not supported yet</h1>
             <p className="text-base text-muted-foreground">
-              Your EduAI account was authenticated successfully, but AI Tutor does not support
-              your role ({user?.role}) in this release.
+              Your EduAI account was authenticated successfully, but AI Tutor does not support your
+              role ({user?.role}) in this release.
             </p>
             <p className="text-sm text-muted-foreground">
               If you expected a different role, update it in EduAI and sign in again. Otherwise,

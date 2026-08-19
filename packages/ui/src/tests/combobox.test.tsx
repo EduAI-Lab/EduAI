@@ -28,9 +28,7 @@ describe("Combobox", () => {
   });
 
   it("disables the trigger when disabled", () => {
-    render(
-      <Combobox options={options} value={null} onValueChange={() => {}} disabled />,
-    );
+    render(<Combobox options={options} value={null} onValueChange={() => {}} disabled />);
     expect(screen.getByRole("combobox")).toBeDisabled();
   });
 });
@@ -38,20 +36,13 @@ describe("Combobox", () => {
 describe("MultiSelect", () => {
   it("shows the placeholder when no options are selected", () => {
     render(
-      <MultiSelect
-        options={options}
-        value={[]}
-        onValueChange={() => {}}
-        placeholder="Add staff"
-      />,
+      <MultiSelect options={options} value={[]} onValueChange={() => {}} placeholder="Add staff" />,
     );
     expect(screen.getByText("Add staff")).toBeInTheDocument();
   });
 
   it("renders a chip for each selected option", () => {
-    render(
-      <MultiSelect options={options} value={["u1", "u3"]} onValueChange={() => {}} />,
-    );
+    render(<MultiSelect options={options} value={["u1", "u3"]} onValueChange={() => {}} />);
     expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
     expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
     expect(screen.queryByText("Alan Turing")).not.toBeInTheDocument();
@@ -80,9 +71,7 @@ describe("MultiSelect", () => {
   });
 
   it("disables the trigger when disabled", () => {
-    render(
-      <MultiSelect options={options} value={[]} onValueChange={vi.fn()} disabled />,
-    );
+    render(<MultiSelect options={options} value={[]} onValueChange={vi.fn()} disabled />);
     expect(screen.getByRole("combobox")).toBeDisabled();
   });
 });

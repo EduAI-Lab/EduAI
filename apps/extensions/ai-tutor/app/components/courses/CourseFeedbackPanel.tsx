@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import api from '~/lib/api';
-import type { ActivityFeedbackRow } from '~/lib/types';
+import { useCallback, useEffect, useRef, useState } from "react";
+import api from "~/lib/api";
+import type { ActivityFeedbackRow } from "~/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -12,8 +12,8 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   const [rows, setRows] = useState<ActivityFeedbackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activityIdFilter, setActivityIdFilter] = useState('');
-  const [studentIdFilter, setStudentIdFilter] = useState('');
+  const [activityIdFilter, setActivityIdFilter] = useState("");
+  const [studentIdFilter, setStudentIdFilter] = useState("");
   const [appliedActivityId, setAppliedActivityId] = useState<number | undefined>();
   const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>();
   const [skip, setSkip] = useState(0);
@@ -35,7 +35,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
       setRows(data);
     } catch {
       if (requestId !== requestIdRef.current) return;
-      setError('Could not load feedback.');
+      setError("Could not load feedback.");
       setRows([]);
     } finally {
       if (requestId === requestIdRef.current) {
@@ -51,7 +51,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   const applyFilters = () => {
     const nextActivityId = activityIdFilter.trim() ? Number(activityIdFilter.trim()) : undefined;
     if (activityIdFilter.trim() && !Number.isFinite(nextActivityId)) {
-      setError('Activity ID must be a number.');
+      setError("Activity ID must be a number.");
       return;
     }
     setAppliedActivityId(nextActivityId);
@@ -60,8 +60,8 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   };
 
   const clearFilters = () => {
-    setActivityIdFilter('');
-    setStudentIdFilter('');
+    setActivityIdFilter("");
+    setStudentIdFilter("");
     setAppliedActivityId(undefined);
     setAppliedStudentId(undefined);
     setSkip(0);
@@ -154,7 +154,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
                       ? row.note
                       : row.rating != null
                         ? `Rating: ${row.rating}`
-                        : '—'}
+                        : "—"}
                   </td>
                   <td className="px-2 py-2">{new Date(row.createdAt).toLocaleString()}</td>
                 </tr>
@@ -167,7 +167,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
       <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>
           Showing {rows.length === 0 ? 0 : skip + 1}–{skip + rows.length}
-          {rows.length === PAGE_SIZE ? '+' : ''}
+          {rows.length === PAGE_SIZE ? "+" : ""}
         </span>
         <div className="flex gap-2">
           <button

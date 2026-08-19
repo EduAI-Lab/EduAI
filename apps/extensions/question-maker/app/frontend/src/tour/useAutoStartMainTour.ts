@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { hasSeenMainTour } from './mainTourStorage';
+import { useEffect, useRef } from "react";
+import { hasSeenMainTour } from "./mainTourStorage";
 
 export function useAutoStartMainTour({
   enabled,
@@ -19,7 +19,7 @@ export function useAutoStartMainTour({
       onStart();
     };
 
-    if (typeof window.requestIdleCallback === 'function') {
+    if (typeof window.requestIdleCallback === "function") {
       const id = window.requestIdleCallback(start, { timeout: 2000 });
       return () => window.cancelIdleCallback?.(id);
     }

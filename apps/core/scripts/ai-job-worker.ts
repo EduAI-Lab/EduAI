@@ -11,16 +11,13 @@ if (existsSync(envPath)) {
 
 // These modules construct the Prisma and Redis singletons at import time, so
 // they must be loaded only after the standalone process has loaded apps/core/.env.
-const [{ default: redis }, { closeAiJobWorkers, startAiJobWorkers }] =
-  await Promise.all([
-    import("../app/lib/queue/connection.server"),
-    import("../app/lib/queue/worker.server"),
-  ]);
+const [{ default: redis }, { closeAiJobWorkers, startAiJobWorkers }] = await Promise.all([
+  import("../app/lib/queue/connection.server"),
+  import("../app/lib/queue/worker.server"),
+]);
 
 const workers = startAiJobWorkers();
-console.log(
-  `[ai-job-worker] listening on ${workers.map((worker) => worker.name).join(", ")}`,
-);
+console.log(`[ai-job-worker] listening on ${workers.map((worker) => worker.name).join(", ")}`);
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {

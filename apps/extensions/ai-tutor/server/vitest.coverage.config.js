@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from "vitest/config";
 
 /**
  * Coverage config — runs the unit AND integration suites in a single pass so the reported
@@ -14,23 +14,23 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'node',
-    include: ['tests/unit/**/*.test.js', 'tests/integration/**/*.test.js'],
-    setupFiles: ['./tests/setup.js'],
-    globalSetup: ['./tests/globalSetup.js'],
+    environment: "node",
+    include: ["tests/unit/**/*.test.js", "tests/integration/**/*.test.js"],
+    setupFiles: ["./tests/setup.js"],
+    globalSetup: ["./tests/globalSetup.js"],
     testTimeout: 15000,
     hookTimeout: 30000,
     fileParallelism: false,
-    pool: 'forks',
+    pool: "forks",
     coverage: {
-      provider: 'v8',
+      provider: "v8",
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.
       reportOnFailure: true,
-      include: ['src/**/*.js'],
-      exclude: ['src/index.js'],
+      include: ["src/**/*.js"],
+      exclude: ["src/index.js"],
       // lcov.info feeds the per-PR patch-coverage warning (pr-coverage.yml); json-summary
       // feeds the scheduled full-suite report. Both stay gitignored under coverage/.
-      reporter: ['text-summary', 'json-summary', 'lcov'],
+      reporter: ["text-summary", "json-summary", "lcov"],
     },
   },
 });

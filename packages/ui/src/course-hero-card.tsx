@@ -1,27 +1,27 @@
-import type * as React from "react"
-import type { CourseAccentColor } from "./course-theme"
-import { HERO_GLASS_STYLE, HeroShell } from "./hero-shell"
-import { termLabel } from "./lib/term"
+import type * as React from "react";
+import type { CourseAccentColor } from "./course-theme";
+import { HERO_GLASS_STYLE, HeroShell } from "./hero-shell";
+import { termLabel } from "./lib/term";
 
 export interface CourseHeroCardProps {
-  code: string
-  term: string
-  year?: string | number | null
-  name: string
-  description?: string | null
-  badges?: string[]
-  topRightBadges?: string[]
-  topics?: string[]
+  code: string;
+  term: string;
+  year?: string | number | null;
+  name: string;
+  description?: string | null;
+  badges?: string[];
+  topRightBadges?: string[];
+  topics?: string[];
   /** Resolved accent — must match the course card on the dashboard. */
-  accentColor: CourseAccentColor
+  accentColor: CourseAccentColor;
   /** Optional top-right slot (customize menu, etc.). */
-  headerAction?: React.ReactNode
+  headerAction?: React.ReactNode;
   /**
    * Optional action rendered at the right end of the topics row (bottom of the
    * hero), beside the topic chips — e.g. a topic sync/create control.
    */
-  topicsAction?: React.ReactNode
-  className?: string
+  topicsAction?: React.ReactNode;
+  className?: string;
 }
 
 export function CourseHeroCard({
@@ -57,7 +57,10 @@ export function CourseHeroCard({
               <span
                 key={label}
                 className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full backdrop-blur-sm"
-                style={{ background: "rgba(255,255,255,0.22)", border: "1px solid rgba(255,255,255,0.28)" }}
+                style={{
+                  background: "rgba(255,255,255,0.22)",
+                  border: "1px solid rgba(255,255,255,0.28)",
+                }}
               >
                 {label}
               </span>
@@ -105,5 +108,5 @@ export function CourseHeroCard({
         </div>
       )}
     </HeroShell>
-  )
+  );
 }

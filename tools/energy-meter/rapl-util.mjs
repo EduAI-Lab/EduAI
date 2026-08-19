@@ -48,10 +48,7 @@ export function integratePowerSamplesMw(samples, fixedDtSec) {
     const prev = samples[i - 1];
     const cur = samples[i];
     const avgW = (prev.mw + cur.mw) / 2 / 1000;
-    const hasTs =
-      Number.isFinite(prev.t) &&
-      Number.isFinite(cur.t) &&
-      cur.t > prev.t;
+    const hasTs = Number.isFinite(prev.t) && Number.isFinite(cur.t) && cur.t > prev.t;
     const dt = hasTs ? (cur.t - prev.t) / 1000 : fixedDtSec;
     joules += avgW * dt;
   }

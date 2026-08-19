@@ -9,7 +9,11 @@ import {
   Button,
 } from "@eduai/ui";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
-import { useChatHistory, fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import {
+  useChatHistory,
+  fetchChatTranscript,
+  type ChatTranscript,
+} from "~/hooks/api/use-chat-history";
 import { cn } from "~/lib/utils";
 
 interface UserChatHistoryDialogProps {
@@ -107,9 +111,7 @@ export function UserChatHistoryDialog({
               </div>
             )}
 
-            {error && (
-              <div className="text-sm text-destructive">{error}</div>
-            )}
+            {error && <div className="text-sm text-destructive">{error}</div>}
 
             {!isLoading && !error && chats.length === 0 && (
               <div className="py-8 text-center text-muted-foreground">
@@ -124,7 +126,7 @@ export function UserChatHistoryDialog({
                     key={chat.id}
                     onClick={() => setSelectedChatId(chat.id)}
                     className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card hover:bg-muted/40 w-full text-left transition-colors"
+                      "flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card hover:bg-muted/40 w-full text-left transition-colors",
                     )}
                   >
                     <div className="flex-1 min-w-0">
@@ -138,9 +140,7 @@ export function UserChatHistoryDialog({
                             <span className="text-primary-text font-medium">{chat.courseCode}</span>
                           </div>
                         )}
-                        <span className="text-[12px]">
-                          {relativeTime(chat.updatedAt)}
-                        </span>
+                        <span className="text-[12px]">{relativeTime(chat.updatedAt)}</span>
                         <span className="text-[12px]">· {chat.messageCount} msgs</span>
                       </div>
                     </div>

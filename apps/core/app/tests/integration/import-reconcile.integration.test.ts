@@ -117,9 +117,7 @@ async function buildRow(row: ImportReconcileRow, index: number): Promise<BuiltRo
   if (row.ExistingPresent === "yes") {
     existingDeletedAt = row.DeletedAt === "yes" ? DELETED_AT : null;
     existingCanvasUpdatedAt =
-      row.StaleAndReady === "yes"
-        ? STALE_CANVAS_UPDATED_AT
-        : new Date("2025-01-09T00:00:00.000Z");
+      row.StaleAndReady === "yes" ? STALE_CANVAS_UPDATED_AT : new Date("2025-01-09T00:00:00.000Z");
 
     const existing = await prisma.courseMaterial.create({
       data: {
@@ -275,11 +273,9 @@ async function assertPostConditions(
     expect(material?.status).toBe("READY");
     expect(material?.canvasUpdatedAt?.toISOString()).toBe(UPSTREAM_UPDATED_AT.toISOString());
     expect(material?.checksum).toBe(STUB_CHECKSUM);
-    expect(processMaterialEmbeddings).toHaveBeenCalledWith(
-      built.existingMaterialId,
-      "hello",
-      { replace: true },
-    );
+    expect(processMaterialEmbeddings).toHaveBeenCalledWith(built.existingMaterialId, "hello", {
+      replace: true,
+    });
   }
 }
 

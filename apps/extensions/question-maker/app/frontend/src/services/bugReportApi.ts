@@ -1,17 +1,17 @@
 /**
  * Bug report submission and admin listing API.
  */
-import api from './api';
-import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from '@eduai/ui';
-import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from '@eduai/ui';
+import api from "./api";
+import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from "@eduai/ui";
+import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from "@eduai/ui";
 
 export type BugReportType =
-  | 'UI_DISPLAY'
-  | 'FEATURE_NOT_WORKING'
-  | 'PERFORMANCE'
-  | 'CONTENT_ERROR'
-  | 'ACCESS_PERMISSION'
-  | 'OTHER';
+  | "UI_DISPLAY"
+  | "FEATURE_NOT_WORKING"
+  | "PERFORMANCE"
+  | "CONTENT_ERROR"
+  | "ACCESS_PERMISSION"
+  | "OTHER";
 
 /**
  * The admin surface consumes the shared row shape directly — QM's backend is a
@@ -39,7 +39,7 @@ export interface SubmitBugReportPayload {
  */
 export const bugReportApi = {
   async submit(payload: SubmitBugReportPayload): Promise<{ id: number }> {
-    const res = await api.post('/api/bug-reports', payload);
+    const res = await api.post("/api/bug-reports", payload);
     return res.data.data;
   },
 
@@ -48,7 +48,7 @@ export const bugReportApi = {
     if (options?.source) {
       params.source = options.source;
     }
-    const res = await api.get('/api/admin/bug-reports', { params });
+    const res = await api.get("/api/admin/bug-reports", { params });
     const payload = res.data.data;
     const reports = Array.isArray(payload?.reports) ? payload.reports : [];
     return reports.map((row: RawAdminBugReport) => normalizeAdminBugReportRow(row));

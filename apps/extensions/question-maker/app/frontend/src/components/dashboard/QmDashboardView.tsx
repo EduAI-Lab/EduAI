@@ -4,14 +4,17 @@
  * instead of chats — QM has no chat. Adds an at-a-glance analytics row and a
  * first-run onboarding state when the user has no courses yet.
  */
-import { Link } from 'react-router';
+import { Link } from "react-router";
+import { IconChevronRight, IconHistory, IconArrowRight, IconSparkles } from "@tabler/icons-react";
 import {
-  IconChevronRight,
-  IconHistory,
-  IconArrowRight,
-  IconSparkles,
-} from '@tabler/icons-react';
-import { StatCard, COURSE_COLORS, Button, QuestionAnalytics, QuickActionsPanel, type QuickAction, type DonutSegment } from '@eduai/ui';
+  StatCard,
+  COURSE_COLORS,
+  Button,
+  QuestionAnalytics,
+  QuickActionsPanel,
+  type QuickAction,
+  type DonutSegment,
+} from "@eduai/ui";
 
 export type QmDashboardStat = {
   label: string;
@@ -61,20 +64,20 @@ function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   const diffMs = now - then;
   const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return 'Just now';
+  if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   const diffHours = Math.floor(diffMins / 60);
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function greeting(hour: number): string {
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }
 
 function AnalyticsSection({ analytics }: { analytics: QmDashboardAnalytics }) {
@@ -84,9 +87,24 @@ function AnalyticsSection({ analytics }: { analytics: QmDashboardAnalytics }) {
 
 function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
   const steps = [
-    { n: 1, title: 'Open a course', body: 'Your EduAI courses appear automatically — pick one to start.', tile: 'bg-secondary/15 text-secondary' },
-    { n: 2, title: 'Add questions', body: 'Write them yourself or let AI draft a first pass you can refine.', tile: 'bg-accent/15 text-accent' },
-    { n: 3, title: 'Build assessments', body: 'Assemble questions into quizzes and exams, then export or push to Canvas.', tile: 'bg-[var(--color-gold-500)]/15 text-[var(--color-gold-600)]' },
+    {
+      n: 1,
+      title: "Open a course",
+      body: "Your EduAI courses appear automatically — pick one to start.",
+      tile: "bg-secondary/15 text-secondary",
+    },
+    {
+      n: 2,
+      title: "Add questions",
+      body: "Write them yourself or let AI draft a first pass you can refine.",
+      tile: "bg-accent/15 text-accent",
+    },
+    {
+      n: 3,
+      title: "Build assessments",
+      body: "Assemble questions into quizzes and exams, then export or push to Canvas.",
+      tile: "bg-[var(--color-gold-500)]/15 text-[var(--color-gold-600)]",
+    },
   ];
   return (
     <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
@@ -101,7 +119,7 @@ function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
         <div className="mt-1">
           <Button asChild>
             <Link to="/courses">
-              {hasCourses ? 'Go to your courses' : 'Browse your courses'}
+              {hasCourses ? "Go to your courses" : "Browse your courses"}
               <IconArrowRight className="size-4" />
             </Link>
           </Button>
@@ -110,7 +128,9 @@ function OnboardingCard({ hasCourses }: { hasCourses: boolean }) {
       <ol className="grid gap-px bg-border sm:grid-cols-3">
         {steps.map((s) => (
           <li key={s.n} className="bg-card p-5">
-            <div className={`mb-2 flex size-6 items-center justify-center rounded-full text-xs font-bold ${s.tile}`}>
+            <div
+              className={`mb-2 flex size-6 items-center justify-center rounded-full text-xs font-bold ${s.tile}`}
+            >
               {s.n}
             </div>
             <div className="text-sm font-semibold text-foreground">{s.title}</div>
@@ -127,7 +147,10 @@ function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; l
     return (
       <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="flex animate-pulse items-center gap-4 border-b border-border px-5 py-4 last:border-b-0">
+          <div
+            key={i}
+            className="flex animate-pulse items-center gap-4 border-b border-border px-5 py-4 last:border-b-0"
+          >
             <div className="h-11 w-1 flex-shrink-0 rounded-sm bg-muted" />
             <div className="flex-1 space-y-2">
               <div className="h-3.5 w-24 rounded bg-muted" />
@@ -162,12 +185,21 @@ function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; l
   );
 }
 
-function RecentActivityPanel({ items, loading }: { items: QmDashboardRecentItem[]; loading: boolean }) {
+function RecentActivityPanel({
+  items,
+  loading,
+}: {
+  items: QmDashboardRecentItem[];
+  loading: boolean;
+}) {
   if (loading) {
     return (
       <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="animate-pulse space-y-2 border-b border-border px-5 py-[14px] last:border-b-0">
+          <div
+            key={i}
+            className="animate-pulse space-y-2 border-b border-border px-5 py-[14px] last:border-b-0"
+          >
             <div className="flex justify-between">
               <div className="h-3 w-16 rounded bg-muted" />
               <div className="h-3 w-12 rounded bg-muted" />
@@ -196,7 +228,7 @@ function RecentActivityPanel({ items, loading }: { items: QmDashboardRecentItem[
             >
               <div className="mb-1 flex items-center justify-between">
                 <span className="flex-shrink-0 text-[10px] font-semibold text-primary-text">
-                  {item.sublabel ?? 'Activity'}
+                  {item.sublabel ?? "Activity"}
                 </span>
                 <span className="ml-2 flex-shrink-0 text-[11px] text-muted-foreground">
                   {relativeTime(item.updatedAt)}
@@ -222,12 +254,14 @@ export function QmDashboardView({
   analytics,
 }: QmDashboardViewProps) {
   const now = new Date();
-  const hello = greetingName ? `${greeting(now.getHours())}, ${greetingName}` : greeting(now.getHours());
-  const dateLabel = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
+  const hello = greetingName
+    ? `${greeting(now.getHours())}, ${greetingName}`
+    : greeting(now.getHours());
+  const dateLabel = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 
   const showOnboarding = !coursesLoading && courses.length === 0;

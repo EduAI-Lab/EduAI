@@ -4,8 +4,8 @@
  * actions sit in the header; filtering is client-side. The cross-course Question
  * Library (pages/QuestionBankPage) shares the same toolbar for a consistent feel.
  */
-import { useMemo, useState } from 'react';
-import { Button, cn, EmptyState } from '@eduai/ui';
+import { useMemo, useState } from "react";
+import { Button, cn, EmptyState } from "@eduai/ui";
 import {
   IconStack2,
   IconInfoCircle,
@@ -15,16 +15,16 @@ import {
   IconUpload,
   IconLayoutGrid,
   IconLayoutList,
-} from '@tabler/icons-react';
-import { QuestionVariantEntry } from '../../types/question';
-import { QuestionCard } from './QuestionCard';
+} from "@tabler/icons-react";
+import { QuestionVariantEntry } from "../../types/question";
+import { QuestionCard } from "./QuestionCard";
 import {
   QuestionFilterToolbar,
   EMPTY_QUESTION_FILTERS,
   type QuestionFilters,
   type QuestionSort,
-} from './QuestionFilterToolbar';
-import { CardGridSkeleton } from '@/components/shared/Skeletons';
+} from "./QuestionFilterToolbar";
+import { CardGridSkeleton } from "@/components/shared/Skeletons";
 
 interface QuestionBankProps {
   variants: QuestionVariantEntry[];
@@ -61,9 +61,9 @@ export const QuestionBank = ({
   onOpenProfile,
   compact = false,
 }: QuestionBankProps) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<QuestionSort>('newest');
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<QuestionSort>("newest");
+  const [view, setView] = useState<"grid" | "list">("grid");
   const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
 
   // Every variant shares its base question's id, so a card needs an ordinal — "Variant 2
@@ -78,7 +78,9 @@ export const QuestionBank = ({
     }
     const numbers = new Map<number, number>(); // variant.id -> ordinal
     for (const list of byQuestion.values()) {
-      const sorted = [...list].sort((a, b) => timeValue(a) - timeValue(b) || a.variant.id - b.variant.id);
+      const sorted = [...list].sort(
+        (a, b) => timeValue(a) - timeValue(b) || a.variant.id - b.variant.id,
+      );
       let n = 0;
       for (const entry of sorted) {
         if (entry.variant.referenceId != null) numbers.set(entry.variant.id, ++n);
@@ -104,29 +106,32 @@ export const QuestionBank = ({
     if (filters.reasoningLevels.length > 0) {
       filtered = filtered.filter(
         (entry) =>
-          entry.variant.reasoningLevel && filters.reasoningLevels.includes(entry.variant.reasoningLevel),
+          entry.variant.reasoningLevel &&
+          filters.reasoningLevels.includes(entry.variant.reasoningLevel),
       );
     }
     if (filters.difficulties.length > 0) {
-      filtered = filtered.filter((entry) => filters.difficulties.includes(entry.variant.difficulty));
+      filtered = filtered.filter((entry) =>
+        filters.difficulties.includes(entry.variant.difficulty),
+      );
     }
-    if (filters.aiGenerated !== 'all') {
-      const wantAi = filters.aiGenerated === 'ai';
+    if (filters.aiGenerated !== "all") {
+      const wantAi = filters.aiGenerated === "ai";
       filtered = filtered.filter((entry) => (entry.isAiGenerated === true) === wantAi);
     }
-    if (filters.draftStatus !== 'all') {
-      const wantDraft = filters.draftStatus === 'draft';
+    if (filters.draftStatus !== "all") {
+      const wantDraft = filters.draftStatus === "draft";
       filtered = filtered.filter((entry) => (entry.isDraft === true) === wantDraft);
     }
 
     switch (sortBy) {
-      case 'newest':
+      case "newest":
         filtered.sort((a, b) => timeValue(b) - timeValue(a));
         break;
-      case 'oldest':
+      case "oldest":
         filtered.sort((a, b) => timeValue(a) - timeValue(b));
         break;
-      case 'type':
+      case "type":
         filtered.sort((a, b) => a.questionType.localeCompare(b.questionType));
         break;
     }
@@ -134,19 +139,19 @@ export const QuestionBank = ({
   }, [variants, searchTerm, sortBy, filters]);
 
   const hasFilters =
-    searchTerm.trim() !== '' ||
+    searchTerm.trim() !== "" ||
     filters.questionTypes.length > 0 ||
     filters.reasoningLevels.length > 0 ||
     filters.difficulties.length > 0 ||
-    filters.aiGenerated !== 'all' ||
-    filters.draftStatus !== 'all';
+    filters.aiGenerated !== "all" ||
+    filters.draftStatus !== "all";
 
   const clearAll = () => {
-    setSearchTerm('');
+    setSearchTerm("");
     setFilters(EMPTY_QUESTION_FILTERS);
   };
 
-  const dense = compact || view === 'grid';
+  const dense = compact || view === "grid";
 
   return (
     <div className="space-y-4">
@@ -156,10 +161,10 @@ export const QuestionBank = ({
           <h2 className="text-lg font-semibold text-foreground">Questions</h2>
           <p className="text-sm text-muted-foreground">
             {variants.length === 0
-              ? 'No questions yet'
+              ? "No questions yet"
               : hasFilters
                 ? `${filteredVariants.length} of ${variants.length} shown`
-                : `${variants.length} question${variants.length === 1 ? '' : 's'} in this course`}
+                : `${variants.length} question${variants.length === 1 ? "" : "s"} in this course`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -196,13 +201,13 @@ export const QuestionBank = ({
               <button
                 type="button"
                 aria-label="Grid view"
-                aria-pressed={view === 'grid'}
-                onClick={() => setView('grid')}
+                aria-pressed={view === "grid"}
+                onClick={() => setView("grid")}
                 className={cn(
-                  'flex size-8 items-center justify-center rounded-md transition-colors',
-                  view === 'grid'
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
+                  "flex size-8 items-center justify-center rounded-md transition-colors",
+                  view === "grid"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <IconLayoutGrid className="size-4" />
@@ -210,13 +215,13 @@ export const QuestionBank = ({
               <button
                 type="button"
                 aria-label="List view"
-                aria-pressed={view === 'list'}
-                onClick={() => setView('list')}
+                aria-pressed={view === "list"}
+                onClick={() => setView("list")}
                 className={cn(
-                  'flex size-8 items-center justify-center rounded-md transition-colors',
-                  view === 'list'
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
+                  "flex size-8 items-center justify-center rounded-md transition-colors",
+                  view === "list"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <IconLayoutList className="size-4" />
@@ -227,12 +232,12 @@ export const QuestionBank = ({
       )}
 
       {isLoading ? (
-        <CardGridSkeleton count={6} columns={view === 'grid' ? 3 : 1} />
+        <CardGridSkeleton count={6} columns={view === "grid" ? 3 : 1} />
       ) : variants.length === 0 ? (
         !courseName && onOpenProfile ? (
           <EmptyState
             icon={<IconInfoCircle className="size-6" />}
-            title={emptyMessage || 'No courses available'}
+            title={emptyMessage || "No courses available"}
             description="Take a quick guided tour to see how Question Maker works."
             bare={false}
             action={
@@ -247,7 +252,8 @@ export const QuestionBank = ({
             icon={<IconStack2 className="size-6" />}
             title="No questions yet"
             description={
-              emptyMessage || "Add your first question or upload a batch to start building this course's bank."
+              emptyMessage ||
+              "Add your first question or upload a batch to start building this course's bank."
             }
             bare={false}
             action={
@@ -285,9 +291,9 @@ export const QuestionBank = ({
       ) : (
         <div
           className={cn(
-            view === 'grid'
-              ? 'grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3'
-              : 'flex flex-col gap-3',
+            view === "grid"
+              ? "grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3"
+              : "flex flex-col gap-3",
           )}
           data-tour-id="question-list"
         >

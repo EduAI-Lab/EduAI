@@ -129,7 +129,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("rejects demoting the LAST active instructor with 409 (#305)", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(1);
     const result = await updateEnrollmentRole("c1", "e1", { role: "STUDENT" });
@@ -143,7 +146,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("allows demotion when another active instructor remains", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(2);
     tx.enrollment.update.mockResolvedValue({ id: "e1", role: "STUDENT" });
@@ -153,7 +159,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("skips the floor check when promoting TO instructor", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "STUDENT", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "STUDENT",
+      isActive: true,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", role: "INSTRUCTOR" });
     const result = await updateEnrollmentRole("c1", "e1", { role: "INSTRUCTOR" });
@@ -163,7 +172,10 @@ describe("updateEnrollmentRole — instructor-floor invariant (§6)", () => {
 
   it("promotes STUDENT to TA without a floor check", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "STUDENT", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "STUDENT",
+      isActive: true,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", role: "TA" });
     const result = await updateEnrollmentRole("c1", "e1", { role: "TA" });
@@ -186,7 +198,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("rejects deactivating the LAST active instructor with 409 — no ADMIN override", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(1);
     const result = await deactivateEnrollment("c1", "e1");
@@ -200,7 +215,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("deactivates an instructor when another active instructor remains", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: true,
     });
     tx.enrollment.count.mockResolvedValue(2);
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
@@ -214,7 +232,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("deactivates a STUDENT without a floor check", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "STUDENT", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      role: "STUDENT",
+      isActive: true,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
     const result = await deactivateEnrollment("c1", "e1");
@@ -224,7 +245,10 @@ describe("deactivateEnrollment — instructor-floor invariant (§6)", () => {
 
   it("skips the floor check for an already-inactive instructor enrollment", async () => {
     tx.enrollment.findFirst.mockResolvedValue({
-      id: "e1", courseId: "c1", role: "INSTRUCTOR", isActive: false,
+      id: "e1",
+      courseId: "c1",
+      role: "INSTRUCTOR",
+      isActive: false,
     });
     tx.enrollment.update.mockResolvedValue({ id: "e1", isActive: false });
     const result = await deactivateEnrollment("c1", "e1");

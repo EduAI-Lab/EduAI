@@ -57,7 +57,10 @@ describe("GET /api/chats", () => {
 
   it("passes through scope=own and scope=all, dropping unrecognized values", async () => {
     await loader(makeArgs("?scope=own"));
-    expect(listChats).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ scope: "own" }));
+    expect(listChats).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ scope: "own" }),
+    );
 
     await loader(makeArgs("?scope=bogus"));
     expect(listChats).toHaveBeenLastCalledWith(

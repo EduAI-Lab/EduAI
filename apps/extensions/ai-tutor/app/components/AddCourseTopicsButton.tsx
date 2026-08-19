@@ -1,7 +1,7 @@
-import type { FormEvent } from 'react';
-import { useState } from 'react';
-import { Button, Input } from '@eduai/ui';
-import { useCourseTopicsContext } from '../hooks/useCourseTopics';
+import type { FormEvent } from "react";
+import { useState } from "react";
+import { Button, Input } from "@eduai/ui";
+import { useCourseTopicsContext } from "../hooks/useCourseTopics";
 
 type AddCourseTopicsButtonProps = {
   disabled?: boolean;
@@ -10,7 +10,7 @@ type AddCourseTopicsButtonProps = {
 export default function AddCourseTopicsButton({ disabled = false }: AddCourseTopicsButtonProps) {
   const { createTopic } = useCourseTopicsContext();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,7 +19,7 @@ export default function AddCourseTopicsButton({ disabled = false }: AddCourseTop
     setError(null);
     setOpen((current) => {
       if (current) {
-        setName('');
+        setName("");
       }
       return !current;
     });
@@ -29,7 +29,7 @@ export default function AddCourseTopicsButton({ disabled = false }: AddCourseTop
     event.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Topic name is required.');
+      setError("Topic name is required.");
       return;
     }
 
@@ -37,11 +37,11 @@ export default function AddCourseTopicsButton({ disabled = false }: AddCourseTop
     setError(null);
     try {
       await createTopic(trimmed);
-      setName('');
+      setName("");
       setOpen(false);
     } catch (err) {
-      console.error('Failed to create topic', err);
-      setError('Could not create topic. Try a different name.');
+      console.error("Failed to create topic", err);
+      setError("Could not create topic. Try a different name.");
     } finally {
       setBusy(false);
     }
@@ -59,7 +59,7 @@ export default function AddCourseTopicsButton({ disabled = false }: AddCourseTop
         onClick={toggle}
         disabled={buttonDisabled}
       >
-        {open ? 'Cancel' : 'Add topic'}
+        {open ? "Cancel" : "Add topic"}
       </Button>
       {open && (
         <form onSubmit={handleSubmit} className="space-y-2">
@@ -72,7 +72,7 @@ export default function AddCourseTopicsButton({ disabled = false }: AddCourseTop
           {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="flex justify-end">
             <Button type="submit" size="sm" disabled={busy || !name.trim()}>
-              {busy ? 'Adding…' : 'Save topic'}
+              {busy ? "Adding…" : "Save topic"}
             </Button>
           </div>
         </form>

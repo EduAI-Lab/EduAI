@@ -1,5 +1,5 @@
-import type { OwnableResource, QmCourseAccess, QmUser } from './types';
-import { isAuthoringAccess, resolvePlatformCourseAccess } from './resolve-course-access';
+import type { OwnableResource, QmCourseAccess, QmUser } from "./types";
+import { isAuthoringAccess, resolvePlatformCourseAccess } from "./resolve-course-access";
 
 function accessFor(user: QmUser | null | undefined, courseAccess?: QmCourseAccess): QmCourseAccess {
   if (courseAccess !== undefined) return courseAccess;
@@ -17,7 +17,7 @@ export function canCreateQuestion(
   courseAccess?: QmCourseAccess,
 ): boolean {
   const access = accessFor(user, courseAccess);
-  return isAuthoringAccess(access) || access === 'ta';
+  return isAuthoringAccess(access) || access === "ta";
 }
 
 export function canEditQuestionMetadata(
@@ -26,8 +26,8 @@ export function canEditQuestionMetadata(
   resource?: OwnableResource | null,
 ): boolean {
   const access = accessFor(user, courseAccess);
-  if (access === 'admin' || access === 'unit' || access === 'instructor') return true;
-  if (access === 'ta') return isOwner(user, resource);
+  if (access === "admin" || access === "unit" || access === "instructor") return true;
+  if (access === "ta") return isOwner(user, resource);
   return false;
 }
 
@@ -36,7 +36,7 @@ export function canApproveVariant(
   courseAccess?: QmCourseAccess,
 ): boolean {
   const access = accessFor(user, courseAccess);
-  return access === 'admin' || access === 'unit' || access === 'instructor';
+  return access === "admin" || access === "unit" || access === "instructor";
 }
 
 export function canEditDraftVariant(
@@ -61,7 +61,7 @@ export function canViewAssessment(
   courseAccess?: QmCourseAccess,
 ): boolean {
   const access = accessFor(user, courseAccess);
-  return isAuthoringAccess(access) || access === 'ta';
+  return isAuthoringAccess(access) || access === "ta";
 }
 
 export function canManageAssessment(
@@ -105,9 +105,9 @@ export function canManageCanvasIntegration(
 // Course onboarding
 export function canLinkCourse(user: QmUser | null | undefined): boolean {
   if (!user?.role) return false;
-  return user.role === 'ADMIN' || user.role === 'UNIT_ADMIN' || user.role === 'INSTRUCTOR';
+  return user.role === "ADMIN" || user.role === "UNIT_ADMIN" || user.role === "INSTRUCTOR";
 }
 
 export function canTriageBugReports(user: QmUser | null | undefined): boolean {
-  return user?.role === 'ADMIN';
+  return user?.role === "ADMIN";
 }

@@ -60,8 +60,11 @@ const TOPICS: HelpTopic[] = [
     icon: IconBooks,
     points: [
       <>
-        Open <Link to="/courses" className="text-primary-text hover:underline">Courses</Link> to
-        browse everything you're enrolled in or teaching.
+        Open{" "}
+        <Link to="/courses" className="text-primary-text hover:underline">
+          Courses
+        </Link>{" "}
+        to browse everything you're enrolled in or teaching.
       </>,
       "Inside a course, use the tabs to move between overview, materials, topics, and people.",
       "The course name in the breadcrumb is a switcher — click it to jump to another course without leaving the page you're on.",
@@ -73,8 +76,11 @@ const TOPICS: HelpTopic[] = [
     icon: IconRobot,
     points: [
       <>
-        Head to <Link to="/chat" className="text-primary-text hover:underline">Chatbot</Link> to ask
-        questions grounded in your course materials.
+        Head to{" "}
+        <Link to="/chat" className="text-primary-text hover:underline">
+          Chatbot
+        </Link>{" "}
+        to ask questions grounded in your course materials.
       </>,
       "Course-scoped chats answer from that course's uploaded materials; general chats aren't tied to a course.",
       "Your conversations are saved — reopen any of them from the dashboard or the chat history.",
@@ -99,7 +105,9 @@ const TOPICS: HelpTopic[] = [
     points: [
       <>
         Manage platform accounts under{" "}
-        <Link to="/admin/users" className="text-primary-text hover:underline">User Management</Link>{" "}
+        <Link to="/admin/users" className="text-primary-text hover:underline">
+          User Management
+        </Link>{" "}
         and invite new people from Invitations.
       </>,
       "Configure AI providers and models in AI Management to control which models power chat and embeddings.",

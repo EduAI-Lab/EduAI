@@ -36,10 +36,13 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     body = await request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }),
+      {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   const parsed = bodySchema.safeParse(body);

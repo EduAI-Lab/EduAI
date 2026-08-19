@@ -16,12 +16,12 @@ function normalizeEdgeBaseUrl(raw: string): string | null {
   }
 }
 
-/** True when the URL is the server-managed cmps01 edge (not user-supplied arbitrary hosts). */
+/** True when the URL matches an independently configured CMPS edge allowlist. */
 export function isTrustedCmps01EdgeUrl(baseUrl: string): boolean {
   const normalized = normalizeEdgeBaseUrl(baseUrl);
   if (!normalized) return false;
 
-  const trustedBases = [process.env.OLLAMA_BASE_URL]
+  const trustedBases = [process.env.OLLAMA_BASE_URL, process.env.CMPS01_INTERNAL_BASE_URL]
     .map((v) => (v ? normalizeEdgeBaseUrl(v) : null))
     .filter((v): v is string => Boolean(v));
 
@@ -46,9 +46,7 @@ export function cmps01InternalAuthHeaders(): Record<string, string> {
 }
 
 /** Attach internal key only for trusted cmps01 edge URLs (never user-controlled hosts). */
-export function cmps01InternalAuthHeadersForUrl(
-  baseUrl: string,
-): Record<string, string> {
+export function cmps01InternalAuthHeadersForUrl(baseUrl: string): Record<string, string> {
   if (!isTrustedCmps01EdgeUrl(baseUrl)) {
     return {};
   }

@@ -2,7 +2,7 @@
  * Dialog to sync a Classic Canvas Assessment Question Bank into a local course bank.
  * One-way Canvas → EduAI; re-sync upserts by Canvas question id.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,17 +18,17 @@ import {
   Button,
   Label,
   Input,
-} from '@eduai/ui';
-import { toast } from 'sonner';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
+} from "@eduai/ui";
+import { toast } from "sonner";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
 import canvasService, {
   CanvasCourse,
   CanvasIntegration,
   CanvasQuestionBank,
-} from '../../services/canvasService';
-import { courseService } from '../../services/courseService';
-import { questionBankService, QuestionBank } from '../../services/questionBankService';
-import { Topic } from '../../types/topic';
+} from "../../services/canvasService";
+import { courseService } from "../../services/courseService";
+import { questionBankService, QuestionBank } from "../../services/questionBankService";
+import { Topic } from "../../types/topic";
 
 interface CanvasBankSyncDialogProps {
   open: boolean;
@@ -57,18 +57,18 @@ export const CanvasBankSyncDialog = ({
   const [localBanks, setLocalBanks] = useState<QuestionBank[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
 
-  const [selectedCanvasCourseId, setSelectedCanvasCourseId] = useState('');
-  const [selectedCanvasBankId, setSelectedCanvasBankId] = useState('');
-  const [selectedTopicId, setSelectedTopicId] = useState('');
-  const [targetBankId, setTargetBankId] = useState<string>('__new__');
+  const [selectedCanvasCourseId, setSelectedCanvasCourseId] = useState("");
+  const [selectedCanvasBankId, setSelectedCanvasBankId] = useState("");
+  const [selectedTopicId, setSelectedTopicId] = useState("");
+  const [targetBankId, setTargetBankId] = useState<string>("__new__");
 
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isLoadingBanks, setIsLoadingBanks] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [showConnectForm, setShowConnectForm] = useState(false);
-  const [canvasUrl, setCanvasUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [canvasUrl, setCanvasUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -104,7 +104,7 @@ export const CanvasBankSyncDialog = ({
   useEffect(() => {
     if (!selectedCanvasCourseId || !integration?.isConnected) {
       setBanks([]);
-      setSelectedCanvasBankId('');
+      setSelectedCanvasBankId("");
       return;
     }
     void loadCanvasBanks(Number(selectedCanvasCourseId));
@@ -116,7 +116,7 @@ export const CanvasBankSyncDialog = ({
       const courses = await canvasService.getCourses();
       setCanvasCourses(courses);
     } catch (error: any) {
-      toast.error('Failed to load Canvas courses', {
+      toast.error("Failed to load Canvas courses", {
         description: error?.response?.data?.error || error.message,
       });
     } finally {
@@ -130,7 +130,7 @@ export const CanvasBankSyncDialog = ({
       const list = await canvasService.getQuestionBanks(canvasCourseId);
       setBanks(list);
     } catch (error: any) {
-      toast.error('Failed to load Canvas banks', {
+      toast.error("Failed to load Canvas banks", {
         description: error?.response?.data?.error || error.message,
       });
       setBanks([]);
@@ -141,15 +141,15 @@ export const CanvasBankSyncDialog = ({
 
   const handleConnect = async () => {
     if (!canvasUrl) {
-      toast.error('Canvas URL required', {
-        description: 'Please enter your Canvas instance URL.',
+      toast.error("Canvas URL required", {
+        description: "Please enter your Canvas instance URL.",
       });
       return;
     }
 
     if (!apiKey) {
-      toast.error('API Key required', {
-        description: 'Please enter your Canvas API key.',
+      toast.error("API Key required", {
+        description: "Please enter your Canvas API key.",
       });
       return;
     }
@@ -163,13 +163,13 @@ export const CanvasBankSyncDialog = ({
       setIntegration(result);
       setShowConnectForm(false);
       if (usedTestMode) {
-        toast('Canvas test mode', {
-          description: 'Using mock Canvas data because live credentials were unavailable.',
+        toast("Canvas test mode", {
+          description: "Using mock Canvas data because live credentials were unavailable.",
         });
       }
       await loadCanvasCourses();
     } catch (error: any) {
-      toast.error('Connection failed', {
+      toast.error("Connection failed", {
         description: error?.response?.data?.error || error.message,
       });
     } finally {
@@ -179,8 +179,8 @@ export const CanvasBankSyncDialog = ({
 
   const handleSync = async () => {
     if (!localCourseId || !selectedCanvasCourseId || !selectedCanvasBankId || !selectedTopicId) {
-      toast.error('Missing fields', {
-        description: 'Select Canvas course, bank, and a local topic.',
+      toast.error("Missing fields", {
+        description: "Select Canvas course, bank, and a local topic.",
       });
       return;
     }
@@ -192,16 +192,16 @@ export const CanvasBankSyncDialog = ({
         localCourseId,
         {
           primaryTopicId: selectedTopicId,
-          targetBankId: targetBankId === '__new__' ? undefined : targetBankId,
+          targetBankId: targetBankId === "__new__" ? undefined : targetBankId,
         },
       );
-      toast('Bank synced', {
+      toast("Bank synced", {
         description: `Created ${result.created}, updated ${result.updated}, skipped ${result.skipped}`,
       });
       onSyncSuccess?.(result);
       onClose();
     } catch (error: any) {
-      toast.error('Sync failed', {
+      toast.error("Sync failed", {
         description: error?.response?.data?.error || error.message,
       });
     } finally {
@@ -219,12 +219,15 @@ export const CanvasBankSyncDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0" data-testid="canvas-bank-sync-dialog">
+      <DialogContent
+        className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0"
+        data-testid="canvas-bank-sync-dialog"
+      >
         <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle>Sync question bank from Canvas</DialogTitle>
           <DialogDescription>
-            One-way import from Classic Canvas Assessment Question Banks into EduAI.
-            Re-sync updates existing questions without duplicates.
+            One-way import from Classic Canvas Assessment Question Banks into EduAI. Re-sync updates
+            existing questions without duplicates.
           </DialogDescription>
         </DialogHeader>
 
@@ -269,7 +272,8 @@ export const CanvasBankSyncDialog = ({
                     <SelectContent>
                       {canvasCourses.map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>
-                          {c.course_code ? `${c.course_code} - ` : ''}{c.name}
+                          {c.course_code ? `${c.course_code} - ` : ""}
+                          {c.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -294,7 +298,7 @@ export const CanvasBankSyncDialog = ({
                       {banks.map((b) => (
                         <SelectItem key={b.id} value={String(b.id)}>
                           {b.title || b.name || `Bank ${b.id}`}
-                          {b.question_count != null ? ` (${b.question_count})` : ''}
+                          {b.question_count != null ? ` (${b.question_count})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -349,7 +353,7 @@ export const CanvasBankSyncDialog = ({
                 Cancel
               </Button>
               <Button onClick={handleConnect} disabled={isConnecting || !canvasUrl || !apiKey}>
-                {isConnecting ? 'Connecting...' : 'Connect Canvas'}
+                {isConnecting ? "Connecting..." : "Connect Canvas"}
               </Button>
             </>
           ) : (
@@ -358,14 +362,14 @@ export const CanvasBankSyncDialog = ({
                 variant="outline"
                 onClick={() => {
                   setShowConnectForm(true);
-                  setSelectedCanvasCourseId('');
-                  setSelectedCanvasBankId('');
+                  setSelectedCanvasCourseId("");
+                  setSelectedCanvasBankId("");
                 }}
               >
                 Change Connection
               </Button>
               <Button onClick={handleSync} disabled={!canSync} data-testid="sync-bank-submit">
-                {isLoading ? 'Syncing...' : 'Sync bank'}
+                {isLoading ? "Syncing..." : "Sync bank"}
               </Button>
             </>
           )}

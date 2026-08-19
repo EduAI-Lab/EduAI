@@ -14,21 +14,26 @@
  *
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
-import request from 'supertest';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import request from "supertest";
 
-vi.mock('../../src/services/authService.js', () => ({
+vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
-const { default: app } = await import('../../src/app.js');
+const { default: app } = await import("../../src/app.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const TEST_USER = { id: 'cuid-immut-user', email: 'immut@test.com', role: 'INSTRUCTOR', name: 'Immut User' };
+const TEST_USER = {
+  id: "cuid-immut-user",
+  email: "immut@test.com",
+  role: "INSTRUCTOR",
+  name: "Immut User",
+};
 
-const cookie = () => ({ Cookie: 'session=valid' });
+const cookie = () => ({ Cookie: "session=valid" });
 
 /**
  * Stubs global fetch for: Core session validation (always) and, when
@@ -44,70 +49,85 @@ function coreFetchStub() {
   const idempotencyKeys = [];
   const fn = vi.fn().mockImplementation((url, opts = {}) => {
     const target = String(url);
-    if (target.endsWith('/api/sessions/validate')) {
+    if (target.endsWith("/api/sessions/validate")) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
     }
-    if (/\/enrollments$/.test(target.split('?')[0])) {
+    if (target.split("?")[0].endsWith("/enrollments")) {
       return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve({
-            enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }],
+            enrollments: [{ studentId: TEST_USER.id, role: "INSTRUCTOR", isActive: true }],
           }),
       });
     }
-    if (target.endsWith('/api/questions') && (opts.method ?? 'GET') === 'POST') {
+    if (target.endsWith("/api/questions") && (opts.method ?? "GET") === "POST") {
       pushCalls += 1;
-      if (typeof opts.body === 'string') {
+      if (typeof opts.body === "string") {
         try {
           idempotencyKeys.push(JSON.parse(opts.body).idempotencyKey);
         } catch {
           idempotencyKeys.push(undefined);
         }
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: `core-question-${pushCalls}` }) });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ id: `core-question-${pushCalls}` }),
+      });
     }
     return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
-  Object.defineProperty(fn, 'pushCalls', { get: () => pushCalls });
-  Object.defineProperty(fn, 'idempotencyKeys', { get: () => idempotencyKeys });
+  Object.defineProperty(fn, "pushCalls", { get: () => pushCalls });
+  Object.defineProperty(fn, "idempotencyKeys", { get: () => idempotencyKeys });
   return fn;
 }
 
-describeDb('Reviewed questions are immutable (#1080)', () => {
+describeDb("Reviewed questions are immutable (#1080)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let courseId, topicId, otherTopicId;
   let fetchStub;
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
     prisma = testDb.prisma;
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
 
-    await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
+    await prisma.user.create({
+      data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name },
+    });
     await seedCoursesForNewUser(TEST_USER.id);
 
     const course = await prisma.course.findFirst({ where: { userId: TEST_USER.id } });
     courseId = course.id;
-    const courseTopics = await prisma.topics.findMany({ where: { courseId }, take: 2, orderBy: { id: 'asc' } });
+    const courseTopics = await prisma.topics.findMany({
+      where: { courseId },
+      take: 2,
+      orderBy: { id: "asc" },
+    });
     topicId = courseTopics[0].id;
     otherTopicId = courseTopics[1].id;
     // Pre-link both topics to Core so pushVariantToCore's resolveCoreTopicId
     // skips the (separately-mocked) topic-push call and uses these directly.
-    await prisma.topics.update({ where: { id: topicId }, data: { coreTopicId: 'core-topic-primary' } });
-    await prisma.topics.update({ where: { id: otherTopicId }, data: { coreTopicId: 'core-topic-secondary' } });
+    await prisma.topics.update({
+      where: { id: topicId },
+      data: { coreTopicId: "core-topic-primary" },
+    });
+    await prisma.topics.update({
+      where: { id: otherTopicId },
+      data: { coreTopicId: "core-topic-secondary" },
+    });
 
     fetchStub = coreFetchStub();
-    vi.stubGlobal('fetch', fetchStub);
+    vi.stubGlobal("fetch", fetchStub);
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -118,10 +138,12 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
 
   /** Creates a question + draft variant, then approves the variant (triggering the first Core push). */
   async function createApprovedQuestion() {
-    const createQ = await request(app)
-      .post('/api/questions')
-      .set(cookie())
-      .send({ description: 'Immutability fixture', courseId, primaryTopicId: topicId, type: 'MCQ' });
+    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+      description: "Immutability fixture",
+      courseId,
+      primaryTopicId: topicId,
+      type: "MCQ",
+    });
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
@@ -129,11 +151,14 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .post(`/api/questions/${qid}/variants`)
       .set(cookie())
       .send({
-        questionText: 'What is 2+2?',
-        difficulty: 'easy',
-        reasoningLevel: 'factual',
-        answer: 'A',
-        choices: [{ letter: 'A', text: '4' }, { letter: 'B', text: '5' }],
+        questionText: "What is 2+2?",
+        difficulty: "easy",
+        reasoningLevel: "factual",
+        answer: "A",
+        choices: [
+          { letter: "A", text: "4" },
+          { letter: "B", text: "5" },
+        ],
         isDraft: true,
       });
     expect(createV.status).toBe(201);
@@ -144,21 +169,21 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .set(cookie())
       .send({ isDraft: false });
     expect(approve.status).toBe(200);
-    expect(approve.body.data.coreQuestionId).toBe('core-question-1');
+    expect(approve.body.data.coreQuestionId).toBe("core-question-1");
 
     return { qid, vid };
   }
 
-  it('rejects a type change on a reviewed question (409 VARIANT_LOCKED)', async () => {
+  it("rejects a type change on a reviewed question (409 VARIANT_LOCKED)", async () => {
     const { qid } = await createApprovedQuestion();
 
-    const res = await request(app).put(`/api/questions/${qid}`).set(cookie()).send({ type: 'SA' });
+    const res = await request(app).put(`/api/questions/${qid}`).set(cookie()).send({ type: "SA" });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('VARIANT_LOCKED');
+    expect(res.body.error).toBe("VARIANT_LOCKED");
   });
 
-  it('rejects a primary topic change on a reviewed question (409 VARIANT_LOCKED)', async () => {
+  it("rejects a primary topic change on a reviewed question (409 VARIANT_LOCKED)", async () => {
     const { qid } = await createApprovedQuestion();
 
     const res = await request(app)
@@ -167,10 +192,10 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .send({ primaryTopicId: otherTopicId });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('VARIANT_LOCKED');
+    expect(res.body.error).toBe("VARIANT_LOCKED");
   });
 
-  it('rejects a secondary topics change on a reviewed variant (409 VARIANT_LOCKED, regression)', async () => {
+  it("rejects a secondary topics change on a reviewed variant (409 VARIANT_LOCKED, regression)", async () => {
     const { vid } = await createApprovedQuestion();
 
     const res = await request(app)
@@ -179,22 +204,22 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .send({ secondaryTopicsId: [otherTopicId] });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('VARIANT_LOCKED');
+    expect(res.body.error).toBe("VARIANT_LOCKED");
   });
 
-  it('unrelated edits (e.g. description) still succeed on a reviewed question', async () => {
+  it("unrelated edits (e.g. description) still succeed on a reviewed question", async () => {
     const { qid } = await createApprovedQuestion();
 
     const res = await request(app)
       .put(`/api/questions/${qid}`)
       .set(cookie())
-      .send({ description: 'Updated description only' });
+      .send({ description: "Updated description only" });
 
     expect(res.status).toBe(200);
-    expect(res.body.data.description).toBe('Updated description only');
+    expect(res.body.data.description).toBe("Updated description only");
   });
 
-  it('un-review clears coreQuestionId, and a re-approve re-pushes a fresh copy', async () => {
+  it("un-review clears coreQuestionId, and a re-approve re-pushes a fresh copy", async () => {
     const { qid, vid } = await createApprovedQuestion();
 
     // Un-review (instructor-only revert per §19/§16) clears the Core link (#1080).
@@ -222,7 +247,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .set(cookie())
       .send({ isDraft: false });
     expect(reapprove.status).toBe(200);
-    expect(reapprove.body.data.coreQuestionId).toBe('core-question-2');
+    expect(reapprove.body.data.coreQuestionId).toBe("core-question-2");
 
     // #1080 follow-up: the two pushes must have used different idempotency
     // keys (content-derived, not a bare `qm-variant-<id>`) — otherwise Core's
