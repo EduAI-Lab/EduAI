@@ -81,7 +81,7 @@ The controlled direct-Core run completed every level successfully. Latency rises
 
 ### p95 latency by concurrency
 
-The baseline series is shown for comparison only at levels where the public path remained interpretable.
+The baseline series is shown for context only. It is **not** a valid latency A/B comparison: the baseline used the public reverse-proxy path, while the post-hardening ladder used direct Core on s378 to isolate router/application capacity. The hardening changes target routing locality and failure recovery, not token generation speed, so a large p95 reduction was not expected from this change alone.
 
 ```mermaid
 xychart-beta
@@ -92,7 +92,13 @@ xychart-beta
     line [2106, 2586, 3543, 6861, 13373, 19699, 30089, 43394]
 ```
 
-**Series order:** baseline public path, post-hardening direct Core path. At 512 and above, the two series converge numerically in places because the baseline values are affected by proxy behavior and are not a like-for-like comparison.
+**Series order:** baseline public path, post-hardening direct Core path. At 512 and above, the values are especially non-comparable because the baseline includes proxy failures, HTTP 502 responses, fetch failures, and rate limiting.
+
+### Why p95 did not materially improve
+
+The test exercised generation capacity more than routing overhead. Once concurrency increased, most elapsed time was spent waiting for model execution and admission/queue capacity; selecting a different healthy server does not make Qwen generation itself faster. In addition, the failure-ejection path had no opportunity to reduce latency because no vLLM host failed during the controlled run, and affinity was validated primarily through the follow-up smoke rather than repeated-turn latency measurement.
+
+The small low-load differences are normal run-to-run variance: post-hardening p95 was 2.11 seconds at 16 users versus 2.24 seconds baseline, 3.54 versus 3.89 seconds at 64, and 13.37 versus 11.48 seconds at 256. These differences should not be interpreted as a regression or improvement without a same-path A/B rerun with warm models, isolated rate-limit buckets, and identical traffic.
 
 ### Direct-Core throughput
 
