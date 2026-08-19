@@ -1380,9 +1380,15 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
+    let ragLatencyMs: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
-    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
+    if (
+      routeWithAuto &&
+      effectiveCourseId &&
+      lastUserMessageTextForRouting.trim().length > 0
+    ) {
+      const ragStartedAt = Date.now();
       try {
         routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
@@ -1397,6 +1403,8 @@ export async function action({ request }: ActionFunctionArgs) {
         ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err: formatStreamError(err) });
+      } finally {
+        ragLatencyMs = Date.now() - ragStartedAt;
       }
     }
 
@@ -1506,6 +1514,7 @@ export async function action({ request }: ActionFunctionArgs) {
         fleetPick = await resolveFleetHost({
           jobType,
           resolvedModelId,
+          affinityKey: chat?.id ?? actingUser.id,
         });
         if (fleetPick) {
           chatApiTrace("fleet host selected", {
@@ -1912,6 +1921,7 @@ export async function action({ request }: ActionFunctionArgs) {
         if (routerRagPrefetch) {
           return { hits: routerRagPrefetch };
         }
+        const ragStartedAt = Date.now();
         try {
           const hits = await findRelevantContent(
             userQuestion,
@@ -1921,8 +1931,10 @@ export async function action({ request }: ActionFunctionArgs) {
             restrictRagToStudentVisible,
             { signal: request.signal },
           );
+          ragLatencyMs = Date.now() - ragStartedAt;
           return { hits };
         } catch (error) {
+          ragLatencyMs = Date.now() - ragStartedAt;
           console.error("Error prefetching course RAG context:", error);
           return { hits: [], error };
         }
@@ -2567,6 +2579,7 @@ ${buildEmptyCourseRagBlock()}`;
             failedPick,
             resolvedModelId,
             jobType,
+            affinityKey: chat?.id ?? actingUser.id,
           });
           if (nextPick) {
             fleetPick = nextPick;
@@ -2791,9 +2804,19 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
-          { status: 200, headers: jsonResponseHeaders() },
+          {
+            status: 200,
+            headers: {
+              ...jsonResponseHeaders(),
+              ...(ragLatencyMs !== null
+                ? { "X-RAG-Latency-Ms": String(ragLatencyMs) }
+                : {}),
+            },
+          },
         );
       } catch (error) {
         releaseAdmission();
@@ -2827,6 +2850,9 @@ ${buildEmptyCourseRagBlock()}`;
       headers["Transfer-Encoding"] = "chunked";
       headers["Connection"] = "keep-alive";
       Object.assign(headers, admissionHeaders());
+      if (ragLatencyMs !== null) {
+        headers["X-RAG-Latency-Ms"] = String(ragLatencyMs);
+      }
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
@@ -2937,9 +2963,19 @@ ${buildEmptyCourseRagBlock()}`;
             chatId: chat?.id,
             ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
             ragChunkCount: courseRagHits.length,
-            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragContextTokenEstimate:
+              ragContextTokenEstimateForCourseRagHits(courseRagHits),
+            ragLatencyMs,
           }),
-          { status: 200, headers: jsonResponseHeaders() },
+          {
+            status: 200,
+            headers: {
+              ...jsonResponseHeaders(),
+              ...(ragLatencyMs !== null
+                ? { "X-RAG-Latency-Ms": String(ragLatencyMs) }
+                : {}),
+            },
+          },
         );
       } catch (error) {
         releaseAdmission();
