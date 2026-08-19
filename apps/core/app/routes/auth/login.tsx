@@ -1,4 +1,4 @@
-import { Form, useActionData, useLoaderData, redirect } from "react-router";
+import { useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { LoginForm } from "~/components/login-form";
@@ -214,7 +214,13 @@ export default function LoginPage() {
             Sign in again so your session works across EduAI apps on this server.
           </p>
         )}
-        <Form method="post">
+        {/*
+         * Auth handlers return Set-Cookie headers. A full document submission
+         * ensures the browser applies those headers before following the
+         * redirect; React Router's single-fetch action transition can otherwise
+         * render dashboard loaders without the newly-created session cookie.
+         */}
+        <form method="post">
           <input type="hidden" name="redirectTo" value={redirectTo} />
           {actionData?.formError && (
             <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
@@ -224,7 +230,7 @@ export default function LoginPage() {
             isLoading={false}
             allowRegistration={allowRegistration}
           />
-        </Form>
+        </form>
 
         <DemoLoginButtons redirectTo={redirectTo} />
       </div>
