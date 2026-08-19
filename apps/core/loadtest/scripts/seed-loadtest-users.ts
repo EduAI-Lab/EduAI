@@ -25,9 +25,7 @@ async function main() {
     select: { id: true, code: true },
   });
   if (!course) {
-    throw new Error(
-      `Course ${COURSE_CODE} not found — run prisma/seed.ts first.`,
-    );
+    throw new Error(`Course ${COURSE_CODE} not found — run prisma/seed.ts first.`);
   }
 
   const hashed = await hashPassword(SEED_PASSWORD);

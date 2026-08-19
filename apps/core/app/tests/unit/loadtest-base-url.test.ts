@@ -25,11 +25,11 @@ describe("resolveLoadtestBaseUrl", () => {
   });
 
   it("never allows the live study or prod hosts, even with the opt-in", () => {
-    expect(() =>
-      resolveLoadtestBaseUrl("https://dev.eduai.ok.ubc.ca", "1"),
-    ).toThrow(/live EduAI traffic/);
-    expect(() =>
-      resolveLoadtestBaseUrl("https://my.eduai.ok.ubc.ca", "1"),
-    ).toThrow(/live EduAI traffic/);
+    expect(() => resolveLoadtestBaseUrl("https://dev.eduai.ok.ubc.ca", "1")).toThrow(
+      /live EduAI traffic/,
+    );
+    expect(() => resolveLoadtestBaseUrl("https://my.eduai.ok.ubc.ca", "1")).toThrow(
+      /live EduAI traffic/,
+    );
   });
 });

@@ -1,6 +1,6 @@
-import http from 'k6/http';
-import { check } from 'k6';
-import { BASE_URL, DEMO_PASSWORD, studentForVU } from './config.js';
+import http from "k6/http";
+import { check } from "k6";
+import { BASE_URL, DEMO_PASSWORD, studentForVU } from "./config.js";
 
 // k6 gives every VU its own implicit cookie jar, so logging in once per VU
 // and reusing it across iterations faithfully mirrors a real browser session
@@ -21,15 +21,15 @@ export function login() {
   const res = http.post(
     `${BASE_URL}/api/auth/sign-in/email`,
     JSON.stringify({ email, password: DEMO_PASSWORD }),
-    { headers: { 'Content-Type': 'application/json' }, tags: { name: 'login' } },
+    { headers: { "Content-Type": "application/json" }, tags: { name: "login" } },
   );
 
   const jar = http.cookieJar();
   const cookies = jar.cookiesForURL(BASE_URL);
   const ok = check(res, {
-    'login succeeded': (r) => r.status === 200,
-    'session cookie held after login': () =>
-      Object.keys(cookies).some((c) => c.includes('session_token')),
+    "login succeeded": (r) => r.status === 200,
+    "session cookie held after login": () =>
+      Object.keys(cookies).some((c) => c.includes("session_token")),
   });
 
   if (ok) loggedInVUs.add(__VU);

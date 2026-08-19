@@ -2,7 +2,7 @@
 // Every value can be overridden with `k6 run -e KEY=value` so the same
 // scripts work for a 10-VU smoke test and the full 500-VU run.
 
-import { resolveLoadtestBaseUrl } from './base-url.js';
+import { resolveLoadtestBaseUrl } from "./base-url.js";
 
 export const BASE_URL = resolveLoadtestBaseUrl(
   __ENV.LOADTEST_BASE_URL,
@@ -11,22 +11,22 @@ export const BASE_URL = resolveLoadtestBaseUrl(
 
 // Seeded by `apps/core/prisma/seed.ts` — see loadtest/README.md for how the
 // isolated DB is provisioned. All demo accounts share one password.
-export const DEMO_PASSWORD = 'EduAI2026!';
+export const DEMO_PASSWORD = "EduAI2026!";
 export const STUDENTS = [
-  'student1@eduai.local',
-  'student2@eduai.local',
-  'student3@eduai.local',
-  'student4@eduai.local',
-  'student5@eduai.local',
+  "student1@eduai.local",
+  "student2@eduai.local",
+  "student3@eduai.local",
+  "student4@eduai.local",
+  "student5@eduai.local",
 ];
 
 // Course every seeded student is enrolled in (see loadtest/README.md).
-export const COURSE_CODE = 'DATA 310';
+export const COURSE_CODE = "DATA 310";
 
 // Model routed to the mock LLM server (loadtest/mock-llm/server.mjs) via
 // VLLM_BASE_URL — never a real provider. supportsTools:false so /api/chat
 // takes the simpler hybrid-RAG (non tool-calling) path.
-export const MODEL_ID = 'vllm:qwen2.5-7b-instruct';
+export const MODEL_ID = "vllm:qwen2.5-7b-instruct";
 
 /**
  * Default: one distinct account per VU (`loadtest.vu-00N@eduai.local`), seeded
@@ -38,16 +38,16 @@ export const MODEL_ID = 'vllm:qwen2.5-7b-instruct';
  * students (useful for a tiny local smoke without the extra seed step).
  */
 export function studentForVU(vu) {
-  if (__ENV.LOADTEST_UNIQUE_USERS === '0') {
+  if (__ENV.LOADTEST_UNIQUE_USERS === "0") {
     return STUDENTS[(vu - 1) % STUDENTS.length];
   }
-  return `loadtest.vu-${String(vu).padStart(3, '0')}@eduai.local`;
+  return `loadtest.vu-${String(vu).padStart(3, "0")}@eduai.local`;
 }
 
 export const CHAT_MESSAGES = [
-  'Can you summarize the last lecture in one paragraph?',
-  'What is the difference between a stack and a queue?',
-  'Give me a short practice question about this topic.',
-  'Explain that again, but more simply.',
-  'What should I focus on before the next quiz?',
+  "Can you summarize the last lecture in one paragraph?",
+  "What is the difference between a stack and a queue?",
+  "Give me a short practice question about this topic.",
+  "Explain that again, but more simply.",
+  "What should I focus on before the next quiz?",
 ];
