@@ -22,7 +22,7 @@ describe("useAiServiceStatus", () => {
   it("starts both services as loading before the first resolution", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValue(pair("online", "online"));
+      .mockResolvedValue(pair("operational", "operational"));
     const { result } = renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 1_000 }));
 
     expect(result.current.cloud).toEqual({ state: "loading" });
@@ -36,13 +36,13 @@ describe("useAiServiceStatus", () => {
   it("applies the fetcher's result once it resolves, and polls on the interval", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValue(pair("online", "offline"));
+      .mockResolvedValue(pair("operational", "outage"));
     const { result } = renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 1_000 }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(result.current.cloud).toEqual({ state: "online" });
-    expect(result.current.ubc).toEqual({ state: "offline" });
+    expect(result.current.cloud).toEqual({ state: "operational" });
+    expect(result.current.ubc).toEqual({ state: "outage" });
 
     await act(() => vi.advanceTimersByTimeAsync(1_000));
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -54,7 +54,7 @@ describe("useAiServiceStatus", () => {
   it("does not poll again before the interval elapses", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValue(pair("online", "online"));
+      .mockResolvedValue(pair("operational", "operational"));
     renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 1_000 }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
@@ -67,7 +67,7 @@ describe("useAiServiceStatus", () => {
   it("refresh() re-checks immediately without waiting for the interval", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValue(pair("online", "online"));
+      .mockResolvedValue(pair("operational", "operational"));
     const { result } = renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 60_000 }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
@@ -83,24 +83,24 @@ describe("useAiServiceStatus", () => {
   it("keeps the last known status when a poll fails", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValueOnce(pair("online", "online"))
+      .mockResolvedValueOnce(pair("operational", "operational"))
       .mockRejectedValueOnce(new Error("network down"));
     const { result } = renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 1_000 }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
-    expect(result.current.cloud).toEqual({ state: "online" });
+    expect(result.current.cloud).toEqual({ state: "operational" });
 
     await act(() => vi.advanceTimersByTimeAsync(1_000));
     expect(fetcher).toHaveBeenCalledTimes(2);
-    // Still "online" — the failed poll did not clobber the last good status.
-    expect(result.current.cloud).toEqual({ state: "online" });
-    expect(result.current.ubc).toEqual({ state: "online" });
+    // Still "operational" — the failed poll did not clobber the last good status.
+    expect(result.current.cloud).toEqual({ state: "operational" });
+    expect(result.current.ubc).toEqual({ state: "operational" });
   });
 
   it("defaults intervalMs to 60s when not provided", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValue(pair("online", "online"));
+      .mockResolvedValue(pair("operational", "operational"));
     renderHook(() => useAiServiceStatus({ fetcher }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
@@ -116,7 +116,7 @@ describe("useAiServiceStatus", () => {
   it("stops polling after unmount", async () => {
     const fetcher = vi
       .fn<() => Promise<AiServiceStatusPair>>()
-      .mockResolvedValue(pair("online", "online"));
+      .mockResolvedValue(pair("operational", "operational"));
     const { unmount } = renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 1_000 }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
