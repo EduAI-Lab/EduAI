@@ -23,7 +23,42 @@ The fleet router and Core application successfully sustained the complete 16-to-
 
 \* The public ladder reused one authenticated user with the original rate-limit window, and the ingress proxy began returning 502/fetch failures. These points are retained as public-path evidence but should not be used as fleet-capacity measurements.
 
-## 1. Latency and throughput
+## 1. Qwen 3.5 2B/9B Chat API scaling summary
+
+The controlled Chat API run used an even model split at every level: half of the requests selected `qwen3.5-2b-instruct` and half selected `qwen3.5-9b-instruct`. Both model groups remained available across cmps01, cmps02, and cmps03, and all requests completed successfully through 1,000 concurrent users.
+
+| Concurrent users | 2B requests | 9B requests | cmps01 | cmps02 | cmps03 | Success | p95 latency | Throughput |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 8 | 8 | 5 | 3 | 8 | 16/16 | 2.11 s | 7.57 RPS |
+| 32 | 16 | 16 | 9 | 15 | 8 | 32/32 | 2.59 s | 12.31 RPS |
+| 64 | 32 | 32 | 22 | 23 | 19 | 64/64 | 3.54 s | 17.70 RPS |
+| 128 | 64 | 64 | 39 | 42 | 47 | 128/128 | 6.86 s | 18.44 RPS |
+| 256 | 128 | 128 | 79 | 96 | 81 | 256/256 | 13.37 s | 18.94 RPS |
+| 512 | 256 | 256 | 165 | 164 | 183 | 512/512 | 19.70 s | 25.51 RPS |
+| 768 | 384 | 384 | 257 | 268 | 243 | 768/768 | 30.09 s | 25.29 RPS |
+| 1,000 | 500 | 500 | 332 | 339 | 329 | 1,000/1,000 | 43.39 s | 22.81 RPS |
+
+### What the split demonstrated
+
+- **Capacity:** the 2B/9B split sustained the entire controlled ladder with no Chat API failures, including 1,000 concurrent requests.
+- **Model balance:** the scheduler maintained an exact 50/50 request split, so neither model tier was starved by the other.
+- **Fleet balance:** at 1,000 users, cmps01 handled 33.2%, cmps02 33.9%, and cmps03 32.9% of requests. The largest observed skew at high load was modest: cmps03 handled 35.7% at 512 users.
+- **Scaling shape:** throughput peaked at 25.51 RPS at 512 users and then flattened/slipped to 22.81 RPS at 1,000, while p95 latency rose to 43.39 seconds. This indicates queueing/compute saturation as concurrency increases, not a routing or server-failure problem.
+- **Interpretation:** the split is operationally balanced and resilient in the direct-Core test, but 1,000 concurrent users is not a low-latency target. It is a stress ceiling: the fleet completed the work, but users would experience substantial waiting at the upper levels.
+
+```mermaid
+xychart-beta
+    title "Requests routed to each fleet server"
+    x-axis "Concurrent users" [16, 32, 64, 128, 256, 512, 768, 1000]
+    y-axis "Requests" 0 --> 400
+    line [5, 9, 22, 39, 79, 165, 257, 332]
+    line [3, 15, 23, 42, 96, 164, 268, 339]
+    line [8, 8, 19, 47, 81, 183, 243, 329]
+```
+
+**Series order:** cmps01, cmps02, cmps03. The near-overlap at higher concurrency shows that the fleet router was sharing Chat API work rather than concentrating it on one server.
+
+## 2. Latency and throughput
 
 The controlled direct-Core run completed every level successfully. Latency rises predictably as concurrency increases, while throughput reaches approximately 25 RPS around 512–768 concurrent requests and remains 22.8 RPS at 1,000.
 
@@ -63,7 +98,7 @@ xychart-beta
 | 768 | 100% | 26.51 s | 30.09 s | 25.29 RPS |
 | 1,000 | 100% | 35.04 s | 43.39 s | 22.81 RPS |
 
-## 2. Success rate
+## 3. Success rate
 
 ```mermaid
 xychart-beta
@@ -76,7 +111,7 @@ xychart-beta
 
 **Series order:** baseline public path, post-hardening direct Core path. The direct-Core result is the important fleet/router capacity signal: no request failures were observed through 1,000 concurrent users.
 
-## 3. Fleet distribution
+## 4. Fleet distribution
 
 At concurrency 1,000, the post-hardening direct run distributed requests almost evenly across the three servers:
 
@@ -90,7 +125,7 @@ xychart-beta
 
 The 2B/9B split was exactly balanced: 500 requests per model at the 1,000-user level. This indicates that model-aware eligibility and round-robin distribution were functioning as intended during the controlled run.
 
-## 4. RAG and context validation
+## 5. RAG and context validation
 
 The authenticated smoke test verified:
 
@@ -104,7 +139,7 @@ The authenticated smoke test verified:
 
 The important architectural result is that context correctness does not depend on a user remaining on one inference server. Core persists messages and reconstructs the conversation context. Affinity is still valuable because it can improve prefix/KV-cache locality and reduce unnecessary cross-host movement.
 
-## 5. What changed in the router
+## 6. What changed in the router
 
 The hardening work added:
 
@@ -114,7 +149,7 @@ The hardening work added:
 4. RAG duration metadata in response JSON and headers for future per-request latency analysis.
 5. Unit coverage for affinity and host ejection, plus a repeatable authenticated RAG stress harness.
 
-## 6. Public-path bottleneck
+## 7. Public-path bottleneck
 
 The public baseline was healthy through 256 concurrent users. At 512, the test recorded 108 fetch failures and 4 HTTP 502 responses. At 768 and 1,000, the result was further distorted by the original `CHAT_RATE_LIMIT=20` window being reused across the same authenticated user and across ladder levels.
 
@@ -126,7 +161,7 @@ The next production-sizing exercise should test the public ingress independently
 - concurrent real-user sessions rather than one shared identity;
 - separate Core, proxy, Redis, database, and vLLM dashboards.
 
-## 7. Supporting systems
+## 8. Supporting systems
 
 The post-run snapshot showed:
 
@@ -137,13 +172,13 @@ The post-run snapshot showed:
 
 These observations are useful health checks, but not a substitute for time-series capacity metrics.
 
-## 8. Restoration and evidence
+## 9. Restoration and evidence
 
 After testing, cmps02 GPU1 was restored to `Qwen/Qwen2.5-32B-Instruct-AWQ` served as `qwen2.5-32b-instruct`. Core was restored to its original `AI_MAX_INFLIGHT=8` and `CHAT_RATE_LIMIT=20` configuration. The temporary RAG course, model settings, cookies, and host-side test files were removed. Core was rebuilt and the public endpoint returned HTTP 200.
 
 Raw machine-readable evidence is available in [`artifacts/`](./artifacts/), and the detailed test log is [FLEET_ROUTER_STRESS_2026-08-18.md](./FLEET_ROUTER_STRESS_2026-08-18.md).
 
-## Overall assessment
+## 10. Overall assessment
 
 **Fleet/router capacity:** strong in the controlled direct-Core test through 1,000 concurrent requests.  
 **Public production readiness:** not yet fully demonstrated; ingress, admission, rate-limit, and observability limits need independent sizing.  
