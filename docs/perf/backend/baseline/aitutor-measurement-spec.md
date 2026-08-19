@@ -97,8 +97,8 @@ The pool is a **pure Core anchor**: one `CourseOffering` keyed by `core.json.sha
 `.perf-pool/core.json`, which the Core perf seed writes first) + a LEAD instructor (`seed_user_instructor_cs`)
 + one topic; modules ×(POOL drop + 2 reuse); lessons ×(POOL drop + 2 reuse) under a reuse module;
 activities ×(POOL drop + 2 reuse) under a reuse lesson; one `CourseEnrollment` for the seed STUDENT
-(`seed_user_student_01` → student1) so the chat-session reads don't 403; one `AiChatSession` (reusing
-`core.json.readChatId`).
+(`seed_user_student_01` → student1, mirrored from the same student's Core enrollment in `sharedCourse`)
+so the chat-session reads don't 403; one `AiChatSession` (reusing `core.json.readChatId`).
 
 ### Manifest contract
 
@@ -111,7 +111,14 @@ activities ×(POOL drop + 2 reuse) under a reuse lesson; one `CourseEnrollment` 
 
 ### Enrollment fixture semantics
 
-`CourseEnrollment.userId` holds a Core CUID (no local FK). The only local fixture is the seed STUDENT.
+`CourseEnrollment.userId` holds a Core CUID (no local FK). The seed STUDENT is `seed_user_student_01`
+(= `student1@eduai.local` in Core). The Core perf seed (`apps/core/scripts/seed-perf-volume.ts`) actively
+enrolls that same student in its `sharedCourse` with `role = STUDENT`, and the AI Tutor seed mirrors the
+identical identity as a local `CourseEnrollment` on the linked `CourseOffering`. This parity is required:
+`GET /courses/:courseId` runs `syncCourseEnrollments()`, which treats Core as the enrollment source of
+truth and deletes local STUDENT/TA rows whose users are not actively enrolled in Core — without the
+Core-side enrollment, the mirror would be pruned before the student chat-session reads, and those reads
+would 403.
 `POST /api/admin/courses/:id/enrollments` is a local idempotent upsert (no Core call), so it reuses the
 Core perf **actor** CUID — a real identity, never an invented `perf_user_*` string. Enrollment DELETE and
 role-PATCH are SKIPped because they require a matching Core enrollment and write through to Core.

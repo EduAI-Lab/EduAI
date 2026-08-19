@@ -272,11 +272,23 @@ async function seedPool(instructorId: string, deptCode: string) {
   }
 
   // --- chats owned by student1 (script reads chats as `student` role) in sharedCourse ---
+  // student1 is a REQUIRED cross-service fixture: the AI Tutor perf seed mirrors
+  // `seed_user_student_01` as the local STUDENT enrollment, and the perf harness
+  // mints its `student` cookie from student1@eduai.local. sharedCourse must
+  // therefore carry an active STUDENT enrollment for this same user, or
+  // `syncCourseEnrollments()` (Core is the enrollment source of truth) will
+  // prune the AI Tutor mirror and the student chat-session reads 403.
   const student1 = await prisma.user.findFirst({
     where: { email: "student1@eduai.local" },
     select: { id: true },
   });
-  const chatOwnerId = student1?.id ?? actor.id;
+  if (!student1) {
+    throw new Error("student1@eduai.local not found — run the main seed first (npm run db:seed).");
+  }
+  await prisma.enrollment.create({
+    data: { courseId: sharedCourse.id, userId: student1.id, role: "STUDENT", isActive: true },
+  });
+  const chatOwnerId = student1.id;
   const deleteChatPool = [];
   for (const i of range(POOL)) {
     const chat = await prisma.chat.create({
