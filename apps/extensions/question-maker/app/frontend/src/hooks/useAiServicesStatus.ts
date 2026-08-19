@@ -11,10 +11,10 @@
  * Feeds the shared `@eduai/ui` AIServiceIndicators. Checks once on mount; a manual
  * refresh re-checks both at once.
  */
-import { useCallback, useEffect, useState } from 'react';
-import type { ServiceStatus } from '@eduai/ui';
-import eduaiService from '../services/eduaiService';
-import { apiKeyStorage, isCloudProvider, isCampusProvider } from '../services/apiKeyStorage';
+import { useCallback, useEffect, useState } from "react";
+import type { ServiceStatus } from "@eduai/ui";
+import eduaiService from "../services/eduaiService";
+import { apiKeyStorage, isCloudProvider, isCampusProvider } from "../services/apiKeyStorage";
 
 async function probeCloud(): Promise<ServiceStatus> {
   let cloudKeys: Record<string, any> = {};
@@ -28,17 +28,20 @@ async function probeCloud(): Promise<ServiceStatus> {
   }
 
   if (Object.keys(cloudKeys).length === 0) {
-    return { state: 'offline', detail: 'Cloud AI · Not configured — add a provider key in Settings.' };
+    return {
+      state: "offline",
+      detail: "Cloud AI · Not configured — add a provider key in Settings.",
+    };
   }
 
   try {
     const res = await eduaiService.testApiKey(cloudKeys);
     if (res?.success && isCloudProvider(res.provider)) {
-      return { state: 'online', detail: 'Cloud AI · Online (your provider key).' };
+      return { state: "online", detail: "Cloud AI · Online (your provider key)." };
     }
-    return { state: 'offline', detail: res?.error || 'Cloud AI · Key could not be validated.' };
+    return { state: "offline", detail: res?.error || "Cloud AI · Key could not be validated." };
   } catch {
-    return { state: 'offline', detail: 'Cloud AI · Unreachable. Check your network.' };
+    return { state: "offline", detail: "Cloud AI · Unreachable. Check your network." };
   }
 }
 
@@ -47,22 +50,25 @@ async function probeUbc(): Promise<ServiceStatus> {
     // Force the UBC-hosted (vLLM) path explicitly. Sending `{}` alone is not
     // enough — with no client key the backend may fall back to its own Google key
     // and would probe Cloud, so the UBC chip must pin the provider.
-    const res = await eduaiService.testApiKey({}, { forceProvider: 'vllm' });
+    const res = await eduaiService.testApiKey({}, { forceProvider: "vllm" });
     if (res?.success && isCampusProvider(res.provider)) {
-      return { state: 'online', detail: 'UBC-hosted AI · Online.' };
+      return { state: "online", detail: "UBC-hosted AI · Online." };
     }
     if (res?.configured === false) {
-      return { state: 'offline', detail: 'UBC-hosted AI · Not configured on the server.' };
+      return { state: "offline", detail: "UBC-hosted AI · Not configured on the server." };
     }
-    return { state: 'offline', detail: res?.error || 'UBC-hosted AI · Unavailable (needs UBC wifi/VPN).' };
+    return {
+      state: "offline",
+      detail: res?.error || "UBC-hosted AI · Unavailable (needs UBC wifi/VPN).",
+    };
   } catch {
-    return { state: 'offline', detail: 'UBC-hosted AI · Unavailable (needs UBC wifi/VPN).' };
+    return { state: "offline", detail: "UBC-hosted AI · Unavailable (needs UBC wifi/VPN)." };
   }
 }
 
 export function useAiServicesStatus() {
-  const [cloud, setCloud] = useState<ServiceStatus>({ state: 'loading' });
-  const [ubc, setUbc] = useState<ServiceStatus>({ state: 'loading' });
+  const [cloud, setCloud] = useState<ServiceStatus>({ state: "loading" });
+  const [ubc, setUbc] = useState<ServiceStatus>({ state: "loading" });
 
   const refresh = useCallback(async () => {
     const [c, u] = await Promise.all([probeCloud(), probeUbc()]);

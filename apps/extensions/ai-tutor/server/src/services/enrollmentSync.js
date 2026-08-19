@@ -1,9 +1,9 @@
-import { prisma } from '../config/database.js';
-import { listEduAiCourseEnrollmentsServiceKey } from './eduaiClient.js';
+import { prisma } from "../config/database.js";
+import { listEduAiCourseEnrollmentsServiceKey } from "./eduaiClient.js";
 
 // AI Tutor local enrollments mirror STUDENT and TA access (#1065); INSTRUCTOR
 // access is tracked separately via CourseInstructor and never mirrored here.
-const MIRRORED_ROLES = new Set(['STUDENT', 'TA']);
+const MIRRORED_ROLES = new Set(["STUDENT", "TA"]);
 
 /**
  * How long a successful auto-sync is trusted before the next sync-before-read
@@ -57,8 +57,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   }
 
   const course =
-    options.course ??
-    (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+    options.course ?? (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
 
   if (!course || !course.coreOfferingId) {
     return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
@@ -77,12 +76,12 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
       signal: options.signal,
     });
   } catch (e) {
-    e.phase = e.phase || 'fetch';
+    e.phase = e.phase || "fetch";
     throw e;
   }
 
   const activeEnrollments = allEnrollments.filter(
-    (e) => e.isActive && MIRRORED_ROLES.has(e.role ?? 'STUDENT'),
+    (e) => e.isActive && MIRRORED_ROLES.has(e.role ?? "STUDENT"),
   );
 
   const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
@@ -99,7 +98,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   );
   const toUpdate = activeEnrollments.filter((e) => {
     const local = existingByUserId.get(e.studentId);
-    return local && local.role !== (e.role ?? 'STUDENT');
+    return local && local.role !== (e.role ?? "STUDENT");
   });
 
   try {
@@ -108,7 +107,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
         data: toCreate.map((e) => ({
           courseOfferingId,
           userId: e.studentId,
-          role: e.role ?? 'STUDENT',
+          role: e.role ?? "STUDENT",
         })),
         skipDuplicates: true,
       });
@@ -117,7 +116,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
     for (const e of toUpdate) {
       await prisma.courseEnrollment.update({
         where: { courseOfferingId_userId: { courseOfferingId, userId: e.studentId } },
-        data: { role: e.role ?? 'STUDENT' },
+        data: { role: e.role ?? "STUDENT" },
       });
     }
 
@@ -130,7 +129,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
       });
     }
   } catch (e) {
-    e.phase = 'write';
+    e.phase = "write";
     throw e;
   }
 

@@ -25,7 +25,7 @@
  * (`moveModuleToPosition` and friends).
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 /**
  * A 4xx-shaped error thrown for a caller mistake. Routes translate this the
@@ -34,7 +34,7 @@ import { prisma } from '../config/database.js';
 export class ReorderError extends Error {
   constructor(message, status, code) {
     super(message);
-    this.name = 'ReorderError';
+    this.name = "ReorderError";
     this.status = status;
     this.code = code;
   }
@@ -53,13 +53,9 @@ export class ReorderError extends Error {
  * @throws {ReorderError} `POSITION_INVALID`
  */
 export function parsePositionBody(raw) {
-  const value = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new ReorderError(
-      'position must be a non-negative integer',
-      400,
-      'POSITION_INVALID',
-    );
+  const value = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : raw;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new ReorderError("position must be a non-negative integer", 400, "POSITION_INVALID");
   }
   return value;
 }
@@ -91,13 +87,13 @@ export async function moveToPosition({ model, id, scopeWhere, targetPosition }) 
     const delegate = tx[model];
     const siblings = await delegate.findMany({
       where: scopeWhere,
-      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      orderBy: [{ position: "asc" }, { id: "asc" }],
       select: { id: true, position: true },
     });
 
     const currentIndex = siblings.findIndex((row) => row.id === id);
     if (currentIndex === -1) {
-      throw new ReorderError('Row is not part of this list', 404, 'ROW_NOT_IN_SCOPE');
+      throw new ReorderError("Row is not part of this list", 404, "ROW_NOT_IN_SCOPE");
     }
 
     const total = siblings.length;

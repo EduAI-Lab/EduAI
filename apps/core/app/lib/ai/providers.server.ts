@@ -1,5 +1,5 @@
-import prisma from '../prisma.server';
-import { parseModelIdentifier, type SupportedProvider } from './providers';
+import prisma from "../prisma.server";
+import { parseModelIdentifier, type SupportedProvider } from "./providers";
 
 export type ActiveChatModel = {
   name: string;
@@ -54,7 +54,7 @@ export function resolveModelContextWindow(
   dbMaxTokens: number | null | undefined,
   providerId?: SupportedProvider,
 ): number {
-  if (providerId === 'vllm') {
+  if (providerId === "vllm") {
     // Admin rows sometimes store 8192; cmps01 qwen2.5-32b is 16384 total.
     if (!dbMaxTokens || dbMaxTokens <= 8192) {
       return 16384;
@@ -85,7 +85,7 @@ export function resolveMaxOutputTokens(
     128_000,
     Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 8192),
   );
-  const defaultOutput = providerId === 'vllm' ? 2048 : 4096;
+  const defaultOutput = providerId === "vllm" ? 2048 : 4096;
 
   if (dbMaxTokens && dbMaxTokens > 0 && dbMaxTokens < 8192) {
     return Math.min(dbMaxTokens, defaultOutput, envCeiling);
@@ -140,14 +140,9 @@ export function capMaxOutputTokensForPrompt(params: {
   const safetyBuffer = params.safetyBuffer ?? 384;
   const toolDefinitionAllowance =
     params.toolDefinitionTokens ??
-    (params.toolCount != null
-      ? estimateToolDefinitionTokens(params.toolCount)
-      : 512);
+    (params.toolCount != null ? estimateToolDefinitionTokens(params.toolCount) : 512);
   const headroom =
-    params.contextWindow -
-    params.estimatedInputTokens -
-    safetyBuffer -
-    toolDefinitionAllowance;
+    params.contextWindow - params.estimatedInputTokens - safetyBuffer - toolDefinitionAllowance;
 
   if (headroom <= minOutput) {
     return minOutput;
@@ -165,8 +160,7 @@ export function promptFitsContextWindow(params: {
 }): boolean {
   const safetyBuffer = params.safetyBuffer ?? 256;
   return (
-    params.estimatedInputTokens + params.maxOutputTokens + safetyBuffer <=
-    params.contextWindow
+    params.estimatedInputTokens + params.maxOutputTokens + safetyBuffer <= params.contextWindow
   );
 }
 
@@ -192,11 +186,11 @@ export async function getChatModelCapabilities(
       name: model?.name ?? null,
     };
     console.log(
-      `Model ${modelIdentifier} (${capabilities.name || 'unknown'}) supports tools: ${capabilities.supportsTools}`,
+      `Model ${modelIdentifier} (${capabilities.name || "unknown"}) supports tools: ${capabilities.supportsTools}`,
     );
     return capabilities;
   } catch (error) {
-    console.error('Error checking model tool support:', error);
+    console.error("Error checking model tool support:", error);
     return { supportsTools: false, supportsImages: false, maxTokens: null, name: null };
   }
 }

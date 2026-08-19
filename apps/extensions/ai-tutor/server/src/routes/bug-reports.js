@@ -1,19 +1,19 @@
-import express from 'express';
-import { requireRole } from '../middleware/auth.js';
-import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import express from "express";
+import { requireRole } from "../middleware/auth.js";
+import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
 import {
   BugReportError,
   createBugReport,
   getAdminBugReport,
   listAdminBugReports,
   updateBugReportStatus,
-} from '../services/bugReports.js';
+} from "../services/bugReports.js";
 
 const router = express.Router();
 
-router.post('/bug-reports', async (req, res) => {
+router.post("/bug-reports", async (req, res) => {
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!authUser) return res.status(401).json({ error: "Authentication required" });
   try {
     await createBugReport(authUser, req.body || {});
     res.status(201).json({ ok: true });
@@ -25,18 +25,18 @@ router.post('/bug-reports', async (req, res) => {
   }
 });
 
-router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/bug-reports", requireRole("ADMIN"), async (req, res) => {
   try {
     const cookie = getEduAiCookieForRequest(req);
     const rows = await listAdminBugReports(cookie);
     res.json(rows);
   } catch (error) {
-    const status = typeof error?.status === 'number' ? error.status : 500;
+    const status = typeof error?.status === "number" ? error.status : 500;
     res.status(status).json({ error: String(error.message ?? error) });
   }
 });
 
-router.get('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req, res) => {
   try {
     const cookie = getEduAiCookieForRequest(req);
     const row = await getAdminBugReport(cookie, req.params.bugReportId);
@@ -45,19 +45,15 @@ router.get('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, 
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });
     }
-    const status = typeof error?.status === 'number' ? error.status : 500;
+    const status = typeof error?.status === "number" ? error.status : 500;
     res.status(status).json({ error: String(error.message ?? error) });
   }
 });
 
-router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
+router.patch("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req, res) => {
   try {
     const cookie = getEduAiCookieForRequest(req);
-    const updated = await updateBugReportStatus(
-      req.params.bugReportId,
-      req.body?.status,
-      cookie,
-    );
+    const updated = await updateBugReportStatus(req.params.bugReportId, req.body?.status, cookie);
     res.json(updated);
   } catch (error) {
     if (error instanceof BugReportError) {

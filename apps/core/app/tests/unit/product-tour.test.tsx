@@ -122,8 +122,7 @@ describe("ProductTour", () => {
     const target = document.createElement("div");
     target.setAttribute("data-tour", "present");
     document.body.appendChild(target);
-    target.getBoundingClientRect = () =>
-      ({ top: 10, left: 20, width: 30, height: 40 }) as DOMRect;
+    target.getBoundingClientRect = () => ({ top: 10, left: 20, width: 30, height: 40 }) as DOMRect;
     target.getClientRects = (() => [{}] as unknown as DOMRectList) as HTMLElement["getClientRects"];
     Object.defineProperty(target, "offsetParent", {
       configurable: true,

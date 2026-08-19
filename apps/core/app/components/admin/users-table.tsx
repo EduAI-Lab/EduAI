@@ -1,9 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type {
   ColumnDef,
   ColumnFiltersState,
@@ -63,31 +59,10 @@ import {
 } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-} from "@eduai/ui";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@eduai/ui";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@eduai/ui";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@eduai/ui";
+import { Pagination, PaginationContent, PaginationItem } from "@eduai/ui";
+import { Popover, PopoverContent, PopoverTrigger } from "@eduai/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 import type { PlatformUser } from "~/hooks/api/types";
 import { DEFAULT_PAGE_SIZE } from "~/hooks/api/pagination";
@@ -125,36 +100,27 @@ export interface UsersTableProps {
 }
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  return new Date(dateString).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 };
 
 // Custom filter function for multi-column searching
 const multiColumnFilterFn: FilterFn<User> = (row, columnId, filterValue) => {
-  const searchableRowContent =
-    `${row.original.name} ${row.original.email}`.toLowerCase();
+  const searchableRowContent = `${row.original.name} ${row.original.email}`.toLowerCase();
   const searchTerm = (filterValue ?? "").toLowerCase();
   return searchableRowContent.includes(searchTerm);
 };
 
-const roleFilterFn: FilterFn<User> = (
-  row,
-  columnId,
-  filterValue: string[]
-) => {
+const roleFilterFn: FilterFn<User> = (row, columnId, filterValue: string[]) => {
   if (!filterValue?.length) return true;
   const role = row.getValue(columnId) as string;
   return filterValue.includes(role);
 };
 
-const statusFilterFn: FilterFn<User> = (
-  row,
-  columnId,
-  filterValue: string[]
-) => {
+const statusFilterFn: FilterFn<User> = (row, columnId, filterValue: string[]) => {
   if (!filterValue?.length) return true;
   const status = row.getValue(columnId) as boolean;
   const statusString = status ? "Active" : "Inactive";
@@ -185,12 +151,7 @@ function RowActions({
     // menu closes leaves the body pointer-events lock stuck → page unclickable.
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0"
-          aria-label="Open menu"
-        >
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Open menu">
           <IconDots className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -205,10 +166,7 @@ function RowActions({
             View chat history
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
-          onClick={() => onToggleActive(user)}
-          disabled={isCurrentUser}
-        >
+        <DropdownMenuItem onClick={() => onToggleActive(user)} disabled={isCurrentUser}>
           {user.isActive ? (
             <IconUserOff className="mr-2 h-4 w-4" />
           ) : (
@@ -239,7 +197,7 @@ export function UsersTable({
   onDelete,
   onToggleActive,
   onViewChatHistory,
-  onCreateUser
+  onCreateUser,
 }: UsersTableProps) {
   const id = useId();
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
@@ -302,9 +260,7 @@ export function UsersTable({
       {
         header: "Role",
         accessorKey: "role",
-        cell: ({ row }) => (
-          <RoleBadge role={row.getValue("role")} />
-        ),
+        cell: ({ row }) => <RoleBadge role={row.getValue("role")} />,
         size: 120,
         filterFn: roleFilterFn,
       },
@@ -334,7 +290,8 @@ export function UsersTable({
         accessorKey: "activity",
         cell: ({ row }) => {
           const user = row.original;
-          const totalCourses = user._count.enrolledCourses + user._count.assistedCourses + user._count.taughtCourses;
+          const totalCourses =
+            user._count.enrolledCourses + user._count.assistedCourses + user._count.taughtCourses;
           return (
             <div className="text-sm space-y-1">
               <div>Courses: {totalCourses}</div>
@@ -348,9 +305,7 @@ export function UsersTable({
       {
         header: "Joined",
         accessorKey: "createdAt",
-        cell: ({ row }) => (
-          <span className="text-sm">{formatDate(row.getValue("createdAt"))}</span>
-        ),
+        cell: ({ row }) => <span className="text-sm">{formatDate(row.getValue("createdAt"))}</span>,
         size: 120,
       },
       {
@@ -381,7 +336,7 @@ export function UsersTable({
         enableSorting: false,
       },
     ],
-    [currentUserId, onEdit, onDelete, onToggleActive, onViewChatHistory]
+    [currentUserId, onEdit, onDelete, onToggleActive, onViewChatHistory],
   );
 
   const table = useReactTable({
@@ -483,9 +438,7 @@ export function UsersTable({
       }
     }
 
-    table
-      .getColumn("role")
-      ?.setFilterValue(newFilterValue.length ? newFilterValue : undefined);
+    table.getColumn("role")?.setFilterValue(newFilterValue.length ? newFilterValue : undefined);
   };
 
   const handleStatusChange = (checked: boolean, value: string) => {
@@ -501,14 +454,12 @@ export function UsersTable({
       }
     }
 
-    table
-      .getColumn("isActive")
-      ?.setFilterValue(newFilterValue.length ? newFilterValue : undefined);
+    table.getColumn("isActive")?.setFilterValue(newFilterValue.length ? newFilterValue : undefined);
   };
 
   const handleDeleteSelected = () => {
     const selectedRows = table.getSelectedRowModel().rows;
-    selectedRows.forEach(row => {
+    selectedRows.forEach((row) => {
       if (row.original.id !== currentUserId) {
         onDelete(row.original.id);
       }
@@ -528,14 +479,10 @@ export function UsersTable({
               ref={inputRef}
               className={cn(
                 "peer min-w-60 ps-9",
-                Boolean(table.getColumn("name")?.getFilterValue()) && "pe-9"
+                Boolean(table.getColumn("name")?.getFilterValue()) && "pe-9",
               )}
-              value={
-                (table.getColumn("name")?.getFilterValue() ?? "") as string
-              }
-              onChange={(e) =>
-                table.getColumn("name")?.setFilterValue(e.target.value)
-              }
+              value={(table.getColumn("name")?.getFilterValue() ?? "") as string}
+              onChange={(e) => table.getColumn("name")?.setFilterValue(e.target.value)}
               placeholder="Filter by name or email..."
               type="text"
               aria-label="Filter by name or email"
@@ -563,11 +510,7 @@ export function UsersTable({
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline">
-                <IconFilter
-                  className="-ms-1 opacity-60"
-                  size={16}
-                  aria-hidden="true"
-                />
+                <IconFilter className="-ms-1 opacity-60" size={16} aria-hidden="true" />
                 Role
                 {selectedRoles.length > 0 && (
                   <span className="bg-background text-muted-foreground/70 -me-1 inline-flex h-5 max-h-full items-center rounded border px-1 font-[inherit] text-[0.625rem] font-medium">
@@ -578,18 +521,14 @@ export function UsersTable({
             </PopoverTrigger>
             <PopoverContent className="w-auto min-w-36 p-3" align="start">
               <div className="space-y-3">
-                <div className="text-muted-foreground text-xs font-medium">
-                  Filter by Role
-                </div>
+                <div className="text-muted-foreground text-xs font-medium">Filter by Role</div>
                 <div className="space-y-3">
                   {uniqueRoleValues.map((value, i) => (
                     <div key={value} className="flex items-center gap-2">
                       <Checkbox
                         id={`${id}-role-${i}`}
                         checked={selectedRoles.includes(value)}
-                        onCheckedChange={(checked: boolean) =>
-                          handleRoleChange(checked, value)
-                        }
+                        onCheckedChange={(checked: boolean) => handleRoleChange(checked, value)}
                       />
                       <Label
                         htmlFor={`${id}-role-${i}`}
@@ -608,11 +547,7 @@ export function UsersTable({
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline">
-                <IconFilter
-                  className="-ms-1 opacity-60"
-                  size={16}
-                  aria-hidden="true"
-                />
+                <IconFilter className="-ms-1 opacity-60" size={16} aria-hidden="true" />
                 Status
                 {selectedStatuses.length > 0 && (
                   <span className="bg-background text-muted-foreground/70 -me-1 inline-flex h-5 max-h-full items-center rounded border px-1 font-[inherit] text-[0.625rem] font-medium">
@@ -623,18 +558,14 @@ export function UsersTable({
             </PopoverTrigger>
             <PopoverContent className="w-auto min-w-36 p-3" align="start">
               <div className="space-y-3">
-                <div className="text-muted-foreground text-xs font-medium">
-                  Filter by Status
-                </div>
+                <div className="text-muted-foreground text-xs font-medium">Filter by Status</div>
                 <div className="space-y-3">
                   {uniqueStatusValues.map((value, i) => (
                     <div key={value} className="flex items-center gap-2">
                       <Checkbox
                         id={`${id}-status-${i}`}
                         checked={selectedStatuses.includes(value)}
-                        onCheckedChange={(checked: boolean) =>
-                          handleStatusChange(checked, value)
-                        }
+                        onCheckedChange={(checked: boolean) => handleStatusChange(checked, value)}
                       />
                       <Label
                         htmlFor={`${id}-status-${i}`}
@@ -653,11 +584,7 @@ export function UsersTable({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
-                <IconColumns
-                  className="-ms-1 opacity-60"
-                  size={16}
-                  aria-hidden="true"
-                />
+                <IconColumns className="-ms-1 opacity-60" size={16} aria-hidden="true" />
                 View
               </Button>
             </DropdownMenuTrigger>
@@ -672,9 +599,7 @@ export function UsersTable({
                       key={column.id}
                       className="capitalize"
                       checked={column.getIsVisible()}
-                      onCheckedChange={(value) =>
-                        column.toggleVisibility(!!value)
-                      }
+                      onCheckedChange={(value) => column.toggleVisibility(!!value)}
                       onSelect={(event) => event.preventDefault()}
                     >
                       {column.id}
@@ -691,26 +616,31 @@ export function UsersTable({
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline">
-                  <IconTrash
-                    className="-ms-1 opacity-60"
-                    size={16}
-                    aria-hidden="true"
-                  />
+                  <IconTrash className="-ms-1 opacity-60" size={16} aria-hidden="true" />
                   Delete
                   <span className="bg-background text-muted-foreground/70 -me-1 inline-flex h-5 max-h-full items-center rounded border px-1 font-[inherit] text-[0.625rem] font-medium">
-                    {table.getSelectedRowModel().rows.filter(row => row.original.id !== currentUserId).length}
+                    {
+                      table
+                        .getSelectedRowModel()
+                        .rows.filter((row) => row.original.id !== currentUserId).length
+                    }
                   </span>
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Are you absolutely sure?
-                  </AlertDialogTitle>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete{" "}
-                    {table.getSelectedRowModel().rows.filter(row => row.original.id !== currentUserId).length} selected{" "}
-                    {table.getSelectedRowModel().rows.filter(row => row.original.id !== currentUserId).length === 1
+                    {
+                      table
+                        .getSelectedRowModel()
+                        .rows.filter((row) => row.original.id !== currentUserId).length
+                    }{" "}
+                    selected{" "}
+                    {table
+                      .getSelectedRowModel()
+                      .rows.filter((row) => row.original.id !== currentUserId).length === 1
                       ? "user"
                       : "users"}
                     .
@@ -718,9 +648,7 @@ export function UsersTable({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDeleteSelected}>
-                    Delete
-                  </AlertDialogAction>
+                  <AlertDialogAction onClick={handleDeleteSelected}>Delete</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -729,11 +657,7 @@ export function UsersTable({
           {/* Add user button */}
           {onCreateUser && (
             <Button onClick={onCreateUser}>
-              <IconPlus
-                className="-ms-1 opacity-60"
-                size={16}
-                aria-hidden="true"
-              />
+              <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
               Add User
             </Button>
           )}
@@ -757,7 +681,7 @@ export function UsersTable({
                         <div
                           className={cn(
                             header.column.getCanSort() &&
-                              "flex h-full cursor-pointer items-center justify-between gap-2 select-none"
+                              "flex h-full cursor-pointer items-center justify-between gap-2 select-none",
                           )}
                           onClick={header.column.getToggleSortingHandler()}
                           onKeyDown={(e) => {
@@ -771,10 +695,7 @@ export function UsersTable({
                           }}
                           tabIndex={header.column.getCanSort() ? 0 : undefined}
                         >
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          {flexRender(header.column.columnDef.header, header.getContext())}
                           {{
                             asc: (
                               <IconChevronUp
@@ -793,10 +714,7 @@ export function UsersTable({
                           }[header.column.getIsSorted() as string] ?? null}
                         </div>
                       ) : (
-                        flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )
+                        flexRender(header.column.columnDef.header, header.getContext())
                       )}
                     </TableHead>
                   );
@@ -807,26 +725,17 @@ export function UsersTable({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                >
+                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="last:py-0">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
+                <TableCell colSpan={columns.length} className="h-24 text-center">
                   No users found.
                 </TableCell>
               </TableRow>
@@ -863,29 +772,19 @@ export function UsersTable({
 
         {/* Page number information */}
         <div className="text-muted-foreground flex grow justify-end text-sm whitespace-nowrap">
-          <p
-            className="text-muted-foreground text-sm whitespace-nowrap"
-            aria-live="polite"
-          >
+          <p className="text-muted-foreground text-sm whitespace-nowrap" aria-live="polite">
             <span className="text-foreground">
-              {table.getState().pagination.pageIndex *
-                table.getState().pagination.pageSize +
-                1}
-              -
+              {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}-
               {Math.min(
                 Math.max(
-                  table.getState().pagination.pageIndex *
-                    table.getState().pagination.pageSize +
+                  table.getState().pagination.pageIndex * table.getState().pagination.pageSize +
                     table.getState().pagination.pageSize,
-                  0
+                  0,
                 ),
-                table.getRowCount()
+                table.getRowCount(),
               )}
             </span>{" "}
-            of{" "}
-            <span className="text-foreground">
-              {table.getRowCount()}
-            </span>
+            of <span className="text-foreground">{table.getRowCount()}</span>
           </p>
         </div>
 
@@ -952,7 +851,12 @@ export function UsersTable({
 
       {/* Single-user delete dialog — rendered outside the row DropdownMenu so
           Radix focus management doesn't conflict with the menu's portal. */}
-      <AlertDialog open={!!userToDelete} onOpenChange={(open) => { if (!open) setUserToDelete(null); }}>
+      <AlertDialog
+        open={!!userToDelete}
+        onOpenChange={(open) => {
+          if (!open) setUserToDelete(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>

@@ -70,27 +70,27 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
 describe("resolveEffectiveAdhdAssist", () => {
   it("uses the body value when the field is present and true", () => {
-    expect(
-      resolveEffectiveAdhdAssist({ hasField: true, bodyValue: true, chatValue: false }),
-    ).toBe(true);
+    expect(resolveEffectiveAdhdAssist({ hasField: true, bodyValue: true, chatValue: false })).toBe(
+      true,
+    );
   });
 
   it("uses the body value when the field is present and false, even if chat is true", () => {
-    expect(
-      resolveEffectiveAdhdAssist({ hasField: true, bodyValue: false, chatValue: true }),
-    ).toBe(false);
+    expect(resolveEffectiveAdhdAssist({ hasField: true, bodyValue: false, chatValue: true })).toBe(
+      false,
+    );
   });
 
   it("falls back to the persisted chat value when the field is absent and chat is true", () => {
-    expect(
-      resolveEffectiveAdhdAssist({ hasField: false, bodyValue: false, chatValue: true }),
-    ).toBe(true);
+    expect(resolveEffectiveAdhdAssist({ hasField: false, bodyValue: false, chatValue: true })).toBe(
+      true,
+    );
   });
 
   it("falls back to the persisted chat value when the field is absent and chat is false", () => {
-    expect(
-      resolveEffectiveAdhdAssist({ hasField: false, bodyValue: true, chatValue: false }),
-    ).toBe(false);
+    expect(resolveEffectiveAdhdAssist({ hasField: false, bodyValue: true, chatValue: false })).toBe(
+      false,
+    );
   });
 });
 
@@ -142,8 +142,12 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("do not emit a bare type-id-only fence");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("How a bill becomes law");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the **Next?** line");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("FIRST LINE of the reply must be exactly: **Top summary**");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("LAST structural line must start exactly: **Next?**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
+      "FIRST LINE of the reply must be exactly: **Top summary**",
+    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
+      "LAST structural line must start exactly: **Next?**",
+    );
     expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
       "UI shows Step ladder → diagram → TLDR → Continue",
     );
@@ -154,15 +158,13 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
       "AND the learner asked for one. Never add diagrams by default.",
     );
-    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
-      "gradient-descent needs only the type id line",
-    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain("gradient-descent needs only the type id line");
   });
 
   it("keeps the Top summary / Next? anchors the oversight layer depends on", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Top summary**");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Next?**");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('Do not rename **Top summary** or **Next?**');
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Do not rename **Top summary** or **Next?**");
   });
 });
 

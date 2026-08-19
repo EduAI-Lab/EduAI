@@ -127,7 +127,11 @@ describe("runFetchPage - crawl fallback path", () => {
   });
 
   it("falls back to crawl() when scrape() yields empty markdown", async () => {
-    scrapeMock.mockResolvedValueOnce({ url: "https://example.com/empty", title: "Empty", markdown: "" });
+    scrapeMock.mockResolvedValueOnce({
+      url: "https://example.com/empty",
+      title: "Empty",
+      markdown: "",
+    });
     crawlMock.mockResolvedValueOnce({
       success: true,
       data: [{ url: "https://example.com/empty", title: "Filled", markdown: "Filled via crawl." }],

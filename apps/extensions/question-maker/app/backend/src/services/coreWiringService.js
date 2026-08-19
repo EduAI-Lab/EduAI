@@ -2,13 +2,17 @@
  * Orchestration helpers that bridge QM's local data model and Core API calls.
  * Handles topic resolution (push-if-missing) before pushing a variant as a Core Question.
  */
-import crypto from 'node:crypto';
-import { prisma } from '../config/database.js';
-import { pushTopicToCore, pushQuestionToCore, patchQuestionTestableOnCore } from './coreApiService.js';
+import crypto from "node:crypto";
+import { prisma } from "../config/database.js";
+import {
+  pushTopicToCore,
+  pushQuestionToCore,
+  patchQuestionTestableOnCore,
+} from "./coreApiService.js";
 
 /** Allowed enum values, validated before persisting/pushing (mirrors the Variants model + questionService). */
-export const VALID_DIFFICULTIES = ['easy', 'medium', 'hard'];
-export const VALID_REASONING_LEVELS = ['factual', 'analytical', 'application'];
+export const VALID_DIFFICULTIES = ["easy", "medium", "hard"];
+export const VALID_REASONING_LEVELS = ["factual", "analytical", "application"];
 
 /**
  * Content fields hashed into the idempotency key (#1080 follow-up). Explicit
@@ -17,26 +21,26 @@ export const VALID_REASONING_LEVELS = ['factual', 'analytical', 'application'];
  * call and defeat retry-safety.
  */
 const IDEMPOTENCY_HASH_FIELDS = [
-  'courseId',
-  'topicId',
-  'content',
-  'type',
-  'difficulty',
-  'reasoningLevel',
-  'choices',
-  'answer',
-  'selectAllThatApply',
-  'correctAnswers',
-  'testable',
-  'secondaryTopicIds',
+  "courseId",
+  "topicId",
+  "content",
+  "type",
+  "difficulty",
+  "reasoningLevel",
+  "choices",
+  "answer",
+  "selectAllThatApply",
+  "correctAnswers",
+  "testable",
+  "secondaryTopicIds",
 ];
 
 /** Deterministic stringify: object keys are sorted so field order in source never matters. */
 function stableStringify(value) {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  if (value && typeof value === 'object') {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
     const keys = Object.keys(value).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
   }
   return JSON.stringify(value ?? null);
 }
@@ -48,8 +52,10 @@ function stableStringify(value) {
  * after an edit pushes a fresh Core row instead of replaying the stale one).
  */
 function hashPayloadContent(payload) {
-  const canonical = IDEMPOTENCY_HASH_FIELDS.map((field) => stableStringify(payload[field] ?? null)).join('|');
-  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 12);
+  const canonical = IDEMPOTENCY_HASH_FIELDS.map((field) =>
+    stableStringify(payload[field] ?? null),
+  ).join("|");
+  return crypto.createHash("sha256").update(canonical).digest("hex").slice(0, 12);
 }
 
 /**
@@ -78,17 +84,19 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
 
   // Validate enums up front so an invalid value fails loudly instead of being
   // silently normalized into a Core question (#6).
-  const difficulty = (variant.difficulty || 'medium').toLowerCase();
+  const difficulty = (variant.difficulty || "medium").toLowerCase();
   if (!VALID_DIFFICULTIES.includes(difficulty)) {
     throw Object.assign(new Error(`Invalid difficulty: ${variant.difficulty}`), { status: 400 });
   }
-  const reasoningLevel = (variant.reasoningLevel || 'factual').toLowerCase();
+  const reasoningLevel = (variant.reasoningLevel || "factual").toLowerCase();
   if (!VALID_REASONING_LEVELS.includes(reasoningLevel)) {
-    throw Object.assign(new Error(`Invalid reasoningLevel: ${variant.reasoningLevel}`), { status: 400 });
+    throw Object.assign(new Error(`Invalid reasoningLevel: ${variant.reasoningLevel}`), {
+      status: 400,
+    });
   }
 
   const primaryTopic = await prisma.topics.findUnique({ where: { id: qm.primaryTopicId } });
-  if (!primaryTopic) throw new Error('Primary topic not found locally');
+  if (!primaryTopic) throw new Error("Primary topic not found locally");
 
   const primaryCoreTopicId = await resolveCoreTopicId(primaryTopic, course.coreCourseId);
 
@@ -98,7 +106,9 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
   const secondaryLocalIds = variant.secondaryTopicsId ?? [];
   let coreSecondaryTopicIds = [];
   if (secondaryLocalIds.length > 0) {
-    const secondaryTopics = await prisma.topics.findMany({ where: { id: { in: secondaryLocalIds } } });
+    const secondaryTopics = await prisma.topics.findMany({
+      where: { id: { in: secondaryLocalIds } },
+    });
     const byId = new Map(secondaryTopics.map((t) => [t.id, t]));
     const ordered = secondaryLocalIds.map((id) => byId.get(id)).filter(Boolean);
     coreSecondaryTopicIds = await Promise.all(

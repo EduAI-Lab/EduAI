@@ -5,10 +5,7 @@
 import { sanitizeSensitiveData } from "~/lib/redact.server";
 
 export function isChatApiDebug(): boolean {
-  return (
-    process.env.CHAT_DEBUG_LOG === "1" ||
-    process.env.LOG_LEVEL?.toLowerCase() === "debug"
-  );
+  return process.env.CHAT_DEBUG_LOG === "1" || process.env.LOG_LEVEL?.toLowerCase() === "debug";
 }
 
 /** Verbose step-by-step tracing. Set `CHAT_API_TRACE=1` in apps/core/.env */

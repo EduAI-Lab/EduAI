@@ -43,7 +43,10 @@ function readBaseTime(filePath) {
     return { entries, warnings };
   }
 
-  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter((line) => line.trim());
+  const lines = fs
+    .readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim());
   if (lines.length === 0) {
     return { entries, warnings };
   }
@@ -64,7 +67,9 @@ function readBaseTime(filePath) {
   lines.slice(1).forEach((line, offset) => {
     const lineNumber = offset + 2;
     const row = parseCsvLine(line);
-    const username = String(row[usernameIndex] || "").trim().replace(/^@/, "");
+    const username = String(row[usernameIndex] || "")
+      .trim()
+      .replace(/^@/, "");
     const baseHoursRaw = row[baseHoursIndex];
     const notes = notesIndex === -1 ? "" : String(row[notesIndex] || "").trim();
 
@@ -94,7 +99,8 @@ function readBaseTime(filePath) {
         type: "duplicate-base-time",
         lineNumber,
         username,
-        message: "Duplicate base time row found; keeping the first value and excluding this duplicate.",
+        message:
+          "Duplicate base time row found; keeping the first value and excluding this duplicate.",
       });
       return;
     }

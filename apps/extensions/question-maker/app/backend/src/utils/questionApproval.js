@@ -23,17 +23,17 @@ export function parseApprovalTarget(body = {}) {
   const { questions, courseId, classId } = body;
 
   if (!Array.isArray(questions) || questions.length === 0) {
-    return { error: 'Questions array is required' };
+    return { error: "Questions array is required" };
   }
 
   const resolved = resolveCourseId(courseId, classId);
   if (resolved.conflicting) {
-    return { error: 'courseId and classId must match when both are provided' };
+    return { error: "courseId and classId must match when both are provided" };
   }
 
   const targetCourseId = Number(resolved.value);
   if (!Number.isInteger(targetCourseId) || targetCourseId <= 0) {
-    return { error: 'Valid courseId is required' };
+    return { error: "Valid courseId is required" };
   }
 
   return { questions, targetCourseId };
@@ -51,7 +51,7 @@ export function prepareApprovalQuestions(
     const resolved = resolveCourseId(question.courseId, question.classId);
     if (resolved.conflicting) {
       return {
-        error: 'Each question courseId and classId must match when both are provided',
+        error: "Each question courseId and classId must match when both are provided",
       };
     }
 
@@ -63,7 +63,7 @@ export function prepareApprovalQuestions(
         parsedCourseId !== targetCourseId
       ) {
         return {
-          error: 'Each question courseId must match the authorized target course',
+          error: "Each question courseId must match the authorized target course",
         };
       }
     }
@@ -73,9 +73,7 @@ export function prepareApprovalQuestions(
     const description = question.description ?? question.content;
     return {
       description:
-        typeof description === 'string' && description.trim()
-          ? description.trim()
-          : null,
+        typeof description === "string" && description.trim() ? description.trim() : null,
       courseId: targetCourseId,
       primaryTopicId: normalizeTopicId(question.primaryTopicId),
       type: question.type,
@@ -85,7 +83,7 @@ export function prepareApprovalQuestions(
   });
 
   if (normalizedQuestions.some((question) => !question.primaryTopicId)) {
-    return { error: 'Each question must include a valid primaryTopicId' };
+    return { error: "Each question must include a valid primaryTopicId" };
   }
 
   return { questions: normalizedQuestions };

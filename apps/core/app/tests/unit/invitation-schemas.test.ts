@@ -41,9 +41,9 @@ describe("createInvitationSchema", () => {
   });
 
   it("rejects TA (not platform-invitable)", () => {
-    expect(
-      createInvitationSchema.safeParse({ email: "ta@ubc.ca", role: "TA" }).success,
-    ).toBe(false);
+    expect(createInvitationSchema.safeParse({ email: "ta@ubc.ca", role: "TA" }).success).toBe(
+      false,
+    );
   });
 
   it("rejects units on a STUDENT invite", () => {
@@ -76,9 +76,7 @@ describe("createInvitationSchema", () => {
   });
 
   it("rejects an invalid email", () => {
-    expect(
-      createInvitationSchema.safeParse({ email: "nope", role: "ADMIN" }).success,
-    ).toBe(false);
+    expect(createInvitationSchema.safeParse({ email: "nope", role: "ADMIN" }).success).toBe(false);
   });
 
   it("accepts unknown unit codes at the schema level — existence is validated server-side (§541)", () => {
@@ -179,8 +177,6 @@ describe("acceptInvitationSchema", () => {
   });
 
   it("rejects a missing token", () => {
-    expect(
-      acceptInvitationSchema.safeParse({ ...valid, token: "" }).success,
-    ).toBe(false);
+    expect(acceptInvitationSchema.safeParse({ ...valid, token: "" }).success).toBe(false);
   });
 });

@@ -12,12 +12,12 @@ describe("RegisterForm — rendering", () => {
     expect(screen.getByLabelText("Name")).toBeInTheDocument();
   });
 
-  it("renders an email input with type=\"email\"", () => {
+  it('renders an email input with type="email"', () => {
     render(<RegisterForm />);
     expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
   });
 
-  it("renders a password input with type=\"password\"", () => {
+  it('renders a password input with type="password"', () => {
     render(<RegisterForm />);
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     expect(screen.getByLabelText("Password")).toHaveAttribute(
@@ -40,12 +40,12 @@ describe("RegisterForm — rendering", () => {
     expect(screen.getByText("Password meets requirements.")).toBeInTheDocument();
   });
 
-  it("renders a confirm-password input with type=\"password\"", () => {
+  it('renders a confirm-password input with type="password"', () => {
     render(<RegisterForm />);
     expect(screen.getByLabelText("Confirm Password")).toHaveAttribute("type", "password");
   });
 
-  it("renders the submit button with the text \"Create account\"", () => {
+  it('renders the submit button with the text "Create account"', () => {
     render(<RegisterForm />);
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
   });
@@ -128,7 +128,7 @@ describe("RegisterForm — loading state", () => {
     expect(screen.getByRole("button", { name: /creating account/i })).toBeDisabled();
   });
 
-  it("changes the submit button text to \"Creating account...\" when isLoading is true", () => {
+  it('changes the submit button text to "Creating account..." when isLoading is true', () => {
     render(<RegisterForm isLoading />);
     expect(screen.getByRole("button", { name: "Creating account..." })).toBeInTheDocument();
   });

@@ -51,5 +51,7 @@ export function adminWriteConfirmationOracle(row: AdminWriteConfirmationRow): Ve
   const consumed = consumeOutcome(row);
   if (consumed !== "ok") return { outcome: "confirmation-required", reason: consumed };
 
-  return row.RunOutcome === "success" ? { outcome: "write-succeeded" } : { outcome: "write-failed" };
+  return row.RunOutcome === "success"
+    ? { outcome: "write-succeeded" }
+    : { outcome: "write-failed" };
 }

@@ -12,12 +12,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { createOllamaMock, createOpenAIMock, createGoogleMock, resolveOllamaMock } = vi.hoisted(() => ({
-  createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  createGoogleMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
-  resolveOllamaMock: vi.fn(),
-}));
+const { createOllamaMock, createOpenAIMock, createGoogleMock, resolveOllamaMock } = vi.hoisted(
+  () => ({
+    createOllamaMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+    createOpenAIMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+    createGoogleMock: vi.fn((_opts: Record<string, unknown>) => vi.fn()),
+    resolveOllamaMock: vi.fn(),
+  }),
+);
 
 vi.mock("ollama-ai-provider", () => ({
   createOllama: (opts: Record<string, unknown>) => createOllamaMock(opts),
@@ -169,11 +171,15 @@ describe("createAIProviderRegistry", () => {
 
     createAIProviderRegistry({ vllm: { isEnabled: true } });
 
-    expect(createOpenAIMock).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "vllm-local" }));
+    expect(createOpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "vllm-local" }),
+    );
   });
 
   it("registers nothing when no provider settings are enabled", () => {
-    const registry = createAIProviderRegistry({}) as unknown as { __providers: Record<string, unknown> };
+    const registry = createAIProviderRegistry({}) as unknown as {
+      __providers: Record<string, unknown>;
+    };
 
     expect(createOpenAIMock).not.toHaveBeenCalled();
     expect(createGoogleMock).not.toHaveBeenCalled();

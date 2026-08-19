@@ -26,9 +26,7 @@ function meanDurationMs(rows: readonly DurationRow[]): number | null {
   });
 
   if (durations.length === 0) return null;
-  return (
-    durations.reduce((sum, duration) => sum + duration, 0) / durations.length
-  );
+  return durations.reduce((sum, duration) => sum + duration, 0) / durations.length;
 }
 
 /**
@@ -68,8 +66,7 @@ export async function getQueueEtaSeconds(
     const durationMs = meanDurationMs(rows);
     if (durationMs === null) return null;
 
-    if (job.queueName !== QUEUE_CHAT && job.queueName !== QUEUE_HEAVY)
-      return null;
+    if (job.queueName !== QUEUE_CHAT && job.queueName !== QUEUE_HEAVY) return null;
     const concurrency = workerConcurrency(job.queueName);
     // queuePosition includes the pending job itself. Add active jobs so idle,
     // partially utilized, and saturated pools all use whole worker-sized waves

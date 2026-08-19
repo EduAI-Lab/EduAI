@@ -63,13 +63,7 @@ describe("CanvasMaterialSyncDialog", () => {
   });
 
   it("loads Canvas files when opened and pre-checks not_imported files", async () => {
-    render(
-      <CanvasMaterialSyncDialog
-        courseId="course-1"
-        open
-        onOpenChange={vi.fn()}
-      />,
-    );
+    render(<CanvasMaterialSyncDialog courseId="course-1" open onOpenChange={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("Lecture 1.txt")).toBeInTheDocument();
@@ -112,13 +106,7 @@ describe("CanvasMaterialSyncDialog", () => {
       skippedItems: [],
     });
 
-    render(
-      <CanvasMaterialSyncDialog
-        courseId="course-1"
-        open
-        onOpenChange={vi.fn()}
-      />,
-    );
+    render(<CanvasMaterialSyncDialog courseId="course-1" open onOpenChange={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("Lecture 1.txt")).toBeInTheDocument();
@@ -141,13 +129,7 @@ describe("CanvasMaterialSyncDialog", () => {
       skippedItems: [{ canvasFileId: "1002", reason: "not-modified" }],
     });
 
-    render(
-      <CanvasMaterialSyncDialog
-        courseId="course-1"
-        open
-        onOpenChange={vi.fn()}
-      />,
-    );
+    render(<CanvasMaterialSyncDialog courseId="course-1" open onOpenChange={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("Lecture 1.txt")).toBeInTheDocument();

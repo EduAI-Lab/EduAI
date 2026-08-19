@@ -6,10 +6,7 @@
  * service state.
  */
 import * as React from "react";
-import {
-  AIServiceIndicators as SharedAIServiceIndicators,
-  type ServiceStatus,
-} from "@eduai/ui";
+import { AIServiceIndicators as SharedAIServiceIndicators, type ServiceStatus } from "@eduai/ui";
 
 type ApiServiceStatus = { state: "online" | "offline" | "unknown"; detail?: string };
 type ApiStatus = { cloud: ApiServiceStatus; ubc: ApiServiceStatus };

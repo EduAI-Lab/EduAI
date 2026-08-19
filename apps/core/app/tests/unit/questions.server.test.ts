@@ -97,7 +97,7 @@ describe("createQuestion", () => {
     db.courseTopic.findMany.mockResolvedValue([{ id: SEC_TOPIC_ID, deletedAt: new Date() }]);
     const result = await createQuestion(
       { ...baseBody, secondaryTopicIds: [SEC_TOPIC_ID] },
-      CREATOR
+      CREATOR,
     );
     expect(result).toEqual({
       error: "INVALID_TOPIC_IDS",
@@ -218,10 +218,7 @@ describe("createQuestion", () => {
   });
 
   it("returns VALIDATION_ERROR for a malformed body (missing content, bad enum)", async () => {
-    const result = await createQuestion(
-      { ...baseBody, content: "", type: "ESSAY" },
-      CREATOR
-    );
+    const result = await createQuestion({ ...baseBody, content: "", type: "ESSAY" }, CREATOR);
     expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
     const fields = (result as { fields: Record<string, string> }).fields;
     expect(fields).toHaveProperty("content");
@@ -237,7 +234,7 @@ describe("createQuestion", () => {
     db.courseTopic.findMany.mockResolvedValue([]);
     const result = await createQuestion(
       { ...baseBody, secondaryTopicIds: ["ghost-topic"] },
-      CREATOR
+      CREATOR,
     );
     expect(result).toEqual({
       error: "INVALID_TOPIC_IDS",
@@ -266,7 +263,12 @@ describe("createQuestion", () => {
 
 describe("listQuestions", () => {
   it("returns questions with the correct total, limit, and offset shape", async () => {
-    const fakeQuestion = { id: QUESTION_ID, courseId: COURSE_ID, testable: false, secondaryTopics: [] };
+    const fakeQuestion = {
+      id: QUESTION_ID,
+      courseId: COURSE_ID,
+      testable: false,
+      secondaryTopics: [],
+    };
     db.question.findMany.mockResolvedValue([fakeQuestion]);
     db.question.count.mockResolvedValue(1);
 
@@ -393,7 +395,10 @@ describe("getQuestionById", () => {
 describe("updateQuestionTestable", () => {
   it("returns { id, testable } on success", async () => {
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
-    expect(await updateQuestionTestable(QUESTION_ID, true)).toEqual({ id: QUESTION_ID, testable: true });
+    expect(await updateQuestionTestable(QUESTION_ID, true)).toEqual({
+      id: QUESTION_ID,
+      testable: true,
+    });
   });
 
   it("updates using the correct id and testable value", async () => {

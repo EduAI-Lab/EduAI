@@ -25,9 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const user = gate.session.user;
   const isAdmin = user.role === "ADMIN";
-  const invitations = await listInvitations(
-    isAdmin ? undefined : { invitedById: user.id },
-  );
+  const invitations = await listInvitations(isAdmin ? undefined : { invitedById: user.id });
   return json(invitations);
 }
 

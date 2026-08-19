@@ -29,10 +29,7 @@ vi.mock("~/lib/request-context.server", () => ({
   getRequestContext: vi.fn(() => ({ routePath: "/api/routing-model-settings" })),
 }));
 
-import {
-  action,
-  loader,
-} from "~/routes/api/routing-model-settings";
+import { action, loader } from "~/routes/api/routing-model-settings";
 
 const settings = {
   autoLlmEnabled: true,
@@ -93,35 +90,21 @@ describe("routing model settings API", () => {
   });
 
   it("persists a valid routing switch update and returns fresh settings", async () => {
-    const res = await action(
-      makeArgs("PATCH", { key: "autoRulesEnabled", value: true }),
-    );
+    const res = await action(makeArgs("PATCH", { key: "autoRulesEnabled", value: true }));
 
     expect(res.status).toBe(200);
-    expect(mocks.setRoutingModelSetting).toHaveBeenCalledWith(
-      "autoRulesEnabled",
-      true,
-      "admin-1",
-    );
+    expect(mocks.setRoutingModelSetting).toHaveBeenCalledWith("autoRulesEnabled", true, "admin-1");
     expect(mocks.fireAndForget).toHaveBeenCalledOnce();
     await expect(res.json()).resolves.toEqual({ settings });
   });
 
   it("rejects unsupported methods, malformed input, and unknown keys", async () => {
     expect((await action(makeArgs("POST", {}))).status).toBe(405);
+    expect((await action(makeArgs("PATCH", { key: "autoLlmEnabled", value: "yes" }))).status).toBe(
+      400,
+    );
     expect(
-      (
-        await action(
-          makeArgs("PATCH", { key: "autoLlmEnabled", value: "yes" }),
-        )
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await action(
-          makeArgs("PATCH", { key: "unknownRoutingMode", value: true }),
-        )
-      ).status,
+      (await action(makeArgs("PATCH", { key: "unknownRoutingMode", value: true }))).status,
     ).toBe(404);
     expect(mocks.setRoutingModelSetting).not.toHaveBeenCalled();
   });

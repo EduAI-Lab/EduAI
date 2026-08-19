@@ -103,9 +103,7 @@ describe("apiFetch", () => {
       }),
     );
 
-    await expect(apiFetch("/api/thing")).rejects.toThrow(
-      JSON.stringify({ somethingElse: true }),
-    );
+    await expect(apiFetch("/api/thing")).rejects.toThrow(JSON.stringify({ somethingElse: true }));
   });
 
   it("falls back to a generic message when the error body is empty non-JSON text", async () => {

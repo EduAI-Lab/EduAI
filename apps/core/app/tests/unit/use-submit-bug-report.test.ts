@@ -75,7 +75,11 @@ describe("useSubmitBugReport", () => {
 
   it("returns false and surfaces the server error message on failure", async () => {
     mockFetch.mockResolvedValue(
-      res({ ok: false, status: 400, json: () => Promise.resolve({ error: "description required" }) }),
+      res({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "description required" }),
+      }),
     );
 
     const { result } = renderHook(() => useSubmitBugReport());

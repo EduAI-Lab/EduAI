@@ -18,35 +18,35 @@
  * test drops the migration's unique index mid-run and recreates it, which
  * would race other integration files if they ran concurrently.
  */
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_SQL_PATH = resolve(
   __dirname,
-  '../../prisma/migrations/20260723220228_practice_exam_unique_index/migration.sql',
+  "../../prisma/migrations/20260723220228_practice_exam_unique_index/migration.sql",
 );
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 function migrationStatements() {
-  return readFileSync(MIGRATION_SQL_PATH, 'utf8')
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('--'))
-    .join('\n')
-    .split(';')
+  return readFileSync(MIGRATION_SQL_PATH, "utf8")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .split(";")
     .map((statement) => statement.trim())
     .filter(Boolean);
 }
 
-describeDb('practice exam dedup migration upgrade path', () => {
+describeDb("practice exam dedup migration upgrade path", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
 
   beforeAll(async () => {
-    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import('../helpers/testDb.js'));
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import("../helpers/testDb.js"));
     await connectTestDatabase();
   });
 
@@ -54,37 +54,41 @@ describeDb('practice exam dedup migration upgrade path', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  it('dedupes same-course duplicates but leaves unlinked (NULL course_id) exams alone', async () => {
+  it("dedupes same-course duplicates but leaves unlinked (NULL course_id) exams alone", async () => {
     await truncateTestDatabase();
     await prisma.user.create({
-      data: { id: 'migration-upgrade-user', email: 'migration-upgrade@test.com', name: 'Upgrade Tester' },
+      data: {
+        id: "migration-upgrade-user",
+        email: "migration-upgrade@test.com",
+        name: "Upgrade Tester",
+      },
     });
     const course = await prisma.course.create({
-      data: { userId: 'migration-upgrade-user', coreCourseId: 'core-migration-upgrade' },
+      data: { userId: "migration-upgrade-user", coreCourseId: "core-migration-upgrade" },
     });
 
     // Simulate a pre-migration database: drop the index this migration
     // creates so the dirty duplicate data below can even be inserted.
-    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS assessments_practice_exam_unique');
+    await prisma.$executeRawUnsafe("DROP INDEX IF EXISTS assessments_practice_exam_unique");
 
     const keep = await prisma.assessments.create({
-      data: { courseId: course.id, type: 'Quiz', name: 'Practice Exam' },
+      data: { courseId: course.id, type: "Quiz", name: "Practice Exam" },
     });
     const dupe1 = await prisma.assessments.create({
-      data: { courseId: course.id, type: 'Quiz', name: 'Practice Exam' },
+      data: { courseId: course.id, type: "Quiz", name: "Practice Exam" },
     });
     const dupe2 = await prisma.assessments.create({
-      data: { courseId: course.id, type: 'Quiz', name: 'Practice Exam' },
+      data: { courseId: course.id, type: "Quiz", name: "Practice Exam" },
     });
 
     // Two unrelated, never-linked-to-a-course Practice Exams — a standard
     // unique index already permits multiple NULLs, so these are NOT
     // duplicates of each other and must survive untouched.
     const unlinked1 = await prisma.assessments.create({
-      data: { courseId: null, type: 'Quiz', name: 'Practice Exam' },
+      data: { courseId: null, type: "Quiz", name: "Practice Exam" },
     });
     const unlinked2 = await prisma.assessments.create({
-      data: { courseId: null, type: 'Quiz', name: 'Practice Exam' },
+      data: { courseId: null, type: "Quiz", name: "Practice Exam" },
     });
 
     for (const statement of migrationStatements()) {
@@ -97,13 +101,13 @@ describeDb('practice exam dedup migration upgrade path', () => {
       ),
     );
 
-    expect(keptRow.name).toBe('Practice Exam');
+    expect(keptRow.name).toBe("Practice Exam");
     expect(dupe1Row.name).toBe(`Practice Exam (duplicate #${dupe1.id})`);
     expect(dupe2Row.name).toBe(`Practice Exam (duplicate #${dupe2.id})`);
 
     // The regression: unlinked course-less exams must NOT be renamed.
-    expect(unlinked1Row.name).toBe('Practice Exam');
-    expect(unlinked2Row.name).toBe('Practice Exam');
+    expect(unlinked1Row.name).toBe("Practice Exam");
+    expect(unlinked2Row.name).toBe("Practice Exam");
 
     // The migration's CREATE UNIQUE INDEX must succeed despite two NULL
     // course_id 'Practice Exam' rows existing simultaneously.

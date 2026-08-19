@@ -13,17 +13,17 @@ describe("toMaterialUploadUserMessage", () => {
   it("sanitizes BigDecimal dump fragments", () => {
     expect(
       toMaterialUploadUserMessage(
-        new Error("Numeric(Some(BigDecimal(\"0.123\"))) repeated many times"),
+        new Error('Numeric(Some(BigDecimal("0.123"))) repeated many times'),
       ),
     ).toBe("Couldn't save this material's search data. Please try again.");
   });
 
   it("maps embedding provider misconfiguration to an admin message", () => {
     expect(
-      toMaterialUploadUserMessage(new Error("No embedding provider configured. Set OPENAI_API_KEY.")),
-    ).toBe(
-      "Search data isn't available for this material right now. Contact your administrator.",
-    );
+      toMaterialUploadUserMessage(
+        new Error("No embedding provider configured. Set OPENAI_API_KEY."),
+      ),
+    ).toBe("Search data isn't available for this material right now. Contact your administrator.");
   });
 
   it("preserves short, user-safe file-processing errors", () => {

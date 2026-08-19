@@ -20,10 +20,10 @@
  * Related: `app/lib/api.ts` (`submitBugReport`), bug-report dialog component.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from "react";
 
 type ConsoleEntry = {
-  level: 'log' | 'warn' | 'error';
+  level: "log" | "warn" | "error";
   message: string;
   stack?: string;
   timestamp: string;
@@ -49,7 +49,7 @@ function stringifyArg(value: unknown) {
   if (value instanceof Error) {
     return value.message;
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
   try {
@@ -68,13 +68,13 @@ function headersToObject(headers: Headers) {
 }
 
 async function readRequestBody(input: RequestInfo | URL, init?: RequestInit) {
-  if (typeof init?.body === 'string') return init.body;
+  if (typeof init?.body === "string") return init.body;
   if (init?.body instanceof URLSearchParams) return init.body.toString();
   if (init?.body instanceof FormData) {
-    return '[form-data]';
+    return "[form-data]";
   }
   if (init?.body) {
-    return '[binary-body]';
+    return "[binary-body]";
   }
   if (input instanceof Request) {
     try {
@@ -100,7 +100,7 @@ export function useBugReportCapture() {
   } | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || patchedRef.current) {
+    if (typeof window === "undefined" || patchedRef.current) {
       return;
     }
     patchedRef.current = true;
@@ -119,10 +119,10 @@ export function useBugReportCapture() {
       fetch: originalFetch,
     };
 
-    function pushConsoleEntry(level: ConsoleEntry['level'], args: unknown[]) {
+    function pushConsoleEntry(level: ConsoleEntry["level"], args: unknown[]) {
       const entry: ConsoleEntry = {
         level,
-        message: args.map(stringifyArg).join(' '),
+        message: args.map(stringifyArg).join(" "),
         stack: args.find((arg) => arg instanceof Error)?.stack,
         timestamp: new Date().toISOString(),
       };
@@ -133,15 +133,15 @@ export function useBugReportCapture() {
     }
 
     console.log = (...args: unknown[]) => {
-      pushConsoleEntry('log', args);
+      pushConsoleEntry("log", args);
       originalLog.apply(console, args);
     };
     console.warn = (...args: unknown[]) => {
-      pushConsoleEntry('warn', args);
+      pushConsoleEntry("warn", args);
       originalWarn.apply(console, args);
     };
     console.error = (...args: unknown[]) => {
-      pushConsoleEntry('error', args);
+      pushConsoleEntry("error", args);
       originalError.apply(console, args);
     };
 
@@ -150,8 +150,8 @@ export function useBugReportCapture() {
       init?: RequestInit,
     ): Promise<Response> => {
       const startedAt = performance.now();
-      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const requestHeaders = headersToObject(
         new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)),
       );
@@ -201,7 +201,7 @@ export function useBugReportCapture() {
   }, []);
 
   const captureScreenshot = useCallback(async () => {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === "undefined") return null;
     const now = Date.now();
     // Reuse the most recent screenshot within the cache window to avoid the
     // visible flash and CPU cost of re-rendering the DOM via html2canvas
@@ -212,7 +212,7 @@ export function useBugReportCapture() {
     try {
       // Lazy import keeps html2canvas out of the main bundle; it is large
       // and only needed when a user actually files a bug report.
-      const html2canvas = (await import('html2canvas')).default;
+      const html2canvas = (await import("html2canvas")).default;
       const canvas = await html2canvas(document.body, {
         logging: false,
         useCORS: true,
@@ -220,7 +220,7 @@ export function useBugReportCapture() {
       });
       // JPEG, not PNG: a full-page PNG data URL easily exceeds Core's 512k
       // screenshot cap, and the server drops oversized screenshots (#979).
-      screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
+      screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
       lastScreenshotAtRef.current = Date.now();
       return screenshotRef.current;
     } catch {

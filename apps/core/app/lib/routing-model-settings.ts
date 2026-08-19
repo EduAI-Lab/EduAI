@@ -15,30 +15,24 @@ export const ROUTING_MODEL_SETTING_DEFINITIONS = {
   },
 } as const;
 
-export type RoutingModelSettingKey =
-  keyof typeof ROUTING_MODEL_SETTING_DEFINITIONS;
+export type RoutingModelSettingKey = keyof typeof ROUTING_MODEL_SETTING_DEFINITIONS;
 
 export type RoutingModelSettings = Record<RoutingModelSettingKey, boolean>;
 
-export function isRoutingModelSettingKey(
-  value: string,
-): value is RoutingModelSettingKey {
+export function isRoutingModelSettingKey(value: string): value is RoutingModelSettingKey {
   return value in ROUTING_MODEL_SETTING_DEFINITIONS;
 }
 
 export function defaultRoutingModelSettings(): RoutingModelSettings {
   return {
     autoLlmEnabled: ROUTING_MODEL_SETTING_DEFINITIONS.autoLlmEnabled.default,
-    autoRulesEnabled:
-      ROUTING_MODEL_SETTING_DEFINITIONS.autoRulesEnabled.default,
+    autoRulesEnabled: ROUTING_MODEL_SETTING_DEFINITIONS.autoRulesEnabled.default,
   };
 }
 
 export function routingModelSettingDefinitions() {
-  return Object.entries(ROUTING_MODEL_SETTING_DEFINITIONS).map(
-    ([key, definition]) => ({
-      key: key as RoutingModelSettingKey,
-      ...definition,
-    }),
-  );
+  return Object.entries(ROUTING_MODEL_SETTING_DEFINITIONS).map(([key, definition]) => ({
+    key: key as RoutingModelSettingKey,
+    ...definition,
+  }));
 }

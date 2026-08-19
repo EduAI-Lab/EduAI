@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { useLocalUser } from '~/hooks/useLocalUser';
-import * as permissions from '~/lib/rbac/permissions';
-import type { AtUser } from '~/lib/rbac/types';
+import { useMemo } from "react";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import * as permissions from "~/lib/rbac/permissions";
+import type { AtUser } from "~/lib/rbac/types";
 
 export function useAtPermissions() {
   const { user } = useLocalUser();
@@ -30,7 +30,7 @@ export function useAtPermissions() {
       canAccessAdminConsole: permissions.canAccessAdminConsole(atUser),
       canSubmitBugReport: permissions.canSubmitBugReport(atUser),
       usesInstructorShell: permissions.usesInstructorShell(atUser),
-      isTaReadOnly: atUser?.role === 'TA',
+      isTaReadOnly: atUser?.role === "TA",
     }),
     [atUser],
   );

@@ -56,7 +56,9 @@ describe("GET /api/ollama-models", () => {
   it("returns models on success", async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ models: [{ name: "llama3", size: 1, digest: "abc", modified_at: "now" }] }),
+        JSON.stringify({
+          models: [{ name: "llama3", size: 1, digest: "abc", modified_at: "now" }],
+        }),
         { status: 200 },
       ),
     ) as never;
@@ -70,17 +72,17 @@ describe("GET /api/ollama-models", () => {
   });
 
   it("passes through a non-ok upstream status", async () => {
-    global.fetch = vi.fn().mockResolvedValue(
-      new Response(null, { status: 502, statusText: "Bad Gateway" }),
-    ) as never;
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 502, statusText: "Bad Gateway" })) as never;
     const res = await loader(makeArgs());
     expect(res.status).toBe(502);
   });
 
   it("maps ECONNREFUSED to a friendly 500", async () => {
-    global.fetch = vi.fn().mockRejectedValue(
-      Object.assign(new Error("nope"), { code: "ECONNREFUSED" }),
-    ) as never;
+    global.fetch = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("nope"), { code: "ECONNREFUSED" })) as never;
     const res = await loader(makeArgs());
     expect(res.status).toBe(500);
     const body = await res.json();

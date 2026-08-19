@@ -187,7 +187,11 @@ describe("removeAdminCourseTA", () => {
 
   it("removes a TA successfully", async () => {
     vi.mocked(resolveAdminCourseId).mockResolvedValue({ courseId: "c1", courseCode: "COSC 111" });
-    vi.mocked(removeCourseTA).mockResolvedValue({ success: true, taId: "e1", taName: "TA" } as never);
+    vi.mocked(removeCourseTA).mockResolvedValue({
+      success: true,
+      taId: "e1",
+      taName: "TA",
+    } as never);
 
     const result = await removeAdminCourseTA(ADMIN, { ...COURSE_OPTS, userId: "u1" });
     expect(result).toEqual({ ok: true });
@@ -219,9 +223,7 @@ describe("listAdminCourseChats", () => {
     prismaMock.chat.findMany.mockResolvedValue([]);
 
     await listAdminCourseChats(ADMIN, { ...COURSE_OPTS, limit: 5000 });
-    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 200 }),
-    );
+    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 200 }));
   });
 });
 
@@ -260,9 +262,7 @@ describe("listAdminUnitChats", () => {
     prismaMock.chat.findMany.mockResolvedValue([]);
 
     await listAdminUnitChats(ADMIN, "COSC", 9999);
-    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 200 }),
-    );
+    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 200 }));
   });
 });
 
@@ -568,7 +568,11 @@ describe("updateAdminCronSchedule", () => {
       scheduleLabel: "Daily at 03:00",
     });
     expect(result).toEqual({ ok: true, jobName: "backup-nightly" });
-    expect(updateCronSchedule).toHaveBeenCalledWith("backup-nightly", "0 3 * * *", "Daily at 03:00");
+    expect(updateCronSchedule).toHaveBeenCalledWith(
+      "backup-nightly",
+      "0 3 * * *",
+      "Daily at 03:00",
+    );
     expect(rescheduleJob).toHaveBeenCalledWith("backup-nightly", "0 3 * * *");
   });
 });

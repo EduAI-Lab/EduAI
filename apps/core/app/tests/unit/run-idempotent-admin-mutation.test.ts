@@ -64,9 +64,7 @@ describe("requestUrlFromIdempotencyRoute (#1110)", () => {
 
   it("throws when there is no path component starting with /", () => {
     expect(() => requestUrlFromIdempotencyRoute("POST")).toThrow(/path starting with \//);
-    expect(() => requestUrlFromIdempotencyRoute("POST api/users")).toThrow(
-      /path starting with \//,
-    );
+    expect(() => requestUrlFromIdempotencyRoute("POST api/users")).toThrow(/path starting with \//);
   });
 
   it("rejects protocol-relative paths that would retarget the origin", () => {
@@ -91,8 +89,8 @@ describe("requestUrlFromIdempotencyRoute (#1110)", () => {
   it("does not produce the pre-fix invalid URL shape", () => {
     // Regression: `http://localhost${"POST /api/users"}` → Invalid URL
     expect(() => new Request(`http://localhostPOST /api/users`)).toThrow();
-    expect(() =>
-      new Request(requestUrlFromIdempotencyRoute("POST /api/users"), { method: "POST" }),
+    expect(
+      () => new Request(requestUrlFromIdempotencyRoute("POST /api/users"), { method: "POST" }),
     ).not.toThrow();
   });
 });
@@ -140,9 +138,7 @@ describe("runIdempotentAdminMutation (#1110)", () => {
     );
     const cached = { writeSucceeded: true, id: "u-cached" };
     // Hash must match bodyForIdempotencyHash({ email: "a@b.c" })
-    const { hashRequestBody, bodyForIdempotencyHash } = await import(
-      "~/lib/idempotency.server"
-    );
+    const { hashRequestBody, bodyForIdempotencyHash } = await import("~/lib/idempotency.server");
     const requestHash = hashRequestBody(bodyForIdempotencyHash({ email: "a@b.c" }));
     prismaMock.idempotencyRecord.findUnique.mockResolvedValue({
       requestHash,
@@ -166,14 +162,12 @@ describe("runIdempotentAdminMutation (#1110)", () => {
   });
 
   it("only runs the mutation once when the second call replays", async () => {
-    prismaMock.idempotencyRecord.create
-      .mockResolvedValueOnce({})
-      .mockRejectedValueOnce(
-        new Prisma.PrismaClientKnownRequestError("dup", {
-          code: "P2002",
-          clientVersion: "test",
-        }),
-      );
+    prismaMock.idempotencyRecord.create.mockResolvedValueOnce({}).mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("dup", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
     prismaMock.idempotencyRecord.update.mockResolvedValue({});
 
     const mutation = vi.fn().mockResolvedValue({ id: "u1", writeSucceeded: true });
@@ -189,9 +183,7 @@ describe("runIdempotentAdminMutation (#1110)", () => {
     expect(first).toEqual({ id: "u1", writeSucceeded: true });
     expect(mutation).toHaveBeenCalledOnce();
 
-    const { hashRequestBody, bodyForIdempotencyHash } = await import(
-      "~/lib/idempotency.server"
-    );
+    const { hashRequestBody, bodyForIdempotencyHash } = await import("~/lib/idempotency.server");
     prismaMock.idempotencyRecord.findUnique.mockResolvedValue({
       requestHash: hashRequestBody(bodyForIdempotencyHash(body)),
       status: "COMPLETED",
@@ -267,9 +259,7 @@ describe("runIdempotentAdminMutation (#1110)", () => {
       }),
     );
 
-    const { hashRequestBody, bodyForIdempotencyHash } = await import(
-      "~/lib/idempotency.server"
-    );
+    const { hashRequestBody, bodyForIdempotencyHash } = await import("~/lib/idempotency.server");
     const body = { email: "cross@process.test" };
     const requestHash = hashRequestBody(bodyForIdempotencyHash(body));
 

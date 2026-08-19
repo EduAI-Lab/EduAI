@@ -27,10 +27,7 @@ const CAN_MANAGE_MATERIALS_LEVELS = new Set(["admin", "unit", "instructor"]);
  * `embeddingModel`, `embeddedWith*`, `lastEmbeddedAt`) — all outside
  * `GATE_COURSE_SELECT`.
  */
-export async function getCourseIfCanManageMaterials(
-  user: SessionUser,
-  courseId: string,
-) {
+export async function getCourseIfCanManageMaterials(user: SessionUser, courseId: string) {
   const { course, access } = await resolveCourseAccessWithCourse(
     { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits },
     courseId,

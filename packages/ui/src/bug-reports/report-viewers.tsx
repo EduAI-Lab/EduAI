@@ -12,13 +12,13 @@
  *     doesn't flash before the user can navigate.
  */
 
-import { useState } from 'react';
-import { SegmentedControl } from '../segmented-control';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import type { AdminBugReportRow } from './types';
+import { useState } from "react";
+import { SegmentedControl } from "../segmented-control";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import type { AdminBugReportRow } from "./types";
 import {
   CONSOLE_LEVELS,
   CONSOLE_LEVEL_BADGE_VARIANT,
@@ -31,7 +31,7 @@ import {
   type ConsoleLogEntry,
   type NetworkLogEntry,
   type ViewerType,
-} from './bug-reports-utils';
+} from "./bug-reports-utils";
 
 function DescriptionViewer({ report }: { report: AdminBugReportRow }) {
   return (
@@ -48,13 +48,13 @@ function DescriptionViewer({ report }: { report: AdminBugReportRow }) {
 // stack traces are collapsed by default to keep the list scannable.
 function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
   const entries = safeJsonParse<ConsoleLogEntry[]>(report.consoleLogs, []);
-  const [levelFilter, setLevelFilter] = useState<(typeof CONSOLE_LEVELS)[number]>('all');
+  const [levelFilter, setLevelFilter] = useState<(typeof CONSOLE_LEVELS)[number]>("all");
   const [expandedStacks, setExpandedStacks] = useState<Record<number, boolean>>({});
 
   const filtered = entries.filter((entry) => {
-    if (levelFilter === 'all') return true;
+    if (levelFilter === "all") return true;
     // Normalize stored level casing so "WARN"/"Warn"/"warn" all match the chip.
-    return (entry.level ?? 'log').toLowerCase() === levelFilter;
+    return (entry.level ?? "log").toLowerCase() === levelFilter;
   });
 
   return (
@@ -73,22 +73,26 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
           </div>
         ) : (
           filtered.map((entry, index) => {
-            const hasStack = typeof entry.stack === 'string' && entry.stack.length > 0;
+            const hasStack = typeof entry.stack === "string" && entry.stack.length > 0;
             const expanded = expandedStacks[index] ?? false;
-            const level = (entry.level ?? 'log').toLowerCase();
+            const level = (entry.level ?? "log").toLowerCase();
             return (
               <div
-                key={`${entry.timestamp ?? 'ts'}-${index}`}
+                key={`${entry.timestamp ?? "ts"}-${index}`}
                 className="rounded-xl border border-border/70 bg-background/60 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge variant={CONSOLE_LEVEL_BADGE_VARIANT[level] ?? 'muted'} size="sm" className="uppercase">
-                    {entry.level ?? 'log'}
+                  <Badge
+                    variant={CONSOLE_LEVEL_BADGE_VARIANT[level] ?? "muted"}
+                    size="sm"
+                    className="uppercase"
+                  >
+                    {entry.level ?? "log"}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{entry.timestamp ?? '-'}</span>
+                  <span className="text-xs text-muted-foreground">{entry.timestamp ?? "-"}</span>
                 </div>
                 <p className="mt-2 whitespace-pre-wrap wrap-break-word text-foreground">
-                  {entry.message ?? ''}
+                  {entry.message ?? ""}
                 </p>
                 {hasStack ? (
                   <div className="mt-3 space-y-2">
@@ -104,7 +108,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                         }))
                       }
                     >
-                      {expanded ? 'Hide stack trace' : 'Show stack trace'}
+                      {expanded ? "Hide stack trace" : "Show stack trace"}
                     </Button>
                     {expanded ? (
                       <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap wrap-break-word">
@@ -127,7 +131,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
 function NetworkViewer({ report }: { report: AdminBugReportRow }) {
   const entries = safeJsonParse<NetworkLogEntry[]>(report.networkLogs, []);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [tab, setTab] = useState<(typeof NETWORK_TABS)[number]>('meta');
+  const [tab, setTab] = useState<(typeof NETWORK_TABS)[number]>("meta");
 
   const entry = entries[selectedIndex] ?? null;
   const requestBody = entry?.requestBody;
@@ -146,7 +150,7 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
             value={String(selectedIndex)}
             onValueChange={(value) => {
               setSelectedIndex(Number(value) || 0);
-              setTab('meta');
+              setTab("meta");
             }}
           >
             <SelectTrigger className="w-full">
@@ -154,8 +158,8 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
             </SelectTrigger>
             <SelectContent>
               {entries.map((item, index) => (
-                <SelectItem key={`${item.method ?? 'GET'}-${index}`} value={String(index)}>
-                  {(item.method ?? 'GET').toUpperCase()} {item.url ?? 'Unknown URL'}
+                <SelectItem key={`${item.method ?? "GET"}-${index}`} value={String(index)}>
+                  {(item.method ?? "GET").toUpperCase()} {item.url ?? "Unknown URL"}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -173,33 +177,33 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
       <div className="max-h-[55vh] overflow-auto rounded-xl border border-border/70 bg-background/60 p-4 text-sm">
         {!entry ? (
           <span className="text-muted-foreground">No network logs captured.</span>
-        ) : tab === 'meta' ? (
+        ) : tab === "meta" ? (
           <div className="space-y-2">
             <div>
-              <span className="font-medium">Method:</span> {(entry.method ?? 'GET').toUpperCase()}
+              <span className="font-medium">Method:</span> {(entry.method ?? "GET").toUpperCase()}
             </div>
             <div>
-              <span className="font-medium">URL:</span> {entry.url ?? '-'}
+              <span className="font-medium">URL:</span> {entry.url ?? "-"}
             </div>
             <div>
-              <span className="font-medium">Status:</span> {entry.status ?? '-'}
+              <span className="font-medium">Status:</span> {entry.status ?? "-"}
             </div>
             <div>
-              <span className="font-medium">Duration:</span> {entry.durationMs ?? '-'}ms
+              <span className="font-medium">Duration:</span> {entry.durationMs ?? "-"}ms
             </div>
             <div>
-              <span className="font-medium">Timestamp:</span> {entry.timestamp ?? '-'}
+              <span className="font-medium">Timestamp:</span> {entry.timestamp ?? "-"}
             </div>
           </div>
-        ) : tab === 'request' ? (
+        ) : tab === "request" ? (
           <pre className="whitespace-pre-wrap wrap-break-word text-xs">
-            {typeof requestBody === 'string'
+            {typeof requestBody === "string"
               ? requestBody
               : JSON.stringify(requestBody ?? {}, null, 2)}
           </pre>
-        ) : tab === 'response' ? (
+        ) : tab === "response" ? (
           <pre className="whitespace-pre-wrap wrap-break-word text-xs">
-            {typeof responseBody === 'string'
+            {typeof responseBody === "string"
               ? responseBody
               : JSON.stringify(responseBody ?? {}, null, 2)}
           </pre>
@@ -265,33 +269,28 @@ export function ReportViewerDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog
-      open={viewerType !== null}
-      onOpenChange={(open) => (!open ? onClose() : undefined)}
-    >
+    <Dialog open={viewerType !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <DialogContent className="max-w-4xl p-6">
         <DialogHeader>
           <DialogTitle>
-            {viewerType === 'description'
-              ? 'Report Description'
-              : viewerType === 'console'
-                ? 'Console Logs'
-                : viewerType === 'network'
-                  ? 'Network Logs'
-                  : 'Screenshot'}
+            {viewerType === "description"
+              ? "Report Description"
+              : viewerType === "console"
+                ? "Console Logs"
+                : viewerType === "network"
+                  ? "Network Logs"
+                  : "Screenshot"}
           </DialogTitle>
           <DialogDescription>
-            {report
-              ? `${getReporterLabel(report)} • ${formatDateTime(report.createdAt)}`
-              : ''}
+            {report ? `${getReporterLabel(report)} • ${formatDateTime(report.createdAt)}` : ""}
           </DialogDescription>
         </DialogHeader>
         {report ? (
-          viewerType === 'description' ? (
+          viewerType === "description" ? (
             <DescriptionViewer report={report} />
-          ) : viewerType === 'console' ? (
+          ) : viewerType === "console" ? (
             <ConsoleViewer report={report} />
-          ) : viewerType === 'network' ? (
+          ) : viewerType === "network" ? (
             <NetworkViewer report={report} />
           ) : (
             <ScreenshotViewer report={report} />

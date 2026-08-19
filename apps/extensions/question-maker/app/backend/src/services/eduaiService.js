@@ -118,13 +118,11 @@ class EduAIService {
         hasApiKey: !!this.apiKey,
         apiKeyLength: this.apiKey ? this.apiKey.length : 0,
       },
-      "EduAI Service initialized"
+      "EduAI Service initialized",
     );
 
     if (!this.apiKey) {
-      logger.warn(
-        "EduAI API key not configured. EduAI features will be disabled."
-      );
+      logger.warn("EduAI API key not configured. EduAI features will be disabled.");
     }
   }
 
@@ -224,9 +222,7 @@ class EduAIService {
         : typeof systemFromMessages?.content === "string"
           ? systemFromMessages.content.trim()
           : null;
-    const messages = rawMessages.filter(
-      (m) => m?.role === "user" || m?.role === "assistant",
-    );
+    const messages = rawMessages.filter((m) => m?.role === "user" || m?.role === "assistant");
     return { systemPrompt, messages };
   }
 
@@ -234,9 +230,7 @@ class EduAIService {
   async chat(params) {
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
-      throw new Error(
-        "EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core."
-      );
+      throw new Error("EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core.");
     }
 
     let chatStartMs;
@@ -277,24 +271,22 @@ class EduAIService {
         messageCount: (requestPayload.messages || []).length,
         hasSystemPrompt: Boolean(requestPayload.systemPrompt),
         systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
-        userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
+        userPromptLength:
+          (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
-      const response = await axios.post(
-        `${this.baseURL}/api/completion`,
-        requestPayload,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
-          timeout: timeoutMs,
-        }
-      );
+      const response = await axios.post(`${this.baseURL}/api/completion`, requestPayload, {
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        timeout: timeoutMs,
+      });
 
       const elapsedMs = Date.now() - chatStartMs;
       const responseData = response.data;
-      const responseKeys = responseData && typeof responseData === "object" ? Object.keys(responseData) : [];
+      const responseKeys =
+        responseData && typeof responseData === "object" ? Object.keys(responseData) : [];
       const contentPreview =
         responseData?.content != null
           ? String(responseData.content).slice(0, 200)
@@ -314,9 +306,7 @@ class EduAIService {
       if (error.response) {
         // API returned an error response
         const errorMessage =
-          error.response.data?.error ||
-          error.response.data?.message ||
-          error.response.statusText;
+          error.response.data?.error || error.response.data?.message || error.response.statusText;
         const statusCode = error.response.status;
         console.error("EduAI API Error:", {
           status: statusCode,
@@ -347,22 +337,24 @@ class EduAIService {
             url: error.config?.url,
             method: error.config?.method,
             timeout: error.config?.timeout,
-          }
+          },
         });
-        
+
         // Provide more specific error messages based on error code
-        const configuredTimeoutSec = error.config?.timeout != null ? Math.round(error.config.timeout / 1000) : 60;
+        const configuredTimeoutSec =
+          error.config?.timeout != null ? Math.round(error.config.timeout / 1000) : 60;
         let errorMessage = "EduAI API request failed: No response received";
-        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
           errorMessage = `EduAI API request timed out after ${configuredTimeoutSec} seconds. The server may be slow or overloaded. Please try again.`;
-        } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
           errorMessage = `EduAI API server is unreachable. Please check your network connection and verify the EduAI service URL (${this.baseURL}) is correct.`;
-        } else if (error.code === 'ECONNRESET') {
-          errorMessage = "EduAI API connection was reset. The server may have closed the connection. Please try again.";
+        } else if (error.code === "ECONNRESET") {
+          errorMessage =
+            "EduAI API connection was reset. The server may have closed the connection. Please try again.";
         } else if (error.code) {
           errorMessage = `EduAI API request failed: ${error.code}. Please check your network connection and try again.`;
         }
-        
+
         throw new Error(errorMessage);
       } else {
         // Something else happened
@@ -390,9 +382,7 @@ class EduAIService {
     } = params;
 
     if (!prompt || (!courseCode && !courseId)) {
-      throw new Error(
-        "Prompt and courseCode (or courseId) are required for question generation"
-      );
+      throw new Error("Prompt and courseCode (or courseId) are required for question generation");
     }
 
     const mcqCountEnforced =
@@ -502,7 +492,10 @@ OUTPUT RULES (mandatory):
         responseKeys: response && typeof response === "object" ? Object.keys(response) : [],
         rawContentType: rawType,
         rawContentLength: rawLength,
-        rawContentPreview: typeof rawContent === "string" ? rawContent.slice(0, 150) + (rawContent.length > 150 ? "..." : "") : String(rawContent).slice(0, 150),
+        rawContentPreview:
+          typeof rawContent === "string"
+            ? rawContent.slice(0, 150) + (rawContent.length > 150 ? "..." : "")
+            : String(rawContent).slice(0, 150),
       });
 
       // Parse the response (EduAI may return string JSON, fenced markdown, or prose + JSON)
@@ -518,9 +511,12 @@ OUTPUT RULES (mandatory):
         const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload ?? "");
         parsedResponse = parseQuestionsPayloadFromText(str);
         if (parsedResponse == null) {
-          console.warn(`${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`, {
-            rawPreview: str.slice(0, 300),
-          });
+          console.warn(
+            `${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`,
+            {
+              rawPreview: str.slice(0, 300),
+            },
+          );
           const repairSystem = `${systemPrompt}
 
 CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}). No markdown, no code fences, no prose before or after the JSON.`;
@@ -537,8 +533,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             timeoutMs: 180000,
             cookie,
           });
-          const repairRaw =
-            repairResponse?.content ?? repairResponse?.message ?? repairResponse;
+          const repairRaw = repairResponse?.content ?? repairResponse?.message ?? repairResponse;
           if (repairRaw !== null && typeof repairRaw === "object") {
             parsedResponse = repairRaw;
           } else {
@@ -560,7 +555,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       }
 
       // Check if the response is an error object
-      if (parsedResponse && typeof parsedResponse === 'object' && parsedResponse.error === true) {
+      if (parsedResponse && typeof parsedResponse === "object" && parsedResponse.error === true) {
         const errorReason = parsedResponse.reason || "AI was unable to generate the question";
         throw new Error(errorReason);
       }
@@ -569,7 +564,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       let questions = null;
       if (Array.isArray(parsedResponse)) {
         questions = parsedResponse;
-      } else if (parsedResponse && typeof parsedResponse === 'object') {
+      } else if (parsedResponse && typeof parsedResponse === "object") {
         questions =
           parsedResponse.questions ??
           parsedResponse.data ??
@@ -582,13 +577,15 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
 
       if (!Array.isArray(questions)) {
         throw new Error(
-          "EduAI response is not an array of questions. Expected a JSON array of question objects (or an object with a 'questions' array)."
+          "EduAI response is not an array of questions. Expected a JSON array of question objects (or an object with a 'questions' array).",
         );
       }
 
       // Normalize missing fields (extraction often omits reasoning_level; default instead of dropping)
       const questionsNormalized = questions
-        .filter((q) => q && typeof q === "object" && typeof q.content === "string" && q.content.trim())
+        .filter(
+          (q) => q && typeof q === "object" && typeof q.content === "string" && q.content.trim(),
+        )
         .map((q) => {
           const difficulty = ["easy", "medium", "hard"].includes(q.difficulty)
             ? q.difficulty
@@ -606,7 +603,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           q.difficulty &&
           q.reasoning_level &&
           ["easy", "medium", "hard"].includes(q.difficulty) &&
-          ["factual", "analytical", "application"].includes(q.reasoning_level)
+          ["factual", "analytical", "application"].includes(q.reasoning_level),
       );
 
       if (validQuestions.length === 0) {
@@ -645,35 +642,27 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         let content = question.content.trim();
 
         const description =
-          typeof question.description === "string" &&
-          question.description.trim().length > 0
+          typeof question.description === "string" && question.description.trim().length > 0
             ? question.description.trim()
             : "";
 
         const primaryCandidate = Number(question.primary_topic_id);
-        const primaryTopicId = Number.isInteger(primaryCandidate)
-          ? primaryCandidate
-          : null;
+        const primaryTopicId = Number.isInteger(primaryCandidate) ? primaryCandidate : null;
 
         const secondaryTopicIds = Array.isArray(question.secondary_topic_ids)
           ? Array.from(
               new Set(
                 question.secondary_topic_ids
                   .map((value) => Number(value))
-                  .filter(
-                    (value) =>
-                      Number.isInteger(value) && value !== primaryTopicId
-                  )
-              )
+                  .filter((value) => Number.isInteger(value) && value !== primaryTopicId),
+              ),
             )
           : [];
 
         const questionType =
-          typeof question.type === "string" &&
-          question.type.toUpperCase().trim() === "SA"
+          typeof question.type === "string" && question.type.toUpperCase().trim() === "SA"
             ? "SA"
-            : typeof question.type === "string" &&
-              question.type.toUpperCase().trim() === "LA"
+            : typeof question.type === "string" && question.type.toUpperCase().trim() === "LA"
               ? "LA"
               : "MCQ";
 
@@ -685,21 +674,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           // Normalize choices: accept array of {letter, text} or object like { "A": "text", "B": "text" }
           let rawChoices = question.choices;
           if (rawChoices !== null && typeof rawChoices === "object" && !Array.isArray(rawChoices)) {
-            rawChoices = Object.entries(rawChoices).map(([letter, text]) => ({
-              letter: String(letter).trim().toUpperCase() || null,
-              text: typeof text === "string" ? text.trim() : String(text || ""),
-            })).filter((c) => c.letter && c.text);
+            rawChoices = Object.entries(rawChoices)
+              .map(([letter, text]) => ({
+                letter: String(letter).trim().toUpperCase() || null,
+                text: typeof text === "string" ? text.trim() : String(text || ""),
+              }))
+              .filter((c) => c.letter && c.text);
           }
           if (Array.isArray(rawChoices) && rawChoices.length > 0) {
             choices = rawChoices
               .map((choice) => {
                 if (typeof choice === "object" && choice !== null) {
-                  const letter = typeof choice.letter === "string"
-                    ? choice.letter.toUpperCase().trim()
-                    : null;
-                  const text = typeof choice.text === "string"
-                    ? choice.text.trim()
-                    : "";
+                  const letter =
+                    typeof choice.letter === "string" ? choice.letter.toUpperCase().trim() : null;
+                  const text = typeof choice.text === "string" ? choice.text.trim() : "";
 
                   if (letter && text) {
                     return { letter, text };
@@ -726,7 +714,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             if (parsed.choices.length >= 2) {
               content = parsed.questionText;
               choices = parsed.choices;
-              console.log(`${DEBUG_PREFIX} MCQ choices parsed from content`, { count: choices.length });
+              console.log(`${DEBUG_PREFIX} MCQ choices parsed from content`, {
+                count: choices.length,
+              });
             }
           }
 
@@ -734,7 +724,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           if (!choices || choices.length === 0) {
             if (mcqCountEnforced) {
               choices = [];
-              console.log(`${DEBUG_PREFIX} MCQ had no choices; leaving empty (strict choice count — caller must retry)`);
+              console.log(
+                `${DEBUG_PREFIX} MCQ had no choices; leaving empty (strict choice count — caller must retry)`,
+              );
             } else {
               choices = [
                 { letter: "A", text: "Option A" },
@@ -774,7 +766,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         };
       });
 
-      console.log(`${DEBUG_PREFIX} generateQuestions success`, { count: normalizedQuestions.length });
+      console.log(`${DEBUG_PREFIX} generateQuestions success`, {
+        count: normalizedQuestions.length,
+      });
       return normalizedQuestions;
     } catch (error) {
       console.error(`${DEBUG_PREFIX} generateQuestions failed`, {
@@ -790,7 +784,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   async listCourses() {
     if (!this.isConfigured() || !this.hasApiKey()) {
       throw new Error(
-        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable.",
       );
     }
 
@@ -802,14 +796,14 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       const response = await axios.get(url, {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         timeout: 60000, // 60 second timeout
       });
 
       const courses = Array.isArray(response.data?.data) ? response.data.data : [];
       const ignored = (config.eduaiIgnoredCourseCodes || []).map((c) =>
-        String(c).replace(/\s+/g, "").toLowerCase()
+        String(c).replace(/\s+/g, "").toLowerCase(),
       );
       if (ignored.length === 0) {
         return courses;
@@ -824,9 +818,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     } catch (error) {
       if (error.response) {
         const errorMessage =
-          error.response.data?.error ||
-          error.response.data?.message ||
-          error.response.statusText;
+          error.response.data?.error || error.response.data?.message || error.response.statusText;
         const statusCode = error.response.status;
         console.error("EduAI courses API error:", {
           status: statusCode,
@@ -849,7 +841,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   async getCourseTopics(courseId) {
     if (!this.isConfigured() || !this.hasApiKey()) {
       throw new Error(
-        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable.",
       );
     }
 
@@ -863,7 +855,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       const response = await axios.get(url, {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         timeout: 60000, // 60 second timeout
       });
@@ -872,9 +864,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     } catch (error) {
       if (error.response) {
         const errorMessage =
-          error.response.data?.error ||
-          error.response.data?.message ||
-          error.response.statusText;
+          error.response.data?.error || error.response.data?.message || error.response.statusText;
         const statusCode = error.response.status;
         console.error("EduAI topics API error:", {
           status: statusCode,
@@ -897,7 +887,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   async listAIModels({ cookie } = {}) {
     if (!this.isConfigured() && !cookie?.trim()) {
       throw new Error(
-        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable.",
       );
     }
 
@@ -951,7 +941,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     }
 
     throw new Error(
-      "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+      "EduAI service is not configured. Please set EDUAI_API_KEY environment variable.",
     );
   }
 
@@ -979,7 +969,11 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     }
 
     let campusModels = null;
-    if (forceProvider === "ollama" || forceProvider === "vllm" || !Object.keys(clientApiKeys || {}).length) {
+    if (
+      forceProvider === "ollama" ||
+      forceProvider === "vllm" ||
+      !Object.keys(clientApiKeys || {}).length
+    ) {
       try {
         campusModels = await this.listAIModels({ cookie });
       } catch (err) {
@@ -1011,30 +1005,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         response: response,
       };
     } catch (error) {
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
-      ) {
+      if (error.message.includes("401") || error.message.includes("Unauthorized")) {
         return {
           success: false,
           error: "AI authentication failed — sign in via Core again",
         };
-      } else if (
-        error.message.includes("403") ||
-        error.message.includes("Forbidden")
-      ) {
+      } else if (error.message.includes("403") || error.message.includes("Forbidden")) {
         return {
           success: false,
           error: "AI access forbidden for this session",
         };
-      } else if (
-        error.message.includes("Invalid API key") ||
-        error.message.includes("test-key")
-      ) {
+      } else if (error.message.includes("Invalid API key") || error.message.includes("test-key")) {
         return {
           success: true,
-          message:
-            "EduAI API key is valid (provider API key test failed as expected)",
+          message: "EduAI API key is valid (provider API key test failed as expected)",
           note: "The EduAI API key works, but you need to provide valid AI provider API keys",
         };
       } else {
@@ -1052,4 +1036,3 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
 // Export singleton instance
 export const eduaiService = new EduAIService();
 export default eduaiService;
-

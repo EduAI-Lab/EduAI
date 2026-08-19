@@ -16,9 +16,7 @@ import type { KnnTierPrediction } from "~/lib/ai/routing/knn";
 import type { LlmRouteClassification } from "~/lib/ai/routing/llm-classifier";
 
 const mockPredictTierKnn = vi.hoisted(() => vi.fn<() => Promise<KnnTierPrediction>>());
-const mockClassifyPromptForTier = vi.hoisted(() =>
-  vi.fn<() => Promise<LlmRouteClassification>>(),
-);
+const mockClassifyPromptForTier = vi.hoisted(() => vi.fn<() => Promise<LlmRouteClassification>>());
 const mockPickModelForSpec = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/ai/routing/knn", () => ({
@@ -100,8 +98,7 @@ function buildRouterInputs(row: AutoRouterRow): {
     courseId: row.Tier3RuleMatch === "yes" ? null : "course-1",
     imagesPresent: row.ImagesPresent === "yes",
   };
-  const modeOverride =
-    row.ModeOverride === "none" ? undefined : (row.ModeOverride as RouterMode);
+  const modeOverride = row.ModeOverride === "none" ? undefined : (row.ModeOverride as RouterMode);
   return { prompt, context, modeOverride };
 }
 
@@ -149,9 +146,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
 
       expect(decision.features.routerMode).toBe(verdict.effectiveMode);
       expect(decision.features.pickSource).toBe(verdict.pickSource);
-      expect(decision.features.routerVersion).toBe(
-        expectedRouterVersion(verdict.effectiveMode),
-      );
+      expect(decision.features.routerVersion).toBe(expectedRouterVersion(verdict.effectiveMode));
 
       if (verdict.downgradedFromThrow) {
         expect(decision.features.rule).toBe("llm_classifier_fallback_rules");

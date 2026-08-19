@@ -21,10 +21,7 @@ vi.mock("~/lib/canvas/client.server", () => ({
 }));
 
 import prisma from "~/lib/prisma.server";
-import {
-  listCanvasCourseStudents,
-  listCanvasCourseTas,
-} from "~/lib/canvas/client.server";
+import { listCanvasCourseStudents, listCanvasCourseTas } from "~/lib/canvas/client.server";
 import { syncCourseRoster } from "~/lib/canvas/roster.server";
 
 const credentials = { canvasBaseUrl: "https://canvas.test", apiToken: "tok" } as never;
@@ -102,9 +99,7 @@ describe("syncCourseRoster", () => {
   // before the deactivation sweep, so prior active rows survive until a later
   // successful sync.
   it("does not deactivate any rows when the roster fetch throws", async () => {
-    vi.mocked(listCanvasCourseStudents).mockRejectedValue(
-      new Error("Canvas 500"),
-    );
+    vi.mocked(listCanvasCourseStudents).mockRejectedValue(new Error("Canvas 500"));
     vi.mocked(listCanvasCourseTas).mockResolvedValue([] as never);
 
     await expect(syncCourseRoster(baseInput())).rejects.toThrow("Canvas 500");

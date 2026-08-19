@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  UBC_STUDENT_NUMBER_PATTERN,
-  UBC_STUDENT_NUMBER_MESSAGE,
-} from "./student-number";
+import { UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE } from "./student-number";
 
 function normalizeCanvasUrl(url: string): string {
   return url.replace(/\/+$/, "");
@@ -65,10 +62,7 @@ export type SyncCanvasCoursesResult = {
 };
 
 export const LinkRosterSchema = z.object({
-  studentNumber: z
-    .string()
-    .trim()
-    .regex(UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE),
+  studentNumber: z.string().trim().regex(UBC_STUDENT_NUMBER_PATTERN, UBC_STUDENT_NUMBER_MESSAGE),
 });
 
 export type LinkRosterInput = z.infer<typeof LinkRosterSchema>;

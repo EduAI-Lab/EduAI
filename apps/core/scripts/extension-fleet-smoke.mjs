@@ -21,10 +21,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const baseUrl = (process.env.CORE_SMOKE_BASE_URL || "http://127.0.0.1:3000").replace(
-  /\/$/,
-  "",
-);
+const baseUrl = (process.env.CORE_SMOKE_BASE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const serviceKey = process.env.EDUAI_API_KEY;
 if (!serviceKey) {
   console.error("EDUAI_API_KEY is required");

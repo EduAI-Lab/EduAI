@@ -173,7 +173,10 @@ describe("POST /api/courses/:courseId/canvas-materials", () => {
     vi.mocked(syncSelectedCanvasMaterials).mockResolvedValue({ synced: 2 } as never);
     const res = await action(makeActionArgs({ canvasFileIds: ["f1", "f2"] }));
     expect(res.status).toBe(200);
-    expect(syncSelectedCanvasMaterials).toHaveBeenCalledWith("instructor-1", "course-1", ["f1", "f2"]);
+    expect(syncSelectedCanvasMaterials).toHaveBeenCalledWith("instructor-1", "course-1", [
+      "f1",
+      "f2",
+    ]);
   });
 
   it("maps a CanvasMaterialSyncError to its statusCode", async () => {

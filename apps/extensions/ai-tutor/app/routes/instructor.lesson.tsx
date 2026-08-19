@@ -35,10 +35,10 @@
  *          hooks/useCourseTopics. Course-level topic sync/create now lives in
  *          the course hero (components/courses/CourseTopicsHeroAction).
  */
-import { startTransition, useEffect, useOptimistic, useRef, useState } from 'react';
-import { Spinner } from '@eduai/ui';
-import { useNavigation, useParams, useSearchParams } from 'react-router';
-import { toast } from 'sonner';
+import { startTransition, useEffect, useOptimistic, useRef, useState } from "react";
+import { Spinner } from "@eduai/ui";
+import { useNavigation, useParams, useSearchParams } from "react-router";
+import { toast } from "sonner";
 import {
   IconArrowsSort,
   IconListCheck,
@@ -52,28 +52,21 @@ import {
   IconSchool,
   IconRoute,
   IconWand,
-} from '@tabler/icons-react';
-import AddActivityPanel from '../components/AddActivityPanel';
-import ActivityDetailsCard from '../components/ActivityDetailsCard';
-import EditActivityPanel from '../components/EditActivityPanel';
-import { contentExcerpt } from '../components/lessons/LessonCard';
-import { ModuleHero } from '../components/lessons/ModuleHero';
-import { accentForCourse } from '~/lib/course-display';
-import api from '../lib/api';
-import type { ImportableActivity } from '../lib/api';
-import type {
-  Activity,
-  Course,
-  Lesson,
-  Module,
-  ModuleDetail,
-  Topic,
-} from '../lib/types';
-import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
-import type { Route } from './+types/instructor.lesson';
-import { requireClientUser } from '~/lib/client-auth';
+} from "@tabler/icons-react";
+import AddActivityPanel from "../components/AddActivityPanel";
+import ActivityDetailsCard from "../components/ActivityDetailsCard";
+import EditActivityPanel from "../components/EditActivityPanel";
+import { contentExcerpt } from "../components/lessons/LessonCard";
+import { ModuleHero } from "../components/lessons/ModuleHero";
+import { accentForCourse } from "~/lib/course-display";
+import api from "../lib/api";
+import type { ImportableActivity } from "../lib/api";
+import type { Activity, Course, Lesson, Module, ModuleDetail, Topic } from "../lib/types";
+import { CourseTopicsProvider, useCourseTopics } from "../hooks/useCourseTopics";
+import type { Route } from "./+types/instructor.lesson";
+import { requireClientUser } from "~/lib/client-auth";
 
-import type { ActivityUpdatePayload } from '../lib/activityForm';
+import type { ActivityUpdatePayload } from "../lib/activityForm";
 import {
   Badge,
   Button,
@@ -104,24 +97,24 @@ import {
   SortableItem,
   DragHandle,
   courseThemeVars,
-} from '@eduai/ui';
-import { splitTitle } from '~/lib/course-title';
-import { cn } from '~/lib/utils';
-import { useBugReport } from '~/components/bug-report/useBugReport';
-import { PermissionGate } from '@eduai/ui';
-import { useAtPermissions } from '~/hooks/useAtPermissions';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { PaginationControls } from '~/components/common/PaginationControls';
-import { ListSearchInput } from '~/components/common/ListSearchInput';
-import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
+} from "@eduai/ui";
+import { splitTitle } from "~/lib/course-title";
+import { cn } from "~/lib/utils";
+import { useBugReport } from "~/components/bug-report/useBugReport";
+import { PermissionGate } from "@eduai/ui";
+import { useAtPermissions } from "~/hooks/useAtPermissions";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { PaginationControls } from "~/components/common/PaginationControls";
+import { ListSearchInput } from "~/components/common/ListSearchInput";
+import { MoveToPositionDialog } from "~/components/common/MoveToPositionDialog";
 import {
   absoluteOrdinal,
   movedRowIndex,
   parseListUrlParams,
   redirectPastEnd,
-} from '~/lib/list-params';
-import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from '~/components/common/ListSearchInput';
+} from "~/lib/list-params";
+import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from "~/components/common/ListSearchInput";
 
 /**
  * Loads the lesson and its activities (parallel), then walks up to the
@@ -130,10 +123,10 @@ import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from '~/components/co
  * having the parent course available.
  */
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
+  await requireClientUser(["INSTRUCTOR", "UNIT_ADMIN", "TA", "ADMIN"]);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
-    throw new Response('Invalid lesson id', { status: 400 });
+    throw new Response("Invalid lesson id", { status: 400 });
   }
 
   // #1207: page + search live in the URL; `search` is applied server-side.
@@ -213,7 +206,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // is disabled only while a search is active, because a filtered list hides
   // the rows between two visible matches.
   const [movingActivity, setMovingActivity] = useState<Activity | null>(null);
-  const searching = search !== '';
+  const searching = search !== "";
   const [oActivities, addActivityOpt] = useOptimistic(
     activities,
     (state, patch: (items: Activity[]) => Activity[]) => patch(state),
@@ -245,8 +238,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // `draft` is what the user is typing; `importSearch` is the settled term that
   // has actually been sent. Keeping them apart is what makes the debounce
   // observable to the effect below.
-  const [importSearchDraft, setImportSearchDraft] = useState('');
-  const [importSearch, setImportSearch] = useState('');
+  const [importSearchDraft, setImportSearchDraft] = useState("");
+  const [importSearch, setImportSearch] = useState("");
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   // The chosen row itself, not just its id (#1207). With server-side search the
   // options list is only the current term's page, so a later search drops the
@@ -367,8 +360,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       );
       cancelEditingActivity();
     } catch (error) {
-      console.error('Failed to update activity', error);
-      setEditError('Could not save activity. Please try again.');
+      console.error("Failed to update activity", error);
+      setEditError("Could not save activity. Please try again.");
     } finally {
       setSavingActivityId((current) => (current === activityId ? null : current));
     }
@@ -378,7 +371,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set('page', String(nextPage));
+        next.set("page", String(nextPage));
         return next;
       },
       { preventScrollReset: false },
@@ -390,9 +383,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const setActivitySearch = (term: string) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (term === '') next.delete('search');
-      else next.set('search', term);
-      next.delete('page');
+      if (term === "") next.delete("search");
+      else next.set("search", term);
+      next.delete("page");
       return next;
     });
   };
@@ -405,7 +398,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setActivities(activityData.data);
       setActivitiesTotal(activityData.total);
     } catch (error) {
-      console.error('Failed to refresh activities', error);
+      console.error("Failed to refresh activities", error);
     }
   };
 
@@ -424,10 +417,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     let unfilteredTotal = activitiesTotal + 1;
     if (searching && numericLessonId) {
       try {
-        unfilteredTotal = (await api.activitiesForLesson(numericLessonId, { page: 1, search: '' }))
+        unfilteredTotal = (await api.activitiesForLesson(numericLessonId, { page: 1, search: "" }))
           .total;
       } catch (error) {
-        console.error('Failed to count activities after add', error);
+        console.error("Failed to count activities after add", error);
       }
     }
 
@@ -435,8 +428,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     if (searching || page !== lastPage) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
-        next.delete('search');
-        next.set('page', String(lastPage));
+        next.delete("search");
+        next.set("page", String(lastPage));
         return next;
       });
       return;
@@ -456,8 +449,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       await api.moveActivityToPosition(activityId, targetOrdinal);
       await refreshActivities();
     } catch (error) {
-      console.error('Failed to move activity', error);
-      toast.error('Failed to reorder activities. The previous order was restored.');
+      console.error("Failed to move activity", error);
+      toast.error("Failed to reorder activities. The previous order was restored.");
       setActivities(current);
     } finally {
       setReorderingActivities(false);
@@ -476,7 +469,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     if (next.length !== activities.length) {
       // Dropped order came from a stale render (list changed mid-drag); refetch
       // rather than persisting a move against a list we no longer have.
-      toast.error('The activity list changed while reordering. Refreshing — please try again.');
+      toast.error("The activity list changed while reordering. Refreshing — please try again.");
       await refreshActivities();
       return;
     }
@@ -510,8 +503,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         cancelEditingActivity();
       }
     } catch (error) {
-      console.error('Failed to remove activity', error);
-      toast.error('Failed to remove activity. Please try again.');
+      console.error("Failed to remove activity", error);
+      toast.error("Failed to remove activity. Please try again.");
     } finally {
       setDeletingActivityId((current) => (current === activityId ? null : current));
     }
@@ -528,8 +521,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       // it out of sync with the server's real order.
       await revealNewestActivity();
     } catch (error) {
-      console.error('Failed to duplicate activity', error);
-      alert('Failed to duplicate activity. Please try again.');
+      console.error("Failed to duplicate activity", error);
+      alert("Failed to duplicate activity. Please try again.");
     } finally {
       setDuplicatingActivityId((current) => (current === activityId ? null : current));
     }
@@ -567,8 +560,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setImportableTotal(page.total);
     } catch (error) {
       if (requestId !== importRequestIdRef.current) return;
-      console.error('Failed to load importable activities', error);
-      setImportableError('Could not load activities to import. Please try again.');
+      console.error("Failed to load importable activities", error);
+      setImportableError("Could not load activities to import. Please try again.");
       setImportableActivities(null);
       setImportableTotal(0);
     } finally {
@@ -579,9 +572,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const openImportDialog = async () => {
     setShowImportDialog(true);
     setSelectedImportId(null);
-    setImportSearch('');
-    setImportSearchDraft('');
-    await loadImportable('');
+    setImportSearch("");
+    setImportSearchDraft("");
+    await loadImportable("");
   };
 
   // Debounce the picker's term, then refetch. Keyed on the draft so each
@@ -606,8 +599,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setSelectedImportId(null);
     setSelectedImportActivity(null);
     setImportableError(null);
-    setImportSearch('');
-    setImportSearchDraft('');
+    setImportSearch("");
+    setImportSearchDraft("");
   };
 
   const handleConfirmImport = async () => {
@@ -625,8 +618,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setSelectedImportId(null);
       setSelectedImportActivity(null);
     } catch (error) {
-      console.error('Failed to import activity', error);
-      setImportableError('Could not import this activity. Please try again.');
+      console.error("Failed to import activity", error);
+      setImportableError("Could not import this activity. Please try again.");
     } finally {
       setImporting(false);
     }
@@ -634,18 +627,18 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
   const handleActivityModeChange = async (
     activityId: number,
-    mode: 'teach' | 'guide' | 'custom',
+    mode: "teach" | "guide" | "custom",
     enabled: boolean,
   ) => {
     const activity = oActivities.find((a) => a.id === activityId);
     if (!activity) return;
 
-    const newTeach = mode === 'teach' ? enabled : activity.enableTeachMode;
-    const newGuide = mode === 'guide' ? enabled : activity.enableGuideMode;
-    const newCustom = mode === 'custom' ? enabled : activity.enableCustomMode;
+    const newTeach = mode === "teach" ? enabled : activity.enableTeachMode;
+    const newGuide = mode === "guide" ? enabled : activity.enableGuideMode;
+    const newCustom = mode === "custom" ? enabled : activity.enableCustomMode;
 
     if (!newTeach && !newGuide && !newCustom) {
-      alert('At least one AI mode must be enabled');
+      alert("At least one AI mode must be enabled");
       return;
     }
 
@@ -658,12 +651,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               enableTeachMode: newTeach,
               enableGuideMode: newGuide,
               enableCustomMode: newCustom,
-              customPrompt: mode === 'custom' && !enabled ? null : a.customPrompt,
+              customPrompt: mode === "custom" && !enabled ? null : a.customPrompt,
             }
           : a,
       ),
     );
-    if (mode === 'custom' && !enabled) {
+    if (mode === "custom" && !enabled) {
       setPromptSaved((prev) => ({ ...prev, [activityId]: false }));
     }
 
@@ -674,21 +667,21 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         enableGuideMode: newGuide,
         enableCustomMode: newCustom,
       };
-      if (mode === 'custom' && !enabled) {
+      if (mode === "custom" && !enabled) {
         payload.customPrompt = null;
       }
       const updated = await api.updateActivity(activityId, payload);
       setActivities((prev) => prev.map((a) => (a.id === activityId ? updated : a)));
     } catch (error) {
-      console.error('Failed to update AI modes', error);
+      console.error("Failed to update AI modes", error);
     } finally {
       endModeUpdate(activityId);
     }
   };
 
   const handleCustomPromptSave = async (activity: Activity) => {
-    const draft = (promptDrafts[activity.id] ?? activity.customPrompt ?? '').trim();
-    const titleDraft = (titleDrafts[activity.id] ?? activity.customPromptTitle ?? '')
+    const draft = (promptDrafts[activity.id] ?? activity.customPrompt ?? "").trim();
+    const titleDraft = (titleDrafts[activity.id] ?? activity.customPromptTitle ?? "")
       .trim()
       .slice(0, 20);
 
@@ -696,19 +689,19 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     if (!titleDraft) {
       setPromptErrors((prev) => ({
         ...prev,
-        [activity.id]: 'Please provide a title for the custom prompt (max 20 characters).',
+        [activity.id]: "Please provide a title for the custom prompt (max 20 characters).",
       }));
       return;
     }
     if (!draft) {
       setPromptErrors((prev) => ({
         ...prev,
-        [activity.id]: 'Please provide the custom prompt text.',
+        [activity.id]: "Please provide the custom prompt text.",
       }));
       return;
     }
 
-    setPromptErrors((prev) => ({ ...prev, [activity.id]: '' }));
+    setPromptErrors((prev) => ({ ...prev, [activity.id]: "" }));
 
     addActivityOpt((items) =>
       items.map((item) =>
@@ -726,10 +719,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setActivities((prev) => prev.map((item) => (item.id === activity.id ? updated : item)));
       setPromptSaved((prev) => ({ ...prev, [activity.id]: true }));
     } catch (error) {
-      console.error('Failed to save custom prompt', error);
+      console.error("Failed to save custom prompt", error);
       setPromptErrors((prev) => ({
         ...prev,
-        [activity.id]: 'Could not save the custom prompt. Please try again.',
+        [activity.id]: "Could not save the custom prompt. Please try again.",
       }));
       setActivities((prev) => [...prev]);
     } finally {
@@ -754,9 +747,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           ? {
               ...activity,
               mainTopic: topic,
-              secondaryTopics: activity.secondaryTopics.filter(
-                (item) => String(item.id) !== value,
-              ),
+              secondaryTopics: activity.secondaryTopics.filter((item) => String(item.id) !== value),
             }
           : activity,
       ),
@@ -777,7 +768,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         ),
       );
     } catch (error) {
-      console.error('Failed to update main topic', error);
+      console.error("Failed to update main topic", error);
       // Base state remains unchanged; optimistic view will clear on next render
     } finally {
       endTopicUpdate(activityId);
@@ -804,9 +795,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     startTransition(async () => {
       addActivityOpt((items) =>
         items.map((activity) =>
-          activity.id === activityId
-            ? { ...activity, secondaryTopics: nextTopics }
-            : activity,
+          activity.id === activityId ? { ...activity, secondaryTopics: nextTopics } : activity,
         ),
       );
       try {
@@ -825,7 +814,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           ),
         );
       } catch (error) {
-        console.error('Failed to update secondary topics', error);
+        console.error("Failed to update secondary topics", error);
         // Base state unchanged; optimistic view clears when the action settles.
       } finally {
         endTopicUpdate(activityId);
@@ -834,15 +823,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   };
 
   const breadcrumbItems = [
-    { label: 'Courses', href: '/instructor' },
+    { label: "Courses", href: "/instructor" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         course?.id != null ? (
           <CourseSwitcher
             courseId={course.id}
             basePath="/instructor"
-            currentTitle={course?.title || 'Course'}
+            currentTitle={course?.title || "Course"}
           />
         ) : undefined,
     },
@@ -854,10 +843,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             href: `/instructor/module/${lesson.moduleId}`,
           },
         ]
-      : [{ label: 'Module' }]),
+      : [{ label: "Module" }]),
     lesson?.title
       ? { label: splitTitle(lesson.title).label, title: lesson.title }
-      : { label: 'Lesson' },
+      : { label: "Lesson" },
   ];
 
   useShellBreadcrumbs(breadcrumbItems);
@@ -868,18 +857,18 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         <ModuleHero
           eyebrow="Lesson"
           orderText={orderText}
-          title={lesson?.title || 'Lesson'}
+          title={lesson?.title || "Lesson"}
           description={
             (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
             module?.title ||
-            'Activity editor'
+            "Activity editor"
           }
           accentColor={accentColor}
           stats={
             oActivities.length > 0
               ? [
                   {
-                    label: oActivities.length === 1 ? 'activity' : 'activities',
+                    label: oActivities.length === 1 ? "activity" : "activities",
                     value: oActivities.length,
                   },
                 ]
@@ -904,90 +893,84 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 onClick={() => setShowAddPanel((open) => !open)}
               >
                 <IconPlus className="size-4" aria-hidden="true" />
-                {showAddPanel ? 'Hide' : 'Add activity'}
+                {showAddPanel ? "Hide" : "Add activity"}
               </Button>
             </PermissionGate>
           }
         />
 
         <div className="space-y-4">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-semibold text-foreground">Activities</h2>
-              {oActivities.length > 0 && (
-                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-muted px-2 text-xs font-semibold text-muted-foreground">
-                  {oActivities.length}
-                </span>
-              )}
-            </div>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-semibold text-foreground">Activities</h2>
+            {oActivities.length > 0 && (
+              <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-muted px-2 text-xs font-semibold text-muted-foreground">
+                {oActivities.length}
+              </span>
+            )}
+          </div>
 
-            <PermissionGate allow={perms.canManageContent}>
-              <Dialog
-                open={showAddPanel}
-                onOpenChange={(open) => setShowAddPanel(open)}
-              >
-                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-                  {numericLessonId !== null && (
-                    <AddActivityPanel
-                      lessonId={numericLessonId}
-                      onActivityCreated={() => {
-                        void revealNewestActivity();
-                        setShowAddPanel(false);
-                      }}
-                      onCancel={() => setShowAddPanel(false)}
-                    />
-                  )}
-                </DialogContent>
-              </Dialog>
-            </PermissionGate>
+          <PermissionGate allow={perms.canManageContent}>
+            <Dialog open={showAddPanel} onOpenChange={(open) => setShowAddPanel(open)}>
+              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                {numericLessonId !== null && (
+                  <AddActivityPanel
+                    lessonId={numericLessonId}
+                    onActivityCreated={() => {
+                      void revealNewestActivity();
+                      setShowAddPanel(false);
+                    }}
+                    onCancel={() => setShowAddPanel(false)}
+                  />
+                )}
+              </DialogContent>
+            </Dialog>
+          </PermissionGate>
 
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <ListSearchInput
-                value={search}
-                label="Search activities"
-                placeholder="Search activities…"
-                onSearchChange={setActivitySearch}
-              />
-              {searching && perms.canManageContent ? (
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <ListSearchInput
+              value={search}
+              label="Search activities"
+              placeholder="Search activities…"
+              onSearchChange={setActivitySearch}
+            />
+            {searching && perms.canManageContent ? (
+              <p className="text-sm text-muted-foreground">
+                Clear the search to reorder activities.
+              </p>
+            ) : null}
+          </div>
+
+          {oActivities.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <IconListCheck size={22} aria-hidden="true" />
+                </div>
                 <p className="text-sm text-muted-foreground">
-                  Clear the search to reorder activities.
+                  {searching ? "No activities match your search." : "No activities yet."}
                 </p>
-              ) : null}
-            </div>
-
-            {oActivities.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                  <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <IconListCheck size={22} aria-hidden="true" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {searching ? 'No activities match your search.' : 'No activities yet.'}
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <SortableProvider
-                ids={oActivities.map((a) => a.id)}
-                onReorder={reorderActivitiesList}
-                strategy="list"
-                disabled={
-                  !perms.canManageContent ||
-                  activitiesTotal < 2 ||
-                  reorderingActivities ||
-                  searching
-                }
-              >
+              </CardContent>
+            </Card>
+          ) : (
+            <SortableProvider
+              ids={oActivities.map((a) => a.id)}
+              onReorder={reorderActivitiesList}
+              strategy="list"
+              disabled={
+                !perms.canManageContent || activitiesTotal < 2 || reorderingActivities || searching
+              }
+            >
               <div className="space-y-4">
                 {oActivities.map((activity, i) => {
                   const isUpdatingTopics = updatingTopicsFor === activity.id;
                   const isUpdatingModes = updatingModesFor === activity.id;
-                  const mainTopicId = activity.mainTopic?.id ?? '';
+                  const mainTopicId = activity.mainTopic?.id ?? "";
                   const isEditing = editingActivityId === activity.id;
                   const isSaving = savingActivityId === activity.id;
                   const isDeleting = deletingActivityId === activity.id;
                   const isDuplicating = duplicatingActivityId === activity.id;
                   const isCustomEnabled = activity.enableCustomMode;
-                  const promptDraft = promptDrafts[activity.id] ?? activity.customPrompt ?? '';
+                  const promptDraft = promptDrafts[activity.id] ?? activity.customPrompt ?? "";
                   const isSavingPrompt = savingPromptId === activity.id;
                   const isPromptSaved =
                     promptSaved[activity.id] ??
@@ -998,115 +981,82 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   return (
                     <SortableItem key={activity.id} id={activity.id} disabled={!canReorderActivity}>
                       {({ handleProps }) => (
-                      <Card
-                        className="group relative overflow-hidden"
-                        style={courseThemeVars(accentColor ?? 'var(--primary)')}
-                      >
-                        {/* Accent rail — ties the activity to its parent course. */}
-                        <div
-                          className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
-                          style={{
-                            background:
-                              'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
-                          }}
-                          aria-hidden="true"
-                        />
-                        {/* Ghosted order-number watermark — the lesson-tier motif. */}
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -bottom-8 right-2 select-none text-[7rem] font-black leading-none tabular-nums"
-                          style={{
-                            color: 'color-mix(in oklch, var(--course-accent) 8%, transparent)',
-                          }}
+                        <Card
+                          className="group relative overflow-hidden"
+                          style={courseThemeVars(accentColor ?? "var(--primary)")}
                         >
-                          {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, '0')}
-                        </span>
-                        <div className="relative flex items-start gap-3 p-5">
-                          {canReorderActivity && (
-                            <DragHandle
-                              handleProps={handleProps}
-                              label={`Drag to reorder ${activity.title ?? 'activity'}`}
-                              className="mt-0.5"
-                            />
-                          )}
-                          <span
-                            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
+                          {/* Accent rail — ties the activity to its parent course. */}
+                          <div
+                            className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
                             style={{
                               background:
-                                'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                              color: 'var(--course-accent)',
-                              boxShadow:
-                                'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                                "linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))",
+                            }}
+                            aria-hidden="true"
+                          />
+                          {/* Ghosted order-number watermark — the lesson-tier motif. */}
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -bottom-8 right-2 select-none text-[7rem] font-black leading-none tabular-nums"
+                            style={{
+                              color: "color-mix(in oklch, var(--course-accent) 8%, transparent)",
                             }}
                           >
-                            {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, '0')}
+                            {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, "0")}
                           </span>
-                          <div className="min-w-0 flex-1 space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary" size="sm">
-                                {activity.type}
-                              </Badge>
-                              {activity.mainTopic && (
-                                <Badge variant="outline" size="sm">
-                                  {activity.mainTopic.name}
-                                </Badge>
-                              )}
-                              {(isSaving || isDeleting || isDuplicating) && (
-                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                                  <Spinner size="xs" />
-                                  {isSaving
-                                    ? 'Saving…'
-                                    : isDeleting
-                                      ? 'Removing…'
-                                      : 'Duplicating…'}
-                                </span>
-                              )}
-                            </div>
-                            <p className="whitespace-pre-wrap text-[15px] font-semibold leading-snug text-foreground">
-                              {activity.question}
-                            </p>
-                          </div>
-                          <PermissionGate allow={perms.canManageContent}>
-                            <div className="flex shrink-0 items-center gap-0.5">
-                              {isEditing ? (
+                          <div className="relative flex items-start gap-3 p-5">
+                            {canReorderActivity && (
+                              <DragHandle
+                                handleProps={handleProps}
+                                label={`Drag to reorder ${activity.title ?? "activity"}`}
+                                className="mt-0.5"
+                              />
+                            )}
+                            <span
+                              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
+                              style={{
+                                background:
+                                  "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                                color: "var(--course-accent)",
+                                boxShadow:
+                                  "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
+                              }}
+                            >
+                              {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, "0")}
+                            </span>
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <Badge variant="secondary" size="sm">
-                                  Editing…
+                                  {activity.type}
                                 </Badge>
-                              ) : (
-                                <TooltipProvider delayDuration={200}>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-8"
-                                        aria-label="Edit activity"
-                                        onClick={() => beginEditingActivity(activity)}
-                                        disabled={isDeleting || isDuplicating}
-                                      >
-                                        <IconPencil className="size-4" aria-hidden="true" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Edit</TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-8"
-                                        aria-label="Duplicate activity"
-                                        onClick={() => handleDuplicateActivity(activity.id)}
-                                        disabled={isDeleting || isDuplicating}
-                                      >
-                                        <IconCopy className="size-4" aria-hidden="true" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Duplicate</TooltipContent>
-                                  </Tooltip>
-                                  {canReorderActivity ? (
+                                {activity.mainTopic && (
+                                  <Badge variant="outline" size="sm">
+                                    {activity.mainTopic.name}
+                                  </Badge>
+                                )}
+                                {(isSaving || isDeleting || isDuplicating) && (
+                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                                    <Spinner size="xs" />
+                                    {isSaving
+                                      ? "Saving…"
+                                      : isDeleting
+                                        ? "Removing…"
+                                        : "Duplicating…"}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="whitespace-pre-wrap text-[15px] font-semibold leading-snug text-foreground">
+                                {activity.question}
+                              </p>
+                            </div>
+                            <PermissionGate allow={perms.canManageContent}>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                {isEditing ? (
+                                  <Badge variant="secondary" size="sm">
+                                    Editing…
+                                  </Badge>
+                                ) : (
+                                  <TooltipProvider delayDuration={200}>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Button
@@ -1114,296 +1064,358 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                           variant="ghost"
                                           size="icon"
                                           className="size-8"
-                                          aria-label="Move activity to position"
-                                          onClick={() => setMovingActivity(activity)}
+                                          aria-label="Edit activity"
+                                          onClick={() => beginEditingActivity(activity)}
                                           disabled={isDeleting || isDuplicating}
                                         >
-                                          <IconArrowsSort className="size-4" aria-hidden="true" />
+                                          <IconPencil className="size-4" aria-hidden="true" />
                                         </Button>
                                       </TooltipTrigger>
-                                      {/* Cross-page move (#1207): drag only reaches this page. */}
-                                      <TooltipContent>Move to position</TooltipContent>
+                                      <TooltipContent>Edit</TooltipContent>
                                     </Tooltip>
-                                  ) : null}
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-8"
+                                          aria-label="Duplicate activity"
+                                          onClick={() => handleDuplicateActivity(activity.id)}
+                                          disabled={isDeleting || isDuplicating}
+                                        >
+                                          <IconCopy className="size-4" aria-hidden="true" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Duplicate</TooltipContent>
+                                    </Tooltip>
+                                    {canReorderActivity ? (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-8"
+                                            aria-label="Move activity to position"
+                                            onClick={() => setMovingActivity(activity)}
+                                            disabled={isDeleting || isDuplicating}
+                                          >
+                                            <IconArrowsSort className="size-4" aria-hidden="true" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        {/* Cross-page move (#1207): drag only reaches this page. */}
+                                        <TooltipContent>Move to position</TooltipContent>
+                                      </Tooltip>
+                                    ) : null}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-8 text-muted-foreground hover:text-destructive"
+                                          aria-label="Remove activity"
+                                          onClick={() => setPendingDeleteId(activity.id)}
+                                          disabled={isDeleting || isDuplicating}
+                                        >
+                                          <IconTrash className="size-4" aria-hidden="true" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Remove</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                              </div>
+                            </PermissionGate>
+                          </div>
+
+                          <div className="relative space-y-4 border-t border-border p-5">
+                            {isEditing && perms.canManageContent ? (
+                              <EditActivityPanel
+                                key={activity.id}
+                                activity={activity}
+                                busy={isSaving}
+                                error={editError}
+                                onSubmit={(payload) => handleEditSubmit(activity.id, payload)}
+                                onCancel={cancelEditingActivity}
+                              />
+                            ) : (
+                              <ActivityDetailsCard activity={activity} />
+                            )}
+
+                            <div className="grid items-start gap-4 lg:grid-cols-2">
+                              <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
+                                    <IconTag className="size-3.5" aria-hidden="true" />
+                                  </span>
+                                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                    Topics
+                                  </span>
+                                </div>
+                                {topics.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Define course topics to tag this activity.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                      <Label
+                                        htmlFor={`activity-${activity.id}-main-topic`}
+                                        className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
+                                      >
+                                        Main topic
+                                      </Label>
+                                      <Select
+                                        value={mainTopicId !== "" ? String(mainTopicId) : undefined}
+                                        onValueChange={(value) =>
+                                          handleActivityMainTopicChange(activity.id, value)
+                                        }
+                                        disabled={loadingTopics || isUpdatingTopics}
+                                      >
+                                        <SelectTrigger
+                                          id={`activity-${activity.id}-main-topic`}
+                                          className="w-full"
+                                        >
+                                          <SelectValue placeholder="Select a topic…" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {topics.map((topic) => (
+                                            <SelectItem key={topic.id} value={String(topic.id)}>
+                                              {topic.name}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        Secondary topics
+                                      </span>
+                                      <MultiSelect
+                                        options={topics
+                                          .filter((topic) => topic.id !== mainTopicId)
+                                          .map((topic) => ({
+                                            value: String(topic.id),
+                                            label: topic.name,
+                                          }))}
+                                        value={activity.secondaryTopics.map((topic) =>
+                                          String(topic.id),
+                                        )}
+                                        onValueChange={(nextValues) =>
+                                          handleActivitySecondaryChange(activity.id, nextValues)
+                                        }
+                                        disabled={loadingTopics}
+                                        placeholder="Add secondary topics…"
+                                        searchPlaceholder="Search topics…"
+                                        emptyText="No other topics."
+                                        className="w-full"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                                {showTopicSaving && isUpdatingTopics && (
+                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                                    <Spinner size="xs" />
+                                    Saving…
+                                  </span>
+                                )}
+                              </section>
+
+                              <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                                    <IconSparkles className="size-3.5" aria-hidden="true" />
+                                  </span>
+                                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                    AI study buddy
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {(
+                                    [
+                                      {
+                                        key: "teach",
+                                        label: "Teach me",
+                                        icon: IconSchool,
+                                        enabled: activity.enableTeachMode,
+                                      },
+                                      {
+                                        key: "guide",
+                                        label: "Guide me",
+                                        icon: IconRoute,
+                                        enabled: activity.enableGuideMode,
+                                      },
+                                      {
+                                        key: "custom",
+                                        label: "Custom prompt",
+                                        icon: IconWand,
+                                        enabled: activity.enableCustomMode,
+                                      },
+                                    ] as const
+                                  ).map((mode) => {
+                                    const ModeIcon = mode.icon;
+                                    return (
+                                      <button
+                                        key={mode.key}
+                                        type="button"
+                                        disabled={isUpdatingModes}
+                                        aria-pressed={mode.enabled}
+                                        onClick={() =>
+                                          handleActivityModeChange(
+                                            activity.id,
+                                            mode.key,
+                                            !mode.enabled,
+                                          )
+                                        }
+                                        className={cn(
+                                          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                                          mode.enabled
+                                            ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                                            : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                                          isUpdatingModes && "opacity-60",
+                                        )}
+                                      >
+                                        <ModeIcon className="size-3.5" aria-hidden="true" />
+                                        {mode.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {showModeSaving && isUpdatingModes && (
+                                  <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
+                                    <Spinner size="xs" />
+                                    Saving…
+                                  </span>
+                                )}
+                                {isCustomEnabled && (
+                                  <div className="mt-3 space-y-3">
+                                    <div className="space-y-1.5">
+                                      <Label
+                                        htmlFor={`activity-${activity.id}-custom-title`}
+                                        className="text-xs font-semibold text-foreground"
+                                      >
+                                        Button title (shown to students, max 20 chars)
+                                      </Label>
+                                      <Input
+                                        id={`activity-${activity.id}-custom-title`}
+                                        type="text"
+                                        value={
+                                          titleDrafts[activity.id] ??
+                                          activity.customPromptTitle ??
+                                          ""
+                                        }
+                                        onChange={(event) => {
+                                          const value = event.target.value.slice(0, 20);
+                                          setTitleDrafts((prev) => ({
+                                            ...prev,
+                                            [activity.id]: value,
+                                          }));
+                                          setPromptSaved((saved) => ({
+                                            ...saved,
+                                            [activity.id]: false,
+                                          }));
+                                        }}
+                                        placeholder="e.g., Explain simply"
+                                        maxLength={20}
+                                        disabled={isSavingPrompt}
+                                      />
+                                      <div className="text-[0.65rem] text-muted-foreground">
+                                        {
+                                          (
+                                            titleDrafts[activity.id] ??
+                                            activity.customPromptTitle ??
+                                            ""
+                                          ).length
+                                        }
+                                        /20 characters
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <Label
+                                        htmlFor={`activity-${activity.id}-custom-prompt`}
+                                        className="text-xs font-semibold text-foreground"
+                                      >
+                                        Custom AI prompt
+                                      </Label>
+                                      <Textarea
+                                        id={`activity-${activity.id}-custom-prompt`}
+                                        value={promptDraft}
+                                        onChange={(event) =>
+                                          setPromptDrafts((prev) => {
+                                            setPromptSaved((saved) => ({
+                                              ...saved,
+                                              [activity.id]: false,
+                                            }));
+                                            return {
+                                              ...prev,
+                                              [activity.id]: event.target.value,
+                                            };
+                                          })
+                                        }
+                                        placeholder="Write a custom prompt the AI should follow for this activity…"
+                                        rows={3}
+                                        disabled={isSavingPrompt}
+                                      />
+                                      <div className="text-[0.65rem] text-muted-foreground">
+                                        Tip: Use{" "}
+                                        <code className="rounded bg-muted px-1 text-foreground">
+                                          [INSERT TOPIC HERE]
+                                        </code>{" "}
+                                        and{" "}
+                                        <code className="rounded bg-muted px-1 text-foreground">
+                                          [ENTER KNOWLEDGE LEVEL]
+                                        </code>{" "}
+                                        as placeholders.
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
                                       <Button
                                         type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-8 text-muted-foreground hover:text-destructive"
-                                        aria-label="Remove activity"
-                                        onClick={() => setPendingDeleteId(activity.id)}
-                                        disabled={isDeleting || isDuplicating}
+                                        size="sm"
+                                        onClick={() => handleCustomPromptSave(activity)}
+                                        disabled={isSavingPrompt}
                                       >
-                                        <IconTrash className="size-4" aria-hidden="true" />
+                                        {isSavingPrompt
+                                          ? "Saving…"
+                                          : isPromptSaved
+                                            ? "Saved"
+                                            : "Save prompt"}
                                       </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Remove</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              )}
+                                      {promptError && (
+                                        <span className="text-[0.75rem] text-destructive">
+                                          {promptError}
+                                        </span>
+                                      )}
+                                      {!promptError && isSavingPrompt && (
+                                        <span className="text-[0.75rem] text-primary-text">
+                                          Saving prompt…
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </section>
                             </div>
-                          </PermissionGate>
-                        </div>
-
-                        <div className="relative space-y-4 border-t border-border p-5">
-                          {isEditing && perms.canManageContent ? (
-                            <EditActivityPanel
-                              key={activity.id}
-                              activity={activity}
-                              busy={isSaving}
-                              error={editError}
-                              onSubmit={(payload) => handleEditSubmit(activity.id, payload)}
-                              onCancel={cancelEditingActivity}
-                            />
-                          ) : (
-                            <ActivityDetailsCard activity={activity} />
-                          )}
-
-                          <div className="grid items-start gap-4 lg:grid-cols-2">
-                            <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-                              <div className="flex items-center gap-2">
-                                <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
-                                  <IconTag className="size-3.5" aria-hidden="true" />
-                                </span>
-                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                  Topics
-                                </span>
-                              </div>
-                              {topics.length === 0 ? (
-                                <p className="text-xs text-muted-foreground">
-                                  Define course topics to tag this activity.
-                                </p>
-                              ) : (
-                                <div className="space-y-3">
-                                  <div className="space-y-1.5">
-                                    <Label
-                                      htmlFor={`activity-${activity.id}-main-topic`}
-                                      className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
-                                    >
-                                      Main topic
-                                    </Label>
-                                    <Select
-                                      value={mainTopicId !== '' ? String(mainTopicId) : undefined}
-                                      onValueChange={(value) =>
-                                        handleActivityMainTopicChange(activity.id, value)
-                                      }
-                                      disabled={loadingTopics || isUpdatingTopics}
-                                    >
-                                      <SelectTrigger
-                                        id={`activity-${activity.id}-main-topic`}
-                                        className="w-full"
-                                      >
-                                        <SelectValue placeholder="Select a topic…" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {topics.map((topic) => (
-                                          <SelectItem key={topic.id} value={String(topic.id)}>
-                                            {topic.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-                                      Secondary topics
-                                    </span>
-                                    <MultiSelect
-                                      options={topics
-                                        .filter((topic) => topic.id !== mainTopicId)
-                                        .map((topic) => ({
-                                          value: String(topic.id),
-                                          label: topic.name,
-                                        }))}
-                                      value={activity.secondaryTopics.map((topic) =>
-                                        String(topic.id),
-                                      )}
-                                      onValueChange={(nextValues) =>
-                                        handleActivitySecondaryChange(activity.id, nextValues)
-                                      }
-                                      disabled={loadingTopics}
-                                      placeholder="Add secondary topics…"
-                                      searchPlaceholder="Search topics…"
-                                      emptyText="No other topics."
-                                      className="w-full"
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                              {showTopicSaving && isUpdatingTopics && (
-                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                                  <Spinner size="xs" />
-                                  Saving…
-                                </span>
-                              )}
-                            </section>
-
-                            <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
-                              <div className="flex items-center gap-2">
-                                <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
-                                  <IconSparkles className="size-3.5" aria-hidden="true" />
-                                </span>
-                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                  AI study buddy
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {(
-                                  [
-                                    { key: 'teach', label: 'Teach me', icon: IconSchool, enabled: activity.enableTeachMode },
-                                    { key: 'guide', label: 'Guide me', icon: IconRoute, enabled: activity.enableGuideMode },
-                                    { key: 'custom', label: 'Custom prompt', icon: IconWand, enabled: activity.enableCustomMode },
-                                  ] as const
-                                ).map((mode) => {
-                                  const ModeIcon = mode.icon;
-                                  return (
-                                    <button
-                                      key={mode.key}
-                                      type="button"
-                                      disabled={isUpdatingModes}
-                                      aria-pressed={mode.enabled}
-                                      onClick={() =>
-                                        handleActivityModeChange(activity.id, mode.key, !mode.enabled)
-                                      }
-                                      className={cn(
-                                        'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition',
-                                        mode.enabled
-                                          ? 'border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]'
-                                          : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
-                                        isUpdatingModes && 'opacity-60',
-                                      )}
-                                    >
-                                      <ModeIcon className="size-3.5" aria-hidden="true" />
-                                      {mode.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {showModeSaving && isUpdatingModes && (
-                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
-                                  <Spinner size="xs" />
-                                  Saving…
-                                </span>
-                              )}
-                              {isCustomEnabled && (
-                              <div className="mt-3 space-y-3">
-                                <div className="space-y-1.5">
-                                  <Label
-                                    htmlFor={`activity-${activity.id}-custom-title`}
-                                    className="text-xs font-semibold text-foreground"
-                                  >
-                                    Button title (shown to students, max 20 chars)
-                                  </Label>
-                                  <Input
-                                    id={`activity-${activity.id}-custom-title`}
-                                    type="text"
-                                    value={titleDrafts[activity.id] ?? activity.customPromptTitle ?? ''}
-                                    onChange={(event) => {
-                                      const value = event.target.value.slice(0, 20);
-                                      setTitleDrafts((prev) => ({ ...prev, [activity.id]: value }));
-                                      setPromptSaved((saved) => ({
-                                        ...saved,
-                                        [activity.id]: false,
-                                      }));
-                                    }}
-                                    placeholder="e.g., Explain simply"
-                                    maxLength={20}
-                                    disabled={isSavingPrompt}
-                                  />
-                                  <div className="text-[0.65rem] text-muted-foreground">
-                                    {
-                                      (titleDrafts[activity.id] ?? activity.customPromptTitle ?? '')
-                                        .length
-                                    }
-                                    /20 characters
-                                  </div>
-                                </div>
-                                <div className="space-y-1.5">
-                                  <Label
-                                    htmlFor={`activity-${activity.id}-custom-prompt`}
-                                    className="text-xs font-semibold text-foreground"
-                                  >
-                                    Custom AI prompt
-                                  </Label>
-                                  <Textarea
-                                    id={`activity-${activity.id}-custom-prompt`}
-                                    value={promptDraft}
-                                    onChange={(event) =>
-                                      setPromptDrafts((prev) => {
-                                        setPromptSaved((saved) => ({
-                                          ...saved,
-                                          [activity.id]: false,
-                                        }));
-                                        return {
-                                          ...prev,
-                                          [activity.id]: event.target.value,
-                                        };
-                                      })
-                                    }
-                                    placeholder="Write a custom prompt the AI should follow for this activity…"
-                                    rows={3}
-                                    disabled={isSavingPrompt}
-                                  />
-                                  <div className="text-[0.65rem] text-muted-foreground">
-                                    Tip: Use{' '}
-                                    <code className="rounded bg-muted px-1 text-foreground">
-                                      [INSERT TOPIC HERE]
-                                    </code>{' '}
-                                    and{' '}
-                                    <code className="rounded bg-muted px-1 text-foreground">
-                                      [ENTER KNOWLEDGE LEVEL]
-                                    </code>{' '}
-                                    as placeholders.
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={() => handleCustomPromptSave(activity)}
-                                    disabled={isSavingPrompt}
-                                  >
-                                    {isSavingPrompt
-                                      ? 'Saving…'
-                                      : isPromptSaved
-                                        ? 'Saved'
-                                        : 'Save prompt'}
-                                  </Button>
-                                  {promptError && (
-                                    <span className="text-[0.75rem] text-destructive">
-                                      {promptError}
-                                    </span>
-                                  )}
-                                  {!promptError && isSavingPrompt && (
-                                    <span className="text-[0.75rem] text-primary-text">
-                                      Saving prompt…
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            </section>
                           </div>
-                        </div>
-                      </Card>
+                        </Card>
                       )}
                     </SortableItem>
                   );
                 })}
               </div>
-              </SortableProvider>
-            )}
+            </SortableProvider>
+          )}
 
-            <PaginationControls
-              page={page}
-              pageSize={pageSize}
-              total={activitiesTotal}
-              onPageChange={goToPage}
-              disabled={navigation.state === 'loading' || reorderingActivities}
-            />
-          </div>
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={activitiesTotal}
+            onPageChange={goToPage}
+            disabled={navigation.state === "loading" || reorderingActivities}
+          />
+        </div>
       </div>
 
       <MoveToPositionDialog
@@ -1411,7 +1423,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         onOpenChange={(open) => {
           if (!open) setMovingActivity(null);
         }}
-        itemTitle={movingActivity?.title || movingActivity?.question || 'this activity'}
+        itemTitle={movingActivity?.title || movingActivity?.question || "this activity"}
         itemNoun="activity"
         currentPosition={
           movingActivity
@@ -1483,8 +1495,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   : importableActivities
                 ).map((item) => ({
                   value: String(item.id),
-                  label: item.title || item.type || 'Untitled activity',
-                  description: [item.moduleTitle, item.lessonTitle].filter(Boolean).join(' · '),
+                  label: item.title || item.type || "Untitled activity",
+                  description: [item.moduleTitle, item.lessonTitle].filter(Boolean).join(" · "),
                 }))}
                 value={selectedImportId}
                 onValueChange={(nextValue) => {
@@ -1498,8 +1510,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 searchPlaceholder="Search all your activities…"
                 emptyText={
                   importSearch
-                    ? 'No activities match your search.'
-                    : 'No activities available to import from your other lessons.'
+                    ? "No activities match your search."
+                    : "No activities available to import from your other lessons."
                 }
                 disabled={importing}
                 className="w-full"
@@ -1522,17 +1534,20 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeImportDialog} disabled={importing}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeImportDialog}
+              disabled={importing}
+            >
               Cancel
             </Button>
             <Button
               type="button"
               onClick={handleConfirmImport}
-              disabled={
-                importing || loadingImportable || !selectedImportId || !!importableError
-              }
+              disabled={importing || loadingImportable || !selectedImportId || !!importableError}
             >
-              {importing ? 'Importing…' : 'Import'}
+              {importing ? "Importing…" : "Import"}
             </Button>
           </DialogFooter>
         </DialogContent>

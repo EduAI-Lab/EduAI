@@ -41,7 +41,7 @@ const APPS = {
  */
 function stripComments(css) {
   let out = "";
-  for (let i = 0; i < css.length; ) {
+  for (let i = 0; i < css.length;) {
     const ch = css[i];
     if (ch === '"' || ch === "'") {
       const quote = ch;
@@ -184,7 +184,8 @@ function tokensFor(entry) {
     const m = String(value ?? "").match(/^var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*))?\)$/);
     if (!m) return value;
     const target = map.get(m[1]);
-    if (target === undefined) return m[2] !== undefined ? resolve(map, m[2].trim(), depth + 1) : value;
+    if (target === undefined)
+      return m[2] !== undefined ? resolve(map, m[2].trim(), depth + 1) : value;
     return resolve(map, target, depth + 1);
   };
 
@@ -215,7 +216,10 @@ function diff(baseline, current, allow) {
         const label = `${app}/${mode} ${key}`;
         if (!(key in b)) problems.push(`REMOVED  ${label}  was ${a[key]}`);
         else if (!(key in a)) problems.push(`ADDED    ${label}  now ${b[key]}`);
-        else problems.push(`CHANGED  ${label}\n           before ${a[key]}\n           after  ${b[key]}`);
+        else
+          problems.push(
+            `CHANGED  ${label}\n           before ${a[key]}\n           after  ${b[key]}`,
+          );
       }
     }
   }
@@ -233,7 +237,9 @@ function main() {
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(snap, null, 2) + "\n");
     for (const [app, modes] of Object.entries(snap))
-      console.log(`  ${app.padEnd(16)} ${Object.keys(modes.light).length} light / ${Object.keys(modes.dark).length} dark`);
+      console.log(
+        `  ${app.padEnd(16)} ${Object.keys(modes.light).length} light / ${Object.keys(modes.dark).length} dark`,
+      );
     console.log(`baseline written to ${file}`);
     return;
   }
@@ -241,11 +247,20 @@ function main() {
   if (cmd === "check") {
     if (!file) throw new Error("usage: token-parity.mjs check <baseline.json> [--allow --a,--b]");
     const idx = rest.indexOf("--allow");
-    const allow = new Set(idx === -1 ? [] : (rest[idx + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+    const allow = new Set(
+      idx === -1
+        ? []
+        : (rest[idx + 1] ?? "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+    );
     const problems = diff(JSON.parse(fs.readFileSync(file, "utf8")), capture(), allow);
     if (allow.size) console.log(`allowing expected deltas: ${[...allow].join(", ")}`);
     if (problems.length) {
-      console.error(`\n\u2717 token parity FAILED \u2014 ${problems.length} unexpected difference(s):\n`);
+      console.error(
+        `\n\u2717 token parity FAILED \u2014 ${problems.length} unexpected difference(s):\n`,
+      );
       for (const p of problems) console.error("  " + p);
       process.exit(1);
     }
@@ -253,7 +268,9 @@ function main() {
     return;
   }
 
-  console.error("usage: token-parity.mjs capture <out.json> | check <baseline.json> [--allow --a,--b]");
+  console.error(
+    "usage: token-parity.mjs capture <out.json> | check <baseline.json> [--allow --a,--b]",
+  );
   process.exit(2);
 }
 

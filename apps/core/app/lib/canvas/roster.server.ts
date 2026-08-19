@@ -1,13 +1,7 @@
 import { EnrollmentRole } from "@prisma/client";
 import type { CanvasCourseUserApi, CanvasIntegrationCredentials } from "~/lib/canvas/client.server";
-import {
-  listCanvasCourseStudents,
-  listCanvasCourseTas,
-} from "~/lib/canvas/client.server";
-import {
-  normalizeRosterEmail,
-  normalizeStudentId,
-} from "~/lib/canvas/enrollment-link.server";
+import { listCanvasCourseStudents, listCanvasCourseTas } from "~/lib/canvas/client.server";
+import { normalizeRosterEmail, normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import {
   clearRosterSisUserIdStorage,
   prepareRosterSisUserIdStorage,
@@ -113,12 +107,7 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
     listCanvasCourseTas(input.credentials, input.canvasCourseId, fetchImpl),
   ]);
 
-  const studentCount = await upsertRosterMembers(
-    students,
-    mapCanvasRole("student"),
-    input,
-    db,
-  );
+  const studentCount = await upsertRosterMembers(students, mapCanvasRole("student"), input, db);
   const taCount = await upsertRosterMembers(tas, mapCanvasRole("ta"), input, db);
   const syncedCount = studentCount + taCount;
 

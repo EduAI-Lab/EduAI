@@ -130,7 +130,7 @@ type CreateQuestionSuccess = { id: string };
 
 export async function createQuestion(
   body: unknown,
-  createdBy: string
+  createdBy: string,
 ): Promise<CreateQuestionError | CreateQuestionSuccess> {
   const parsed = CreateQuestionSchema.safeParse(body);
   if (!parsed.success) {
@@ -176,9 +176,7 @@ export async function createQuestion(
       select: { id: true, deletedAt: true },
     });
     const foundIds = new Set(secondaryTopics.map((t) => t.id));
-    const deletedTopicIds = secondaryTopics
-      .filter((t) => t.deletedAt !== null)
-      .map((t) => t.id);
+    const deletedTopicIds = secondaryTopics.filter((t) => t.deletedAt !== null).map((t) => t.id);
     // Genuinely-absent IDs would otherwise slip past this check and trigger an
     // FK violation (P2003) → 500 when writing question_secondary_topics. Fold
     // them in with the soft-deleted ones: both are invalid Core references and
@@ -186,7 +184,11 @@ export async function createQuestion(
     const missingTopicIds = [...new Set(secondaryTopicIds)].filter((id) => !foundIds.has(id));
     const invalidTopicIds = [...deletedTopicIds, ...missingTopicIds];
     if (invalidTopicIds.length > 0) {
-      return { error: "INVALID_TOPIC_IDS", deletedTopicIds: invalidTopicIds, conflictingWithPrimary: [] };
+      return {
+        error: "INVALID_TOPIC_IDS",
+        deletedTopicIds: invalidTopicIds,
+        conflictingWithPrimary: [],
+      };
     }
   }
 

@@ -105,9 +105,7 @@ async function findReEmbedJobByIdempotencyKey(
   return toSnapshot(job);
 }
 
-export async function findActiveReEmbedJob(
-  courseId: string,
-): Promise<ReEmbedJobSnapshot | null> {
+export async function findActiveReEmbedJob(courseId: string): Promise<ReEmbedJobSnapshot | null> {
   const job = await reEmbedJobClient().findFirst({
     where: { courseId, status: { in: ACTIVE_JOB_STATUSES } },
     orderBy: { createdAt: "desc" },
@@ -385,7 +383,11 @@ export async function startReEmbedJob(
       if (active) {
         if (isStaleJob(active)) {
           await reclaimStaleReEmbedJob(active);
-        } else if (idempotencyKey && active.idempotencyKey && active.idempotencyKey !== idempotencyKey) {
+        } else if (
+          idempotencyKey &&
+          active.idempotencyKey &&
+          active.idempotencyKey !== idempotencyKey
+        ) {
           // Already belongs to a different caller's key — do not silently
           // reassign it. A single idempotencyKey column can only remember
           // one key per row, so tell the caller their key was not honored
@@ -484,7 +486,11 @@ export async function startReEmbedJob(
             code: "re_embed_job_compensate_delete_failed",
             message: `Failed to compensate (delete) PENDING re-embed job ${job.id} after claim failure`,
             error: deleteError,
-            details: { jobId: job.id, courseId, claimError: error instanceof Error ? error.message : String(error) },
+            details: {
+              jobId: job.id,
+              courseId,
+              claimError: error instanceof Error ? error.message : String(error),
+            },
           }),
         );
       }

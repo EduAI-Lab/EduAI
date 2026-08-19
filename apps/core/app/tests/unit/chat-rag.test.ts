@@ -33,7 +33,10 @@ describe("messageHasImageParts", () => {
     expect(
       messageHasImageParts({
         role: "user",
-        parts: [{ type: "text", text: "see this" }, { type: "image", image: "data:..." }],
+        parts: [
+          { type: "text", text: "see this" },
+          { type: "image", image: "data:..." },
+        ],
       }),
     ).toBe(true);
     expect(
@@ -83,11 +86,7 @@ describe("buildCappedRagContextText", () => {
   });
 
   it("includes source headers and joins chunks with separators", () => {
-    const text = buildCappedRagContextText(
-      [hit("alpha"), hit("beta", "Reading 2")],
-      4,
-      10_000,
-    );
+    const text = buildCappedRagContextText([hit("alpha"), hit("beta", "Reading 2")], 4, 10_000);
     expect(text).toContain("**Source**: Lecture 1");
     expect(text).toContain("alpha");
     expect(text).toContain("**Source**: Reading 2");
@@ -96,12 +95,7 @@ describe("buildCappedRagContextText", () => {
   });
 
   it("limits to maxChunks even when more hits are provided", () => {
-    const hits = [
-      hit("chunk-one"),
-      hit("chunk-two"),
-      hit("chunk-three"),
-      hit("chunk-four"),
-    ];
+    const hits = [hit("chunk-one"), hit("chunk-two"), hit("chunk-three"), hit("chunk-four")];
     const text = buildCappedRagContextText(hits, 2, 10_000);
     expect(text).toContain("chunk-one");
     expect(text).toContain("chunk-two");
@@ -233,8 +227,9 @@ describe("capToolResultsInMessages", () => {
     ];
 
     const capped = capToolResultsInMessages(messages, 6000);
-    const result = (capped[0].content as Array<{ toolInvocation: { result: { markdown: string } } }>)[0]
-      .toolInvocation.result.markdown;
+    const result = (
+      capped[0].content as Array<{ toolInvocation: { result: { markdown: string } } }>
+    )[0].toolInvocation.result.markdown;
 
     expect(result.length).toBe(6001);
     expect(result.endsWith("…")).toBe(true);
@@ -411,7 +406,11 @@ describe("prepareBoundedSessionContext", () => {
       },
     });
     const messages = [
-      { id: "1", role: "assistant", content: [part("a", 3_000), part("b", 3_000), part("c", 3_000)] },
+      {
+        id: "1",
+        role: "assistant",
+        content: [part("a", 3_000), part("b", 3_000), part("c", 3_000)],
+      },
     ];
 
     const bounded = prepareBoundedSessionContext(messages, {

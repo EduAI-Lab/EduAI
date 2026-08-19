@@ -43,7 +43,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const q = url.searchParams.get("q")?.trim() || null;
   const rawLimit = Number(url.searchParams.get("limit"));
   const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(MAX_LIMIT, Math.floor(rawLimit)) : DEFAULT_LIMIT;
+    Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(MAX_LIMIT, Math.floor(rawLimit))
+      : DEFAULT_LIMIT;
   // "ta" excludes users already an active TA in this course; the default
   // ("enrolled") excludes anyone with any active enrollment — used by the
   // "add student" picker so an existing TA/instructor can't be re-added as a

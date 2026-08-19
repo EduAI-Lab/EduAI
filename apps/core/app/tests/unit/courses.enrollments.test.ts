@@ -39,7 +39,9 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/policy.server")>();
   return {
     ...actual,
-    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
     logPolicyDenial: vi.fn(),
   };
 });
@@ -49,7 +51,11 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
-import { getCourseEnrollments, getCourseEnrollmentsPage, addEnrollment } from "~/lib/courses/enrollments.server";
+import {
+  getCourseEnrollments,
+  getCourseEnrollmentsPage,
+  addEnrollment,
+} from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 import { withIdempotency } from "~/lib/idempotency.server";
 
@@ -160,7 +166,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   // --- 403 service key ---
   it("returns 403 when Bearer token fails requireServiceKey", async () => {
     vi.mocked(requireServiceKey).mockResolvedValue(
-      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 })
+      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 }),
     );
     const res = await loader(makeArgs("course-1", "Bearer wrong"));
     expect(res.status).toBe(403);
@@ -246,9 +252,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps STUDENT enrollment correctly", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const student = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "STUDENT"
-    );
+    const student = body.enrollments.find((e: Record<string, unknown>) => e.role === "STUDENT");
     expect(student).toEqual({
       id: "enr-1",
       studentId: "user-1",
@@ -265,7 +269,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
     const instructor = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "INSTRUCTOR"
+      (e: Record<string, unknown>) => e.role === "INSTRUCTOR",
     );
     expect(instructor).toEqual({
       id: "enr-3",
@@ -283,9 +287,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("returns both active and inactive enrollments", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map(
-      (e: Record<string, unknown>) => e.isActive
-    );
+    const activeStates = body.enrollments.map((e: Record<string, unknown>) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });

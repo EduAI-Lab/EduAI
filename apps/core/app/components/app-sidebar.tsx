@@ -1,5 +1,5 @@
-import * as React from "react"
-import { Form, Link, useLocation, useRouteLoaderData } from "react-router"
+import * as React from "react";
+import { Form, Link, useLocation, useRouteLoaderData } from "react-router";
 import {
   IconBooks,
   IconBrain,
@@ -18,24 +18,20 @@ import {
   IconUser,
   IconUsers,
   type Icon,
-} from "@tabler/icons-react"
+} from "@tabler/icons-react";
 
-import { Sidebar } from "@eduai/ui"
+import { Sidebar } from "@eduai/ui";
 import type {
   AppSidebarProps,
   NavGroupItem as NavMainGroupItem,
   NavMainItem,
   NavSecondaryItem,
-} from "@eduai/ui"
-import type { User } from "~/lib/auth/types"
-import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps"
-import {
-  getNavForUser,
-  getNavSecondaryForUser,
-  type NavItemKey,
-} from "~/lib/rbac"
-import { usePolicyGate } from "~/components/policy/policy-gate"
-import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status"
+} from "@eduai/ui";
+import type { User } from "~/lib/auth/types";
+import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
+import { getNavForUser, getNavSecondaryForUser, type NavItemKey } from "~/lib/rbac";
+import { usePolicyGate } from "~/components/policy/policy-gate";
+import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status";
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
@@ -55,7 +51,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
   help: IconHelp,
   "ai-tutor": IconMessageChatbot,
-}
+};
 
 function toNavMainItems(
   items: ReturnType<typeof getNavForUser>,
@@ -73,10 +69,9 @@ function toNavMainItems(
           external: child.external,
           disabled: child.disabled,
           disabledReason: child.disabledReason,
-          badge:
-            child.url === "/admin/cron-jobs" && cronStatusColor ? cronStatusColor : undefined,
+          badge: child.url === "/admin/cron-jobs" && cronStatusColor ? cronStatusColor : undefined,
         })),
-      } satisfies NavMainGroupItem
+      } satisfies NavMainGroupItem;
     }
     return {
       title: item.title,
@@ -85,26 +80,24 @@ function toNavMainItems(
       external: item.external,
       disabled: item.disabled,
       disabledReason: item.disabledReason,
-    } satisfies NavMainItem
-  })
+    } satisfies NavMainItem;
+  });
 }
 
-function toNavSecondaryItems(
-  items: ReturnType<typeof getNavSecondaryForUser>,
-): NavSecondaryItem[] {
+function toNavSecondaryItems(items: ReturnType<typeof getNavSecondaryForUser>): NavSecondaryItem[] {
   return items.map((item) => ({
     title: item.title,
     url: item.url,
     icon: NAV_ICONS[item.key],
     external: item.external,
-  }))
+  }));
 }
 
 export type UseCoreSidebarPropsOptions = {
-  user: User
-  navMain?: (NavMainItem | NavMainGroupItem)[]
-  navSecondary?: NavSecondaryItem[]
-} & Omit<React.ComponentProps<typeof Sidebar>, "children">
+  user: User;
+  navMain?: (NavMainItem | NavMainGroupItem)[];
+  navSecondary?: NavSecondaryItem[];
+} & Omit<React.ComponentProps<typeof Sidebar>, "children">;
 
 /**
  * Core's sidebar props-builder (issue #764 core-shell parity). Used to render
@@ -122,28 +115,27 @@ export function useCoreSidebarProps({
   variant = "sidebar",
   ...props
 }: UseCoreSidebarPropsOptions): AppSidebarProps {
-  const { isEnabled } = usePolicyGate()
-  const { pathname } = useLocation()
+  const { isEnabled } = usePolicyGate();
+  const { pathname } = useLocation();
   // Prefer the server-resolved flag from the root loader (authoritative,
   // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
-  const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
+  const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined;
 
   // The cron admin page owns polling while it is open, so this always-mounted
   // sidebar never creates a concurrent request loop.
   const cronStatusColor = useCronJobStatus(
     user.role === "ADMIN" && pathname !== "/admin/cron-jobs",
-  )
+  );
 
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
   const navItems = getNavForUser(user, {
     canInvite: rootData?.canInvite ?? isEnabled("unitAdmins.canInvite"),
-  })
-  const autoNav = toNavMainItems(navItems, cronStatusColor)
-  const navMain = navMainOverride ?? autoNav
-  const navSecondary =
-    navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
+  });
+  const autoNav = toNavMainItems(navItems, cronStatusColor);
+  const navMain = navMainOverride ?? autoNav;
+  const navSecondary = navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user));
 
   const logo = (
     <>
@@ -157,16 +149,26 @@ export function useCoreSidebarProps({
           background: "var(--primary)",
         }}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-          <circle cx="12" cy="12" r="9"/>
-          <path d="M12 3a9 9 0 0 1 0 18"/>
-          <path d="M3 12h18"/>
-          <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="white"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3a9 9 0 0 1 0 18" />
+          <path d="M3 12h18" />
+          <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
         </svg>
       </div>
-      <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
+      <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>
+        EduAI
+      </span>
     </>
-  )
+  );
 
   return {
     logo,
@@ -210,5 +212,5 @@ export function useCoreSidebarProps({
     },
     variant,
     ...props,
-  }
+  };
 }

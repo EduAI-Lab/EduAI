@@ -38,9 +38,7 @@ describe("ApiKeySettings — rendering", () => {
     fireEvent.click(screen.getByRole("combobox"));
     const googleOption = await screen.findByRole("option", { name: "Google AI" });
     fireEvent.click(googleOption);
-    await waitFor(() =>
-      expect(screen.getByText("Google AI API key")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText("Google AI API key")).toBeInTheDocument());
     expect(screen.queryByText("OpenAI API key")).not.toBeInTheDocument();
   });
 
@@ -98,9 +96,7 @@ describe("ApiKeySettings — unconfigured providers", () => {
     const googleOption = await screen.findByRole("option", { name: "Google AI" });
     fireEvent.click(googleOption);
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: /save google ai key/i })
-      ).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /save google ai key/i })).toBeInTheDocument(),
     );
   });
 });
@@ -114,7 +110,7 @@ describe("ApiKeySettings — configured provider", () => {
     render(
       <ApiKeySettings
         {...makeProps({ apiKeys: withOpenAIKey, isProviderConfigured: onlyOpenAI })}
-      />
+      />,
     );
     expect(screen.getByText("Active")).toBeInTheDocument();
   });
@@ -123,7 +119,7 @@ describe("ApiKeySettings — configured provider", () => {
     render(
       <ApiKeySettings
         {...makeProps({ apiKeys: withOpenAIKey, isProviderConfigured: onlyOpenAI })}
-      />
+      />,
     );
     // Dialog portals render into document.body, not the render container
     const readonlyInput = document.body.querySelector("input[readonly]");
@@ -135,7 +131,7 @@ describe("ApiKeySettings — configured provider", () => {
     render(
       <ApiKeySettings
         {...makeProps({ apiKeys: withOpenAIKey, isProviderConfigured: onlyOpenAI })}
-      />
+      />,
     );
     const readonlyInput = document.body.querySelector("input[readonly]")!;
     // Eye button is first in the configured provider row
@@ -153,7 +149,7 @@ describe("ApiKeySettings — configured provider", () => {
           isProviderConfigured: onlyOpenAI,
           onRemoveProvider,
         })}
-      />
+      />,
     );
     // Trash button is second (eye button is first) among all buttons
     const [, trashBtn] = screen.getAllByRole("button");

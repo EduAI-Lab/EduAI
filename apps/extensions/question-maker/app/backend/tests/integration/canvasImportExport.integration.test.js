@@ -7,34 +7,34 @@
  *   - exportAssessmentToCanvas (round-trips the imported assessment back out)
  *   - getCanvasCourseMapping
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
-vi.mock('../../src/services/authService.js', () => ({
+vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-describeDb('canvasService import/export (integration, test mode)', () => {
+describeDb("canvasService import/export (integration, test mode)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let canvas;
 
-  const USER = { id: 'cuid-canvas-user', email: 'canvas@test.com', name: 'Canvas User' };
-  const OTHER = { id: 'cuid-canvas-other', email: 'other@test.com', name: 'Other User' };
+  const USER = { id: "cuid-canvas-user", email: "canvas@test.com", name: "Canvas User" };
+  const OTHER = { id: "cuid-canvas-other", email: "other@test.com", name: "Other User" };
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
-    canvas = await import('../../src/services/canvasService.js');
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
+    canvas = await import("../../src/services/canvasService.js");
 
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   let courseId, topicId;
@@ -53,8 +53,8 @@ describeDb('canvasService import/export (integration, test mode)', () => {
     await prisma.canvasIntegration.create({
       data: {
         userId: USER.id,
-        canvasUrl: 'https://canvas.test',
-        apiKey: 'test-token',
+        canvasUrl: "https://canvas.test",
+        apiKey: "test-token",
         isTestMode: true,
       },
     });
@@ -65,50 +65,52 @@ describeDb('canvasService import/export (integration, test mode)', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  describe('saveCanvasIntegration / getCanvasIntegration', () => {
-    it('creates then updates the integration row for a user', async () => {
+  describe("saveCanvasIntegration / getCanvasIntegration", () => {
+    it("creates then updates the integration row for a user", async () => {
       const created = await canvas.saveCanvasIntegration(OTHER.id, {
-        canvasUrl: 'https://x.test',
-        apiKey: 'k1',
+        canvasUrl: "https://x.test",
+        apiKey: "k1",
         isTestMode: true,
       });
-      expect(created.canvasUrl).toBe('https://x.test');
+      expect(created.canvasUrl).toBe("https://x.test");
 
       const updated = await canvas.saveCanvasIntegration(OTHER.id, {
-        canvasUrl: 'https://y.test',
-        apiKey: 'k2',
+        canvasUrl: "https://y.test",
+        apiKey: "k2",
         isTestMode: false,
       });
-      expect(updated.canvasUrl).toBe('https://y.test');
+      expect(updated.canvasUrl).toBe("https://y.test");
       expect(updated.isTestMode).toBe(false);
 
       const fetched = await canvas.getCanvasIntegration(OTHER.id);
-      expect(fetched.apiKey).toBe('k2');
+      expect(fetched.apiKey).toBe("k2");
     });
 
-    it('returns null when no integration exists', async () => {
-      const fetched = await canvas.getCanvasIntegration('nonexistent-user');
+    it("returns null when no integration exists", async () => {
+      const fetched = await canvas.getCanvasIntegration("nonexistent-user");
       expect(fetched).toBeNull();
     });
   });
 
-  describe('test-mode read endpoints', () => {
-    it('lists mock courses', async () => {
+  describe("test-mode read endpoints", () => {
+    it("lists mock courses", async () => {
       const courses = await canvas.getCanvasCourses(USER.id);
       expect(Array.isArray(courses)).toBe(true);
       expect(courses.length).toBeGreaterThan(0);
     });
 
-    it('throws when the integration is not configured', async () => {
+    it("throws when the integration is not configured", async () => {
       await expect(canvas.getCanvasCourses(OTHER.id)).rejects.toThrow(/not configured/i);
     });
 
-    it('lists assignment-type quizzes', async () => {
+    it("lists assignment-type quizzes", async () => {
       const quizzes = await canvas.getCanvasQuizzes(USER.id, 101);
-      expect(quizzes.every((q) => q.quiz_type === 'assignment' || q.quiz_type === 'graded_survey')).toBe(true);
+      expect(
+        quizzes.every((q) => q.quiz_type === "assignment" || q.quiz_type === "graded_survey"),
+      ).toBe(true);
     });
 
-    it('lists quiz questions and fetches one by id', async () => {
+    it("lists quiz questions and fetches one by id", async () => {
       const list = await canvas.getCanvasQuizQuestions(USER.id, 101, 1);
       expect(list.length).toBeGreaterThan(0);
       const single = await canvas.getCanvasQuizQuestionById(USER.id, 101, 1, 5);
@@ -117,44 +119,46 @@ describeDb('canvasService import/export (integration, test mode)', () => {
     });
   });
 
-  describe('importQuizFromCanvas', () => {
-    it('imports the mock quiz into a new assessment with one variant', async () => {
+  describe("importQuizFromCanvas", () => {
+    it("imports the mock quiz into a new assessment with one variant", async () => {
       const result = await canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, {
         primaryTopicId: topicId,
-        assessmentName: 'Imported Exam',
+        assessmentName: "Imported Exam",
       });
       expect(result.questionsImported).toBe(1);
-      expect(result.assessmentName).toBe('Imported Exam');
+      expect(result.assessmentName).toBe("Imported Exam");
 
-      const variants = await prisma.variants.findMany({ where: { assessmentId: result.assessmentId } });
+      const variants = await prisma.variants.findMany({
+        where: { assessmentId: result.assessmentId },
+      });
       expect(variants).toHaveLength(1);
       expect(variants[0].choices).toBeTruthy();
 
       const mapping = await canvas.getCanvasCourseMapping(USER.id, courseId);
-      expect(String(mapping.canvasCourseId)).toBe('101');
+      expect(String(mapping.canvasCourseId)).toBe("101");
     });
 
-    it('requires a primary topic id', async () => {
-      await expect(
-        canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, {})
-      ).rejects.toThrow(/Primary topic ID is required/);
+    it("requires a primary topic id", async () => {
+      await expect(canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, {})).rejects.toThrow(
+        /Primary topic ID is required/,
+      );
     });
 
-    it('throws when the local course is not found', async () => {
+    it("throws when the local course is not found", async () => {
       await expect(
-        canvas.importQuizFromCanvas(USER.id, 101, 1, 999999, { primaryTopicId: topicId })
+        canvas.importQuizFromCanvas(USER.id, 101, 1, 999999, { primaryTopicId: topicId }),
       ).rejects.toThrow(/Local course not found/);
     });
 
-    it('throws when the integration is not configured', async () => {
+    it("throws when the integration is not configured", async () => {
       await expect(
-        canvas.importQuizFromCanvas(OTHER.id, 101, 1, courseId, { primaryTopicId: topicId })
+        canvas.importQuizFromCanvas(OTHER.id, 101, 1, courseId, { primaryTopicId: topicId }),
       ).rejects.toThrow(/not configured/i);
     });
   });
 
-  describe('exportAssessmentToCanvas', () => {
-    it('exports an imported assessment back to Canvas', async () => {
+  describe("exportAssessmentToCanvas", () => {
+    it("exports an imported assessment back to Canvas", async () => {
       const imported = await canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, {
         primaryTopicId: topicId,
       });
@@ -162,19 +166,19 @@ describeDb('canvasService import/export (integration, test mode)', () => {
       const result = await canvas.exportAssessmentToCanvas(USER.id, imported.assessmentId, 101);
       expect(result.quizId).toBeDefined();
       expect(result.questionsCreated).toBeGreaterThanOrEqual(1);
-      expect(result.canvasUrl).toContain('TEST MODE');
+      expect(result.canvasUrl).toContain("TEST MODE");
     });
 
-    it('throws when the assessment is not found', async () => {
-      await expect(
-        canvas.exportAssessmentToCanvas(USER.id, 999999, 101)
-      ).rejects.toThrow(/Assessment not found|Failed to export/);
+    it("throws when the assessment is not found", async () => {
+      await expect(canvas.exportAssessmentToCanvas(USER.id, 999999, 101)).rejects.toThrow(
+        /Assessment not found|Failed to export/,
+      );
     });
 
-    it('throws when the integration is not configured', async () => {
-      await expect(
-        canvas.exportAssessmentToCanvas(OTHER.id, 1, 101)
-      ).rejects.toThrow(/not configured/i);
+    it("throws when the integration is not configured", async () => {
+      await expect(canvas.exportAssessmentToCanvas(OTHER.id, 1, 101)).rejects.toThrow(
+        /not configured/i,
+      );
     });
   });
 });

@@ -1,12 +1,6 @@
-"use client"
+"use client";
 
-import {
-  IconDots,
-  IconFolder,
-  IconShare3,
-  IconTrash,
-  type Icon,
-} from "@tabler/icons-react"
+import { IconDots, IconFolder, IconShare3, IconTrash, type Icon } from "@tabler/icons-react";
 
 import {
   DropdownMenu,
@@ -14,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@eduai/ui"
+} from "@eduai/ui";
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -23,20 +17,20 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@eduai/ui"
+} from "@eduai/ui";
 
 export interface NavDocumentItem {
-  name: string
-  url: string
-  icon: Icon
+  name: string;
+  url: string;
+  icon: Icon;
 }
 
 export interface NavDocumentsProps {
-  items: NavDocumentItem[]
+  items: NavDocumentItem[];
 }
 
 export function NavDocuments({ items }: NavDocumentsProps) {
-  const { isMobile } = useSidebar()
+  const { isMobile } = useSidebar();
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -52,10 +46,7 @@ export function NavDocuments({ items }: NavDocumentsProps) {
             </SidebarMenuButton>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuAction
-                  showOnHover
-                  className="data-[state=open]:bg-accent rounded-sm"
-                >
+                <SidebarMenuAction showOnHover className="data-[state=open]:bg-accent rounded-sm">
                   <IconDots />
                   <span className="sr-only">More</span>
                 </SidebarMenuAction>
@@ -90,5 +81,5 @@ export function NavDocuments({ items }: NavDocumentsProps) {
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
-  )
+  );
 }

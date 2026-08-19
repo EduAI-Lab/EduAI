@@ -16,8 +16,7 @@
 export const POLICY_FLAGS = {
   "instructors.canCreateCourses": {
     label: "Instructors can create courses",
-    description:
-      "Allow users with the INSTRUCTOR role to create courses.",
+    description: "Allow users with the INSTRUCTOR role to create courses.",
     default: true,
   },
   "instructors.canPublishCourses": {
@@ -88,8 +87,7 @@ export const POLICY_FLAGS = {
   },
   "instructors.canViewCourseChats": {
     label: "Instructors can view course chats",
-    description:
-      "Allow users with the INSTRUCTOR role to read student chats in their courses.",
+    description: "Allow users with the INSTRUCTOR role to read student chats in their courses.",
     default: false,
   },
   "unitAdmins.canViewUnitChats": {

@@ -93,7 +93,10 @@ describe("getCourseIfCanManageMaterials", () => {
   // for ADMIN, which previously used an unfiltered `findUnique`.
   it("returns null for a soft-deleted course even for ADMIN", async () => {
     resolveCourseAccessWithCourse.mockResolvedValue({ course: null, access: null });
-    const result = await getCourseIfCanManageMaterials({ id: "u1", role: "ADMIN" }, "deleted-course");
+    const result = await getCourseIfCanManageMaterials(
+      { id: "u1", role: "ADMIN" },
+      "deleted-course",
+    );
     expect(result).toBeNull();
   });
 
