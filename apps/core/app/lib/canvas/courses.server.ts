@@ -1,9 +1,6 @@
 import { EnrollmentRole } from "@prisma/client";
 import type { CanvasCourseApi, CanvasIntegrationCredentials } from "~/lib/canvas/client.server";
-import {
-  CANVAS_EXTERNAL_SOURCE,
-  listTeacherCanvasCourses,
-} from "~/lib/canvas/client.server";
+import { CANVAS_EXTERNAL_SOURCE, listTeacherCanvasCourses } from "~/lib/canvas/client.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
 import type { CanvasCoursePickerItem } from "~/lib/canvas/schemas";
 import {
@@ -59,8 +56,7 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
     );
   }
 
-  const endDate =
-    parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
+  const endDate = parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
 
   return { startDate, endDate };
 }

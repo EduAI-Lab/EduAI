@@ -10,20 +10,11 @@ import {
   parseModelIdentifier,
   PROVIDER_CONFIGS,
 } from "~/lib/ai/providers";
-import {
-  classifyProviderError,
-  createProviderFailure,
-} from "~/lib/ai/provider-errors.server";
-import {
-  FleetUnavailableError,
-  resolveFleetHost,
-} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { classifyProviderError, createProviderFailure } from "~/lib/ai/provider-errors.server";
+import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
-import {
-  composeSecurityPrompt,
-  sanitizeSystemPrompt,
-} from "~/lib/ai/prompt-safety";
+import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 
 const DEFAULT_TEMPERATURE = 0.2;
@@ -130,13 +121,11 @@ export async function runCompletion(request: CompletionRequest) {
     return {
       ok: false as const,
       status: 400,
-      error:
-        'Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).',
+      error: "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
     };
   }
 
-  const validatedModelId =
-    `${parsedModel.providerId}:${parsedModel.modelId}` as const;
+  const validatedModelId = `${parsedModel.providerId}:${parsedModel.modelId}` as const;
   let fleetBaseUrl: string | undefined;
   let fleetServerId: string | undefined;
   if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
@@ -163,19 +152,10 @@ export async function runCompletion(request: CompletionRequest) {
 
   const providerSettings = validatedApiKeys[parsedModel.providerId];
   if (!providerSettings?.isEnabled) {
-    return createProviderFailure(
-      parsedModel.providerId,
-      "INVALID_PROVIDER_CONFIG",
-    );
+    return createProviderFailure(parsedModel.providerId, "INVALID_PROVIDER_CONFIG");
   }
-  if (
-    PROVIDER_CONFIGS[parsedModel.providerId]?.requiresApiKey &&
-    !providerSettings.apiKey
-  ) {
-    return createProviderFailure(
-      parsedModel.providerId,
-      "INVALID_PROVIDER_CONFIG",
-    );
+  if (PROVIDER_CONFIGS[parsedModel.providerId]?.requiresApiKey && !providerSettings.apiKey) {
+    return createProviderFailure(parsedModel.providerId, "INVALID_PROVIDER_CONFIG");
   }
 
   let aiModel;

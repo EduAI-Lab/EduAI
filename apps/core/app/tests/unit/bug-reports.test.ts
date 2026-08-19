@@ -34,31 +34,51 @@ describe("createBugReport — validation", () => {
 
   it("rejects missing source", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, source: undefined });
-    expect(r).toMatchObject({ ok: false, error: "VALIDATION_ERROR", fields: { source: expect.any(String) } });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { source: expect.any(String) },
+    });
     expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
   });
 
   it("rejects invalid source value", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, source: "INVALID_SOURCE" });
-    expect(r).toMatchObject({ ok: false, error: "VALIDATION_ERROR", fields: { source: expect.any(String) } });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { source: expect.any(String) },
+    });
     expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
   });
 
   it("rejects missing userId", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, userId: undefined });
-    expect(r).toMatchObject({ ok: false, error: "VALIDATION_ERROR", fields: { userId: expect.any(String) } });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { userId: expect.any(String) },
+    });
     expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
   });
 
   it("rejects empty userId string", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, userId: "   " });
-    expect(r).toMatchObject({ ok: false, error: "VALIDATION_ERROR", fields: { userId: expect.any(String) } });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { userId: expect.any(String) },
+    });
     expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
   });
 
   it("rejects missing description", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, description: undefined });
-    expect(r).toMatchObject({ ok: false, error: "VALIDATION_ERROR", fields: { description: expect.any(String) } });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { description: expect.any(String) },
+    });
     expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
   });
 

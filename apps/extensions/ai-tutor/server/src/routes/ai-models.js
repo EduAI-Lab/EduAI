@@ -21,14 +21,14 @@
  * Related: services/aiModelPolicy.js, routes/admin.js (policy editor)
  */
 
-import express from 'express';
-import { getAiModelPolicyState } from '../services/aiModelPolicy.js';
+import express from "express";
+import { getAiModelPolicyState } from "../services/aiModelPolicy.js";
 
 const router = express.Router();
 
 // Roles that may preview admin-only models. Everyone else (including a
 // missing or unrecognized req.user.role) gets the allow-list-filtered view.
-const PRIVILEGED_MODEL_ROLES = new Set(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']);
+const PRIVILEGED_MODEL_ROLES = new Set(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]);
 
 /**
  * GET /ai-models — list tutor-eligible models for the current user.
@@ -41,7 +41,7 @@ const PRIVILEGED_MODEL_ROLES = new Set(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']);
  * tempt them; instructors see all models with `availability` so they can
  * understand what their students will actually see.
  */
-router.get('/ai-models', async (req, res) => {
+router.get("/ai-models", async (req, res) => {
   try {
     const { policy, availableModels, availableModelsError } = await getAiModelPolicyState();
 
@@ -52,13 +52,13 @@ router.get('/ai-models', async (req, res) => {
     const models = visibleModels.map((model) => ({
       ...model,
       studentSelectable: policy.allowedTutorModelIds.includes(model.modelId),
-      availability: policy.allowedTutorModelIds.includes(model.modelId) ? 'allowed' : 'admin-only',
+      availability: policy.allowedTutorModelIds.includes(model.modelId) ? "allowed" : "admin-only",
     }));
 
     res.json(models);
   } catch (error) {
-    console.error('Failed to load AI models:', error);
-    res.status(500).json({ error: 'Failed to load AI models', detail: String(error) });
+    console.error("Failed to load AI models:", error);
+    res.status(500).json({ error: "Failed to load AI models", detail: String(error) });
   }
 });
 
@@ -69,32 +69,32 @@ router.get('/ai-models', async (req, res) => {
  * Returns 200 with { valid: true/false, error? } so the client can read
  * provider-specific error messages. Only returns 4xx/5xx for actual request errors.
  */
-router.post('/ai-models/validate-key', async (req, res) => {
+router.post("/ai-models/validate-key", async (req, res) => {
   const { provider, apiKey } = req.body;
 
   if (!provider || !apiKey) {
-    return res.status(400).json({ valid: false, error: 'Missing provider or apiKey' });
+    return res.status(400).json({ valid: false, error: "Missing provider or apiKey" });
   }
 
   try {
-    if (provider === 'google') {
+    if (provider === "google") {
       // Gemini: list models endpoint is free/lightweight
       const resp = await fetch(
         `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(apiKey)}`,
       );
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        const message = body?.error?.message || 'Invalid API key';
+        const message = body?.error?.message || "Invalid API key";
         return res.json({ valid: false, error: message });
       }
-    } else if (provider === 'openai') {
+    } else if (provider === "openai") {
       // OpenAI: GET /models is free
-      const resp = await fetch('https://api.openai.com/v1/models', {
+      const resp = await fetch("https://api.openai.com/v1/models", {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        const message = body?.error?.message || 'Invalid API key';
+        const message = body?.error?.message || "Invalid API key";
         return res.json({ valid: false, error: message });
       }
     } else {
@@ -103,8 +103,8 @@ router.post('/ai-models/validate-key', async (req, res) => {
 
     res.json({ valid: true });
   } catch (error) {
-    console.error('API key validation failed:', error);
-    res.status(500).json({ valid: false, error: 'Validation request failed' });
+    console.error("API key validation failed:", error);
+    res.status(500).json({ valid: false, error: "Validation request failed" });
   }
 });
 

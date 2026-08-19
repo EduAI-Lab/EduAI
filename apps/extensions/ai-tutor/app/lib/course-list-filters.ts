@@ -9,17 +9,17 @@
  * Shared by `routes/instructor.tsx` and `routes/student.tsx` so the two cannot
  * drift on param names, page-reset behaviour, or debounce timing.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
-import { useDebouncedValue } from '~/hooks/useDebouncedValue';
+import { useDebouncedValue } from "~/hooks/useDebouncedValue";
 
 /**
  * Filter dimensions carried in the URL. The keys double as both the query-param
  * name and the `CourseFilterGroup.id` the toolbar reports, so a change comes back
  * as the param to write — no translation table to keep in sync.
  */
-export const COURSE_FILTER_KEYS = ['term', 'status', 'progress'] as const;
+export const COURSE_FILTER_KEYS = ["term", "status", "progress"] as const;
 export type CourseFilterKey = (typeof COURSE_FILTER_KEYS)[number];
 
 /**
@@ -41,8 +41,8 @@ export const MAX_COURSE_SEARCH_LENGTH = 200;
  * an unknown term simply matches nothing, which is the honest answer.
  */
 const COURSE_FILTER_ALLOWED: Partial<Record<CourseFilterKey, readonly string[]>> = {
-  status: ['published', 'draft'],
-  progress: ['not-started', 'in-progress', 'completed'],
+  status: ["published", "draft"],
+  progress: ["not-started", "in-progress", "completed"],
 };
 
 export interface CourseListSelection {
@@ -53,9 +53,8 @@ export interface CourseListSelection {
 
 /** Read the current selection out of a request URL, for use in a loader. */
 export function readCourseListSelection(url: URL): CourseListSelection {
-  const requestedPage = Number(url.searchParams.get('page'));
-  const page =
-    Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+  const requestedPage = Number(url.searchParams.get("page"));
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
   const filters = {} as Record<CourseFilterKey, string[]>;
   for (const key of COURSE_FILTER_KEYS) {
@@ -66,7 +65,7 @@ export function readCourseListSelection(url: URL): CourseListSelection {
       .filter((value) => !allowed || allowed.includes(value));
   }
 
-  const search = (url.searchParams.get('search')?.trim() ?? '').slice(0, MAX_COURSE_SEARCH_LENGTH);
+  const search = (url.searchParams.get("search")?.trim() ?? "").slice(0, MAX_COURSE_SEARCH_LENGTH);
 
   return { page, search, filters };
 }
@@ -74,8 +73,8 @@ export function readCourseListSelection(url: URL): CourseListSelection {
 /** True when anything is narrowing the list — drives "no results" vs "empty" copy. */
 export function hasActiveCourseFilters(selection: CourseListSelection): boolean {
   return (
-    selection.search.length > 0
-    || COURSE_FILTER_KEYS.some((key) => selection.filters[key].length > 0)
+    selection.search.length > 0 ||
+    COURSE_FILTER_KEYS.some((key) => selection.filters[key].length > 0)
   );
 }
 
@@ -115,9 +114,9 @@ export function useCourseListFilters(selection: CourseListSelection) {
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
-        if (next) params.set('search', next);
-        else params.delete('search');
-        params.delete('page');
+        if (next) params.set("search", next);
+        else params.delete("search");
+        params.delete("page");
         return params;
       },
       { replace: true, preventScrollReset: true },
@@ -132,7 +131,7 @@ export function useCourseListFilters(selection: CourseListSelection) {
           const params = new URLSearchParams(prev);
           params.delete(groupId);
           for (const value of values) params.append(groupId, value);
-          params.delete('page');
+          params.delete("page");
           return params;
         },
         { preventScrollReset: true },
@@ -142,13 +141,13 @@ export function useCourseListFilters(selection: CourseListSelection) {
   );
 
   const clearAll = useCallback(() => {
-    committedSearch.current = '';
-    setSearchDraft('');
+    committedSearch.current = "";
+    setSearchDraft("");
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
-        params.delete('search');
-        params.delete('page');
+        params.delete("search");
+        params.delete("page");
         for (const key of COURSE_FILTER_KEYS) params.delete(key);
         return params;
       },
@@ -161,7 +160,7 @@ export function useCourseListFilters(selection: CourseListSelection) {
       setSearchParams(
         (prev) => {
           const params = new URLSearchParams(prev);
-          params.set('page', String(nextPage));
+          params.set("page", String(nextPage));
           return params;
         },
         { preventScrollReset: false },

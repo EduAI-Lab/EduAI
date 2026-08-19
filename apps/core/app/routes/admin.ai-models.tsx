@@ -108,7 +108,9 @@ export default function AIModelsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>

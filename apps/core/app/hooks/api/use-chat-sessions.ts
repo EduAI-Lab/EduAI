@@ -61,9 +61,7 @@ export function useChatSession(chatId: string | null) {
 }
 
 /** Load chat metadata by id (imperative helper for routes). */
-export async function fetchChatSession(
-  chatId: string,
-): Promise<ChatSessionMeta | null> {
+export async function fetchChatSession(chatId: string): Promise<ChatSessionMeta | null> {
   try {
     return await apiFetch<ChatSessionMeta>(`/api/chats/${chatId}`);
   } catch {

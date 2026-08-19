@@ -1,17 +1,17 @@
-import { IconBooks, IconBug, IconSettings } from '@tabler/icons-react';
-import { DonutChart, PanelCard, type DonutSegment } from '@eduai/ui';
-import type { DashboardStats } from '~/lib/api';
-import type { AdminBugReportRow, AdminUserPage, Course } from '~/lib/types';
-import { DashboardView, type DashboardQuickAction } from './DashboardView';
-import { BugReportTriagePanel } from './BugReportTriagePanel';
-import { toDashboardCourseRow } from './dashboard-helpers';
+import { IconBooks, IconBug, IconSettings } from "@tabler/icons-react";
+import { DonutChart, PanelCard, type DonutSegment } from "@eduai/ui";
+import type { DashboardStats } from "~/lib/api";
+import type { AdminBugReportRow, AdminUserPage, Course } from "~/lib/types";
+import { DashboardView, type DashboardQuickAction } from "./DashboardView";
+import { BugReportTriagePanel } from "./BugReportTriagePanel";
+import { toDashboardCourseRow } from "./dashboard-helpers";
 
-const PUBLISHED_COLOR = 'var(--color-series-1)';
-const DRAFT_COLOR = 'var(--color-series-2)';
+const PUBLISHED_COLOR = "var(--color-series-1)";
+const DRAFT_COLOR = "var(--color-series-2)";
 
-const STUDENT_COLOR = 'var(--color-series-4)';
-const INSTRUCTOR_COLOR = 'var(--color-series-5)';
-const OTHER_COLOR = 'var(--color-series-6)';
+const STUDENT_COLOR = "var(--color-series-4)";
+const INSTRUCTOR_COLOR = "var(--color-series-5)";
+const OTHER_COLOR = "var(--color-series-6)";
 
 type DashboardAdminViewProps = {
   courses: Course[];
@@ -35,7 +35,7 @@ export function DashboardAdminView({
   dashboardStats,
 }: DashboardAdminViewProps) {
   const published = courses.filter((c) => c.isPublished);
-  const openReports = bugReports.filter((r) => r.status === 'unhandled');
+  const openReports = bugReports.filter((r) => r.status === "unhandled");
 
   // #1041: counts come from Core's platform-wide `stats`. Deriving them from a
   // fetched list is no longer possible — the list is one page.
@@ -53,21 +53,21 @@ export function DashboardAdminView({
   const draftCount = dashboardStats?.draftCourses ?? totalCourses - publishedCount;
 
   const stats = [
-    { label: 'Total courses', value: totalCourses },
-    { label: 'Published', value: publishedCount },
-    { label: 'Platform users', value: dashboardStats?.totalUsers ?? userStats.total },
-    { label: 'Open bug reports', value: dashboardStats?.openBugReports ?? openReports.length },
+    { label: "Total courses", value: totalCourses },
+    { label: "Published", value: publishedCount },
+    { label: "Platform users", value: dashboardStats?.totalUsers ?? userStats.total },
+    { label: "Open bug reports", value: dashboardStats?.openBugReports ?? openReports.length },
   ];
 
   const statusSegments: DonutSegment[] = [
-    { label: 'Published', value: publishedCount, color: PUBLISHED_COLOR },
-    { label: 'Draft', value: draftCount, color: DRAFT_COLOR },
+    { label: "Published", value: publishedCount, color: PUBLISHED_COLOR },
+    { label: "Draft", value: draftCount, color: DRAFT_COLOR },
   ];
 
   const roleSegments: DonutSegment[] = [
-    { label: 'Students', value: studentCount, color: STUDENT_COLOR },
-    { label: 'Instructors', value: instructorCount, color: INSTRUCTOR_COLOR },
-    { label: 'Other', value: otherCount, color: OTHER_COLOR },
+    { label: "Students", value: studentCount, color: STUDENT_COLOR },
+    { label: "Instructors", value: instructorCount, color: INSTRUCTOR_COLOR },
+    { label: "Other", value: otherCount, color: OTHER_COLOR },
   ];
 
   const analytics = (
@@ -91,21 +91,24 @@ export function DashboardAdminView({
 
   const quickActions: DashboardQuickAction[] = [
     {
-      label: 'View courses',
-      description: 'Browse every course on the platform.',
-      href: '/instructor',
+      label: "View courses",
+      description: "Browse every course on the platform.",
+      href: "/instructor",
       icon: <IconBooks size={16} stroke={1.75} />,
     },
     {
-      label: 'Triage bug reports',
-      description: openReports.length > 0 ? `${openReports.length} waiting for review.` : 'Nothing waiting for review.',
-      href: '/admin',
+      label: "Triage bug reports",
+      description:
+        openReports.length > 0
+          ? `${openReports.length} waiting for review.`
+          : "Nothing waiting for review.",
+      href: "/admin",
       icon: <IconBug size={16} stroke={1.75} />,
     },
     {
-      label: 'Open settings',
-      description: 'Manage your AI providers and accessibility.',
-      href: '/settings',
+      label: "Open settings",
+      description: "Manage your AI providers and accessibility.",
+      href: "/settings",
       icon: <IconSettings size={16} stroke={1.75} />,
     },
   ];

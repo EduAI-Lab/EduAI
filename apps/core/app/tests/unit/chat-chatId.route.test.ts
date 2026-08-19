@@ -76,10 +76,7 @@ describe("chat.$chatId loader", () => {
   it("redirects to /chat when the transcript is missing or unauthorized", async () => {
     vi.mocked(loadChatTranscript).mockResolvedValue(null as never);
     await expectThrownRedirect(loader(makeArgs()), "/chat");
-    expect(loadChatTranscript).toHaveBeenCalledWith(
-      { id: "u1", role: "STUDENT" },
-      "chat-1",
-    );
+    expect(loadChatTranscript).toHaveBeenCalledWith({ id: "u1", role: "STUDENT" }, "chat-1");
   });
 
   it("returns base data plus the transcript when found and authorized", async () => {

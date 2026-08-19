@@ -1,6 +1,6 @@
-import { ReactNode } from 'react';
+import { ReactNode } from "react";
 
-export type TourPlacement = 'top' | 'bottom' | 'left' | 'right' | 'center';
+export type TourPlacement = "top" | "bottom" | "left" | "right" | "center";
 
 export type TourStep = {
   /** Step identifier; also used as default `data-tour-id` unless `targetId` is set */
@@ -16,6 +16,6 @@ export type TourStep = {
   waitForTargetMs?: number;
 };
 
-export type TourId = 'main' | 'assessmentBuilder';
+export type TourId = "main" | "assessmentBuilder";
 
 export type TourConfig = Record<TourId, TourStep[]>;

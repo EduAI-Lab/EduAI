@@ -26,56 +26,85 @@ import {
   TooltipTrigger,
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
+import { useCronJobStatuses } from "~/hooks/api/use-cron-job-status";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
-function CronStatusBadge({ status, external, message }: { status: CronJobStatusValue | null; external?: boolean; message?: string | null }) {
+function CronStatusBadge({
+  status,
+  external,
+  message,
+}: {
+  status: CronJobStatusValue | null;
+  external?: boolean;
+  message?: string | null;
+}) {
   if (external) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-        <span className="w-[5px] h-[5px] rounded-full shrink-0"
-          style={{ background: "var(--muted-foreground)" }} />
+      <span
+        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+      >
+        <span
+          className="w-[5px] h-[5px] rounded-full shrink-0"
+          style={{ background: "var(--muted-foreground)" }}
+        />
         External
       </span>
     );
   }
   if (!status) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-        <span className="w-[5px] h-[5px] rounded-full shrink-0"
-          style={{ background: "var(--muted-foreground)" }} />
+      <span
+        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+      >
+        <span
+          className="w-[5px] h-[5px] rounded-full shrink-0"
+          style={{ background: "var(--muted-foreground)" }}
+        />
         Never run
       </span>
     );
   }
   if (status === "RUNNING") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-        style={{ background: "var(--color-warning-100)", color: "var(--color-warning-700)" }}>
-        <span className="w-[5px] h-[5px] rounded-full flex-shrink-0 animate-pulse"
-          style={{ background: "var(--color-warning-500)" }} />
+      <span
+        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+        style={{ background: "var(--color-warning-100)", color: "var(--color-warning-700)" }}
+      >
+        <span
+          className="w-[5px] h-[5px] rounded-full flex-shrink-0 animate-pulse"
+          style={{ background: "var(--color-warning-500)" }}
+        />
         Running
       </span>
     );
   }
   if (status === "SUCCESS") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-        style={{ background: "var(--color-success-100)", color: "var(--color-success-700)" }}>
-        <span className="w-[5px] h-[5px] rounded-full flex-shrink-0"
-          style={{ background: "var(--color-success-500)" }} />
+      <span
+        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+        style={{ background: "var(--color-success-100)", color: "var(--color-success-700)" }}
+      >
+        <span
+          className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+          style={{ background: "var(--color-success-500)" }}
+        />
         Success
       </span>
     );
   }
 
   const badge = (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-      style={{ background: "var(--color-error-100)", color: "var(--destructive)" }}>
-      <span className="w-[5px] h-[5px] rounded-full flex-shrink-0"
-        style={{ background: "var(--destructive)" }} />
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+      style={{ background: "var(--color-error-100)", color: "var(--destructive)" }}
+    >
+      <span
+        className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+        style={{ background: "var(--destructive)" }}
+      />
       Error
     </span>
   );
@@ -135,7 +164,12 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(v: boolean) => { if (!v) onClose(); }}>
+      <Dialog
+        open={open}
+        onOpenChange={(v: boolean) => {
+          if (!v) onClose();
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Run history — {jobName}</DialogTitle>
@@ -151,6 +185,7 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Started</TableHead>
+                  <TableHead>Triggered by</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Message</TableHead>
@@ -160,6 +195,18 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
                 {runs.map((run) => (
                   <TableRow key={run.id}>
                     <TableCell className="text-sm">{formatDateTime(run.startedAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {run.triggerSource === "ADMIN_UI"
+                        ? "Admin panel"
+                        : run.triggerSource === "ADMIN_CHAT"
+                          ? "Admin chatbot"
+                          : run.triggerSource === "SCHEDULE"
+                            ? "Schedule"
+                            : "Unknown"}
+                      {run.triggeredByUserId && (
+                        <div className="font-mono text-[10px]">{run.triggeredByUserId}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDuration(run.startedAt, run.finishedAt)}
                     </TableCell>
@@ -175,7 +222,9 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
                         >
                           {run.message}
                         </button>
-                      ) : "—"}
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -185,13 +234,20 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={expandedMessage !== null} onOpenChange={(v) => { if (!v) setExpandedMessage(null); }}>
+      <Dialog
+        open={expandedMessage !== null}
+        onOpenChange={(v) => {
+          if (!v) setExpandedMessage(null);
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Run output — {jobName}</DialogTitle>
           </DialogHeader>
-          <pre className="text-xs font-mono whitespace-pre-wrap overflow-y-auto max-h-[60vh] rounded-md p-4"
-            style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+          <pre
+            className="text-xs font-mono whitespace-pre-wrap overflow-y-auto max-h-[60vh] rounded-md p-4"
+            style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+          >
             {expandedMessage}
           </pre>
         </DialogContent>
@@ -260,7 +316,13 @@ interface EditScheduleDialogProps {
   triggerEnabled: boolean;
 }
 
-function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: EditScheduleDialogProps) {
+function EditScheduleDialog({
+  job,
+  open,
+  onClose,
+  onSaved,
+  triggerEnabled,
+}: EditScheduleDialogProps) {
   const [expr, setExpr] = useState("");
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -292,9 +354,14 @@ function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: Edi
       const res = await fetch("/api/admin/cron-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: "update-schedule", jobName: job.name, schedule: expr.trim(), scheduleLabel: label.trim() || deriveCronLabel(expr.trim()) }),
+        body: JSON.stringify({
+          intent: "update-schedule",
+          jobName: job.name,
+          schedule: expr.trim(),
+          scheduleLabel: label.trim() || deriveCronLabel(expr.trim()),
+        }),
       });
-      const body = await res.json() as { jobs?: CronJobEntry[]; error?: string };
+      const body = (await res.json()) as { jobs?: CronJobEntry[]; error?: string };
       if (!res.ok || body.error) {
         setError(body.error ?? "Failed to save");
         return;
@@ -316,7 +383,7 @@ function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: Edi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ intent: "reset-schedule", jobName: job.name }),
       });
-      const body = await res.json() as { jobs?: CronJobEntry[]; error?: string };
+      const body = (await res.json()) as { jobs?: CronJobEntry[]; error?: string };
       if (!res.ok || body.error) {
         setError(body.error ?? "Failed to reset");
         return;
@@ -329,7 +396,12 @@ function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: Edi
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v: boolean) => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v: boolean) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit schedule — {job?.name}</DialogTitle>
@@ -342,7 +414,10 @@ function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: Edi
               className="font-mono"
               placeholder="0 2 * * *"
               value={expr}
-              onChange={(e) => { setExpr(e.target.value); setError(null); }}
+              onChange={(e) => {
+                setExpr(e.target.value);
+                setError(null);
+              }}
             />
             <p className="text-xs text-muted-foreground">
               Format: <span className="font-mono">minute hour day-of-month month day-of-week</span>
@@ -356,15 +431,23 @@ function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: Edi
               value={label}
               onChange={(e) => setLabel(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">Auto-filled from common patterns. Edit freely.</p>
+            <p className="text-xs text-muted-foreground">
+              Auto-filled from common patterns. Edit freely.
+            </p>
           </div>
           {!triggerEnabled && (
-            <p className="text-xs text-muted-foreground rounded-md border px-3 py-2" style={{ borderColor: "var(--border)" }}>
-              This job is managed by an extension server. The saved schedule is informational — the extension server must be reconfigured separately to change when it runs.
+            <p
+              className="text-xs text-muted-foreground rounded-md border px-3 py-2"
+              style={{ borderColor: "var(--border)" }}
+            >
+              This job is managed by an extension server. The saved schedule is informational — the
+              extension server must be reconfigured separately to change when it runs.
             </p>
           )}
           {error && (
-            <p className="text-sm" style={{ color: "var(--destructive)" }}>{error}</p>
+            <p className="text-sm" style={{ color: "var(--destructive)" }}>
+              {error}
+            </p>
           )}
         </div>
         <DialogFooter className="flex items-center gap-2">
@@ -373,7 +456,9 @@ function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: Edi
               Reset to default
             </Button>
           )}
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
           <Button onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save"}
           </Button>
@@ -390,39 +475,11 @@ export interface CronJobsAdminViewProps {
 }
 
 export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps) {
-  const [jobs, setJobs] = useState<CronJobEntry[]>(initialJobs);
+  const { jobs, refresh: fetchStatuses, setJobs } = useCronJobStatuses(true, initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<string | null>(null);
   const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const hasRunning = jobs.some((j) => j.lastRun?.status === "RUNNING");
-
-  const fetchStatuses = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/cron-jobs");
-      if (!res.ok) return;
-      const body = (await res.json()) as { jobs: CronJobEntry[] };
-      setJobs(body.jobs);
-    } catch {
-      // network blip — ignore
-    }
-  }, []);
-
-  // Poll every 3 s while any job is RUNNING, stop otherwise.
-  useEffect(() => {
-    if (hasRunning) {
-      pollRef.current = setInterval(fetchStatuses, 3000);
-    } else {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [hasRunning, fetchStatuses]);
+  const hasRunning = jobs.some((job) => job.lastRun?.status === "RUNNING");
 
   async function triggerJob(jobName: string) {
     setTriggering((prev) => new Set(prev).add(jobName));
@@ -470,14 +527,14 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>
-              {runningCount > 0 ? "Currently running" : "Errors"}
-            </CardDescription>
+            <CardDescription>{runningCount > 0 ? "Currently running" : "Errors"}</CardDescription>
             <CardTitle className="text-2xl">
               {runningCount > 0 ? (
                 <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full animate-pulse"
-                    style={{ background: "var(--color-warning-500)" }} />
+                  <span
+                    className="w-2 h-2 rounded-full animate-pulse"
+                    style={{ background: "var(--color-warning-500)" }}
+                  />
                   {runningCount}
                 </span>
               ) : errorCount > 0 ? (
@@ -531,8 +588,13 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                           {job.schedule}
                         </Badge>
                         {job.scheduleOverridden && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                            style={{ background: "var(--color-warning-100)", color: "var(--color-warning-700)" }}>
+                          <span
+                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                            style={{
+                              background: "var(--color-warning-100)",
+                              color: "var(--color-warning-700)",
+                            }}
+                          >
                             custom
                           </span>
                         )}
@@ -563,7 +625,11 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <CronStatusBadge status={job.lastRun?.status ?? null} external={job.triggerEnabled === false} message={job.lastRun?.message} />
+                      <CronStatusBadge
+                        status={job.lastRun?.status ?? null}
+                        external={job.triggerEnabled === false}
+                        message={job.lastRun?.message}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -603,7 +669,10 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
         job={editScheduleJob}
         open={editScheduleJob !== null}
         onClose={() => setEditScheduleJob(null)}
-        onSaved={(updated) => { setJobs(updated); setEditScheduleJob(null); }}
+        onSaved={(updated) => {
+          setJobs(updated);
+          setEditScheduleJob(null);
+        }}
         triggerEnabled={editScheduleJob?.triggerEnabled !== false}
       />
     </div>

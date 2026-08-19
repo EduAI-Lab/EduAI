@@ -13,8 +13,8 @@
  * in any of the three APIs degrades to a skip, not a wrong number.
  */
 
-const AI_TUTOR_API = process.env.AI_TUTOR_API_URL || 'http://localhost:4000';
-const QM_API = process.env.QM_API_URL || 'http://localhost:8000';
+const AI_TUTOR_API = process.env.AI_TUTOR_API_URL || "http://localhost:4000";
+const QM_API = process.env.QM_API_URL || "http://localhost:8000";
 
 /** GET + parse JSON, swallowing every failure mode into undefined. */
 async function getJson(request, url) {
@@ -34,7 +34,8 @@ async function getJson(request, url) {
  * that actually owns children, and seeded content clusters — so give those a
  * wide window rather than letting coverage depend on which rows sort first.
  */
-const paged = (url, pageSize = 5) => `${url}${url.includes('?') ? '&' : '?'}page=1&pageSize=${pageSize}`;
+const paged = (url, pageSize = 5) =>
+  `${url}${url.includes("?") ? "&" : "?"}page=1&pageSize=${pageSize}`;
 const WALK = 50;
 
 /**
@@ -47,13 +48,13 @@ const WALK = 50;
 function toArray(payload, ...keys) {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
-  const candidates = [...keys, 'data', 'items', 'results', 'rows'];
+  const candidates = [...keys, "data", "items", "results", "rows"];
   for (const k of candidates) {
     if (Array.isArray(payload?.[k])) return payload[k];
   }
   for (const k of candidates) {
     const nested = payload?.[k];
-    if (nested && typeof nested === 'object') {
+    if (nested && typeof nested === "object") {
       const found = toArray(nested, ...keys);
       if (found.length) return found;
     }
@@ -64,7 +65,7 @@ function toArray(payload, ...keys) {
 /** First usable id in a list, tolerating id / _id / uuid naming. */
 function firstId(list, ...idKeys) {
   for (const row of list) {
-    for (const k of [...idKeys, 'id', '_id', 'uuid']) {
+    for (const k of [...idKeys, "id", "_id", "uuid"]) {
       if (row?.[k] != null) return String(row[k]);
     }
   }
@@ -74,11 +75,11 @@ function firstId(list, ...idKeys) {
 async function resolveCore(request, baseUrl) {
   const params = {};
 
-  const courses = toArray(await getJson(request, paged(`${baseUrl}/api/courses`)), 'courses');
-  params.courseId = firstId(courses, 'courseId');
+  const courses = toArray(await getJson(request, paged(`${baseUrl}/api/courses`)), "courses");
+  params.courseId = firstId(courses, "courseId");
 
-  const chats = toArray(await getJson(request, paged(`${baseUrl}/api/chats`)), 'chats');
-  params.chatId = firstId(chats, 'chatId');
+  const chats = toArray(await getJson(request, paged(`${baseUrl}/api/chats`)), "chats");
+  params.chatId = firstId(chats, "chatId");
 
   // /units/:department/chats keys on the department CODE (e.g. COSC), not an id,
   // and the loader rejects any code outside the caller's `authorizedUnits` with
@@ -91,7 +92,10 @@ async function resolveCore(request, baseUrl) {
   if (authorized.length) {
     params.department = String(authorized[0]);
   } else {
-    const disciplines = toArray(await getJson(request, `${baseUrl}/api/disciplines`), 'disciplines');
+    const disciplines = toArray(
+      await getJson(request, `${baseUrl}/api/disciplines`),
+      "disciplines",
+    );
     for (const d of disciplines) {
       const code = d?.code ?? d?.department ?? d?.name;
       if (code) {
@@ -102,7 +106,7 @@ async function resolveCore(request, baseUrl) {
   }
   // The unit-admin seed account is authorized for COSC, so that is the only
   // department it can open if both endpoints are unavailable.
-  params.department ??= 'COSC';
+  params.department ??= "COSC";
 
   return params;
 }
@@ -118,32 +122,36 @@ async function resolveCore(request, baseUrl) {
 async function resolveAiTutor(request) {
   const params = {};
 
-  const courses = toArray(await getJson(request, paged(`${AI_TUTOR_API}/api/courses`, WALK)), 'courses', 'offerings');
+  const courses = toArray(
+    await getJson(request, paged(`${AI_TUTOR_API}/api/courses`, WALK)),
+    "courses",
+    "offerings",
+  );
   if (!courses.length) return params;
-  params.courseId = firstId(courses, 'courseId', 'offeringId');
+  params.courseId = firstId(courses, "courseId", "offeringId");
 
   for (const course of courses) {
-    const courseId = firstId([course], 'courseId', 'offeringId');
+    const courseId = firstId([course], "courseId", "offeringId");
     if (!courseId) continue;
 
     const modules = toArray(
       await getJson(request, paged(`${AI_TUTOR_API}/api/courses/${courseId}/modules`, WALK)),
-      'modules'
+      "modules",
     );
     if (!modules.length) continue;
 
     // A module id is only usable once we know the course it hangs off renders.
     params.courseId = courseId;
-    params.moduleId ??= firstId(modules, 'moduleId');
+    params.moduleId ??= firstId(modules, "moduleId");
 
     for (const mod of modules) {
-      const moduleId = firstId([mod], 'moduleId');
+      const moduleId = firstId([mod], "moduleId");
       if (!moduleId) continue;
       const lessons = toArray(
         await getJson(request, paged(`${AI_TUTOR_API}/api/modules/${moduleId}/lessons`)),
-        'lessons'
+        "lessons",
       );
-      const lessonId = firstId(lessons, 'lessonId');
+      const lessonId = firstId(lessons, "lessonId");
       if (!lessonId) continue;
       params.moduleId = moduleId;
       params.lessonId = lessonId;
@@ -157,24 +165,27 @@ async function resolveAiTutor(request) {
 async function resolveQuestionMaker(request) {
   const params = {};
 
-  const courses = toArray(await getJson(request, paged(`${QM_API}/api/course`, WALK)), 'courses');
+  const courses = toArray(await getJson(request, paged(`${QM_API}/api/course`, WALK)), "courses");
   if (!courses.length) return params;
-  params.courseId = firstId(courses, 'courseId');
+  params.courseId = firstId(courses, "courseId");
 
   // The first course is not guaranteed to own any questions or assessments —
   // seeded content clusters on a few courses — so walk the page until one does.
   // /courses/:courseId itself only needs the first id, which is already set.
   for (const course of courses) {
-    const courseId = firstId([course], 'courseId');
+    const courseId = firstId([course], "courseId");
     if (!courseId) continue;
 
-    const questions = toArray(await getJson(request, paged(`${QM_API}/api/questions?courseId=${courseId}`)), 'questions');
+    const questions = toArray(
+      await getJson(request, paged(`${QM_API}/api/questions?courseId=${courseId}`)),
+      "questions",
+    );
     const assessments = toArray(
       await getJson(request, paged(`${QM_API}/api/assessments?courseId=${courseId}`)),
-      'assessments'
+      "assessments",
     );
-    const questionId = firstId(questions, 'questionId');
-    const assessmentId = firstId(assessments, 'assessmentId');
+    const questionId = firstId(questions, "questionId");
+    const assessmentId = firstId(assessments, "assessmentId");
     if (!questionId && !assessmentId) continue;
 
     // Keep the ids self-consistent: a question/assessment id is only valid in
@@ -196,11 +207,11 @@ async function resolveQuestionMaker(request) {
  */
 export async function resolveParams(request, appKey, coreBaseUrl) {
   switch (appKey) {
-    case 'core':
+    case "core":
       return resolveCore(request, coreBaseUrl);
-    case 'aiTutor':
+    case "aiTutor":
       return resolveAiTutor(request);
-    case 'questionMaker':
+    case "questionMaker":
       return resolveQuestionMaker(request);
     default:
       return {};

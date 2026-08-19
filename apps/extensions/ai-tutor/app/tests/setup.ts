@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom/vitest';
+import "@testing-library/jest-dom/vitest";
 
 class ResizeObserverMock {
   observe() {}
@@ -6,11 +6,11 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-if (typeof globalThis.ResizeObserver === 'undefined') {
+if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
 }
 
-if (typeof window.matchMedia === 'undefined') {
+if (typeof window.matchMedia === "undefined") {
   window.matchMedia = (query: string) => ({
     matches: false,
     media: query,
@@ -23,6 +23,6 @@ if (typeof window.matchMedia === 'undefined') {
   });
 }
 
-if (typeof Element.prototype.scrollIntoView !== 'function') {
+if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => {};
 }

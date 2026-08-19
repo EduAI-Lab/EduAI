@@ -184,11 +184,7 @@ function conditionToRunMode(condition) {
 /** @param {string} runMode */
 function runModeToConditionLabel(runMode) {
   const condition =
-    runMode === "off"
-      ? "baseline"
-      : runMode === "on"
-        ? "assist-oversight"
-        : "assist-prompt-only";
+    runMode === "off" ? "baseline" : runMode === "on" ? "assist-oversight" : "assist-prompt-only";
   return CONDITIONS[condition].label;
 }
 
@@ -220,7 +216,9 @@ function resolveConfig(cli) {
   if (!cookie) fail("EDUAI_COOKIE is required (paste your browser session cookie header).");
   if (!apiKeysJson) fail("EDUAI_API_KEYS_JSON is required.");
   if (!courseId && !courseCode) {
-    fail("EDUAI_COURSE_ID (or EDUAI_COURSE_CODE) is required; interactive chats are course-scoped.");
+    fail(
+      "EDUAI_COURSE_ID (or EDUAI_COURSE_CODE) is required; interactive chats are course-scoped.",
+    );
   }
 
   let apiKeys;
@@ -231,14 +229,18 @@ function resolveConfig(cli) {
   }
 
   const requestedOnly = cli.only
-    ? cli.only.split(",").map((s) => s.trim()).filter(Boolean)
+    ? cli.only
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
     : ["S1", "S2", "S3"];
   const scenarioIds = [...requestedOnly];
   if (cli["include-s5"] && !scenarioIds.includes("S5")) scenarioIds.push("S5");
   if (cli["include-s4"] && !scenarioIds.includes("S4")) scenarioIds.push("S4");
 
   for (const id of scenarioIds) {
-    if (!SCENARIOS[id]) fail(`Unknown scenario "${id}". Known: ${Object.keys(SCENARIOS).join(", ")}`);
+    if (!SCENARIOS[id])
+      fail(`Unknown scenario "${id}". Known: ${Object.keys(SCENARIOS).join(", ")}`);
   }
 
   const conditions = resolveConditions(cli.mode);
@@ -279,8 +281,7 @@ function turnKey(scenarioId, turnIndex) {
 
 function oversightMetaFromEnv() {
   const raw = process.env.ADHD_ASSIST_OVERSIGHT?.trim().toLowerCase();
-  const disabled =
-    raw === "false" || raw === "0" || raw === "no" || raw === "off";
+  const disabled = raw === "false" || raw === "0" || raw === "no" || raw === "off";
   return {
     enabled: !disabled,
     envValue: process.env.ADHD_ASSIST_OVERSIGHT ?? "(default on)",
@@ -288,7 +289,12 @@ function oversightMetaFromEnv() {
 }
 
 /** Qual pass: profile-conditional when assist is on; legacy TURN_SHAPE fallback otherwise. */
-function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, priorAssistantText, userText }) {
+function evaluateContextualPass(
+  turnRef,
+  metrics,
+  assistantText,
+  { adhdAssist, priorAssistantText, userText },
+) {
   const shape = TURN_SHAPE[turnRef];
   if (!shape) {
     return { expectedShape: "unknown", contextualPass: null, responseProfile: null };
@@ -303,11 +309,7 @@ function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, p
     const profileMetrics = computeAdhdResponseMetrics(assistantText, { wordCap });
     return {
       expectedShape: shape.label,
-      contextualPass: isProfileStructuralPass(
-        profileMetrics,
-        responseProfile,
-        assistantText,
-      ),
+      contextualPass: isProfileStructuralPass(profileMetrics, responseProfile, assistantText),
       responseProfile,
     };
   }
@@ -319,9 +321,7 @@ function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, p
       responseProfile: null,
     };
   }
-  const hasRedirectCue = /separate question|one topic|come back|switch now/i.test(
-    assistantText,
-  );
+  const hasRedirectCue = /separate question|one topic|come back|switch now/i.test(assistantText);
   const overStructured = metrics.topSummary && metrics.wordCount > 60;
   return {
     expectedShape: shape.label,
@@ -464,7 +464,15 @@ async function runScenarioMode({ config, scenarioId, mode }) {
       process.stderr.write(
         `[${scenarioId}.t${i + 1} mode=${mode}] ERROR in ${elapsed} ms: ${errorForTurn}\n`,
       );
-      transcript.push({ userText, assistantText: `<<ERROR: ${errorForTurn}>>`, turnRef, metrics: null, structuralPass: false, expectedShape: null, contextualPass: false });
+      transcript.push({
+        userText,
+        assistantText: `<<ERROR: ${errorForTurn}>>`,
+        turnRef,
+        metrics: null,
+        structuralPass: false,
+        expectedShape: null,
+        contextualPass: false,
+      });
       turnResults.push({
         scenarioId,
         mode,
@@ -562,7 +570,9 @@ function buildTranscriptMd(result) {
       lines.push(`- turnRef: ${t.turnRef}`);
       lines.push(`- strict structural pass: ${t.structuralPass ? "Y" : "N"}`);
       lines.push(`- expected shape: ${t.expectedShape ?? "—"}`);
-      lines.push(`- contextual pass: ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"}`);
+      lines.push(
+        `- contextual pass: ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"}`,
+      );
     }
     lines.push("");
     lines.push(t.assistantText);
@@ -610,7 +620,9 @@ function buildCsv(results, outDir) {
           t.contextualPass === null ? "" : t.contextualPass ? "Y" : "N",
           t.expectedShape ?? "",
           "",
-        ].map(escapeCsv).join(","),
+        ]
+          .map(escapeCsv)
+          .join(","),
       );
     }
   }
@@ -643,7 +655,9 @@ function buildFormASnapshot({ config, results }) {
     );
   }
   lines.push("");
-  lines.push("Pair with baseline via `record-form-a-phase3.mjs` for IURA Form A before/after table.");
+  lines.push(
+    "Pair with baseline via `record-form-a-phase3.mjs` for IURA Form A before/after table.",
+  );
   lines.push("");
   return lines.join("\n");
 }
@@ -695,10 +709,7 @@ async function writeOutputs({ config, results }) {
       }
       await writeFile(path.join(dir, "results.csv"), buildCsv(subset, dir));
     }
-    await writeFile(
-      path.join(config.outDir, "results.csv"),
-      buildCsv(results, config.outDir),
-    );
+    await writeFile(path.join(config.outDir, "results.csv"), buildCsv(results, config.outDir));
   } else {
     for (const r of results) {
       const file = path.join(config.outDir, `${r.scenarioId}-${r.mode}.md`);

@@ -48,7 +48,10 @@ describe("createPinnedLookup", () => {
 
     const result = await invokeLookup("canvas.ubc.ca", { all: true });
 
-    expect(result).toEqual({ address: [{ address: "93.184.216.34", family: 4 }], family: undefined });
+    expect(result).toEqual({
+      address: [{ address: "93.184.216.34", family: 4 }],
+      family: undefined,
+    });
   });
 
   it("returns (address, family) when called without all", async () => {

@@ -1,11 +1,11 @@
-import { useState } from "react"
+import { useState } from "react";
 
-import { cn } from "~/lib/utils"
-import { Button } from "@eduai/ui"
-import { Input } from "@eduai/ui"
-import { Label } from "@eduai/ui"
-import type { SignUpInput } from "~/lib/auth"
-import { PasswordRequirements } from "~/components/password-requirements"
+import { cn } from "~/lib/utils";
+import { Button } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import type { SignUpInput } from "~/lib/auth";
+import { PasswordRequirements } from "~/components/password-requirements";
 
 export interface RegisterFormProps extends React.ComponentProps<"div"> {
   fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
@@ -40,9 +40,7 @@ export function RegisterForm({
             disabled={isLoading}
             className={fieldErrors?.name ? "border-destructive" : ""}
           />
-          {fieldErrors?.name && (
-            <p className="text-sm text-destructive">{fieldErrors.name}</p>
-          )}
+          {fieldErrors?.name && <p className="text-sm text-destructive">{fieldErrors.name}</p>}
         </div>
         <div className="grid gap-3">
           <Label htmlFor="email">Email</Label>
@@ -76,10 +74,7 @@ export function RegisterForm({
             onChange={(event) => setPassword(event.currentTarget.value)}
             className={fieldErrors?.password ? "border-destructive" : ""}
           />
-          <PasswordRequirements
-            password={password}
-            id="register-password-requirements"
-          />
+          <PasswordRequirements password={password} id="register-password-requirements" />
           {fieldErrors?.password && (
             <p className="text-sm text-destructive" role="alert">
               {fieldErrors.password}
@@ -112,5 +107,5 @@ export function RegisterForm({
         </a>
       </div>
     </div>
-  )
+  );
 }

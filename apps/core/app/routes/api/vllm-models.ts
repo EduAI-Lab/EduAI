@@ -10,11 +10,7 @@ function resolveVllmBaseUrl(raw: string): string {
   return base;
 }
 
-function formatVllmFetchError(err: {
-  name?: string;
-  code?: string;
-  message?: string;
-}): string {
+function formatVllmFetchError(err: { name?: string; code?: string; message?: string }): string {
   if (err.name === "AbortError") {
     return "Request timeout — vLLM proxy did not respond within 10s";
   }
@@ -37,8 +33,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const vllmPort = process.env.VLLM_PORT || "8001";
-  const rawBase =
-    process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
+  const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
   const apiKey = resolveVllmApiKey();
   if (!apiKey) {

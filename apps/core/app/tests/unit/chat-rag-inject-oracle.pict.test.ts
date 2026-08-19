@@ -51,10 +51,8 @@ describe.each(rows.map((row, index) => ({ row, index })))(
   "chat-rag-inject-oracle PICT row #$index $row.HasCourse/$row.AlwaysWithCourse/$row.AlwaysSource/$row.TopSimilarity",
   ({ row }) => {
     it("matches the oracle inject verdict via shouldInjectCourseRag", () => {
-      const useEnv =
-        row.AlwaysWithCourse === "yes" && row.AlwaysSource === "env";
-      const useArg =
-        row.AlwaysWithCourse === "yes" && row.AlwaysSource === "arg";
+      const useEnv = row.AlwaysWithCourse === "yes" && row.AlwaysSource === "env";
+      const useArg = row.AlwaysWithCourse === "yes" && row.AlwaysSource === "arg";
 
       if (useEnv) {
         process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE = "1";

@@ -1,4 +1,4 @@
-import { prisma } from '../src/config/database.js';
+import { prisma } from "../src/config/database.js";
 
 // ----- Mock user factories -----
 
@@ -11,9 +11,9 @@ function nextId() {
 export function makeProfessor(overrides = {}) {
   return {
     id: nextId(),
-    name: 'Prof Test',
+    name: "Prof Test",
     email: `prof_${counter}@test.com`,
-    role: 'INSTRUCTOR',
+    role: "INSTRUCTOR",
     createdAt: new Date(),
     updatedAt: new Date(),
     emailVerified: false,
@@ -26,9 +26,9 @@ export function makeProfessor(overrides = {}) {
 export function makeStudent(overrides = {}) {
   return {
     id: nextId(),
-    name: 'Student Test',
+    name: "Student Test",
     email: `student_${counter}@test.com`,
-    role: 'STUDENT',
+    role: "STUDENT",
     createdAt: new Date(),
     updatedAt: new Date(),
     emailVerified: false,
@@ -41,9 +41,9 @@ export function makeStudent(overrides = {}) {
 export function makeAdmin(overrides = {}) {
   return {
     id: nextId(),
-    name: 'Admin Test',
+    name: "Admin Test",
     email: `admin_${counter}@test.com`,
-    role: 'ADMIN',
+    role: "ADMIN",
     createdAt: new Date(),
     updatedAt: new Date(),
     emailVerified: false,
@@ -56,9 +56,9 @@ export function makeAdmin(overrides = {}) {
 export function makeTA(overrides = {}) {
   return {
     id: nextId(),
-    name: 'TA Test',
+    name: "TA Test",
     email: `ta_${counter}@test.com`,
-    role: 'TA',
+    role: "TA",
     createdAt: new Date(),
     updatedAt: new Date(),
     emailVerified: false,
@@ -71,9 +71,9 @@ export function makeTA(overrides = {}) {
 export function makeUnitAdmin(authorizedUnits = [], overrides = {}) {
   return {
     id: nextId(),
-    name: 'Unit Admin Test',
+    name: "Unit Admin Test",
     email: `unit_admin_${counter}@test.com`,
-    role: 'UNIT_ADMIN',
+    role: "UNIT_ADMIN",
     authorizedUnits,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -127,14 +127,14 @@ export async function seedMinimalCourse(professorId, { coreOfferingId } = {}) {
 
   if (professorId) {
     await prisma.courseInstructor.create({
-      data: { courseOfferingId: course.id, userId: professorId, role: 'LEAD' },
+      data: { courseOfferingId: course.id, userId: professorId, role: "LEAD" },
     });
   }
 
   const module = await prisma.module.create({
     data: {
-      title: 'Test Module',
-      description: 'A test module',
+      title: "Test Module",
+      description: "A test module",
       position: 0,
       isPublished: true,
       courseOfferingId: course.id,
@@ -143,8 +143,8 @@ export async function seedMinimalCourse(professorId, { coreOfferingId } = {}) {
 
   const lesson = await prisma.lesson.create({
     data: {
-      title: 'Test Lesson',
-      contentMd: 'Test content',
+      title: "Test Lesson",
+      contentMd: "Test content",
       position: 0,
       isPublished: true,
       moduleId: module.id,
@@ -153,7 +153,7 @@ export async function seedMinimalCourse(professorId, { coreOfferingId } = {}) {
 
   const topic = await prisma.topic.create({
     data: {
-      name: 'Test Topic',
+      name: "Test Topic",
       courseOfferingId: course.id,
     },
   });

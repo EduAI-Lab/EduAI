@@ -50,10 +50,8 @@ vi.mock("mammoth", () => ({ convertToHtml: vi.fn() }));
 
 const mammothMock = await import("mammoth");
 
-const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const PPTX_MIME =
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 async function buildZipArrayBuffer(
   files: Record<string, string> = { "word/document.xml": "<xml/>" },
@@ -68,10 +66,7 @@ async function buildZipArrayBuffer(
 async function buildPptxZipArrayBuffer(slides: string[]): Promise<ArrayBuffer> {
   const zip = new JSZip();
   slides.forEach((text, i) => {
-    zip.file(
-      `ppt/slides/slide${i + 1}.xml`,
-      `<p:sld><p:txBody>${text}</p:txBody></p:sld>`,
-    );
+    zip.file(`ppt/slides/slide${i + 1}.xml`, `<p:sld><p:txBody>${text}</p:txBody></p:sld>`);
   });
   return zip.generateAsync({ type: "arraybuffer" });
 }
@@ -201,10 +196,7 @@ describe("validateFile", () => {
   it("accepts DOCX MIME type", () => {
     expect(
       validateFile(
-        makeFile(
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          100,
-        ),
+        makeFile("application/vnd.openxmlformats-officedocument.wordprocessingml.document", 100),
       ).isValid,
     ).toBe(true);
   });
@@ -212,10 +204,7 @@ describe("validateFile", () => {
   it("accepts PPTX MIME type", () => {
     expect(
       validateFile(
-        makeFile(
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          100,
-        ),
+        makeFile("application/vnd.openxmlformats-officedocument.presentationml.presentation", 100),
       ).isValid,
     ).toBe(true);
   });
@@ -338,18 +327,14 @@ describe("validateFileSignature", () => {
 describe("assertZipWithinLimits", () => {
   // Mimics a JSZip instance loaded via loadAsync: entries carry a `_data`
   // object whose `uncompressedSize` comes from the ZIP central directory.
-  const makeZip = (
-    entries: Array<{ name: string; uncompressedSize?: number; dir?: boolean }>,
-  ) => ({
+  const makeZip = (entries: Array<{ name: string; uncompressedSize?: number; dir?: boolean }>) => ({
     files: Object.fromEntries(
       entries.map((e) => [
         e.name,
         {
           dir: e.dir ?? false,
           _data:
-            e.uncompressedSize === undefined
-              ? undefined
-              : { uncompressedSize: e.uncompressedSize },
+            e.uncompressedSize === undefined ? undefined : { uncompressedSize: e.uncompressedSize },
         },
       ]),
     ),
@@ -391,9 +376,7 @@ describe("assertZipWithinLimits", () => {
       name: `part${i}.bin`,
       uncompressedSize: chunk,
     }));
-    expect(() => assertZipWithinLimits(makeZip(entries), "DOCX")).toThrow(
-      /possible zip bomb/,
-    );
+    expect(() => assertZipWithinLimits(makeZip(entries), "DOCX")).toThrow(/possible zip bomb/);
   });
 
   it("ignores directory entries and entries with unknown size", () => {
@@ -531,7 +514,9 @@ describe("applyStandardChunking section splits", () => {
     const body = "Actual content about the introduction topic. ".repeat(20);
     const content = `Chapter 1\n1.1 Introduction\n${body}`;
     const chunks = applySemanticChunking(content, 500);
-    expect(chunks.some((c) => c.includes("Chapter 1") && c.includes("1.1 Introduction"))).toBe(true);
+    expect(chunks.some((c) => c.includes("Chapter 1") && c.includes("1.1 Introduction"))).toBe(
+      true,
+    );
     expect(chunks.some((c) => c.includes("Actual content"))).toBe(true);
     expect(chunks.some((c) => c.trim() === "Chapter 1")).toBe(false);
   });
@@ -1163,7 +1148,9 @@ describe("processUploadedFile", () => {
 
   it("rejects a declared-type/actual-bytes mismatch with the raw signature error (not wrapped)", async () => {
     const file = new File(["not a pdf"], "fake.pdf", { type: "application/pdf" });
-    await expect(processUploadedFile(file)).rejects.toThrow(/does not start with the PDF signature/);
+    await expect(processUploadedFile(file)).rejects.toThrow(
+      /does not start with the PDF signature/,
+    );
   });
 
   it("processes a text/plain upload end-to-end with enhanced metadata", async () => {
@@ -1211,8 +1198,14 @@ describe("processUploadedFile", () => {
 
   it("processes a PPTX upload end-to-end with slide-derived pageCount/metadata", async () => {
     const zip = new JSZip();
-    zip.file("ppt/slides/slide1.xml", "<p:sld><p:txBody><a:t>Intro to the course</a:t></p:txBody></p:sld>");
-    zip.file("ppt/slides/slide2.xml", "<p:sld><p:txBody><a:t>Grading policy details</a:t></p:txBody></p:sld>");
+    zip.file(
+      "ppt/slides/slide1.xml",
+      "<p:sld><p:txBody><a:t>Intro to the course</a:t></p:txBody></p:sld>",
+    );
+    zip.file(
+      "ppt/slides/slide2.xml",
+      "<p:sld><p:txBody><a:t>Grading policy details</a:t></p:txBody></p:sld>",
+    );
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     const file = new File([new Uint8Array(zipBuffer)], "slides.pptx", { type: PPTX_MIME });
 

@@ -248,7 +248,9 @@ describe("SSRF guard for real Canvas requests", () => {
     ).resolves.toBeUndefined();
     expect(assertPublicHostnameMock).toHaveBeenCalledTimes(1);
 
-    assertPublicHostnameMock.mockRejectedValueOnce(new Error("resolves to a disallowed network address"));
+    assertPublicHostnameMock.mockRejectedValueOnce(
+      new Error("resolves to a disallowed network address"),
+    );
     await expect(
       verifyCanvasCredentials("https://canvas.attacker.example", "token"),
     ).rejects.toMatchObject({ statusCode: 400 });
@@ -261,7 +263,9 @@ describe("SSRF guard for real Canvas requests", () => {
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 200 })),
     );
 
-    await expect(verifyCanvasCredentials("https://canvas.ubc.ca", "token")).resolves.toBeUndefined();
+    await expect(
+      verifyCanvasCredentials("https://canvas.ubc.ca", "token"),
+    ).resolves.toBeUndefined();
     expect(assertPublicHostnameMock).toHaveBeenCalledWith("canvas.ubc.ca");
   });
 
@@ -437,10 +441,7 @@ describe("downloadCanvasFile", () => {
   });
 
   it("downloads via rewritten URL using the Canvas API token", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response("file bytes", { status: 200 })),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("file bytes", { status: 200 })));
 
     const bytes = await downloadCanvasFile(
       { canvasUrl: "http://localhost:8080", apiKey: "1234~token", isTestMode: false },
@@ -471,8 +472,7 @@ describe("downloadCanvasFile", () => {
           new Response(null, {
             status: 302,
             headers: {
-              Location:
-                "http://canvas.docker/files/1/download?download_frd=1&sf_verifier=abc",
+              Location: "http://canvas.docker/files/1/download?download_frd=1&sf_verifier=abc",
             },
           }),
         )
@@ -538,27 +538,27 @@ describe("computeCanvasFilePublishState", () => {
   });
 
   it("treats a future unlock_at as unpublished", () => {
-    expect(
-      computeCanvasFilePublishState({ unlock_at: "2026-07-06T00:00:00.000Z" }, now),
-    ).toEqual({ isPublished: false });
+    expect(computeCanvasFilePublishState({ unlock_at: "2026-07-06T00:00:00.000Z" }, now)).toEqual({
+      isPublished: false,
+    });
   });
 
   it("treats a past unlock_at as published", () => {
-    expect(
-      computeCanvasFilePublishState({ unlock_at: "2026-07-01T00:00:00.000Z" }, now),
-    ).toEqual({ isPublished: true });
+    expect(computeCanvasFilePublishState({ unlock_at: "2026-07-01T00:00:00.000Z" }, now)).toEqual({
+      isPublished: true,
+    });
   });
 
   it("treats a past lock_at as unpublished", () => {
-    expect(
-      computeCanvasFilePublishState({ lock_at: "2026-07-01T00:00:00.000Z" }, now),
-    ).toEqual({ isPublished: false });
+    expect(computeCanvasFilePublishState({ lock_at: "2026-07-01T00:00:00.000Z" }, now)).toEqual({
+      isPublished: false,
+    });
   });
 
   it("treats a future lock_at as still published", () => {
-    expect(
-      computeCanvasFilePublishState({ lock_at: "2026-07-06T00:00:00.000Z" }, now),
-    ).toEqual({ isPublished: true });
+    expect(computeCanvasFilePublishState({ lock_at: "2026-07-06T00:00:00.000Z" }, now)).toEqual({
+      isPublished: true,
+    });
   });
 });
 
@@ -751,14 +751,9 @@ describe("Canvas upstream failure handling (#225 CANVAS-12)", () => {
   });
 
   it("surfaces Canvas 429 as a generic CanvasApiError with status 429", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(null, { status: 429 })),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 429 })));
 
-    await expect(
-      listCanvasCourseStudents(NON_TEST_CREDENTIALS, "42"),
-    ).rejects.toMatchObject({
+    await expect(listCanvasCourseStudents(NON_TEST_CREDENTIALS, "42")).rejects.toMatchObject({
       message: "Canvas API error: 429",
       statusCode: 429,
     });
@@ -770,9 +765,7 @@ describe("Canvas upstream failure handling (#225 CANVAS-12)", () => {
     });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutError));
 
-    await expect(
-      listCanvasCourseStudents(NON_TEST_CREDENTIALS, "42"),
-    ).rejects.toMatchObject({
+    await expect(listCanvasCourseStudents(NON_TEST_CREDENTIALS, "42")).rejects.toMatchObject({
       message: "Could not reach Canvas",
       statusCode: 502,
     });

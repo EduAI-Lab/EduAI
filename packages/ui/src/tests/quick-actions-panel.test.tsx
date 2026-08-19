@@ -4,8 +4,19 @@ import { describe, expect, it, vi } from "vitest";
 import { QuickActionsPanel, type QuickAction } from "../quick-actions-panel";
 
 const actions: QuickAction[] = [
-  { label: "New course", description: "Start from scratch", href: "/courses/new", icon: <span>+</span> },
-  { label: "Invite staff", description: "Add a TA or instructor", href: "/invite", icon: <span>@</span>, color: "#ff0000" },
+  {
+    label: "New course",
+    description: "Start from scratch",
+    href: "/courses/new",
+    icon: <span>+</span>,
+  },
+  {
+    label: "Invite staff",
+    description: "Add a TA or instructor",
+    href: "/invite",
+    icon: <span>@</span>,
+    color: "#ff0000",
+  },
 ];
 
 // A minimal router-style Link stand-in: takes `to`, renders an anchor.
@@ -50,7 +61,9 @@ describe("QuickActionsPanel", () => {
     const onClick = vi.fn();
     render(
       <QuickActionsPanel
-        actions={[{ label: "Open modal", description: "In-page action", onClick, icon: <span>*</span> }]}
+        actions={[
+          { label: "Open modal", description: "In-page action", onClick, icon: <span>*</span> },
+        ]}
       />,
     );
     const button = screen.getByText("Open modal").closest("button") as HTMLButtonElement;
@@ -63,7 +76,15 @@ describe("QuickActionsPanel", () => {
     const onClick = vi.fn();
     render(
       <QuickActionsPanel
-        actions={[{ label: "Locked", description: "Not yet", onClick, icon: <span>*</span>, disabled: true }]}
+        actions={[
+          {
+            label: "Locked",
+            description: "Not yet",
+            onClick,
+            icon: <span>*</span>,
+            disabled: true,
+          },
+        ]}
       />,
     );
     const button = screen.getByText("Locked").closest("button") as HTMLButtonElement;

@@ -1,12 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-  PageHeading,
-} from "@eduai/ui"
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, PageHeading } from "@eduai/ui";
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
@@ -92,18 +86,18 @@ function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: Eff
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const name = (user.name ?? "").split(" ");
-  const firstName = (name.length == 3 && name[0].endsWith('.') ? name[1] : name[0])
+  const firstName = name.length == 3 && name[0].endsWith(".") ? name[1] : name[0];
   const { heading, subheading } = DASHBOARD_CONFIG[effectiveRole].heroCopy(firstName, greeting);
   const dateStr = new Date().toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 
   return (
     <div className="px-4 lg:px-6 pt-6 pb-4" data-tour="dashboard-hero">
-      <PageHeading
-        heading={heading}
-        subheading={`${dateStr} · ${subheading}`}
-      />
+      <PageHeading heading={heading} subheading={`${dateStr} · ${subheading}`} />
     </div>
   );
 }
@@ -125,8 +119,7 @@ function DashboardContent({
   // Mirrors the `instructors.canManageCanvasIntegration` gate on the Canvas API
   // (canvas.$.ts) and the Settings Canvas tab.
   const canvasPolicyOk =
-    user.role === "ADMIN" ||
-    isEnabled("instructors.canManageCanvasIntegration");
+    user.role === "ADMIN" || isEnabled("instructors.canManageCanvasIntegration");
   const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
 
   // STUDENT-platform users who hold a TA enrollment get the TA dashboard.

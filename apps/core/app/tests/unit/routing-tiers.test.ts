@@ -44,20 +44,14 @@ describe("routing tier model cache", () => {
   });
 
   it("reloads active tier models after AI Management invalidates the cache", async () => {
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-7b-instruct", "TIER_1"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-7b-instruct", "TIER_1")]);
     expect((await getCachedTierModels())[0].registryId).toContain("7b");
 
     invalidateTierModelCache();
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-32b-instruct", "TIER_3"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-32b-instruct", "TIER_3")]);
 
     const refreshed = await getCachedTierModels();
-    expect(refreshed.map((row) => row.registryId)).toEqual([
-      "vllm:qwen2.5-32b-instruct",
-    ]);
+    expect(refreshed.map((row) => row.registryId)).toEqual(["vllm:qwen2.5-32b-instruct"]);
     expect(prismaMock.aIModel.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -70,15 +64,11 @@ describe("routing tier model cache", () => {
 
   it("reloads tier models after the cache TTL expires", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-7b-instruct", "TIER_1"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-7b-instruct", "TIER_1")]);
     expect((await getCachedTierModels())[0].registryId).toContain("7b");
 
     now.mockReturnValue(11_001);
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-32b-instruct", "TIER_3"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-32b-instruct", "TIER_3")]);
 
     expect((await getCachedTierModels())[0].registryId).toContain("32b");
     expect(prismaMock.aIModel.findMany).toHaveBeenCalledTimes(2);
@@ -97,14 +87,10 @@ describe("routing tier model cache", () => {
     resolveStale([tierRow("qwen2.5-7b-instruct", "TIER_1")]);
     await firstRead;
 
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-32b-instruct", "TIER_3"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-32b-instruct", "TIER_3")]);
 
     const refreshed = await getCachedTierModels();
-    expect(refreshed.map((row) => row.registryId)).toEqual([
-      "vllm:qwen2.5-32b-instruct",
-    ]);
+    expect(refreshed.map((row) => row.registryId)).toEqual(["vllm:qwen2.5-32b-instruct"]);
     expect(prismaMock.aIModel.findMany).toHaveBeenCalledTimes(2);
   });
 
@@ -249,18 +235,14 @@ describe("pickModelForSpec", () => {
   });
 
   it("loads cached tier rows and picks a matching candidate", async () => {
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-32b-instruct", "TIER_3"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-32b-instruct", "TIER_3")]);
 
     const picked = await pickModelForSpec({ kind: "minTier", minTier: 3, tieBreak: "energy" });
     expect(picked?.registryId).toBe("vllm:qwen2.5-32b-instruct");
   });
 
   it("returns null when the cached rows have no match for the spec", async () => {
-    prismaMock.aIModel.findMany.mockResolvedValueOnce([
-      tierRow("qwen2.5-7b-instruct", "TIER_1"),
-    ]);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([tierRow("qwen2.5-7b-instruct", "TIER_1")]);
 
     const picked = await pickModelForSpec({ kind: "exactTier", tier: 3, tieBreak: "energy" });
     expect(picked).toBeNull();

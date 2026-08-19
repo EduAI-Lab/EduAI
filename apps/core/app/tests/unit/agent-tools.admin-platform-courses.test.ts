@@ -235,7 +235,11 @@ describe("updateAdminCourseRagSettings", () => {
 
   it("updates rag settings and invalidates cache for admin", async () => {
     mockResolvedCourseId();
-    prismaMock.course.update.mockResolvedValue({ id: "c1", ragTopK: 10, ragSimilarityThreshold: 0.5 });
+    prismaMock.course.update.mockResolvedValue({
+      id: "c1",
+      ragTopK: 10,
+      ragSimilarityThreshold: 0.5,
+    });
     const result = await updateAdminCourseRagSettings(ADMIN, OPTS, { ragTopK: 10 });
     expect(result).toEqual({
       ok: true,
@@ -445,7 +449,10 @@ describe("getAdminCourseReEmbedJob", () => {
 
   it("returns the serialized job for admin", async () => {
     mockResolvedCourseId();
-    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({ id: "job1", status: "COMPLETED" } as never);
+    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({
+      id: "job1",
+      status: "COMPLETED",
+    } as never);
     const result = await getAdminCourseReEmbedJob(ADMIN, JOB_OPTS);
     expect(result).toMatchObject({ dataSource: "database", job: { serialized: true, id: "job1" } });
   });
@@ -459,9 +466,15 @@ describe("listAdminCanvasMaterials", () => {
 
   it("returns discovered canvas materials for admin", async () => {
     mockResolvedCourseId();
-    vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([{ canvasFileId: "f1" }] as never);
+    vi.mocked(discoverCanvasMaterialsForCourse).mockResolvedValue([
+      { canvasFileId: "f1" },
+    ] as never);
     const result = await listAdminCanvasMaterials(ADMIN, OPTS);
-    expect(result).toMatchObject({ dataSource: "database", count: 1, materials: [{ canvasFileId: "f1" }] });
+    expect(result).toMatchObject({
+      dataSource: "database",
+      count: 1,
+      materials: [{ canvasFileId: "f1" }],
+    });
     expect(discoverCanvasMaterialsForCourse).toHaveBeenCalledWith("a1", "c1");
   });
 });

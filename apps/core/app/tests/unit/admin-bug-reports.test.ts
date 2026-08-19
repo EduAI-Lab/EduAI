@@ -71,7 +71,12 @@ const LIST_ROW = {
   hasScreenshot: false,
 };
 
-function makeArgs(path: string, method = "GET", body?: unknown, params: Record<string, string> = {}) {
+function makeArgs(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  params: Record<string, string> = {},
+) {
   return {
     request: new Request(`http://localhost${path}`, {
       method,
@@ -84,9 +89,7 @@ function makeArgs(path: string, method = "GET", body?: unknown, params: Record<s
 }
 
 function mockUser(role: string | null, id = "u1") {
-  vi.mocked(auth.api.getSession).mockResolvedValue(
-    (role ? { user: { id, role } } : null) as never,
-  );
+  vi.mocked(auth.api.getSession).mockResolvedValue((role ? { user: { id, role } } : null) as never);
 }
 
 beforeEach(() => {
@@ -136,7 +139,9 @@ describe("GET /api/admin/bug-reports (#304)", () => {
       consoleLogs: '[{"level":"error"}]',
       screenshot: "data:image/png;base64,abc",
     } as never);
-    const res = await adminLoader(makeArgs("/api/admin/bug-reports/br-1", "GET", undefined, { id: "br-1" }));
+    const res = await adminLoader(
+      makeArgs("/api/admin/bug-reports/br-1", "GET", undefined, { id: "br-1" }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
@@ -151,7 +156,9 @@ describe("GET /api/admin/bug-reports (#304)", () => {
   it("returns 404 when GET /:id misses", async () => {
     mockUser("ADMIN");
     vi.mocked(prisma.bugReport.findUnique).mockResolvedValue(null);
-    const res = await adminLoader(makeArgs("/api/admin/bug-reports/missing", "GET", undefined, { id: "missing" }));
+    const res = await adminLoader(
+      makeArgs("/api/admin/bug-reports/missing", "GET", undefined, { id: "missing" }),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -177,9 +184,7 @@ describe("GET /api/admin/bug-reports (#304)", () => {
 
   it("masks userId/email/name when isAnonymous=true (§11)", async () => {
     mockUser("ADMIN");
-    vi.mocked(prisma.$queryRaw).mockResolvedValue([
-      { ...LIST_ROW, isAnonymous: true },
-    ] as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ ...LIST_ROW, isAnonymous: true }] as never);
     const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
     const body = await res.json();
     expect(body.reports[0].userId).toBeNull();
@@ -190,9 +195,7 @@ describe("GET /api/admin/bug-reports (#304)", () => {
 
   it("forwards source and status filters to the count query", async () => {
     mockUser("ADMIN");
-    await adminLoader(
-      makeArgs("/api/admin/bug-reports?source=QUESTION_MAKER&status=RESOLVED"),
-    );
+    await adminLoader(makeArgs("/api/admin/bug-reports?source=QUESTION_MAKER&status=RESOLVED"));
     expect(prisma.bugReport.count).toHaveBeenCalledWith({
       where: { source: "QUESTION_MAKER", status: "RESOLVED" },
     });

@@ -141,9 +141,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   return { response: null, session };
 }
 
-type AdminGate =
-  | { response: Response; session: null }
-  | { response: null; session: Session };
+type AdminGate = { response: Response; session: null } | { response: null; session: Session };
 
 /**
  * Resolve an ADMIN session for an admin-only endpoint.
@@ -166,10 +164,10 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
       }),
     );
     return {
-      response: new Response(
-        JSON.stringify({ error: "Forbidden: Admins only" }),
-        { status: 403, headers: { "Content-Type": "application/json" } },
-      ),
+      response: new Response(JSON.stringify({ error: "Forbidden: Admins only" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
       session: null,
     };
   }
@@ -183,10 +181,7 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
  * accidentally skip it — ADMIN is always allowed. `action` tags the
  * policy-denial audit line (e.g. "invitation.create").
  */
-export async function requireInviter(
-  request: Request,
-  action: string,
-): Promise<AdminGate> {
+export async function requireInviter(request: Request, action: string): Promise<AdminGate> {
   const resolved = await getRequestSession(request);
   const role = resolved?.user?.role;
 
@@ -226,10 +221,10 @@ export async function requireInviter(
         }),
       );
       return {
-        response: new Response(
-          JSON.stringify({ error: "Forbidden" }),
-          { status: 403, headers: { "Content-Type": "application/json" } },
-        ),
+        response: new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
         session: null,
       };
     }
@@ -273,10 +268,10 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "MISSING_SERVICE_KEY" }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const token = authHeader.slice(7);
@@ -292,14 +287,14 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const tokenHash = createHash("sha256").update(token).digest();
-  const keyHash   = createHash("sha256").update(envKey).digest();
+  const keyHash = createHash("sha256").update(envKey).digest();
 
   if (!timingSafeEqual(tokenHash, keyHash)) {
     fireAndForget(
@@ -311,10 +306,10 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
         entityType: "Auth",
       }),
     );
-    return new Response(
-      JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return null;

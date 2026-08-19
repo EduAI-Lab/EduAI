@@ -19,11 +19,7 @@ export function isLongOutputIntent(prompt: string): boolean {
   }
 
   return (
-    LONG_OUTPUT_PATTERNS.some((pattern) =>
-      pattern.test(normalizedPrompt),
-    ) ||
-    CONTINUATION_PATTERNS.some((pattern) =>
-      pattern.test(normalizedPrompt),
-    )
+    LONG_OUTPUT_PATTERNS.some((pattern) => pattern.test(normalizedPrompt)) ||
+    CONTINUATION_PATTERNS.some((pattern) => pattern.test(normalizedPrompt))
   );
 }

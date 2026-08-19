@@ -1,29 +1,24 @@
-import * as React from "react"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@eduai/ui/tooltip"
+import * as React from "react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui/tooltip";
 
-import { policyDefault, type PolicyKey } from "~/lib/policy-flags"
+import { policyDefault, type PolicyKey } from "~/lib/policy-flags";
 
-export type { PolicyKey } from "~/lib/policy-flags"
+export type { PolicyKey } from "~/lib/policy-flags";
 
 /** Shown when an admin-disabled control is hovered. Keep generic — the flag's
  * full description is ADMIN-only, so we don't leak it to every role. */
-export const DEFAULT_POLICY_DISABLED_MESSAGE = "Turned off by your administrator."
+export const DEFAULT_POLICY_DISABLED_MESSAGE = "Turned off by your administrator.";
 
 /** A (partial) map of policy flag → value. Partial because guests and tests may
  * seed only a subset; unseeded keys fall back to their code default. */
-export type PolicyValues = Partial<Record<PolicyKey, boolean>>
+export type PolicyValues = Partial<Record<PolicyKey, boolean>>;
 
 /**
  * Holds the policy flag values resolved server-side in the root loader and
  * handed to the client at first paint. Defaulting to `{}` means a component
  * rendered without a provider (e.g. in isolation) falls back to code defaults.
  */
-const PolicyContext = React.createContext<PolicyValues>({})
+const PolicyContext = React.createContext<PolicyValues>({});
 
 /**
  * Seeds the policy values for the subtree. Render it once near the root with the
@@ -34,12 +29,10 @@ export function PolicyProvider({
   policies,
   children,
 }: {
-  policies: PolicyValues
-  children: React.ReactNode
+  policies: PolicyValues;
+  children: React.ReactNode;
 }) {
-  return (
-    <PolicyContext.Provider value={policies}>{children}</PolicyContext.Provider>
-  )
+  return <PolicyContext.Provider value={policies}>{children}</PolicyContext.Provider>;
 }
 
 /**
@@ -48,23 +41,23 @@ export function PolicyProvider({
  * any flag not present in the map falls back to its code default.
  */
 export function usePolicyGate() {
-  const policies = React.useContext(PolicyContext)
+  const policies = React.useContext(PolicyContext);
   const isEnabled = React.useCallback(
     (key: PolicyKey): boolean => policies[key] ?? policyDefault(key),
     [policies],
-  )
-  return { isEnabled }
+  );
+  return { isEnabled };
 }
 
 interface DisabledTooltipProps {
   /** When true, force the child disabled and show the tooltip; otherwise pass through. */
-  disabled: boolean
+  disabled: boolean;
   /** Tooltip copy. */
-  message?: string
+  message?: string;
   /** Tooltip side; defaults to "top". */
-  side?: React.ComponentProps<typeof TooltipContent>["side"]
+  side?: React.ComponentProps<typeof TooltipContent>["side"];
   /** A single interactive element (button, switch, tab trigger, …). */
-  children: React.ReactElement
+  children: React.ReactElement;
 }
 
 /**
@@ -84,20 +77,18 @@ export function DisabledTooltip({
   side = "top",
   children,
 }: DisabledTooltipProps) {
-  if (!disabled) return children
+  if (!disabled) return children;
 
   const child = children as React.ReactElement<{
-    disabled?: boolean
-    className?: string
-    "aria-disabled"?: boolean
-  }>
+    disabled?: boolean;
+    className?: string;
+    "aria-disabled"?: boolean;
+  }>;
   const disabledChild = React.cloneElement(child, {
     disabled: true,
     "aria-disabled": true,
-    className: [child.props.className, "pointer-events-none"]
-      .filter(Boolean)
-      .join(" "),
-  })
+    className: [child.props.className, "pointer-events-none"].filter(Boolean).join(" "),
+  });
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -114,18 +105,18 @@ export function DisabledTooltip({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  )
+  );
 }
 
 interface PolicyTooltipProps {
   /** The policy flag this control depends on. */
-  flag: PolicyKey
+  flag: PolicyKey;
   /** Override the default tooltip copy. */
-  message?: string
+  message?: string;
   /** Tooltip side; defaults to "top". */
-  side?: React.ComponentProps<typeof TooltipContent>["side"]
+  side?: React.ComponentProps<typeof TooltipContent>["side"];
   /** A single interactive element (button, switch, tab trigger, …). */
-  children: React.ReactElement
+  children: React.ReactElement;
 }
 
 /**
@@ -139,10 +130,10 @@ export function PolicyTooltip({
   side = "top",
   children,
 }: PolicyTooltipProps) {
-  const { isEnabled } = usePolicyGate()
+  const { isEnabled } = usePolicyGate();
   return (
     <DisabledTooltip disabled={!isEnabled(flag)} message={message} side={side}>
       {children}
     </DisabledTooltip>
-  )
+  );
 }

@@ -384,6 +384,7 @@ confirm the id exists.
 {
   id, kind, type, source, status,
   queuePosition,          // computed at read: PENDING jobs ahead in the same queue (not a column)
+  etaSeconds,             // advisory live estimate from recent completions in that pool, or null
   result,                 // null until COMPLETED
   errorMessage,           // null unless FAILED
   attempts,
@@ -391,10 +392,14 @@ confirm the id exists.
 }
 ```
 
-**ETA (#917)** is derived, not stored: `eta ≈ queuePosition × rollingMeanJobDuration(type)`, where
-the rolling mean comes from recent `completedAt − startedAt` per pool. Position is recomputed from
-the queue at read time so it decreases as the worker drains the pool. This is a later issue; the
-contract only guarantees the `queuePosition` field and the timestamps ETA is computed from.
+**ETA (#917)** is derived, not stored: `etaSeconds ≈ queuePosition × rollingMeanJobDuration(pool) /
+worker-sized waves, `ceil((runningCount + queuePosition) / poolConcurrency) × rollingMeanJobDuration(pool)`.
+The rolling mean uses the most recent completed jobs with both `startedAt` and `completedAt` in the
+same persisted pool. The estimate also counts currently `RUNNING` jobs in that pool so a saturated
+worker set is not treated as idle. It is advisory and returns `null` until that pool has a usable
+sample. Position is recomputed from the queue at read time so it decreases as the worker drains the
+pool. The duration lookup is backed by the `(queueName, status, completedAt)` index and capped to
+the most recent sample window.
 
 ---
 

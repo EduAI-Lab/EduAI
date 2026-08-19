@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@eduai/ui";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
 
 type LogDetailsDialogProps = {
   title: string;

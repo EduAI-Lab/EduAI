@@ -7,9 +7,9 @@
  * the client can't verify locally, so a half-applied shift would silently
  * corrupt an order nobody is looking at.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
 import {
   makeProfessor,
   makeAdmin,
@@ -17,16 +17,16 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
 
-describe('Move-to-position reordering (#1207)', () => {
+describe("Move-to-position reordering (#1207)", () => {
   let prof;
   let seed;
   let profApp;
@@ -65,7 +65,7 @@ describe('Move-to-position reordering (#1207)', () => {
   async function moduleOrder() {
     const rows = await prisma.module.findMany({
       where: { courseOfferingId: seed.course.id },
-      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      orderBy: [{ position: "asc" }, { id: "asc" }],
       select: { id: true, position: true },
     });
     return rows;
@@ -76,8 +76,8 @@ describe('Move-to-position reordering (#1207)', () => {
     expect(rows.map((r) => r.position)).toEqual(rows.map((_, i) => i));
   }
 
-  describe('PATCH /modules/:moduleId/position', () => {
-    it('moves a module down and leaves positions contiguous', async () => {
+  describe("PATCH /modules/:moduleId/position", () => {
+    it("moves a module down and leaves positions contiguous", async () => {
       const modules = await seedModules(4); // ordinals 0..4
 
       const res = await request(profApp)
@@ -99,7 +99,7 @@ describe('Move-to-position reordering (#1207)', () => {
       ]);
     });
 
-    it('moves a module up and leaves positions contiguous', async () => {
+    it("moves a module up and leaves positions contiguous", async () => {
       const modules = await seedModules(4);
 
       const res = await request(profApp)
@@ -118,7 +118,7 @@ describe('Move-to-position reordering (#1207)', () => {
       ]);
     });
 
-    it('moves a module to the front', async () => {
+    it("moves a module to the front", async () => {
       const modules = await seedModules(3);
 
       await request(profApp)
@@ -131,7 +131,7 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(rows[0].id).toBe(modules[3].id);
     });
 
-    it('clamps an out-of-range ordinal to the end instead of erroring', async () => {
+    it("clamps an out-of-range ordinal to the end instead of erroring", async () => {
       const modules = await seedModules(3); // 4 modules total
 
       const res = await request(profApp)
@@ -148,7 +148,7 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(rows[rows.length - 1].id).toBe(modules[0].id);
     });
 
-    it('is a no-op when the module is already at the target ordinal', async () => {
+    it("is a no-op when the module is already at the target ordinal", async () => {
       const modules = await seedModules(3);
       const before = await moduleOrder();
 
@@ -160,7 +160,7 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(await moduleOrder()).toEqual(before);
     });
 
-    it('normalizes a list whose positions have gaps', async () => {
+    it("normalizes a list whose positions have gaps", async () => {
       // Deleting rows leaves gaps; `position` is not a rank until something
       // rewrites it. The ordinal must still mean "index in the ordered list".
       const modules = await seedModules(3);
@@ -184,32 +184,32 @@ describe('Move-to-position reordering (#1207)', () => {
       ]);
     });
 
-    it('rejects a non-integer position with 400 POSITION_INVALID', async () => {
+    it("rejects a non-integer position with 400 POSITION_INVALID", async () => {
       const res = await request(profApp)
         .patch(`/api/modules/${seed.module.id}/position`)
-        .send({ position: 'first' });
+        .send({ position: "first" });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('POSITION_INVALID');
+      expect(res.body.code).toBe("POSITION_INVALID");
     });
 
-    it('rejects a negative position', async () => {
+    it("rejects a negative position", async () => {
       const res = await request(profApp)
         .patch(`/api/modules/${seed.module.id}/position`)
         .send({ position: -1 });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('POSITION_INVALID');
+      expect(res.body.code).toBe("POSITION_INVALID");
     });
 
-    it('404s for a module that does not exist', async () => {
+    it("404s for a module that does not exist", async () => {
       const res = await request(profApp)
-        .patch('/api/modules/99999999/position')
+        .patch("/api/modules/99999999/position")
         .send({ position: 0 });
       expect(res.status).toBe(404);
     });
 
-    it('403s for an instructor who does not lead the course', async () => {
+    it("403s for an instructor who does not lead the course", async () => {
       const other = makeProfessor();
       const otherApp = await createApp({ mockUser: other });
 
@@ -220,10 +220,10 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('403s for a student', async () => {
+    it("403s for a student", async () => {
       const student = makeStudent();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+        data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
       });
       const studentApp = await createApp({ mockUser: student });
 
@@ -234,7 +234,7 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('allows an ADMIN who is not an instructor on the course', async () => {
+    it("allows an ADMIN who is not an instructor on the course", async () => {
       const adminApp = await createApp({ mockUser: makeAdmin() });
       await request(adminApp)
         .patch(`/api/modules/${seed.module.id}/position`)
@@ -243,7 +243,7 @@ describe('Move-to-position reordering (#1207)', () => {
     });
   });
 
-  describe('PATCH /lessons/:lessonId/position', () => {
+  describe("PATCH /lessons/:lessonId/position", () => {
     async function seedLessons(count) {
       const created = [];
       for (let i = 1; i <= count; i += 1) {
@@ -252,7 +252,7 @@ describe('Move-to-position reordering (#1207)', () => {
           await prisma.lesson.create({
             data: {
               title: `Lesson ${i}`,
-              contentMd: '',
+              contentMd: "",
               position: i,
               isPublished: true,
               moduleId: seed.module.id,
@@ -263,7 +263,7 @@ describe('Move-to-position reordering (#1207)', () => {
       return [seed.lesson, ...created];
     }
 
-    it('moves a lesson within its module and stays contiguous', async () => {
+    it("moves a lesson within its module and stays contiguous", async () => {
       const lessons = await seedLessons(3);
 
       const res = await request(profApp)
@@ -275,17 +275,17 @@ describe('Move-to-position reordering (#1207)', () => {
 
       const rows = await prisma.lesson.findMany({
         where: { moduleId: seed.module.id },
-        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        orderBy: [{ position: "asc" }, { id: "asc" }],
         select: { id: true, position: true },
       });
       expectContiguous(rows);
       expect(rows[2].id).toBe(lessons[0].id);
     });
 
-    it('does not disturb lessons in a sibling module', async () => {
+    it("does not disturb lessons in a sibling module", async () => {
       const otherModule = await prisma.module.create({
         data: {
-          title: 'Other',
+          title: "Other",
           position: 1,
           isPublished: true,
           courseOfferingId: seed.course.id,
@@ -293,8 +293,8 @@ describe('Move-to-position reordering (#1207)', () => {
       });
       const untouched = await prisma.lesson.create({
         data: {
-          title: 'Untouched',
-          contentMd: '',
+          title: "Untouched",
+          contentMd: "",
           position: 7,
           isPublished: true,
           moduleId: otherModule.id,
@@ -311,7 +311,7 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(after.position).toBe(7);
     });
 
-    it('403s for an instructor on another course', async () => {
+    it("403s for an instructor on another course", async () => {
       const otherApp = await createApp({ mockUser: makeProfessor() });
       const res = await request(otherApp)
         .patch(`/api/lessons/${seed.lesson.id}/position`)
@@ -320,7 +320,7 @@ describe('Move-to-position reordering (#1207)', () => {
     });
   });
 
-  describe('PATCH /activities/:activityId/position', () => {
+  describe("PATCH /activities/:activityId/position", () => {
     async function seedActivities(count) {
       const created = [];
       for (let i = 0; i < count; i += 1) {
@@ -329,8 +329,8 @@ describe('Move-to-position reordering (#1207)', () => {
           await prisma.activity.create({
             data: {
               title: `Activity ${i}`,
-              instructionsMd: 'Answer it.',
-              config: { question: `Q${i}`, questionType: 'SHORT_TEXT', hints: [] },
+              instructionsMd: "Answer it.",
+              config: { question: `Q${i}`, questionType: "SHORT_TEXT", hints: [] },
               position: i,
               lessonId: seed.lesson.id,
               mainTopicId: seed.topic.id,
@@ -341,7 +341,7 @@ describe('Move-to-position reordering (#1207)', () => {
       return created;
     }
 
-    it('moves an activity within its lesson and stays contiguous', async () => {
+    it("moves an activity within its lesson and stays contiguous", async () => {
       const activities = await seedActivities(5);
 
       const res = await request(profApp)
@@ -354,7 +354,7 @@ describe('Move-to-position reordering (#1207)', () => {
 
       const rows = await prisma.activity.findMany({
         where: { lessonId: seed.lesson.id },
-        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        orderBy: [{ position: "asc" }, { id: "asc" }],
         select: { id: true, position: true },
       });
       expectContiguous(rows);
@@ -367,7 +367,7 @@ describe('Move-to-position reordering (#1207)', () => {
       ]);
     });
 
-    it('supports a cross-page ordinal (row on page 1 to the last slot)', async () => {
+    it("supports a cross-page ordinal (row on page 1 to the last slot)", async () => {
       // Page size 25: this is the move a numbered pager cannot express by drag.
       const activities = await seedActivities(30);
 
@@ -380,14 +380,14 @@ describe('Move-to-position reordering (#1207)', () => {
 
       const rows = await prisma.activity.findMany({
         where: { lessonId: seed.lesson.id },
-        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        orderBy: [{ position: "asc" }, { id: "asc" }],
         select: { id: true, position: true },
       });
       expectContiguous(rows);
       expect(rows[29].id).toBe(activities[0].id);
     });
 
-    it('403s for an instructor on another course', async () => {
+    it("403s for an instructor on another course", async () => {
       const [activity] = await seedActivities(1);
       const otherApp = await createApp({ mockUser: makeProfessor() });
       const res = await request(otherApp)
@@ -397,11 +397,11 @@ describe('Move-to-position reordering (#1207)', () => {
     });
   });
 
-  describe('bulk PUT .../order still guards against a partial list', () => {
+  describe("bulk PUT .../order still guards against a partial list", () => {
     // The client-side truncation flag is gone; this is the server-side backstop
     // that keeps a caller holding one page from reassigning 0..n-1 over the
     // whole course and orphaning everything it never loaded.
-    it('rejects an orderedIds that omits some of the course modules', async () => {
+    it("rejects an orderedIds that omits some of the course modules", async () => {
       const modules = await seedModules(3);
 
       const res = await request(profApp)
@@ -412,7 +412,7 @@ describe('Move-to-position reordering (#1207)', () => {
       expect(res.body.error).toMatch(/full set/i);
     });
 
-    it('403s an instructor who does not lead the course', async () => {
+    it("403s an instructor who does not lead the course", async () => {
       // Regression guard: `isUnitAdminForCourse` is async and was previously
       // called without `await`, so this check passed a truthy Promise and let
       // any INSTRUCTOR reorder any course's tree.

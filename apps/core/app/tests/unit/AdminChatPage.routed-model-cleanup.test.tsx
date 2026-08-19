@@ -122,18 +122,14 @@ describe("AdminChatPage — routed-model cleanup on error", () => {
 
     await simulateRoutedResponse("openai:gpt-4");
 
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe(
-      "openai:gpt-4",
-    );
+    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe("openai:gpt-4");
   });
 
   it("clears streamingRoutedRegistryId when the turn errors out via onError", async () => {
     renderAdminChatPage();
 
     await simulateRoutedResponse("openai:gpt-4");
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe(
-      "openai:gpt-4",
-    );
+    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe("openai:gpt-4");
 
     await act(async () => {
       capturedUseChatOptions.current?.onError?.(new Error("provider blew up"));
@@ -148,9 +144,7 @@ describe("AdminChatPage — routed-model cleanup on Stop", () => {
     renderAdminChatPage();
 
     await simulateRoutedResponse("openai:gpt-4");
-    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe(
-      "openai:gpt-4",
-    );
+    expect(capturedAdminChatViewProps.current?.streamingRoutedRegistryId).toBe("openai:gpt-4");
 
     const onStop = capturedAdminChatViewProps.current?.onStop as () => void;
     expect(onStop).toBeInstanceOf(Function);

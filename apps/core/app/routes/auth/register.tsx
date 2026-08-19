@@ -1,14 +1,14 @@
-import { Form, Link, useActionData, useLoaderData, redirect } from "react-router"
-import { useState } from "react"
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
+import { Form, Link, useActionData, useLoaderData, redirect } from "react-router";
+import { useState } from "react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { RegisterForm } from "~/components/register-form"
-import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server"
-import { signUpSchema, type SignUpInput } from "~/lib/auth"
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
-import { auth } from "~/lib/auth/server"
-import { getPolicy } from "~/lib/policy.server"
+import { RegisterForm } from "~/components/register-form";
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
+import { signUpSchema, type SignUpInput } from "~/lib/auth";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
+import { auth } from "~/lib/auth/server";
+import { getPolicy } from "~/lib/policy.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -59,19 +59,15 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    const authRequest = buildAuthSubRequest(
-      "/api/auth/sign-up/email",
-      request,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: input.name,
-          email: input.email,
-          password: input.password,
-        }),
-      },
-    );
+    const authRequest = buildAuthSubRequest("/api/auth/sign-up/email", request, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: input.name,
+        email: input.email,
+        password: input.password,
+      }),
+    });
 
     const response = await auth.handler(authRequest);
 
@@ -103,10 +99,12 @@ export default function RegisterPage() {
   const { registrationDisabled } = useLoaderData() as {
     registrationDisabled: boolean;
   };
-  const actionData = useActionData() as {
-    fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
-    formError?: string;
-  } | undefined;
+  const actionData = useActionData() as
+    | {
+        fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
+        formError?: string;
+      }
+    | undefined;
 
   return (
     <div
@@ -114,7 +112,10 @@ export default function RegisterPage() {
       style={{ background: "var(--muted)" }}
     >
       {/* Gold top bar */}
-      <div className="fixed top-0 left-0 right-0 h-[3px] z-10" style={{ background: "var(--gold)" }} />
+      <div
+        className="fixed top-0 left-0 right-0 h-[3px] z-10"
+        style={{ background: "var(--gold)" }}
+      />
 
       {/* Logo */}
       <div className="flex items-center gap-2 mb-7">
@@ -122,24 +123,43 @@ export default function RegisterPage() {
           className="w-9 h-9 rounded-[9px] flex items-center justify-center"
           style={{ background: "var(--primary)" }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 3a9 9 0 0 1 0 18" />
+            <path d="M3 12h18" />
+            <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9" />
           </svg>
         </div>
-        <span className="text-xl font-bold" style={{ color: "var(--primary)", letterSpacing: "-0.01em" }}>EduAI</span>
+        <span
+          className="text-xl font-bold"
+          style={{ color: "var(--primary)", letterSpacing: "-0.01em" }}
+        >
+          EduAI
+        </span>
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+      <div
+        className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg"
+        style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
+      >
         {registrationDisabled ? (
           // §807: public registration is off — explain it's invite-only instead
           // of bouncing the user to /login with no context.
           <div className="flex flex-col items-center gap-4 text-center">
             <h1 className="text-lg font-semibold text-foreground">Registration is invite-only</h1>
             <p className="text-sm text-muted-foreground">
-              New accounts on this platform are created by invitation. Ask your
-              administrator or instructor to send you an invite, then use the link
-              in that email to set up your account.
+              New accounts on this platform are created by invitation. Ask your administrator or
+              instructor to send you an invite, then use the link in that email to set up your
+              account.
             </p>
             <Link
               to="/auth/login"
@@ -158,7 +178,9 @@ export default function RegisterPage() {
         )}
       </div>
 
-      <p className="mt-5 text-xs text-muted-foreground">University of British Columbia · EduAI Platform</p>
+      <p className="mt-5 text-xs text-muted-foreground">
+        University of British Columbia · EduAI Platform
+      </p>
     </div>
-  )
+  );
 }

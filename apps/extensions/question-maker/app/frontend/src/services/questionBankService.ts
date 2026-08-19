@@ -2,7 +2,7 @@
  * API client for per-course question banks and membership.
  * Bank ids are Core CUIDs (strings); QM proxies to EduAI Core.
  */
-import api from './api';
+import api from "./api";
 
 export interface QuestionBank {
   id: string;
@@ -62,9 +62,7 @@ export const questionBankService = {
     bankId: string,
     questionMetadataId: number,
   ): Promise<void> {
-    await api.delete(
-      `/api/course/${courseId}/banks/${bankId}/questions/${questionMetadataId}`,
-    );
+    await api.delete(`/api/course/${courseId}/banks/${bankId}/questions/${questionMetadataId}`);
   },
 };
 

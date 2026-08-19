@@ -62,13 +62,13 @@ export function mapCoreAdminUser(user) {
   const createdAt = user?.createdAt;
   return {
     id: user.id,
-    name: user.name ?? '',
-    email: user.email ?? '',
+    name: user.name ?? "",
+    email: user.email ?? "",
     role: user.role,
     createdAt:
       createdAt instanceof Date
         ? createdAt.toISOString()
-        : typeof createdAt === 'string'
+        : typeof createdAt === "string"
           ? createdAt
           : createdAt
             ? String(createdAt)
@@ -105,12 +105,12 @@ export function mapCourseOffering(offering, coreCourse) {
     code: core?.code ?? null,
     description: core?.description ?? null,
     department: core?.department ?? null,
-    isPublished: typeof core?.isPublished === 'boolean' ? core.isPublished : false,
+    isPublished: typeof core?.isPublished === "boolean" ? core.isPublished : false,
     startDate: core?.startDate ?? null,
     endDate: core?.endDate ?? null,
     term: core?.term ?? null,
-    year: typeof core?.year === 'number' ? core.year : null,
-    aiInstructions: typeof core?.aiInstructions === 'string' ? core.aiInstructions : null,
+    year: typeof core?.year === "number" ? core.year : null,
+    aiInstructions: typeof core?.aiInstructions === "string" ? core.aiInstructions : null,
   };
 }
 
@@ -129,7 +129,11 @@ export function mapCourseOffering(offering, coreCourse) {
  * A successful re-read (`coreUnavailable: false`) always wins, in case Core's
  * state has already moved again by the time the read happens.
  */
-export function mapCourseOfferingAfterPublishWrite(offering, { course: coreCourse, coreUnavailable }, knownPublished) {
+export function mapCourseOfferingAfterPublishWrite(
+  offering,
+  { course: coreCourse, coreUnavailable },
+  knownPublished,
+) {
   const dto = mapCourseOffering(offering, coreCourse);
   if (coreUnavailable) {
     dto.isPublished = knownPublished;
@@ -217,11 +221,11 @@ export function mapActivity(activity) {
       : null,
     // Fallback chain spans three generations of activity authoring.
     question: config.question ?? config.prompt ?? activity.instructionsMd,
-    type: config.questionType ?? 'MCQ',
+    type: config.questionType ?? "MCQ",
     // Always emit `{ choices: string[] }` so the client has one shape to
     // render. Legacy array-form options remain valid on read.
     options: (() => {
-      if (!('options' in config) || config.options == null) return null;
+      if (!("options" in config) || config.options == null) return null;
       if (Array.isArray(config.options)) {
         return { choices: config.options };
       }
@@ -251,9 +255,9 @@ export function mapActivity(activity) {
     enableTeachMode: activity.enableTeachMode ?? true,
     enableGuideMode: activity.enableGuideMode ?? true,
     enableCustomMode: activity.enableCustomMode ?? false,
-    customPrompt: typeof activity.customPrompt === 'string' ? activity.customPrompt : null,
+    customPrompt: typeof activity.customPrompt === "string" ? activity.customPrompt : null,
     customPromptTitle:
-      typeof activity.customPromptTitle === 'string' ? activity.customPromptTitle : null,
+      typeof activity.customPromptTitle === "string" ? activity.customPromptTitle : null,
     completionStatus: activity.completionStatus ?? undefined,
   };
 }
@@ -289,7 +293,7 @@ export function mapImportableActivity(activity) {
   return {
     id: activity.id,
     title: activity.title ?? config.question ?? activity.instructionsMd,
-    type: config.questionType ?? 'MCQ',
+    type: config.questionType ?? "MCQ",
     lessonId: activity.lessonId,
     lessonTitle: activity.lesson?.title ?? null,
     moduleTitle: activity.lesson?.module?.title ?? null,

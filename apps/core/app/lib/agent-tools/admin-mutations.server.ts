@@ -9,11 +9,7 @@ import {
   deactivateEnrollment,
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
-import {
-  createCourseTopic,
-  deleteCourseTopic,
-  updateCourseTopic,
-} from "~/lib/courses/server";
+import { createCourseTopic, deleteCourseTopic, updateCourseTopic } from "~/lib/courses/server";
 import { updateBugReportStatus } from "~/lib/bug-reports/server";
 import {
   getAccessibleCourse,
@@ -163,7 +159,9 @@ export async function runAdminWriteTool(
 ): Promise<MutationResult> {
   const result = await run();
   const succeeded =
-    "writeSucceeded" in result && result.writeSucceeded === true && !("error" in result && result.error);
+    "writeSucceeded" in result &&
+    result.writeSucceeded === true &&
+    !("error" in result && result.error);
 
   console.info("[admin-chat:write]", {
     tool: toolName,
@@ -194,10 +192,8 @@ export async function runConfirmedAdminWriteTool(
   payload: Record<string, unknown> = {},
   turnId: string | null = null,
 ): Promise<MutationResult> {
-  const {
-    registerWritePreview,
-    consumeWritePreview,
-  } = await import("./admin-write-confirmation.server");
+  const { registerWritePreview, consumeWritePreview } =
+    await import("./admin-write-confirmation.server");
 
   // Always bind previews to tool name so confirmed=true cannot skip preview
   // or reuse a preview from a different write tool.
@@ -319,10 +315,7 @@ export async function createAdminUser(
     });
     return mutationPayload({ ok: true, user });
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { error: "EMAIL_ALREADY_EXISTS" };
     }
     throw error;
@@ -394,16 +387,10 @@ export async function updateAdminUser(
     });
     return mutationPayload({ ok: true, user });
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2025"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
       return { error: "USER_NOT_FOUND" };
     }
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { error: "EMAIL_ALREADY_EXISTS" };
     }
     throw error;
@@ -442,16 +429,10 @@ export async function deleteAdminUser(actor: RbacUser, userId: string): Promise<
     }
     return mutationPayload({ ok: true, deletedUserId: userId });
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2025"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
       return { error: "USER_NOT_FOUND" };
     }
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2003"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       return { error: "CANNOT_DELETE_USER_WITH_DATA" };
     }
     throw error;
@@ -591,9 +572,7 @@ export async function deactivateAdminEnrollment(
     return resolved;
   }
 
-  return mapEnrollmentResult(
-    await deactivateEnrollment(resolved.courseId, opts.enrollmentId),
-  );
+  return mapEnrollmentResult(await deactivateEnrollment(resolved.courseId, opts.enrollmentId));
 }
 
 /** ADMIN — update bug report triage status. */
@@ -756,7 +735,9 @@ export async function deleteAdminCourseTopic(
   );
 }
 
-function isToolError(result: { error?: string }): result is { error: string; fields?: Record<string, string> } {
+function isToolError(result: {
+  error?: string;
+}): result is { error: string; fields?: Record<string, string> } {
   return typeof result.error === "string";
 }
 
@@ -992,14 +973,24 @@ export async function syncAdminCanvasMaterialsMutation(
 
 export async function addAdminCourseTAMutation(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ): Promise<MutationResult> {
   return wrapPlatformResult(await addAdminCourseTA(actor, opts));
 }
 
 export async function removeAdminCourseTAMutation(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ): Promise<MutationResult> {
   return wrapPlatformResult(await removeAdminCourseTA(actor, opts));
 }

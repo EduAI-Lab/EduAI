@@ -20,7 +20,9 @@ export function isEnqueueRequested(body: unknown): boolean {
   if (process.env.QUEUE_ENQUEUE_ENABLED !== "true") {
     return false;
   }
-  return typeof body === "object" && body !== null && (body as { enqueue?: unknown }).enqueue === true;
+  return (
+    typeof body === "object" && body !== null && (body as { enqueue?: unknown }).enqueue === true
+  );
 }
 
 // Resolve the fleet job type (interactive | background) from the request's
@@ -49,7 +51,9 @@ function lastUserPrompt(messages: unknown[]): string {
     if (Array.isArray(msg.content)) {
       const text = msg.content
         .map((part) =>
-          typeof part === "object" && part !== null && typeof (part as { text?: unknown }).text === "string"
+          typeof part === "object" &&
+          part !== null &&
+          typeof (part as { text?: unknown }).text === "string"
             ? (part as { text: string }).text
             : "",
         )

@@ -9,7 +9,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -257,14 +261,11 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
 
     expect(streamText).toHaveBeenCalledTimes(2);
     expect(resolveFleetHostAfterFailure).toHaveBeenCalledTimes(1);
-
   });
 
   it("normalizes fleet model unavailability without leaking host details", async () => {
     vi.mocked(resolveFleetHost).mockRejectedValue(
-      new FleetUnavailableError(
-        "No healthy server at http://private-fleet.internal",
-      ),
+      new FleetUnavailableError("No healthy server at http://private-fleet.internal"),
     );
 
     const res = await action(makeRequest(baseBody()));

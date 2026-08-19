@@ -259,7 +259,9 @@ describe("runWebSearch - fallback / retry behavior", () => {
   it("issues a second search with scrapeOptions when the first attempt yields zero results", async () => {
     searchMock.mockResolvedValueOnce({ web: [], news: [] });
     searchMock.mockResolvedValueOnce({
-      web: [{ url: "https://example.com/second", title: "Second", description: "From second call." }],
+      web: [
+        { url: "https://example.com/second", title: "Second", description: "From second call." },
+      ],
       news: [],
     });
 
@@ -279,7 +281,13 @@ describe("runWebSearch - fallback / retry behavior", () => {
   it("swallows an error from the first search attempt and falls through to the second", async () => {
     searchMock.mockRejectedValueOnce(new Error("network fail"));
     searchMock.mockResolvedValueOnce({
-      web: [{ url: "https://example.com/recovered", title: "Recovered", description: "Recovered result." }],
+      web: [
+        {
+          url: "https://example.com/recovered",
+          title: "Recovered",
+          description: "Recovered result.",
+        },
+      ],
       news: [],
     });
 

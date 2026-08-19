@@ -11,13 +11,13 @@ import type { LoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/root";
 import "./app.css";
 
+import { getRequestSession } from "~/lib/auth/request-session.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicies } from "~/lib/policy.server";
 import {
   getExpiredPasswordRedirect,
   isPasswordExpiredForUser,
 } from "~/lib/auth/password-expiry.server";
-import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui/sonner";
@@ -29,7 +29,6 @@ import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
-import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
  * Root middleware — the single request chokepoint that every route matches.
@@ -58,10 +57,7 @@ export const middleware: Route.MiddlewareFunction[] = [
 
     const response = await next();
     const isHtml =
-      response.headers
-        .get("content-type")
-        ?.toLowerCase()
-        .includes("text/html") ?? false;
+      response.headers.get("content-type")?.toLowerCase().includes("text/html") ?? false;
     if (!isHtml) {
       applySecurityHeaders(response.headers, {
         isProd: process.env.NODE_ENV === "production",
@@ -113,19 +109,12 @@ const GUEST_ROOT_PREFERENCES = {
  * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  ensureCronSchedulerRunning();
-
-  // getRequestSession and getPolicies are independent — run them in parallel so a
-  // policy cache-miss does not serialize behind the session lookup on every
-  // navigation. The session itself resolves once per inbound request (#946):
-  // this loader and every matched route loader share the same memo entry.
+  // getSession and getPolicies are independent — run them in parallel so a policy
+  // cache-miss does not serialize behind the session lookup on every navigation.
   // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
-  const [session, policies] = await Promise.all([
-    getRequestSession(request),
-    getPolicies(),
-  ]);
+  const [session, policies] = await Promise.all([getRequestSession(request), getPolicies()]);
 
   if (!session?.user) {
     return { ...GUEST_ROOT_PREFERENCES, policies };
@@ -134,9 +123,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // #339: enforce annual password rotation. Skip the check on /settings and
   // /auth/* so the user can actually reach the change-password form and log out.
   const url = new URL(request.url);
-  const isExempt =
-    url.pathname.startsWith("/settings") ||
-    url.pathname.startsWith("/auth/");
+  const isExempt = url.pathname.startsWith("/settings") || url.pathname.startsWith("/auth/");
   // #1369: the preference lookup and the expiry check depend only on `session.user.id`,
   // so fire the preference read first and await it last instead of serializing it behind
   // the expiry check on every authenticated render. `isPasswordExpiredForUser` is memoized
@@ -172,9 +159,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
   // link is policy-gated, so derive it from the already-resolved policy map.
   const canInvite =
-    session.user.role === "UNIT_ADMIN"
-      ? (policies["unitAdmins.canInvite"] ?? false)
-      : false;
+    session.user.role === "UNIT_ADMIN" ? (policies["unitAdmins.canInvite"] ?? false) : false;
 
   return {
     assistive: row?.assistDefault ?? false,
@@ -245,9 +230,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? "404" : "Error";
     details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
+      error.status === 404 ? "The requested page could not be found." : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

@@ -36,9 +36,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
-  chatbotTypeFromMode: vi.fn((mode: unknown) =>
-    mode === "admin" ? "ADMIN" : "LEARNING",
-  ),
+  chatbotTypeFromMode: vi.fn((mode: unknown) => (mode === "admin" ? "ADMIN" : "LEARNING")),
   createChatTools: vi.fn().mockReturnValue({}),
   parseChatMode: vi.fn((v: unknown) => (v === "admin" ? "admin" : "learning")),
 }));
@@ -48,9 +46,7 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi
-    .fn()
-    .mockResolvedValue({ response: null, session: null }),
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
   requireServiceKey: vi.fn().mockResolvedValue(
     new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
       status: 401,
@@ -76,8 +72,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 }));
 
 vi.mock("~/lib/ai/providers.server", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/providers.server")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/providers.server")>();
   return {
     ...actual,
     getChatModelCapabilities: vi.fn().mockResolvedValue({
@@ -124,12 +119,8 @@ vi.mock("~/lib/ai/course-scope-guardrail", () => ({
   buildCourseScopePolicyPrompt: vi.fn(
     (context: { courseName: string }) => `SCOPE:${context.courseName}`,
   ),
-  resolveCourseScopeVerdict: vi
-    .fn()
-    .mockResolvedValue({ blocked: false, classification: null }),
-  buildCourseScopeRedirectMessage: vi.fn(
-    (name: string | null) => `REDIRECT:${name}`,
-  ),
+  resolveCourseScopeVerdict: vi.fn().mockResolvedValue({ blocked: false, classification: null }),
+  buildCourseScopeRedirectMessage: vi.fn((name: string | null) => `REDIRECT:${name}`),
 }));
 
 import { streamText } from "ai";
@@ -159,9 +150,7 @@ function makeRequest(body: object) {
 
 function baseBody(overrides: Record<string, unknown> = {}) {
   return {
-    messages: [
-      { id: "msg-1", role: "user", content: "What's due for assignment 2?" },
-    ],
+    messages: [{ id: "msg-1", role: "user", content: "What's due for assignment 2?" }],
     model: "vllm:test-model",
     apiKeys: {},
     streaming: false,
@@ -321,9 +310,7 @@ describe("POST /api/chat — course-scope guardrail", () => {
   it("passes a long assistant answer for a follow-up about its final resource", async () => {
     const longBiologyAnswer = [
       "Support and resources available for BIOL 116.",
-      "Study materials, office hours, discussion forums, tutoring, and lab sessions. ".repeat(
-        20,
-      ),
+      "Study materials, office hours, discussion forums, tutoring, and lab sessions. ".repeat(20),
       "For calculations related to the course, the Math and Science Help Desk can assist.",
     ].join(" ");
     mockPriorCourseConversation(
@@ -381,33 +368,30 @@ describe("POST /api/chat — course-scope guardrail", () => {
         },
       ],
     },
-  ])(
-    "rejects unsupported $label student turns explicitly",
-    async ({ content }) => {
-      const res = await action(
-        makeRequest(
-          baseBody({
-            messages: [
-              {
-                id: "image-only",
-                role: "user",
-                content,
-              },
-            ],
-          }),
-        ),
-      );
+  ])("rejects unsupported $label student turns explicitly", async ({ content }) => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "image-only",
+              role: "user",
+              content,
+            },
+          ],
+        }),
+      ),
+    );
 
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({
-        error: "IMAGE_MESSAGE_UNSUPPORTED",
-        message: "Course Chat does not support image messages.",
-      });
-      expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
-      expect(streamText).not.toHaveBeenCalled();
-      expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
-    },
-  );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "IMAGE_MESSAGE_UNSUPPORTED",
+      message: "Course Chat does not support image messages.",
+    });
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(streamText).not.toHaveBeenCalled();
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
+  });
 
   it("skips the classifier when disabled for the course but keeps Layer A scope", async () => {
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValueOnce({

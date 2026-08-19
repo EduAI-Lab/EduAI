@@ -50,10 +50,7 @@ beforeEach(() => {
   } as never);
 });
 
-function patchArgs(
-  body: unknown,
-  opts: { role?: string; courseId?: string | undefined } = {},
-) {
+function patchArgs(body: unknown, opts: { role?: string; courseId?: string | undefined } = {}) {
   const role = opts.role ?? "INSTRUCTOR";
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role },
@@ -101,9 +98,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
       course: { id: "c1" },
       access: { level: "student", rank: 1 },
     } as never);
-    const res = await action(
-      patchArgs({ responseStyleTags: ["concise"] }, { role: "STUDENT" }),
-    );
+    const res = await action(patchArgs({ responseStyleTags: ["concise"] }, { role: "STUDENT" }));
     expect(res.status).toBe(403);
     expect(prisma.course.update).not.toHaveBeenCalled();
   });
@@ -114,9 +109,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
       access: { level: "ta", rank: 2 },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(false);
-    const res = await action(
-      patchArgs({ responseStyleTags: ["concise"] }, { role: "TA" }),
-    );
+    const res = await action(patchArgs({ responseStyleTags: ["concise"] }, { role: "TA" }));
     expect(res.status).toBe(403);
     expect(getPolicy).toHaveBeenCalledWith("tas.canSetAiInstructions");
     expect(prisma.course.update).not.toHaveBeenCalled();
@@ -128,9 +121,7 @@ describe("PATCH /api/courses/:id/response-style", () => {
       access: { level: "ta", rank: 2 },
     } as never);
     vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await action(
-      patchArgs({ aiInstructions: "Clarify proofs." }, { role: "TA" }),
-    );
+    const res = await action(patchArgs({ aiInstructions: "Clarify proofs." }, { role: "TA" }));
     expect(res.status).toBe(200);
     expect(prisma.course.update).toHaveBeenCalledWith({
       where: { id: "c1" },

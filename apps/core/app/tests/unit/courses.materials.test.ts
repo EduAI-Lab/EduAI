@@ -39,7 +39,9 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/policy.server")>();
   return {
     ...actual,
-    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
     logPolicyDenial: vi.fn(),
   };
 });
@@ -82,10 +84,9 @@ function makeArgs(method: string, body?: BodyInit, headers?: Record<string, stri
 
 function makePreviewArgs(materialId: string) {
   return {
-    request: new Request(
-      `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`,
-      { method: "GET" },
-    ),
+    request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`, {
+      method: "GET",
+    }),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
   } as any;
@@ -93,10 +94,9 @@ function makePreviewArgs(materialId: string) {
 
 function makeDeleteArgs(materialId: string) {
   return {
-    request: new Request(
-      `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`,
-      { method: "DELETE" },
-    ),
+    request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`, {
+      method: "DELETE",
+    }),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
   } as any;
@@ -104,14 +104,11 @@ function makeDeleteArgs(materialId: string) {
 
 function makeRenameArgs(materialId: string, body: unknown) {
   return {
-    request: new Request(
-      `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    ),
+    request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
   } as any;
@@ -230,7 +227,11 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     expect(res.status).toBe(200);
     expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ courseId: COURSE_ID, deletedAt: null, unpublishedAt: null }),
+        where: expect.objectContaining({
+          courseId: COURSE_ID,
+          deletedAt: null,
+          unpublishedAt: null,
+        }),
       }),
     );
   });
@@ -479,7 +480,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockSession("STUDENT", "ta-user");
     mockAccess({ level: "ta", rank: 1 });
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "c1", title: "f.pdf", mimeType: "application/pdf", fileSize: 1, content: "x",
+      checksum: "c1",
+      title: "f.pdf",
+      mimeType: "application/pdf",
+      fileSize: 1,
+      content: "x",
     } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
@@ -503,7 +508,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(getPolicy).mockResolvedValue(true);
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "c2", title: "f.pdf", mimeType: "application/pdf", fileSize: 1, content: "x",
+      checksum: "c2",
+      title: "f.pdf",
+      mimeType: "application/pdf",
+      fileSize: 1,
+      content: "x",
     } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-2" } as never);
@@ -564,7 +573,9 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("persists a FAILED material when PDF extraction dies before create (#1018)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(processUploadedFile).mockRejectedValueOnce(
-      new Error("Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)"),
+      new Error(
+        "Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)",
+      ),
     );
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
@@ -586,8 +597,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("persists uploadedBy as the session user on create (#294)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "new-checksum", title: "file.pdf", mimeType: "application/pdf",
-      fileSize: 100, content: "text",
+      checksum: "new-checksum",
+      title: "file.pdf",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      content: "text",
     } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
@@ -606,8 +620,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockSession("ADMIN");
     mockAccess({ level: "admin", rank: 4 });
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "abc123", title: "file.pdf", mimeType: "application/pdf",
-      fileSize: 100, content: "text",
+      checksum: "abc123",
+      title: "file.pdf",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      content: "text",
     } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({ id: "existing-mat" } as never);
 
@@ -618,8 +635,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("returns 409 (not 500) when a concurrent upload wins the checksum race (#225 RAG-04)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "race-checksum", title: "file.pdf", mimeType: "application/pdf",
-      fileSize: 100, content: "text",
+      checksum: "race-checksum",
+      title: "file.pdf",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      content: "text",
     } as never);
     // Our findFirst dedupe check sees no existing row (the race window)...
     vi.mocked(prisma.courseMaterial.findFirst)
@@ -643,8 +663,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
   it("re-throws a create() failure unrelated to the checksum unique constraint", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "other-failure", title: "file.pdf", mimeType: "application/pdf",
-      fileSize: 100, content: "text",
+      checksum: "other-failure",
+      title: "file.pdf",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      content: "text",
     } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockRejectedValue(new Error("connection refused"));
@@ -660,8 +683,11 @@ describe("POST /api/courses/:courseId/materials action", () => {
     mockSession("ADMIN");
     mockAccess({ level: "admin", rank: 4 });
     vi.mocked(processUploadedFile).mockResolvedValue({
-      checksum: "abc123", title: "file.pdf", mimeType: "application/pdf",
-      fileSize: 100, content: "text",
+      checksum: "abc123",
+      title: "file.pdf",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      content: "text",
     } as never);
     // Same-checksum row exists but is soft-deleted → should restore, not 409.
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
@@ -888,9 +914,7 @@ describe("PATCH /api/courses/:courseId/materials/:materialId action", () => {
       visibleToStudents: true,
       availableAt: null,
     } as never);
-    const res = await action(
-      makeRenameArgs("mat-1", { availableAt: "2099-01-01T00:00:00.000Z" }),
-    );
+    const res = await action(makeRenameArgs("mat-1", { availableAt: "2099-01-01T00:00:00.000Z" }));
     expect(res.status).toBe(403);
     expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
   });
@@ -906,8 +930,7 @@ describe("GET materials — student visibility gate (#839)", () => {
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
     await loader(makeArgs("GET"));
-    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any)
-      .where;
+    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any).where;
     expect(where).toEqual(
       expect.objectContaining({
         courseId: COURSE_ID,
@@ -924,8 +947,7 @@ describe("GET materials — student visibility gate (#839)", () => {
     mockAccess({ level: "instructor", rank: 2 });
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
     await loader(makeArgs("GET"));
-    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any)
-      .where;
+    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any).where;
     expect(where.visibleToStudents).toBeUndefined();
     expect(where.OR).toBeUndefined();
   });
@@ -964,11 +986,8 @@ describe("GET materials — student visibility gate (#839)", () => {
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     await loader(makePreviewArgs("mat-1"));
-    const where = (vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as any)
-      .where;
-    expect(where).toEqual(
-      expect.objectContaining({ visibleToStudents: true }),
-    );
+    const where = (vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as any).where;
+    expect(where).toEqual(expect.objectContaining({ visibleToStudents: true }));
   });
 });
 

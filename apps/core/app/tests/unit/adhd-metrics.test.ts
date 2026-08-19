@@ -99,16 +99,11 @@ Next? Want to know more?`;
 
 describe("detectUrgencyTerms", () => {
   it("returns the urgency terms present, lower-cased", () => {
-    expect(detectUrgencyTerms("Do this Quickly, then hurry up")).toEqual([
-      "quickly",
-      "hurry",
-    ]);
+    expect(detectUrgencyTerms("Do this Quickly, then hurry up")).toEqual(["quickly", "hurry"]);
   });
 
   it("matches multi-word pressure phrases", () => {
-    expect(detectUrgencyTerms("finish as soon as possible")).toContain(
-      "as soon as possible",
-    );
+    expect(detectUrgencyTerms("finish as soon as possible")).toContain("as soon as possible");
   });
 
   it("does not match unrelated words or empty input", () => {
@@ -215,7 +210,9 @@ describe("resolveAdhdResponseWordCap", () => {
   });
 
   it("uses tutoring cap for longer user turns", () => {
-    const long = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD + 1).fill("word").join(" ");
+    const long = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD + 1)
+      .fill("word")
+      .join(" ");
     expect(resolveAdhdResponseWordCap(long)).toBe(ADHD_TUTORING_WORD_CAP);
   });
 
@@ -294,9 +291,7 @@ Want to come back to the dishwashing steps first, or switch now to learn about m
 
   describe("hasRedirectBleedContent", () => {
     it("flags a defining/causal connector", () => {
-      expect(hasRedirectBleedContent("Marginal tax brackets mean higher rates apply.")).toBe(
-        true,
-      );
+      expect(hasRedirectBleedContent("Marginal tax brackets mean higher rates apply.")).toBe(true);
       expect(hasRedirectBleedContent("It works by taxing each bracket separately.")).toBe(true);
     });
 

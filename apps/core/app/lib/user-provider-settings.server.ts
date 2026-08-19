@@ -39,11 +39,7 @@ export async function upsertUserProviderSetting(
   if (!provider) throw new Error(`Unknown provider: ${providerName}`);
 
   const encryptedKey =
-    input.apiKey !== undefined
-      ? input.apiKey
-        ? encrypt(input.apiKey)
-        : null
-      : undefined;
+    input.apiKey !== undefined ? (input.apiKey ? encrypt(input.apiKey) : null) : undefined;
 
   await prisma.userProviderSettings.upsert({
     where: { userId_providerId: { userId, providerId: provider.id } },

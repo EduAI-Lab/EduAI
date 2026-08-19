@@ -2,10 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
-import {
-  capRagHitsForTool,
-  HYBRID_RAG_MAX_CHUNKS,
-} from "~/lib/chat-rag";
+import { capRagHitsForTool, HYBRID_RAG_MAX_CHUNKS } from "~/lib/chat-rag";
 
 export function buildChatToolRegistry(options: {
   effectiveCourseId: string | null;
@@ -80,9 +77,7 @@ export function buildToolCallingSystemPrompt(options: {
 When the user asks for reviews, opinions, recent updates, or external information, call webSearch after checking course materials. After webSearch, call fetchPage on promising sources before answering.`
     : "";
 
-  const webCitation = options.webToolsEnabled
-    ? " Always cite URLs for web results."
-    : "";
+  const webCitation = options.webToolsEnabled ? " Always cite URLs for web results." : "";
 
   return `${options.basePrompt}
 

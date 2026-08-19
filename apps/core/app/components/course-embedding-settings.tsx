@@ -7,17 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@edua
 import { Checkbox } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { readJsonResponse } from "~/lib/api/client";
-import {
-  formatReEmbedJobMessage,
-  pollReEmbedJobUntilDone,
-} from "~/lib/api/re-embed-job.client";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@eduai/ui";
+import { formatReEmbedJobMessage, pollReEmbedJobUntilDone } from "~/lib/api/re-embed-job.client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 
 type ModelOption = { id: string; label: string };
 
@@ -50,7 +41,10 @@ const PROVIDER_OPTIONS = [
   { value: "cloud", label: "Cloud" },
 ] as const;
 
-export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmbeddingSettingsProps) {
+export function CourseEmbeddingSettings({
+  courseId,
+  onSettingsSaved,
+}: CourseEmbeddingSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +60,9 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
     setError(null);
     try {
       const response = await fetch(`/api/courses/${courseId}/embedding-settings`);
-      const parsed = await readJsonResponse<EmbeddingSettingsResponse & { error?: string; hint?: string }>(response);
+      const parsed = await readJsonResponse<
+        EmbeddingSettingsResponse & { error?: string; hint?: string }
+      >(response);
 
       if (!parsed.ok) {
         throw new Error(parsed.error);
@@ -137,17 +133,17 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
 
       const result = parsed.data;
       if (!response.ok) {
-        throw new Error([result.error, result.hint].filter(Boolean).join(" ") || "Failed to save search settings");
+        throw new Error(
+          [result.error, result.hint].filter(Boolean).join(" ") || "Failed to save search settings",
+        );
       }
 
       setData((prev) => ({
         settings: result.settings,
         effective: result.effective,
         needsReEmbed: result.needsReEmbed,
-        allowedLocalModels:
-          result.allowedLocalModels ?? prev?.allowedLocalModels ?? [],
-        allowedCloudModels:
-          result.allowedCloudModels ?? prev?.allowedCloudModels ?? [],
+        allowedLocalModels: result.allowedLocalModels ?? prev?.allowedLocalModels ?? [],
+        allowedCloudModels: result.allowedCloudModels ?? prev?.allowedCloudModels ?? [],
       }));
       setProviderChoice(result.settings.embeddingProvider ?? "env");
       setModelChoice(result.settings.embeddingModel ?? "default");
@@ -209,13 +205,14 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
         {data && (
           <div className="rounded-md border p-3 text-sm text-muted-foreground space-y-1">
             <p>
-              Active: <span className="font-medium text-foreground">{data.effective.provider}</span> /{" "}
-              <span className="font-medium text-foreground">{data.effective.model}</span>
+              Active: <span className="font-medium text-foreground">{data.effective.provider}</span>{" "}
+              / <span className="font-medium text-foreground">{data.effective.model}</span>
               {data.effective.source.provider === "env" && " (from server env)"}
             </p>
             {data.settings.embeddedWithModel && (
               <p>
-                Last processed with: {data.settings.embeddedWithProvider} / {data.settings.embeddedWithModel}
+                Last processed with: {data.settings.embeddedWithProvider} /{" "}
+                {data.settings.embeddedWithModel}
                 {data.settings.lastEmbeddedAt &&
                   ` · ${new Date(data.settings.lastEmbeddedAt).toLocaleString()}`}
               </p>

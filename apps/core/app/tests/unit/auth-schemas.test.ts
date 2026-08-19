@@ -12,9 +12,7 @@ import {
 
 describe("signInSchema", () => {
   it("accepts valid input", () => {
-    expect(
-      signInSchema.safeParse({ email: "a@b.com", password: "12345678" }).success,
-    ).toBe(true);
+    expect(signInSchema.safeParse({ email: "a@b.com", password: "12345678" }).success).toBe(true);
   });
 
   it("rejects an invalid email", () => {
@@ -60,8 +58,7 @@ describe("signUpSchema", () => {
   it("accepts a 16-char passphrase", () => {
     const phrase = "correct horse ba";
     expect(
-      signUpSchema.safeParse({ ...valid, password: phrase, confirmPassword: phrase })
-        .success,
+      signUpSchema.safeParse({ ...valid, password: phrase, confirmPassword: phrase }).success,
     ).toBe(true);
   });
 
@@ -204,9 +201,9 @@ describe("createUserSchema", () => {
 
   it("accepts every valid role", () => {
     for (const role of ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"] as const) {
-      expect(
-        createUserSchema.safeParse({ name: "Ada", email: "a@b.com", role }).success,
-      ).toBe(true);
+      expect(createUserSchema.safeParse({ name: "Ada", email: "a@b.com", role }).success).toBe(
+        true,
+      );
     }
   });
 });

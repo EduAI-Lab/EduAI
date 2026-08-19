@@ -19,7 +19,7 @@ const job = {
 } as unknown as AiJob;
 
 describe("serializeAiJob", () => {
-  it("maps timestamps to ISO strings and defaults queuePosition to null", () => {
+  it("maps timestamps to ISO strings and defaults queue metadata to null", () => {
     expect(serializeAiJob(job)).toEqual({
       id: "job-1",
       kind: "question-generation",
@@ -27,6 +27,7 @@ describe("serializeAiJob", () => {
       source: "question-maker",
       status: "COMPLETED",
       queuePosition: null,
+      etaSeconds: null,
       result: { output: { content: "Q1?" } },
       errorMessage: null,
       attempts: 1,
@@ -38,7 +39,15 @@ describe("serializeAiJob", () => {
   });
 
   it("passes through an explicit queuePosition", () => {
-    expect(serializeAiJob(job, { queuePosition: 4 })).toMatchObject({ queuePosition: 4 });
+    expect(serializeAiJob(job, { queuePosition: 4 })).toMatchObject({
+      queuePosition: 4,
+    });
+  });
+
+  it("passes through an explicit ETA", () => {
+    expect(serializeAiJob(job, { etaSeconds: 90 })).toMatchObject({
+      etaSeconds: 90,
+    });
   });
 
   it("nulls out unset startedAt/completedAt and defaults a null result", () => {

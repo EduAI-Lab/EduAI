@@ -14,8 +14,8 @@
  * `[data-assistive] .reading-surface` contract (see
  * `~/components/settings/assistive-mode.tsx`) must not be touched.
  */
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useState } from "react";
+import { useNavigate } from "react-router";
 import {
   AccessibilitySettings,
   Avatar,
@@ -31,23 +31,23 @@ import {
   useTheme,
   type AccessibilityUiDensity,
   type AccessibilityUiTheme,
-} from '@eduai/ui';
-import { IconAccessible, IconLogout, IconUser, IconWorld } from '@tabler/icons-react';
+} from "@eduai/ui";
+import { IconAccessible, IconLogout, IconUser, IconWorld } from "@tabler/icons-react";
 
-import { useAssistiveMode } from '~/components/settings/assistive-mode';
-import { ProvidersSettings } from '~/components/settings/providers-settings';
-import { useLocalUser } from '~/hooks/useLocalUser';
+import { useAssistiveMode } from "~/components/settings/assistive-mode";
+import { ProvidersSettings } from "~/components/settings/providers-settings";
+import { useLocalUser } from "~/hooks/useLocalUser";
 
 function readInitialDensity(): AccessibilityUiDensity {
-  if (typeof document === 'undefined') return 'comfortable';
-  return document.documentElement.getAttribute('data-density') === 'compact'
-    ? 'compact'
-    : 'comfortable';
+  if (typeof document === "undefined") return "comfortable";
+  return document.documentElement.getAttribute("data-density") === "compact"
+    ? "compact"
+    : "comfortable";
 }
 
 function readInitialMotionReduced(): boolean {
-  if (typeof document === 'undefined') return false;
-  return document.documentElement.hasAttribute('data-reduce-motion');
+  if (typeof document === "undefined") return false;
+  return document.documentElement.hasAttribute("data-reduce-motion");
 }
 
 export function SettingsView() {
@@ -58,29 +58,29 @@ export function SettingsView() {
   const [density, setDensity] = useState<AccessibilityUiDensity>(readInitialDensity);
   const [motionReduced, setMotionReduced] = useState<boolean>(readInitialMotionReduced);
 
-  const theme = (nextTheme as AccessibilityUiTheme | undefined) ?? 'system';
+  const theme = (nextTheme as AccessibilityUiTheme | undefined) ?? "system";
 
   const handleDensityChange = (value: AccessibilityUiDensity) => {
     setDensity(value);
-    if (value === 'compact') {
-      document.documentElement.setAttribute('data-density', 'compact');
+    if (value === "compact") {
+      document.documentElement.setAttribute("data-density", "compact");
     } else {
-      document.documentElement.removeAttribute('data-density');
+      document.documentElement.removeAttribute("data-density");
     }
   };
 
   const handleMotionReducedChange = (value: boolean) => {
     setMotionReduced(value);
     if (value) {
-      document.documentElement.setAttribute('data-reduce-motion', 'true');
+      document.documentElement.setAttribute("data-reduce-motion", "true");
     } else {
-      document.documentElement.removeAttribute('data-reduce-motion');
+      document.documentElement.removeAttribute("data-reduce-motion");
     }
   };
 
   const handleLogout = async () => {
     await logout();
-    navigate('/');
+    navigate("/");
   };
 
   return (
@@ -98,33 +98,33 @@ export function SettingsView() {
       }
       tabs={[
         {
-          value: 'account',
-          label: 'Account',
+          value: "account",
+          label: "Account",
           icon: <IconUser className="h-4 w-4" />,
           content: (
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Your account details for this AI Tutor session.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                <Avatar name={user?.name ?? 'You'} size={48} radius={12} />
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="truncate text-sm font-medium">{user?.name ?? 'Signed in'}</p>
-                  {user?.email && (
-                    <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-                  )}
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile</CardTitle>
+                <CardDescription>Your account details for this AI Tutor session.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4">
+                  <Avatar name={user?.name ?? "You"} size={48} radius={12} />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="truncate text-sm font-medium">{user?.name ?? "Signed in"}</p>
+                    {user?.email && (
+                      <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+                    )}
+                  </div>
+                  {user?.role && <RoleBadge role={user.role} className="shrink-0" />}
                 </div>
-                {user?.role && <RoleBadge role={user.role} className="shrink-0" />}
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
           ),
         },
         {
-          value: 'accessibility',
-          label: 'Accessibility',
+          value: "accessibility",
+          label: "Accessibility",
           icon: <IconAccessible className="h-4 w-4" />,
           content: (
             <AccessibilitySettings
@@ -141,8 +141,8 @@ export function SettingsView() {
           ),
         },
         {
-          value: 'providers',
-          label: 'Providers',
+          value: "providers",
+          label: "Providers",
           icon: <IconWorld className="h-4 w-4" />,
           content: <ProvidersSettings />,
         },

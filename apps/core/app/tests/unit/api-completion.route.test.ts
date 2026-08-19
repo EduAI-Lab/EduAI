@@ -119,11 +119,7 @@ describe("POST /api/completion", () => {
 
     await action(makeArgs({ model: "gpt", messages: [] }));
 
-    expect(checkRateLimitMock).toHaveBeenCalledWith(
-      "completion:admin-key-owner",
-      2,
-      60_000,
-    );
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:admin-key-owner", 2, 60_000);
     expect(auth.api.getSession).not.toHaveBeenCalled();
   });
 
@@ -154,7 +150,11 @@ describe("POST /api/completion", () => {
   });
 
   it("preserves ordinary validation failures as their existing error shape", async () => {
-    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "model is required", status: 400 } as never);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      error: "model is required",
+      status: 400,
+    } as never);
     const res = await action(makeArgs({ model: "bogus", messages: [] }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "model is required" });

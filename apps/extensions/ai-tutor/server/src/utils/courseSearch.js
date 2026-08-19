@@ -23,10 +23,10 @@
  */
 
 /** The two values the Status dimension can take. */
-export const COURSE_STATUS_VALUES = ['published', 'draft'];
+export const COURSE_STATUS_VALUES = ["published", "draft"];
 
 /** The three buckets the Progress dimension can take (see progressBucket). */
-export const COURSE_PROGRESS_VALUES = ['not-started', 'in-progress', 'completed'];
+export const COURSE_PROGRESS_VALUES = ["not-started", "in-progress", "completed"];
 
 /**
  * Canonical term key for a Core course — `"W2::2026"` style, matching
@@ -34,18 +34,18 @@ export const COURSE_PROGRESS_VALUES = ['not-started', 'in-progress', 'completed'
  * the course belongs to no term and any term filter excludes it.
  */
 export function coreTermKey(coreCourse) {
-  const term = typeof coreCourse?.term === 'string' ? coreCourse.term.trim() : '';
+  const term = typeof coreCourse?.term === "string" ? coreCourse.term.trim() : "";
   const year = coreCourse?.year;
   // `.trim()` matches `courseTerm()` in app/lib/course-display.ts, which is what
   // feeds `buildTermFilterGroup` — so the value the dropdown emits and the value
   // matched here are the same string.
-  if (!term || typeof year !== 'number') return null;
+  if (!term || typeof year !== "number") return null;
   return `${term}::${year}`;
 }
 
 /** Status value for a Core course. Anything not explicitly published is a draft. */
 export function coreStatusValue(coreCourse) {
-  return coreCourse?.isPublished === true ? 'published' : 'draft';
+  return coreCourse?.isPublished === true ? "published" : "draft";
 }
 
 /**
@@ -59,8 +59,8 @@ export function coreStatusValue(coreCourse) {
  */
 export function matchesCoreCourse(coreCourse, query) {
   if (!query) return true;
-  const name = typeof coreCourse?.name === 'string' ? coreCourse.name : '';
-  const code = typeof coreCourse?.code === 'string' ? coreCourse.code : '';
+  const name = typeof coreCourse?.name === "string" ? coreCourse.name : "";
+  const code = typeof coreCourse?.code === "string" ? coreCourse.code : "";
   return `${name} ${code}`.toLowerCase().includes(query);
 }
 
@@ -78,12 +78,12 @@ export function matchesCoreCourse(coreCourse, query) {
  *   `{ in: [] }` in that case would empty every list.
  */
 export function coreFacetWhere(catalogCourses, { search, terms = [], statuses = [] } = {}) {
-  const query = typeof search === 'string' ? search.trim().toLowerCase() : '';
+  const query = typeof search === "string" ? search.trim().toLowerCase() : "";
   if (!query && terms.length === 0 && statuses.length === 0) return null;
 
   const ids = (catalogCourses ?? [])
     .filter((c) => {
-      if (!c || typeof c.id !== 'string') return false;
+      if (!c || typeof c.id !== "string") return false;
       if (query && !matchesCoreCourse(c, query)) return false;
       if (terms.length > 0 && !terms.includes(coreTermKey(c))) return false;
       if (statuses.length > 0 && !statuses.includes(coreStatusValue(c))) return false;
@@ -143,6 +143,6 @@ function compareTermKeysDesc(a, b) {
 }
 
 function termSortKey(key) {
-  const [term, year] = key.split('::');
+  const [term, year] = key.split("::");
   return (Number(year) || 0) * 10 + (TERM_RANK[term] ?? -1);
 }

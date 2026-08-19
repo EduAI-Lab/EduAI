@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from "react";
+import html2canvas from "html2canvas";
 
 interface ConsoleEntry {
   level: string;
@@ -16,8 +17,6 @@ interface NetworkEntry {
 
 const MAX_CONSOLE_ENTRIES = 100;
 const MAX_NETWORK_ENTRIES = 50;
-const SCREENSHOT_INTERVAL_MS = 10_000;
-
 /**
  * Patches console + fetch to buffer recent diagnostics for bug reports.
  * When `enabled` is false, restores originals and clears buffers.
@@ -26,6 +25,8 @@ export function useBugReportCapture(enabled: boolean) {
   const consoleBuffer = useRef<ConsoleEntry[]>([]);
   const networkBuffer = useRef<NetworkEntry[]>([]);
   const screenshotRef = useRef<string | null>(null);
+  const capturePromiseRef = useRef<Promise<void> | null>(null);
+  const captureGenerationRef = useRef(0);
   const patchedRef = useRef(false);
   const originalsRef = useRef<{
     log: typeof console.log;
@@ -35,7 +36,7 @@ export function useBugReportCapture(enabled: boolean) {
   } | null>(null);
 
   useEffect(() => {
-    if (!enabled || typeof window === 'undefined') {
+    if (!enabled || typeof window === "undefined") {
       if (originalsRef.current && patchedRef.current) {
         console.log = originalsRef.current.log;
         console.warn = originalsRef.current.warn;
@@ -47,6 +48,8 @@ export function useBugReportCapture(enabled: boolean) {
       consoleBuffer.current = [];
       networkBuffer.current = [];
       screenshotRef.current = null;
+      captureGenerationRef.current += 1;
+      capturePromiseRef.current = null;
       return;
     }
 
@@ -62,7 +65,7 @@ export function useBugReportCapture(enabled: boolean) {
       log: origLog,
       warn: origWarn,
       error: origError,
-      fetch: origFetch
+      fetch: origFetch,
     };
 
     function addConsoleEntry(level: string, args: unknown[]) {
@@ -71,13 +74,13 @@ export function useBugReportCapture(enabled: boolean) {
         message: args
           .map((a) => {
             try {
-              return typeof a === 'string' ? a : JSON.stringify(a);
+              return typeof a === "string" ? a : JSON.stringify(a);
             } catch {
               return String(a);
             }
           })
-          .join(' '),
-        timestamp: new Date().toISOString()
+          .join(" "),
+        timestamp: new Date().toISOString(),
       };
       consoleBuffer.current.push(entry);
       if (consoleBuffer.current.length > MAX_CONSOLE_ENTRIES) {
@@ -86,22 +89,21 @@ export function useBugReportCapture(enabled: boolean) {
     }
 
     console.log = (...args: unknown[]) => {
-      addConsoleEntry('log', args);
+      addConsoleEntry("log", args);
       origLog.apply(console, args);
     };
     console.warn = (...args: unknown[]) => {
-      addConsoleEntry('warn', args);
+      addConsoleEntry("warn", args);
       origWarn.apply(console, args);
     };
     console.error = (...args: unknown[]) => {
-      addConsoleEntry('error', args);
+      addConsoleEntry("error", args);
       origError.apply(console, args);
     };
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const method = init?.method || 'GET';
-      const url =
-        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method || "GET";
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const start = performance.now();
       let status: number | null = null;
 
@@ -115,7 +117,7 @@ export function useBugReportCapture(enabled: boolean) {
           url,
           status,
           durationMs: Math.round(performance.now() - start),
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         };
         networkBuffer.current.push(entry);
         if (networkBuffer.current.length > MAX_NETWORK_ENTRIES) {
@@ -123,32 +125,6 @@ export function useBugReportCapture(enabled: boolean) {
         }
       }
     };
-
-    let screenshotTimer: ReturnType<typeof setInterval>;
-    let capturing = false;
-
-    async function captureScreenshot() {
-      if (capturing) return;
-      capturing = true;
-      try {
-        const html2canvas = (await import('html2canvas')).default;
-        const canvas = await html2canvas(document.body, {
-          logging: false,
-          useCORS: true,
-          scale: 0.5
-        });
-        // JPEG, not PNG: PNG ignores the quality arg, and a full-page PNG data
-        // URL easily exceeds Core's 512k screenshot cap (dropped server-side).
-        screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
-      } catch {
-        // ignore capture failures
-      } finally {
-        capturing = false;
-      }
-    }
-
-    const initialTimeout = setTimeout(captureScreenshot, 3000);
-    screenshotTimer = setInterval(captureScreenshot, SCREENSHOT_INTERVAL_MS);
 
     return () => {
       if (originalsRef.current) {
@@ -159,18 +135,45 @@ export function useBugReportCapture(enabled: boolean) {
       }
       patchedRef.current = false;
       originalsRef.current = null;
-      clearTimeout(initialTimeout);
-      clearInterval(screenshotTimer);
     };
+  }, [enabled]);
+
+  const captureScreenshot = useCallback(async () => {
+    if (!enabled || typeof window === "undefined") return;
+    if (capturePromiseRef.current) return capturePromiseRef.current;
+
+    const generation = captureGenerationRef.current;
+    let capturePromise!: Promise<void>;
+    capturePromise = (async () => {
+      try {
+        const canvas = await html2canvas(document.body, {
+          logging: false,
+          useCORS: true,
+          scale: 0.5,
+        });
+        // JPEG keeps the report below Core's screenshot size cap.
+        if (captureGenerationRef.current === generation) {
+          screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
+        }
+      } catch {
+        // ignore capture failures
+      } finally {
+        if (capturePromiseRef.current === capturePromise) {
+          capturePromiseRef.current = null;
+        }
+      }
+    })();
+    capturePromiseRef.current = capturePromise;
+    return capturePromise;
   }, [enabled]);
 
   const getCapturedData = useCallback(() => {
     return {
       consoleLogs: JSON.stringify(consoleBuffer.current),
       networkLogs: JSON.stringify(networkBuffer.current),
-      screenshot: screenshotRef.current
+      screenshot: screenshotRef.current,
     };
   }, []);
 
-  return { getCapturedData };
+  return { captureScreenshot, getCapturedData };
 }

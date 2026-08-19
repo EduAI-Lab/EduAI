@@ -1,10 +1,10 @@
 // @ts-check
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
-  packageManager: 'npm',
-  testRunner: 'vitest',
-  coverageAnalysis: 'perTest',
-  reporters: ['html', 'clear-text', 'progress'],
+  packageManager: "npm",
+  testRunner: "vitest",
+  coverageAnalysis: "perTest",
+  reporters: ["html", "clear-text", "progress"],
   // Local fail-closed gate (not CI). Tied to the documented overall baseline
   // of ~73.65% across the 11 mutate targets (PR #1102 / issue #224), with a
   // small cushion so noise doesn't flake while still catching score regressions.
@@ -20,20 +20,20 @@ const config = {
     // the entire included suite to pass, and the full app/tests/unit suite
     // both times out here and includes embedding.rag-settings.test.ts,
     // which requires a local Ollama instance (a pre-existing, unrelated gap).
-    configFile: 'vitest.mutation.config.ts',
+    configFile: "vitest.mutation.config.ts",
   },
   mutate: [
-    'app/lib/rbac/permissions.ts',
-    'app/lib/rbac/index.ts',
-    'app/lib/rbac/resolve-course-access.server.ts',
-    'app/lib/auth/course-access.server.ts',
-    'app/lib/auth/guards.server.ts',
-    'app/lib/canvas/encryption.ts',
-    'app/lib/auth/password-policy.ts',
-    'app/lib/auth/password-expiry.server.ts',
-    'app/lib/auth/password-history.server.ts',
-    'app/lib/auth/rate-limit.server.ts',
-    'app/lib/canvas/guards.server.ts',
+    "app/lib/rbac/permissions.ts",
+    "app/lib/rbac/index.ts",
+    "app/lib/rbac/resolve-course-access.server.ts",
+    "app/lib/auth/course-access.server.ts",
+    "app/lib/auth/guards.server.ts",
+    "app/lib/canvas/encryption.ts",
+    "app/lib/auth/password-policy.ts",
+    "app/lib/auth/password-expiry.server.ts",
+    "app/lib/auth/password-history.server.ts",
+    "app/lib/auth/rate-limit.server.ts",
+    "app/lib/canvas/guards.server.ts",
   ],
 };
 

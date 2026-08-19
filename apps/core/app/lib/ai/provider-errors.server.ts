@@ -64,10 +64,7 @@ export function createProviderFailure(
   };
 }
 
-export function classifyProviderError(
-  provider: string,
-  error: unknown,
-): ProviderFailure {
+export function classifyProviderError(provider: string, error: unknown): ProviderFailure {
   const shape = isObject(error) ? (error as ErrorShape) : {};
   const name = typeof shape.name === "string" ? shape.name : "";
 
@@ -106,9 +103,7 @@ export function classifyProviderError(
   return createProviderFailure(provider, "PROVIDER_REQUEST_FAILED");
 }
 
-export function providerFailureBody(
-  failure: ProviderFailure,
-): ProviderFailureBody {
+export function providerFailureBody(failure: ProviderFailure): ProviderFailureBody {
   return {
     error: failure.error,
     code: failure.code,
@@ -117,12 +112,8 @@ export function providerFailureBody(
   };
 }
 
-export function providerFailureHeaders(
-  failure: ProviderFailure,
-): Record<string, string> {
-  return failure.retryAfter == null
-    ? {}
-    : { "Retry-After": String(failure.retryAfter) };
+export function providerFailureHeaders(failure: ProviderFailure): Record<string, string> {
+  return failure.retryAfter == null ? {} : { "Retry-After": String(failure.retryAfter) };
 }
 
 export function normalizeRetryAfter(value: unknown): number | undefined {
@@ -174,8 +165,6 @@ function isTimeoutError(error: unknown): boolean {
 
 function retryAfterFromHeaders(headers: unknown): number | undefined {
   if (!isObject(headers)) return undefined;
-  const entry = Object.entries(headers).find(
-    ([key]) => key.toLowerCase() === "retry-after",
-  );
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === "retry-after");
   return normalizeRetryAfter(entry?.[1]);
 }

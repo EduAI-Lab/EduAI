@@ -58,8 +58,14 @@ describe("auth/accept-invitation loader", () => {
   });
 
   it("maps a service error code to a friendly message", async () => {
-    vi.mocked(getInvitationByToken).mockResolvedValue({ ok: false, status: 410, error: "INVITATION_EXPIRED" });
-    const result = await loader(makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"));
+    vi.mocked(getInvitationByToken).mockResolvedValue({
+      ok: false,
+      status: 410,
+      error: "INVITATION_EXPIRED",
+    });
+    const result = await loader(
+      makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"),
+    );
     expect(result).toEqual({ ok: false, error: expect.stringContaining("expired") });
   });
 
@@ -68,7 +74,9 @@ describe("auth/accept-invitation loader", () => {
       ok: true,
       invitation: { email: "new@student.ubc.ca", role: "STUDENT", name: "New User" },
     } as never);
-    const result = await loader(makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"));
+    const result = await loader(
+      makeLoaderArgs("http://localhost/auth/accept-invitation?token=abc"),
+    );
     expect(result).toEqual({
       ok: true,
       token: "abc",
@@ -94,7 +102,11 @@ describe("auth/accept-invitation action", () => {
   });
 
   it("returns a friendly formError when acceptInvitation fails", async () => {
-    vi.mocked(acceptInvitation).mockResolvedValue({ ok: false, status: 400, error: "INVALID_TOKEN" });
+    vi.mocked(acceptInvitation).mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "INVALID_TOKEN",
+    });
     const result = (await action(
       makeActionArgs({
         token: "bad-token",

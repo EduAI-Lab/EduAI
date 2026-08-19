@@ -66,7 +66,7 @@ const callGroqAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.groqApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     return response.data.choices[0].message.content;
@@ -114,7 +114,7 @@ const callOpenAIAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.openaiApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     return response.data.choices[0].message.content;
@@ -160,7 +160,7 @@ const callDeepSeekAPI = async (prompt, params) => {
           Authorization: `Bearer ${config.deepseekApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     return response.data.choices[0].message.content;
@@ -213,29 +213,20 @@ const buildDifficultyCounts = (total) => {
 
 /** Cleans and normalizes EduAI question objects into the format expected by uploads. */
 const sanitizeEduAIQuestion = (question) => {
-  const content =
-    typeof question?.content === "string" ? question.content.trim() : "";
+  const content = typeof question?.content === "string" ? question.content.trim() : "";
   if (!content) return null;
   const summarySource =
-    typeof question?.description === "string" &&
-    question.description.trim().length > 0
+    typeof question?.description === "string" && question.description.trim().length > 0
       ? question.description.trim()
       : summarizeQuestion(content);
 
-  const difficulty = ["easy", "medium", "hard"].includes(
-    question?.difficulty?.toLowerCase()
-  )
+  const difficulty = ["easy", "medium", "hard"].includes(question?.difficulty?.toLowerCase())
     ? question.difficulty.toLowerCase()
     : "medium";
 
-  const type = question?.type === "MCQ"
-    ? "MCQ"
-    : question?.type === "LA"
-      ? "LA"
-      : "SA";
+  const type = question?.type === "MCQ" ? "MCQ" : question?.type === "LA" ? "LA" : "SA";
   const primaryTopicId =
-    Number.isInteger(question?.primary_topic_id) &&
-    question.primary_topic_id > 0
+    Number.isInteger(question?.primary_topic_id) && question.primary_topic_id > 0
       ? Number(question.primary_topic_id)
       : null;
   const secondaryTopicIds = Array.isArray(question?.secondary_topic_ids)
@@ -243,10 +234,8 @@ const sanitizeEduAIQuestion = (question) => {
         new Set(
           question.secondary_topic_ids
             .map((value) => Number(value))
-            .filter(
-              (value) => Number.isInteger(value) && value !== primaryTopicId
-            )
-        )
+            .filter((value) => Number.isInteger(value) && value !== primaryTopicId),
+        ),
       )
     : [];
 
@@ -256,10 +245,7 @@ const sanitizeEduAIQuestion = (question) => {
     choices = question.choices
       .filter(
         (c) =>
-          c &&
-          typeof c === "object" &&
-          typeof c.letter === "string" &&
-          typeof c.text === "string"
+          c && typeof c === "object" && typeof c.letter === "string" && typeof c.text === "string",
       )
       .map((c) => ({
         letter: String(c.letter).trim().toUpperCase() || "A",
@@ -289,17 +275,20 @@ const sanitizeEduAIQuestion = (question) => {
 };
 
 /** Uses EduAI to extract questions from OCR’d text, chunking input and deduplicating outputs. */
-const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.5-flash", apiKeys = {}, { cookie } = {}) => {
+const extractQuestionsWithEduAI = async (
+  text,
+  course,
+  model = "google:gemini-2.5-flash",
+  apiKeys = {},
+  { cookie } = {},
+) => {
   if (!eduaiService.isConfigured()) {
-    throw new Error(
-      "EduAI service is not configured. Please set EDUAI_API_KEY."
-    );
+    throw new Error("EduAI service is not configured. Please set EDUAI_API_KEY.");
   }
 
   // Preserve original spacing/casing so Core can resolve by code when
   // coreCourseId is absent. Prefer course.coreCourseId (Core CUID) below.
-  const courseCode =
-    (course?.code && course.code.trim()) || `COURSE-${course?.id ?? "UNKNOWN"}`;
+  const courseCode = (course?.code && course.code.trim()) || `COURSE-${course?.id ?? "UNKNOWN"}`;
   const coreCourseId =
     typeof course?.coreCourseId === "string" && course.coreCourseId.trim()
       ? course.coreCourseId.trim()
@@ -314,7 +303,7 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
       topics = await prisma.topics.findMany({
         where: { courseId: course.id },
         select: { id: true, name: true },
-        orderBy: { name: 'asc' }
+        orderBy: { name: "asc" },
       });
     } catch (error) {
       console.error("Failed to fetch topics for course", error.message);
@@ -323,16 +312,18 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
   }
 
   // Format topics for the prompt
-  const topicsSection = topics.length > 0
-    ? `\n\nCourse topics:\n${topics.map(t => `- ID ${t.id}: ${t.name}`).join('\n')}\n`
-    : '';
+  const topicsSection =
+    topics.length > 0
+      ? `\n\nCourse topics:\n${topics.map((t) => `- ID ${t.id}: ${t.name}`).join("\n")}\n`
+      : "";
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const blockCount = blockCountsPerChunk[i];
-    const numQuestions = blockCount != null && blockCount > 0
-      ? Math.max(1, Math.min(blockCount, 15))
-      : calculateQuestionTarget(chunk);
+    const numQuestions =
+      blockCount != null && blockCount > 0
+        ? Math.max(1, Math.min(blockCount, 15))
+        : calculateQuestionTarget(chunk);
     const difficultyDistribution = buildDifficultyCounts(numQuestions);
     const reasoningDistribution = {
       factual: 40,
@@ -340,9 +331,10 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
       application: 30,
     };
 
-    const continuationNote = i > 0
-      ? " This segment continues from the previous one; do not treat content as a new \"Question 1\" unless the source explicitly starts a new numbered question.\n\n"
-      : "";
+    const continuationNote =
+      i > 0
+        ? ' This segment continues from the previous one; do not treat content as a new "Question 1" unless the source explicitly starts a new numbered question.\n\n'
+        : "";
 
     const extractionSystemPrompt = `You are an assistant that EXTRACTS exam-ready questions from source material. Your job is to list every complete question block that appears in the text. Do NOT generate new questions or improvise—only extract or paraphrase what is actually in the source.
 
@@ -400,9 +392,7 @@ ${chunk}
         userPromptOverride: userPrompt,
         cookie,
       });
-      return questions
-        .map((question) => sanitizeEduAIQuestion(question))
-        .filter(Boolean);
+      return questions.map((question) => sanitizeEduAIQuestion(question)).filter(Boolean);
     };
 
     try {
@@ -419,7 +409,7 @@ ${chunk}
       try {
         const sanitizedRetry = await runChunkExtraction(
           extractionRetrySystemPrompt,
-          extractionRetryUserPrompt
+          extractionRetryUserPrompt,
         );
         if (sanitizedRetry.length === 0) {
           throw new Error(error.message || "Extraction produced no questions");
@@ -440,9 +430,7 @@ ${chunk}
 /** Legacy helper that asks OpenAI to extract structured questions from a chunk of text. */
 const callOpenAIForExtraction = async (textChunk) => {
   if (!config.openaiApiKey) {
-    throw new Error(
-      "OpenAI API key is not configured. Please add it to the .env file."
-    );
+    throw new Error("OpenAI API key is not configured. Please add it to the .env file.");
   }
 
   const systemPrompt = `You are an assistant that extracts study questions from source material.
@@ -487,7 +475,7 @@ ${textChunk}
         Authorization: `Bearer ${config.openaiApiKey}`,
         "Content-Type": "application/json",
       },
-    }
+    },
   );
 
   const content = response.data?.choices?.[0]?.message?.content ?? "[]";
@@ -500,8 +488,7 @@ const sanitizeExtractedQuestion = (raw) => {
     return null;
   }
 
-  const questionText =
-    typeof raw.question === "string" ? raw.question.trim() : "";
+  const questionText = typeof raw.question === "string" ? raw.question.trim() : "";
   if (!questionText) {
     return null;
   }
@@ -511,26 +498,17 @@ const sanitizeExtractedQuestion = (raw) => {
     return null;
   }
 
-  const difficulty =
-    typeof raw.difficulty === "string"
-      ? raw.difficulty.toLowerCase().trim()
-      : "";
+  const difficulty = typeof raw.difficulty === "string" ? raw.difficulty.toLowerCase().trim() : "";
 
-  const allowedDifficulty = ["easy", "medium", "hard"].includes(difficulty)
-    ? difficulty
-    : "medium";
+  const allowedDifficulty = ["easy", "medium", "hard"].includes(difficulty) ? difficulty : "medium";
   const type =
-    typeof raw.type === "string" && ["MCQ", "SA", "LA"].includes(raw.type)
-      ? raw.type
-      : "SA";
+    typeof raw.type === "string" && ["MCQ", "SA", "LA"].includes(raw.type) ? raw.type : "SA";
 
   return {
     summary,
     question: questionText,
     instructions:
-      typeof raw.instructions === "string"
-        ? raw.instructions.trim() || undefined
-        : undefined,
+      typeof raw.instructions === "string" ? raw.instructions.trim() || undefined : undefined,
     difficulty: allowedDifficulty,
     answer: typeof raw.answer === "string" ? raw.answer.trim() || null : null,
     type,
@@ -543,9 +521,7 @@ const sanitizeExtractedQuestion = (raw) => {
 /** Legacy helper that calls OpenAI to assign topic IDs to extracted questions. */
 const callOpenAIForTopicAssignment = async (questions, topics) => {
   if (!config.openaiApiKey) {
-    throw new Error(
-      "OpenAI API key is not configured. Please add it to the .env file."
-    );
+    throw new Error("OpenAI API key is not configured. Please add it to the .env file.");
   }
 
   const systemPrompt = `You are an assistant that assigns course topics to questions.
@@ -575,7 +551,7 @@ Use only IDs from the provided topics. Keep the array order identical to the inp
       })),
     },
     null,
-    2
+    2,
   );
 
   const response = await axios.post(
@@ -594,7 +570,7 @@ Use only IDs from the provided topics. Keep the array order identical to the inp
         Authorization: `Bearer ${config.openaiApiKey}`,
         "Content-Type": "application/json",
       },
-    }
+    },
   );
 
   return response.data?.choices?.[0]?.message?.content ?? "[]";
@@ -685,18 +661,13 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
     return questions.map((question, index) => {
       const assignment = assignmentMap.get(index);
       const primaryTopicId =
-        assignment?.primaryTopicId ??
-        fallbackTopicId ??
-        question.primaryTopicId ??
-        null;
+        assignment?.primaryTopicId ?? fallbackTopicId ?? question.primaryTopicId ?? null;
       const candidateSecondary = Array.isArray(assignment?.secondaryTopicIds)
         ? [...assignment.secondaryTopicIds]
         : Array.isArray(question.secondaryTopicIds)
-        ? [...question.secondaryTopicIds]
-        : [];
-      const secondaryTopicIds = candidateSecondary.filter(
-        (id) => id !== primaryTopicId
-      );
+          ? [...question.secondaryTopicIds]
+          : [];
+      const secondaryTopicIds = candidateSecondary.filter((id) => id !== primaryTopicId);
 
       return {
         ...question,
@@ -711,7 +682,13 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
 };
 
 /** Public API to normalize raw upload text and run EduAI extraction for a course. */
-export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys, { cookie } = {}) => {
+export const extractQuestionsFromText = async (
+  rawText,
+  courseId,
+  model,
+  apiKeys,
+  { cookie } = {},
+) => {
   const normalized = normalizeExtractText(rawText);
   if (!normalized) {
     return [];
@@ -725,70 +702,63 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
   });
   const enrichedCourse = course ? await enrichCourseDetail(course, { cookie }) : null;
 
-  const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, { cookie });
+  const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, {
+    cookie,
+  });
   return extracted;
 };
 
 /** Invokes the selected AI provider to generate structured questions, parsing/validating results. */
 export const generateQuestions = async (prompt, provider, params) => {
+  let response;
+
+  switch (provider) {
+    case AI_PROVIDERS.GROQ:
+      response = await callGroqAPI(prompt, params);
+      break;
+    case AI_PROVIDERS.OPENAI:
+      response = await callOpenAIAPI(prompt, params);
+      break;
+    case AI_PROVIDERS.DEEPSEEK:
+      response = await callDeepSeekAPI(prompt, params);
+      break;
+    default:
+      throw new Error(`Unsupported AI provider: ${provider}`);
+  }
+
+  // Parse and validate response
   try {
-    let response;
-
-    switch (provider) {
-      case AI_PROVIDERS.GROQ:
-        response = await callGroqAPI(prompt, params);
-        break;
-      case AI_PROVIDERS.OPENAI:
-        response = await callOpenAIAPI(prompt, params);
-        break;
-      case AI_PROVIDERS.DEEPSEEK:
-        response = await callDeepSeekAPI(prompt, params);
-        break;
-      default:
-        throw new Error(`Unsupported AI provider: ${provider}`);
+    const questions = JSON.parse(response);
+    if (!Array.isArray(questions)) {
+      throw new Error("Response is not an array");
     }
 
-    // Parse and validate response
-    try {
-      const questions = JSON.parse(response);
-      if (!Array.isArray(questions)) {
-        throw new Error("Response is not an array");
-      }
+    // Validate each question
+    const validQuestions = questions.filter(
+      (q) =>
+        q.content &&
+        q.difficulty &&
+        q.bloom_level &&
+        ["easy", "medium", "hard"].includes(q.difficulty) &&
+        ["remember", "understand", "apply", "analyze", "evaluate", "create"].includes(
+          q.bloom_level,
+        ),
+    );
 
-      // Validate each question
-      const validQuestions = questions.filter(
-        (q) =>
-          q.content &&
-          q.difficulty &&
-          q.bloom_level &&
-          ["easy", "medium", "hard"].includes(q.difficulty) &&
-          [
-            "remember",
-            "understand",
-            "apply",
-            "analyze",
-            "evaluate",
-            "create",
-          ].includes(q.bloom_level)
-      );
-
-      if (validQuestions.length === 0) {
-        throw new Error("No valid questions found in response");
-      }
-
-      return validQuestions;
-    } catch (parseError) {
-      // If parsing fails, return a single question with the response text
-      return [
-        {
-          content: response,
-          difficulty: "medium",
-          bloom_level: "understand",
-        },
-      ];
+    if (validQuestions.length === 0) {
+      throw new Error("No valid questions found in response");
     }
-  } catch (error) {
-    throw error;
+
+    return validQuestions;
+  } catch (parseError) {
+    // If parsing fails, return a single question with the response text
+    return [
+      {
+        content: response,
+        difficulty: "medium",
+        bloom_level: "understand",
+      },
+    ];
   }
 };
 

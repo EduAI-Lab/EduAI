@@ -94,11 +94,11 @@ export async function updateLogRetentionPolicy(input: LogRetentionPolicyInput) {
 
   const auditRetentionDays = normalizeRetentionDays(
     input.auditRetentionDays,
-    DEFAULT_AUDIT_RETENTION_DAYS
+    DEFAULT_AUDIT_RETENTION_DAYS,
   );
   const systemRetentionDays = normalizeRetentionDays(
     input.systemRetentionDays,
-    DEFAULT_SYSTEM_RETENTION_DAYS
+    DEFAULT_SYSTEM_RETENTION_DAYS,
   );
 
   return prisma.logRetentionPolicy.update({
@@ -114,17 +114,17 @@ export async function updateLogRetentionPolicy(input: LogRetentionPolicyInput) {
  * Runs both audit and system retention cleanups using either provided or persisted windows.
  */
 export async function runConfiguredLogRetention(
-  input?: Partial<LogRetentionPolicyInput>
+  input?: Partial<LogRetentionPolicyInput>,
 ): Promise<LogRetentionPolicyCleanupResult> {
   const persistedPolicy = await getLogRetentionPolicy();
 
   const auditRetentionDays = normalizeRetentionDays(
     input?.auditRetentionDays ?? persistedPolicy.auditRetentionDays,
-    persistedPolicy.auditRetentionDays
+    persistedPolicy.auditRetentionDays,
   );
   const systemRetentionDays = normalizeRetentionDays(
     input?.systemRetentionDays ?? persistedPolicy.systemRetentionDays,
-    persistedPolicy.systemRetentionDays
+    persistedPolicy.systemRetentionDays,
   );
 
   // Running both delete queries in parallel keeps cleanup latency predictable for manual triggers.
@@ -149,7 +149,7 @@ export async function runConfiguredLogRetention(
  * Executes periodic cleanup at most once per interval and swallows failures to keep app requests resilient.
  */
 export async function runConfiguredLogRetentionIfDue(
-  intervalMs = DEFAULT_AUTO_SWEEP_INTERVAL_MS
+  intervalMs = DEFAULT_AUTO_SWEEP_INTERVAL_MS,
 ): Promise<void> {
   const safeIntervalMs = Number.isFinite(intervalMs)
     ? Math.max(60_000, Math.floor(intervalMs))

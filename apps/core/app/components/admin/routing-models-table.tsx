@@ -15,10 +15,7 @@ import {
 } from "@eduai/ui";
 
 import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
-import type {
-  RoutingModelSettingKey,
-  RoutingModelSettings,
-} from "~/lib/routing-model-settings";
+import type { RoutingModelSettingKey, RoutingModelSettings } from "~/lib/routing-model-settings";
 
 type RoutingModelsTableProps = {
   definitions: RoutingModelSettingDefinition[];
@@ -26,11 +23,7 @@ type RoutingModelsTableProps = {
   onToggle: (key: RoutingModelSettingKey, value: boolean) => Promise<void>;
 };
 
-export function RoutingModelsTable({
-  definitions,
-  settings,
-  onToggle,
-}: RoutingModelsTableProps) {
+export function RoutingModelsTable({ definitions, settings, onToggle }: RoutingModelsTableProps) {
   return (
     <div className="space-y-2">
       <div>
@@ -76,9 +69,7 @@ export function RoutingModelsTable({
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {definition.id}
-                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">{definition.id}</div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">Routing</Badge>
@@ -91,13 +82,9 @@ export function RoutingModelsTable({
                       <Switch
                         aria-label={`${enabled ? "Disable" : "Enable"} ${definition.name}`}
                         checked={enabled}
-                        onCheckedChange={(checked) =>
-                          void onToggle(definition.key, checked)
-                        }
+                        onCheckedChange={(checked) => void onToggle(definition.key, checked)}
                       />
-                      <span className="text-sm">
-                        {enabled ? "Active" : "Inactive"}
-                      </span>
+                      <span className="text-sm">{enabled ? "Active" : "Inactive"}</span>
                     </div>
                   </TableCell>
                 </TableRow>

@@ -1,7 +1,7 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
-import { baseVitestConfig } from './vitest.shared';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+import { baseVitestConfig } from "./vitest.shared";
 
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
 const base = baseVitestConfig(coreDir);
@@ -22,18 +22,24 @@ export default defineConfig({
   ...base,
   test: {
     projects: [
-      { extends: 'vitest.config.ts', test: { name: 'unit' } },
-      { extends: 'vitest.integration.config.ts', test: { name: 'integration' } },
+      { extends: "vitest.config.ts", test: { name: "unit" } },
+      { extends: "vitest.integration.config.ts", test: { name: "integration" } },
     ],
     coverage: {
-      provider: 'v8',
+      provider: "v8",
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.
       reportOnFailure: true,
-      include: ['app/**/*.{ts,tsx}'],
-      exclude: ['app/tests/**', 'app/**/*.test.{ts,tsx}', 'app/**/*.d.ts', 'app/root.tsx', 'app/routes.ts'],
+      include: ["app/**/*.{ts,tsx}"],
+      exclude: [
+        "app/tests/**",
+        "app/**/*.test.{ts,tsx}",
+        "app/**/*.d.ts",
+        "app/root.tsx",
+        "app/routes.ts",
+      ],
       // lcov.info feeds the per-PR patch-coverage warning (pr-coverage.yml); json-summary
       // feeds the scheduled full-suite report. Both stay gitignored under coverage/.
-      reporter: ['text-summary', 'json-summary', 'lcov'],
+      reporter: ["text-summary", "json-summary", "lcov"],
     },
   },
 });

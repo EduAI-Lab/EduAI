@@ -87,9 +87,7 @@ describe("MaterialPreviewDialog", () => {
     );
 
     expect(await screen.findByText("Some material text")).toBeInTheDocument();
-    expect(
-      screen.queryByText(/Preview truncated/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Preview truncated/)).not.toBeInTheDocument();
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/courses/course-1/materials/mat-1",
       expect.objectContaining({ signal: expect.anything() }),
@@ -126,9 +124,7 @@ describe("MaterialPreviewDialog", () => {
       />,
     );
 
-    expect(
-      await screen.findByText("No text content available for preview."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No text content available for preview.")).toBeInTheDocument();
   });
 
   it("surfaces the server error message on a non-ok response", async () => {

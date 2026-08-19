@@ -40,9 +40,7 @@ describe("ChatTypingIndicator — rendering", () => {
     expect(screen.getAllByText(/waiting for model/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/About 28s left/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Usually ~40s/i)).toBeInTheDocument();
-    expect(
-      container.querySelector('[data-chat-progress-percent="55"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[data-chat-progress-percent="55"]')).not.toBeNull();
     const bar = screen.getByRole("progressbar", {
       name: /response progress: waiting for model/i,
     });
@@ -123,9 +121,7 @@ describe("ChatTypingIndicator — rendering", () => {
 
     expect(screen.queryByText("AI")).not.toBeInTheDocument();
     expect(screen.getAllByText(/About 4s left/i).length).toBeGreaterThan(0);
-    expect(
-      document.querySelector('[data-chat-progress-compact="true"]'),
-    ).not.toBeNull();
+    expect(document.querySelector('[data-chat-progress-compact="true"]')).not.toBeNull();
   });
 });
 
@@ -178,11 +174,7 @@ describe("ChatTypingIndicator — local timer (#1171 review)", () => {
       vi.advanceTimersByTime(6_500);
     });
 
-    expect(
-      container.querySelector('[data-chat-progress-stage="preparing_assist"]'),
-    ).not.toBeNull();
-    expect(
-      screen.getAllByText(/Working on Assist reply/i).length,
-    ).toBeGreaterThan(0);
+    expect(container.querySelector('[data-chat-progress-stage="preparing_assist"]')).not.toBeNull();
+    expect(screen.getAllByText(/Working on Assist reply/i).length).toBeGreaterThan(0);
   });
 });
