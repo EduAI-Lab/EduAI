@@ -23,7 +23,6 @@ import {
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import type { Session } from "~/lib/auth/server";
-import { fireAndForget, logAuditAction, logSystemError } from "~/lib/logging.server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
@@ -263,6 +262,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           ? "MATERIAL_UPDATED"
           : "MATERIAL_VISIBILITY_CHANGED";
 
+      const { fireAndForget, logAuditAction } = await import("~/lib/logging.server");
       fireAndForget(
         logAuditAction({
           ...getActorContext(user ?? null),
@@ -350,8 +350,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
         data: { deletedAt: new Date(), deletedBy: user.id },
       });
 
-      fireAndForget(
-        logAuditAction({
+      const { fireAndForget: fireAndForgetDelete, logAuditAction: logAuditActionDelete } =
+        await import("~/lib/logging.server");
+      fireAndForgetDelete(
+        logAuditActionDelete({
           ...getActorContext(user ?? null),
           ...requestContext,
           actionCode: "MATERIAL_DELETED",
@@ -580,8 +582,10 @@ async function uploadMaterial(
   // processing failure is recorded separately by `failMaterial`).
   // actorUserId/actorRole come from getActorContext; email/name and the
   // material's type/size go in details so the audit line carries who-added-what.
-  fireAndForget(
-    logAuditAction({
+  const { fireAndForget: fireAndForgetUpload, logAuditAction: logAuditActionUpload } =
+    await import("~/lib/logging.server");
+  fireAndForgetUpload(
+    logAuditActionUpload({
       ...getActorContext(user ?? null),
       ...requestContext,
       actionCode: "MATERIAL_UPLOADED",
