@@ -1,7 +1,7 @@
 /**
  * Unit tests for importTaughtCoursesFromCore (AI Tutor server).
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const courseOfferingFindFirst = vi.fn();
 const courseOfferingFindMany = vi.fn();
@@ -14,6 +14,7 @@ const courseEnrollmentUpsert = vi.fn();
 const courseEnrollmentFindMany = vi.fn();
 const courseEnrollmentDeleteMany = vi.fn();
 const transaction = vi.fn();
+const syncCourseEnrollments = vi.fn();
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
@@ -46,14 +47,17 @@ vi.mock("../../src/services/topicSync.js", () => ({
 }));
 
 vi.mock("../../src/services/enrollmentSync.js", () => ({
-  syncCourseEnrollments: vi
-    .fn()
-    .mockResolvedValue({ synced: 0, created: 0, deleted: 0, errors: [] }),
+  AUTO_SYNC_TIMEOUT_MS: 3_000,
+  syncCourseEnrollments,
+  withCourseEnrollmentLock: vi.fn((courseOfferingId, operation) =>
+    operation({ courseEnrollment: { deleteMany: courseEnrollmentDeleteMany } }),
+  ),
 }));
 
 const { listEduAiCourses } = await import("../../src/services/eduaiClient.js");
 const {
   ensureOfferingAnchors,
+  importExternalCourseForUser,
   importEnrolledCoursesFromCore,
   importTaughtCoursesFromCore,
   userHasCoreTaEnrollment,
@@ -80,6 +84,44 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
     courseEnrollmentUpsert.mockResolvedValue({});
     courseEnrollmentFindMany.mockResolvedValue([]);
     courseEnrollmentDeleteMany.mockResolvedValue({ count: 0 });
+    syncCourseEnrollments.mockResolvedValue({
+      synced: 0,
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      errors: [],
+    });
+  });
+
+  it("enforces exact Core INSTRUCTOR role inside the explicit import helper", async () => {
+    await expect(
+      importExternalCourseForUser(instructor, {
+        id: "core-ta-only",
+        callerEnrollmentRole: "TA",
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "CORE_COURSE_INSTRUCTOR_REQUIRED" });
+
+    expect(courseOfferingFindFirst).not.toHaveBeenCalled();
+    expect(courseInstructorCreate).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does not return upstream error details when Core course listing fails", async () => {
+    const canary = "SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack";
+    listEduAiCourses.mockRejectedValue(new Error(canary));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await importTaughtCoursesFromCore(instructor, "session=abc");
+
+    expect(result).toEqual({
+      imported: 0,
+      skipped: 0,
+      error: "Core course listing unavailable",
+    });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
   });
 
   it("skips auto-import for students", async () => {
@@ -107,6 +149,17 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
         data: { coreOfferingId: "core-1" },
       }),
     );
+  });
+
+  it("does not promote a platform instructor who is a course TA to CourseInstructor LEAD", async () => {
+    listEduAiCourses.mockResolvedValue([
+      { id: "core-1", callerEnrollmentRole: "TA", isPublished: true },
+    ]);
+
+    const result = await importTaughtCoursesFromCore(instructor, "session=abc");
+
+    expect(result.imported).toBe(0);
+    expect(courseInstructorCreate).not.toHaveBeenCalled();
   });
 
   it("skips courses already imported by the instructor", async () => {
@@ -199,6 +252,13 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
     courseEnrollmentUpsert.mockResolvedValue({});
     courseEnrollmentFindMany.mockResolvedValue([]);
     courseEnrollmentDeleteMany.mockResolvedValue({ count: 0 });
+    syncCourseEnrollments.mockResolvedValue({
+      synced: 0,
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      errors: [],
+    });
   });
 
   it("skips enrollment mirror for instructors", async () => {
@@ -225,17 +285,31 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
     const result = await importEnrolledCoursesFromCore(student, "session=abc");
 
     expect(result.enrolled).toBe(1);
-    expect(courseEnrollmentUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          courseOfferingId_userId: {
-            courseOfferingId: 20,
-            userId: "student-1",
-          },
-        },
-        create: expect.objectContaining({ role: "STUDENT" }),
-      }),
-    );
+    expect(syncCourseEnrollments).toHaveBeenCalledWith(20, {
+      course: { id: 20, coreOfferingId: "core-1" },
+      signal: expect.any(AbortSignal),
+    });
+    expect(courseEnrollmentUpsert).not.toHaveBeenCalled();
+  });
+
+  it("bounds each authoritative mirror fetch before entering the enrollment lock", async () => {
+    listEduAiCourses.mockResolvedValue([
+      {
+        id: "core-1",
+        callerEnrollmentRole: "STUDENT",
+      },
+    ]);
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValue(new AbortController().signal);
+
+    await importEnrolledCoursesFromCore(student, "session=abc");
+
+    expect(timeoutSpy).toHaveBeenCalledWith(3_000);
+    expect(syncCourseEnrollments).toHaveBeenCalledWith(20, {
+      course: { id: 20, coreOfferingId: "core-1" },
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("does not prune enrollments when Core returns an empty course list", async () => {
@@ -287,7 +361,7 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
       where: {
         userId: "student-1",
         role: { in: ["STUDENT", "TA"] },
-        courseOfferingId: { in: [30] },
+        courseOfferingId: 30,
       },
     });
   });
@@ -325,16 +399,23 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
       { courseOfferingId: 40, role: "TA", courseOffering: { coreOfferingId: "core-old-ta" } },
       { courseOfferingId: 41, role: "TA", courseOffering: { coreOfferingId: "core-current-ta" } },
     ]);
-    courseEnrollmentDeleteMany.mockResolvedValue({ count: 2 });
+    courseEnrollmentDeleteMany.mockResolvedValue({ count: 1 });
 
     const result = await importEnrolledCoursesFromCore(student, "session=abc");
 
     expect(result.removed).toBe(2);
-    expect(courseEnrollmentDeleteMany).toHaveBeenCalledWith({
+    expect(courseEnrollmentDeleteMany).toHaveBeenNthCalledWith(1, {
       where: {
         userId: "student-1",
         role: { in: ["STUDENT", "TA"] },
-        courseOfferingId: { in: [30, 40] },
+        courseOfferingId: 30,
+      },
+    });
+    expect(courseEnrollmentDeleteMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        userId: "student-1",
+        role: { in: ["STUDENT", "TA"] },
+        courseOfferingId: 40,
       },
     });
   });

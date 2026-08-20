@@ -8,7 +8,7 @@
  *   3. global env default (RAG_SIMILARITY_THRESHOLD, falls back to 0.5)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be hoisted before any imports that pull in the modules
@@ -68,6 +68,7 @@ vi.mock("@ai-sdk/openai", () => ({
 // uses Google (the 1024 branch only accepts OpenRouter / OpenAI).
 process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-google-key";
 process.env.EMBEDDING_DIMENSION = "3";
+const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
 
 import { findRelevantContent, __resetPgvectorIterativeScanCacheForTests } from "~/lib/ai/embedding";
 
@@ -89,6 +90,9 @@ function getQueryArgs(callIndex = 0): unknown[] {
 }
 
 beforeEach(() => {
+  // Vite loads the developer's apps/core/.env during unit tests. Keep this
+  // mocked cloud-provider suite independent of a local Ollama configuration.
+  process.env.EMBEDDING_PROVIDER = "cloud";
   vi.clearAllMocks();
   __resetPgvectorIterativeScanCacheForTests();
   // First $queryRaw call in every test is the cached pgvector version check
@@ -98,6 +102,11 @@ beforeEach(() => {
   queryRawMock.mockResolvedValue([]);
   // loadEffectiveEmbeddingSettings needs a course row; null = use server-level defaults.
   courseFindUniqueMock.mockResolvedValue(null);
+});
+
+afterAll(() => {
+  if (originalEmbeddingProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
+  else process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
 });
 
 // ---------------------------------------------------------------------------

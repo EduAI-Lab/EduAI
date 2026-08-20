@@ -1048,7 +1048,8 @@ export function QuestionComposerPage() {
                 await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
                 setApiKeySaveState("saved");
                 toast("API key saved", {
-                  description: "Stored locally in your browser for this provider.",
+                  description:
+                    "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
                 });
               } catch {
                 setApiKeySaveState("error");

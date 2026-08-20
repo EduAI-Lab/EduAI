@@ -23,7 +23,7 @@ import type { CourseMaterial as UploadMaterial } from "~/components/course-mater
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
-import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
+import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -35,9 +35,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
-    include: {
-      instructor: { select: { id: true, name: true, email: true } },
-    },
+    select: COURSE_STAFF_SELECT,
   });
 
   if (!course) return redirect("/courses");
@@ -87,36 +85,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const isStudent = access === "student";
 
+  const audience = isStudent ? "student" : "staff";
+
   return {
-    course: {
-      id: course.id,
-      code: course.code,
-      name: course.name,
-      description: course.description,
-      term: course.term,
-      year: course.year,
-      isActive: course.isActive,
-      isPublished: course.isPublished,
-      ...(isStudent
-        ? {
-            hasAiConfig: courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions),
-          }
-        : { aiInstructions: course.aiInstructions }),
-      responseStyleTags: course.responseStyleTags,
-      ragTopK: course.ragTopK,
-      ragSimilarityThreshold: course.ragSimilarityThreshold,
-      instructorId: course.instructorId,
-      department: course.department,
-      startDate: course.startDate.toISOString(),
-      endDate: course.endDate?.toISOString() ?? null,
-      externalSource: course.externalSource,
-      externalId: course.externalId,
-      createdAt: course.createdAt.toISOString(),
-      updatedAt: course.updatedAt.toISOString(),
-      instructor: course.instructor ?? undefined,
-      // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
-      // role=TA); the course query no longer includes a CourseTA relation.
-    } satisfies CourseDetail,
+    course: serializeCourseForApi(course, {
+      audience,
+      detail: true,
+    }) as unknown as CourseDetail & Record<string, unknown>,
+    // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
+    // role=TA); the course query no longer includes a CourseTA relation.
     user,
     access,
     instructors,

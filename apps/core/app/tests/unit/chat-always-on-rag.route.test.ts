@@ -87,7 +87,7 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { EmbeddingRequestTimeoutError, findRelevantContent } from "~/lib/ai/embedding";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-metrics";
@@ -337,6 +337,20 @@ describe("Smart course RAG gate (#484)", () => {
       expect(streamText).not.toHaveBeenCalled();
     });
 
+    it("fails closed with RAG_RETRIEVAL_TIMEOUT when the embedding deadline expires", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(new EmbeddingRequestTimeoutError(100));
+      const res = await action(
+        makeRequest(
+          baseBody({
+            messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(503);
+      expect((await res.json()).code).toBe("RAG_RETRIEVAL_TIMEOUT");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
     it("fails closed on prefetch failure even when intent heuristics skip grounding (#225 RAG-01/RAG-02)", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
@@ -397,6 +411,7 @@ describe("Smart course RAG gate (#484)", () => {
         expect.any(Number),
         undefined,
         expect.any(Boolean),
+        { signal: expect.any(AbortSignal) },
       );
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");
       expect(lastStreamConfig().system).not.toContain("did not return relevant excerpts");
@@ -439,6 +454,25 @@ describe("Smart course RAG gate (#484)", () => {
       expect(ids[0]).toBe("stored-1");
       expect(ids).not.toContain("stored-0");
       expect(ids[19]).toBe("incoming-20");
+    });
+
+    it("does not persist incoming turns that were trimmed from the model context", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const incoming = Array.from({ length: 21 }, (_, index) => ({
+        id: `incoming-${index}`,
+        role: "user",
+        content: `turn-${index}`,
+      }));
+
+      const res = await action(makeRequest(baseBody({ messages: incoming })));
+
+      expect(res.status).toBe(200);
+      const firstPersistCall = vi.mocked(prisma.chatMessage.createMany).mock.calls[0]?.[0];
+      const persisted = Array.isArray(firstPersistCall?.data) ? firstPersistCall.data : [];
+      expect(persisted).toHaveLength(20);
+      expect(persisted.map((row) => row.messageId)).not.toContain("incoming-0");
+      expect(persisted.map((row) => row.messageId)).toContain("incoming-20");
     });
   });
 

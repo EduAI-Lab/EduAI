@@ -2,7 +2,7 @@
 //
 // #1269 review: the settings PATCH route's outer catch always returned 500,
 // even when the reEmbed=true path throws QueueUnavailableError from
-// startReEmbedJob on a DB/queue outage. That must surface as 503.
+// startOrResumeReEmbedJob on a DB/queue outage. That must surface as 503.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
@@ -33,7 +33,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 }));
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
-  startReEmbedJob: vi.fn(),
+  startOrResumeReEmbedJob: vi.fn(),
   serializeReEmbedJob: vi.fn((job: { id: string; courseId: string; status: string }) => ({
     id: job.id,
     courseId: job.courseId,
@@ -54,7 +54,7 @@ vi.mock("~/lib/request-context.server", () => ({
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
-import { startReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { action } from "~/routes/api/courses.embedding-settings.$";
 
 const course = {
@@ -88,8 +88,8 @@ function patchArgs(body: Record<string, unknown>) {
 }
 
 describe("PATCH /api/courses/:courseId/embedding-settings (#1269)", () => {
-  it("returns 503, not 500, when startReEmbedJob throws QueueUnavailableError", async () => {
-    vi.mocked(startReEmbedJob).mockRejectedValueOnce(
+  it("returns 503, not 500, when startOrResumeReEmbedJob throws QueueUnavailableError", async () => {
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(
       new QueueUnavailableError("Queue unavailable"),
     );
 
@@ -101,7 +101,7 @@ describe("PATCH /api/courses/:courseId/embedding-settings (#1269)", () => {
   });
 
   it("still returns 500 for a genuine application error", async () => {
-    vi.mocked(startReEmbedJob).mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(new Error("boom"));
 
     const res = await action(
       patchArgs({ embeddingProvider: "local", embeddingModel: "local-embedding", reEmbed: true }),
@@ -116,6 +116,6 @@ describe("PATCH /api/courses/:courseId/embedding-settings (#1269)", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(startReEmbedJob).not.toHaveBeenCalled();
+    expect(startOrResumeReEmbedJob).not.toHaveBeenCalled();
   });
 });

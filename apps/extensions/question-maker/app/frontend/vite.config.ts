@@ -8,7 +8,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 const frontendDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionRoot = path.resolve(frontendDir, "../..");
-const monorepoRoot = path.resolve(frontendDir, "../../../..");
+const monorepoRoot = path.resolve(frontendDir, "../../../../..");
 
 export default defineConfig({
   plugins: [tailwindcss(), react(), tsconfigPaths()],

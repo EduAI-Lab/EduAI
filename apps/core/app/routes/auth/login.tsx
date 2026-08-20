@@ -2,7 +2,6 @@ import { Form, useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { LoginForm } from "~/components/login-form";
-import { DemoLoginButtons } from "~/components/auth/demo-login-buttons";
 import { signInSchema, type SignInInput } from "~/lib/auth";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
@@ -12,6 +11,29 @@ import { getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server";
+
+export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
+
+function formBodyErrorResponse(error: unknown): Response | null {
+  if (error instanceof MultipartBodyTooLargeError) {
+    return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (error instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -35,11 +57,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
-  const formData = Object.fromEntries(await request.formData());
-  const redirectTo = validateRedirectUrl(String(formData.redirectTo || ""));
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, AUTH_FORM_BODY_MAX_BYTES);
+  } catch (error) {
+    const response = formBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+  const values = Object.fromEntries(formData);
+  const redirectTo = validateRedirectUrl(String(values.redirectTo || ""));
   const input = {
-    email: String(formData.email || ""),
-    password: String(formData.password || ""),
+    email: String(values.email || ""),
+    password: String(values.password || ""),
   };
 
   const result = signInSchema.safeParse(input);
@@ -225,8 +255,6 @@ export default function LoginPage() {
             allowRegistration={allowRegistration}
           />
         </Form>
-
-        <DemoLoginButtons redirectTo={redirectTo} />
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">

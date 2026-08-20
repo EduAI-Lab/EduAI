@@ -7,8 +7,18 @@ import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { QM_AUTHORIZED } from "../middleware/roles.js";
 import eduaiService from "../services/eduaiService.js";
 import { resolveAccessForCourse, LEVELS } from "../middleware/courseAccess.js";
-import { findCoursesByProjectedCode } from "../services/courseListService.js";
-import { config } from "../config/settings.js";
+import { findCoursesByProjectedCode, listCoursesForUser } from "../services/courseListService.js";
+import { prisma } from "../config/database.js";
+import { safeRequestLogFields } from "../utils/safeLogging.js";
+import {
+  qmAiUserRateLimit,
+  qmAiProviderCallAdmission,
+  validateChatAdmission,
+  validateTestApiKeyAdmission,
+  validateGenerationBudget,
+  isQmAiDeadlineError,
+  assertQmAiDeadline,
+} from "../middleware/aiAdmission.js";
 
 const router = express.Router();
 
@@ -20,34 +30,112 @@ const router = express.Router();
  * Reuses the same access helper as the per-course middleware. Returns
  * `{ course, access }` on success, or null when no accessible match exists.
  */
-async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
-  const matches = await findCoursesByProjectedCode(courseCode);
+async function resolveCourseCodeAccess(reqUser, courseCode, cookie, signal) {
+  const matches = await findCoursesByProjectedCode(courseCode, { signal });
+  assertQmAiDeadline({ signal });
   for (const course of matches) {
-    const access = await resolveAccessForCourse(reqUser, course, { cookie });
+    const access = await resolveAccessForCourse(reqUser, course, { cookie, signal });
+    assertQmAiDeadline({ signal });
     if (access && access.rank >= LEVELS.ta.rank) return { course, access };
   }
   return null;
 }
 
+/** Resolve a Core course id only through a locally anchored QM course + live access. */
+async function resolveCoreCourseAccess(reqUser, coreCourseId, cookie, signal) {
+  if (typeof coreCourseId !== "string" || !coreCourseId.trim()) return null;
+  const courses = await prisma.course.findMany({
+    where: { coreCourseId: coreCourseId.trim() },
+  });
+  for (const course of courses) {
+    const access = await resolveAccessForCourse(reqUser, course, { cookie, signal });
+    assertQmAiDeadline({ signal });
+    if (access && access.rank >= LEVELS.ta.rank) return { course, access };
+  }
+  return null;
+}
+
+/** Keep the catalog response Core-shaped without exposing unrelated QM rows. */
+function projectVisibleCourse(course) {
+  if (!course?.coreCourseId) return null;
+  return {
+    id: course.coreCourseId,
+    name: course.name ?? null,
+    code: course.code ?? null,
+    department: course.department ?? null,
+    term: course.term ?? null,
+    year: course.year ?? null,
+    description: course.description ?? null,
+    isPublished: course.isPublished ?? null,
+  };
+}
+
+function logEduaiRouteError(event, error) {
+  // Upstream messages/bodies can contain prompts, keys, or provider details.
+  console.error(event, safeRequestLogFields(error));
+}
+
 router.use(authenticateToken, requireRole(QM_AUTHORIZED));
 
+const chatAdmission = qmAiProviderCallAdmission({
+  validate: validateChatAdmission,
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+const testApiKeyAdmission = qmAiProviderCallAdmission({
+  validate: validateTestApiKeyAdmission,
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+const generationAdmission = qmAiProviderCallAdmission({
+  validate: (body) => {
+    const budget = validateGenerationBudget({
+      prompt: body?.prompt,
+      numQuestions: body?.numQuestions,
+    });
+    if (budget.status) return budget;
+
+    // generateQuestions makes one provider call and may make one bounded
+    // JSON-repair call, so reserve the complete worst-case fanout up front.
+    return { ...budget, providerCalls: 2 };
+  },
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+function sendStableAiFailure(res, error, fallbackCode, fallbackMessage) {
+  const statusCode = Number(error?.statusCode ?? error?.status);
+  if (statusCode === 429) {
+    return res.status(429).json({
+      success: false,
+      error: "AI provider rate limit exceeded; try again later",
+      code: "EDUAI_UPSTREAM_RATE_LIMITED",
+    });
+  }
+  if (isQmAiDeadlineError(error) || statusCode === 504) {
+    return res.status(504).json({
+      success: false,
+      error: "AI operation timed out; try again later",
+      code: "QM_AI_OPERATION_DEADLINE",
+    });
+  }
+  return res.status(500).json({ success: false, error: fallbackMessage, code: fallbackCode });
+}
+
 /** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course code. */
-router.post("/chat", async (req, res) => {
+router.post("/chat", qmAiUserRateLimit, chatAdmission, async (req, res) => {
   try {
-    const { messages, model, apiKeys, courseCode, streaming } = req.body;
-
-    // Validate required fields
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: "Messages array is required" });
-    }
-
-    if (!courseCode) {
-      return res.status(400).json({ error: "Course code is required" });
-    }
+    const { model, apiKeys, streaming } = req.body;
+    const { messages } = req.aiAdmission;
+    const courseCode = typeof req.body.courseCode === "string" ? req.body.courseCode.trim() : "";
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    const resolved = await resolveCourseCodeAccess(
+      req.user,
+      courseCode,
+      req.headers.cookie,
+      req.aiOperation?.signal,
+    );
     if (!resolved) {
       return res.status(403).json({
         success: false,
@@ -72,6 +160,8 @@ router.post("/chat", async (req, res) => {
       courseCode: resolvedCourseCode,
       streaming: streaming || false,
       cookie: req.headers.cookie ?? "",
+      signal: req.aiOperation?.signal,
+      deadlineAt: req.aiOperation?.deadlineAt,
     });
 
     res.json({
@@ -85,45 +175,50 @@ router.post("/chat", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("EduAI chat error:", error);
-    res.status(500).json({
-      error: "Failed to process chat request",
-      details: error.message,
-    });
+    logEduaiRouteError("EduAI chat error", error);
+    if (
+      Number(error?.statusCode ?? error?.status) === 429 ||
+      isQmAiDeadlineError(error) ||
+      Number(error?.statusCode ?? error?.status) === 504
+    ) {
+      return sendStableAiFailure(res, error, "EDUAI_CHAT_FAILED", "Failed to process chat request");
+    }
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to process chat request", code: "EDUAI_CHAT_FAILED" });
   }
 });
 
 /** POST /api/eduai/generate-questions – requests generated questions from EduAI using the provided prompt and options. */
-router.post("/generate-questions", async (req, res) => {
+router.post("/generate-questions", qmAiUserRateLimit, generationAdmission, async (req, res) => {
   try {
     const {
-      prompt,
       courseCode,
       model,
       apiKeys,
-      numQuestions,
       difficultyDistribution,
       reasoningDistribution,
       mcqRequiredChoiceCount,
     } = req.body;
 
-    // Validate required fields
-    if (!prompt || !courseCode) {
+    // Admission already validated and normalized the finite generation
+    // budget before reserving provider capacity or resolving the course.
+    const budget = req.aiAdmission;
+
+    if (!courseCode) {
       return res.status(400).json({
         error: "Prompt and course code are required",
       });
     }
 
-    const resolvedNumQuestions = parseInt(numQuestions, 10) || 5;
-    if (resolvedNumQuestions > config.maxQuestions) {
-      return res.status(400).json({
-        error: `numQuestions cannot exceed ${config.maxQuestions}`,
-      });
-    }
-
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    const resolved = await resolveCourseCodeAccess(
+      req.user,
+      courseCode,
+      req.headers.cookie,
+      req.aiOperation?.signal,
+    );
     if (!resolved) {
       return res.status(403).json({
         success: false,
@@ -146,12 +241,12 @@ router.post("/generate-questions", async (req, res) => {
         : undefined;
 
     const questions = await eduaiService.generateQuestions({
-      prompt,
+      prompt: budget.prompt,
       courseCode: resolvedCourseCode,
       courseId: coreCourseId,
       model: model || "google:gemini-2.5-flash",
       apiKeys: apiKeys || {},
-      numQuestions: resolvedNumQuestions,
+      numQuestions: budget.numQuestions,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },
       reasoningDistribution: reasoningDistribution || {
         factual: 40,
@@ -160,6 +255,8 @@ router.post("/generate-questions", async (req, res) => {
       },
       ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
       cookie: req.headers.cookie ?? "",
+      signal: req.aiOperation?.signal,
+      deadlineAt: req.aiOperation?.deadlineAt,
     });
 
     res.json({
@@ -176,34 +273,36 @@ router.post("/generate-questions", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("EduAI question generation error:", error);
-    // If the error message is from the AI (contains detailed reason), use it as the main error
-    // Otherwise, use a generic message with details
-    const errorMessage = error.message || "Failed to generate questions";
-    const isAiError = errorMessage && !errorMessage.includes("EduAI question generation failed:");
-
-    res.status(500).json({
-      error: isAiError ? errorMessage : "Failed to generate questions",
-      details: errorMessage,
-      aiErrorReason: isAiError ? errorMessage : undefined,
-    });
+    logEduaiRouteError("EduAI question generation error", error);
+    return sendStableAiFailure(
+      res,
+      error,
+      "EDUAI_GENERATION_FAILED",
+      "Failed to generate questions",
+    );
   }
 });
 
 /** GET /api/eduai/courses – fetches the list of EduAI-managed courses for selection. */
 router.get("/courses", async (req, res) => {
   try {
-    const coursesData = await eduaiService.listCourses();
+    // Never expose the service-key catalog directly. The QM list applies the
+    // caller's live Core/QM access policy (including ADMIN/unit rules).
+    const visibleCourses = await listCoursesForUser(req.user, {
+      cookie: req.headers.cookie ?? "",
+    });
+    const coursesData = visibleCourses.map(projectVisibleCourse).filter(Boolean);
 
     res.json({
       success: true,
       data: coursesData,
     });
   } catch (error) {
-    console.error("EduAI list courses error:", error);
+    logEduaiRouteError("EduAI list courses error", error);
     res.status(500).json({
+      success: false,
       error: "Failed to retrieve courses from EduAI",
-      details: error.message,
+      code: "EDUAI_COURSE_LIST_FAILED",
     });
   }
 });
@@ -212,22 +311,40 @@ router.get("/courses", async (req, res) => {
 router.get("/courses/:courseId/topics", async (req, res) => {
   try {
     const { courseId } = req.params;
+    const normalizedCourseId = typeof courseId === "string" ? courseId.trim() : "";
 
-    if (!courseId) {
+    if (!normalizedCourseId) {
       return res.status(400).json({ error: "Course ID is required" });
     }
 
-    const topics = await eduaiService.getCourseTopics(courseId);
+    // A Core id is not itself an authorization token. Resolve it through a
+    // local QM anchor and the caller's live enrollment/unit access before the
+    // service-key topic fetch; deny indistinguishably to prevent ID probing.
+    const resolved = await resolveCoreCourseAccess(
+      req.user,
+      normalizedCourseId,
+      req.headers.cookie ?? "",
+    );
+    if (!resolved) {
+      return res.status(404).json({
+        success: false,
+        error: "Course not found",
+        code: "COURSE_NOT_FOUND",
+      });
+    }
+
+    const topics = await eduaiService.getCourseTopics(normalizedCourseId);
 
     res.json({
       success: true,
       data: topics,
     });
   } catch (error) {
-    console.error("EduAI course topics error:", error);
+    logEduaiRouteError("EduAI course topics error", error);
     res.status(500).json({
+      success: false,
       error: "Failed to retrieve topics from EduAI",
-      details: error.message,
+      code: "EDUAI_COURSE_TOPICS_FAILED",
     });
   }
 });
@@ -240,12 +357,14 @@ router.get("/courses/:courseId/topics", async (req, res) => {
  * (e.g. `'ollama'` for the independent UBC status chip). Echoes back `provider`
  * so the UI can report which path is live.
  */
-router.post("/test-api-key", async (req, res) => {
+router.post("/test-api-key", qmAiUserRateLimit, testApiKeyAdmission, async (req, res) => {
   try {
     const result = await eduaiService.testApiKey({
       cookie: req.headers.cookie ?? "",
       apiKeys: req.body?.apiKeys ?? {},
-      forceProvider: req.body?.provider,
+      forceProvider: req.aiAdmission.provider || undefined,
+      signal: req.aiOperation?.signal,
+      deadlineAt: req.aiOperation?.deadlineAt,
     });
 
     if (result.success) {
@@ -256,18 +375,36 @@ router.post("/test-api-key", async (req, res) => {
         data: result.response,
       });
     } else {
-      res.status(400).json({
+      const status = Number(result.statusCode) === 429 ? 429 : 400;
+      res.status(status).json({
         success: false,
         provider: result.provider,
-        error: result.error,
-        statusCode: result.statusCode,
+        error:
+          status === 429
+            ? "AI provider rate limit exceeded; try again later"
+            : "EduAI API key test failed",
+        code: status === 429 ? "EDUAI_UPSTREAM_RATE_LIMITED" : "EDUAI_API_KEY_TEST_REJECTED",
+        statusCode: Number.isInteger(result.statusCode) ? result.statusCode : undefined,
       });
     }
   } catch (error) {
-    console.error("EduAI API key test error:", error);
+    logEduaiRouteError("EduAI API key test error", error);
+    if (
+      Number(error?.statusCode ?? error?.status) === 429 ||
+      isQmAiDeadlineError(error) ||
+      Number(error?.statusCode ?? error?.status) === 504
+    ) {
+      return sendStableAiFailure(
+        res,
+        error,
+        "EDUAI_API_KEY_TEST_FAILED",
+        "Failed to test EduAI API key",
+      );
+    }
     res.status(500).json({
+      success: false,
       error: "Failed to test EduAI API key",
-      details: error.message,
+      code: "EDUAI_API_KEY_TEST_FAILED",
     });
   }
 });
@@ -283,6 +420,13 @@ const FALLBACK_AI_MODELS = [
     modelId: "gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
     description: "Cloud model — uses your own Google API key.",
+    isActive: true,
+  },
+  {
+    provider: "opencode",
+    modelId: "deepseek-v4-flash",
+    name: "DeepSeek V4 Flash (OpenCode Go)",
+    description: "Requires your own OpenCode Go subscription and API key.",
     isActive: true,
   },
   {
@@ -315,13 +459,15 @@ router.get("/ai-models", async (req, res) => {
     );
     return res.json(FALLBACK_AI_MODELS);
   } catch (error) {
-    console.error("EduAI list models error:", error);
+    logEduaiRouteError("EduAI list models error", error);
     // Auth failures are the caller's problem to fix; surface them. For any other
     // failure, degrade gracefully to the fallback catalog rather than an empty picker.
-    if (error.status === 401 || error.status === 403) {
-      return res.status(error.status).json({
+    const status = error.status ?? error.statusCode;
+    if (status === 401 || status === 403) {
+      return res.status(status).json({
+        success: false,
         error: "Failed to retrieve AI models from EduAI",
-        details: error.message,
+        code: "EDUAI_MODELS_ACCESS_DENIED",
       });
     }
     return res.json(FALLBACK_AI_MODELS);

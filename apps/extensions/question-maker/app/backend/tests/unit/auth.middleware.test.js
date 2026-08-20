@@ -3,9 +3,14 @@
  * Mocks Core session validation and the findOrCreateUser DB call — no network or DB needed.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import express from "express";
+import request from "supertest";
+import { EventEmitter } from "node:events";
 
 process.env.CORE_URL = "http://core.test";
 process.env.EXTENSION_URL = "http://qm.test";
+process.env.EDUAI_API_KEY = "test-service-key";
+const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 const findOrCreateUser = vi.fn();
 
@@ -50,6 +55,11 @@ describe("requireAuth", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    if (originalCoreAuthTimeoutMs === undefined) {
+      delete process.env.CORE_AUTH_TIMEOUT_MS;
+    } else {
+      process.env.CORE_AUTH_TIMEOUT_MS = originalCoreAuthTimeoutMs;
+    }
   });
 
   it("calls next and sets req.user on a valid session", async () => {
@@ -72,6 +82,40 @@ describe("requireAuth", () => {
     expect(req.user).toMatchObject({ id: "u1", email: "a@b.com", role: "INSTRUCTOR" });
   });
 
+  it("does not treat normal Express POST body completion as caller cancellation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            setImmediate(() =>
+              resolve({
+                ok: true,
+                status: 200,
+                json: () =>
+                  Promise.resolve({
+                    user: { id: "u1", email: "a@b.com", name: "Alice", role: "INSTRUCTOR" },
+                  }),
+              }),
+            );
+          }),
+      ),
+    );
+
+    const app = express();
+    app.use(express.json());
+    app.post("/protected", requireAuth, (_req, res) => res.json({ ok: true }));
+
+    const response = await request(app)
+      .post("/protected")
+      .set("Cookie", "session=test")
+      .send({ provider: "opencode" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+  });
+
   it("calls findOrCreateUser to maintain the local user row", async () => {
     vi.stubGlobal(
       "fetch",
@@ -88,8 +132,8 @@ describe("requireAuth", () => {
     );
   });
 
-  it("returns 401 JSON when Core rejects the session", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  it("returns 401 JSON only when Core verifies that the session is unauthorized", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const req = makeApiReq();
     const res = makeRes();
 
@@ -102,7 +146,110 @@ describe("requireAuth", () => {
     );
   });
 
-  it("returns 401 JSON when fetch throws (Core unreachable)", async () => {
+  it("preserves a verified Core 403 response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Authentication forbidden",
+    });
+  });
+
+  it("returns 503 JSON when Core session validation responds with a 5xx", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Authentication service unavailable",
+    });
+    expect(findOrCreateUser).not.toHaveBeenCalled();
+  });
+
+  it("returns 504 when Core session validation never responds before the configured deadline", async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = "5";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+    const req = makeApiReq();
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(504);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Authentication service timed out",
+    });
+  });
+
+  it("composes an available caller cancellation signal with the deadline", async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = "1000";
+    const caller = new AbortController();
+    let forwardedSignal;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, { signal }) => {
+        forwardedSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          caller.abort();
+        });
+      }),
+    );
+    const req = makeApiReq({ signal: caller.signal });
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(forwardedSignal).not.toBe(caller.signal);
+    expect(forwardedSignal.aborted).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(401);
+  });
+
+  it("cancels Core authentication when an Express request is actually aborted", async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = "1000";
+    const req = Object.assign(new EventEmitter(), makeApiReq());
+    let forwardedSignal;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, { signal }) => {
+        forwardedSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          setImmediate(() => req.emit("aborted"));
+        });
+      }),
+    );
+    const res = makeRes();
+
+    await requireAuth(req, res, next);
+
+    expect(forwardedSignal.aborted).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(401);
+  });
+
+  it("returns 503 JSON when fetch throws (Core unreachable)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
     const req = makeApiReq();
     const res = makeRes();
@@ -110,7 +257,11 @@ describe("requireAuth", () => {
     await requireAuth(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Authentication service unavailable",
+    });
   });
 
   // #225 edge-case audit SEAM-01 / #1197 fix: a Core 429 (IP rate limit) is
@@ -172,9 +323,62 @@ describe("requireAuth", () => {
       `${config.coreUrl}/api/sessions/validate`,
       expect.objectContaining({
         method: "POST",
-        headers: { cookie: "session=tok123" },
+        headers: expect.objectContaining({ cookie: "session=tok123" }),
       }),
     );
+  });
+
+  it("forwards verified service auth and isolates clients by trusted rightmost XFF", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await requireAuth(
+      makeApiReq({
+        headers: { cookie: "session=a", "x-forwarded-for": "203.0.113.99, 198.51.100.20" },
+        socket: { remoteAddress: "127.0.0.1" },
+      }),
+      makeRes(),
+      next,
+    );
+    await requireAuth(
+      makeApiReq({
+        headers: { cookie: "session=b", "x-forwarded-for": "203.0.113.99, 198.51.100.21" },
+        socket: { remoteAddress: "127.0.0.1" },
+      }),
+      makeRes(),
+      next,
+    );
+
+    expect(mockFetch.mock.calls.map(([, init]) => init.headers)).toEqual([
+      expect.objectContaining({
+        authorization: "Bearer test-service-key",
+        "x-eduai-client-ip": "198.51.100.20",
+      }),
+      expect.objectContaining({
+        authorization: "Bearer test-service-key",
+        "x-eduai-client-ip": "198.51.100.21",
+      }),
+    ]);
+  });
+
+  it("falls back to the socket peer when trusted XFF is missing", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await requireAuth(makeApiReq({ socket: { remoteAddress: "192.0.2.54" } }), makeRes(), next);
+
+    expect(mockFetch.mock.calls[0][1].headers).toMatchObject({
+      authorization: "Bearer test-service-key",
+      "x-eduai-client-ip": "192.0.2.54",
+    });
   });
 
   it("normalizes an unrecognized role to STUDENT", async () => {

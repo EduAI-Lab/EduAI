@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
+
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi
+      .fn()
+      .mockResolvedValue({ allowed: true, state: "allowed", role: "INSTRUCTOR" }),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,
@@ -27,6 +38,14 @@ describe("Topics routes", () => {
 
   beforeEach(async () => {
     await truncateAll();
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+        const assigned = course?.instructors?.some((entry) => entry.userId === userId);
+        const role = assigned && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : null;
+        const allowed = allowedRoles.includes(role);
+        return { allowed, state: allowed ? "allowed" : "denied", role };
+      },
+    );
     listEduAiCourseTopics.mockReset();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
@@ -44,6 +63,32 @@ describe("Topics routes", () => {
   // ── GET /api/courses/:courseId/topics ──────────────────────────────
 
   describe("GET /api/courses/:courseId/topics", () => {
+    it("denies a stale local instructor demoted in Core", async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "denied",
+        role: "TA",
+      });
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.data).toBeUndefined();
+    });
+
+    it("fails closed when live instructor authorization is unavailable", async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "unavailable",
+        role: null,
+      });
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("COURSE_AUTH_UNAVAILABLE");
+    });
+
     it("returns topics for an authorized member", async () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
@@ -140,7 +185,7 @@ describe("Topics routes", () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/db down/i);
+      expect(res.body.error).toBe("Internal server error");
       tx.mockRestore();
     });
   });
@@ -454,7 +499,7 @@ describe("Topics routes", () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/fromTopicId does not belong/i);
+      expect(res.body.error).toBe("Internal server error");
 
       // Whole batch rolls back, so the first pair's work is undone too.
       const stillThere = await prisma.topic.findUnique({ where: { id: topicA.id } });
@@ -478,7 +523,7 @@ describe("Topics routes", () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/toTopicId does not belong/i);
+      expect(res.body.error).toBe("Internal server error");
     });
 
     it("follows a chain of pairs so activities land on the final topic", async () => {
@@ -583,7 +628,7 @@ describe("Topics routes", () => {
         .send({ mappings: [{ fromTopicId: otherCourse.topic.id, toTopicId: topicB.id }] });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/fromTopicId does not belong/i);
+      expect(res.body.error).toBe("Internal server error");
     });
 
     it("returns 500 when toTopicId does not belong to this course", async () => {
@@ -594,7 +639,7 @@ describe("Topics routes", () => {
         .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: otherCourse.topic.id }] });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toMatch(/toTopicId does not belong/i);
+      expect(res.body.error).toBe("Internal server error");
     });
   });
 
@@ -644,7 +689,7 @@ describe("Topics routes", () => {
       const res = await request(app).post(`/api/courses/${seed.course.id}/topics/sync`).send({});
 
       expect(res.status).toBe(503);
-      expect(res.body.error).toMatch(/core down/i);
+      expect(res.body.error).toBe("Failed to sync topics from EduAI");
     });
 
     it("falls back to a generic message when the sync failure carries none", async () => {

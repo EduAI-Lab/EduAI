@@ -2,6 +2,10 @@
   "name": "ai-tutor-server",
   "version": "1.0.0",
   "description": "",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "vitest run && vitest run --config vitest.integration.config.js",
@@ -20,13 +24,9 @@
     "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
   "dependencies": {
-    "@prisma/client": "^6.19.3",
     "@eduai/types": "*",
+    "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
@@ -35,7 +35,8 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.7",
-    "prisma": "^6.16.1",
+    "oxlint": "^1.78.0",
+    "prisma": "6.19.3",
     "supertest": "^7.2.2",
     "vitest": "^4.1.9"
   }

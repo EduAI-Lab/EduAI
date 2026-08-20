@@ -30,6 +30,11 @@ import {
   removeQuestionFromBank,
   ensureDefaultBank,
 } from "../services/questionBankService.js";
+import {
+  safeRequestLogFields,
+  safeStatusCode,
+  toStableUpstreamError,
+} from "../utils/safeLogging.js";
 
 const router = express.Router();
 
@@ -38,6 +43,27 @@ const courseIdFromParam = (req) => req.params.id;
 
 /** Active Core enrollment roles that may materialize a QM course anchor (#1114). */
 const TEACHING_ENROLLMENT_ROLES = new Set(["INSTRUCTOR", "TA"]);
+
+const PUBLIC_CORE_ERROR_RE = /^CORE_[A-Z0-9_]{1,63}$/;
+
+/** Converts a Core failure into stable response text and allowlisted log metadata. */
+function stableCoreFailure(error, fallbackMessage) {
+  const statusCode = safeStatusCode(error);
+  const status = statusCode !== null && statusCode >= 400 ? statusCode : 502;
+  const publicCode =
+    error?.isPublic === true &&
+    typeof error?.code === "string" &&
+    PUBLIC_CORE_ERROR_RE.test(error.code)
+      ? error.code
+      : null;
+  const stable = toStableUpstreamError(error, { serviceName: "Core API" });
+
+  return {
+    status,
+    message: publicCode || stable.message || fallbackMessage,
+    logFields: safeRequestLogFields(error),
+  };
+}
 
 // The Core course mirror (`importTaughtCoursesFromCore`) is a background side
 // effect, not a dependency of the list response: it fetches Core's cookie-
@@ -95,10 +121,11 @@ router.post("/", authenticateToken, requireRole(INSTRUCTORS), async (req, res, n
     try {
       linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
     } catch (err) {
-      const status = Number.isInteger(err?.status) ? err.status : 502;
-      return res.status(status).json({
+      const failure = stableCoreFailure(err, "Failed to verify Core course access");
+      logger.warn(failure.logFields, "Core course access check failed");
+      return res.status(failure.status).json({
         success: false,
-        error: err.message || "Failed to verify Core course access",
+        error: failure.message,
       });
     }
 
@@ -473,15 +500,31 @@ router.patch(
 
       const course = req.qmCourse;
 
+      // A linked QM course is a local anchor for the Core course that owns all
+      // of its topics/questions/assessments. Relinking it would leave that
+      // content under the old Core identity while reads and future writes use a
+      // different one. Keep the anchor immutable once set; importantly, reject
+      // before looking up the requested target so an unauthorized target cannot
+      // be probed through this endpoint. Re-sending the existing id remains the
+      // idempotent path below.
+      if (course.coreCourseId && course.coreCourseId !== coreCourseId) {
+        return res.status(409).json({
+          success: false,
+          error: "Core course link is immutable",
+          code: "CORE_COURSE_LINK_IMMUTABLE",
+        });
+      }
+
       const cookie = req.headers.cookie ?? "";
       let linkable = false;
       try {
         linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
       } catch (err) {
-        const status = Number.isInteger(err?.status) ? err.status : 502;
-        return res.status(status).json({
+        const failure = stableCoreFailure(err, "Failed to verify Core course access");
+        logger.warn(failure.logFields, "Core course access check failed");
+        return res.status(failure.status).json({
           success: false,
-          error: err.message || "Failed to verify Core course access",
+          error: failure.message,
         });
       }
 
@@ -522,9 +565,11 @@ router.post(
       try {
         synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
       } catch (err) {
-        return res.status(502).json({
+        const failure = stableCoreFailure(err, "Core request failed");
+        logger.warn(failure.logFields, "Core topic sync failed");
+        return res.status(failure.status).json({
           success: false,
-          error: err.message || "Core request failed",
+          error: failure.message,
         });
       }
 

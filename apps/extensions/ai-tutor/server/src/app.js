@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { requireAuth } from "./middleware/auth.js";
+import { requireSameOriginMutation } from "./middleware/csrf.js";
 
 import authRoutes from "./routes/authentication.js";
 import courseRoutes from "./routes/courses.js";
@@ -52,6 +53,7 @@ export async function createApp(options = {}) {
   const app = express();
 
   app.use(cors(corsOptions));
+  app.use("/api", requireSameOriginMutation);
 
   // JSON parser for our own routes
   app.use(express.json());
@@ -61,8 +63,8 @@ export async function createApp(options = {}) {
     try {
       await prisma.$queryRaw`SELECT 1`;
       res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e) });
+    } catch {
+      res.status(503).json({ ok: false, error: "Database unavailable" });
     }
   });
 

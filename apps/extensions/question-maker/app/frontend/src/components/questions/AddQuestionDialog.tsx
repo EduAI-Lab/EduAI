@@ -2076,7 +2076,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           setProviderApiKey("");
           setApiKeySaveState("saved");
           toast("API key saved", {
-            description: "Stored locally in your browser for this provider.",
+            description:
+              "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
           });
           // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
           void eduaiStatus.refresh();

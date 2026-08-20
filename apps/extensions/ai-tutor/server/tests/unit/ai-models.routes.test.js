@@ -3,19 +3,22 @@ import request from "supertest";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const mockGetAiModelPolicyState = vi.fn();
+const originalValidationTimeoutMs = process.env.AI_KEY_VALIDATION_TIMEOUT_MS;
+const originalMaxTrackedUsers = process.env.AI_KEY_VALIDATION_MAX_TRACKED_USERS;
 
 vi.mock("../../src/services/aiModelPolicy.js", () => ({
   getAiModelPolicyState: (...args) => mockGetAiModelPolicyState(...args),
 }));
 
-const { default: aiModelsRoutes } = await import("../../src/routes/ai-models.js");
+const { default: aiModelsRoutes, __resetKeyValidationStateForTests } =
+  await import("../../src/routes/ai-models.js");
 
-function buildApp({ role } = {}) {
+function buildApp({ role, id = "u1" } = {}) {
   const app = express();
   app.use(express.json());
   if (role) {
     app.use((req, _res, next) => {
-      req.user = { role, id: "u1" };
+      req.user = { role, id };
       next();
     });
   }
@@ -25,10 +28,21 @@ function buildApp({ role } = {}) {
 
 beforeEach(() => {
   mockGetAiModelPolicyState.mockReset();
+  __resetKeyValidationStateForTests();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (originalValidationTimeoutMs === undefined) {
+    delete process.env.AI_KEY_VALIDATION_TIMEOUT_MS;
+  } else {
+    process.env.AI_KEY_VALIDATION_TIMEOUT_MS = originalValidationTimeoutMs;
+  }
+  if (originalMaxTrackedUsers === undefined) {
+    delete process.env.AI_KEY_VALIDATION_MAX_TRACKED_USERS;
+  } else {
+    process.env.AI_KEY_VALIDATION_MAX_TRACKED_USERS = originalMaxTrackedUsers;
+  }
 });
 
 describe("GET /api/ai-models", () => {
@@ -44,7 +58,7 @@ describe("GET /api/ai-models", () => {
       availableModels,
       availableModelsError: null,
     });
-    const app = buildApp({ role: "STUDENT" });
+    const app = buildApp({ role: "STUDENT", id: "timeout-user" });
 
     const res = await request(app).get("/api/ai-models");
 
@@ -131,15 +145,21 @@ describe("POST /api/ai-models/validate-key", () => {
   });
 
   it("returns valid: true for google when the upstream responds ok", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({}) });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
     const app = buildApp();
+    const apiKey = "gemini-url-canary-secret";
 
     const res = await request(app)
       .post("/api/ai-models/validate-key")
-      .send({ provider: "google", apiKey: "k" });
+      .send({ provider: "google", apiKey });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ valid: true });
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).not.toContain(apiKey);
+    expect(options?.headers).toMatchObject({ "x-goog-api-key": apiKey });
   });
 
   it("returns 200 valid: false for google when the upstream responds 4xx", async () => {
@@ -214,7 +234,20 @@ describe("POST /api/ai-models/validate-key", () => {
       .send({ provider: "anthropic", apiKey: "k" });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ valid: false, error: "Unsupported provider: anthropic" });
+    expect(res.body).toEqual({ valid: false, error: "Unsupported provider" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized API key without forwarding it", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const app = buildApp({ role: "STUDENT", id: "oversized-key-user" });
+
+    const res = await request(app)
+      .post("/api/ai-models/validate-key")
+      .send({ provider: "google", apiKey: "k".repeat(513) });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ valid: false, error: "Invalid provider or apiKey" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -228,5 +261,94 @@ describe("POST /api/ai-models/validate-key", () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ valid: false, error: "Validation request failed" });
+  });
+
+  it("returns 504 when provider validation exceeds its deadline", async () => {
+    process.env.AI_KEY_VALIDATION_TIMEOUT_MS = "5";
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, options = {}) => {
+      if (!options.signal) return Promise.reject(new Error("missing validation deadline"));
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+          once: true,
+        });
+      });
+    });
+    const app = buildApp({ role: "STUDENT", id: "rate-limit-user" });
+
+    const res = await request(app)
+      .post("/api/ai-models/validate-key")
+      .send({ provider: "google", apiKey: "k" });
+
+    expect(res.status).toBe(504);
+    expect(res.body).toEqual({ valid: false, error: "Validation request timed out" });
+  });
+
+  it("rate limits repeated validation attempts by authenticated user", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({}) });
+    const app = buildApp({ role: "STUDENT" });
+
+    const responses = [];
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      responses.push(
+        await request(app)
+          .post("/api/ai-models/validate-key")
+          .send({ provider: "google", apiKey: "k" }),
+      );
+    }
+
+    expect(responses.slice(0, 10).every((response) => response.status === 200)).toBe(true);
+    expect(responses[10].status).toBe(429);
+    expect(responses[10].body).toEqual({
+      valid: false,
+      error: "Too many validation attempts",
+    });
+  });
+
+  it("admits at most two concurrent validations per authenticated user", async () => {
+    const providerResolvers = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          providerResolvers.push(resolve);
+        }),
+    );
+    const app = buildApp({ role: "STUDENT", id: "concurrency-user" });
+    const body = { provider: "google", apiKey: "k" };
+
+    const first = Promise.resolve(request(app).post("/api/ai-models/validate-key").send(body));
+    const second = Promise.resolve(request(app).post("/api/ai-models/validate-key").send(body));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const rejected = await request(app).post("/api/ai-models/validate-key").send(body);
+    expect(rejected.status).toBe(429);
+    expect(rejected.body).toEqual({ valid: false, error: "Too many validation attempts" });
+
+    for (const resolveProvider of providerResolvers) {
+      resolveProvider({ ok: true, json: async () => ({}) });
+    }
+    const completed = await Promise.all([first, second]);
+    expect(completed.map((response) => response.status)).toEqual([200, 200]);
+  });
+
+  it("bounds the number of user identities retained by the in-memory limiter", async () => {
+    process.env.AI_KEY_VALIDATION_MAX_TRACKED_USERS = "2";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+
+    for (const id of ["bounded-user-1", "bounded-user-2"]) {
+      const response = await request(buildApp({ role: "STUDENT", id }))
+        .post("/api/ai-models/validate-key")
+        .send({ provider: "google", apiKey: "k" });
+      expect(response.status).toBe(200);
+    }
+
+    const overflow = await request(buildApp({ role: "STUDENT", id: "bounded-user-3" }))
+      .post("/api/ai-models/validate-key")
+      .send({ provider: "google", apiKey: "k" });
+
+    expect(overflow.status).toBe(503);
+    expect(overflow.body).toEqual({ valid: false, error: "Validation service busy" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
