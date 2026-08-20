@@ -15,12 +15,14 @@ const {
   mockFindCoursesByProjectedCode,
   mockListCoursesForUser,
   mockCourseFindMany,
+  mockCourseFindUnique,
   mockEnrollments,
   eduaiService,
 } = vi.hoisted(() => ({
   mockFindCoursesByProjectedCode: vi.fn(),
   mockListCoursesForUser: vi.fn(),
   mockCourseFindMany: vi.fn(),
+  mockCourseFindUnique: vi.fn(),
   mockEnrollments: vi.fn(),
   eduaiService: {
     chat: vi.fn(),
@@ -58,7 +60,11 @@ vi.mock("../../src/services/courseListService.js", () => ({
 
 vi.mock("../../src/config/database.js", () => ({
   prisma: {
-    course: { findMany: mockCourseFindMany },
+    course: {
+      findMany: (...args) => mockCourseFindMany(...args),
+      findUnique: (...args) => mockCourseFindUnique(...args),
+      findFirst: (...args) => mockCourseFindUnique(...args),
+    },
   },
 }));
 
@@ -100,10 +106,27 @@ function accessibleCourse(overrides = {}) {
   return course;
 }
 
+/** Same course, loaded by QM courseId via resolveCourseAccessWithCourse (#1362). */
+function accessibleCourseById(overrides = {}) {
+  const course = {
+    id: 1,
+    userId: INSTRUCTOR.id,
+    coreCourseId: "cuid-core-course",
+    code: null,
+    ...overrides,
+  };
+  mockCourseFindUnique.mockResolvedValue(course);
+  mockEnrollments.mockResolvedValue({
+    enrollments: [{ studentId: INSTRUCTOR.id, role: "INSTRUCTOR", isActive: true }],
+  });
+  return course;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockListCoursesForUser.mockResolvedValue([]);
   mockCourseFindMany.mockResolvedValue([]);
+  mockCourseFindUnique.mockResolvedValue(null);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -237,6 +260,56 @@ describe("POST /api/eduai/chat", () => {
     );
     expect(coreFetch.mock.calls.some(([, options]) => options?.signal?.aborted)).toBe(true);
     expect(eduaiService.chat).not.toHaveBeenCalled();
+  });
+
+  it("authorizes via courseId without courseCode (#1362)", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourseById();
+    eduaiService.chat.mockResolvedValue({ reply: "hello" });
+
+    const res = await request(app)
+      .post("/api/eduai/chat")
+      .set("Cookie", "session=v")
+      .send({ messages: [{ role: "user", content: "hi" }], courseId: 1 });
+
+    expect(res.status).toBe(200);
+    expect(mockFindCoursesByProjectedCode).not.toHaveBeenCalled();
+    expect(eduaiService.chat).toHaveBeenCalledWith(
+      expect.objectContaining({ courseId: "cuid-core-course" }),
+    );
+  });
+
+  it("prefers courseId over courseCode when both are sent (#1362)", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourseById();
+    eduaiService.chat.mockResolvedValue({ reply: "hello" });
+
+    const res = await request(app)
+      .post("/api/eduai/chat")
+      .set("Cookie", "session=v")
+      .send({ messages: [{ role: "user", content: "hi" }], courseId: 1, courseCode: "COSC 101" });
+
+    expect(res.status).toBe(200);
+    expect(mockFindCoursesByProjectedCode).not.toHaveBeenCalled();
+  });
+
+  it("returns Insufficient course access when courseId is denied (#1362)", async () => {
+    authAs(INSTRUCTOR);
+    mockCourseFindUnique.mockResolvedValue({
+      id: 1,
+      userId: "other",
+      coreCourseId: "cuid-core-course",
+    });
+    mockEnrollments.mockResolvedValue({ enrollments: [] });
+
+    const res = await request(app)
+      .post("/api/eduai/chat")
+      .set("Cookie", "session=v")
+      .send({ messages: [{ role: "user", content: "hi" }], courseId: 1 });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/Insufficient course access/i);
+    expect(res.body.code).toBeUndefined();
   });
 });
 
@@ -399,6 +472,56 @@ describe("POST /api/eduai/generate-questions", () => {
     );
     expect(coreFetch.mock.calls.some(([, options]) => options?.signal?.aborted)).toBe(true);
     expect(eduaiService.generateQuestions).not.toHaveBeenCalled();
+  });
+
+  it("authorizes via courseId without courseCode (#1362)", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourseById();
+    eduaiService.generateQuestions.mockResolvedValue([{ id: "q1" }]);
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseId: 1 });
+
+    expect(res.status).toBe(200);
+    expect(mockFindCoursesByProjectedCode).not.toHaveBeenCalled();
+    expect(eduaiService.generateQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ courseId: "cuid-core-course" }),
+    );
+  });
+
+  it("prefers courseId over courseCode when both are sent (#1362)", async () => {
+    authAs(INSTRUCTOR);
+    accessibleCourseById();
+    eduaiService.generateQuestions.mockResolvedValue([{ id: "q1" }]);
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseId: 1, courseCode: "COSC 101" });
+
+    expect(res.status).toBe(200);
+    expect(mockFindCoursesByProjectedCode).not.toHaveBeenCalled();
+  });
+
+  it("returns Insufficient course access when courseId is denied (#1362)", async () => {
+    authAs(INSTRUCTOR);
+    mockCourseFindUnique.mockResolvedValue({
+      id: 1,
+      userId: "other",
+      coreCourseId: "cuid-core-course",
+    });
+    mockEnrollments.mockResolvedValue({ enrollments: [] });
+
+    const res = await request(app)
+      .post("/api/eduai/generate-questions")
+      .set("Cookie", "session=v")
+      .send({ prompt: "x", courseId: 1 });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/Insufficient course access/i);
+    expect(res.body.code).toBeUndefined();
   });
 });
 

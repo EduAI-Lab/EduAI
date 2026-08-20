@@ -6,7 +6,11 @@ import express from "express";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
 import { QM_AUTHORIZED } from "../middleware/roles.js";
 import eduaiService from "../services/eduaiService.js";
-import { resolveAccessForCourse, LEVELS } from "../middleware/courseAccess.js";
+import {
+  resolveAccessForCourse,
+  resolveCourseAccessWithCourse,
+  LEVELS,
+} from "../middleware/courseAccess.js";
 import { findCoursesByProjectedCode, listCoursesForUser } from "../services/courseListService.js";
 import { prisma } from "../config/database.js";
 import { safeRequestLogFields } from "../utils/safeLogging.js";
@@ -55,6 +59,75 @@ async function resolveCoreCourseAccess(reqUser, coreCourseId, cookie, signal) {
   return null;
 }
 
+/**
+ * Prefer QM `courseId` + `resolveCourseAccessWithCourse` (same gate as the rest
+ * of QM). Fall back to `courseCode` lookup when only a code is supplied (#1362).
+ *
+ * @returns {{ course: object, access: object } | { error: { status: number, body: object } }}
+ */
+async function resolveEduAiCourse(req, signal) {
+  const { courseId, courseCode } = req.body ?? {};
+  const hasCourseId = courseId !== null && courseId !== undefined && String(courseId).trim() !== "";
+  const hasCourseCode = typeof courseCode === "string" && courseCode.trim() !== "";
+
+  if (hasCourseId) {
+    const { course, access } = await resolveCourseAccessWithCourse(
+      req.user,
+      String(courseId).trim(),
+      {
+        cookie: req.headers.cookie,
+        signal,
+      },
+    );
+    assertQmAiDeadline({ signal });
+    if (!course) {
+      return { error: { status: 404, body: { success: false, error: "Course not found" } } };
+    }
+    if (!access || access.rank < LEVELS.ta.rank) {
+      return {
+        error: { status: 403, body: { success: false, error: "Insufficient course access" } },
+      };
+    }
+    return { course, access };
+  }
+
+  if (hasCourseCode) {
+    const resolved = await resolveCourseCodeAccess(
+      req.user,
+      courseCode,
+      req.headers.cookie,
+      signal,
+    );
+    if (!resolved) {
+      return {
+        error: {
+          status: 403,
+          body: {
+            success: false,
+            error: "You do not have access to this course",
+            code: "COURSE_ACCESS_DENIED",
+          },
+        },
+      };
+    }
+    return resolved;
+  }
+
+  return {
+    error: { status: 400, body: { error: "Course id or course code is required" } },
+  };
+}
+
+function resolvedCourseFields(qmCourse, fallbackCourseCode) {
+  const resolvedCourseCode =
+    (qmCourse.code && String(qmCourse.code).trim()) || fallbackCourseCode || "";
+  const coreCourseId =
+    typeof qmCourse.coreCourseId === "string" && qmCourse.coreCourseId.trim()
+      ? qmCourse.coreCourseId.trim()
+      : undefined;
+  return { resolvedCourseCode, coreCourseId };
+}
+
 /** Keep the catalog response Core-shaped without exposing unrelated QM rows. */
 function projectVisibleCourse(course) {
   if (!course?.coreCourseId) return null;
@@ -93,7 +166,32 @@ const generationAdmission = qmAiProviderCallAdmission({
       prompt: body?.prompt,
       numQuestions: body?.numQuestions,
     });
-    if (budget.status) return budget;
+    if (budget.status) {
+      // Prompt errors win over missing identifier (#1362 validation order)
+      if (budget.code === "QM_PROMPT_REQUIRED" || budget.code === "QM_PROMPT_TOO_LARGE") {
+        return budget;
+      }
+      const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
+      const hasCourseCode = typeof body?.courseCode === "string" && body.courseCode.trim() !== "";
+      if (!hasCourseId && !hasCourseCode) {
+        return {
+          status: 400,
+          code: "QM_COURSE_REQUIRED",
+          message: "Course id or course code is required",
+        };
+      }
+      return budget;
+    }
+
+    const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
+    const hasCourseCode = typeof body?.courseCode === "string" && body.courseCode.trim() !== "";
+    if (!hasCourseId && !hasCourseCode) {
+      return {
+        status: 400,
+        code: "QM_COURSE_REQUIRED",
+        message: "Course id or course code is required",
+      };
+    }
 
     // generateQuestions makes one provider call and may make one bounded
     // JSON-repair call, so reserve the complete worst-case fanout up front.
@@ -121,35 +219,21 @@ function sendStableAiFailure(res, error, fallbackCode, fallbackMessage) {
   return res.status(500).json({ success: false, error: fallbackMessage, code: fallbackCode });
 }
 
-/** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course code. */
+/** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course. */
 router.post("/chat", qmAiUserRateLimit, chatAdmission, async (req, res) => {
   try {
     const { model, apiKeys, streaming } = req.body;
     const { messages } = req.aiAdmission;
-    const courseCode = typeof req.body.courseCode === "string" ? req.body.courseCode.trim() : "";
+    const fallbackCourseCode =
+      typeof req.body.courseCode === "string" ? req.body.courseCode.trim() : "";
 
-    // Confirm the caller actually has access to this course in QM before
-    // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const resolved = await resolveCourseCodeAccess(
-      req.user,
-      courseCode,
-      req.headers.cookie,
-      req.aiOperation?.signal,
-    );
-    if (!resolved) {
-      return res.status(403).json({
-        success: false,
-        error: "You do not have access to this course",
-        code: "COURSE_ACCESS_DENIED",
-      });
+    const resolved = await resolveEduAiCourse(req, req.aiOperation?.signal);
+    if (resolved.error) {
+      return res.status(resolved.error.status).json(resolved.error.body);
     }
 
     const { course: qmCourse } = resolved;
-    const resolvedCourseCode = (qmCourse.code && qmCourse.code.trim()) || courseCode;
-    const coreCourseId =
-      typeof qmCourse.coreCourseId === "string" && qmCourse.coreCourseId.trim()
-        ? qmCourse.coreCourseId.trim()
-        : undefined;
+    const { resolvedCourseCode, coreCourseId } = resolvedCourseFields(qmCourse, fallbackCourseCode);
 
     // Call EduAI service — prefer Core courseId when the QM course is linked.
     const response = await eduaiService.chat({
@@ -204,35 +288,15 @@ router.post("/generate-questions", qmAiUserRateLimit, generationAdmission, async
     // Admission already validated and normalized the finite generation
     // budget before reserving provider capacity or resolving the course.
     const budget = req.aiAdmission;
+    const fallbackCourseCode = typeof courseCode === "string" ? courseCode.trim() : "";
 
-    if (!courseCode) {
-      return res.status(400).json({
-        error: "Prompt and course code are required",
-      });
-    }
-
-    // Confirm the caller actually has access to this course in QM before
-    // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const resolved = await resolveCourseCodeAccess(
-      req.user,
-      courseCode,
-      req.headers.cookie,
-      req.aiOperation?.signal,
-    );
-    if (!resolved) {
-      return res.status(403).json({
-        success: false,
-        error: "You do not have access to this course",
-        code: "COURSE_ACCESS_DENIED",
-      });
+    const resolved = await resolveEduAiCourse(req, req.aiOperation?.signal);
+    if (resolved.error) {
+      return res.status(resolved.error.status).json(resolved.error.body);
     }
 
     const { course: qmCourse } = resolved;
-    const resolvedCourseCode = (qmCourse.code && qmCourse.code.trim()) || courseCode;
-    const coreCourseId =
-      typeof qmCourse.coreCourseId === "string" && qmCourse.coreCourseId.trim()
-        ? qmCourse.coreCourseId.trim()
-        : undefined;
+    const { resolvedCourseCode, coreCourseId } = resolvedCourseFields(qmCourse, fallbackCourseCode);
 
     // Call EduAI service to generate questions
     const mcqN =
@@ -324,6 +388,7 @@ router.get("/courses/:courseId/topics", async (req, res) => {
       req.user,
       normalizedCourseId,
       req.headers.cookie ?? "",
+      req.aiOperation?.signal,
     );
     if (!resolved) {
       return res.status(404).json({

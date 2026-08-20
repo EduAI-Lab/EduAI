@@ -15,7 +15,11 @@ import {
   listCoursesFromCore,
   searchCoursesFromCore,
 } from "./coreApiService.js";
-import { dedupeCoursesByCoreId, normalizeCourseCode } from "./courseCodeUtils.js";
+import {
+  dedupeCoursesByCoreId,
+  normalizeCourseCode,
+  courseCodeLookupCandidates,
+} from "./courseCodeUtils.js";
 import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
 import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
@@ -613,8 +617,12 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
  * (`routes/eduai.js`) to authorize a client-supplied course code against a
  * real course — `code` is Core-owned and no longer stored locally (#1072 §4
  * step 10), so matching must read through Core rather than querying the
- * dropped `courses.code` column. One Core-side `?search=` call (#1125)
- * regardless of row count (no N+1, mirrors `listCoursesForUser`).
+ * dropped `courses.code` column.
+ *
+ * Core `?search=` is literal contains (#1125 / #1362), so this issues one
+ * search per whitespace/compact candidate from `courseCodeLookupCandidates`
+ * (not a single query) and unions the results before the exact normalized
+ * match filter. Still no per-row Core fan-out.
  *
  * Returns raw `Course` model instances (not enriched rows) so callers can
  * pass them straight to `resolveAccessForCourse`.
@@ -623,14 +631,21 @@ export async function findCoursesByProjectedCode(codeQuery, { signal } = {}) {
   const target = normalizeCourseCode(codeQuery);
   if (!target) return [];
 
+  const candidates = courseCodeLookupCandidates(codeQuery);
   let coreById = new Map();
   try {
     assertQmAiDeadline({ signal });
-    // #1125: let Core do the code match instead of pulling the catalog and
-    // filtering here. The exact-match check below still applies, since Core's
-    // `search` is a substring match.
-    const coreCourses = await searchCoursesFromCore(target, { signal }, { serviceKeyOnly: true });
-    coreById = new Map(coreCourses.map((c) => [c.id, c]));
+    // #1125 / #1362: Core `search` is literal contains — try whitespace
+    // variants so compact client codes (COSC121) still match spaced Core
+    // codes (COSC 121). Exact normalized match below still applies.
+    for (const candidate of candidates) {
+      const coreCourses = await searchCoursesFromCore(
+        candidate,
+        { signal },
+        { serviceKeyOnly: true },
+      );
+      for (const c of coreCourses) coreById.set(c.id, c);
+    }
   } catch {
     if (signal?.aborted) assertQmAiDeadline({ signal });
     return []; // Core unreachable — no code-based match is possible; degrade to no access.

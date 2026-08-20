@@ -232,8 +232,10 @@ export function validateChatAdmission(body = {}) {
     }
   }
 
-  if (typeof body.courseCode !== "string" || !body.courseCode.trim()) {
-    return publicValidation(400, "QM_CHAT_COURSE_REQUIRED", "Course code is required");
+  const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
+  const hasCourseCode = typeof body.courseCode === "string" && body.courseCode.trim() !== "";
+  if (!hasCourseId && !hasCourseCode) {
+    return publicValidation(400, "QM_CHAT_COURSE_REQUIRED", "Course id or course code is required");
   }
   return {
     messages,

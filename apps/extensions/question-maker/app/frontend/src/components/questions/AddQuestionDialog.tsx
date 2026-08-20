@@ -960,12 +960,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       return;
     }
     const courseCode = resolveCourseCodeForEduAI();
-    if (!courseCode) {
-      setError(
-        "AI service requires a course code. Update the course with a code or ensure the course exists in the AI service.",
-      );
-      return;
-    }
     if (!form.generationPrompt.trim()) {
       setError("Enter a topic or prompt before asking the AI service to generate a question.");
       return;
@@ -1055,7 +1049,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       const apiKeys = await apiKeyStorage.buildApiKeysForModel(form.generationModel);
       const response = await eduaiService.generateQuestions({
         prompt: promptWithTopics,
-        courseCode,
+        courseId,
+        ...(courseCode ? { courseCode } : {}),
         model: form.generationModel,
         numQuestions: 1,
         difficultyDistribution,
