@@ -10,10 +10,17 @@ export type FleetServer = {
   models: string[];
 };
 
+export type FleetLoadLease = {
+  markActive: () => void;
+  release: () => void;
+};
+
 export type FleetPick = {
   serverId: string;
   baseUrl: string;
   reason: string;
+  /** Internal process-local reservation; omitted from serialized router metadata. */
+  loadLease?: FleetLoadLease;
 };
 
 export type FleetHealthResult = {

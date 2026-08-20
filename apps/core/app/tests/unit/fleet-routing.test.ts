@@ -7,6 +7,7 @@ import {
   recordFleetHostFailure,
   resetFleetHealthCache,
 } from "~/lib/ai/routing/fleet/health";
+import { resetFleetLoad } from "~/lib/ai/routing/fleet/load";
 import {
   fleetRoutingEnabled,
   getAllFleetServers,
@@ -195,6 +196,7 @@ describe("resolveFleetHost", () => {
     process.env.FLEET_CONFIG_PATH = NONEXISTENT_CONFIG_PATH;
     resetFleetRegistryCache();
     resetFleetHealthCache();
+    resetFleetLoad();
     resetFleetRoundRobin();
     vi.restoreAllMocks();
   });
@@ -210,6 +212,7 @@ describe("resolveFleetHost", () => {
     else process.env.FLEET_CONFIG_PATH = originalConfigPath;
     resetFleetRegistryCache();
     resetFleetHealthCache();
+    resetFleetLoad();
     resetFleetRoundRobin();
     vi.restoreAllMocks();
   });
@@ -253,6 +256,35 @@ describe("resolveFleetHost", () => {
     fetchMock.mockRestore();
   });
 
+  it("reserves the least-loaded server for queued requests", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    const first = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      reserveLoad: true,
+    });
+    const second = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      reserveLoad: true,
+    });
+
+    expect(first?.serverId).toBe("cmps01");
+    expect(second?.serverId).toBe("cmps02");
+    expect(second?.reason).toBe("interactive-round-robin-load-aware");
+    first?.loadLease?.release();
+    second?.loadLease?.release();
+  });
+
   it("keeps a chat affinity key on the same server across requests", async () => {
     process.env.VLLM_FLEET_CHAT_URLS =
       "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001,http://cmps03.ok.ubc.ca:8001";
@@ -268,15 +300,19 @@ describe("resolveFleetHost", () => {
       jobType: "interactive",
       resolvedModelId: "vllm:qwen2.5-7b-instruct",
       affinityKey: "chat-123",
+      reserveLoad: true,
     });
     const second = await resolveFleetHost({
       jobType: "interactive",
       resolvedModelId: "vllm:qwen2.5-7b-instruct",
       affinityKey: "chat-123",
+      reserveLoad: true,
     });
 
     expect(second?.serverId).toBe(first?.serverId);
     expect(first?.reason).toBe("interactive-affinity");
+    first?.loadLease?.release();
+    second?.loadLease?.release();
   });
 
   it("ejects an inference-failed host before selecting the next request", async () => {

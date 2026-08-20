@@ -2137,6 +2137,53 @@ ${buildEmptyCourseRagBlock()}`;
 
     streamConfig.maxTokens = longOutputCap.maxTokens;
 
+    // The initial fleet pick is needed while building provider settings and
+    // router metadata. Re-pick immediately before admission with a load
+    // reservation so concurrent waiters influence server selection rather
+    // than all choosing round-robin targets before the FIFO queue is entered.
+    let fleetLoadLease = fleetPick?.loadLease ?? null;
+    if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+      try {
+        const scheduledPick = await resolveFleetHost({
+          jobType,
+          resolvedModelId,
+          affinityKey: chat?.id ?? actingUser.id,
+          reserveLoad: true,
+        });
+        if (scheduledPick && scheduledPick.serverId !== fleetPick?.serverId) {
+          validatedApiKeys = mergeLocalInferenceFromEnv(
+            providerSettingsBase,
+            resolvedModelId,
+            scheduledPick.baseUrl,
+          );
+          registry = createAIProviderRegistry(validatedApiKeys);
+          aiModel = registry.languageModel(resolvedModelId);
+          streamConfig.model = aiModel;
+        }
+        fleetPick = scheduledPick;
+        fleetLoadLease = scheduledPick?.loadLease ?? null;
+        routerContext = {
+          ...(routerContext ?? {}),
+          ...buildFleetRouterFeatures(workloadFeature, fleetPick),
+        };
+      } catch (error) {
+        fleetLoadLease?.release();
+        fleetLoadLease = null;
+        if (error instanceof FleetUnavailableError) {
+          return rejectProviderFailure(
+            createProviderFailure(parsedModel.providerId, "MODEL_UNAVAILABLE"),
+            {
+              chatMode,
+              userId: actingUser.id,
+              model: resolvedModelId,
+              stage: "fleet-load-resolution",
+            },
+          );
+        }
+        throw error;
+      }
+    }
+
     let longOutputCapApplied =
       longOutputCap.isLongOutputIntent &&
       longOutputCap.maxTokens < maxTokensBeforeLongOutputCap;
@@ -2361,7 +2408,10 @@ ${buildEmptyCourseRagBlock()}`;
         const slot = await acquireAiAdmission(request.signal);
         admissionRelease = slot.release;
         admissionWaitedMs = slot.waitedMs;
+        fleetLoadLease?.markActive();
       } catch (err) {
+        fleetLoadLease?.release();
+        fleetLoadLease = null;
         if (isClientAbort(err, request.signal)) {
           return clientAbortResponse();
         }
@@ -2386,6 +2436,8 @@ ${buildEmptyCourseRagBlock()}`;
         admissionRelease();
         admissionRelease = null;
       }
+      fleetLoadLease?.release();
+      fleetLoadLease = null;
     };
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0
@@ -2569,15 +2621,20 @@ ${buildEmptyCourseRagBlock()}`;
       // Slice 2: one inference retry on an alternate healthy fleet host.
       if (fleetPick && parsedModel.providerId === "vllm") {
         const failedPick = fleetPick;
+        fleetLoadLease?.release();
+        fleetLoadLease = null;
         try {
           const nextPick = await resolveFleetHostAfterFailure({
             failedPick,
             resolvedModelId,
             jobType,
             affinityKey: chat?.id ?? actingUser.id,
+            reserveLoad: true,
           });
           if (nextPick) {
             fleetPick = nextPick;
+            fleetLoadLease = nextPick.loadLease ?? null;
+            fleetLoadLease?.markActive();
             validatedApiKeys = mergeLocalInferenceFromEnv(
               providerSettingsBase,
               resolvedModelId,
@@ -2858,7 +2915,7 @@ ${buildEmptyCourseRagBlock()}`;
           fleetPick?.serverId ?? null,
         ),
       );
-      const release = admissionRelease;
+      const release = () => releaseAdmission();
       admissionRelease = null;
       return withAdmissionRelease(
         result.toDataStreamResponse({

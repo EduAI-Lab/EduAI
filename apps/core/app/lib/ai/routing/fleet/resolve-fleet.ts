@@ -5,6 +5,7 @@ import {
   recordFleetHostFailure,
   serverHostsModel,
 } from "./health";
+import { fleetLoadScore, reserveFleetLoad } from "./load";
 import { fleetRoutingEnabled, getServersForJobType, heavyFleetConfigured } from "./registry";
 import {
   jobTypeForWorkloadFeature,
@@ -19,6 +20,8 @@ type ResolveFleetInputBase = {
   excludeServerIds?: string[];
   /** Stable request/session key for cross-process chat affinity. */
   affinityKey?: string;
+  /** Reserve the selected server/model so queued requests influence later picks. */
+  reserveLoad?: boolean;
 };
 
 export type ResolveFleetInput =
@@ -71,11 +74,13 @@ function pickReason(jobType: JobType): string {
   return "interactive-round-robin";
 }
 
-function pickServer(
+async function pickServer(
   eligible: Array<{ id: string; baseUrl: string }>,
   jobType: JobType,
   affinityKey: string | undefined,
-): { server: { id: string; baseUrl: string }; reason: string } {
+  modelId: string,
+  reserveLoad: boolean,
+): Promise<{ server: { id: string; baseUrl: string }; reason: string }> {
   const pool = poolCursorKey(jobType);
   const normalizedAffinityKey = affinityKey?.trim();
   if (normalizedAffinityKey) {
@@ -87,6 +92,25 @@ function pickServer(
           : "interactive-affinity",
     };
   }
+
+  if (reserveLoad) {
+    const scored = await Promise.all(
+      eligible.map(async (server) => ({
+        server,
+        score: await fleetLoadScore({ jobType, serverId: server.id, modelId }),
+      })),
+    );
+    const lowestScore = Math.min(...scored.map(({ score }) => score));
+    const tied = scored
+      .filter(({ score }) => score === lowestScore)
+      .map(({ server }) => server);
+    const server = tied[nextRoundRobinIndex(pool) % tied.length]!;
+    return {
+      server,
+      reason: `${pickReason(jobType)}-load-aware`,
+    };
+  }
+
   return {
     server: eligible[nextRoundRobinIndex(pool) % eligible.length]!,
     reason: pickReason(jobType),
@@ -136,12 +160,27 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     );
   }
 
-  const { server, reason } = pickServer(eligible, jobType, input.affinityKey);
+  const picked = await pickServer(
+    eligible,
+    jobType,
+    input.affinityKey,
+    parsed.modelId,
+    input.reserveLoad === true,
+  );
 
   return {
-    serverId: server.id,
-    baseUrl: server.baseUrl,
-    reason: excluded.size > 0 ? `${reason}-retry` : reason,
+    serverId: picked.server.id,
+    baseUrl: picked.server.baseUrl,
+    reason: excluded.size > 0 ? `${picked.reason}-retry` : picked.reason,
+    ...(input.reserveLoad === true
+      ? {
+          loadLease: await reserveFleetLoad({
+            jobType,
+            serverId: picked.server.id,
+            modelId: parsed.modelId,
+          }),
+        }
+      : {}),
   };
 }
 
@@ -154,6 +193,7 @@ export async function resolveFleetHostAfterFailure(input: {
   resolvedModelId: string;
   jobType: JobType;
   affinityKey?: string;
+  reserveLoad?: boolean;
 }): Promise<FleetPick | null> {
   invalidateFleetHealthCacheForUrl(input.failedPick.baseUrl);
   recordFleetHostFailure(input.failedPick.baseUrl);
@@ -163,6 +203,7 @@ export async function resolveFleetHostAfterFailure(input: {
       resolvedModelId: input.resolvedModelId,
       excludeServerIds: [input.failedPick.serverId],
       affinityKey: input.affinityKey,
+      reserveLoad: input.reserveLoad,
     });
   } catch (err) {
     if (err instanceof FleetUnavailableError) return null;
