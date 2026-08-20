@@ -55,16 +55,32 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
   const authorizedUnits = dbUser?.authorizedUnits ?? [];
   const taCourseIds = enrollmentRows.filter((r) => r.role === "TA").map((r) => r.courseId);
+  const instructorCourseIds = enrollmentRows
+    .filter((r) => r.role === "INSTRUCTOR")
+    .map((r) => r.courseId);
   const enrolledCourseIds = enrollmentRows
     .filter((r) => r.role === "STUDENT")
     .map((r) => r.courseId);
 
-  return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors };
+  return {
+    user: session.user,
+    authorizedUnits,
+    taCourseIds,
+    instructorCourseIds,
+    enrolledCourseIds,
+    instructors,
+  };
 }
 
 export default function CoursesPage() {
-  const { user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors } =
-    useLoaderData<typeof loader>();
+  const {
+    user,
+    authorizedUnits,
+    taCourseIds,
+    instructorCourseIds,
+    enrolledCourseIds,
+    instructors,
+  } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const accessDenied = searchParams.get("access") === "denied";
   const {
@@ -133,7 +149,10 @@ export default function CoursesPage() {
     return Promise.resolve();
   };
 
-  if (loading) {
+  // `loading` is only true for the genuine first load (the hook never flips it
+  // back on for background refreshes), but gate on "no rows yet" too so a
+  // refetch can never tear down an already-mounted page.
+  if (loading && courses.length === 0) {
     return (
       <Layout user={user}>
         <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -235,6 +254,7 @@ export default function CoursesPage() {
             role="mixed"
             courses={courses}
             taCourseIds={taCourseIds}
+            instructorCourseIds={instructorCourseIds}
             enrolledCourseIds={enrolledCourseIds}
             search={search}
             onSearchChange={setSearch}

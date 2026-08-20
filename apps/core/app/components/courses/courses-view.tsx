@@ -87,6 +87,7 @@ interface MixedViewProps extends ControlledListProps {
   role: "mixed";
   courses: Course[];
   taCourseIds: string[];
+  instructorCourseIds: string[];
   enrolledCourseIds: string[];
 }
 
@@ -1292,6 +1293,7 @@ function InstructorCoursesBody({
 function MixedCoursesBody({
   courses,
   taCourseIds,
+  instructorCourseIds,
   enrolledCourseIds,
   search,
   onSearchChange,
@@ -1304,17 +1306,44 @@ function MixedCoursesBody({
   const { getCoursePreference, setCoursePreference } = useCourseCardPreferences();
 
   // Presentation-only split: the backend already scoped `courses` to what the
-  // caller may see. A course held as both TA and student belongs to the
-  // "assisting" section (mirrors the old assisting-first ordering); a draft
-  // course is only ever shown when the caller holds it as TA, so the enrolled
-  // section still filters to published courses.
+  // caller may see. Every visible course must land in exactly one section:
+  //   - `teaching` — active INSTRUCTOR enrollment (e.g. a non-platform-instructor
+  //     user such as a STUDENT-platform grad TA holding an INSTRUCTOR enrollment).
+  //   - `assisting` — active TA enrollment.
+  //   - `enrolled` — active STUDENT enrollment, published only (the backend only
+  //     grants STUDENT access to published courses, so the draft filter is a
+  //     defensive presentation rule, not an authorization check).
+  // A course held under multiple roles resolves to the highest-priority bucket
+  // (teaching > assisting > enrolled), so it is never dropped into a no-section
+  // body while `total` still reports it.
+  //
+  // Deferred (review #1535): the pre-#1263 mixed view rendered each role as its
+  // own uncontrolled list with per-term "Current/Upcoming/Previous" sub-headings
+  // and item counts. `CourseListView` only supports a flat section list, so
+  // restoring per-term sub-grouping under each role would require nested sections
+  // in the shared UI package — out of scope for #1263 and tracked separately.
   const groupSections = useCallback(
     (list: Course[]): CourseListSection<Course>[] => {
-      const assisting = list.filter((c) => taCourseIds.includes(c.id));
+      const teaching = list.filter((c) => instructorCourseIds.includes(c.id));
+      const assisting = list.filter(
+        (c) => !instructorCourseIds.includes(c.id) && taCourseIds.includes(c.id),
+      );
       const enrolled = list.filter(
-        (c) => !taCourseIds.includes(c.id) && enrolledCourseIds.includes(c.id) && c.isPublished,
+        (c) =>
+          !instructorCourseIds.includes(c.id) &&
+          !taCourseIds.includes(c.id) &&
+          enrolledCourseIds.includes(c.id) &&
+          c.isPublished,
       );
       const sections: CourseListSection<Course>[] = [];
+      if (teaching.length > 0) {
+        sections.push({
+          key: "teaching",
+          title: "Courses You Are Teaching",
+          headerVariant: "simple",
+          items: teaching,
+        });
+      }
       if (assisting.length > 0) {
         sections.push({
           key: "assisting",
@@ -1333,7 +1362,7 @@ function MixedCoursesBody({
       }
       return sections;
     },
-    [taCourseIds, enrolledCourseIds],
+    [taCourseIds, instructorCourseIds, enrolledCourseIds],
   );
 
   return (
@@ -1376,7 +1405,11 @@ function MixedCoursesBody({
         const preference = getCoursePreference(course.id);
         const accentColor = resolveCourseAccentColor(course.id, preference);
         const displayName = getCourseDisplayName(course.name, preference);
-        const extraBadges = taCourseIds.includes(course.id) ? ["TA"] : ["Enrolled"];
+        const extraBadges = instructorCourseIds.includes(course.id)
+          ? ["Instructor"]
+          : taCourseIds.includes(course.id)
+            ? ["TA"]
+            : ["Enrolled"];
         return (
           <CourseCard
             id={course.id}
