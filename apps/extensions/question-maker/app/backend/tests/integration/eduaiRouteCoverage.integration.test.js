@@ -567,10 +567,13 @@ describe("GET /api/eduai/courses", () => {
   });
 
   it("surfaces an auth failure as 401, not 500", async () => {
+    // The route fetches via listCoursesForUser (cookie-scoped, #1569); when that
+    // surfaces a Core auth failure with a statusCode, the route must answer it
+    // instead of flattening to 500 (review follow-up on the /courses catch).
     authAs(INSTRUCTOR);
     const err = new Error("A caller session cookie is required to list courses.");
     err.statusCode = 401;
-    eduaiService.listCourses.mockRejectedValue(err);
+    mockListCoursesForUser.mockRejectedValue(err);
 
     const res = await request(app).get("/api/eduai/courses").set("Cookie", "session=v");
 
