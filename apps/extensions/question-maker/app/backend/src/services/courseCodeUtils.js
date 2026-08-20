@@ -11,11 +11,11 @@ export function normalizeCourseCode(value) {
  * `contains` (no whitespace folding).
  */
 export function courseCodeLookupCandidates(courseCode) {
-  if (!courseCode || typeof courseCode !== 'string') return [];
+  if (!courseCode || typeof courseCode !== "string") return [];
   const trimmed = courseCode.trim();
   if (!trimmed) return [];
-  const compact = trimmed.replace(/\s+/g, '');
-  const spaced = compact.replace(/([A-Za-z]+)(\d+)/, '$1 $2');
+  const compact = trimmed.replace(/\s+/g, "");
+  const spaced = compact.replace(/([A-Za-z]+)(\d+)/, "$1 $2");
   return [...new Set([trimmed, compact, spaced].filter(Boolean))];
 }
 

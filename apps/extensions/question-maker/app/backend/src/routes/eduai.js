@@ -71,10 +71,14 @@ async function resolveEduAiCourse(req, signal) {
   const hasCourseCode = typeof courseCode === "string" && courseCode.trim() !== "";
 
   if (hasCourseId) {
-    const { course, access } = await resolveCourseAccessWithCourse(req.user, String(courseId).trim(), {
-      cookie: req.headers.cookie,
-      signal,
-    });
+    const { course, access } = await resolveCourseAccessWithCourse(
+      req.user,
+      String(courseId).trim(),
+      {
+        cookie: req.headers.cookie,
+        signal,
+      },
+    );
     assertQmAiDeadline({ signal });
     if (!course) {
       return { error: { status: 404, body: { success: false, error: "Course not found" } } };
@@ -88,7 +92,12 @@ async function resolveEduAiCourse(req, signal) {
   }
 
   if (hasCourseCode) {
-    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie, signal);
+    const resolved = await resolveCourseCodeAccess(
+      req.user,
+      courseCode,
+      req.headers.cookie,
+      signal,
+    );
     if (!resolved) {
       return {
         error: {
@@ -207,7 +216,8 @@ router.post("/chat", qmAiUserRateLimit, chatAdmission, async (req, res) => {
   try {
     const { model, apiKeys, streaming } = req.body;
     const { messages } = req.aiAdmission;
-    const fallbackCourseCode = typeof req.body.courseCode === "string" ? req.body.courseCode.trim() : "";
+    const fallbackCourseCode =
+      typeof req.body.courseCode === "string" ? req.body.courseCode.trim() : "";
 
     const resolved = await resolveEduAiCourse(req, req.aiOperation?.signal);
     if (resolved.error) {

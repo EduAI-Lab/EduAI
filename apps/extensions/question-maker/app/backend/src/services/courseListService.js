@@ -639,7 +639,11 @@ export async function findCoursesByProjectedCode(codeQuery, { signal } = {}) {
     // variants so compact client codes (COSC121) still match spaced Core
     // codes (COSC 121). Exact normalized match below still applies.
     for (const candidate of candidates) {
-      const coreCourses = await searchCoursesFromCore(candidate, { signal }, { serviceKeyOnly: true });
+      const coreCourses = await searchCoursesFromCore(
+        candidate,
+        { signal },
+        { serviceKeyOnly: true },
+      );
       for (const c of coreCourses) coreById.set(c.id, c);
     }
   } catch {

@@ -651,9 +651,7 @@ describe("findCoursesByProjectedCode (#1362)", () => {
       if (String(q).toLowerCase() === "cosc121") return [];
       return [];
     });
-    mockFindMany.mockResolvedValue([
-      { id: 42, coreCourseId: "core-spaced", userId: "inst-1" },
-    ]);
+    mockFindMany.mockResolvedValue([{ id: 42, coreCourseId: "core-spaced", userId: "inst-1" }]);
 
     const rows = await findCoursesByProjectedCode("COSC121");
     expect(rows).toHaveLength(1);

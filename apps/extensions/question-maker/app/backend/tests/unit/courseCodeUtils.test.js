@@ -24,10 +24,7 @@ describe("courseCodeLookupCandidates (#1362)", () => {
   });
 
   it("keeps trimmed spaced codes and also tries the compact form", () => {
-    expect(courseCodeLookupCandidates("  COSC 121  ")).toEqual([
-      "COSC 121",
-      "COSC121",
-    ]);
+    expect(courseCodeLookupCandidates("  COSC 121  ")).toEqual(["COSC 121", "COSC121"]);
   });
 
   it("returns empty for blank input", () => {

@@ -3,83 +3,91 @@
  * Auth is handled by stubbing global fetch for Core session validation.
  * No DB required — all 400 guards fire before any model access.
  */
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import request from 'supertest';
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import request from "supertest";
 
-vi.mock('../../src/services/authService.js', () => ({
+vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
-const { default: app } = await import('../../src/app.js');
+const { default: app } = await import("../../src/app.js");
 
-const TEST_USER = { id: 'cuid-test-user', email: 'test@test.com', role: 'INSTRUCTOR', name: 'Test User' };
+const TEST_USER = {
+  id: "cuid-test-user",
+  email: "test@test.com",
+  role: "INSTRUCTOR",
+  name: "Test User",
+};
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve({ user: TEST_USER }),
-  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ user: TEST_USER }),
+    }),
+  );
 });
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('EduAI HTTP validation (integration)', () => {
-  describe('POST /api/eduai/chat', () => {
-    it('returns 400 when messages is missing', async () => {
+describe("EduAI HTTP validation (integration)", () => {
+  describe("POST /api/eduai/chat", () => {
+    it("returns 400 when messages is missing", async () => {
       const res = await request(app)
-        .post('/api/eduai/chat')
-        .set('Cookie', 'session=valid')
-        .send({ courseCode: 'COSC_101' });
+        .post("/api/eduai/chat")
+        .set("Cookie", "session=valid")
+        .send({ courseCode: "COSC_101" });
       expect(res.status).toBe(400);
-      expect(String(res.body.error || '')).toMatch(/[Mm]essage/i);
+      expect(String(res.body.error || "")).toMatch(/[Mm]essage/i);
     });
 
-    it('returns 400 when courseId and courseCode are both missing', async () => {
+    it("returns 400 when courseId and courseCode are both missing", async () => {
       const res = await request(app)
-        .post('/api/eduai/chat')
-        .set('Cookie', 'session=valid')
-        .send({ messages: [{ role: 'user', content: 'Hello' }] });
+        .post("/api/eduai/chat")
+        .set("Cookie", "session=valid")
+        .send({ messages: [{ role: "user", content: "Hello" }] });
       expect(res.status).toBe(400);
-      expect(String(res.body.error || '')).toMatch(/course/i);
+      expect(String(res.body.error || "")).toMatch(/course/i);
     });
   });
 
-  describe('POST /api/eduai/generate-questions', () => {
-    it('returns 400 when prompt is missing', async () => {
+  describe("POST /api/eduai/generate-questions", () => {
+    it("returns 400 when prompt is missing", async () => {
       const res = await request(app)
-        .post('/api/eduai/generate-questions')
-        .set('Cookie', 'session=valid')
-        .send({ courseCode: 'TEST' });
+        .post("/api/eduai/generate-questions")
+        .set("Cookie", "session=valid")
+        .send({ courseCode: "TEST" });
       expect(res.status).toBe(400);
-      expect(String(res.body.error || '')).toMatch(/[Pp]rompt|required/i);
+      expect(String(res.body.error || "")).toMatch(/[Pp]rompt|required/i);
     });
 
-    it('returns 400 when courseId and courseCode are both missing', async () => {
+    it("returns 400 when courseId and courseCode are both missing", async () => {
       const res = await request(app)
-        .post('/api/eduai/generate-questions')
-        .set('Cookie', 'session=valid')
-        .send({ prompt: 'Write one MCQ' });
+        .post("/api/eduai/generate-questions")
+        .set("Cookie", "session=valid")
+        .send({ prompt: "Write one MCQ" });
       expect(res.status).toBe(400);
-      expect(String(res.body.error || '')).toMatch(/[Cc]ourse|required/i);
+      expect(String(res.body.error || "")).toMatch(/[Cc]ourse|required/i);
     });
 
-    it('returns 400 for missing identifiers before numQuestions exceeds max', async () => {
+    it("returns 400 for missing identifiers before numQuestions exceeds max", async () => {
       const res = await request(app)
-        .post('/api/eduai/generate-questions')
-        .set('Cookie', 'session=valid')
-        .send({ prompt: 'Write many MCQs', numQuestions: 10000 });
+        .post("/api/eduai/generate-questions")
+        .set("Cookie", "session=valid")
+        .send({ prompt: "Write many MCQs", numQuestions: 10000 });
       expect(res.status).toBe(400);
-      expect(String(res.body.error || '')).toMatch(/course/i);
-      expect(String(res.body.error || '')).not.toMatch(/numQuestions|exceed|max/i);
+      expect(String(res.body.error || "")).toMatch(/course/i);
+      expect(String(res.body.error || "")).not.toMatch(/numQuestions|exceed|max/i);
     });
 
-    it('returns 400 when numQuestions exceeds maxQuestions', async () => {
+    it("returns 400 when numQuestions exceeds maxQuestions", async () => {
       const res = await request(app)
-        .post('/api/eduai/generate-questions')
-        .set('Cookie', 'session=valid')
-        .send({ prompt: 'Write many MCQs', courseCode: 'TEST', numQuestions: 10000 });
+        .post("/api/eduai/generate-questions")
+        .set("Cookie", "session=valid")
+        .send({ prompt: "Write many MCQs", courseCode: "TEST", numQuestions: 10000 });
       expect(res.status).toBe(400);
-      expect(String(res.body.error || '')).toMatch(/numQuestions|exceed|max/i);
+      expect(String(res.body.error || "")).toMatch(/numQuestions|exceed|max/i);
     });
   });
 });
