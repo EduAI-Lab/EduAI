@@ -1,4 +1,4 @@
-import { Spinner } from '@eduai/ui';
+import { Spinner } from "@eduai/ui";
 import {
   Button,
   Card,
@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
   Textarea,
-} from '@eduai/ui';
+} from "@eduai/ui";
 
 type StudentActivityFeedbackCardProps = {
   rating: number | null;
@@ -37,8 +37,8 @@ export default function StudentActivityFeedbackCard({
     return (
       <Card
         style={{
-          borderColor: 'var(--color-success-500)',
-          background: 'var(--color-success-100)',
+          borderColor: "var(--color-success-500)",
+          background: "var(--color-success-100)",
         }}
       >
         <CardContent className="text-sm text-[var(--color-success-700)]">
@@ -70,7 +70,7 @@ export default function StudentActivityFeedbackCard({
               <Button
                 key={value}
                 type="button"
-                variant={rating === value ? 'primary' : 'outline'}
+                variant={rating === value ? "primary" : "outline"}
                 onClick={() => onSelectRating(value)}
                 aria-pressed={rating === value}
                 className="w-full"
@@ -113,7 +113,7 @@ export default function StudentActivityFeedbackCard({
               Saving...
             </>
           ) : (
-            'Send feedback'
+            "Send feedback"
           )}
         </Button>
         <p className="text-xs text-muted-foreground">

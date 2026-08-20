@@ -5,10 +5,7 @@ import type {
   SyncCanvasCoursesInput,
   SyncCanvasCoursesResult,
 } from "~/lib/canvas/schemas";
-import type {
-  CanvasMaterialDiscoverItem,
-  SyncCanvasMaterialsResult,
-} from "@eduai/types";
+import type { CanvasMaterialDiscoverItem, SyncCanvasMaterialsResult } from "@eduai/types";
 
 export type {
   CanvasCoursePickerItem,
@@ -31,10 +28,7 @@ async function parseCanvasResponse<T>(response: Response): Promise<CanvasApiBody
   return response.json() as Promise<CanvasApiBody<T>>;
 }
 
-async function canvasRequest<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<CanvasApiBody<T>> {
+async function canvasRequest<T>(path: string, init?: RequestInit): Promise<CanvasApiBody<T>> {
   const response = await fetch(`/api/canvas/${path}`, {
     ...init,
     credentials: "include",
@@ -81,7 +75,9 @@ export async function listCanvasCourses(): Promise<CanvasCoursePickerItem[]> {
   return body.data?.courses ?? [];
 }
 
-export async function syncCanvasCourses(input: SyncCanvasCoursesInput): Promise<SyncCanvasCoursesResult> {
+export async function syncCanvasCourses(
+  input: SyncCanvasCoursesInput,
+): Promise<SyncCanvasCoursesResult> {
   const body = await canvasRequest<SyncCanvasCoursesResult>("sync", {
     method: "POST",
     body: JSON.stringify(input),
@@ -156,7 +152,10 @@ export async function excludeCanvasMaterial(courseId: string, canvasFileId: stri
   }
 }
 
-export async function unexcludeCanvasMaterial(courseId: string, canvasFileId: string): Promise<void> {
+export async function unexcludeCanvasMaterial(
+  courseId: string,
+  canvasFileId: string,
+): Promise<void> {
   const response = await fetch(`/api/courses/${courseId}/canvas-materials/exclusions`, {
     method: "DELETE",
     credentials: "include",

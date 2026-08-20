@@ -18,12 +18,7 @@ const cssPath = join(
 const css = readFileSync(cssPath, "utf-8");
 
 describe("resolveMessageHighlightRole", () => {
-  const thread = [
-    { role: "user" },
-    { role: "assistant" },
-    { role: "user" },
-    { role: "assistant" },
-  ];
+  const thread = [{ role: "user" }, { role: "assistant" }, { role: "user" }, { role: "assistant" }];
 
   it("returns null when assistive mode is off", () => {
     expect(resolveMessageHighlightRole(3, thread, false)).toBeNull();

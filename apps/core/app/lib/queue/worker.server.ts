@@ -1,21 +1,13 @@
 import { Prisma } from "@prisma/client";
-import {
-  Worker,
-  type ConnectionOptions,
-  type Job,
-  type WorkerOptions,
-} from "bullmq";
+import { Worker, type ConnectionOptions, type Job, type WorkerOptions } from "bullmq";
 import { runCompletion } from "~/lib/ai/completion.server";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import redis from "./connection.server";
-import {
-  JobPayloadSchema,
-  type JobPayload,
-  type QueuedJobPayload,
-} from "./job-schema";
+import { assertAiJobQueueEnabled } from "./availability.server";
+import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { type QueueName } from "./resolve-pool.server";
 import { workerConcurrency } from "./concurrency.server";
@@ -49,10 +41,7 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 export function aiJobTimeoutMs(): number {
-  return positiveInt(
-    process.env.AI_JOB_EXECUTION_TIMEOUT_MS,
-    DEFAULT_AI_JOB_TIMEOUT_MS,
-  );
+  return positiveInt(process.env.AI_JOB_EXECUTION_TIMEOUT_MS, DEFAULT_AI_JOB_TIMEOUT_MS);
 }
 
 function formatError(error: unknown): string {
@@ -69,10 +58,13 @@ function formatError(error: unknown): string {
   }
 }
 
-function serverApiKeys(model: string): Record<string, {
-  isEnabled: boolean;
-  apiKey?: string;
-}> {
+function serverApiKeys(model: string): Record<
+  string,
+  {
+    isEnabled: boolean;
+    apiKey?: string;
+  }
+> {
   if (model.startsWith("openai:") && process.env.OPENAI_API_KEY) {
     return {
       openai: {
@@ -116,10 +108,7 @@ async function resolveWorkerModel(payload: JobPayload): Promise<string> {
     );
     return decision.modelId;
   } catch (error) {
-    console.error(
-      "[ai-job-worker] Auto model routing failed; using worker fallback",
-      error,
-    );
+    console.error("[ai-job-worker] Auto model routing failed; using worker fallback", error);
     return DEFAULT_WORKER_MODEL;
   }
 }
@@ -226,9 +215,7 @@ export async function processAiJob(
   const bullJobId = String(job.id);
 
   const aiJobId =
-    "aiJobId" in job.data && typeof job.data.aiJobId === "string"
-      ? job.data.aiJobId
-      : null;
+    "aiJobId" in job.data && typeof job.data.aiJobId === "string" ? job.data.aiJobId : null;
   const select = {
     id: true,
     status: true,
@@ -261,13 +248,8 @@ export async function processAiJob(
         : `No AiJob row for ${queueName}/${bullJobId}`,
     );
   }
-  if (
-    row.queueName !== queueName ||
-    (row.bullJobId !== null && row.bullJobId !== bullJobId)
-  ) {
-    throw new Error(
-      `AiJob ${row.id} does not belong to ${queueName}/${bullJobId}`,
-    );
+  if (row.queueName !== queueName || (row.bullJobId !== null && row.bullJobId !== bullJobId)) {
+    throw new Error(`AiJob ${row.id} does not belong to ${queueName}/${bullJobId}`);
   }
   if (row.status === "CANCELLED") {
     return { skipped: true, reason: "cancelled" };
@@ -364,6 +346,8 @@ export function createAiJobWorker(
   options: Partial<WorkerOptions> = {},
   execute: ExecuteAiJob = executeAiJobPayload,
 ): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome> {
+  assertAiJobQueueEnabled();
+
   const worker = new Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>(
     queueName,
     (job) => processAiJob(job, queueName, execute),
@@ -378,18 +362,13 @@ export function createAiJobWorker(
     console.error(`[ai-job-worker:${queueName}] worker error`, error);
   });
   worker.on("failed", (job, error) => {
-    console.error(
-      `[ai-job-worker:${queueName}] job ${job?.id ?? "unknown"} failed`,
-      error,
-    );
+    console.error(`[ai-job-worker:${queueName}] job ${job?.id ?? "unknown"} failed`, error);
   });
   return worker;
 }
 
-export function startAiJobWorkers(): Worker<
-  JobPayload | QueuedJobPayload,
-  AiJobWorkerOutcome
->[] {
+export function startAiJobWorkers(): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>[] {
+  assertAiJobQueueEnabled();
   return AI_JOB_QUEUE_NAMES.map((queueName) => createAiJobWorker(queueName));
 }
 

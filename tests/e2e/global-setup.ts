@@ -3,12 +3,8 @@
  * before the workers start. Mirrors the Docker healthcheck endpoints so the
  * check is guaranteed to pass once the container is marked healthy.
  */
-import { request } from '@playwright/test';
-import {
-  CORE_URL,
-  AI_TUTOR_API_URL,
-  QM_BACKEND_URL,
-} from './playwright.config';
+import { request } from "@playwright/test";
+import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from "./playwright.config";
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_WAIT_MS = 60_000;
@@ -33,19 +29,19 @@ async function waitForUrl(url: string): Promise<void> {
 
   await ctx.dispose();
   throw new Error(
-    `Service at ${url} not ready after ${MAX_WAIT_MS}ms: ${last?.message ?? 'unknown'}`,
+    `Service at ${url} not ready after ${MAX_WAIT_MS}ms: ${last?.message ?? "unknown"}`,
   );
 }
 
 export default async function globalSetup() {
-  const suites = new Set((process.env.E2E_SUITES ?? 'all').split(','));
-  const all = suites.has('all') || suites.has('cross-service');
+  const suites = new Set((process.env.E2E_SUITES ?? "all").split(","));
+  const all = suites.has("all") || suites.has("cross-service");
   const checks = [waitForUrl(`${CORE_URL}/api/health`)];
 
-  if (all || suites.has('ai-tutor')) {
+  if (all || suites.has("ai-tutor")) {
     checks.push(waitForUrl(`${AI_TUTOR_API_URL}/api/courses`));
   }
-  if (all || suites.has('question-maker')) {
+  if (all || suites.has("question-maker")) {
     checks.push(waitForUrl(`${QM_BACKEND_URL}/api/course`));
   }
 

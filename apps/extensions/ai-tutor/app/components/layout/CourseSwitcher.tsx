@@ -9,14 +9,14 @@
  * page can still reach any of them by typing, instead of silently seeing the
  * first 200.
  */
-import * as React from 'react';
-import { useNavigate } from 'react-router';
-import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from '@eduai/ui';
+import * as React from "react";
+import { useNavigate } from "react-router";
+import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from "@eduai/ui";
 
-import api from '~/lib/api';
-import { useDebouncedValue } from '~/hooks/useDebouncedValue';
-import { splitTitle } from '~/lib/course-title';
-import type { Course } from '~/lib/types';
+import api from "~/lib/api";
+import { useDebouncedValue } from "~/hooks/useDebouncedValue";
+import { splitTitle } from "~/lib/course-title";
+import type { Course } from "~/lib/types";
 
 export function CourseSwitcher({
   courseId,
@@ -30,7 +30,7 @@ export function CourseSwitcher({
 }) {
   const navigate = useNavigate();
   const [courses, setCourses] = React.useState<Course[]>([]);
-  const [query, setQuery] = React.useState('');
+  const [query, setQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(query);
 
   // Monotonic request id. Debouncing narrows the out-of-order window but does not
@@ -74,7 +74,7 @@ export function CourseSwitcher({
   const options: CourseSwitcherOption[] = pending
     ? []
     : courses.length > 0
-      ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? 'Untitled course') }))
+      ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? "Untitled course") }))
       : searching
         ? []
         : [{ id: courseId, ...current }];

@@ -121,17 +121,17 @@ describe("requireChatSessionUser", () => {
   it("returns the session user", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: USER } as never);
 
-    await expect(
-      requireChatSessionUser(new Request("http://localhost/chat/chat-1")),
-    ).resolves.toBe(USER);
+    await expect(requireChatSessionUser(new Request("http://localhost/chat/chat-1"))).resolves.toBe(
+      USER,
+    );
   });
 
   it("redirects to login when there is no session", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
-    const thrown = await requireChatSessionUser(
-      new Request("http://localhost/chat/chat-1"),
-    ).catch((error: unknown) => error);
+    const thrown = await requireChatSessionUser(new Request("http://localhost/chat/chat-1")).catch(
+      (error: unknown) => error,
+    );
 
     expect(thrown).toBeInstanceOf(Response);
     expect((thrown as Response).headers.get("Location")).toBe("/auth/login");
@@ -156,9 +156,7 @@ describe("loadChatBaseDataForUser", () => {
       tracker.track({ autoLlmEnabled: false, autoRulesEnabled: false }) as never,
     );
     vi.mocked(prisma.aIModel.findMany).mockImplementation(tracker.track([]) as never);
-    vi.mocked(getAccessibleCourseCodes).mockImplementation(
-      tracker.track(["COSC 101"]) as never,
-    );
+    vi.mocked(getAccessibleCourseCodes).mockImplementation(tracker.track(["COSC 101"]) as never);
 
     const pending = loadChatBaseDataForUser(USER);
     await Promise.resolve();
@@ -283,10 +281,7 @@ describe("loadChatTranscript", () => {
   it("returns null when the viewer may not read the chat", async () => {
     vi.mocked(resolveChatReadAccess).mockResolvedValue(null);
 
-    const result = await loadChatTranscript(
-      { id: "other-user", role: "STUDENT" },
-      "chat-1",
-    );
+    const result = await loadChatTranscript({ id: "other-user", role: "STUDENT" }, "chat-1");
 
     expect(result).toBeNull();
     expect(getChatMessages).not.toHaveBeenCalled();
@@ -298,10 +293,7 @@ describe("loadChatTranscript", () => {
       { messageId: "m1", role: "user", content: { id: "m1", role: "user", content: "hello" } },
     ]);
 
-    const result = await loadChatTranscript(
-      { id: "owner-1", role: "STUDENT" },
-      "chat-1",
-    );
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
 
     expect(result).not.toBeNull();
     expect(result!.canEdit).toBe(true);
@@ -327,10 +319,7 @@ describe("loadChatTranscript", () => {
       },
     ]);
 
-    const result = await loadChatTranscript(
-      { id: "owner-1", role: "STUDENT" },
-      "chat-1",
-    );
+    const result = await loadChatTranscript({ id: "owner-1", role: "STUDENT" }, "chat-1");
 
     expect(result?.messages).toEqual([
       expect.objectContaining({
@@ -349,10 +338,7 @@ describe("loadChatTranscript", () => {
     });
     vi.mocked(getChatMessages).mockResolvedValue([]);
 
-    const result = await loadChatTranscript(
-      { id: "instr-1", role: "INSTRUCTOR" },
-      "chat-1",
-    );
+    const result = await loadChatTranscript({ id: "instr-1", role: "INSTRUCTOR" }, "chat-1");
 
     expect(result!.canEdit).toBe(false);
   });

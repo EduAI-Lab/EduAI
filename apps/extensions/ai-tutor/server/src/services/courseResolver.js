@@ -44,7 +44,12 @@
  * resolve through here rather than reading `CourseOffering` columns or the
  * `externalMetadata` snapshot directly.
  */
-import { fetchCoreCourseSafe, listEduAiCourses, listEduAiCoursesServiceKey } from './eduaiClient.js';
+import {
+  fetchCoreCourseSafe,
+  listEduAiCourses,
+  listEduAiCoursesServiceKey,
+} from "./eduaiClient.js";
+import { logSafeError } from "../utils/safeErrors.js";
 
 /**
  * Fetch Core's FULL course catalog in one batched service-key call — the
@@ -65,9 +70,12 @@ export async function resolveCoreCourseCatalog() {
     // so there is no id set to narrow it with. Callers that already know which
     // ids they want should use `resolveCoreCoursesByIds` instead.
     const courses = await listEduAiCoursesServiceKey({ all: true });
-    return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
+    if (!Array.isArray(courses)) {
+      return { courses: [], coreUnavailable: true };
+    }
+    return { courses, coreUnavailable: false };
   } catch (err) {
-    console.error('[courseResolver] Core course catalog unavailable', err);
+    logSafeError("[courseResolver] Core course catalog unavailable", err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -83,9 +91,12 @@ export async function resolveCoreCourseList({ cookie } = {}) {
   try {
     // Authorization context for the caller's own courses; page-walked (#1041).
     const courses = await listEduAiCourses({ cookie, all: true });
-    return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
+    if (!Array.isArray(courses)) {
+      return { courses: [], coreUnavailable: true };
+    }
+    return { courses, coreUnavailable: false };
   } catch (err) {
-    console.error('[courseResolver] Core course list unavailable', err);
+    logSafeError("[courseResolver] Core course list unavailable", err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -104,7 +115,7 @@ export async function resolveCoreCoursesByIds(ids) {
     const courses = await listEduAiCoursesServiceKey({ ids: wanted });
     return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
   } catch (err) {
-    console.error('[courseResolver] Core course lookup unavailable', err);
+    logSafeError("[courseResolver] Core course lookup unavailable", err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -141,7 +152,7 @@ export async function resolveCoreCourseById(coreOfferingId, options = {}) {
     const course = await fetchCoreCourseSafe(coreOfferingId, { signal: options.signal });
     return { course, coreUnavailable: false };
   } catch (err) {
-    console.error('[courseResolver] Core course fetch failed', coreOfferingId, err);
+    logSafeError("[courseResolver] Core course fetch failed", err);
     return { course: null, coreUnavailable: true };
   }
 }
@@ -155,7 +166,7 @@ export async function resolveCoreCourseById(coreOfferingId, options = {}) {
  */
 export function resolveIsPublished(offering, coreCoursesById) {
   const core = coreCoursesById?.get(offering.coreOfferingId);
-  return typeof core?.isPublished === 'boolean' ? core.isPublished : false;
+  return typeof core?.isPublished === "boolean" ? core.isPublished : false;
 }
 
 /**
@@ -168,5 +179,5 @@ export function resolveIsPublished(offering, coreCoursesById) {
  */
 export async function isCoursePublishedLive(coreOfferingId) {
   const { course } = await resolveCoreCourseById(coreOfferingId);
-  return typeof course?.isPublished === 'boolean' ? course.isPublished : false;
+  return typeof course?.isPublished === "boolean" ? course.isPublished : false;
 }

@@ -1,12 +1,19 @@
 import type { ScheduledTask } from "node-cron";
 import cron from "node-cron";
-import { dispatchManualCronRuns, KNOWN_CRON_JOBS, startCronRun, triggerCronJobAsync } from "~/lib/db.cron-jobs.server";
+import {
+  dispatchManualCronRuns,
+  KNOWN_CRON_JOBS,
+  reapExpiredCronRuns,
+  startCronRun,
+  triggerCronJobAsync,
+} from "~/lib/db.cron-jobs.server";
 import prisma from "~/lib/prisma.server";
 import { redactErrorForConsole } from "~/lib/redact.server";
 
 declare global {
   var __cronTasks: Map<string, ScheduledTask> | undefined;
   var __cronTaskSchedules: Map<string, string> | undefined;
+  var __cronSchedulerInitPromise: Promise<void> | undefined;
 }
 
 function getTaskMap(): Map<string, ScheduledTask> {
@@ -30,9 +37,11 @@ function scheduleOne(
   const task = cron.schedule(
     schedule,
     () => {
-      startCronRun(jobName, { source: "SCHEDULE" })
-        .then(({ runId, created }) => {
-          if (created) triggerCronJobAsync(jobName, script, runId, execution);
+      startCronRun(jobName)
+        .then((result) => {
+          if (result.created) {
+            triggerCronJobAsync(jobName, script, result.runId, result.leaseOwner, execution);
+          }
         })
         .catch((err: unknown) =>
           console.error(`[cron] ${jobName} failed to start:`, redactErrorForConsole(err)),
@@ -77,6 +86,46 @@ export function stopCronScheduler(): void {
  * Backward-compatible hook for admin-tool callers. Scheduling is owned by the
  * dedicated worker; it observes the persisted override on its next refresh.
  */
-export function rescheduleJob(_jobName: string, _schedule: string | null): void {
-  // Intentionally no-op in the web process.
+export function rescheduleJob(jobName: string, schedule: string | null): void {
+  const job = KNOWN_CRON_JOBS.find((j) => j.name === jobName);
+  if (!job?.script) return;
+  scheduleOne(jobName, schedule ?? job.schedule, job.script);
+}
+
+/**
+ * Initialize the in-process cron scheduler once per process. Concurrent callers
+ * share the same promise; a failed initialization clears it so the server
+ * runtime can retry instead of permanently suppressing cron.
+ */
+export function ensureCronSchedulerRunning(): Promise<void> {
+  if (globalThis.__cronSchedulerInitPromise) {
+    return globalThis.__cronSchedulerInitPromise;
+  }
+
+  const initialize = (async () => {
+    const reaped = await reapExpiredCronRuns();
+    if (reaped > 0) {
+      console.warn(`[cron] Reaped ${reaped} expired run lease${reaped === 1 ? "" : "s"}`);
+    }
+
+    const overrides = await prisma.cronJobScheduleOverride.findMany();
+    const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
+    for (const job of KNOWN_CRON_JOBS) {
+      if (!job.script) continue; // external extension jobs — skip
+      try {
+        scheduleOne(job.name, overrideMap.get(job.name) ?? job.schedule, job.script);
+      } catch (err) {
+        console.error(`[cron] Failed to schedule ${job.name}:`, redactErrorForConsole(err));
+      }
+    }
+    console.log("[cron] In-process scheduler started");
+  })();
+
+  globalThis.__cronSchedulerInitPromise = initialize;
+  void initialize.catch(() => {
+    if (globalThis.__cronSchedulerInitPromise === initialize) {
+      globalThis.__cronSchedulerInitPromise = undefined;
+    }
+  });
+  return initialize;
 }

@@ -13,12 +13,12 @@
 // isUnitAdminForCourse) is mocked; ANON rows go through createApp()'s real
 // auth middleware, which fails closed to 401 when Core is unreachable.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { createApp } from "../../src/app.js";
 import {
   makeProfessor,
   makeStudent,
@@ -28,30 +28,54 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+  return {
+    ...actual,
+    fetchCoreCourseSafe: vi.fn(),
+    getEduAiCourseEnrollmentServiceKey: vi.fn(),
+    listEduAiCourseEnrollmentsServiceKey: vi.fn(),
+  };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import {
+  fetchCoreCourseSafe,
+  getEduAiCourseEnrollmentServiceKey,
+  listEduAiCourseEnrollmentsServiceKey,
+} from "../../src/services/eduaiClient.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
-  readFileSync(path.join(repoRoot, 'tests/models/lesson-modules-view.cases.json'), 'utf8'),
+  readFileSync(path.join(repoRoot, "tests/models/lesson-modules-view.cases.json"), "utf8"),
 );
-const {
-  expectedActivitiesListStatus,
-  expectedModulesListStatus,
-  expectedModuleVisibleInList,
-} = await import(path.join(repoRoot, 'tests/models/lesson-modules-view.oracle.ts'));
+const { expectedActivitiesListStatus, expectedModulesListStatus, expectedModuleVisibleInList } =
+  await import(path.join(repoRoot, "tests/models/lesson-modules-view.oracle.ts"));
 
-const DEPARTMENT = 'COSC';
+const DEPARTMENT = "COSC";
 const NOT_FOUND_ID = 999_999_999;
+
+function coreEnrollment(userId, role = "STUDENT") {
+  return {
+    studentId: userId,
+    studentEmail: `${userId}@test.com`,
+    studentName: userId,
+    enrolledAt: new Date().toISOString(),
+    isActive: true,
+    role,
+  };
+}
 
 beforeEach(async () => {
   await truncateAll();
+  vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
+  vi.mocked(getEduAiCourseEnrollmentServiceKey)
+    .mockReset()
+    .mockImplementation(async (_courseId, userId) => {
+      const enrollments = await listEduAiCourseEnrollmentsServiceKey();
+      return enrollments.find((enrollment) => enrollment.studentId === userId) ?? null;
+    });
   vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
     id: coreOfferingId,
     department: DEPARTMENT,
@@ -66,63 +90,80 @@ beforeEach(async () => {
 async function buildRow(row) {
   const owner = makeProfessor();
   const seed = await seedMinimalCourse(owner.id);
-  await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: row.Published === 'yes' } });
-  await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: row.Published === 'yes' } });
+  await prisma.module.update({
+    where: { id: seed.module.id },
+    data: { isPublished: row.Published === "yes" },
+  });
+  await prisma.lesson.update({
+    where: { id: seed.lesson.id },
+    data: { isPublished: row.Published === "yes" },
+  });
 
   let app;
   switch (row.Role) {
-    case 'ANON':
+    case "ANON":
       app = await createApp();
       break;
-    case 'ADMIN':
+    case "ADMIN":
       app = await createApp({ mockUser: makeAdmin() });
       break;
-    case 'INSTRUCTOR': {
+    case "INSTRUCTOR": {
       // seedMinimalCourse already made `owner` this course's instructor.
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(owner.id, "INSTRUCTOR"),
+      ]);
       app = await createApp({ mockUser: owner });
       break;
     }
-    case 'TA': {
+    case "TA": {
       const ta = makeTA();
-      await prisma.courseEnrollment.create({ data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' } });
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: "TA" },
+      });
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(ta.id, "TA"),
+      ]);
       app = await createApp({ mockUser: ta });
       break;
     }
-    case 'UNIT_ADMIN': {
+    case "UNIT_ADMIN": {
       const unitAdmin = makeUnitAdmin([DEPARTMENT]);
       app = await createApp({ mockUser: unitAdmin });
       break;
     }
-    case 'STUDENT': {
+    case "STUDENT": {
       const student = makeStudent();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+        data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
       });
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(student.id),
+      ]);
       app = await createApp({ mockUser: student });
       break;
     }
-    case 'NONE': {
+    case "NONE": {
       const stranger = makeProfessor(); // authenticated, but not this course's instructor and not enrolled
       app = await createApp({ mockUser: stranger });
       break;
     }
   }
 
-  const lessonId = row.Found === 'yes' ? seed.lesson.id : NOT_FOUND_ID;
-  const courseId = row.Found === 'yes' ? seed.course.id : NOT_FOUND_ID;
+  const lessonId = row.Found === "yes" ? seed.lesson.id : NOT_FOUND_ID;
+  const courseId = row.Found === "yes" ? seed.course.id : NOT_FOUND_ID;
   return { app, lessonId, courseId, moduleId: seed.module.id };
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'lesson-modules-view PICT row #$index $row.Role/$row.Published/$row.Found',
+  "lesson-modules-view PICT row #$index $row.Role/$row.Published/$row.Found",
   ({ row }) => {
-    it('activities route matches the oracle', async () => {
+    it("activities route matches the oracle", async () => {
       const { app, lessonId } = await buildRow(row);
       const res = await request(app).get(`/api/lessons/${lessonId}/activities`);
       expect(res.status).toBe(expectedActivitiesListStatus(row));
     });
 
-    it('modules route matches the oracle, including list-filtering vs 403', async () => {
+    it("modules route matches the oracle, including list-filtering vs 403", async () => {
       const { app, courseId, moduleId } = await buildRow(row);
       const res = await request(app).get(`/api/courses/${courseId}/modules`);
       expect(res.status).toBe(expectedModulesListStatus(row));

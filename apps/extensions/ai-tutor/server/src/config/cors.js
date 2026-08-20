@@ -1,7 +1,7 @@
 const rawOriginPattern = /^https?:\/\/[^/?#]+$/;
 
 export function isValidOrigin(entry) {
-  if (!rawOriginPattern.test(entry) || entry.includes('*')) {
+  if (!rawOriginPattern.test(entry) || entry.includes("*")) {
     return false;
   }
 
@@ -12,11 +12,11 @@ export function isValidOrigin(entry) {
     return false;
   }
 
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
     return false;
   }
 
-  if (url.username !== '' || url.password !== '') {
+  if (url.username !== "" || url.password !== "") {
     return false;
   }
 
@@ -30,24 +30,24 @@ export function normalizeOrigin(entry) {
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 const runtimeEnvironment = process.env.NODE_ENV?.trim();
 const localDefaultOrigins =
-  runtimeEnvironment === 'development' || runtimeEnvironment === 'test'
-    ? ['http://localhost:3001']
+  runtimeEnvironment === "development" || runtimeEnvironment === "test"
+    ? ["http://localhost:3001"]
     : [];
 
 let allowedOrigins;
-if (!corsOriginsEnv || corsOriginsEnv.trim() === '') {
+if (!corsOriginsEnv || corsOriginsEnv.trim() === "") {
   allowedOrigins = [...localDefaultOrigins];
 } else {
   const raw = corsOriginsEnv
-    .split(',')
+    .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
   const deduped = [...new Set(raw)];
 
   for (const entry of deduped) {
-    if (entry.includes('*')) {
-      throw new Error('CORS_ORIGINS must not contain a wildcard (*). Use explicit origins only.');
+    if (entry.includes("*")) {
+      throw new Error("CORS_ORIGINS must not contain a wildcard (*). Use explicit origins only.");
     }
 
     if (!isValidOrigin(entry)) {
@@ -61,7 +61,7 @@ if (!corsOriginsEnv || corsOriginsEnv.trim() === '') {
 }
 
 export function corsOriginCallback(origin, callback) {
-  if (!origin || origin === 'null') {
+  if (!origin || origin === "null") {
     return callback(null, false);
   }
 

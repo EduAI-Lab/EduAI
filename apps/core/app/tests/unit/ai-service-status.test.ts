@@ -110,7 +110,10 @@ describe("getAiServiceStatus", () => {
     const status = await mod.getAiServiceStatus();
     expect(status.ubc.state).toBe("online");
     expect(status.ubc.detail).toMatch(/reachable/i);
-    expect(fetchMock).toHaveBeenCalledWith("http://vllm.test/models", expect.objectContaining({ method: "GET" }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://vllm.test/models",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 
   it("reports ubc online when only Ollama is configured and reachable", async () => {
@@ -121,7 +124,10 @@ describe("getAiServiceStatus", () => {
 
     const status = await mod.getAiServiceStatus();
     expect(status.ubc.state).toBe("online");
-    expect(fetchMock).toHaveBeenCalledWith("http://ollama.test/tags", expect.objectContaining({ method: "GET" }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://ollama.test/tags",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 
   it("reports ubc offline when configured URLs are unreachable", async () => {

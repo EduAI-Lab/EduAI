@@ -15,10 +15,7 @@ import {
   deactivateDroppedCanvasEnrollments,
   linkEnrollmentsFromStagingForCourse,
 } from "~/lib/canvas/enrollment-link.server";
-import {
-  deactivateCourseRoster,
-  syncCourseRoster,
-} from "~/lib/canvas/roster.server";
+import { deactivateCourseRoster, syncCourseRoster } from "~/lib/canvas/roster.server";
 import type {
   SyncCanvasCourseResult,
   SyncCanvasCoursesResult,
@@ -39,7 +36,7 @@ async function syncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
   fetchImpl: typeof fetch,
-): Promise<Omit<SyncCanvasCourseResult, 'canvasId'>> {
+): Promise<Omit<SyncCanvasCourseResult, "canvasId">> {
   const credentials = await requireCanvasCredentials(userId);
   const canvasCourse = await findCanvasCourseByExternalId(canvasCourseId, fetchImpl, userId);
 
@@ -86,7 +83,7 @@ async function syncSingleCanvasCourse(
 async function unsyncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
-): Promise<Omit<UnsyncCanvasCourseResult, 'canvasId'>> {
+): Promise<Omit<UnsyncCanvasCourseResult, "canvasId">> {
   const course = await prisma.course.findFirst({
     where: {
       externalSource: CANVAS_EXTERNAL_SOURCE,
@@ -107,42 +104,53 @@ async function unsyncSingleCanvasCourse(
     throw new Error(`Synced course ${canvasCourseId} not found for this instructor`);
   }
 
-  await prisma.enrollment.updateMany({
-    where: {
-      courseId: course.id,
-      userId,
-      role: EnrollmentRole.INSTRUCTOR,
+  // Serialize sync and unsync decisions for a shared Core course. Instructors
+  // can independently connect the same Canvas course, so student/TA and roster
+  // state is course-owned and must only be torn down by the final instructor.
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-sync:${course.id}`}))`;
+
+      await tx.enrollment.updateMany({
+        where: {
+          courseId: course.id,
+          userId,
+          role: EnrollmentRole.INSTRUCTOR,
+        },
+        data: { isActive: false },
+      });
+
+      const activeInstructors = await tx.enrollment.count({
+        where: {
+          courseId: course.id,
+          role: EnrollmentRole.INSTRUCTOR,
+          isActive: true,
+        },
+      });
+
+      if (activeInstructors > 0) {
+        return;
+      }
+
+      await tx.enrollment.updateMany({
+        where: {
+          courseId: course.id,
+          externalSource: CANVAS_EXTERNAL_SOURCE,
+          role: { in: [EnrollmentRole.STUDENT, EnrollmentRole.TA] },
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+
+      await deactivateCourseRoster(course.id, tx);
+
+      await tx.course.update({
+        where: { id: course.id },
+        data: { isActive: false, deletedAt: new Date() },
+      });
     },
-    data: { isActive: false },
-  });
-
-  await prisma.enrollment.updateMany({
-    where: {
-      courseId: course.id,
-      externalSource: CANVAS_EXTERNAL_SOURCE,
-      role: { in: [EnrollmentRole.STUDENT, EnrollmentRole.TA] },
-      isActive: true,
-    },
-    data: { isActive: false },
-  });
-
-  await deactivateCourseRoster(course.id);
-
-  const otherActiveInstructors = await prisma.enrollment.count({
-    where: {
-      courseId: course.id,
-      role: EnrollmentRole.INSTRUCTOR,
-      isActive: true,
-      userId: { not: userId },
-    },
-  });
-
-  if (otherActiveInstructors === 0) {
-    await prisma.course.update({
-      where: { id: course.id },
-      data: { isActive: false, deletedAt: new Date() },
-    });
-  }
+    { maxWait: 15_000, timeout: 30_000 },
+  );
 
   return { coreCourseId: course.id };
 }
@@ -187,7 +195,11 @@ export async function syncCanvasCourses(
     listTeacherCanvasCourses(credentials, fetchImpl),
   ]);
   const liveCanvasIds = liveCourses.map((course) => String(course.id));
-  const { toSync, toUnsync } = computeCanvasSyncDelta(currentlySynced, canvasCourseIds, liveCanvasIds);
+  const { toSync, toUnsync } = computeCanvasSyncDelta(
+    currentlySynced,
+    canvasCourseIds,
+    liveCanvasIds,
+  );
 
   const result: SyncCanvasCoursesResult = {
     synced: [],

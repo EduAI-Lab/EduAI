@@ -8,10 +8,7 @@ vi.mock("~/lib/prisma.server", () => ({
   default: { aiJob: { findMany, count } },
 }));
 
-import {
-  ETA_SAMPLE_SIZE,
-  getQueueEtaSeconds,
-} from "~/lib/queue/queue-eta.server";
+import { ETA_SAMPLE_SIZE, getQueueEtaSeconds } from "~/lib/queue/queue-eta.server";
 
 const job = { queueName: "ai-jobs-chat", status: "PENDING" };
 
@@ -87,17 +84,13 @@ describe("getQueueEtaSeconds", () => {
   });
 
   it("does not query for terminal jobs or missing queue positions", async () => {
-    await expect(
-      getQueueEtaSeconds({ ...job, status: "COMPLETED" }, null),
-    ).resolves.toBeNull();
+    await expect(getQueueEtaSeconds({ ...job, status: "COMPLETED" }, null)).resolves.toBeNull();
     expect(findMany).not.toHaveBeenCalled();
   });
 
   it("degrades to null when the advisory stats query fails", async () => {
     findMany.mockRejectedValue(new Error("database unavailable"));
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       await expect(getQueueEtaSeconds(job, 1)).resolves.toBeNull();

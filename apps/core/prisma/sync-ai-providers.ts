@@ -116,30 +116,98 @@ async function main() {
     },
   });
 
+  const opencode = await prisma.aIProvider.upsert({
+    where: { name: "opencode" },
+    update: {
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+    create: {
+      name: "opencode",
+      displayName: "OpenCode Go",
+      description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
+      requiresApiKey: true,
+      defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
-    { modelId: "gpt-4.1", name: "GPT-4.1", description: "Advanced GPT-4.1", maxTokens: 128000, inputPricing: 5, outputPricing: 15 },
-    { modelId: "gpt-4o", name: "GPT-4o", description: "Multimodal flagship", maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
-    { modelId: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and cheap", maxTokens: 128000, inputPricing: 0.15, outputPricing: 0.6 },
+    {
+      modelId: "gpt-4.1",
+      name: "GPT-4.1",
+      description: "Advanced GPT-4.1",
+      maxTokens: 128000,
+      inputPricing: 5,
+      outputPricing: 15,
+    },
+    {
+      modelId: "gpt-4o",
+      name: "GPT-4o",
+      description: "Multimodal flagship",
+      maxTokens: 128000,
+      inputPricing: 2.5,
+      outputPricing: 10,
+    },
+    {
+      modelId: "gpt-4o-mini",
+      name: "GPT-4o Mini",
+      description: "Fast and cheap",
+      maxTokens: 128000,
+      inputPricing: 0.15,
+      outputPricing: 0.6,
+    },
   ];
 
   for (const m of openaiModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: openai.id, modelId: m.modelId } },
       update: { isActive: true },
-      create: { ...m, type: "CHAT", supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: openai.id },
+      create: {
+        ...m,
+        type: "CHAT",
+        supportsImages: true,
+        supportsTools: true,
+        supportsStreaming: true,
+        providerId: openai.id,
+      },
     });
   }
 
   const googleModels = [
-    { modelId: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Advanced multimodal", maxTokens: 2097152, inputPricing: 1.25, outputPricing: 5 },
-    { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash", description: "Fast multimodal", maxTokens: 1048576, inputPricing: 0.075, outputPricing: 0.3 },
+    {
+      modelId: "gemini-2.5-pro",
+      name: "Gemini 2.5 Pro",
+      description: "Advanced multimodal",
+      maxTokens: 2097152,
+      inputPricing: 1.25,
+      outputPricing: 5,
+    },
+    {
+      modelId: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      description: "Fast multimodal",
+      maxTokens: 1048576,
+      inputPricing: 0.075,
+      outputPricing: 0.3,
+    },
   ];
 
   for (const m of googleModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
       update: { isActive: true },
-      create: { ...m, type: "CHAT", supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: google.id },
+      create: {
+        ...m,
+        type: "CHAT",
+        supportsImages: true,
+        supportsTools: true,
+        supportsStreaming: true,
+        providerId: google.id,
+      },
     });
   }
 
@@ -174,8 +242,33 @@ async function main() {
     });
   }
 
+  await prisma.aIModel.upsert({
+    where: { providerId_modelId: { providerId: opencode.id, modelId: "deepseek-v4-flash" } },
+    update: {
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      isActive: true,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+    },
+    create: {
+      modelId: "deepseek-v4-flash",
+      name: "DeepSeek V4 Flash (OpenCode Go)",
+      description: "OpenCode Go subscription model",
+      maxTokens: 32768,
+      type: "CHAT",
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+      providerId: opencode.id,
+    },
+  });
+
   await applyRoutingTierAssignments();
-  console.log("[sync-ai-providers] Done (vLLM provider + models synced)");
+  console.log("[sync-ai-providers] Done (vLLM + OpenCode providers and models synced)");
 }
 
 main()

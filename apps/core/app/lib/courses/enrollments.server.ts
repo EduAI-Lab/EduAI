@@ -53,6 +53,14 @@ export async function getCourseEnrollments(courseId: string) {
   });
 }
 
+/** Service-key authorization lookup that avoids loading or reconciling a full roster. */
+export async function getCourseEnrollmentForUser(courseId: string, userId: string) {
+  return prisma.enrollment.findUnique({
+    where: { courseId_userId: { courseId, userId } },
+    select: ENROLLMENT_SELECT,
+  });
+}
+
 /**
  * Cursor-paginated student roster for the browser-facing course detail page
  * (#1042). Filters to active STUDENT rows — the same set the Students tab
@@ -78,6 +86,20 @@ export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit
 }
 
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * Serialize enrollment mutations that can affect the instructor floor. A row
+ * lock on the parent course makes the subsequent count-and-write decision
+ * observe any earlier concurrent mutation before it proceeds.
+ */
+async function lockCourseEnrollmentMutations(tx: TxClient, courseId: string) {
+  await tx.$queryRaw`
+    SELECT "id"
+    FROM "courses"
+    WHERE "id" = ${courseId}
+    FOR UPDATE
+  `;
+}
 
 /**
  * §6 instructor-floor invariant: a course must always retain >= 1 active
@@ -136,7 +158,11 @@ export async function addEnrollment(
   actorRank: number,
 ) {
   if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
-    return { status: "422", error: "VALIDATION_ERROR", fields: { body: "userId and role required" } } as const;
+    return {
+      status: "422",
+      error: "VALIDATION_ERROR",
+      fields: { body: "userId and role required" },
+    } as const;
   }
 
   if (!canAddEnrollmentRole(actorRank, payload.role)) {
@@ -162,10 +188,7 @@ export async function addEnrollment(
     });
     return { status: "201", enrollment } as const;
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       // A row already exists for [courseId, userId]. If it's an inactive
       // (previously removed) enrollment, reactivate it with the requested role
       // rather than 409 — a removed TA/student must be re-addable, e.g. after a
@@ -202,6 +225,7 @@ export async function updateEnrollmentRole(
 
   const role = payload.role;
   return prisma.$transaction(async (tx) => {
+    await lockCourseEnrollmentMutations(tx, courseId);
     const existing = await tx.enrollment.findFirst({
       where: { id: enrollmentId, courseId },
     });
@@ -230,6 +254,7 @@ export async function updateEnrollmentRole(
  */
 export async function deactivateEnrollment(courseId: string, enrollmentId: string) {
   return prisma.$transaction(async (tx) => {
+    await lockCourseEnrollmentMutations(tx, courseId);
     const existing = await tx.enrollment.findFirst({
       where: { id: enrollmentId, courseId },
     });

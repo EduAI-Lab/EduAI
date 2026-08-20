@@ -4,17 +4,17 @@
  * Mirrors the mapping used by the course Questions tab wrapper (difficulty label,
  * correct-choice flagging, topic tags).
  */
-import { QuestionCard, questionStatus } from '@eduai/ui';
-import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
+import { QuestionCard, questionStatus } from "@eduai/ui";
+import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from "@eduai/ui";
 
 import {
   questionTypeLabels,
   type QuestionType,
   type QuestionDifficulty,
   type MCQChoice,
-} from '../../types/question';
-import type { Topic } from '../../types/topic';
-import { markCorrectChoices } from '@/lib/mcq';
+} from "../../types/question";
+import type { Topic } from "../../types/topic";
+import { markCorrectChoices } from "@/lib/mcq";
 
 interface ComposerPreviewProps {
   questionType: QuestionType;
@@ -51,14 +51,15 @@ export function ComposerPreview({
   ai = false,
   isDraft = true,
 }: ComposerPreviewProps) {
-  const topicName = (id: string) => topics.find((t) => t.id.toString() === id)?.name ?? `Topic ${id}`;
+  const topicName = (id: string) =>
+    topics.find((t) => t.id.toString() === id)?.name ?? `Topic ${id}`;
   const topicLabels = [
     ...(primaryTopicId ? [topicName(primaryTopicId)] : []),
     ...secondaryTopicIds.map(topicName),
   ];
 
   const previewChoices: QuestionCardChoice[] | undefined =
-    questionType === 'MCQ'
+    questionType === "MCQ"
       ? (() => {
           const visible = choices.filter((c) => c.text.trim().length > 0);
           const correctFlags = markCorrectChoices(answer, visible, {
@@ -87,7 +88,9 @@ export function ComposerPreview({
         questionText.trim() ? (
           questionText
         ) : (
-          <span className="text-muted-foreground italic">Your question will appear here as you type…</span>
+          <span className="text-muted-foreground italic">
+            Your question will appear here as you type…
+          </span>
         )
       }
       choices={previewChoices}

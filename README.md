@@ -43,7 +43,7 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
-Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. `/api/courses` additionally accepts repeatable `?status=` (published|draft), `?term=<code>::<year>`, and `?department=` filters that narrow the complete role-scoped dataset before pagination (never just the current page), and a role-scoped `GET /api/courses/facets` returns the status/term/department option values for the caller's whole accessible set. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
 
 Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
 Core conversations are pinned to a single course so their history and RAG context cannot mix across courses. Selecting another course from an existing conversation starts a fresh chat with that course selected.
@@ -136,7 +136,7 @@ Requires Core, AI Tutor, and Question Maker dev servers already running locally 
 
 The tool audits public pages (e.g. Core sign-in, marked `requiresAuth: false` in `pages.mjs`) in a logged-out browser context, then logs into Core once and reuses that session for every other page across all three apps — Better Auth's dev cookie is host-only for `localhost` with no port restriction (RFC 6265), and AI Tutor / Question Maker authenticate every request by forwarding the `Cookie` header to Core's `/api/sessions/validate` rather than keeping their own session. Each result carries an `authOk` flag confirming the navigation actually landed on the target page; the run exits non-zero if any page fails that check. Full rationale in the navigation helpers in [`scripts/mobile-audit/lib.mjs`](scripts/mobile-audit/lib.mjs).
 
-Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
+Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `EDUAI_LOCAL_SEED_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
 
 ## Route-scoped chat stylesheet (EduAI Core, `#1222`)
 
@@ -163,7 +163,16 @@ npm run dev
 
 On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
 
-**Seeded dev accounts** — all share password `EduAI2026!`
+**Local fixture password** — before starting Core or running a seed, generate a unique password for this disposable local database and export it as `EDUAI_LOCAL_SEED_PASSWORD`:
+
+```bash
+export EDUAI_LOCAL_SEED_PASSWORD="$(openssl rand -base64 24)"
+npm run dev
+```
+
+Keep this value local and use the same shell/environment for local tools that sign in as a seeded account. The seed refuses to run without this explicit local-only secret and the required loopback/development settings; never copy it to a shared or production system.
+
+**Seeded dev accounts** — all use the local-only value in `EDUAI_LOCAL_SEED_PASSWORD`
 
 | Role | Email | Name |
 | --- | --- | --- |
@@ -278,19 +287,43 @@ A few things worth knowing before you touch the setup:
   silently skips those three workspaces.
 - **`no-console` is off on purpose.** The server-path policy is `#1277`'s to
   set, via `overrides` in the shared config.
-- **Formatting is not enforced yet.** `format:check` is wired and runnable, but
-  the repo has never been swept with `oxfmt --write`, so it currently fails. The
-  sweep is a separate PR, landing as one isolated commit recorded in
-  `.git-blame-ignore-revs`, once the open-PR queue has drained. Until then
-  `format:check` is deliberately absent from CI. 1441 of 1798 JavaScript and
-  TypeScript files would change. The sweep and the CI flip are tracked in
-  `#1512`.
-- **A pre-commit hook runs oxlint on staged files**, installed by lefthook via
-  the root `prepare` script. Use `git commit --no-verify` to bypass it, or
-  `npx lefthook run pre-commit` to run it by hand.
+- **Formatting is enforced.** The repo was swept with `oxfmt --write` in one
+  isolated commit (1482 files), and `format:check` runs in the
+  `Lint & Typecheck` CI job. The sweep commit is listed in
+  [`.git-blame-ignore-revs`](.git-blame-ignore-revs) so `git blame` skips it;
+  run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once to get the
+  same behaviour locally. GitHub applies the file automatically. Every SHA in
+  that file is checked for resolvability by the `Validate blame-ignore revs` CI
+  step, so a rebase that mints a new SHA fails loudly instead of quietly leaving
+  `git blame` pointed at the sweep forever.
+- **oxfmt is pinned exactly, not with a caret.** It is pre-1.0, so a minor bump
+  can change its output, and a floating range would let a fresh install reformat
+  files the swept tree considers clean — putting CI at odds with what you get
+  locally. Bumping it is a deliberate commit that re-runs the sweep.
+- **oxfmt is not idempotent in a single pass.** During the sweep, some files
+  under `question-maker-backend` still failed `--check` after the first
+  `--write`. If you re-run it wholesale, loop until `--check` is clean rather
+  than trusting one pass.
+- **Do not assert on source formatting in source-text tests.** A few tests read a
+  source file and assert on its literal text; three in
+  `ai-tutor/app/tests/unit/chat-markdown-css-scope.test.ts` pinned single quotes
+  around import specifiers and went red in the sweep. Quotes are only the case
+  that bit us — spacing, line breaks and trailing commas are all the formatter's
+  to decide, and `printWidth` can move any of them. Assert on the thing you mean
+  (that the import exists) with a regex loose enough that reformatting the line
+  cannot change the answer.
+- **A pre-commit hook runs oxfmt and oxlint on staged files**, installed by
+  lefthook via the root `prepare` script. Use `git commit --no-verify` to bypass
+  it, or `npx lefthook run pre-commit` to run it by hand.
+- **The format scripts pass `.`, not a list of directories.** `ignorePatterns`
+  in `.oxfmtrc.json` already scopes oxfmt to JavaScript and TypeScript, so
+  checking the whole repo takes well under a second and cannot miss a new
+  top-level directory. A hand-maintained directory list would go stale the first
+  time someone adds one.
 - **oxfmt is scoped to JavaScript and TypeScript on purpose.** It also formats
   Markdown, JSON, YAML, CSS and HTML, which is more than this repo wants it to
-  own: a bare `oxfmt .` reflows all 151 tracked Markdown files (including
+  own. Without those entries in `ignorePatterns`, `oxfmt .` reflows all 151
+  tracked Markdown files (including
   `CHANGELOG.md`, which merges under a union driver — reflowing it would break
   that), rewrites the nine GitHub Actions workflows, and rewrites data JSON such
   as `apps/core/data/routing-knn-exemplars.json`. It also reflowed a

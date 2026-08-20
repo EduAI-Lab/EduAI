@@ -66,12 +66,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   try {
     const recheckPublishState = new URL(request.url).searchParams.get("recheck") === "true";
-    const files = await discoverCanvasMaterialsForCourse(
-      resolved.user.id,
-      courseId,
-      undefined,
-      { recheckPublishState },
-    );
+    const files = await discoverCanvasMaterialsForCourse(resolved.user.id, courseId, undefined, {
+      recheckPublishState,
+    });
     return json(200, { success: true, data: { files } });
   } catch (error) {
     return mapCanvasMaterialsError(error);

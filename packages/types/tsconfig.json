@@ -7,6 +7,7 @@
     "declarationMap": true,
     "rootDir": "./src",
     "outDir": "./dist",
+    "types": [],
     "strict": true,
     "verbatimModuleSyntax": true
   },

@@ -81,9 +81,7 @@ export function getCourseDisplayName(
   officialName: string,
   preference?: CourseCardPreference,
 ): string {
-  const nickname = preference?.nickname
-    ? normalizeCourseNickname(preference.nickname)
-    : "";
+  const nickname = preference?.nickname ? normalizeCourseNickname(preference.nickname) : "";
   return nickname || officialName;
 }
 

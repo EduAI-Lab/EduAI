@@ -10,10 +10,7 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { buildInvitationEmail } from "~/lib/email/templates/invitation";
 import { generateInviteToken, hashToken } from "~/lib/invitations/token.server";
-import type {
-  AcceptInvitationInput,
-  CreateInvitationInput,
-} from "~/lib/invitations/schemas";
+import type { AcceptInvitationInput, CreateInvitationInput } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
 
@@ -47,6 +44,13 @@ export type AcceptInvitationResult =
       user: { id: string; email: string; role: string };
     }
   | { ok: false; status: number; error: string };
+
+class InvitationConsumeLostRaceError extends Error {
+  constructor() {
+    super("Invitation was changed while it was being accepted");
+    this.name = "InvitationConsumeLostRaceError";
+  }
+}
 
 function expiryHours(): number {
   const raw = process.env.INVITE_EXPIRY_HOURS;
@@ -158,10 +162,27 @@ export async function resendInvitation(
 
   const { token, tokenHash } = generateInviteToken();
   const expiresAt = new Date(Date.now() + expiryHours() * 60 * 60 * 1000);
-  const updated = await prisma.invitation.update({
-    where: { id },
-    data: { tokenHash, expiresAt },
-  });
+  let updated: Invitation;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      // Rotate only while the row is still pending. An accept/revoke that wins
+      // the race makes this conditional write a no-op instead of resurrecting
+      // or rotating a consumed invitation.
+      const changed = await tx.invitation.updateMany({
+        where: { id, status: "PENDING" },
+        data: { tokenHash, expiresAt },
+      });
+      if (changed.count !== 1) throw new InvitationConsumeLostRaceError();
+      const row = await tx.invitation.findUnique({ where: { id } });
+      if (!row) throw new InvitationConsumeLostRaceError();
+      return row;
+    });
+  } catch (error) {
+    if (error instanceof InvitationConsumeLostRaceError) {
+      return { ok: false, status: 409, error: "NOT_PENDING" };
+    }
+    throw error;
+  }
 
   const acceptUrl = buildAcceptUrl(token);
   const emailDelivered = await emailInvite(updated, acceptUrl, invitedBy?.name);
@@ -182,9 +203,9 @@ const INVITATIONS_LIST_LIMIT = 500;
  * `invitedById` to scope the list to a single inviter (used so a UNIT_ADMIN only
  * sees the invitations they sent).
  */
-export async function listInvitations(
-  opts?: { invitedById?: string },
-): Promise<PublicInvitation[]> {
+export async function listInvitations(opts?: {
+  invitedById?: string;
+}): Promise<PublicInvitation[]> {
   // Fail closed: a scope object MUST carry a non-empty id. Otherwise a future
   // falsy value would silently collapse the filter to "all invitations".
   if (opts && !opts.invitedById) return [];
@@ -217,17 +238,33 @@ export async function revokeInvitation(
   if (invitation.status !== "PENDING") {
     return { ok: false, status: 409, error: "NOT_PENDING" };
   }
-  const updated = await prisma.invitation.update({
-    where: { id },
-    data: { status: "REVOKED" },
-  });
+  let updated: Invitation;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const changed = await tx.invitation.updateMany({
+        where: { id, status: "PENDING" },
+        data: { status: "REVOKED" },
+      });
+      if (changed.count !== 1) throw new InvitationConsumeLostRaceError();
+      const row = await tx.invitation.findUnique({ where: { id } });
+      if (!row) throw new InvitationConsumeLostRaceError();
+      return row;
+    });
+  } catch (error) {
+    if (error instanceof InvitationConsumeLostRaceError) {
+      return { ok: false, status: 409, error: "NOT_PENDING" };
+    }
+    throw error;
+  }
   return { ok: true, invitation: toPublic(updated) };
 }
 
 /** Validate a raw token for the accept page; never reveals the token hash. */
 export async function getInvitationByToken(
   token: string,
-): Promise<{ ok: true; invitation: PublicInvitation } | { ok: false; status: number; error: string }> {
+): Promise<
+  { ok: true; invitation: PublicInvitation } | { ok: false; status: number; error: string }
+> {
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashToken(token) },
   });
@@ -308,9 +345,11 @@ export async function acceptInvitation(
     return { ok: false, status: 500, error: "ACCOUNT_NOT_CREATED" };
   }
 
-  // Promote the account and consume the invite. If this fails after sign-up
-  // succeeded, roll the new user back (account/sessions cascade) so the invite
-  // stays usable — otherwise a retry would dead-end on USER_EXISTS as STUDENT.
+  // Promote the account and consume the invite. The final write is conditional
+  // on the exact invitation id + original token hash + PENDING status + expiry
+  // snapshot. If revoke/resend/another accept wins first, no stale accept can
+  // overwrite it. If this transaction loses, roll the newly-created account
+  // (and its Better Auth session/account rows) back before returning.
   let updatedUser: { id: string; email: string; role: string };
   try {
     updatedUser = await prisma.$transaction(async (tx) => {
@@ -323,14 +362,24 @@ export async function acceptInvitation(
         },
         select: { id: true, email: true, role: true },
       });
-      await tx.invitation.update({
-        where: { id: invite.id },
+      const consumed = await tx.invitation.updateMany({
+        where: {
+          id: invite.id,
+          tokenHash: hashToken(input.token),
+          status: "PENDING",
+          // Preserve the existing exact-expiry contract: getInvitationByToken
+          // treats an invite at its expiry instant as still valid. Equality
+          // also fences this consume to the original snapshot, so a resend
+          // cannot be mistaken for the invitation that was displayed.
+          expiresAt: { equals: invite.expiresAt, gte: new Date() },
+        },
         data: {
           status: "ACCEPTED",
           acceptedAt: new Date(),
           acceptedUserId: user.id,
         },
       });
+      if (consumed.count !== 1) throw new InvitationConsumeLostRaceError();
       return user;
     });
   } catch (error) {
@@ -340,6 +389,22 @@ export async function acceptInvitation(
       .catch((cleanupError) =>
         console.error("[invitations] rollback of invited account failed", cleanupError),
       );
+    if (error instanceof InvitationConsumeLostRaceError) {
+      const current = await prisma.invitation.findUnique({ where: { id: invite.id } });
+      if (!current || current.tokenHash !== hashToken(input.token)) {
+        return { ok: false, status: 409, error: "INVALID_TOKEN" };
+      }
+      if (current.status === "REVOKED") {
+        return { ok: false, status: 409, error: "INVITATION_REVOKED" };
+      }
+      if (current.status === "ACCEPTED") {
+        return { ok: false, status: 409, error: "INVITATION_USED" };
+      }
+      if (current.expiresAt.getTime() <= Date.now()) {
+        return { ok: false, status: 409, error: "INVITATION_EXPIRED" };
+      }
+      return { ok: false, status: 409, error: "INVALID_TOKEN" };
+    }
     return { ok: false, status: 500, error: "SIGNUP_FAILED" };
   }
 

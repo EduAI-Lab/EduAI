@@ -223,7 +223,9 @@ describe("listAdminCourseTopics", () => {
       course: { id: "c1", code: "COSC 111" },
     } as never);
     vi.mocked(listAccessibleCourseTopics).mockResolvedValue({
-      topics: [{ id: "t1", courseId: "c1", name: "Loops", createdAt: new Date(), updatedAt: new Date() }],
+      topics: [
+        { id: "t1", courseId: "c1", name: "Loops", createdAt: new Date(), updatedAt: new Date() },
+      ],
     });
 
     const result = await listAdminCourseTopics(ADMIN, "c1");

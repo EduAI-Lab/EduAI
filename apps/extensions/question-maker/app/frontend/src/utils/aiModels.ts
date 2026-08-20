@@ -2,18 +2,18 @@
  * Helpers for choosing AI models from the live Core/EduAI catalog.
  * Prefer campus (vllm/ollama) models; avoid hardcoding specific model ids.
  */
-import type { EduAIModelOption } from '../services/eduaiService';
-import { modelSizeRankFromText } from './modelSizeRanks';
+import type { EduAIModelOption } from "../services/eduaiService";
+import { modelSizeRankFromText } from "./modelSizeRanks";
 
-export const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
+export const CAMPUS_PROVIDERS = new Set(["vllm", "ollama"]);
 
 /** Soft last-resort ids when the catalog is empty (offline Core). */
-export const FALLBACK_GENERATION_MODEL = 'vllm:qwen2.5-32b-instruct';
-export const FALLBACK_PROBE_MODEL = 'vllm:qwen2.5-7b-instruct';
+export const FALLBACK_GENERATION_MODEL = "vllm:qwen2.5-32b-instruct";
+export const FALLBACK_PROBE_MODEL = "vllm:qwen2.5-7b-instruct";
 
-export function isCampusModel(model: Pick<EduAIModelOption, 'provider' | 'id'>): boolean {
+export function isCampusModel(model: Pick<EduAIModelOption, "provider" | "id">): boolean {
   if (CAMPUS_PROVIDERS.has(model.provider)) return true;
-  return model.id.startsWith('vllm:') || model.id.startsWith('ollama:');
+  return model.id.startsWith("vllm:") || model.id.startsWith("ollama:");
 }
 
 function sizeRank(model: EduAIModelOption): number {

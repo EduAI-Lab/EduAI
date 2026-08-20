@@ -71,10 +71,7 @@ export async function getDashboardCanvasIntegration(user: {
   role?: string | null;
 }): Promise<CanvasIntegrationPublic | null> {
   if (!canManageCanvasIntegration(user.role)) return null;
-  if (
-    user.role === "INSTRUCTOR" &&
-    !(await getPolicy("instructors.canManageCanvasIntegration"))
-  ) {
+  if (user.role === "INSTRUCTOR" && !(await getPolicy("instructors.canManageCanvasIntegration"))) {
     return null;
   }
   return getCanvasIntegrationPublic(user.id);

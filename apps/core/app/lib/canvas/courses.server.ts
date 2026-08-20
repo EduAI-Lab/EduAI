@@ -1,9 +1,6 @@
-import { EnrollmentRole } from "@prisma/client";
+import { EnrollmentRole, Prisma } from "@prisma/client";
 import type { CanvasCourseApi, CanvasIntegrationCredentials } from "~/lib/canvas/client.server";
-import {
-  CANVAS_EXTERNAL_SOURCE,
-  listTeacherCanvasCourses,
-} from "~/lib/canvas/client.server";
+import { CANVAS_EXTERNAL_SOURCE, listTeacherCanvasCourses } from "~/lib/canvas/client.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
 import type { CanvasCoursePickerItem } from "~/lib/canvas/schemas";
 import {
@@ -59,8 +56,7 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
     );
   }
 
-  const endDate =
-    parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
+  const endDate = parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
 
   return { startDate, endDate };
 }
@@ -163,36 +159,59 @@ export async function listCanvasCoursesWithSyncState(
 /** Upserts a Core course from a Canvas course payload. */
 export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) {
   const fields = mapCanvasCourseToCoreFields(canvasCourse);
-
-  const existing = await prisma.course.findFirst({
-    where: {
+  const externalIdentity = {
+    externalSource_externalId: {
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: fields.externalId,
     },
-  });
+  } as const;
+  const updates = {
+    name: fields.name,
+    code: fields.code,
+    section: fields.section,
+    term: fields.term,
+    year: fields.year,
+    startDate: fields.startDate,
+    endDate: fields.endDate,
+    lastSyncedAt: fields.lastSyncedAt,
+    deletedAt: null,
+    isActive: true,
+    isPublished: fields.isPublished,
+  };
 
-  if (existing) {
+  try {
+    // The external identity unique key lets Prisma issue a database-native
+    // upsert, so concurrent first syncs converge even when Canvas snapshots
+    // differ in code or dates (and therefore in the legacy course triplet).
+    const course = await prisma.course.upsert({
+      where: externalIdentity,
+      create: fields,
+      update: updates,
+    });
+    // Native upsert does not report create-vs-update; ensureDefaultBank is
+    // idempotent and race-safe, so newly synced courses always converge on a
+    // default question bank even when concurrent first syncs race here.
+    await ensureDefaultBank(course.id);
+    return course;
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+
+    // Some Prisma/database execution paths can still report the losing insert
+    // as P2002. Adopt only a row with the same external identity; if none
+    // exists, the conflict belongs to another invariant (for example a manual
+    // course with the same code/start/section) and must remain visible.
+    const winner = await prisma.course.findUnique({ where: externalIdentity });
+    if (!winner) {
+      throw error;
+    }
+
     return prisma.course.update({
-      where: { id: existing.id },
-      data: {
-        name: fields.name,
-        code: fields.code,
-        section: fields.section,
-        term: fields.term,
-        year: fields.year,
-        startDate: fields.startDate,
-        endDate: fields.endDate,
-        lastSyncedAt: fields.lastSyncedAt,
-        deletedAt: null,
-        isActive: true,
-        isPublished: fields.isPublished,
-      },
+      where: { id: winner.id },
+      data: updates,
     });
   }
-
-  const created = await prisma.course.create({ data: fields });
-  await ensureDefaultBank(created.id);
-  return created;
 }
 
 /** Ensures the syncing instructor has an active INSTRUCTOR enrollment on the course. */

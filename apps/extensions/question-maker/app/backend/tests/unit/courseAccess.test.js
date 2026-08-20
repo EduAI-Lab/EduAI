@@ -2,7 +2,7 @@
  * Unit tests for QM per-course RBAC (resolveCourseAccess + requireCourseAccess).
  * Mocks the Course model and the Core HTTP client — no network or DB needed.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCourseFindOne, mockEnrollments, mockCourse, mockMe } = vi.hoisted(() => ({
   mockCourseFindOne: vi.fn(),
@@ -11,113 +11,126 @@ const { mockCourseFindOne, mockEnrollments, mockCourse, mockMe } = vi.hoisted(()
   mockMe: vi.fn(),
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: { course: { findUnique: mockCourseFindOne } },
 }));
 
-vi.mock('../../src/services/coreApiService.js', () => ({
+vi.mock("../../src/services/coreApiService.js", () => ({
   getCourseEnrollmentsFromCore: mockEnrollments,
   getCourseFromCore: mockCourse,
   getMyProfileFromCore: mockMe,
 }));
 
-const { resolveCourseAccess, requireCourseAccess, LEVELS } = await import(
-  '../../src/middleware/courseAccess.js'
-);
+const { resolveCourseAccess, requireCourseAccess, requireOptionalCourseAccess, LEVELS } =
+  await import("../../src/middleware/courseAccess.js");
 
-const LINKED = { id: 1, userId: 'owner-1', coreCourseId: 'core-c1' };
+const LINKED = { id: 1, userId: "owner-1", coreCourseId: "core-c1" };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockCourseFindOne.mockResolvedValue(LINKED);
   mockEnrollments.mockResolvedValue({ enrollments: [] });
-  mockCourse.mockResolvedValue({ id: 'core-c1', department: 'COSC' });
-  mockMe.mockResolvedValue({ role: 'UNIT_ADMIN', authorizedUnits: [] });
+  mockCourse.mockResolvedValue({ id: "core-c1", department: "COSC" });
+  mockMe.mockResolvedValue({ role: "UNIT_ADMIN", authorizedUnits: [] });
 });
 
-describe('resolveCourseAccess', () => {
-  it('grants ADMIN the admin level without any Core call', async () => {
-    const access = await resolveCourseAccess({ id: 'a', role: 'ADMIN' }, 1);
+describe("resolveCourseAccess", () => {
+  it("grants ADMIN the admin level without any Core call", async () => {
+    const access = await resolveCourseAccess({ id: "a", role: "ADMIN" }, 1);
     expect(access).toEqual(LEVELS.admin);
     expect(mockEnrollments).not.toHaveBeenCalled();
     expect(mockCourse).not.toHaveBeenCalled();
   });
 
-  it('returns null when the QM course does not exist', async () => {
+  it("returns null when the QM course does not exist", async () => {
     mockCourseFindOne.mockResolvedValueOnce(null);
-    const access = await resolveCourseAccess({ id: 'x', role: 'INSTRUCTOR' }, 99);
+    const access = await resolveCourseAccess({ id: "x", role: "INSTRUCTOR" }, 99);
     expect(access).toBeNull();
   });
 
-  it('returns null for a non-integer course id', async () => {
-    const access = await resolveCourseAccess({ id: 'x', role: 'INSTRUCTOR' }, 'abc');
+  it("returns null for a non-integer course id", async () => {
+    const access = await resolveCourseAccess({ id: "x", role: "INSTRUCTOR" }, "abc");
     expect(access).toBeNull();
     expect(mockCourseFindOne).not.toHaveBeenCalled();
   });
 
-  describe('unlinked course (coreCourseId === null)', () => {
+  describe("unlinked course (coreCourseId === null)", () => {
     beforeEach(() => {
-      mockCourseFindOne.mockResolvedValue({ id: 2, userId: 'owner-1', coreCourseId: null });
+      mockCourseFindOne.mockResolvedValue({ id: 2, userId: "owner-1", coreCourseId: null });
     });
 
-    it('denies the owner — ownership alone is not access (#1114)', async () => {
-      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 2);
+    it("denies the owner — ownership alone is not access (#1114)", async () => {
+      const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 2);
       expect(access).toBeNull();
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
-    it('denies a non-owner (even a TA enrolled elsewhere)', async () => {
-      const access = await resolveCourseAccess({ id: 'someone-else', role: 'TA' }, 2);
+    it("denies a STUDENT owner access to an unlinked course", async () => {
+      const access = await resolveCourseAccess({ id: "owner-1", role: "STUDENT" }, 2);
+      expect(access).toBeNull();
+      expect(mockEnrollments).not.toHaveBeenCalled();
+    });
+
+    it("denies a non-owner (even a TA enrolled elsewhere)", async () => {
+      const access = await resolveCourseAccess({ id: "someone-else", role: "TA" }, 2);
       expect(access).toBeNull();
     });
   });
 
-  describe('enrollment-based access', () => {
+  describe("enrollment-based access", () => {
     it.each([
-      ['INSTRUCTOR', LEVELS.instructor],
-      ['TA', LEVELS.ta],
-      ['STUDENT', LEVELS.student],
-    ])('maps an active %s enrollment to its level', async (role, expected) => {
+      ["INSTRUCTOR", LEVELS.instructor],
+      ["TA", LEVELS.ta],
+      ["STUDENT", LEVELS.student],
+    ])("maps an active %s enrollment to its level", async (role, expected) => {
       mockEnrollments.mockResolvedValueOnce({
-        enrollments: [{ studentId: 'u1', role, isActive: true }],
+        enrollments: [{ studentId: "u1", role, isActive: true }],
       });
-      const access = await resolveCourseAccess({ id: 'u1', role: 'STUDENT' }, 1);
+      const access = await resolveCourseAccess({ id: "u1", role: "STUDENT" }, 1);
       expect(access).toEqual(expected);
     });
 
-    it('returns null when the caller has no enrollment', async () => {
+    it("returns null when the caller has no enrollment", async () => {
       mockEnrollments.mockResolvedValueOnce({
-        enrollments: [{ studentId: 'other', role: 'INSTRUCTOR', isActive: true }],
+        enrollments: [{ studentId: "other", role: "INSTRUCTOR", isActive: true }],
       });
-      const access = await resolveCourseAccess({ id: 'u1', role: 'INSTRUCTOR' }, 1);
+      const access = await resolveCourseAccess({ id: "u1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
 
-    it('ignores an inactive enrollment', async () => {
+    it("ignores an inactive enrollment", async () => {
       mockEnrollments.mockResolvedValueOnce({
-        enrollments: [{ studentId: 'u1', role: 'INSTRUCTOR', isActive: false }],
+        enrollments: [{ studentId: "u1", role: "INSTRUCTOR", isActive: false }],
       });
-      const access = await resolveCourseAccess({ id: 'u1', role: 'INSTRUCTOR' }, 1);
+      const access = await resolveCourseAccess({ id: "u1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
 
-    it('returns null for an unrecognized enrollment role', async () => {
+    it("returns null for an unrecognized enrollment role", async () => {
       mockEnrollments.mockResolvedValueOnce({
-        enrollments: [{ studentId: 'u1', role: 'OBSERVER', isActive: true }],
+        enrollments: [{ studentId: "u1", role: "OBSERVER", isActive: true }],
       });
-      const access = await resolveCourseAccess({ id: 'u1', role: 'STUDENT' }, 1);
+      const access = await resolveCourseAccess({ id: "u1", role: "STUDENT" }, 1);
       expect(access).toBeNull();
     });
 
-    it('fails closed for the owner when enrollment fetch throws (#1114)', async () => {
-      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
-      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 1);
+    it("fails closed for the owner when enrollment fetch throws (#1114)", async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error("Core unreachable"));
+      const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
 
-    it('fails closed for the owner when no matching enrollment exists (#1114)', async () => {
+    it("fails closed for the owner when no matching enrollment exists (#1114)", async () => {
       mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
-      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 1);
+      const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 1);
+      expect(access).toBeNull();
+    });
+
+    it("fails closed when Core returns a malformed enrollment payload", async () => {
+      mockEnrollments.mockResolvedValueOnce({
+        enrollments: { studentId: "u1", role: "INSTRUCTOR" },
+      });
+      const access = await resolveCourseAccess({ id: "u1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
   });
@@ -128,22 +141,16 @@ describe('resolveCourseAccess', () => {
   // source of truth for access; an owner is not automatically an instructor
   // just because they linked the course. Owner-fail-open is preserved only
   // for unlinked courses (`coreCourseId === null`, tested above).
-  describe('owner fail-closed when Core enrollments unavailable (SEAM-02 / #1197)', () => {
-    it('denies the QM course owner (null access) when getCourseEnrollmentsFromCore throws', async () => {
-      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
-      const access = await resolveCourseAccess(
-        { id: 'owner-1', role: 'INSTRUCTOR' },
-        1,
-      );
+  describe("owner fail-closed when Core enrollments unavailable (SEAM-02 / #1197)", () => {
+    it("denies the QM course owner (null access) when getCourseEnrollmentsFromCore throws", async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error("Core unreachable"));
+      const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
 
-    it('denies a non-owner when getCourseEnrollmentsFromCore throws', async () => {
-      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
-      const access = await resolveCourseAccess(
-        { id: 'someone-else', role: 'INSTRUCTOR' },
-        1,
-      );
+    it("denies a non-owner when getCourseEnrollmentsFromCore throws", async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error("Core unreachable"));
+      const access = await resolveCourseAccess({ id: "someone-else", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
 
@@ -154,74 +161,96 @@ describe('resolveCourseAccess', () => {
     // #1114 fail-closed test above with the opposite expectation was the
     // stale case this replaces — see 'fails closed for the owner when no
     // matching enrollment exists (#1114)' above, same scenario.
-    it('denies the owner when Core answers with an empty roster, same as any other no-match (#1114)', async () => {
+    it("denies the owner when Core answers with an empty roster, same as any other no-match (#1114)", async () => {
       mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
-      const access = await resolveCourseAccess(
-        { id: 'owner-1', role: 'INSTRUCTOR' },
-        1,
-      );
+      const access = await resolveCourseAccess({ id: "owner-1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
-    it('denies a UNIT_ADMIN QM owner when getCourseFromCore and enrollments both throw', async () => {
-      mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
-      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
-      const access = await resolveCourseAccess(
-        { id: 'owner-1', role: 'UNIT_ADMIN' },
-        1,
-      );
+    it("denies a UNIT_ADMIN QM owner when getCourseFromCore and enrollments both throw", async () => {
+      mockCourse.mockRejectedValueOnce(new Error("Core unreachable"));
+      mockEnrollments.mockRejectedValueOnce(new Error("Core unreachable"));
+      const access = await resolveCourseAccess({ id: "owner-1", role: "UNIT_ADMIN" }, 1);
       expect(access).toBeNull();
     });
   });
 
-  describe('UNIT_ADMIN unit lock', () => {
-    const unitAdmin = { id: 'ua', role: 'UNIT_ADMIN' };
+  describe("UNIT_ADMIN unit lock", () => {
+    const unitAdmin = { id: "ua", role: "UNIT_ADMIN" };
 
-    it('grants unit access when the course department is in authorizedUnits', async () => {
-      mockCourse.mockResolvedValueOnce({ id: 'core-c1', department: 'COSC' });
-      mockMe.mockResolvedValueOnce({ authorizedUnits: ['COSC', 'MATH'] });
+    it("grants unit access when the course department is in authorizedUnits", async () => {
+      mockCourse.mockResolvedValueOnce({ id: "core-c1", department: "COSC" });
+      mockMe.mockResolvedValueOnce({ authorizedUnits: ["COSC", "MATH"] });
       const access = await resolveCourseAccess(unitAdmin, 1);
       expect(access).toEqual(LEVELS.unit);
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
-    it('never matches a null department, falling through to enrollment', async () => {
-      mockCourse.mockResolvedValueOnce({ id: 'core-c1', department: null });
-      mockMe.mockResolvedValueOnce({ authorizedUnits: ['COSC'] });
+    it("never matches a null department, falling through to enrollment", async () => {
+      mockCourse.mockResolvedValueOnce({ id: "core-c1", department: null });
+      mockMe.mockResolvedValueOnce({ authorizedUnits: ["COSC"] });
       mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
       const access = await resolveCourseAccess(unitAdmin, 1);
       expect(access).toBeNull();
     });
 
-    it('falls through to enrollment when the department is outside their units', async () => {
-      mockCourse.mockResolvedValueOnce({ id: 'core-c1', department: 'MATH' });
-      mockMe.mockResolvedValueOnce({ authorizedUnits: ['COSC'] });
+    it("falls through to enrollment when the department is outside their units", async () => {
+      mockCourse.mockResolvedValueOnce({ id: "core-c1", department: "MATH" });
+      mockMe.mockResolvedValueOnce({ authorizedUnits: ["COSC"] });
       mockEnrollments.mockResolvedValueOnce({
-        enrollments: [{ studentId: 'ua', role: 'TA', isActive: true }],
+        enrollments: [{ studentId: "ua", role: "TA", isActive: true }],
       });
       const access = await resolveCourseAccess(unitAdmin, 1);
       expect(access).toEqual(LEVELS.ta);
     });
 
-    it('uses authorizedUnits already on req.user without calling /api/me', async () => {
-      mockCourse.mockResolvedValueOnce({ id: 'core-c1', department: 'COSC' });
+    it("uses authorizedUnits already on req.user without calling /api/me", async () => {
+      mockCourse.mockResolvedValueOnce({ id: "core-c1", department: "COSC" });
       const access = await resolveCourseAccess(
-        { id: 'ua', role: 'UNIT_ADMIN', authorizedUnits: ['COSC'] },
+        { id: "ua", role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
         1,
       );
       expect(access).toEqual(LEVELS.unit);
       expect(mockMe).not.toHaveBeenCalled();
     });
 
-    it('fails closed for a UNIT_ADMIN owner when Core course fetch throws (#1114)', async () => {
-      mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
-      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
-      const access = await resolveCourseAccess({ id: 'owner-1', role: 'UNIT_ADMIN' }, 1);
+    it("fails closed for a UNIT_ADMIN owner when Core course fetch throws (#1114)", async () => {
+      mockCourse.mockRejectedValueOnce(new Error("Core unreachable"));
+      mockEnrollments.mockRejectedValueOnce(new Error("Core unreachable"));
+      const access = await resolveCourseAccess({ id: "owner-1", role: "UNIT_ADMIN" }, 1);
       expect(access).toBeNull();
     });
   });
 });
 
-describe('requireCourseAccess', () => {
+describe("requireOptionalCourseAccess", () => {
+  it("returns a validation error before resolving malformed target ids", async () => {
+    const req = {
+      user: { id: "u1", role: "INSTRUCTOR" },
+      body: { courseId: "not-a-number" },
+      headers: {},
+    };
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+    const next = vi.fn();
+
+    await requireOptionalCourseAccess({
+      min: "instructor",
+      getCourseId: (request) => request.body.courseId,
+    })(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Valid courseId is required",
+    });
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe("requireCourseAccess", () => {
   function makeRes() {
     const res = { status: vi.fn(), json: vi.fn() };
     res.status.mockReturnValue(res);
@@ -229,32 +258,32 @@ describe('requireCourseAccess', () => {
     return res;
   }
 
-  const reqBase = { user: { id: 'u1', role: 'INSTRUCTOR' }, headers: {} };
+  const reqBase = { user: { id: "u1", role: "INSTRUCTOR" }, headers: {} };
 
-  it('admits and attaches courseAccess + qmCourse when rank meets min', async () => {
+  it("admits and attaches courseAccess + qmCourse when rank meets min", async () => {
     mockEnrollments.mockResolvedValueOnce({
-      enrollments: [{ studentId: 'u1', role: 'INSTRUCTOR', isActive: true }],
+      enrollments: [{ studentId: "u1", role: "INSTRUCTOR", isActive: true }],
     });
     const req = { ...reqBase };
     const res = makeRes();
     const next = vi.fn();
 
-    await requireCourseAccess({ min: 'instructor', getCourseId: () => 1 })(req, res, next);
+    await requireCourseAccess({ min: "instructor", getCourseId: () => 1 })(req, res, next);
 
     expect(next).toHaveBeenCalledOnce();
     expect(req.courseAccess).toEqual(LEVELS.instructor);
     expect(req.qmCourse).toEqual(LINKED);
   });
 
-  it('403s when the caller is below the required rank', async () => {
+  it("403s when the caller is below the required rank", async () => {
     mockEnrollments.mockResolvedValueOnce({
-      enrollments: [{ studentId: 'u1', role: 'TA', isActive: true }],
+      enrollments: [{ studentId: "u1", role: "TA", isActive: true }],
     });
     const res = makeRes();
     const next = vi.fn();
 
-    await requireCourseAccess({ min: 'instructor', getCourseId: () => 1 })(
-      { user: { id: 'u1', role: 'TA' }, headers: {} },
+    await requireCourseAccess({ min: "instructor", getCourseId: () => 1 })(
+      { user: { id: "u1", role: "TA" }, headers: {} },
       res,
       next,
     );
@@ -263,47 +292,47 @@ describe('requireCourseAccess', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it('admits a TA when min is ta', async () => {
+  it("admits a TA when min is ta", async () => {
     mockEnrollments.mockResolvedValueOnce({
-      enrollments: [{ studentId: 'u1', role: 'TA', isActive: true }],
+      enrollments: [{ studentId: "u1", role: "TA", isActive: true }],
     });
     const next = vi.fn();
-    await requireCourseAccess({ min: 'ta', getCourseId: () => 1 })(
-      { user: { id: 'u1', role: 'TA' }, headers: {} },
+    await requireCourseAccess({ min: "ta", getCourseId: () => 1 })(
+      { user: { id: "u1", role: "TA" }, headers: {} },
       makeRes(),
       next,
     );
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it('404s when getCourseId returns null', async () => {
+  it("404s when getCourseId returns null", async () => {
     const res = makeRes();
     const next = vi.fn();
-    await requireCourseAccess({ min: 'ta', getCourseId: () => null })(reqBase, res, next);
+    await requireCourseAccess({ min: "ta", getCourseId: () => null })(reqBase, res, next);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('404s when the course does not exist', async () => {
+  it("404s when the course does not exist", async () => {
     mockCourseFindOne.mockResolvedValueOnce(null);
     const res = makeRes();
     const next = vi.fn();
-    await requireCourseAccess({ min: 'ta', getCourseId: () => 7 })(reqBase, res, next);
+    await requireCourseAccess({ min: "ta", getCourseId: () => 7 })(reqBase, res, next);
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  it('401s when req.user is absent', async () => {
+  it("401s when req.user is absent", async () => {
     const res = makeRes();
     const next = vi.fn();
-    await requireCourseAccess({ min: 'ta', getCourseId: () => 1 })({ headers: {} }, res, next);
+    await requireCourseAccess({ min: "ta", getCourseId: () => 1 })({ headers: {} }, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it('forwards thrown errors to next', async () => {
-    const boom = new Error('boom');
+  it("forwards thrown errors to next", async () => {
+    const boom = new Error("boom");
     const next = vi.fn();
     await requireCourseAccess({
-      min: 'ta',
+      min: "ta",
       getCourseId: () => {
         throw boom;
       },
@@ -311,12 +340,12 @@ describe('requireCourseAccess', () => {
     expect(next).toHaveBeenCalledWith(boom);
   });
 
-  it('403s the course owner when Core enrollment fetch fails (#1114)', async () => {
-    mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+  it("403s the course owner when Core enrollment fetch fails (#1114)", async () => {
+    mockEnrollments.mockRejectedValueOnce(new Error("Core unreachable"));
     const res = makeRes();
     const next = vi.fn();
-    await requireCourseAccess({ min: 'instructor', getCourseId: () => 1 })(
-      { user: { id: 'owner-1', role: 'INSTRUCTOR' }, headers: {} },
+    await requireCourseAccess({ min: "instructor", getCourseId: () => 1 })(
+      { user: { id: "owner-1", role: "INSTRUCTOR" }, headers: {} },
       res,
       next,
     );

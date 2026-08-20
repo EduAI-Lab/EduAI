@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@eduai/ui";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@eduai/ui";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
@@ -141,9 +149,7 @@ export function UserFormDialog({
     const payload = {
       ...data,
       ...(data.role === "UNIT_ADMIN" ? { authorizedUnits: selectedUnits } : {}),
-      ...(isEditing
-        ? { taCourseIds: data.role === "STUDENT" ? selectedTACourseIds : [] }
-        : {}),
+      ...(isEditing ? { taCourseIds: data.role === "STUDENT" ? selectedTACourseIds : [] } : {}),
     };
 
     // Lightweight pre-submit checks so the admin gets an inline message without
@@ -185,9 +191,7 @@ export function UserFormDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Edit User" : "Create New User"}
-          </DialogTitle>
+          <DialogTitle>{isEditing ? "Edit User" : "Create New User"}</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>

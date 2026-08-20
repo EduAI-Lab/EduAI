@@ -82,8 +82,7 @@ export async function loadChatBaseDataForUser(user: User): Promise<ChatBaseData>
   ]);
 
   const routerAutoEnabled =
-    routingModelSettings.autoLlmEnabled ||
-    routingModelSettings.autoRulesEnabled;
+    routingModelSettings.autoLlmEnabled || routingModelSettings.autoRulesEnabled;
   const showRoutingModels = routerAutoEnabled;
 
   const registryModels: ChatModelOption[] = dbModels.map((model) => ({
@@ -126,10 +125,7 @@ export async function loadChatTranscript(
   viewer: { id: string; role?: string | null },
   chatId: string,
 ): Promise<ChatTranscript | null> {
-  const access = await resolveChatReadAccess(
-    { id: viewer.id, role: viewer.role },
-    chatId,
-  );
+  const access = await resolveChatReadAccess({ id: viewer.id, role: viewer.role }, chatId);
   if (!access) return null;
 
   const { chat, canEdit } = access;
@@ -147,9 +143,7 @@ export async function loadChatTranscript(
       ownerId: chat.userId,
       ownerName: chat.user.name,
       updatedAt:
-        chat.updatedAt instanceof Date
-          ? chat.updatedAt.toISOString()
-          : String(chat.updatedAt),
+        chat.updatedAt instanceof Date ? chat.updatedAt.toISOString() : String(chat.updatedAt),
     },
     messages: rows.map(reviveStoredMessage),
     canEdit,

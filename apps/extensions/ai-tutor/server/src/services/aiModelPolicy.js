@@ -33,10 +33,11 @@
  * Related: `aiGuidance.js`, `eduaiClient.js`, `systemSettings.js`.
  */
 
-import { listEduAiModels } from './eduaiClient.js';
-import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from './systemSettings.js';
+import { listEduAiModels } from "./eduaiClient.js";
+import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from "./systemSettings.js";
+import { logSafeError } from "../utils/safeErrors.js";
 
-export const DEFAULT_TUTOR_MODEL = 'google:gemini-2.5-flash';
+export const DEFAULT_TUTOR_MODEL = "google:gemini-2.5-flash";
 export const DEFAULT_MAX_SUPERVISOR_ITERATIONS = 3;
 // Hard floor/ceiling for supervisor iterations: 0 would disable supervision
 // (use dualLoopEnabled instead), >5 risks runaway cost on a per-request basis.
@@ -62,22 +63,22 @@ function getPreferredDefaultModelId(modelIds) {
  * When new model families launch, add a substring here so the admin UI can
  * surface accurate cost guidance.
  */
-function inferCostTier(modelId = '', modelName = '') {
+function inferCostTier(modelId = "", modelName = "") {
   const normalized = `${modelId} ${modelName}`.toLowerCase();
-  if (/(flash|mini|haiku)/.test(normalized)) return 'LOW';
-  if (/(pro|opus|o1|reasoning)/.test(normalized)) return 'HIGH';
-  return 'MEDIUM';
+  if (/(flash|mini|haiku)/.test(normalized)) return "LOW";
+  if (/(pro|opus|o1|reasoning)/.test(normalized)) return "HIGH";
+  return "MEDIUM";
 }
 
-function inferSummary(modelId = '', modelName = '') {
+function inferSummary(modelId = "", modelName = "") {
   const normalized = `${modelId} ${modelName}`.toLowerCase();
   if (/(flash|mini|haiku)/.test(normalized)) {
-    return 'Fast response with lower cost; good for everyday guidance and short feedback loops.';
+    return "Fast response with lower cost; good for everyday guidance and short feedback loops.";
   }
   if (/(pro|opus|o1|reasoning)/.test(normalized)) {
-    return 'Higher quality reasoning with higher cost; best when you want stricter review or more nuanced tutoring.';
+    return "Higher quality reasoning with higher cost; best when you want stricter review or more nuanced tutoring.";
   }
-  return 'Balanced model that trades cost and quality evenly for general tutoring tasks.';
+  return "Balanced model that trades cost and quality evenly for general tutoring tasks.";
 }
 
 /**
@@ -106,17 +107,17 @@ export function normalizeStoredAiModelPolicy(rawPolicy = {}) {
       ? Array.from(
           new Set(
             rawPolicy.allowedTutorModelIds.filter(
-              (value) => typeof value === 'string' && value.trim(),
+              (value) => typeof value === "string" && value.trim(),
             ),
           ),
         )
       : [],
     defaultTutorModelId:
-      typeof rawPolicy.defaultTutorModelId === 'string' && rawPolicy.defaultTutorModelId.trim()
+      typeof rawPolicy.defaultTutorModelId === "string" && rawPolicy.defaultTutorModelId.trim()
         ? rawPolicy.defaultTutorModelId.trim()
         : null,
     defaultSupervisorModelId:
-      typeof rawPolicy.defaultSupervisorModelId === 'string' &&
+      typeof rawPolicy.defaultSupervisorModelId === "string" &&
       rawPolicy.defaultSupervisorModelId.trim()
         ? rawPolicy.defaultSupervisorModelId.trim()
         : null,
@@ -182,9 +183,9 @@ function mapCatalogModel(model) {
     costTier,
     summary: inferSummary(modelId, model.name),
     roleHint:
-      costTier === 'HIGH'
-        ? 'Stronger supervisor candidate when you want stricter review quality.'
-        : 'Good tutor candidate when you want a responsive student-facing experience.',
+      costTier === "HIGH"
+        ? "Stronger supervisor candidate when you want stricter review quality."
+        : "Good tutor candidate when you want a responsive student-facing experience.",
   };
 }
 
@@ -213,7 +214,7 @@ export async function getStoredAiModelPolicy() {
   try {
     return normalizeStoredAiModelPolicy(JSON.parse(stored.value));
   } catch (error) {
-    console.error('Failed to parse stored AI model policy:', error);
+    logSafeError("Failed to parse stored AI model policy", error);
     return normalizeStoredAiModelPolicy();
   }
 }
@@ -244,11 +245,11 @@ export async function getAiModelPolicyState() {
       availableModelsError: null,
     };
   } catch (error) {
-    console.error('Failed to load AI model catalog:', error);
+    logSafeError("Failed to load AI model catalog", error);
     return {
       policy: resolveAiModelPolicy(storedPolicy, []),
       availableModels: [],
-      availableModelsError: String(error),
+      availableModelsError: "AI model catalog unavailable",
     };
   }
 }
@@ -265,21 +266,21 @@ export async function setAiModelPolicy(policyInput) {
   const nextPolicy = resolveAiModelPolicy(policyInput, availableModelIds);
 
   if (nextPolicy.allowedTutorModelIds.length === 0) {
-    throw new Error('At least one tutor model must be allowed');
+    throw new Error("At least one tutor model must be allowed");
   }
 
   if (
     !nextPolicy.defaultTutorModelId ||
     !nextPolicy.allowedTutorModelIds.includes(nextPolicy.defaultTutorModelId)
   ) {
-    throw new Error('defaultTutorModelId must be one of the allowed tutor models');
+    throw new Error("defaultTutorModelId must be one of the allowed tutor models");
   }
 
   if (
     !nextPolicy.defaultSupervisorModelId ||
     !availableModelIds.includes(nextPolicy.defaultSupervisorModelId)
   ) {
-    throw new Error('defaultSupervisorModelId must reference an available model');
+    throw new Error("defaultSupervisorModelId must reference an available model");
   }
 
   await setSystemSetting(SYSTEM_SETTING_KEYS.AI_MODEL_POLICY, JSON.stringify(nextPolicy));
@@ -305,7 +306,7 @@ export async function resolveTutorModelSelection(requestedModelId) {
   const { allowedTutorModelIds, defaultTutorModelId } = policy;
 
   if (requestedModelId && !allowedTutorModelIds.includes(requestedModelId)) {
-    const error = new Error('Selected tutor model is not allowed');
+    const error = new Error("Selected tutor model is not allowed");
     error.status = 403;
     throw error;
   }

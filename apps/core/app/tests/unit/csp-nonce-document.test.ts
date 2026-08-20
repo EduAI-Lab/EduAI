@@ -55,10 +55,7 @@ const ROOT_LOADER_DATA = {
  */
 function serverHandoffStream(): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const chunks = [
-    encoder.encode('[{"_1":2},"loaderData",{}]'),
-    encoder.encode('["tail"]'),
-  ];
+  const chunks = [encoder.encode('[{"_1":2},"loaderData",{}]'), encoder.encode('["tail"]')];
   let i = 0;
   return new ReadableStream({
     pull(controller) {
@@ -127,6 +124,9 @@ function entryContext(): EntryContext {
     isSpaMode: false,
     routeDiscovery: { mode: "initial" as const },
     renderMeta: {},
+    // Make React Router emit its critical CSS `<style>` so the test covers
+    // the nonce path that `HydratedRouter` does not retain client-side.
+    criticalCss: "body{color:rgb(1 2 3)}",
     serverHandoffString: JSON.stringify({ ssr: true, isSpaMode: false }),
     serverHandoffStream: serverHandoffStream(),
     // `EntryContext` is the framework's own build-time shape (full asset
@@ -137,9 +137,7 @@ function entryContext(): EntryContext {
 
 /** Every `src`-less (i.e. inline) `<script>` in the document, tag and body. */
 function inlineScripts(html: string): { tag: string; body: string }[] {
-  const matches = html.matchAll(
-    /<script\b(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g,
-  );
+  const matches = html.matchAll(/<script\b(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g);
   return [...matches].map((m) => ({ tag: `<script${m[1]}>`, body: m[2] }));
 }
 
@@ -210,13 +208,25 @@ describe("CSP nonce on document inline scripts (#1219)", () => {
     )?.[1];
 
     const themeScripts = inlineScripts(html).filter(
-      ({ body }) =>
-        body.includes("colorScheme") || body.includes("classList"),
+      ({ body }) => body.includes("colorScheme") || body.includes("classList"),
     );
 
     expect(themeScripts.length).toBeGreaterThanOrEqual(1);
     for (const { tag } of themeScripts) {
       expect(tag).toContain(`nonce="${nonce}"`);
     }
+  });
+
+  it("nonces React Router critical CSS with the response CSP nonce", async () => {
+    const { response, html } = await renderDocument();
+    const nonce = (response.headers.get("Content-Security-Policy") ?? "").match(
+      /'nonce-([^']+)'/,
+    )?.[1];
+    const criticalStyle = html.match(
+      /<style\b[^>]*data-react-router-critical-css[^>]*>[\s\S]*?<\/style>/,
+    )?.[0];
+
+    expect(criticalStyle).toBeTruthy();
+    expect(criticalStyle).toContain(`nonce="${nonce}"`);
   });
 });

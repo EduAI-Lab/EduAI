@@ -1,45 +1,49 @@
-import { useState } from 'react'
-import { Card, CardContent, Button } from '@eduai/ui'
-import { useChatDetail, useCourseChats, type CourseChatSummary } from '~/hooks/api/use-course-chats'
+import { useState } from "react";
+import { Card, CardContent, Button } from "@eduai/ui";
+import {
+  useChatDetail,
+  useCourseChats,
+  type CourseChatSummary,
+} from "~/hooks/api/use-course-chats";
 
 /** Best-effort plain-text extraction from a stored chat message `content` JSON. */
 function messageText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (content && typeof content === 'object') {
-    const obj = content as Record<string, unknown>
-    if (typeof obj.content === 'string') return obj.content
+  if (typeof content === "string") return content;
+  if (content && typeof content === "object") {
+    const obj = content as Record<string, unknown>;
+    if (typeof obj.content === "string") return obj.content;
     if (Array.isArray(obj.parts)) {
       return obj.parts
         .map((p) =>
-          p && typeof p === 'object' && typeof (p as Record<string, unknown>).text === 'string'
+          p && typeof p === "object" && typeof (p as Record<string, unknown>).text === "string"
             ? (p as Record<string, unknown>).text
-            : '',
+            : "",
         )
-        .join('')
+        .join("");
     }
     if (Array.isArray(obj.content)) {
       return obj.content
         .map((p) =>
-          p && typeof p === 'object' && typeof (p as Record<string, unknown>).text === 'string'
+          p && typeof p === "object" && typeof (p as Record<string, unknown>).text === "string"
             ? (p as Record<string, unknown>).text
-            : '',
+            : "",
         )
-        .join('')
+        .join("");
     }
   }
-  return ''
+  return "";
 }
 
 function ChatMessageViewer({ chatId }: { chatId: string }) {
-  const { chat, loading, error, hasMore, loadingMore, loadMore } = useChatDetail(chatId)
+  const { chat, loading, error, hasMore, loadingMore, loadMore } = useChatDetail(chatId);
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading chat…</p>
+    return <p className="text-sm text-muted-foreground">Loading chat…</p>;
   }
   if (error) {
-    return <p className="text-sm text-destructive">{error}</p>
+    return <p className="text-sm text-destructive">{error}</p>;
   }
-  if (!chat) return null
+  if (!chat) return null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -65,18 +69,18 @@ function ChatMessageViewer({ chatId }: { chatId: string }) {
         </Button>
       )}
     </div>
-  )
+  );
 }
 
 interface Props {
-  chats: CourseChatSummary[]
-  loading?: boolean
-  error?: string | null
+  chats: CourseChatSummary[];
+  loading?: boolean;
+  error?: string | null;
   /** Optional extra label rendered next to each chat (e.g. the course code in a unit view). */
-  secondaryLabel?: (chatId: string) => string | null
-  hasMore?: boolean
-  loadingMore?: boolean
-  onLoadMore?: () => void
+  secondaryLabel?: (chatId: string) => string | null;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 /**
@@ -93,7 +97,7 @@ export function CourseChatsPanel({
   loadingMore = false,
   onLoadMore,
 }: Props) {
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -102,14 +106,14 @@ export function CourseChatsPanel({
           Loading chats…
         </CardContent>
       </Card>
-    )
+    );
   }
   if (error) {
     return (
       <Card>
         <CardContent className="py-6 text-sm text-destructive">{error}</CardContent>
       </Card>
-    )
+    );
   }
   // Unit chats can return `{ chats: [], nextCursor }` when early batches are
   // all staff chats — only treat as truly empty once the stream is exhausted.
@@ -120,41 +124,36 @@ export function CourseChatsPanel({
           No chats yet.
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
     <div className="grid gap-4 md:grid-cols-[20rem_1fr]">
       <div className="grid gap-2 content-start">
         {chats.map((chat) => {
-          const extra = secondaryLabel?.(chat.id)
+          const extra = secondaryLabel?.(chat.id);
           return (
             <Button
               key={chat.id}
-              variant={selectedChatId === chat.id ? 'default' : 'outline'}
+              variant={selectedChatId === chat.id ? "default" : "outline"}
               className="h-auto flex-col items-start gap-0.5 py-2 text-left"
               onClick={() => setSelectedChatId(chat.id)}
             >
               <span className="text-sm font-medium truncate w-full">
-                {chat.title || 'Untitled chat'}
+                {chat.title || "Untitled chat"}
               </span>
               <span className="text-xs text-muted-foreground truncate w-full">
                 {chat.ownerName ?? chat.ownerId}
-                {extra ? ` · ${extra}` : ''}
+                {extra ? ` · ${extra}` : ""}
               </span>
               <span className="text-xs text-muted-foreground">
                 {new Date(chat.updatedAt).toLocaleString()}
               </span>
             </Button>
-          )
+          );
         })}
         {hasMore && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loadingMore}
-            onClick={() => onLoadMore?.()}
-          >
+          <Button variant="outline" size="sm" disabled={loadingMore} onClick={() => onLoadMore?.()}>
             {loadingMore ? "Loading…" : "Load more chats"}
           </Button>
         )}
@@ -169,7 +168,7 @@ export function CourseChatsPanel({
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
 /**
@@ -179,7 +178,7 @@ export function CourseChatsPanel({
  * which no longer grants staff access to other users' chats.
  */
 export function CourseChatsTab({ courseId }: { courseId: string }) {
-  const { chats, loading, error, hasMore, loadingMore, loadMore } = useCourseChats(courseId)
+  const { chats, loading, error, hasMore, loadingMore, loadMore } = useCourseChats(courseId);
   return (
     <CourseChatsPanel
       chats={chats}
@@ -189,5 +188,5 @@ export function CourseChatsTab({ courseId }: { courseId: string }) {
       loadingMore={loadingMore}
       onLoadMore={loadMore}
     />
-  )
+  );
 }

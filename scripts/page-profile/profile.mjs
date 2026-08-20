@@ -80,13 +80,13 @@
  *      QM_API_URL (id resolution), SEED_PASSWORD (overrides every account),
  *      TARGET_LABEL (same as --target).
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { execSync } from 'node:child_process';
-import { chromium, request as apiRequest } from 'playwright';
-import { loginToCore } from '../mobile-audit/lib.mjs';
-import { APPS, ACCOUNTS } from './pages.mjs';
-import { resolveParams, fillPath } from './resolvers.mjs';
+import fs from "node:fs";
+import path from "node:path";
+import { execSync } from "node:child_process";
+import { chromium, request as apiRequest } from "playwright";
+import { loginToCore } from "../mobile-audit/lib.mjs";
+import { APPS, ACCOUNTS } from "./pages.mjs";
+import { resolveParams, fillPath } from "./resolvers.mjs";
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -95,45 +95,61 @@ const argv = process.argv.slice(2);
 const flag = (name) => {
   const hit = argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
   if (!hit) return undefined;
-  return hit.includes('=') ? hit.slice(name.length + 3) : true;
+  return hit.includes("=") ? hit.slice(name.length + 3) : true;
 };
 const list = (name) => {
   const v = flag(name);
-  return typeof v === 'string' ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+  return typeof v === "string"
+    ? v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
 };
 
-const RUNS = Number(flag('runs') ?? 3);
-const COLD = !flag('warm');
-const CPU_THROTTLE = Number(flag('cpu') ?? 0);
-const NET_PROFILE = typeof flag('net') === 'string' ? flag('net') : 'off';
-const SHOW_CHUNKS = Boolean(flag('chunks'));
-const FULL_CHUNKS = Boolean(flag('full-chunks'));
+const RUNS = Number(flag("runs") ?? 3);
+const COLD = !flag("warm");
+const CPU_THROTTLE = Number(flag("cpu") ?? 0);
+const NET_PROFILE = typeof flag("net") === "string" ? flag("net") : "off";
+const SHOW_CHUNKS = Boolean(flag("chunks"));
+const FULL_CHUNKS = Boolean(flag("full-chunks"));
 // Routes the seeded dev state cannot reach (see `gated` in pages.mjs) are
 // skipped as expected rather than measured against whatever they bounce to.
-const INCLUDE_GATED = Boolean(flag('include-gated'));
+const INCLUDE_GATED = Boolean(flag("include-gated"));
 // Core's Better Auth limiter allows 100 requests per 60s per IP, and every
 // measured load costs it a few (session read on each app). An unpaced sweep of
 // ~50 pages x 3 runs sails past that and starts getting bounced to the login
 // page mid-run, which looks like a broken page rather than a throttled one.
 // Idle between loads so a full sweep stays under the limit by construction.
-const PACE_MS = Number(flag('pace') ?? 750);
+const PACE_MS = Number(flag("pace") ?? 750);
 const RATE_LIMIT_HINT = /too many requests|rate ?limit|\b429\b/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const OUT_DIR = (typeof flag('out') === 'string' ? flag('out') : 'docs/perf/frontend/baseline').replace(/\/$/, '');
-const TARGET_LABEL = (typeof flag('target') === 'string' ? flag('target') : process.env.TARGET_LABEL) ?? 'local';
-const HEADED = Boolean(flag('headed'));
-const APP_FILTER = list('app');
-const PAGE_FILTER = list('page');
-const ROLE_FILTER = list('role');
+const OUT_DIR = (
+  typeof flag("out") === "string" ? flag("out") : "docs/perf/frontend/baseline"
+).replace(/\/$/, "");
+const TARGET_LABEL =
+  (typeof flag("target") === "string" ? flag("target") : process.env.TARGET_LABEL) ?? "local";
+const HEADED = Boolean(flag("headed"));
+const APP_FILTER = list("app");
+const PAGE_FILTER = list("page");
+const ROLE_FILTER = list("role");
 
 // Chrome DevTools' own presets, in bytes/sec and ms.
 const NET_PROFILES = {
   off: null,
-  fast3g: { downloadThroughput: (1.6 * 1024 * 1024) / 8, uploadThroughput: (750 * 1024) / 8, latency: 150 },
-  slow3g: { downloadThroughput: (500 * 1024) / 8, uploadThroughput: (500 * 1024) / 8, latency: 400 },
+  fast3g: {
+    downloadThroughput: (1.6 * 1024 * 1024) / 8,
+    uploadThroughput: (750 * 1024) / 8,
+    latency: 150,
+  },
+  slow3g: {
+    downloadThroughput: (500 * 1024) / 8,
+    uploadThroughput: (500 * 1024) / 8,
+    latency: 400,
+  },
 };
 if (!(NET_PROFILE in NET_PROFILES)) {
-  console.error(`unknown --net=${NET_PROFILE}; expected ${Object.keys(NET_PROFILES).join(' | ')}`);
+  console.error(`unknown --net=${NET_PROFILE}; expected ${Object.keys(NET_PROFILES).join(" | ")}`);
   process.exit(2);
 }
 
@@ -156,13 +172,13 @@ function installCollectors() {
       /* unsupported entry type in this browser — leave the metric at 0 */
     }
   };
-  obs('largest-contentful-paint', (l) => {
+  obs("largest-contentful-paint", (l) => {
     for (const e of l.getEntries()) window.__vitals.lcp = e.startTime;
   });
-  obs('layout-shift', (l) => {
+  obs("layout-shift", (l) => {
     for (const e of l.getEntries()) if (!e.hadRecentInput) window.__vitals.cls += e.value;
   });
-  obs('longtask', (l) => {
+  obs("longtask", (l) => {
     for (const e of l.getEntries()) {
       window.__vitals.longTasks += 1;
       window.__vitals.longTaskTime += e.duration;
@@ -171,9 +187,9 @@ function installCollectors() {
 }
 
 function readMetrics() {
-  const nav = performance.getEntriesByType('navigation')[0] || {};
-  const fcp = performance.getEntriesByName('first-contentful-paint')[0];
-  const resources = performance.getEntriesByType('resource').map((r) => ({
+  const nav = performance.getEntriesByType("navigation")[0] || {};
+  const fcp = performance.getEntriesByName("first-contentful-paint")[0];
+  const resources = performance.getEntriesByType("resource").map((r) => ({
     name: r.name,
     type: r.initiatorType,
     duration: r.duration,
@@ -209,14 +225,14 @@ const ms = (n) => `${Math.round(n)}`;
 const kb = (n) => `${(n / 1024).toFixed(1)}`;
 const basename = (u) => {
   try {
-    return new URL(u).pathname.split('/').pop() || u;
+    return new URL(u).pathname.split("/").pop() || u;
   } catch {
     return u;
   }
 };
-const isJs = (r) => r.type === 'script' || /\.m?js(\?|$)/.test(r.name);
+const isJs = (r) => r.type === "script" || /\.m?js(\?|$)/.test(r.name);
 
-const normPath = (p) => p.replace(/\/+$/, '') || '/';
+const normPath = (p) => p.replace(/\/+$/, "") || "/";
 
 /**
  * A navigation landed where it was told to: same origin, same route.
@@ -240,14 +256,17 @@ function landedOk(requestedUrl, finalUrl, { redirectsTo } = {}) {
 }
 
 async function applyThrottling(page) {
-  if (!CPU_THROTTLE && NET_PROFILE === 'off' && !COLD) return;
+  if (!CPU_THROTTLE && NET_PROFILE === "off" && !COLD) return;
   const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Network.enable');
-  if (COLD) await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+  await cdp.send("Network.enable");
+  if (COLD) await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
   if (NET_PROFILES[NET_PROFILE]) {
-    await cdp.send('Network.emulateNetworkConditions', { offline: false, ...NET_PROFILES[NET_PROFILE] });
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      ...NET_PROFILES[NET_PROFILE],
+    });
   }
-  if (CPU_THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
+  if (CPU_THROTTLE > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU_THROTTLE });
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +283,7 @@ async function measureIn(context, entry) {
   const page = await context.newPage();
   try {
     await applyThrottling(page);
-    const response = await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
+    const response = await page.goto(url, { waitUntil: "load", timeout: 60_000 });
     // An error page served at the requested path keeps that path, so landedOk()
     // cannot tell a rendered 404/500 apart from the real route — the HTTP status
     // is the only signal. Reject the sample before readMetrics() runs, otherwise
@@ -273,7 +292,7 @@ async function measureIn(context, entry) {
     if (status == null) throw new Error(`navigation to ${url} produced no response`);
     if (status >= 400) throw new Error(`HTTP ${status} ${response.statusText()}`.trim());
     // networkidle lets lazy chunks / deferred fetches land before the snapshot.
-    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
     const metrics = await page.evaluate(readMetrics);
     return { ...metrics, status, finalUrl: page.url(), authOk: landedOk(url, page.url(), entry) };
   } finally {
@@ -319,8 +338,8 @@ async function profilePage(browser, storageState, entry) {
     // 60s per IP, and a page load costs several, so wait out the whole window
     // rather than retrying into the same wall.
     if (!ok.length) {
-      const rateLimited = runs.some((r) => RATE_LIMIT_HINT.test(r.error ?? ''));
-      if (rateLimited) process.stderr.write('rate-limited, waiting out the 60s auth window ... ');
+      const rateLimited = runs.some((r) => RATE_LIMIT_HINT.test(r.error ?? ""));
+      if (rateLimited) process.stderr.write("rate-limited, waiting out the 60s auth window ... ");
       await sleep(rateLimited ? 65_000 : 3000);
       try {
         const retry = await once();
@@ -330,7 +349,7 @@ async function profilePage(browser, storageState, entry) {
         runs.push({ error: String(err?.message ?? err) });
       }
     }
-    if (!ok.length) return { ...entry, error: runs[0]?.error ?? 'all runs failed' };
+    if (!ok.length) return { ...entry, error: runs[0]?.error ?? "all runs failed" };
 
     return summarise(entry, ok, runs);
   } finally {
@@ -342,8 +361,10 @@ function summarise(entry, ok, runs) {
   const pick = (k) => median(ok.map((r) => r[k]));
   // Chunk detail comes from the run whose LCP is closest to the median, so the
   // table matches the number reported above it.
-  const lcpMedian = pick('lcp');
-  const rep = ok.reduce((a, b) => (Math.abs(b.lcp - lcpMedian) < Math.abs(a.lcp - lcpMedian) ? b : a));
+  const lcpMedian = pick("lcp");
+  const rep = ok.reduce((a, b) =>
+    Math.abs(b.lcp - lcpMedian) < Math.abs(a.lcp - lcpMedian) ? b : a,
+  );
   const js = rep.resources.filter(isJs);
 
   return {
@@ -357,14 +378,14 @@ function summarise(entry, ok, runs) {
     authOk: ok.every((r) => r.authOk),
     status: rep.status,
     finalUrl: rep.finalUrl,
-    ttfb: pick('ttfb'),
-    fcp: pick('fcp'),
+    ttfb: pick("ttfb"),
+    fcp: pick("fcp"),
     lcp: lcpMedian,
-    dcl: pick('domContentLoaded'),
-    load: pick('load'),
-    cls: pick('cls'),
-    longTasks: pick('longTasks'),
-    longTaskTime: pick('longTaskTime'),
+    dcl: pick("domContentLoaded"),
+    load: pick("load"),
+    cls: pick("cls"),
+    longTasks: pick("longTasks"),
+    longTaskTime: pick("longTaskTime"),
     requests: rep.resources.length,
     jsCount: js.length,
     jsTransferBytes: js.reduce((s, r) => s + r.transferSize, 0),
@@ -390,49 +411,52 @@ function table(rows, cols) {
   const head = cols.map((c) => c.label);
   const body = rows.map((r) => cols.map((c) => String(c.get(r))));
   const width = head.map((h, i) => Math.max(h.length, ...body.map((b) => b[i].length)));
-  const line = (cells) => cells.map((c, i) => (cols[i].right ? c.padStart(width[i]) : c.padEnd(width[i]))).join('  ');
-  return [line(head), width.map((w) => '-'.repeat(w)).join('  '), ...body.map(line)].join('\n');
+  const line = (cells) =>
+    cells.map((c, i) => (cols[i].right ? c.padStart(width[i]) : c.padEnd(width[i]))).join("  ");
+  return [line(head), width.map((w) => "-".repeat(w)).join("  "), ...body.map(line)].join("\n");
 }
 
 function report(results, skipped, loginFailures) {
   const good = results.filter((r) => !r.error);
   console.log(
-    `\n=== page profile — ${good.length} page(s), ${RUNS} run(s) each, ${COLD ? 'cold' : 'warm'} cache` +
-      `${CPU_THROTTLE > 1 ? `, ${CPU_THROTTLE}x CPU` : ''}` +
-      `${NET_PROFILE !== 'off' ? `, ${NET_PROFILE} net` : ''} — median ms ===\n`
+    `\n=== page profile — ${good.length} page(s), ${RUNS} run(s) each, ${COLD ? "cold" : "warm"} cache` +
+      `${CPU_THROTTLE > 1 ? `, ${CPU_THROTTLE}x CPU` : ""}` +
+      `${NET_PROFILE !== "off" ? `, ${NET_PROFILE} net` : ""} — median ms ===\n`,
   );
   if (good.length) {
     console.log(
       table(good, [
-        { label: 'app', get: (r) => r.app },
-        { label: 'page', get: (r) => r.name },
-        { label: 'role', get: (r) => r.role },
-        { label: 'TTFB', get: (r) => ms(r.ttfb), right: true },
-        { label: 'FCP', get: (r) => ms(r.fcp), right: true },
-        { label: 'LCP', get: (r) => ms(r.lcp), right: true },
-        { label: 'DCL', get: (r) => ms(r.dcl), right: true },
-        { label: 'load', get: (r) => ms(r.load), right: true },
-        { label: 'CLS', get: (r) => r.cls.toFixed(3), right: true },
-        { label: 'blocking', get: (r) => `${ms(r.longTaskTime)} (${r.longTasks})`, right: true },
-        { label: 'JS', get: (r) => `${r.jsCount} / ${kb(r.jsDecodedBytes)}KB`, right: true },
-        { label: 'total KB', get: (r) => kb(r.totalTransferBytes), right: true },
-        { label: 'runs', get: (r) => (r.partial ? `${r.runs}/${RUNS}` : `${r.runs}`), right: true },
-        { label: 'auth', get: (r) => (r.authOk ? 'ok' : 'REDIRECTED') },
-      ])
+        { label: "app", get: (r) => r.app },
+        { label: "page", get: (r) => r.name },
+        { label: "role", get: (r) => r.role },
+        { label: "TTFB", get: (r) => ms(r.ttfb), right: true },
+        { label: "FCP", get: (r) => ms(r.fcp), right: true },
+        { label: "LCP", get: (r) => ms(r.lcp), right: true },
+        { label: "DCL", get: (r) => ms(r.dcl), right: true },
+        { label: "load", get: (r) => ms(r.load), right: true },
+        { label: "CLS", get: (r) => r.cls.toFixed(3), right: true },
+        { label: "blocking", get: (r) => `${ms(r.longTaskTime)} (${r.longTasks})`, right: true },
+        { label: "JS", get: (r) => `${r.jsCount} / ${kb(r.jsDecodedBytes)}KB`, right: true },
+        { label: "total KB", get: (r) => kb(r.totalTransferBytes), right: true },
+        { label: "runs", get: (r) => (r.partial ? `${r.runs}/${RUNS}` : `${r.runs}`), right: true },
+        { label: "auth", get: (r) => (r.authOk ? "ok" : "REDIRECTED") },
+      ]),
     );
   }
 
   if (SHOW_CHUNKS) {
     for (const r of good) {
-      console.log(`\n--- ${r.app}/${r.name} — ${r.jsCount} JS chunks, ${kb(r.jsDecodedBytes)}KB decoded ---`);
+      console.log(
+        `\n--- ${r.app}/${r.name} — ${r.jsCount} JS chunks, ${kb(r.jsDecodedBytes)}KB decoded ---`,
+      );
       console.log(
         table(r.chunks, [
-          { label: 'chunk', get: (c) => c.file },
-          { label: 'decoded KB', get: (c) => kb(c.decodedBytes), right: true },
-          { label: 'wire KB', get: (c) => (c.cached ? 'cache' : kb(c.transferBytes)), right: true },
-          { label: 'start ms', get: (c) => ms(c.startMs), right: true },
-          { label: 'dur ms', get: (c) => ms(c.durationMs), right: true },
-        ])
+          { label: "chunk", get: (c) => c.file },
+          { label: "decoded KB", get: (c) => kb(c.decodedBytes), right: true },
+          { label: "wire KB", get: (c) => (c.cached ? "cache" : kb(c.transferBytes)), right: true },
+          { label: "start ms", get: (c) => ms(c.startMs), right: true },
+          { label: "dur ms", get: (c) => ms(c.durationMs), right: true },
+        ]),
       );
     }
   }
@@ -447,7 +471,9 @@ function report(results, skipped, loginFailures) {
     for (const s of realSkips) console.log(`${s.app}/${s.name}  ${s.path}  ${s.reason}`);
   }
   if (expectedSkips.length) {
-    console.log(`\n--- expected skips (${expectedSkips.length}) — unreachable in this environment ---`);
+    console.log(
+      `\n--- expected skips (${expectedSkips.length}) — unreachable in this environment ---`,
+    );
     for (const s of expectedSkips) console.log(`${s.app}/${s.name}  ${s.path}  ${s.reason}`);
   }
   const failed = results.filter((r) => r.error);
@@ -457,25 +483,38 @@ function report(results, skipped, loginFailures) {
   }
   const redirected = good.filter((r) => !r.authOk);
   if (redirected.length) {
-    console.log(`\n--- redirected (${redirected.length}) — numbers describe the redirect target, not the page ---`);
-    for (const r of redirected) console.log(`${r.app}/${r.name}  as ${r.role}  ${r.url} -> ${r.finalUrl}`);
+    console.log(
+      `\n--- redirected (${redirected.length}) — numbers describe the redirect target, not the page ---`,
+    );
+    for (const r of redirected)
+      console.log(`${r.app}/${r.name}  as ${r.role}  ${r.url} -> ${r.finalUrl}`);
   }
   // Landed correctly but on fewer samples than requested. Reported separately
   // from redirects so the two failure modes are not conflated.
   const partial = good.filter((r) => r.authOk && r.partial);
   if (partial.length) {
-    console.log(`\n--- partial samples (${partial.length}) — fewer than the ${RUNS} runs requested ---`);
-    for (const r of partial) console.log(`${r.app}/${r.name}  as ${r.role}  ${r.runs}/${RUNS} ok, ${r.failed} failed`);
+    console.log(
+      `\n--- partial samples (${partial.length}) — fewer than the ${RUNS} runs requested ---`,
+    );
+    for (const r of partial)
+      console.log(`${r.app}/${r.name}  as ${r.role}  ${r.runs}/${RUNS} ok, ${r.failed} failed`);
   }
   if (loginFailures.length) {
-    console.log(`\n--- login failed (${loginFailures.length} role(s)) — their pages were not measured ---`);
+    console.log(
+      `\n--- login failed (${loginFailures.length} role(s)) — their pages were not measured ---`,
+    );
     for (const l of loginFailures) console.log(`${l.role} (${l.email})  ${l.reason}`);
   }
   console.log(
     `\ncoverage: ${good.length - redirected.length - partial.length} measured, ${redirected.length} redirected, ` +
-      `${partial.length} partial, ${realSkips.length} skipped, ${expectedSkips.length} expected-skip, ${failed.length} failed`
+      `${partial.length} partial, ${realSkips.length} skipped, ${expectedSkips.length} expected-skip, ${failed.length} failed`,
   );
-  return { failed: failed.length, redirected: redirected.length, partial: partial.length, skipped: realSkips.length };
+  return {
+    failed: failed.length,
+    redirected: redirected.length,
+    partial: partial.length,
+    skipped: realSkips.length,
+  };
 }
 
 /**
@@ -487,22 +526,23 @@ function fingerprint() {
     try {
       return execSync(c).toString().trim();
     } catch {
-      return 'unknown';
+      return "unknown";
     }
   };
   return {
     captured_at: new Date().toISOString(),
     target_label: TARGET_LABEL,
     targets: Object.fromEntries(Object.entries(APPS).map(([k, v]) => [k, v.baseUrl])),
-    git_sha: g('git rev-parse --short HEAD'),
-    git_branch: g('git branch --show-current'),
+    git_sha: g("git rev-parse --short HEAD"),
+    git_branch: g("git branch --show-current"),
     node: process.version,
     platform: `${process.platform}-${process.arch}`,
     runs: RUNS,
-    cache: COLD ? 'cold' : 'warm',
+    cache: COLD ? "cold" : "warm",
     cpu_throttle: CPU_THROTTLE,
     network: NET_PROFILE,
-    seed_note: 'Run `npm run dbseed` before measuring; unresolved dynamic ids are reported as skipped.',
+    seed_note:
+      "Run `npm run dbseed` before measuring; unresolved dynamic ids are reported as skipped.",
   };
 }
 
@@ -515,18 +555,26 @@ function collectErrors(results, skipped, loginFailures) {
   const errors = [];
   for (const l of loginFailures) {
     errors.push({
-      app: 'core',
+      app: "core",
       page: `(login as ${l.role})`,
       role: l.role,
-      path: '/auth/login',
+      path: "/auth/login",
       url: `${APPS.core.baseUrl}/auth/login`,
-      kind: 'login-failed',
+      kind: "login-failed",
       reason: l.reason,
       affected_pages: l.affected,
     });
   }
   for (const r of results.filter((r) => r.error)) {
-    errors.push({ app: r.app, page: r.name, role: r.role, path: r.path, url: r.url, kind: 'load-failed', reason: r.error });
+    errors.push({
+      app: r.app,
+      page: r.name,
+      role: r.role,
+      path: r.path,
+      url: r.url,
+      kind: "load-failed",
+      reason: r.error,
+    });
   }
   for (const r of results.filter((r) => !r.error && !r.authOk)) {
     errors.push({
@@ -535,7 +583,7 @@ function collectErrors(results, skipped, loginFailures) {
       role: r.role,
       path: r.path,
       url: r.url,
-      kind: 'redirected',
+      kind: "redirected",
       reason:
         `landed on ${r.finalUrl} instead — the route sent this session elsewhere ` +
         `(login bounce, role guard, feature flag, or an access-denied redirect)`,
@@ -551,7 +599,7 @@ function collectErrors(results, skipped, loginFailures) {
       role: r.role,
       path: r.path,
       url: r.url,
-      kind: 'partial-samples',
+      kind: "partial-samples",
       reason: `only ${r.runs} of ${RUNS} runs succeeded (${r.failed} failed) — the median is over an incomplete sample set`,
       runs: r.runs,
       requested_runs: RUNS,
@@ -564,7 +612,7 @@ function collectErrors(results, skipped, loginFailures) {
       role: s.role,
       path: s.path,
       url: null,
-      kind: s.expected ? 'expected-skip' : 'skipped',
+      kind: s.expected ? "expected-skip" : "skipped",
       reason: s.reason,
     });
   }
@@ -594,44 +642,62 @@ function writeArtifacts(results, skipped, loginFailures) {
   const env = fingerprint();
   const measured = results.filter((r) => !r.error && r.authOk && !r.partial);
 
-  const vitalsPath = path.join(dir, 'page-vitals.json');
+  const vitalsPath = path.join(dir, "page-vitals.json");
   fs.writeFileSync(
     vitalsPath,
-    JSON.stringify({ env, measured_count: measured.length, chunks_per_page: CHUNK_LIMIT, results: results.map(trimChunks), skipped }, null, 2)
+    JSON.stringify(
+      {
+        env,
+        measured_count: measured.length,
+        chunks_per_page: CHUNK_LIMIT,
+        results: results.map(trimChunks),
+        skipped,
+      },
+      null,
+      2,
+    ),
   );
 
   if (FULL_CHUNKS) {
-    const chunksPath = path.join(dir, 'page-chunks.json');
+    const chunksPath = path.join(dir, "page-chunks.json");
     fs.writeFileSync(
       chunksPath,
       JSON.stringify(
-        { env, results: results.filter((r) => r.chunks).map((r) => ({ app: r.app, name: r.name, role: r.role, chunks: r.chunks })) },
+        {
+          env,
+          results: results
+            .filter((r) => r.chunks)
+            .map((r) => ({ app: r.app, name: r.name, role: r.role, chunks: r.chunks })),
+        },
         null,
-        2
-      )
+        2,
+      ),
     );
     console.log(`\nwrote ${chunksPath} (untruncated chunk lists)`);
   }
 
   const errors = collectErrors(results, skipped, loginFailures);
-  const errPath = path.join(dir, 'errors.json');
-  const logPath = path.join(dir, 'errors.log');
+  const errPath = path.join(dir, "errors.json");
+  const logPath = path.join(dir, "errors.log");
   fs.writeFileSync(errPath, JSON.stringify({ env, errors }, null, 2));
 
   if (!errors.length) {
     fs.writeFileSync(logPath, `no errored pages — clean run (${measured.length} measured)\n`);
   } else {
-    const lines = [`=== errored pages (${errors.length}; ${measured.length} measured cleanly) ===`, ''];
+    const lines = [
+      `=== errored pages (${errors.length}; ${measured.length} measured cleanly) ===`,
+      "",
+    ];
     for (const e of errors) {
       lines.push(`[${e.app}] ${e.page}  (role=${e.role}, kind=${e.kind})`);
       lines.push(`  path: ${e.path}`);
       if (e.url) lines.push(`  url:  ${e.url}`);
       if (e.final_url) lines.push(`  landed: ${e.final_url}`);
-      if (e.affected_pages) lines.push(`  affected pages: ${e.affected_pages.join(', ')}`);
+      if (e.affected_pages) lines.push(`  affected pages: ${e.affected_pages.join(", ")}`);
       lines.push(`  reason: ${e.reason}`);
-      lines.push('');
+      lines.push("");
     }
-    fs.writeFileSync(logPath, lines.join('\n'));
+    fs.writeFileSync(logPath, lines.join("\n"));
   }
   console.log(`\nwrote ${vitalsPath}`);
   console.log(`wrote ${logPath} + ${errPath} (${errors.length} errored page(s))`);
@@ -650,7 +716,7 @@ for (const [appKey, appConfig] of Object.entries(APPS)) {
   }
 }
 if (!selected.length) {
-  console.error('no pages matched --app/--page/--role filters');
+  console.error("no pages matched --app/--page/--role filters");
   process.exit(2);
 }
 
@@ -662,15 +728,15 @@ try {
   // A role whose login fails is recorded and its pages are reported as errors —
   // aborting here would throw away the measurements every other role can still
   // produce, and the whole point of the errors file is to name what to fix.
-  const states = new Map([['anon', undefined]]);
+  const states = new Map([["anon", undefined]]);
   const loginFailures = [];
   for (const role of new Set(selected.map((p) => p.role))) {
-    if (role === 'anon') continue;
+    if (role === "anon") continue;
     const creds = credentialsFor(role);
     if (!creds) {
       loginFailures.push({
         role,
-        email: '(none)',
+        email: "(none)",
         reason: `no seeded account configured for role "${role}" in pages.mjs ACCOUNTS`,
         affected: selected.filter((p) => p.role === role).map((p) => `${p.app}/${p.name}`),
       });
@@ -692,13 +758,15 @@ try {
         break;
       } catch (err) {
         const bodyText = await page
-          .locator('body')
+          .locator("body")
           .innerText()
-          .then((t) => t.replace(/\s+/g, ' ').slice(0, 300))
-          .catch(() => '(page text unavailable)');
+          .then((t) => t.replace(/\s+/g, " ").slice(0, 300))
+          .catch(() => "(page text unavailable)");
         const reason = `${err.message} — landed on ${page.url()}; page said: ${bodyText}`;
         if (attempt < 1 && RATE_LIMIT_HINT.test(reason)) {
-          process.stderr.write(`login as ${role} rate-limited, waiting out the 60s auth window ...\n`);
+          process.stderr.write(
+            `login as ${role} rate-limited, waiting out the 60s auth window ...\n`,
+          );
           await sleep(65_000);
           continue;
         }
@@ -708,7 +776,9 @@ try {
           reason,
           affected: selected.filter((p) => p.role === role).map((p) => `${p.app}/${p.name}`),
         });
-        process.stderr.write(`login FAILED as ${role} (${creds.email}) — its pages will be reported as errors\n`);
+        process.stderr.write(
+          `login FAILED as ${role} (${creds.email}) — its pages will be reported as errors\n`,
+        );
         break;
       } finally {
         await ctx.close();
@@ -751,7 +821,10 @@ try {
       const resolved = await paramsFor(p.app, p.role);
       const filled = fillPath(p.path, p.params, resolved);
       if (filled.missing) {
-        skipped.push({ ...p, reason: `could not resolve ${filled.missing.join(', ')} as ${p.role}` });
+        skipped.push({
+          ...p,
+          reason: `could not resolve ${filled.missing.join(", ")} as ${p.role}`,
+        });
         continue;
       }
       urlPath = filled.path;
@@ -762,7 +835,7 @@ try {
       role: p.role,
       path: urlPath,
       url: `${p.baseUrl}${urlPath}`,
-      requiresAuth: p.role !== 'anon',
+      requiresAuth: p.role !== "anon",
       ...(p.redirectsTo ? { redirectsTo: p.redirectsTo } : {}),
     });
   }
@@ -772,13 +845,22 @@ try {
     if (results.length && PACE_MS) await sleep(PACE_MS);
     process.stderr.write(`profiling ${entry.app}/${entry.name} (${entry.role}) ... `);
     const r = await profilePage(browser, states.get(entry.role), entry);
-    process.stderr.write(r.error ? 'FAILED\n' : `LCP ${ms(r.lcp)}ms${r.authOk ? '' : ' REDIRECTED'}\n`);
+    process.stderr.write(
+      r.error ? "FAILED\n" : `LCP ${ms(r.lcp)}ms${r.authOk ? "" : " REDIRECTED"}\n`,
+    );
     results.push(r);
   }
 
   const counts = report(results, skipped, loginFailures);
   writeArtifacts(results, skipped, loginFailures);
-  if (counts.failed || counts.redirected || counts.partial || counts.skipped || loginFailures.length) exitCode = 1;
+  if (
+    counts.failed ||
+    counts.redirected ||
+    counts.partial ||
+    counts.skipped ||
+    loginFailures.length
+  )
+    exitCode = 1;
 } finally {
   await browser.close();
 }

@@ -8,7 +8,7 @@ describe("SiteFooter — rendering", () => {
     render(
       <MemoryRouter>
         <SiteFooter />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
   });
@@ -17,7 +17,7 @@ describe("SiteFooter — rendering", () => {
     render(
       <MemoryRouter>
         <SiteFooter />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: "Quick links" })).toBeInTheDocument();
   });
@@ -26,7 +26,7 @@ describe("SiteFooter — rendering", () => {
     render(
       <MemoryRouter>
         <SiteFooter />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     const year = new Date().getFullYear().toString();
     expect(screen.getByText(new RegExp(year))).toBeInTheDocument();

@@ -21,23 +21,22 @@ describe("resolveConditions", () => {
 
   it("maps legacy off/on aliases and warns", () => {
     const warnings: string[] = [];
-    expect(
-      resolveConditions("off", { onWarn: (m) => warnings.push(m) }),
-    ).toEqual(["baseline"]);
+    expect(resolveConditions("off", { onWarn: (m) => warnings.push(m) })).toEqual(["baseline"]);
     expect(warnings.some((w) => w.includes("deprecated"))).toBe(true);
 
     warnings.length = 0;
-    expect(
-      resolveConditions("on", { onWarn: (m) => warnings.push(m) }),
-    ).toEqual(["assist-oversight"]);
+    expect(resolveConditions("on", { onWarn: (m) => warnings.push(m) })).toEqual([
+      "assist-oversight",
+    ]);
     expect(warnings.some((w) => w.includes("deprecated"))).toBe(true);
   });
 
   it("maps deprecated both to baseline + assist-oversight with a warning", () => {
     const warnings: string[] = [];
-    expect(
-      resolveConditions("both", { onWarn: (m) => warnings.push(m) }),
-    ).toEqual(["baseline", "assist-oversight"]);
+    expect(resolveConditions("both", { onWarn: (m) => warnings.push(m) })).toEqual([
+      "baseline",
+      "assist-oversight",
+    ]);
     expect(warnings.some((w) => w.includes("both is deprecated"))).toBe(true);
   });
 

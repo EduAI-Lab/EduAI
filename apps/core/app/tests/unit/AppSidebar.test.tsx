@@ -5,10 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { useCoreSidebarProps } from "~/components/app-sidebar";
 import { AppSidebar as SharedAppSidebar, SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
-import {
-  PolicyProvider,
-  type PolicyValues,
-} from "~/components/policy/policy-gate";
+import { PolicyProvider, type PolicyValues } from "~/components/policy/policy-gate";
 
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -89,9 +86,7 @@ describe("AppSidebar — rendering", () => {
     // visibility), so stub AI Tutor's URL as configured for this assertion.
     vi.stubEnv("VITE_AI_TUTOR_URL", "http://localhost:4100");
     renderSidebar("STUDENT");
-    expect(
-      screen.getByRole("button", { name: "Switch app" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Switch app" })).toBeInTheDocument();
     vi.unstubAllEnvs();
   });
 });

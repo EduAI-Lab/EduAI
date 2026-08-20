@@ -131,22 +131,19 @@ async function buildRow(row: ResolveChatReadAccessRow) {
 describe.each(rows.map((row, index) => [index, row] as const))(
   "resolve-chat-read-access PICT row #%i",
   (index, row) => {
-    it(
-      `${row.Owner}/${row.Admin}/${row.CourseId}/${row.AccessLevel}/${row.PolicyFlag}/${row.OwnerActiveStudent} matches oracle`,
-      async () => {
-        const expected = resolveChatReadAccessOracle(row);
-        const { chat, viewer } = await buildRow(row);
+    it(`${row.Owner}/${row.Admin}/${row.CourseId}/${row.AccessLevel}/${row.PolicyFlag}/${row.OwnerActiveStudent} matches oracle`, async () => {
+      const expected = resolveChatReadAccessOracle(row);
+      const { chat, viewer } = await buildRow(row);
 
-        const result = await resolveChatReadAccess(viewer, chat.id);
+      const result = await resolveChatReadAccess(viewer, chat.id);
 
-        if (expected.outcome === "denied") {
-          expect(result).toBeNull();
-        } else {
-          expect(result).not.toBeNull();
-          expect(result!.isOwner).toBe(expected.isOwner);
-          expect(result!.canEdit).toBe(expected.isOwner);
-        }
-      },
-    );
+      if (expected.outcome === "denied") {
+        expect(result).toBeNull();
+      } else {
+        expect(result).not.toBeNull();
+        expect(result!.isOwner).toBe(expected.isOwner);
+        expect(result!.canEdit).toBe(expected.isOwner);
+      }
+    });
   },
 );

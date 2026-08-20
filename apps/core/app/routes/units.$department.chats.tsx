@@ -1,8 +1,8 @@
-import { Link, redirect, useLoaderData } from 'react-router'
-import type { LoaderFunctionArgs } from 'react-router'
+import { Link, redirect, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
-import prisma from '~/lib/prisma.server'
-import { CoreAppShell } from '~/components/layout/core-app-shell'
+import prisma from "~/lib/prisma.server";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,9 +10,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@eduai/ui'
-import { CourseChatsPanel } from '~/components/courses/course-chats-panel'
-import { useUnitChats } from '~/hooks/api/use-course-chats'
+} from "@eduai/ui";
+import { CourseChatsPanel } from "~/components/courses/course-chats-panel";
+import { useUnitChats } from "~/hooks/api/use-course-chats";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 /**
@@ -22,24 +22,24 @@ import { getRequestSession } from "~/lib/auth/request-session.server";
  * authorized units, are redirected.
  */
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await getRequestSession(request)
-  if (!session?.user) return redirect('/auth/login')
+  const session = await getRequestSession(request);
+  if (!session?.user) return redirect("/auth/login");
 
-  const department = params.department
-  if (!department) return redirect('/courses')
+  const department = params.department;
+  if (!department) return redirect("/courses");
 
-  const role = session.user.role
-  if (role !== 'ADMIN' && role !== 'UNIT_ADMIN') {
-    return redirect('/courses?access=denied')
+  const role = session.user.role;
+  if (role !== "ADMIN" && role !== "UNIT_ADMIN") {
+    return redirect("/courses?access=denied");
   }
 
-  if (role === 'UNIT_ADMIN') {
+  if (role === "UNIT_ADMIN") {
     const dbUser = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { authorizedUnits: true },
-    })
+    });
     if (!(dbUser?.authorizedUnits ?? []).includes(department)) {
-      return redirect('/courses?access=denied')
+      return redirect("/courses?access=denied");
     }
   }
 
@@ -47,16 +47,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const discipline = await prisma.discipline.findUnique({
     where: { code: department },
     select: { name: true },
-  })
-  const departmentLabel = discipline?.name ?? department
+  });
+  const departmentLabel = discipline?.name ?? department;
 
-  return { user: session.user, department, departmentLabel }
+  return { user: session.user, department, departmentLabel };
 }
 
 export default function UnitChatsPage() {
-  const { user, department, departmentLabel } = useLoaderData<typeof loader>()
-  const { chats, loading, error, hasMore, loadingMore, loadMore } = useUnitChats(department)
-  const codeById = new Map(chats.map((c) => [c.id, c.courseCode]))
+  const { user, department, departmentLabel } = useLoaderData<typeof loader>();
+  const { chats, loading, error, hasMore, loadingMore, loadMore } = useUnitChats(department);
+  const codeById = new Map(chats.map((c) => [c.id, c.courseCode]));
 
   return (
     <CoreAppShell
@@ -67,7 +67,9 @@ export default function UnitChatsPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -97,5 +99,5 @@ export default function UnitChatsPage() {
         </div>
       </div>
     </CoreAppShell>
-  )
+  );
 }

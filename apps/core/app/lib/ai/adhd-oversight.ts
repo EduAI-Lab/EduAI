@@ -1,9 +1,6 @@
 import { randomUUID } from "crypto";
 import { generateText, type LanguageModel } from "ai";
-import {
-  getProfileRequirements,
-  type AdhdTurnProfile,
-} from "~/lib/ai/adhd-turn-profile";
+import { getProfileRequirements, type AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
@@ -83,11 +80,9 @@ RULES:
 Return ONLY the rewritten response.`;
 
 const DEFAULT_NEXT_OFFER = "Want me to continue with the next step?";
-const DEFAULT_REDIRECT_NEXT =
-  "Want to come back to the previous topic first, or switch now?";
+const DEFAULT_REDIRECT_NEXT = "Want to come back to the previous topic first, or switch now?";
 /** Generic citation when tools/RAG ran — never invent chapter/page numbers. */
-export const ADHD_OVERSIGHT_GENERIC_SOURCES =
-  "Sources: Retrieved materials used this turn.";
+export const ADHD_OVERSIGHT_GENERIC_SOURCES = "Sources: Retrieved materials used this turn.";
 
 export function buildOversightRewriteSystem(
   profile: AdhdTurnProfile,
@@ -137,9 +132,7 @@ export const ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD = 6;
 export const ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS = 1024;
 
 export function resolveOversightRewriteMaxTokens(wordCap: number): number {
-  const fromWordCap = Math.ceil(
-    Math.max(0, wordCap) * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD,
-  );
+  const fromWordCap = Math.ceil(Math.max(0, wordCap) * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD);
   return Math.max(ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS, fromWordCap);
 }
 
@@ -198,7 +191,10 @@ export function emptyOversightAuditResult(): AuditAndMaybeRewriteResult {
 }
 
 function lastNonEmptyLine(text: string): string | null {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   return lines.length > 0 ? lines[lines.length - 1] : null;
 }
 
@@ -295,9 +291,7 @@ export function normalizeAdhdStructuralAnchors(text: string): string {
 
   const leadingOk = t.replace(/^\s{0,2}/, "").startsWith("**Top summary**");
   if (!leadingOk) {
-    const leading = t.match(
-      /^(\s{0,2})(?:\*{1,2}\s*)?Top\s+summary(?:\*{1,2})?\s*:?\s*\n?/i,
-    );
+    const leading = t.match(/^(\s{0,2})(?:\*{1,2}\s*)?Top\s+summary(?:\*{1,2})?\s*:?\s*\n?/i);
     if (leading) {
       t = `**Top summary**\n${t.slice(leading[0].length)}`;
     }
@@ -419,11 +413,7 @@ const MIN_BODY_WORDS_WHEN_FITTING = 20;
  * `wordCap`. Oversized citation footers are replaced with the short generic
  * Sources line; if even that cannot fit with **Next?**, Sources is dropped.
  */
-function boundStructuralTail(
-  sourcesBlock: string,
-  nextBlock: string,
-  wordCap: number,
-): string {
+function boundStructuralTail(sourcesBlock: string, nextBlock: string, wordCap: number): string {
   const next = (nextBlock ?? "").trim();
   const nextWords = next ? countWords(next) : 0;
   let sources = (sourcesBlock ?? "").trim();
@@ -431,14 +421,8 @@ function boundStructuralTail(
   if (sources) {
     const genericWords = countWords(ADHD_OVERSIGHT_GENERIC_SOURCES);
     // Prefer leaving room for a short body when the cap allows it.
-    const sourcesBudget = Math.max(
-      0,
-      wordCap - nextWords - MIN_BODY_WORDS_WHEN_FITTING,
-    );
-    if (
-      countWords(sources) > sourcesBudget &&
-      sourcesBudget >= genericWords
-    ) {
+    const sourcesBudget = Math.max(0, wordCap - nextWords - MIN_BODY_WORDS_WHEN_FITTING);
+    if (countWords(sources) > sourcesBudget && sourcesBudget >= genericWords) {
       sources = ADHD_OVERSIGHT_GENERIC_SOURCES;
     } else if (countWords(sources) > Math.max(0, wordCap - nextWords)) {
       // Still too large even without a body reserve — swap or drop.
@@ -457,10 +441,7 @@ function boundStructuralTail(
     if (next) {
       return next.split(/\s+/).filter(Boolean).slice(0, wordCap).join(" ");
     }
-    return ADHD_OVERSIGHT_GENERIC_SOURCES.split(/\s+/)
-      .filter(Boolean)
-      .slice(0, wordCap)
-      .join(" ");
+    return ADHD_OVERSIGHT_GENERIC_SOURCES.split(/\s+/).filter(Boolean).slice(0, wordCap).join(" ");
   }
   return tail;
 }
@@ -489,18 +470,10 @@ export function truncateToWordCap(text: string, wordCap: number): string {
     if (nextIdx >= 0 && sourcesIdx >= 0) break;
   }
 
-  const nextBlock =
-    nextIdx >= 0 ? lines.slice(nextIdx).join("\n").trim() : "";
+  const nextBlock = nextIdx >= 0 ? lines.slice(nextIdx).join("\n").trim() : "";
   const sourcesEnd =
-    sourcesIdx >= 0
-      ? nextIdx >= 0 && nextIdx > sourcesIdx
-        ? nextIdx
-        : lines.length
-      : -1;
-  const sourcesBlock =
-    sourcesIdx >= 0
-      ? lines.slice(sourcesIdx, sourcesEnd).join("\n").trim()
-      : "";
+    sourcesIdx >= 0 ? (nextIdx >= 0 && nextIdx > sourcesIdx ? nextIdx : lines.length) : -1;
+  const sourcesBlock = sourcesIdx >= 0 ? lines.slice(sourcesIdx, sourcesEnd).join("\n").trim() : "";
   const bodyEnd =
     sourcesIdx >= 0 && (nextIdx < 0 || sourcesIdx < nextIdx)
       ? sourcesIdx
@@ -815,8 +788,7 @@ function mergeUsage(
   if (!a && !b) return null;
   return {
     promptTokens: (a?.promptTokens ?? 0) + (b?.promptTokens ?? 0) || undefined,
-    completionTokens:
-      (a?.completionTokens ?? 0) + (b?.completionTokens ?? 0) || undefined,
+    completionTokens: (a?.completionTokens ?? 0) + (b?.completionTokens ?? 0) || undefined,
   };
 }
 
@@ -850,10 +822,7 @@ export function tryDeterministicStructuralFix(
       profile,
       trimmed,
     );
-    if (
-      before.profileStructuralPass &&
-      (!options?.expectSources || before.hasSources)
-    ) {
+    if (before.profileStructuralPass && (!options?.expectSources || before.hasSources)) {
       return trimmed;
     }
 
@@ -876,10 +845,7 @@ export function tryDeterministicStructuralFix(
   }
 
   const before = computeAdhdResponseMetrics(trimmed, { wordCap });
-  if (
-    isStructuralCompliancePass(before) &&
-    (!options?.expectSources || before.hasSources)
-  ) {
+  if (isStructuralCompliancePass(before) && (!options?.expectSources || before.hasSources)) {
     return trimmed;
   }
 
@@ -900,8 +866,7 @@ export function tryDeterministicStructuralFix(
   }
 
   const after = computeAdhdResponseMetrics(fixed, { wordCap });
-  return isStructuralCompliancePass(after) &&
-    (!options?.expectSources || after.hasSources)
+  return isStructuralCompliancePass(after) && (!options?.expectSources || after.hasSources)
     ? fixed
     : null;
 }
@@ -930,8 +895,7 @@ export async function auditAndMaybeRewrite(args: {
   const rawDraft = (args.draft ?? "").trim();
   const trimmed = normalizeAdhdStructuralAnchors(rawDraft);
   const profileReq = getProfileRequirements(profile);
-  const requireDiagram =
-    userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
+  const requireDiagram = userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
   const expectSources = Boolean(args.toolsUsed);
   // #1245: a step-recall request must get a real Step ladder re-explanation,
   // not just a bare Top summary / Next? shell around a copy-pasted fragment.
@@ -1223,8 +1187,7 @@ function finalizeForcedDeterministic(args: {
   );
 
   const forcedOk =
-    forcedMetrics.underCap &&
-    contentOk(forcedMetrics, args.profile, forced, args.gateOpts);
+    forcedMetrics.underCap && contentOk(forcedMetrics, args.profile, forced, args.gateOpts);
 
   if (!forcedOk) {
     // Minimal under-cap skeleton — prefer compliance over preserving draft prose.
@@ -1239,10 +1202,7 @@ function finalizeForcedDeterministic(args: {
       // Preserve the actual recalled action from the prior turn's Step
       // ladder when we can find it; only fall back to the generic
       // placeholder when the source step can't be located (#1245).
-      const recalledStep = extractRecalledStepText(
-        args.userText,
-        args.priorAssistantText,
-      );
+      const recalledStep = extractRecalledStepText(args.userText, args.priorAssistantText);
       parts.push(
         "### Step ladder",
         recalledStep
@@ -1267,9 +1227,7 @@ function finalizeForcedDeterministic(args: {
     }
     if (req.expectNextLine || req.expectRedirectTemplate) {
       parts.push(
-        `**Next?** ${
-          req.expectRedirectTemplate ? DEFAULT_REDIRECT_NEXT : DEFAULT_NEXT_OFFER
-        }`,
+        `**Next?** ${req.expectRedirectTemplate ? DEFAULT_REDIRECT_NEXT : DEFAULT_NEXT_OFFER}`,
       );
     }
     forced = truncateToWordCap(parts.filter(Boolean).join("\n\n"), args.wordCap);
@@ -1306,14 +1264,10 @@ export function buildOverseenAssistantMessagesToPersist(
   const generateId = options?.generateId ?? randomUUID;
 
   if (responseMessages?.length) {
-    const assistantMessages = responseMessages.filter(
-      (message) => message.role === "assistant",
-    );
+    const assistantMessages = responseMessages.filter((message) => message.role === "assistant");
     if (assistantMessages.length > 0 && overseenText) {
       return assistantMessages.map((message, index) =>
-        index === assistantMessages.length - 1
-          ? { ...message, content: overseenText }
-          : message,
+        index === assistantMessages.length - 1 ? { ...message, content: overseenText } : message,
       );
     }
     return assistantMessages;

@@ -27,6 +27,7 @@ import { getCourse } from "~/lib/courses/server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import {
   addEnrollment,
+  getCourseEnrollmentForUser,
   getCourseEnrollments,
   getCourseEnrollmentsPage,
   requiredRankForEnrollmentRole,
@@ -64,8 +65,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    // Service key path stays a full, unpaged read — AI Tutor's enrollmentSync.js
-    // depends on getting every row back in one call (see module docblock).
+    const userId = url.searchParams.get("userId")?.trim();
+    if (userId) {
+      const enrollment = await getCourseEnrollmentForUser(courseId, userId);
+      return new Response(
+        JSON.stringify({ enrollment: enrollment ? mapEnrollment(enrollment) : null }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Explicit roster synchronization remains available to background/admin
+    // callers, but live authorization uses the bounded single-user lookup.
     return fullEnrollmentsResponse(courseId);
   }
 
@@ -138,10 +148,10 @@ async function pagedEnrollmentsResponse(
   params: { cursor: string | null; limit: number },
 ) {
   const { page, nextCursor, total } = await getCourseEnrollmentsPage(courseId, params);
-  return new Response(
-    JSON.stringify({ enrollments: page.map(mapEnrollment), nextCursor, total }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
+  return new Response(JSON.stringify({ enrollments: page.map(mapEnrollment), nextCursor, total }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -233,7 +243,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
               category: "ENROLLMENT",
               entityType: "Enrollment",
               entityId: result.enrollment.id,
-              details: { courseId, role: result.enrollment.role, targetUserId: result.enrollment.userId },
+              details: {
+                courseId,
+                role: result.enrollment.role,
+                targetUserId: result.enrollment.userId,
+              },
             }),
           );
           return new Response(JSON.stringify(result.enrollment), {
@@ -263,10 +277,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
             },
           );
         default:
-          return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid" } }), {
-            status: 422,
-            headers: { "Content-Type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid" } }),
+            {
+              status: 422,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
       }
     },
   );

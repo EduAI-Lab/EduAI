@@ -2,7 +2,8 @@
  * Canvas API client for integration status, course listings, exports, and imports.
  * Mirrors backend routes and shapes data for frontend consumption.
  */
-import api from './api';
+import api from "./api";
+import { getCanvasDefaultUrl } from "./canvasDefaults";
 
 export interface CanvasIntegration {
   canvasUrl: string;
@@ -78,7 +79,7 @@ export interface CanvasBankSyncResult {
 export const canvasService = {
   /** True when local dev should prefer Canvas test mode (set VITE_CANVAS_TEST_MODE=true). */
   prefersTestMode(): boolean {
-    return import.meta.env.VITE_CANVAS_TEST_MODE === 'true';
+    return import.meta.env.VITE_CANVAS_TEST_MODE === "true";
   },
 
   /** Connect with optional fallback to test mode when live credentials fail. */
@@ -88,10 +89,11 @@ export const canvasService = {
     options: { preferTestMode?: boolean } = {},
   ): Promise<{ integration: CanvasIntegration; usedTestMode: boolean }> {
     const preferTestMode = options.preferTestMode ?? this.prefersTestMode();
+    const defaultUrl = getCanvasDefaultUrl(import.meta.env.DEV);
     if (preferTestMode) {
       const integration = await this.connectCanvas(
-        canvasUrl || 'https://canvas.test',
-        apiKey || 'test-key',
+        canvasUrl || defaultUrl,
+        apiKey || "test-key",
         true,
       );
       return { integration, usedTestMode: true };
@@ -105,10 +107,10 @@ export const canvasService = {
       if (!allowTestFallback) {
         throw error;
       }
-      console.warn('Canvas live connect failed; retrying in test mode', error);
+      console.warn("Canvas live connect failed; retrying in test mode", error);
       const integration = await this.connectCanvas(
-        canvasUrl || 'https://canvas.test',
-        apiKey || 'test-key',
+        canvasUrl || defaultUrl,
+        apiKey || "test-key",
         true,
       );
       return { integration, usedTestMode: true };
@@ -118,39 +120,46 @@ export const canvasService = {
   /** Fetches the current user's Canvas integration status (or null). */
   async getIntegration(): Promise<CanvasIntegration | null> {
     try {
-      const response = await api.get('/api/canvas/integration');
+      const response = await api.get("/api/canvas/integration");
       return response.data.data;
     } catch (error) {
-      console.error('Failed to get Canvas integration:', error);
+      console.error("Failed to get Canvas integration:", error);
       return null;
     }
   },
 
   /** Connects a Canvas account or test mode and returns the saved integration. */
-  async connectCanvas(canvasUrl: string, apiKey: string, isTestMode: boolean = false): Promise<CanvasIntegration> {
-    const response = await api.post('/api/canvas/connect', {
+  async connectCanvas(
+    canvasUrl: string,
+    apiKey: string,
+    isTestMode: boolean = false,
+  ): Promise<CanvasIntegration> {
+    const response = await api.post("/api/canvas/connect", {
       canvasUrl,
       apiKey,
-      isTestMode
+      isTestMode,
     });
     return response.data.data;
   },
 
   /** Disconnects the user's Canvas integration. */
   async disconnectCanvas(): Promise<void> {
-    await api.delete('/api/canvas/disconnect');
+    await api.delete("/api/canvas/disconnect");
   },
 
   /** Lists Canvas courses for the connected user. */
   async getCourses(): Promise<CanvasCourse[]> {
-    const response = await api.get('/api/canvas/courses');
+    const response = await api.get("/api/canvas/courses");
     return response.data.data || [];
   },
 
   /** Exports an assessment to a Canvas course, returning quiz details. */
-  async exportAssessment(assessmentId: number, canvasCourseId: number): Promise<CanvasExportResult> {
+  async exportAssessment(
+    assessmentId: number,
+    canvasCourseId: number,
+  ): Promise<CanvasExportResult> {
     const response = await api.post(`/api/canvas/export/${assessmentId}`, {
-      canvasCourseId
+      canvasCourseId,
     });
     return response.data.data;
   },
@@ -177,7 +186,9 @@ export const canvasService = {
    * Get questions from a Canvas quiz
    */
   async getQuizQuestions(canvasCourseId: number, quizId: number): Promise<CanvasQuestion[]> {
-    const response = await api.get(`/api/canvas/courses/${canvasCourseId}/quizzes/${quizId}/questions`);
+    const response = await api.get(
+      `/api/canvas/courses/${canvasCourseId}/quizzes/${quizId}/questions`,
+    );
     return response.data.data || [];
   },
 
@@ -192,11 +203,11 @@ export const canvasService = {
       assessmentType?: string;
       assessmentName?: string;
       primaryTopicId: number;
-    }
+    },
   ): Promise<CanvasImportResult> {
     const response = await api.post(`/api/canvas/import/${canvasCourseId}/quizzes/${quizId}`, {
       localCourseId,
-      ...options
+      ...options,
     });
     return response.data.data;
   },
@@ -222,14 +233,11 @@ export const canvasService = {
     localCourseId: number,
     options: { primaryTopicId: string; targetBankId?: string },
   ): Promise<CanvasBankSyncResult> {
-    const response = await api.post(
-      `/api/canvas/import/${canvasCourseId}/banks/${canvasBankId}`,
-      {
-        localCourseId,
-        primaryTopicId: options.primaryTopicId,
-        targetBankId: options.targetBankId,
-      },
-    );
+    const response = await api.post(`/api/canvas/import/${canvasCourseId}/banks/${canvasBankId}`, {
+      localCourseId,
+      primaryTopicId: options.primaryTopicId,
+      targetBankId: options.targetBankId,
+    });
     return response.data.data;
   },
 };

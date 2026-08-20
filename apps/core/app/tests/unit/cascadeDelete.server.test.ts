@@ -63,7 +63,11 @@ describe("cascadeDeleteToExtensions", () => {
       expect.objectContaining({
         source: "API",
         code: "CASCADE_DELETE_EXTENSION_FAILED",
-        details: expect.objectContaining({ courseId: "course-1", extension: "question-maker", status: 500 }),
+        details: expect.objectContaining({
+          courseId: "course-1",
+          extension: "question-maker",
+          status: 500,
+        }),
       }),
     );
   });
