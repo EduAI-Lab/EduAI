@@ -64,6 +64,12 @@ export interface UseCoursesOptions {
   pageSize?: number;
   /** Restrict to active/inactive courses; omit for both. */
   isActive?: boolean;
+  /**
+   * Load filter option values from `/api/courses/facets`. Callers that only
+   * need course records for a picker and never consume `availableValues` should
+   * pass `false` to skip the extra unpaginated scalar scan (default `true`).
+   */
+  includeFacets?: boolean;
 }
 
 /**
@@ -78,7 +84,7 @@ export interface UseCoursesOptions {
  * current filtered page and must not be re-filtered client-side.
  */
 export function useCourses(options: UseCoursesOptions = {}) {
-  const { pageSize = DEFAULT_PAGE_SIZE, isActive } = options;
+  const { pageSize = DEFAULT_PAGE_SIZE, isActive, includeFacets = true } = options;
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [total, setTotal] = useState(0);
@@ -87,23 +93,32 @@ export function useCourses(options: UseCoursesOptions = {}) {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedFilters, setSelectedFilters] = useState<CourseFilters>(EMPTY_FILTERS);
   const [availableValues, setAvailableValues] = useState<Record<string, string[]>>({});
+  // `loading` is the initial-load gate only (mirrors useAiModels): background
+  // refreshes from search/filter/page changes and mutations never flip it back
+  // to true, so the course page stays mounted while stale rows are replaced.
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // The debounced search is also kept in a ref so the timer can tell whether a
+  // settled search actually changed (typing then erasing inside the window must
+  // not reset the offset — only a real query change invalidates it).
+  const debouncedSearchRef = useRef(debouncedSearch);
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    debouncedSearchRef.current = debouncedSearch;
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      // Reset the offset in the same commit as the new query, so the fetch that
+      // follows never fires once with the new search and a stale (pre-reset)
+      // page index.
+      if (search !== debouncedSearchRef.current) {
+        setPagination((prev) => (prev.pageIndex === 0 ? prev : { ...prev, pageIndex: 0 }));
+      }
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [search]);
-
-  // A new query (search or any filter) invalidates the current offset.
-  const firstRender = useRef(true);
-  useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      return;
-    }
-    setPagination((prev) => (prev.pageIndex === 0 ? prev : { ...prev, pageIndex: 0 }));
-  }, [debouncedSearch, selectedFilters]);
 
   // Monotonic request id so a slower, older response never overwrites the state
   // a newer query already committed (rapid search/filter changes race otherwise).
@@ -111,7 +126,6 @@ export function useCourses(options: UseCoursesOptions = {}) {
 
   const fetchCourses = useCallback(async () => {
     const seq = ++requestSeq.current;
-    setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams(
@@ -146,17 +160,25 @@ export function useCourses(options: UseCoursesOptions = {}) {
 
   // Facets are best-effort metadata for the dropdowns: a failure must never
   // block the list, so errors are swallowed and the toolbar falls back to the
-  // values already present on the loaded rows.
+  // values already present on the loaded rows. `includeFacets: false` callers
+  // never reach the network. A monotonic seq mirrors `fetchCourses` so a slower,
+  // older facet response cannot overwrite a newer one (e.g. two quick edits, or
+  // a broadcast firing while a local mutation's fetch is still in flight).
+  const facetSeq = useRef(0);
+
   const fetchFacets = useCallback(async () => {
+    if (!includeFacets) return;
+    const seq = ++facetSeq.current;
     try {
       const res = await fetch("/api/courses/facets");
       if (!res.ok) return;
       const body: CourseFilters = await res.json();
+      if (seq !== facetSeq.current) return;
       setAvailableValues(body);
     } catch {
       // ignore — dropdowns derive from the current page in the worst case
     }
-  }, []);
+  }, [includeFacets]);
 
   useEffect(() => {
     fetchCourses();
@@ -171,11 +193,24 @@ export function useCourses(options: UseCoursesOptions = {}) {
 
   const setFilter = useCallback((key: CourseFilterKey, values: string[]) => {
     setSelectedFilters((prev) => ({ ...prev, [key]: values }));
+    // A new filter invalidates the current offset; reset it in the same commit
+    // as the selection so the fetch never fires once with a stale page.
+    setPagination((prev) => (prev.pageIndex === 0 ? prev : { ...prev, pageIndex: 0 }));
   }, []);
 
   const clearFilters = useCallback(() => {
     setSelectedFilters(EMPTY_FILTERS);
+    setPagination((prev) => (prev.pageIndex === 0 ? prev : { ...prev, pageIndex: 0 }));
   }, []);
+
+  // A mutation can move a row into/out of the active filter and change the
+  // facet values, so it refreshes both. The two reads are independent — run
+  // them together instead of serially. `fetchFacets` no-ops for
+  // `includeFacets: false`, and neither read throws, so a best-effort facet
+  // failure can never turn a successful mutation/list refresh into a failure.
+  const refreshAfterMutation = useCallback(async () => {
+    await Promise.all([fetchCourses(), fetchFacets()]);
+  }, [fetchCourses, fetchFacets]);
 
   const createCourse = useCallback(
     async (input: CreateCourseInput): Promise<Course> => {
@@ -194,11 +229,10 @@ export function useCourses(options: UseCoursesOptions = {}) {
       const course = await res.json();
       // Where the new row lands depends on the current sort/page, so refetch.
       // A new course can also add a term/department the dropdowns haven't seen.
-      await fetchCourses();
-      await fetchFacets();
+      await refreshAfterMutation();
       return course;
     },
-    [fetchCourses, fetchFacets],
+    [refreshAfterMutation],
   );
 
   const updateCourse = useCallback(
@@ -214,11 +248,10 @@ export function useCourses(options: UseCoursesOptions = {}) {
       // term, year, or department, which may move the course out of (or into)
       // the active filter and change the facet values. Re-fetch the filtered
       // list and facets instead of patching the stale local page.
-      await fetchCourses();
-      await fetchFacets();
+      await refreshAfterMutation();
       return updated;
     },
-    [fetchCourses, fetchFacets],
+    [refreshAfterMutation],
   );
 
   const deleteCourse = useCallback(
@@ -227,10 +260,9 @@ export function useCourses(options: UseCoursesOptions = {}) {
       if (!res.ok) throw new Error(await res.text());
       // Removing a row pulls the next page's first row into this one, and can
       // remove a facet value entirely.
-      await fetchCourses();
-      await fetchFacets();
+      await refreshAfterMutation();
     },
-    [fetchCourses, fetchFacets],
+    [refreshAfterMutation],
   );
 
   return {
