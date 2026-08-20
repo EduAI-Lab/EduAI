@@ -35,6 +35,7 @@ import {
 import apiKeyStorage, { type AIProvider } from "../services/apiKeyStorage";
 import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
 import { canvasService, type CanvasIntegration } from "../services/canvasService";
+import { getCanvasDefaultUrl } from "../services/canvasDefaults";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -94,7 +95,7 @@ function readExportPrefs(): ExportPrefs {
   }
 }
 
-const CANVAS_DEFAULT_URL = import.meta.env.DEV ? "http://localhost:8080" : "https://canvas.ubc.ca";
+const CANVAS_DEFAULT_URL = getCanvasDefaultUrl(import.meta.env.DEV);
 
 // ── Component ──────────────────────────────────────────────────────────────
 

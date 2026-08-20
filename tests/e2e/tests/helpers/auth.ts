@@ -1,4 +1,4 @@
-import type { APIRequestContext, APIResponse } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
 
@@ -18,6 +18,39 @@ export const DEFAULT_PASSWORD = "E2eTestPass1!";
 export function coreServiceHeaders(): Record<string, string> {
   const key = process.env.EDUAI_API_KEY ?? "test-service-key-not-for-production";
   return { Authorization: `Bearer ${key}` };
+}
+
+/**
+ * Sign in through Core's real UI before exercising an extension UI.
+ *
+ * Extension flows cross from the QM origin to Core, so copying an API request
+ * context's storage state can leave the browser without a usable session.
+ */
+export async function signInThroughPage(
+  page: Page,
+  user: { email: string; password: string },
+  returnUrl: string,
+): Promise<void> {
+  const loginUrl = `${CORE_URL}/auth/login?force=1&redirect=${encodeURIComponent(returnUrl)}`;
+  await page.goto(loginUrl);
+  await page.getByLabel("Email").fill(user.email);
+  await page.getByLabel("Password").fill(user.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  const expectedUrl = new URL(returnUrl);
+  try {
+    await page.waitForURL(
+      (url) =>
+        url.origin === expectedUrl.origin &&
+        url.pathname === expectedUrl.pathname &&
+        url.search === expectedUrl.search,
+      { waitUntil: "domcontentloaded" },
+    );
+  } catch {
+    throw new Error(
+      `Core did not redirect to ${returnUrl} (landed on ${page.url()}). ` +
+        "Check the credentials and use a localhost/127.0.0.1 or approved production redirect host.",
+    );
+  }
 }
 
 export interface SignUpResult {

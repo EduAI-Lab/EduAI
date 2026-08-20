@@ -183,6 +183,9 @@ services:
       context: .
       dockerfile: docker/tests/Dockerfile.qm-app
       target: serve
+      args:
+        VITE_API_URL: ${QM_BACKEND_URL:-http://localhost:8000}
+        VITE_CORE_URL: ${CORE_URL:-http://localhost:3000}
     environment:
       PORT: "5173"
     ports:

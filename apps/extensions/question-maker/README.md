@@ -83,7 +83,8 @@ PDF/image/TXT files larger than 20 MiB before reading or starting OCR.
 | `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
 | `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
-| `VITE_API_URL` | No | Default `http://localhost:8000` |
+| `VITE_API_URL` | No | API origin; defaults to same-origin `/api` paths when unset |
+| `VITE_CANVAS_DEFAULT_URL` | No | Optional reachable HTTPS Canvas host used to prefill development/test-mode connections; leave empty when testers use account-specific hosts |
 | `TEST_DATABASE_URL` | Integration tests | Optional |
 
 **Production Compose** requires `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). Automated server deploys use a read-only SSH deploy key or OS credential helper configured outside the application `.env`; see [docs/deployment/cron.md](docs/deployment/cron.md).

@@ -13,6 +13,7 @@ import {
   Button,
   CommandSearchButton,
   AIServiceIndicators,
+  NavSecondary,
 } from "@eduai/ui";
 import {
   IconBooks,
@@ -31,7 +32,7 @@ import { useCourses } from "@/hooks/useCourses";
 import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
 import { useGuidedTour } from "@/contexts/GuidedTourContext";
 import { useBugReport } from "@/contexts/BugReportContext";
-import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
+import { getFooterNavForUser, getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
 import type { QmNavItemKey } from "@/lib/rbac/types";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
@@ -179,6 +180,13 @@ function QmAppLayoutInner() {
     external: item.external,
   }));
 
+  const navFooter = getFooterNavForUser(user).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
   // The question composer relies on a page-level sticky action bar. AppShell's
   // default `<main>` is `overflow-auto`, which makes it the sticky containing
   // block — but it never actually scrolls (the document does), so any sticky
@@ -196,6 +204,9 @@ function QmAppLayoutInner() {
         logoHref: "/dashboard",
         navMain,
         navSecondary,
+        footerLeading: (
+          <NavSecondary items={navFooter} currentPath={pathname} LinkComponent={Link} />
+        ),
         currentPath: pathname,
         LinkComponent: Link,
         launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
@@ -311,6 +322,13 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
     external: item.external,
   }));
 
+  const navFooter = getFooterNavForUser(user).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
   return (
     <QmLayoutProvider>
       <AppShell
@@ -319,6 +337,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           logoHref: "/dashboard",
           navMain,
           navSecondary,
+          footerLeading: <NavSecondary items={navFooter} currentPath="/" LinkComponent={Link} />,
           currentPath: "/",
           LinkComponent: Link,
           launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
