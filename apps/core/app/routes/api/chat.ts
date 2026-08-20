@@ -2210,7 +2210,7 @@ ${buildEmptyCourseRagBlock()}`;
       fleetPick = null;
       validatedApiKeys = enableBedrockOnSettings(validatedApiKeys);
       registry = createAIProviderRegistry(validatedApiKeys);
-      aiModel = registry.languageModel(resolvedModelId);
+      aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
       streamConfig.model = aiModel;
       routerContext = {
         ...routerContext,
