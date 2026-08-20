@@ -8,6 +8,8 @@ export interface CourseDetail extends Omit<Course, "aiInstructions"> {
   ragTopK?: number | null;
   ragSimilarityThreshold?: number | null;
   responseStyleTags?: string[];
+  /** Instructor-facing course-scope classifier toggle; hidden from students. */
+  courseScopeGuardrailEnabled?: boolean;
   /** Set by the course detail loader for students — raw aiInstructions are staff-only. */
   hasAiConfig?: boolean;
   instructor?: { id?: string; name: string; email: string } | null;

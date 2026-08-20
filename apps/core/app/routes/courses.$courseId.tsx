@@ -4,7 +4,10 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import prisma from "~/lib/prisma.server";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
-import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
+import {
+  CourseDetailManagerView,
+  type CourseDetailManagerCourse,
+} from "~/components/courses/course-detail-manager-view";
 import { CourseDetailTaView } from "~/components/courses/course-detail-ta-view";
 import { CourseDetailStudentView } from "~/components/courses/course-detail-student-view";
 import { useCourseTopics } from "~/hooks/api/use-course-topics";
@@ -222,7 +225,8 @@ export default function CourseDetailPage() {
         <div className="px-4 lg:px-6 py-6">
           {access === "admin" || access === "unit" || access === "instructor" ? (
             <CourseDetailManagerView
-              course={course}
+              // The staff branch above always includes this non-null DB field.
+              course={course as CourseDetailManagerCourse}
               access={access}
               topics={topics}
               enrollments={enrollments}

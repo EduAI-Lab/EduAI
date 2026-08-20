@@ -32,6 +32,7 @@ export interface Course {
   hasAiConfig?: boolean;
   ragTopK?: number | null;
   ragSimilarityThreshold?: number | null;
+  /** Enables the stricter second-pass course-scope classifier. Off by default. */
   courseScopeGuardrailEnabled?: boolean;
   externalSource?: string | null;
   externalId?: string | null;
