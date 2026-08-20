@@ -62,33 +62,73 @@ Each server was tested independently with both deployed models through concurren
 
 ### p95 latency by server — Qwen 3.5 2B
 
+Each chart below contains one server only, so the server identity is visible in the chart title.
+
+#### cmps01 — Qwen 3.5 2B
+
 ```mermaid
 xychart-beta
-    title "Per-server Qwen 3.5 2B p95 latency"
+    title "cmps01 — Qwen 3.5 2B p95 latency"
     x-axis "Concurrency" [1, 2, 4, 8, 16, 32, 64, 128]
     y-axis "p95 milliseconds" 0 --> 4000
     line [69, 98, 98, 111, 115, 190, 244, 438]
-    line [68, 101, 108, 117, 141, 156, 278, 463]
-    line [193, 292, 468, 701, 1019, 1185, 2101, 3854]
 ```
 
-**Legend — Qwen 3.5 2B:** line 1 = cmps01; line 2 = cmps02; line 3 = cmps03. The colors are assigned by the Mermaid renderer and may vary by GitHub theme.
-
-### p95 latency by server — Qwen 3.5 9B
+#### cmps02 — Qwen 3.5 2B
 
 ```mermaid
 xychart-beta
-    title "Per-server Qwen 3.5 9B p95 latency"
+    title "cmps02 — Qwen 3.5 2B p95 latency"
+    x-axis "Concurrency" [1, 2, 4, 8, 16, 32, 64, 128]
+    y-axis "p95 milliseconds" 0 --> 4000
+    line [68, 101, 108, 117, 141, 156, 278, 463]
+```
+
+#### cmps03 — Qwen 3.5 2B
+
+```mermaid
+xychart-beta
+    title "cmps03 — Qwen 3.5 2B p95 latency"
+    x-axis "Concurrency" [1, 2, 4, 8, 16, 32, 64, 128]
+    y-axis "p95 milliseconds" 0 --> 4000
+    line [193, 292, 468, 701, 1019, 1185, 2101, 3854]
+```
+
+### p95 latency by server — Qwen 3.5 9B
+
+Each chart below contains one server only, so the server identity is visible in the chart title.
+
+#### cmps01 — Qwen 3.5 9B
+
+```mermaid
+xychart-beta
+    title "cmps01 — Qwen 3.5 9B p95 latency"
     x-axis "Concurrency" [1, 2, 4, 8, 16, 32, 64, 128]
     y-axis "p95 milliseconds" 0 --> 5000
     line [89, 117, 148, 145, 149, 231, 349, 562]
+```
+
+#### cmps02 — Qwen 3.5 9B
+
+```mermaid
+xychart-beta
+    title "cmps02 — Qwen 3.5 9B p95 latency"
+    x-axis "Concurrency" [1, 2, 4, 8, 16, 32, 64, 128]
+    y-axis "p95 milliseconds" 0 --> 5000
     line [90, 125, 140, 154, 157, 221, 372, 638]
+```
+
+#### cmps03 — Qwen 3.5 9B
+
+```mermaid
+xychart-beta
+    title "cmps03 — Qwen 3.5 9B p95 latency"
+    x-axis "Concurrency" [1, 2, 4, 8, 16, 32, 64, 128]
+    y-axis "p95 milliseconds" 0 --> 5000
     line [520, 587, 814, 1108, 1451, 1675, 2690, 4943]
 ```
 
-**Legend — Qwen 3.5 9B:** line 1 = cmps01; line 2 = cmps02; line 3 = cmps03. The colors are assigned by the Mermaid renderer and may vary by GitHub theme.
-
-**Server-series order:** cmps01, cmps02, cmps03. At concurrency 128, the measured p95/RPS pairs were:
+At concurrency 128, the measured p95/RPS pairs were:
 
 | Server | Qwen 3.5 2B | Qwen 3.5 9B |
 |---|---:|---:|
