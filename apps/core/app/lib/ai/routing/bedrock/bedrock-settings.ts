@@ -15,8 +15,7 @@ export const BEDROCK_OVERFLOW_SETTING_KEYS = [
   "resourceLimit",
 ] as const;
 
-export type BedrockOverflowSettingKey =
-  (typeof BEDROCK_OVERFLOW_SETTING_KEYS)[number];
+export type BedrockOverflowSettingKey = (typeof BEDROCK_OVERFLOW_SETTING_KEYS)[number];
 
 export type BedrockOverflowSettings = {
   enabled: boolean;
@@ -50,11 +49,13 @@ export const BEDROCK_OVERFLOW_SETTING_DEFINITIONS: Record<
   },
   dailyUserLimit: {
     label: "Daily cap per user",
-    description: "Maximum Bedrock overflow turns one user may consume in 24 hours. 0 blocks this cap.",
+    description:
+      "Maximum Bedrock overflow turns one user may consume in 24 hours. 0 blocks this cap.",
   },
   monthlyUserLimit: {
     label: "Monthly cap per user",
-    description: "Maximum Bedrock overflow turns one user may consume in 30 days. 0 blocks this cap.",
+    description:
+      "Maximum Bedrock overflow turns one user may consume in 30 days. 0 blocks this cap.",
   },
   globalLimit: {
     label: "Global monthly cap",
@@ -70,9 +71,7 @@ export function defaultBedrockOverflowSettings(): BedrockOverflowSettings {
   return { ...DEFAULT_BEDROCK_OVERFLOW_SETTINGS };
 }
 
-export function isBedrockOverflowSettingKey(
-  value: string,
-): value is BedrockOverflowSettingKey {
+export function isBedrockOverflowSettingKey(value: string): value is BedrockOverflowSettingKey {
   return (BEDROCK_OVERFLOW_SETTING_KEYS as readonly string[]).includes(value);
 }
 

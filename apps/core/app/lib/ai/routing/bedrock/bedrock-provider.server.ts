@@ -15,10 +15,7 @@ import type {
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
 } from "@ai-sdk/provider";
-import {
-  concatBytes,
-  parseEventStreamMessages,
-} from "./bedrock-eventstream";
+import { concatBytes, parseEventStreamMessages } from "./bedrock-eventstream";
 
 export type BedrockProviderConfig = {
   apiKey: string;
@@ -88,8 +85,7 @@ export function convertPromptToConverse(prompt: LanguageModelV1Prompt): {
     const text = collectText(message.content);
     if (!text) continue;
 
-    const role: "user" | "assistant" =
-      message.role === "assistant" ? "assistant" : "user";
+    const role: "user" | "assistant" = message.role === "assistant" ? "assistant" : "user";
     const last = messages[messages.length - 1];
     if (last && last.role === role) {
       last.content[0] = { text: `${last.content[0]?.text ?? ""}\n${text}` };
@@ -233,10 +229,7 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
       stopReason?: string;
       usage?: BedrockUsage;
     };
-    const text =
-      json.output?.message?.content
-        ?.map((block) => block.text ?? "")
-        .join("") ?? "";
+    const text = json.output?.message?.content?.map((block) => block.text ?? "").join("") ?? "";
 
     return {
       text,

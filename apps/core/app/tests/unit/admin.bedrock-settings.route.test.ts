@@ -34,10 +34,7 @@ vi.mock("~/lib/request-context.server", () => ({
   getRequestContext: vi.fn(() => ({ routePath: "/api/admin/bedrock-settings" })),
 }));
 
-import {
-  action,
-  loader,
-} from "~/routes/api/admin.bedrock-settings";
+import { action, loader } from "~/routes/api/admin.bedrock-settings";
 import { defaultBedrockOverflowSettings } from "~/lib/ai/routing/bedrock/bedrock-settings";
 
 const settings = {
@@ -98,10 +95,7 @@ describe("admin bedrock settings API", () => {
     const res = await action(makeArgs("PATCH", settings));
 
     expect(res.status).toBe(200);
-    expect(mocks.setBedrockOverflowSettings).toHaveBeenCalledWith(
-      settings,
-      "admin-1",
-    );
+    expect(mocks.setBedrockOverflowSettings).toHaveBeenCalledWith(settings, "admin-1");
     expect(mocks.fireAndForget).toHaveBeenCalledOnce();
     await expect(res.json()).resolves.toEqual({
       settings,
@@ -111,9 +105,9 @@ describe("admin bedrock settings API", () => {
 
   it("rejects unsupported methods and malformed input", async () => {
     expect((await action(makeArgs("POST", {}))).status).toBe(405);
-    expect(
-      (await action(makeArgs("PATCH", { enabled: true, resourceLimit: -1 }))).status,
-    ).toBe(400);
+    expect((await action(makeArgs("PATCH", { enabled: true, resourceLimit: -1 }))).status).toBe(
+      400,
+    );
     expect(mocks.setBedrockOverflowSettings).not.toHaveBeenCalled();
   });
 });

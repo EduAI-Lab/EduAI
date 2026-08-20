@@ -94,9 +94,7 @@ describe("tryActivateBedrockOverflow", () => {
   });
 
   it("returns null when the bearer token is missing", async () => {
-    await expect(
-      tryActivateBedrockOverflow({ settings: enabledSettings() }),
-    ).resolves.toBeNull();
+    await expect(tryActivateBedrockOverflow({ settings: enabledSettings() })).resolves.toBeNull();
   });
 
   it("returns null when AWS is still at the admin default of off / 0", async () => {
@@ -118,9 +116,7 @@ describe("tryActivateBedrockOverflow", () => {
   it("returns the default Llama 3 model and aws-bedrock server id", async () => {
     process.env.AWS_BEARER_TOKEN_BEDROCK = "test-token";
 
-    await expect(
-      tryActivateBedrockOverflow({ settings: enabledSettings() }),
-    ).resolves.toEqual({
+    await expect(tryActivateBedrockOverflow({ settings: enabledSettings() })).resolves.toEqual({
       resolvedModelId: `bedrock:${DEFAULT_BEDROCK_MODEL_ID}`,
       serverId: BEDROCK_OVERFLOW_SERVER_ID,
     });
@@ -154,9 +150,7 @@ describe("tryActivateBedrockOverflow", () => {
     await expect(
       tryActivateBedrockOverflow({ settings, userId: "user-1" }),
     ).resolves.not.toBeNull();
-    await expect(
-      tryActivateBedrockOverflow({ settings, userId: "user-1" }),
-    ).resolves.toBeNull();
+    await expect(tryActivateBedrockOverflow({ settings, userId: "user-1" })).resolves.toBeNull();
     await expect(
       tryActivateBedrockOverflow({ settings, userId: "user-2" }),
     ).resolves.not.toBeNull();

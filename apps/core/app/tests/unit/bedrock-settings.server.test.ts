@@ -24,9 +24,7 @@ describe("bedrock-settings.server", () => {
   it("defaults AWS overflow off with every cap at 0", async () => {
     prismaMock.systemConfig.findMany.mockResolvedValue([]);
 
-    await expect(getBedrockOverflowSettings()).resolves.toEqual(
-      defaultBedrockOverflowSettings(),
-    );
+    await expect(getBedrockOverflowSettings()).resolves.toEqual(defaultBedrockOverflowSettings());
   });
 
   it("applies persisted admin overrides", async () => {

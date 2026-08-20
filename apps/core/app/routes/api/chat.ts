@@ -2670,7 +2670,7 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(telemetryServerId ?? fleetPick?.serverId
+              ...((telemetryServerId ?? fleetPick?.serverId)
                 ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
                 : {}),
             },
@@ -2826,7 +2826,7 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(telemetryServerId ?? fleetPick?.serverId
+              ...((telemetryServerId ?? fleetPick?.serverId)
                 ? { "X-Fleet-Server": (telemetryServerId ?? fleetPick?.serverId)! }
                 : {}),
             },

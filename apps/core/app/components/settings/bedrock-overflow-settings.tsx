@@ -61,17 +61,16 @@ export function BedrockOverflowSettingsCard({
       <CardHeader>
         <CardTitle>AWS Bedrock overflow</CardTitle>
         <CardDescription>
-          Paid fallback only. Off by default. Administrators are the only role
-          that can enable it or change the caps.
+          Paid fallback only. Off by default. Administrators are the only role that can enable it or
+          change the caps.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <Alert variant="destructive">
           <AlertTitle>This can incur AWS charges</AlertTitle>
           <AlertDescription>
-            Bedrock is used only when local GPUs are saturated. Keep it off
-            unless you intend to spend. A cap of 0 blocks that window. Overflow
-            stays blocked while every cap is 0.
+            Bedrock is used only when local GPUs are saturated. Keep it off unless you intend to
+            spend. A cap of 0 blocks that window. Overflow stays blocked while every cap is 0.
           </AlertDescription>
         </Alert>
 
@@ -79,8 +78,8 @@ export function BedrockOverflowSettingsCard({
           <Alert>
             <AlertTitle>AWS token is not configured</AlertTitle>
             <AlertDescription>
-              Set AWS_BEARER_TOKEN_BEDROCK on this deployment before overflow
-              can fire. Enabling the switch alone is not enough.
+              Set AWS_BEARER_TOKEN_BEDROCK on this deployment before overflow can fire. Enabling the
+              switch alone is not enough.
             </AlertDescription>
           </Alert>
         ) : null}
@@ -98,9 +97,7 @@ export function BedrockOverflowSettingsCard({
             id="bedrock-overflow-enabled"
             aria-label="Enable AWS Bedrock overflow"
             checked={draft.enabled}
-            onCheckedChange={(value) =>
-              setDraft((current) => ({ ...current, enabled: value }))
-            }
+            onCheckedChange={(value) => setDraft((current) => ({ ...current, enabled: value }))}
           />
         </div>
 

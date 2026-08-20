@@ -58,7 +58,7 @@ async function main() {
     console.error(
       "AWS_BEARER_TOKEN_BEDROCK not set. Add to apps/core/.env:\n" +
         '  AWS_BEARER_TOKEN_BEDROCK="<bedrock api key>"\n' +
-        '  BEDROCK_REGION="us-east-1"'
+        '  BEDROCK_REGION="us-east-1"',
     );
     process.exit(1);
   }

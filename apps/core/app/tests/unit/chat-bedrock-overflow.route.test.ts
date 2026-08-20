@@ -10,7 +10,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -118,10 +122,7 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import {
-  AdmissionTimeoutError,
-  acquireAiAdmission,
-} from "~/lib/ai/admission.server";
+import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";

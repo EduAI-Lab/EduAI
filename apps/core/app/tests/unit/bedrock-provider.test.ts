@@ -86,9 +86,7 @@ describe("createBedrockProvider", () => {
     );
     const meta = encodeEventStreamMessage(
       { ":message-type": "event", ":event-type": "metadata" },
-      new TextEncoder().encode(
-        JSON.stringify({ usage: { inputTokens: 2, outputTokens: 3 } }),
-      ),
+      new TextEncoder().encode(JSON.stringify({ usage: { inputTokens: 2, outputTokens: 3 } })),
     );
     const body = new Uint8Array(delta.length + stop.length + meta.length);
     body.set(delta, 0);

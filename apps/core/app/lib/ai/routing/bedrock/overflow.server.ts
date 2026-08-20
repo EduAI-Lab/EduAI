@@ -125,9 +125,7 @@ export async function tryActivateBedrockOverflow(
 }
 
 /** Enable Bedrock on a settings object without accepting client key/URL overrides. */
-export function enableBedrockOnSettings(
-  settings: UserProviderSettings,
-): UserProviderSettings {
+export function enableBedrockOnSettings(settings: UserProviderSettings): UserProviderSettings {
   return {
     ...settings,
     bedrock: { isEnabled: true },

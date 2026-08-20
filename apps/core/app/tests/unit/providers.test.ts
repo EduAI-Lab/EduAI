@@ -345,13 +345,9 @@ describe("listEnabledRegistryProviders", () => {
 
   it("includes bedrock only when enabled and AWS_BEARER_TOKEN_BEDROCK is set", () => {
     process.env.AWS_BEARER_TOKEN_BEDROCK = "env-token";
-    expect(
-      listEnabledRegistryProviders({ bedrock: { isEnabled: true } }),
-    ).toEqual(["bedrock"]);
+    expect(listEnabledRegistryProviders({ bedrock: { isEnabled: true } })).toEqual(["bedrock"]);
 
     delete process.env.AWS_BEARER_TOKEN_BEDROCK;
-    expect(
-      listEnabledRegistryProviders({ bedrock: { isEnabled: true } }),
-    ).toEqual([]);
+    expect(listEnabledRegistryProviders({ bedrock: { isEnabled: true } })).toEqual([]);
   });
 });

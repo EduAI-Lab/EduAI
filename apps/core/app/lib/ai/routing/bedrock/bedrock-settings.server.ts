@@ -18,11 +18,7 @@ export function invalidateBedrockOverflowSettingsCache(): void {
   cache = null;
 }
 
-function applyRow(
-  settings: BedrockOverflowSettings,
-  key: string,
-  value: string,
-): void {
+function applyRow(settings: BedrockOverflowSettings, key: string, value: string): void {
   const settingKey = key.startsWith(BEDROCK_OVERFLOW_SETTING_PREFIX)
     ? key.slice(BEDROCK_OVERFLOW_SETTING_PREFIX.length)
     : key;
@@ -39,9 +35,7 @@ export async function getBedrockOverflowSettings(): Promise<BedrockOverflowSetti
     return cache.value;
   }
 
-  const keys = BEDROCK_OVERFLOW_SETTING_KEYS.map(
-    (key) => BEDROCK_OVERFLOW_SETTING_PREFIX + key,
-  );
+  const keys = BEDROCK_OVERFLOW_SETTING_KEYS.map((key) => BEDROCK_OVERFLOW_SETTING_PREFIX + key);
   const rows = await prisma.systemConfig.findMany({
     where: { key: { in: keys } },
     select: { key: true, value: true },

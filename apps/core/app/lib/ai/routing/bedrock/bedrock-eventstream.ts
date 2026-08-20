@@ -83,9 +83,7 @@ function parseHeaders(section: Uint8Array): Record<string, string> {
     offset += 1;
 
     if (type !== HEADER_TYPE_STRING) {
-      throw new EventStreamParseError(
-        `Unsupported event-stream header type ${type} for "${name}"`,
-      );
+      throw new EventStreamParseError(`Unsupported event-stream header type ${type} for "${name}"`);
     }
     if (offset + 2 > section.length) {
       throw new EventStreamParseError("Truncated event-stream header value length");

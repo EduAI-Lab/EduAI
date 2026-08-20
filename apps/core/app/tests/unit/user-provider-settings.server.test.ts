@@ -92,9 +92,9 @@ describe("getUserProviderSettings", () => {
 
 describe("upsertUserProviderSetting", () => {
   it("rejects bedrock so only admins can enable AWS overflow", async () => {
-    await expect(
-      upsertUserProviderSetting("u1", "bedrock", { isEnabled: true }),
-    ).rejects.toThrow("admin-only overflow");
+    await expect(upsertUserProviderSetting("u1", "bedrock", { isEnabled: true })).rejects.toThrow(
+      "admin-only overflow",
+    );
     expect(prismaMock.aIProvider.findUnique).not.toHaveBeenCalled();
   });
 
