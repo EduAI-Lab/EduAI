@@ -15,6 +15,7 @@ import {
 } from "../services/aiReviewHistoryStorage";
 import { clearOCRHistoryForUser, OCR_HISTORY_KEY } from "../types/ocr";
 import { isAxiosError } from "axios";
+import { getCoreLoginUrl } from "../lib/coreUrl";
 
 interface AuthContextType {
   user: User | null;
@@ -123,8 +124,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     setAuthError(null);
-    const coreUrl = import.meta.env?.VITE_CORE_URL || "http://localhost:3000";
-    window.location.href = `${coreUrl}/login`;
+    // Match the api.ts 401 interceptor and AI Tutor: send the user to Core login
+    // with a `redirect` back to this extension so re-login returns them here,
+    // rather than stranding them on Core with a bare `/login` (#1574).
+    window.location.href = getCoreLoginUrl();
   }, [user?.id]);
 
   return (
