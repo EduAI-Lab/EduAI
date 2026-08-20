@@ -13,8 +13,10 @@ Chromium *and* the protocol-level engine in one tool.
   resolve to `::1` and miss the IPv4-only bind). k6 **refuses** a
   non-loopback `LOADTEST_BASE_URL` unless you set `LOADTEST_ALLOW_REMOTE=1`
   for a dedicated load-test host. `dev.eduai.ok.ubc.ca` / `my.eduai.ok.ubc.ca`
-  are blocked even with that flag — those hosts run live traffic, and a
-  500-VU ramp would degrade real participants.
+  are blocked even with that flag (hostname is lowercased and trailing FQDN
+  dots are stripped, so `https://dev.eduai.ok.ubc.ca.` is refused too) —
+  those hosts run live traffic, and a 500-VU ramp would degrade real
+  participants.
 - **No real model calls.** `VLLM_BASE_URL`/`OLLAMA_BASE_URL` point at
   `loadtest/mock-llm/server.mjs`, a canned-response stand-in. This is
   intentional — real OpenAI/Google keys would incur real cost per simulated

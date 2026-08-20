@@ -2,6 +2,14 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 const FORBIDDEN_HOSTS = new Set(["dev.eduai.ok.ubc.ca", "my.eduai.ok.ubc.ca"]);
 
 /**
+ * `URL.hostname` keeps a trailing FQDN dot (`dev.eduai.ok.ubc.ca.`), so an
+ * exact-host block would miss it. Lowercase and strip trailing dots first.
+ */
+function canonicalizeHostname(hostname) {
+  return hostname.toLowerCase().replace(/\.+$/, "");
+}
+
+/**
  * Fail closed: default and allowed targets are loopback. A remote URL is
  * refused unless allowRemote === '1' (dedicated load-test host only).
  * The live study/prod hosts are never allowed, even with that opt-in.
@@ -17,7 +25,7 @@ export function resolveLoadtestBaseUrl(raw, allowRemote) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`LOADTEST_BASE_URL must be http(s): ${value}`);
   }
-  const host = url.hostname.toLowerCase();
+  const host = canonicalizeHostname(url.hostname);
   if (FORBIDDEN_HOSTS.has(host)) {
     throw new Error(
       `LOADTEST_BASE_URL points at ${host}, which serves live EduAI traffic. ` +
