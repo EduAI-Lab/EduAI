@@ -8,6 +8,11 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 const frontendDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionRoot = path.resolve(frontendDir, "../..");
+// frontendDir is <repo>/apps/extensions/question-maker/app/frontend, so the repo
+// root is five levels up. Without the true root here, `server.fs.allow` excludes
+// the hoisted root `node_modules`, and /@fs requests for the self-hosted Outfit
+// woff2 files hit "outside of Vite serving allow list" (403) — QM then renders a
+// fallback font in dev while Core/AI Tutor do not (#1575).
 const monorepoRoot = path.resolve(frontendDir, "../../../../..");
 
 export default defineConfig({
