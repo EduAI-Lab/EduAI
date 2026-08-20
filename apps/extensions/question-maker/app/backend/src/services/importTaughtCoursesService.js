@@ -10,6 +10,7 @@ import { syncTopicsFromCoreForCourse } from "./topicSyncService.js";
 import { createAssessment } from "./assessmentService.js";
 import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
 import { logger } from "../utils/logger.js";
+import { safeRequestLogFields, toStableUpstreamError } from "../utils/safeLogging.js";
 
 const AUTO_IMPORT_ROLES = new Set(["INSTRUCTOR"]);
 const TEACHING_ENROLLMENT_ROLES = new Set(["INSTRUCTOR", "TA"]);
@@ -145,8 +146,12 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
     // #1041: import reconciles against every course the caller can see.
     coreCourses = await listCoursesFromCore(cookie ?? "", { all: true });
   } catch (err) {
-    logger.warn({ err, userId }, "Auto-import skipped: could not list Core courses");
-    return { imported: 0, skipped: 0, error: err.message };
+    const stable = toStableUpstreamError(err, { serviceName: "Core API" });
+    logger.warn(
+      { ...safeRequestLogFields(err), userId },
+      "Auto-import skipped: could not list Core courses",
+    );
+    return { imported: 0, skipped: 0, error: stable.message };
   }
 
   if (coreCourses.length === 0) {

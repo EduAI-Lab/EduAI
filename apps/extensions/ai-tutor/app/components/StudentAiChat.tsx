@@ -389,7 +389,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       // `loading`), but the imperative `sendGuidePrompt` handle exposed to
       // the parent route bypasses that — this guard is the single choke
       // point both paths funnel through.
-      if (chatState[tab].loading) return;
+      if (chatState[tab].loading || abortControllersRef.current[tab]) return;
 
       const modeEnabled =
         (tab === "teach" && activity.enableTeachMode) ||
@@ -505,8 +505,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       } finally {
         if (abortControllersRef.current[tab] === controller) {
           delete abortControllersRef.current[tab];
+          setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
         }
-        setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
       }
     },
     [
@@ -969,8 +969,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored only on this device and sent directly to {getProviderLabel(currentProvider)}.
-              You can also manage keys in Settings → Providers.
+              Stored for your account on this device and sent through EduAI services to{" "}
+              {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
+              device. You can also manage keys in Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

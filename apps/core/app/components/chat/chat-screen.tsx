@@ -173,7 +173,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
-  const { getValidApiKeys } = useApiKeys();
+  // ChatScreen creates the CurrentUserIdProvider below this hook, inside
+  // CoreAppShell. Pass the loader-owned user id explicitly so this instance
+  // and the nested ChatInput instance address the same module-level key store.
+  // Otherwise they alternate between the anonymous and authenticated owners,
+  // repeatedly resetting the store until React trips its update-depth guard.
+  const { getValidApiKeys } = useApiKeys(user.id);
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);

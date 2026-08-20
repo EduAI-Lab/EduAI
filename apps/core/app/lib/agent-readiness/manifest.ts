@@ -806,6 +806,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/ollama-models",
     readiness: "ready",
     adminChatTool: "listOllamaModels",

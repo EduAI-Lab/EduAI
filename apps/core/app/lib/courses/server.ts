@@ -25,6 +25,12 @@ import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
 import { ensureDefaultBank } from "~/lib/question-banks/server";
 import {
+  COURSE_PUBLIC_SELECT,
+  COURSE_SERVICE_SELECT,
+  COURSE_STAFF_SELECT,
+  serializeCourseForApi,
+} from "./dto.server";
+import {
   CreateCourseSchema,
   UpdateCourseSchema,
   CreateCourseTopicSchema,
@@ -353,9 +359,25 @@ export async function getCourses(request: Request) {
     return and.length === 1 ? base : { AND: and };
   };
 
+  // STUDENT accounts can hold a TA enrollment on one course and a STUDENT
+  // enrollment on another.  The list itself only needs public metadata for a
+  // platform-STUDENT caller; the role-aware detail endpoint provides the
+  // staff configuration for an actual TA course.  Other session roles use the
+  // staff projection because their course-management list edits AI settings.
+  const select =
+    caller.kind === "serviceKey"
+      ? COURSE_SERVICE_SELECT
+      : caller.user.role === "STUDENT"
+        ? COURSE_PUBLIC_SELECT
+        : COURSE_STAFF_SELECT;
+
   const listCourses = async (where: Prisma.CourseWhereInput) => {
     if (!pagination) {
-      const rows = await prisma.course.findMany({ where, orderBy: { code: "asc" } });
+      const rows = await prisma.course.findMany({
+        where,
+        orderBy: { code: "asc" },
+        select,
+      });
       return { rows, total: rows.length };
     }
     const [total, rows] = await prisma.$transaction([
@@ -365,6 +387,7 @@ export async function getCourses(request: Request) {
         orderBy: { code: "asc" },
         skip: pagination.skip,
         take: pagination.take,
+        select,
       }),
     ]);
     return { rows, total };
@@ -373,7 +396,8 @@ export async function getCourses(request: Request) {
   // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
   if (caller.kind === "serviceKey") {
     const { rows, total } = await listCourses(withSelectors({ deletedAt: null }));
-    return pagination ? paginatedResponse(rows, total, pagination) : unpagedResponse(rows);
+    const data = rows.map((row) => serializeCourseForApi(row, { audience: "service" }));
+    return pagination ? paginatedResponse(data, total, pagination) : unpagedResponse(data);
   }
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
@@ -393,10 +417,23 @@ export async function getCourses(request: Request) {
     select: { courseId: true, role: true },
   });
   const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
-  const coursesWithCallerRole = courses.map((course) => ({
-    ...course,
-    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
-  }));
+  const coursesWithCallerRole = courses.map((course) => {
+    const callerEnrollmentRole = roleByCourseId.get(course.id) ?? null;
+    // Audience follows the resolved course relationship, not merely the
+    // platform role.  A platform INSTRUCTOR/UNIT_ADMIN can still hold a
+    // STUDENT enrollment on another course; that row must remain public.
+    const audience =
+      caller.user.role === "ADMIN" ||
+      (caller.user.role === "UNIT_ADMIN" && callerEnrollmentRole !== "STUDENT") ||
+      callerEnrollmentRole === "TA" ||
+      callerEnrollmentRole === "INSTRUCTOR"
+        ? "staff"
+        : "student";
+    return serializeCourseForApi(course, {
+      audience,
+      callerEnrollmentRole,
+    });
+  });
 
   return pagination
     ? paginatedResponse(coursesWithCallerRole, total, pagination)
@@ -551,7 +588,7 @@ export async function createCourse(request: Request) {
     return created;
   });
 
-  return jsonResponse(201, course);
+  return jsonResponse(201, serializeCourseForApi(course, { audience: "staff", detail: true }));
 }
 
 /**
@@ -608,10 +645,13 @@ export async function updateCourse(request: Request, courseId: string) {
         aiInstructions: result.data.aiInstructions,
       },
     });
-    return new Response(JSON.stringify(updated), {
-      status: 200,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return new Response(
+      JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" } as const,
+      },
+    );
   }
 
   if (!access || access.rank < 2) {
@@ -679,10 +719,13 @@ export async function updateCourse(request: Request, courseId: string) {
     });
   });
 
-  return new Response(JSON.stringify(updated), {
-    status: 200,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return new Response(
+    JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    },
+  );
 }
 
 /**
@@ -758,8 +801,14 @@ export async function deleteCourse(request: Request, courseId: string) {
  * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
  */
 export async function setPublishState(request: Request, courseId: string, publish: boolean) {
-  // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+  // A forwarded user session remains the actor even when a trusted extension
+  // also supplies its service key as server provenance. Resolve the session
+  // once so bearer presence cannot bypass user access or publish policy.
+  const session = await getRequestSession(request);
+
+  // Service-only requests retain trusted extension access. Invalid bearer
+  // credentials still fail the guard.
+  if (!session?.user && request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
 
@@ -778,14 +827,16 @@ export async function setPublishState(request: Request, courseId: string, publis
       where: { id: courseId },
       data: { isPublished: publish },
     });
-    return new Response(JSON.stringify(updated), {
-      status: 200,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return new Response(
+      JSON.stringify(serializeCourseForApi(updated, { audience: "service", detail: true })),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" } as const,
+      },
+    );
   }
 
   // User session path (admin UI / direct API access)
-  const session = await getRequestSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -825,10 +876,13 @@ export async function setPublishState(request: Request, courseId: string, publis
     where: { id: courseId },
     data: { isPublished: publish },
   });
-  return new Response(JSON.stringify(updated), {
-    status: 200,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return new Response(
+    JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    },
+  );
 }
 
 export async function getCourse(courseId: string, includeDeleted = false) {

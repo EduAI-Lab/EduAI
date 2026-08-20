@@ -1,10 +1,43 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
 
+const DEFAULT_CRON_RUN_LEASE_MS = 60_000;
+const MIN_CRON_RUN_LEASE_MS = 15_000;
+const MAX_CRON_RUN_LEASE_MS = 10 * 60_000;
+export const DEFAULT_CRON_OUTPUT_MAX_BYTES = 64 * 1024;
+const MIN_CRON_OUTPUT_MAX_BYTES = 1024;
+const MAX_CRON_OUTPUT_MAX_BYTES = 1024 * 1024;
+const CRON_PERSISTED_MESSAGE_MAX_BYTES = 1000;
+const CRON_CHILD_KILL_GRACE_MS = 5_000;
+
+type CronRunDb = Pick<Prisma.TransactionClient, "$executeRaw" | "$queryRaw">;
+
 declare global {
   var __manualCronRunIds: Set<string> | undefined;
+}
+
+export type StartCronRunResult =
+  | { runId: string; created: true; leaseOwner: string }
+  | { runId: string; created: false };
+
+export function resolveCronRunLeaseMs(): number {
+  const configured = Number(process.env.CRON_RUN_LEASE_MS);
+  if (!Number.isSafeInteger(configured) || configured < MIN_CRON_RUN_LEASE_MS) {
+    return DEFAULT_CRON_RUN_LEASE_MS;
+  }
+  return Math.min(configured, MAX_CRON_RUN_LEASE_MS);
+}
+
+export function resolveCronOutputMaxBytes(): number {
+  const configured = Number(process.env.CRON_OUTPUT_MAX_BYTES);
+  if (!Number.isSafeInteger(configured) || configured < MIN_CRON_OUTPUT_MAX_BYTES) {
+    return DEFAULT_CRON_OUTPUT_MAX_BYTES;
+  }
+  return Math.min(configured, MAX_CRON_OUTPUT_MAX_BYTES);
 }
 
 export type CronJobStatusValue = "RUNNING" | "SUCCESS" | "ERROR";
@@ -197,69 +230,134 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
   }));
 }
 
-export async function findRunningCronRun(jobName: string): Promise<{ id: string } | null> {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+async function findRunningCronRunWithDb(
+  db: CronRunDb,
+  jobName: string,
+): Promise<{ id: string } | null> {
+  const rows = await db.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM cron_job_runs
     WHERE "jobName" = ${jobName}
       AND status = 'RUNNING'::"CronJobStatus"
+      AND "leaseExpiresAt" > statement_timestamp()
     ORDER BY "startedAt" DESC
     LIMIT 1
   `;
   return rows[0] ?? null;
 }
 
-export async function startCronRun(
-  jobName: string,
-  metadata: { source: CronJobTriggerSource; triggeredByUserId?: string } = { source: "UNKNOWN" },
-): Promise<{ runId: string; created: boolean }> {
-  // Insert first; partial unique index (one RUNNING per jobName) makes concurrent
-  // triggers conflict instead of double-spawning. ON CONFLICT DO NOTHING + reclaim.
-  // `created: true` only when this caller won the INSERT — losers must not spawn.
-  const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
-    INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "triggerSource", "triggeredByUserId", "createdAt")
-    VALUES (
-      gen_random_uuid()::text,
-      ${jobName},
-      'RUNNING'::"CronJobStatus",
-      NOW(),
-      ${metadata.source}::"CronJobTriggerSource",
-      ${metadata.triggeredByUserId ?? null},
-      NOW()
-    )
-    ON CONFLICT ("jobName") WHERE (status = 'RUNNING') DO NOTHING
-    RETURNING id
+export async function findRunningCronRun(jobName: string): Promise<{ id: string } | null> {
+  return findRunningCronRunWithDb(prisma, jobName);
+}
+
+async function reapExpiredCronRunsWithDb(db: CronRunDb, jobName?: string): Promise<number> {
+  const jobFilter = jobName ? Prisma.sql`AND "jobName" = ${jobName}` : Prisma.empty;
+  return db.$executeRaw`
+    UPDATE cron_job_runs
+    SET status = 'ERROR'::"CronJobStatus",
+        "finishedAt" = statement_timestamp(),
+        message = CASE
+          WHEN message IS NULL OR BTRIM(message) = ''
+            THEN 'Cron run lease expired; a later process may safely retry it'
+          ELSE message || E'\nCron run lease expired; a later process may safely retry it'
+        END,
+        "exitCode" = COALESCE("exitCode", 1),
+        "leaseHeartbeatAt" = NULL,
+        "leaseExpiresAt" = NULL
+    WHERE status = 'RUNNING'::"CronJobStatus"
+      AND "leaseExpiresAt" <= statement_timestamp()
+      ${jobFilter}
   `;
-  if (inserted[0]?.id) {
-    return { runId: inserted[0].id, created: true };
-  }
+}
 
-  const running = await findRunningCronRun(jobName);
-  if (running) {
-    return { runId: running.id, created: false };
-  }
+/** Terminalize expired attempts while preserving each crashed row as audit history. */
+export async function reapExpiredCronRuns(): Promise<number> {
+  return reapExpiredCronRunsWithDb(prisma);
+}
 
-  throw new Error(`Failed to start or reclaim cron run for job "${jobName}"`);
+export async function startCronRun(jobName: string): Promise<StartCronRunResult> {
+  const leaseOwner = randomUUID();
+  const leaseMs = resolveCronRunLeaseMs();
+
+  return prisma.$transaction(async (tx) => {
+    // Serialize acquisition for one logical job across scheduler replicas and
+    // manual triggers. The partial unique index remains the database backstop.
+    await tx.$queryRaw<Array<{ locked: boolean }>>`
+      WITH job_lock AS MATERIALIZED (
+        SELECT pg_advisory_xact_lock(hashtextextended(${jobName}, 0))
+      )
+      SELECT TRUE AS locked FROM job_lock
+    `;
+
+    await reapExpiredCronRunsWithDb(tx, jobName);
+    const running = await findRunningCronRunWithDb(tx, jobName);
+    if (running) return { runId: running.id, created: false };
+
+    // statement_timestamp() is evaluated after any advisory-lock wait and uses
+    // the database clock, so host clock skew cannot shorten or extend a lease.
+    const inserted = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO cron_job_runs (
+        id, "jobName", status, "startedAt", "createdAt",
+        "leaseOwner", "leaseHeartbeatAt", "leaseExpiresAt"
+      )
+      VALUES (
+        gen_random_uuid()::text,
+        ${jobName},
+        'RUNNING'::"CronJobStatus",
+        statement_timestamp(),
+        statement_timestamp(),
+        ${leaseOwner},
+        statement_timestamp(),
+        statement_timestamp() + (${leaseMs} * INTERVAL '1 millisecond')
+      )
+      RETURNING id
+    `;
+    if (!inserted[0]?.id) {
+      throw new Error(`Failed to acquire cron run lease for job "${jobName}"`);
+    }
+    return { runId: inserted[0].id, created: true, leaseOwner };
+  });
+}
+
+export async function renewCronRunLease(id: string, leaseOwner: string): Promise<boolean> {
+  const leaseMs = resolveCronRunLeaseMs();
+  const updated = await prisma.$executeRaw`
+    UPDATE cron_job_runs
+    SET "leaseHeartbeatAt" = statement_timestamp(),
+        "leaseExpiresAt" = statement_timestamp() + (${leaseMs} * INTERVAL '1 millisecond')
+    WHERE id = ${id}
+      AND status = 'RUNNING'::"CronJobStatus"
+      AND "leaseOwner" = ${leaseOwner}
+      AND "leaseExpiresAt" > statement_timestamp()
+  `;
+  return updated === 1;
 }
 
 export async function finishCronRun(
   id: string,
+  leaseOwner: string,
   status: "SUCCESS" | "ERROR",
   message: string,
   exitCode: number,
-): Promise<void> {
+): Promise<boolean> {
   // `message` is the tail of a cron script's stdout/stderr, and those scripts are spawned with
   // the full `process.env` — a crash trace can print DATABASE_URL or an API key verbatim. This
   // is the single chokepoint every run outcome is persisted through, so scrub it here.
   const safeMessage = redactSecretValuesInString(message);
-  await prisma.$executeRaw`
+  const updated = await prisma.$executeRaw`
     UPDATE cron_job_runs
     SET status     = ${status}::"CronJobStatus",
-        "finishedAt" = NOW(),
+        "finishedAt" = statement_timestamp(),
         message    = ${safeMessage},
-        "exitCode" = ${exitCode}
+        "exitCode" = ${exitCode},
+        "leaseHeartbeatAt" = NULL,
+        "leaseExpiresAt" = NULL
     WHERE id = ${id}
+      AND status = 'RUNNING'::"CronJobStatus"
+      AND "leaseOwner" = ${leaseOwner}
+      AND "leaseExpiresAt" > statement_timestamp()
   `;
+  return updated === 1;
 }
 
 function resolveScriptDir(): string {
@@ -275,21 +373,77 @@ function resolveScriptDir(): string {
   return cwdNorm.endsWith("apps/core") ? fromAppsCore : fromCwd;
 }
 
+function utf8Tail(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value);
+  if (bytes.length <= maxBytes) return value;
+
+  // Starting in the middle of a multi-byte character produces a replacement
+  // character. Drop only that damaged prefix while retaining the diagnostic tail.
+  return bytes
+    .subarray(bytes.length - maxBytes)
+    .toString("utf8")
+    .replace(/^\uFFFD+/, "");
+}
+
+function persistedCronMessage(
+  captured: Buffer,
+  capturedBytes: number,
+  exitCode: number,
+  outputLimit: number | null,
+  overrideMessage?: string,
+): string {
+  if (overrideMessage) {
+    return utf8Tail(
+      redactSecretValuesInString(overrideMessage),
+      CRON_PERSISTED_MESSAGE_MAX_BYTES,
+    ).trim();
+  }
+
+  // The capture is bounded before conversion to a string. Redact the complete
+  // bounded capture before selecting its tail so a long KEY=secret assignment
+  // cannot lose its identifying key before the value is scrubbed.
+  const safeOutput = redactSecretValuesInString(
+    captured.subarray(0, capturedBytes).toString("utf8"),
+  );
+  if (outputLimit !== null) {
+    const marker = `Cron output limit of ${outputLimit} bytes exceeded; process terminated`;
+    const diagnosticBudget = Math.max(
+      0,
+      CRON_PERSISTED_MESSAGE_MAX_BYTES - Buffer.byteLength(marker) - 1,
+    );
+    const diagnostic = utf8Tail(safeOutput, diagnosticBudget).trim();
+    return diagnostic ? `${diagnostic}\n${marker}` : marker;
+  }
+
+  return (
+    utf8Tail(safeOutput, CRON_PERSISTED_MESSAGE_MAX_BYTES).trim() ||
+    (exitCode === 0 ? "Completed successfully" : `Exited with code ${exitCode}`)
+  );
+}
+
 export function triggerCronJobAsync(
   jobName: string,
   script: string,
   runId: string,
+  leaseOwner: string,
   execution: CronJobExecution = "SCRIPT",
 ): void {
   if (execution === "CORE") {
     void import("~/lib/cron-notify-api-key-expiry.server")
       .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
       .then(({ notified }) =>
-        finishCronRun(runId, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0),
+        finishCronRun(
+          runId,
+          leaseOwner,
+          "SUCCESS",
+          `Sent ${notified} API key expiry notification(s)`,
+          0,
+        ),
       )
       .catch((err: unknown) =>
         finishCronRun(
           runId,
+          leaseOwner,
           "ERROR",
           `Core handler failed: ${redactErrorForConsole(err)}`,
           1,
@@ -300,42 +454,125 @@ export function triggerCronJobAsync(
     return;
   }
 
-  // Pass the script dir as cwd so Node sets the working directory at the OS level
   const scriptDir = resolveScriptDir();
+  let child: ReturnType<typeof spawn>;
 
-  const child = spawn("bash", [`./${script}`], {
-    env: { ...process.env, CORE_CRON_RUN_ID: runId },
-    cwd: scriptDir,
-    timeout: 10 * 60 * 1000,
-  });
+  try {
+    // Pass the script dir as cwd so Node sets the working directory at the OS level.
+    child = spawn("bash", [`./${script}`], {
+      env: { ...process.env, CORE_CRON_RUN_ID: runId },
+      cwd: scriptDir,
+      timeout: 10 * 60 * 1000,
+    });
+  } catch (err) {
+    const message = `Failed to start script: ${err instanceof Error ? err.message : String(err)}`;
+    void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((finishErr: unknown) =>
+      console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+    );
+    return;
+  }
 
-  let output = "";
-  child.stdout?.on("data", (d: Buffer) => {
-    output += d.toString();
-  });
-  child.stderr?.on("data", (d: Buffer) => {
-    output += d.toString();
-  });
+  const outputLimit = resolveCronOutputMaxBytes();
+  const captured = Buffer.allocUnsafe(outputLimit);
+  let capturedBytes = 0;
+  let exceededOutputLimit = false;
+  let finalized = false;
+  let terminating = false;
+  let leaseRenewalInFlight = false;
+  let forcedMessage: string | undefined;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
 
-  child.on("close", (code: number | null) => {
-    const exitCode = code ?? 1;
+  const terminate = (message: string): void => {
+    if (terminating || finalized) return;
+    terminating = true;
+    forcedMessage ??= message;
+    try {
+      child.kill("SIGTERM");
+    } catch (err) {
+      console.error(`[cron] ${jobName} SIGTERM failed:`, redactErrorForConsole(err));
+    }
+    killTimer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch (err) {
+        console.error(`[cron] ${jobName} SIGKILL failed:`, redactErrorForConsole(err));
+      }
+    }, CRON_CHILD_KILL_GRACE_MS);
+    killTimer.unref?.();
+  };
+
+  const capture = (chunk: Buffer | string): void => {
+    if (exceededOutputLimit) return;
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const remaining = outputLimit - capturedBytes;
+    const copied = Math.min(remaining, bytes.length);
+    if (copied > 0) {
+      bytes.copy(captured, capturedBytes, 0, copied);
+      capturedBytes += copied;
+    }
+    if (bytes.length > remaining) {
+      exceededOutputLimit = true;
+      // Keep the capture bounded and fail closed: otherwise a script that
+      // continuously writes can keep consuming pipe/runtime memory indefinitely.
+      terminate(`Cron output limit of ${outputLimit} bytes exceeded`);
+    }
+  };
+
+  child.stdout?.on("data", capture);
+  child.stderr?.on("data", capture);
+
+  const leaseHeartbeatMs = Math.max(5_000, Math.floor(resolveCronRunLeaseMs() / 3));
+  const heartbeatTimer = setInterval(() => {
+    if (finalized || leaseRenewalInFlight) return;
+    leaseRenewalInFlight = true;
+    void renewCronRunLease(runId, leaseOwner)
+      .then((renewed) => {
+        if (!renewed) {
+          terminate("Cron run lease ownership was lost; process terminated");
+        }
+      })
+      .catch((err: unknown) => {
+        console.error(`[cron] ${jobName} lease renewal failed:`, redactErrorForConsole(err));
+        // Continuing after the database can no longer confirm our lease risks
+        // overlapping external side effects with a successor after expiry.
+        terminate("Cron run lease could not be renewed; process terminated");
+      })
+      .finally(() => {
+        leaseRenewalInFlight = false;
+      });
+  }, leaseHeartbeatMs);
+  heartbeatTimer.unref?.();
+
+  const finalize = (code: number | null, overrideMessage?: string): void => {
+    if (finalized) return;
+    finalized = true;
+    clearInterval(heartbeatTimer);
+    if (killTimer) clearTimeout(killTimer);
+
+    const rawExitCode = code ?? 1;
+    const exitCode = exceededOutputLimit || forcedMessage ? 1 : rawExitCode;
     const status = exitCode === 0 ? "SUCCESS" : "ERROR";
-    // Redact before truncating. Slicing first can cut a long assignment between its key and its
-    // value, and the redactor recognises a secret only by the key that precedes it — a 1500-char
-    // `API_KEY=…` would arrive as an unattributed tail and survive (PR #1291 review).
-    const msg =
-      redactSecretValuesInString(output).slice(-1000).trim() ||
-      (exitCode === 0 ? "Completed successfully" : `Exited with code ${exitCode}`);
-    finishCronRun(runId, status, msg, exitCode).catch((err: unknown) =>
-      console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
+    const message = persistedCronMessage(
+      captured,
+      capturedBytes,
+      exitCode,
+      exceededOutputLimit ? outputLimit : null,
+      overrideMessage ?? (exceededOutputLimit ? undefined : forcedMessage),
     );
-  });
+    void finishCronRun(runId, leaseOwner, status, message, exitCode)
+      .then((finished) => {
+        if (!finished) {
+          console.warn(`[cron] ${jobName} completion ignored after lease ownership changed`);
+        }
+      })
+      .catch((err: unknown) =>
+        console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
+      );
+  };
 
+  child.on("close", (code: number | null) => finalize(code));
   child.on("error", (err: Error) => {
-    const msg = `Failed to start script: ${err.message}`;
-    finishCronRun(runId, "ERROR", msg, 1).catch((err: unknown) =>
-      console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
-    );
+    finalize(1, `Failed to start script: ${err.message}`);
   });
 }
 
@@ -347,8 +584,8 @@ export function triggerCronJobAsync(
 export async function dispatchManualCronRuns(): Promise<void> {
   const claimed =
     globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
-  const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string }>>`
-    SELECT id, "jobName"
+  const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string; leaseOwner: string }>>`
+    SELECT id, "jobName", "leaseOwner"
     FROM cron_job_runs
     WHERE status = 'RUNNING'::"CronJobStatus"
       AND "triggerSource" IN ('ADMIN_UI'::"CronJobTriggerSource", 'ADMIN_CHAT'::"CronJobTriggerSource")
@@ -361,6 +598,6 @@ export async function dispatchManualCronRuns(): Promise<void> {
     const job = KNOWN_CRON_JOBS.find((candidate) => candidate.name === row.jobName);
     if (!job || job.triggerEnabled === false) continue;
     claimed.add(row.id);
-    triggerCronJobAsync(row.jobName, job.script, row.id, job.execution);
+    triggerCronJobAsync(row.jobName, job.script, row.id, row.leaseOwner, job.execution);
   }
 }

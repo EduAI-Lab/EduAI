@@ -5,6 +5,21 @@ export function normalizeCourseCode(value) {
 }
 
 /**
+ * Build Core `?search=` candidates for course-code lookups (#1362).
+ * Mirrors Core `courseCodeLookupCandidates`: compact client codes like
+ * `COSC121` must also try `COSC 121` because Core's search is literal
+ * `contains` (no whitespace folding).
+ */
+export function courseCodeLookupCandidates(courseCode) {
+  if (!courseCode || typeof courseCode !== "string") return [];
+  const trimmed = courseCode.trim();
+  if (!trimmed) return [];
+  const compact = trimmed.replace(/\s+/g, "");
+  const spaced = compact.replace(/([A-Za-z]+)(\d+)/, "$1 $2");
+  return [...new Set([trimmed, compact, spaced].filter(Boolean))];
+}
+
+/**
  * Keep one row per Core-course identity (#1072 §4 step 6). `coreCourseId` is
  * DB-unique across all rows once set, so this only ever collapses duplicate
  * *unlinked* local rows that happen to share the same `id` — i.e. never,

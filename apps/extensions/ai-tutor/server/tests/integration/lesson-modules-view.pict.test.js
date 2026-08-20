@@ -32,10 +32,19 @@ import {
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+  return {
+    ...actual,
+    fetchCoreCourseSafe: vi.fn(),
+    getEduAiCourseEnrollmentServiceKey: vi.fn(),
+    listEduAiCourseEnrollmentsServiceKey: vi.fn(),
+  };
 });
 
-import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import {
+  fetchCoreCourseSafe,
+  getEduAiCourseEnrollmentServiceKey,
+  listEduAiCourseEnrollmentsServiceKey,
+} from "../../src/services/eduaiClient.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
@@ -47,8 +56,26 @@ const { expectedActivitiesListStatus, expectedModulesListStatus, expectedModuleV
 const DEPARTMENT = "COSC";
 const NOT_FOUND_ID = 999_999_999;
 
+function coreEnrollment(userId, role = "STUDENT") {
+  return {
+    studentId: userId,
+    studentEmail: `${userId}@test.com`,
+    studentName: userId,
+    enrolledAt: new Date().toISOString(),
+    isActive: true,
+    role,
+  };
+}
+
 beforeEach(async () => {
   await truncateAll();
+  vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
+  vi.mocked(getEduAiCourseEnrollmentServiceKey)
+    .mockReset()
+    .mockImplementation(async (_courseId, userId) => {
+      const enrollments = await listEduAiCourseEnrollmentsServiceKey();
+      return enrollments.find((enrollment) => enrollment.studentId === userId) ?? null;
+    });
   vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
     id: coreOfferingId,
     department: DEPARTMENT,
@@ -82,6 +109,9 @@ async function buildRow(row) {
       break;
     case "INSTRUCTOR": {
       // seedMinimalCourse already made `owner` this course's instructor.
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(owner.id, "INSTRUCTOR"),
+      ]);
       app = await createApp({ mockUser: owner });
       break;
     }
@@ -90,6 +120,9 @@ async function buildRow(row) {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seed.course.id, userId: ta.id, role: "TA" },
       });
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(ta.id, "TA"),
+      ]);
       app = await createApp({ mockUser: ta });
       break;
     }
@@ -103,6 +136,9 @@ async function buildRow(row) {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
       });
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        coreEnrollment(student.id),
+      ]);
       app = await createApp({ mockUser: student });
       break;
     }

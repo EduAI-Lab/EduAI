@@ -3,7 +3,7 @@
  */
 import app from "./app.js";
 import { connectDatabase, prisma } from "./config/database.js";
-import { config } from "./config/settings.js";
+import { config, assertCoreServiceKeyConfigured } from "./config/settings.js";
 import { logger } from "./utils/logger.js";
 import { initScheduler } from "./jobs/scheduler.js";
 
@@ -53,6 +53,8 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 /** Boots the Express app, wires server error handlers, and kicks off DB connection attempts. */
 const startServer = async () => {
   try {
+    assertCoreServiceKeyConfigured();
+
     server = app.listen(PORT, "0.0.0.0", () => {
       logger.info(
         {

@@ -108,7 +108,10 @@ export async function seedCoursesForNewUser(userId) {
         isAiGenerated: false,
       };
       if (q.type === "MCQ" && Array.isArray(q.choices) && q.correctAnswer) {
-        variantPayload.choices = q.choices.map((c) => ({ letter: c.letter, text: c.text }));
+        variantPayload.choices = q.choices.map((c) => ({
+          letter: c.letter,
+          text: c.text,
+        }));
       }
       const variant = await prisma.variants.create({ data: variantPayload });
       variantsCreated++;

@@ -25,10 +25,12 @@ vi.mock("@mendable/firecrawl-js", () => ({
 process.env.FIRECRAWL_API_KEY = "test-key";
 
 let runFetchPage: typeof import("~/lib/ai/tools/fetch-page").runFetchPage;
+let fetchPage: typeof import("~/lib/ai/tools/fetch-page").fetchPage;
 
 async function loadModule() {
   const mod = await import("~/lib/ai/tools/fetch-page");
   runFetchPage = mod.runFetchPage;
+  fetchPage = mod.fetchPage;
 }
 
 beforeAll(async () => {
@@ -37,6 +39,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  scrapeMock.mockReset();
+  crawlMock.mockReset();
   delete process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK;
 });
 
@@ -59,7 +63,12 @@ describe("runFetchPage - scrape success path", () => {
       title: "Page Title",
       markdown: "# Hello\n\nThis is the page content.",
     });
-    expect(scrapeMock).toHaveBeenCalledWith("https://example.com/page");
+    expect(scrapeMock).toHaveBeenCalledWith("https://example.com/page", {
+      timeout: expect.any(Number),
+    });
+    const timeout = scrapeMock.mock.calls[0]?.[1]?.timeout;
+    expect(timeout).toBeGreaterThan(0);
+    expect(timeout).toBeLessThanOrEqual(5000);
     expect(crawlMock).not.toHaveBeenCalled();
   });
 
@@ -173,6 +182,7 @@ describe("runFetchPage - crawl fallback path", () => {
       title: "https://example.com/failed",
       markdown: "",
       error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
     });
   });
 
@@ -187,6 +197,7 @@ describe("runFetchPage - crawl fallback path", () => {
       title: "https://example.com/null-resp",
       markdown: "",
       error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
     });
   });
 
@@ -201,6 +212,7 @@ describe("runFetchPage - crawl fallback path", () => {
       title: "https://example.com/both-fail",
       markdown: "",
       error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
     });
   });
 });
@@ -219,12 +231,140 @@ describe("runFetchPage - client construction failure", () => {
         title: "https://example.com/no-key",
         markdown: "",
         error: "Failed to fetch page content",
-        details: "FIRECRAWL_API_KEY is not configured. Web fetch is unavailable.",
+        code: "FETCH_FAILED",
       });
     } finally {
       process.env.FIRECRAWL_API_KEY = original;
       vi.resetModules();
       await loadModule();
     }
+  });
+});
+
+describe("runFetchPage - egress boundaries", () => {
+  it("rejects private and loopback URL targets before calling Firecrawl", async () => {
+    for (const url of [
+      "http://127.0.0.1:8000/private",
+      "http://[::1]/private",
+      "http://169.254.169.254/latest/meta-data",
+      "http://localhost:3000/private",
+    ]) {
+      const result = await runFetchPage({ url });
+      expect(result.error).toMatch(/unavailable|unsafe|public/i);
+    }
+
+    expect(scrapeMock).not.toHaveBeenCalled();
+    expect(crawlMock).not.toHaveBeenCalled();
+  });
+
+  it("bounds a never-resolving scrape", async () => {
+    scrapeMock.mockImplementation(() => new Promise(() => {}));
+    crawlMock.mockImplementation(() => new Promise(() => {}));
+    const started = Date.now();
+
+    const result = await runFetchPage({ url: "https://example.com", timeoutMs: 25 });
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(result.error).toBeDefined();
+    expect(scrapeMock).toHaveBeenCalledTimes(1);
+    expect(crawlMock).not.toHaveBeenCalled();
+  });
+
+  it("bounds a never-resolving fallback crawl", async () => {
+    scrapeMock.mockResolvedValue({ url: "https://example.com", markdown: "" });
+    crawlMock.mockImplementation(() => new Promise(() => {}));
+    const started = Date.now();
+
+    const result = await runFetchPage({ url: "https://example.com", timeoutMs: 25 });
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(result.error).toBeDefined();
+    expect(crawlMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes Firecrawl timeout units to scrape and crawl correctly", async () => {
+    scrapeMock.mockResolvedValue({ url: "https://example.com", markdown: "" });
+    crawlMock.mockResolvedValue({ data: [] });
+
+    await runFetchPage({ url: "https://example.com", timeoutMs: 5000 });
+
+    expect(scrapeMock).toHaveBeenCalledWith(
+      "https://example.com",
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
+    expect(crawlMock).toHaveBeenCalledWith(
+      "https://example.com",
+      expect.objectContaining({
+        timeout: expect.any(Number),
+        scrapeOptions: expect.objectContaining({ timeout: expect.any(Number) }),
+      }),
+    );
+  });
+
+  it("honors a caller abort without waiting for Firecrawl", async () => {
+    scrapeMock.mockImplementation(() => new Promise(() => {}));
+    crawlMock.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runFetchPage({
+      url: "https://example.com",
+      signal: controller.signal,
+    });
+
+    expect(result.error).toBeDefined();
+    expect(scrapeMock).not.toHaveBeenCalled();
+    expect(crawlMock).not.toHaveBeenCalled();
+  });
+
+  it("propagates the AI SDK tool abort signal to the Firecrawl operation", async () => {
+    scrapeMock.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const execute = fetchPage.execute;
+    expect(execute).toBeDefined();
+
+    const startedAt = Date.now();
+    const resultPromise = execute!(
+      {
+        url: "https://example.com",
+        timeoutMs: 10_000,
+      },
+      {
+        toolCallId: "tool-1",
+        messages: [],
+        abortSignal: controller.signal,
+      },
+    );
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(resultPromise).resolves.toMatchObject({ error: "Fetch cancelled" });
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(scrapeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an allowlisted error without provider body or URL details", async () => {
+    scrapeMock.mockRejectedValue(
+      new Error(
+        "provider body direct-fetch-secret https://provider.test/v1?api_key=direct-fetch-url-secret",
+      ),
+    );
+    crawlMock.mockRejectedValue(
+      new Error(
+        "provider body direct-fetch-secret https://provider.test/v1?api_key=direct-fetch-url-secret",
+      ),
+    );
+
+    const result = await runFetchPage({ url: "https://example.com" });
+
+    expect(result).toEqual({
+      url: "https://example.com",
+      title: "https://example.com",
+      markdown: "",
+      error: "Failed to fetch page content",
+      code: "FETCH_FAILED",
+    });
+    expect(JSON.stringify(result)).not.toContain("direct-fetch-secret");
+    expect(JSON.stringify(result)).not.toContain("direct-fetch-url-secret");
   });
 });

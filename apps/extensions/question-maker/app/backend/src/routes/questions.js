@@ -3,13 +3,17 @@
  * generation, and extraction workflows.
  *
  * RBAC (rbac-matrix.md §16, issues #311/#312):
- *  - Flat role gate (AUTHORS) blocks STUDENT before any Core call.
  *  - Course-specific routes add a per-course access gate (requireCourseAccess /
  *    requireQuestionAccess) and scope the service by the authorized course's
  *    owner id (`req.qmCourse.userId`); `createdBy` records the actual author.
+ *    This is the source of truth for course-level TA access: Core sessions carry
+ *    a platform STUDENT role for TAs, while the active enrollment resolves to
+ *    `courseAccess.level === 'ta'`. Course-less list/aggregate routes retain the
+ *    platform authoring-role gate so this does not become blanket STUDENT access.
  *  - #312: TA may edit/delete only question_metadata they created.
  *  - List/aggregate routes (list, stats, generate) carry the flat gate only and
- *    remain caller-scoped.
+ *    remain caller-scoped; AI generation additionally requires a course context
+ *    and uses a caller-keyed resource limiter.
  *  - POST /approve is the exception: no flat role gate — a course TA (platform
  *    STUDENT + TA enrollment) may create question_metadata shells, so the
  *    per-course gate alone authorizes that route (see its inline comment).
@@ -47,8 +51,16 @@ import { config } from "../config/settings.js";
 import { parseLimitOffset } from "../utils/listPagination.js";
 import { parseQuestionListFilters } from "../utils/questionListQuery.js";
 import { parseApprovalTarget, prepareApprovalQuestions } from "../utils/questionApproval.js";
+import { resolveVisibleCourseWhereForUser } from "../services/courseListService.js";
+import { parsePositiveSafeInteger } from "../utils/questionOrder.js";
+import { qmAiUserRateLimit, validateGenerationBudget } from "../middleware/aiAdmission.js";
 
 const router = express.Router();
+
+const qmMaxExtractTextChars = () =>
+  Number.isInteger(config.qmMaxExtractTextChars) && config.qmMaxExtractTextChars > 0
+    ? config.qmMaxExtractTextChars
+    : 120_000;
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
 function denyTaNotOwner(req, res) {
@@ -61,11 +73,20 @@ function denyTaNotOwner(req, res) {
 
 /** Validate and normalize the single target course for an approval batch. */
 function validateApprovalTarget(req, res, next) {
-  const { error, targetCourseId } = parseApprovalTarget(req.body);
+  const { error, questions, targetCourseId } = parseApprovalTarget(req.body);
   if (error) {
     return res.status(400).json({
       success: false,
       error,
+    });
+  }
+
+  const maxQuestions =
+    Number.isInteger(config.maxQuestions) && config.maxQuestions > 0 ? config.maxQuestions : 50;
+  if (questions.length > maxQuestions) {
+    return res.status(400).json({
+      success: false,
+      error: `Cannot approve more than ${maxQuestions} questions at once`,
     });
   }
 
@@ -80,8 +101,8 @@ function validateApprovalTarget(req, res, next) {
  * the id is non-integer, missing, or cross-course.
  */
 async function assessmentInCourse(assessmentId, courseId) {
-  const id = Number(assessmentId);
-  if (!Number.isInteger(id)) return null;
+  const id = parsePositiveSafeInteger(assessmentId);
+  if (id === null) return null;
   const assessment = await prisma.assessments.findUnique({ where: { id } });
   return assessment && assessment.courseId === courseId ? assessment : null;
 }
@@ -90,7 +111,6 @@ async function assessmentInCourse(assessmentId, courseId) {
 router.post(
   "/",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId ?? req.body.classId }),
   async (req, res, next) => {
     try {
@@ -148,10 +168,11 @@ router.post(
  * When a courseId is supplied (the UI's course-bank view), any caller with
  * view access to that course — including an enrolled TA who doesn't own it —
  * sees the whole bank: we verify course access (§16 view, min 'ta') and scope
- * by the course owner. Without a courseId the list stays caller-scoped to the
- * user's own courses.
+ * by the course owner. Without a courseId the shared course-list visibility
+ * predicate includes every course the caller can author in (ADMIN catalog,
+ * UNIT_ADMIN units, and instructor enrollments), including non-owned anchors.
  */
-router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -160,6 +181,7 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 
     let scopeUserId = req.user.id;
     let scopeCourseId = normalizedCourseId;
+    let courseWhere;
 
     if (normalizedCourseId !== undefined) {
       const { course, access } = await resolveCourseAccessWithCourse(req.user, normalizedCourseId, {
@@ -174,6 +196,19 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       // Owner-scope so an enrolled non-owner viewer still sees the course bank.
       scopeUserId = course.userId;
       scopeCourseId = course.id;
+    } else {
+      // The course-bank view is TA-capable only when a concrete course is
+      // supplied and resolved above. Keep the legacy caller-scoped aggregate
+      // path restricted to platform authoring roles; otherwise a STUDENT
+      // session would gain an unscoped list merely by clearing `courseId`.
+      if (!QM_AUTHORIZED.includes(req.user.role)) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Question bank courseId is required" });
+      }
+      courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
+        cookie: req.headers.cookie,
+      });
     }
 
     const { limit, offset } = parseLimitOffset(req.query);
@@ -181,6 +216,7 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
     const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
       questionBankId: req.query.questionBankId,
+      courseWhere,
       ...listFilters,
       limit,
       offset,
@@ -196,12 +232,13 @@ router.get("/", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 });
 
 /** GET /api/questions/stats – returns aggregate stats (counts, types) for the user’s question bank. */
-router.get("/stats", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get("/stats", authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
     let scopeUserId = req.user.id;
     let scopeCourseId;
+    let courseWhere;
 
     if (requestedCourseId !== undefined && requestedCourseId !== "") {
       const { course, access } = await resolveCourseAccessWithCourse(req.user, requestedCourseId, {
@@ -215,9 +252,21 @@ router.get("/stats", authenticateToken, requireRole(QM_AUTHORIZED), async (req, 
       }
       scopeUserId = course.userId;
       scopeCourseId = course.id;
+    } else {
+      if (!QM_AUTHORIZED.includes(req.user.role)) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Question bank courseId is required" });
+      }
+      courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
+        cookie: req.headers.cookie,
+      });
     }
 
-    const stats = await getQuestionStats(scopeUserId, { courseId: scopeCourseId });
+    const stats = await getQuestionStats(scopeUserId, {
+      courseId: scopeCourseId,
+      courseWhere,
+    });
 
     res.json({
       success: true,
@@ -244,7 +293,7 @@ function csvCell(value) {
  * above). Reuses getQuestionsByUser (eager-loads course + variants, so no N+1).
  * Registered before `/:id` so the static `export` segment isn't captured as an id.
  */
-router.get("/export", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+router.get("/export", authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId, format = "json" } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -361,7 +410,6 @@ router.get("/export", authenticateToken, requireRole(QM_AUTHORIZED), async (req,
 router.get(
   "/:id",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
@@ -381,7 +429,6 @@ router.get(
 router.put(
   "/:id",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
@@ -412,6 +459,16 @@ router.put(
           return res.status(400).json({
             success: false,
             error: "Valid courseId is required",
+          });
+        }
+        // Question course ownership is immutable. Reject relocation here so
+        // same-course updates resolve Core access only once; the service keeps
+        // the same invariant for direct callers that bypass this route.
+        if (resolvedCourseId !== Number(req.qmCourse.id)) {
+          return res.status(409).json({
+            success: false,
+            error: "Question course relocation is not supported",
+            code: "COURSE_RELOCATION_NOT_ALLOWED",
           });
         }
         updates.courseId = resolvedCourseId;
@@ -475,7 +532,6 @@ router.put(
 router.delete(
   "/:id",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
@@ -494,57 +550,60 @@ router.delete(
 );
 
 /** POST /api/questions/generate – triggers legacy AI providers to generate draft questions. */
-router.post("/generate", authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
-  try {
-    const {
-      prompt,
-      provider = AI_PROVIDERS.GROQ,
-      numQuestions = 15,
-      difficultyDistribution,
-    } = req.body;
+router.post(
+  "/generate",
+  authenticateToken,
+  // Legacy generation used to be course-free. Keep it available only when
+  // the caller supplies a course they can author in; otherwise deployment API
+  // keys could be used as an unscoped generation oracle.
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
+  qmAiUserRateLimit,
+  async (req, res, next) => {
+    try {
+      const {
+        prompt,
+        provider = AI_PROVIDERS.GROQ,
+        numQuestions = 15,
+        difficultyDistribution,
+      } = req.body;
 
-    if (!prompt || !prompt.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: "Prompt is required",
+      const budget = validateGenerationBudget({ prompt, numQuestions });
+      if (budget.status) {
+        return res.status(budget.status).json({
+          success: false,
+          error: budget.message,
+          code: budget.code,
+        });
+      }
+
+      const params = {
+        numQuestions: budget.numQuestions,
+        difficultyDistribution: difficultyDistribution || {
+          easy: 5,
+          medium: 5,
+          hard: 5,
+        },
+      };
+
+      const questions = await generateQuestions(budget.prompt, provider, params);
+
+      res.json({
+        success: true,
+        message: "Questions generated successfully",
+        data: questions,
       });
+    } catch (error) {
+      next(error);
     }
-
-    const resolvedNumQuestions = parseInt(numQuestions, 10) || 15;
-    if (resolvedNumQuestions > config.maxQuestions) {
-      return res.status(400).json({
-        success: false,
-        error: `numQuestions cannot exceed ${config.maxQuestions}`,
-      });
-    }
-
-    const params = {
-      numQuestions: resolvedNumQuestions,
-      difficultyDistribution: difficultyDistribution || {
-        easy: 5,
-        medium: 5,
-        hard: 5,
-      },
-    };
-
-    const questions = await generateQuestions(prompt.trim(), provider, params);
-
-    res.json({
-      success: true,
-      message: "Questions generated successfully",
-      data: questions,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/questions/extract – sends OCR text to the AI extraction service and returns proposed questions. */
 router.post(
   "/extract",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
+  qmAiUserRateLimit,
   async (req, res, next) => {
     try {
       const { text, model, apiKeys } = req.body;
@@ -553,6 +612,14 @@ router.post(
         return res.status(400).json({
           success: false,
           error: "Text content is required for extraction",
+        });
+      }
+
+      const maxTextChars = qmMaxExtractTextChars();
+      if (text.length > maxTextChars) {
+        return res.status(413).json({
+          success: false,
+          error: `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
         });
       }
 
@@ -574,7 +641,6 @@ router.post(
 router.post(
   "/extract/save",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
@@ -676,14 +742,26 @@ router.put(
         });
       }
 
-      if (!(await assessmentInCourse(assessmentId, req.qmCourse.id))) {
+      const normalizedAssessmentId = parsePositiveSafeInteger(assessmentId);
+      if (normalizedAssessmentId === null) {
+        return res.status(404).json({ success: false, error: "Assessment not found" });
+      }
+      const normalizedOrderNumber = parsePositiveSafeInteger(orderNumber);
+      if (normalizedOrderNumber === null) {
+        return res.status(400).json({
+          success: false,
+          error: "Order number must be a positive safe integer",
+        });
+      }
+
+      if (!(await assessmentInCourse(normalizedAssessmentId, req.qmCourse.id))) {
         return res.status(404).json({ success: false, error: "Assessment not found" });
       }
 
       const question = await updateQuestionOrder(
         req.params.id,
-        assessmentId,
-        orderNumber,
+        normalizedAssessmentId,
+        normalizedOrderNumber,
         req.qmCourse.userId,
       );
 

@@ -136,7 +136,7 @@ Requires Core, AI Tutor, and Question Maker dev servers already running locally 
 
 The tool audits public pages (e.g. Core sign-in, marked `requiresAuth: false` in `pages.mjs`) in a logged-out browser context, then logs into Core once and reuses that session for every other page across all three apps — Better Auth's dev cookie is host-only for `localhost` with no port restriction (RFC 6265), and AI Tutor / Question Maker authenticate every request by forwarding the `Cookie` header to Core's `/api/sessions/validate` rather than keeping their own session. Each result carries an `authOk` flag confirming the navigation actually landed on the target page; the run exits non-zero if any page fails that check. Full rationale in the navigation helpers in [`scripts/mobile-audit/lib.mjs`](scripts/mobile-audit/lib.mjs).
 
-Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
+Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `EDUAI_LOCAL_SEED_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
 
 ## Route-scoped chat stylesheet (EduAI Core, `#1222`)
 
@@ -163,7 +163,16 @@ npm run dev
 
 On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
 
-**Seeded dev accounts** — all share password `EduAI2026!`
+**Local fixture password** — before starting Core or running a seed, generate a unique password for this disposable local database and export it as `EDUAI_LOCAL_SEED_PASSWORD`:
+
+```bash
+export EDUAI_LOCAL_SEED_PASSWORD="$(openssl rand -base64 24)"
+npm run dev
+```
+
+Keep this value local and use the same shell/environment for local tools that sign in as a seeded account. The seed refuses to run without this explicit local-only secret and the required loopback/development settings; never copy it to a shared or production system.
+
+**Seeded dev accounts** — all use the local-only value in `EDUAI_LOCAL_SEED_PASSWORD`
 
 | Role | Email | Name |
 | --- | --- | --- |

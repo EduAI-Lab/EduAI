@@ -61,6 +61,7 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
           open={open}
           onOpenChange={setOpen}
           onSubmit={handleSubmit}
+          captureScreenshot={captureScreenshot}
           getCapturedData={getCapturedData}
         />
       )}

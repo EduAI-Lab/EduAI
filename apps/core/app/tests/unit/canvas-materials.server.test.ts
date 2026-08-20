@@ -207,8 +207,25 @@ describe("discoverCanvasMaterialsForCourse", () => {
     expect(files[0]).toMatchObject({
       canvasFileId: "2002",
       displayName: "slides.pdf",
+      mimeType: "application/pdf",
       importStatus: "not_imported",
     });
+  });
+
+  it("uses the supported extension when Canvas reports a conflicting text MIME", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      {
+        ...CANVAS_FILE,
+        id: 2003,
+        display_name: "lecture.pdf",
+        filename: "lecture.pdf",
+        "content-type": "text/plain",
+      },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]?.mimeType).toBe("application/pdf");
   });
 
   it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
@@ -319,6 +336,11 @@ describe("syncSelectedCanvasMaterials", () => {
 
     expect(result.imported).toBe(1);
     expect(result.failed).toHaveLength(0);
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ fileSize: 5 }),
+      }),
+    );
     expect(processUploadedFile).toHaveBeenCalled();
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
   });
