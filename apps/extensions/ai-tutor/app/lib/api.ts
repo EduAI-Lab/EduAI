@@ -469,8 +469,8 @@ export const api = {
     });
     return meInFlight;
   },
-  aiStatus: () =>
-    http("/api/ai-status") as Promise<{
+  aiStatus: (signal?: AbortSignal) =>
+    http("/api/ai-status", { signal }) as Promise<{
       cloud: {
         state: "operational" | "degraded" | "outage" | "loading" | "unknown";
         detail?: string;

@@ -29,7 +29,7 @@ import { useAiServiceStatus, type AiServiceStatusPair, type ServiceStatus } from
 import eduaiService from "../services/eduaiService";
 import { apiKeyStorage, isCloudProvider, isCampusProvider } from "../services/apiKeyStorage";
 
-async function probeCloud(): Promise<ServiceStatus> {
+async function probeCloud(signal: AbortSignal): Promise<ServiceStatus> {
   let cloudKeys: Record<string, any> = {};
   try {
     const stored = await apiKeyStorage.getAllApiKeys();
@@ -48,7 +48,7 @@ async function probeCloud(): Promise<ServiceStatus> {
   }
 
   try {
-    const res = await eduaiService.testApiKey(cloudKeys);
+    const res = await eduaiService.testApiKey(cloudKeys, { signal });
     if (res?.success && isCloudProvider(res.provider)) {
       return { state: "operational", detail: "Cloud AI · Online (your provider key)." };
     }
@@ -58,12 +58,12 @@ async function probeCloud(): Promise<ServiceStatus> {
   }
 }
 
-async function probeUbc(): Promise<ServiceStatus> {
+async function probeUbc(signal: AbortSignal): Promise<ServiceStatus> {
   try {
     // Force the UBC-hosted (vLLM) path explicitly. Sending `{}` alone is not
     // enough — with no client key the backend may fall back to its own Google key
     // and would probe Cloud, so the UBC chip must pin the provider.
-    const res = await eduaiService.testApiKey({}, { forceProvider: "vllm" });
+    const res = await eduaiService.testApiKey({}, { forceProvider: "vllm", signal });
     if (res?.success && isCampusProvider(res.provider)) {
       return { state: "operational", detail: "UBC-hosted AI · Online." };
     }
@@ -83,8 +83,11 @@ async function probeUbc(): Promise<ServiceStatus> {
 const QM_POLL_INTERVAL_MS = 300_000;
 
 export function useAiServicesStatus() {
-  const fetcher = useCallback(async (): Promise<AiServiceStatusPair> => {
-    const [cloud, ubc] = await Promise.all([probeCloud(), probeUbc()]);
+  const fetcher = useCallback(async (signal: AbortSignal): Promise<AiServiceStatusPair> => {
+    // Forward the poll's signal to both live probes so refresh / unmount /
+    // timeout tears down a wedged request instead of letting it overwrite
+    // newer state (issue #1551).
+    const [cloud, ubc] = await Promise.all([probeCloud(signal), probeUbc(signal)]);
     return { cloud, ubc };
   }, []);
 
