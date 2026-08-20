@@ -27,7 +27,9 @@ vi.mock("@/services/apiKeyStorage", () => ({
 // instead of leaning on the real polling loop's timers.
 let capturedFetcher: ((signal: AbortSignal) => Promise<AiServiceStatusPair>) | undefined;
 vi.mock("@eduai/ui", () => ({
-  useAiServiceStatus: (opts: { fetcher: (signal: AbortSignal) => Promise<AiServiceStatusPair> }) => {
+  useAiServiceStatus: (opts: {
+    fetcher: (signal: AbortSignal) => Promise<AiServiceStatusPair>;
+  }) => {
     capturedFetcher = opts.fetcher;
     return {
       cloud: { state: "loading" as const },
@@ -112,7 +114,8 @@ describe("useAiServicesStatus probes", () => {
   it("reports UBC operational when the forced vLLM probe validates", async () => {
     isCampusProvider.mockReturnValue(true);
     testApiKey.mockImplementation((_keys: unknown, opts?: { forceProvider?: string }) => {
-      if (opts?.forceProvider === "vllm") return Promise.resolve({ success: true, provider: "vllm" });
+      if (opts?.forceProvider === "vllm")
+        return Promise.resolve({ success: true, provider: "vllm" });
       return Promise.resolve({ configured: false });
     });
     const fetcher = mountAndGetFetcher();

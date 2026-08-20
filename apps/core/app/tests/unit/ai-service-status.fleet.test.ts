@@ -18,10 +18,7 @@ vi.mock("~/lib/ai/routing/fleet/health", () => ({
 
 import { fleetRoutingEnabled, getAllFleetServers } from "~/lib/ai/routing/fleet/registry";
 import { getServerHealth } from "~/lib/ai/routing/fleet/health";
-import {
-  getAiServiceStatus,
-  resetAiServiceStatusCache,
-} from "~/lib/ai/service-status.server";
+import { getAiServiceStatus, resetAiServiceStatusCache } from "~/lib/ai/service-status.server";
 
 const fleetRoutingEnabledMock = vi.mocked(fleetRoutingEnabled);
 const getAllFleetServersMock = vi.mocked(getAllFleetServers);
@@ -34,10 +31,9 @@ function server(baseUrl: string) {
 
 /** A `/metrics` payload with the two gauges the load probe reads. */
 function metrics(waiting: number, cacheUsage: number): string {
-  return [
-    `vllm:num_requests_waiting ${waiting}`,
-    `vllm:gpu_cache_usage_perc ${cacheUsage}`,
-  ].join("\n");
+  return [`vllm:num_requests_waiting ${waiting}`, `vllm:gpu_cache_usage_perc ${cacheUsage}`].join(
+    "\n",
+  );
 }
 
 const CLOUD_ENV = [
@@ -76,7 +72,9 @@ describe("getAiServiceStatus (fleet mode)", () => {
       const url = String(input);
       for (const [base, load] of Object.entries(byHost)) {
         if (url.startsWith(base)) {
-          return Promise.resolve(new Response(metrics(load.waiting, load.cacheUsage), { status: 200 }));
+          return Promise.resolve(
+            new Response(metrics(load.waiting, load.cacheUsage), { status: 200 }),
+          );
         }
       }
       return Promise.resolve(new Response("", { status: 404 }));

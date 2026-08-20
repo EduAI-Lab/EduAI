@@ -123,8 +123,7 @@ export function useAiServiceStatus(
     let inFlight: AbortController | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const isHidden = () =>
-      typeof document !== "undefined" && document.visibilityState === "hidden";
+    const isHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 
     const clearTimer = () => {
       if (timer) clearTimeout(timer);

@@ -146,9 +146,7 @@ describe("useAiServiceStatus", () => {
       // Never resolves on its own — only the timeout can end it.
       return new Promise<AiServiceStatusPair>(() => {});
     });
-    renderHook(() =>
-      useAiServiceStatus({ fetcher, intervalMs: 60_000, requestTimeoutMs: 1_000 }),
-    );
+    renderHook(() => useAiServiceStatus({ fetcher, intervalMs: 60_000, requestTimeoutMs: 1_000 }));
 
     await act(() => vi.advanceTimersByTimeAsync(0));
     expect(captured?.aborted).toBe(false);
