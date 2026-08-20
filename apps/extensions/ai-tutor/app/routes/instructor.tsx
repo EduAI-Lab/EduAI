@@ -45,6 +45,7 @@ import {
   useCourseListFilters,
 } from "~/lib/course-list-filters";
 import { loadCourseFacets } from "~/lib/course-facets";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -229,3 +230,9 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };
