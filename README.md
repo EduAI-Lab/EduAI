@@ -451,8 +451,22 @@ From the monorepo root:
 npm run test:docker              # all unit + integration suites, in Docker
 npm run test:docker:unit         # all unit suites only, in Docker
 npm run test:docker:integration  # all integration suites only, in Docker
-npm run test:e2e                 # all e2e suites; WARNING: no e2e tests currently
+npm run test:e2e                 # all e2e suites (Playwright, full stack in Docker)
 ```
+
+`test:e2e` boots the whole stack, which is slow when you only care about one
+app. `E2E_SUITES` narrows both the containers it starts and the specs it runs —
+`all` (default), `core`, `ai-tutor`, `question-maker`, `cross-service`, or a
+comma-separated list:
+
+```bash
+E2E_SUITES=ai-tutor npm run test:e2e
+```
+
+The e2e stack publishes ports 3000/3001/4000 (and 5173/8000 for Question
+Maker), so stop any local `npm run dev` servers first — Docker will otherwise
+start the containers with those ports unpublished and the run will silently hit
+your dev servers instead.
 
 #### Two runners, one naming scheme
 
