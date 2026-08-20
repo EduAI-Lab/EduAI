@@ -1,5 +1,10 @@
 import { prisma } from "../config/database.js";
-import { decrypt, encrypt, hasEncryptionKey } from "../utils/encryption.js";
+import {
+  decrypt,
+  encrypt,
+  hasEncryptionKey,
+  SecretEncryptionUnavailableError,
+} from "../utils/encryption.js";
 
 export const SYSTEM_SETTING_KEYS = {
   EDUAI_API_KEY: "EDUAI_API_KEY",
@@ -14,15 +19,24 @@ export const SYSTEM_SETTING_KEYS = {
 const ENCRYPTED_SETTING_KEYS = new Set([SYSTEM_SETTING_KEYS.EDUAI_API_KEY]);
 
 /**
- * Encrypt a secret setting value before persisting. Falls back to plaintext
- * (with a warning) when no ENCRYPTION_KEY is configured, so a deployment that
- * has not set the env var keeps working — existing plaintext rows also remain
- * readable via `decrypt`'s legacy passthrough.
+ * Encrypt a secret setting value before persisting. When no ENCRYPTION_KEY is
+ * configured the behavior is environment-dependent (#1571 / review follow-up):
+ *   - production fails closed — it refuses to persist the secret in plaintext
+ *     at rest and throws `SecretEncryptionUnavailableError`;
+ *   - development/test fall back to plaintext (with a warning) so a deployment
+ *     without the env var keeps working locally.
+ * Existing plaintext rows always remain readable via `decrypt`'s legacy
+ * passthrough regardless of environment, so migration is non-breaking.
  */
 function encodeSettingValue(key, value) {
   if (!ENCRYPTED_SETTING_KEYS.has(key)) return value;
   if (!value) return value;
   if (!hasEncryptionKey()) {
+    if (process.env.NODE_ENV === "production") {
+      throw new SecretEncryptionUnavailableError(
+        `Refusing to store ${key} at rest without ENCRYPTION_KEY. Set ENCRYPTION_KEY to enable encrypted secret storage.`,
+      );
+    }
     console.warn(
       `[systemSettings] ENCRYPTION_KEY not set — storing ${key} in PLAINTEXT. Set ENCRYPTION_KEY to encrypt it at rest.`,
     );

@@ -29,6 +29,19 @@ export class CredentialDecryptError extends Error {
   }
 }
 
+/**
+ * Thrown when a secret must be written but no ENCRYPTION_KEY is configured and
+ * the deployment refuses to persist plaintext at rest (production). Callers map
+ * this to a clear client error instead of silently storing the secret in the
+ * clear (#1571 / review follow-up).
+ */
+export class SecretEncryptionUnavailableError extends Error {
+  constructor(message = "ENCRYPTION_KEY is required to store this secret", options) {
+    super(message, options);
+    this.name = "SecretEncryptionUnavailableError";
+  }
+}
+
 /** True when a non-empty ENCRYPTION_KEY is configured. */
 export function hasEncryptionKey() {
   return Boolean(process.env.ENCRYPTION_KEY && process.env.ENCRYPTION_KEY.length > 0);

@@ -23,7 +23,8 @@ const {
   getEduAiApiKeyStatus,
 } = await import("../../src/services/systemSettings.js");
 
-const { isEncrypted, encrypt } = await import("../../src/utils/encryption.js");
+const { isEncrypted, encrypt, SecretEncryptionUnavailableError } =
+  await import("../../src/utils/encryption.js");
 
 beforeEach(() => {
   mockFindUnique.mockReset();
@@ -235,6 +236,20 @@ describe("EDUAI_API_KEY encryption at rest (#1571)", () => {
 
     expect(mockUpsert.mock.calls[0][0].update.value).toBe("plain-key");
     expect(warn).toHaveBeenCalled();
+  });
+
+  it("fails closed in production when ENCRYPTION_KEY is not set (never persists plaintext)", async () => {
+    const priorNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    mockUpsert.mockResolvedValue({});
+    try {
+      await expect(
+        setSystemSetting(SYSTEM_SETTING_KEYS.EDUAI_API_KEY, "plain-key"),
+      ).rejects.toBeInstanceOf(SecretEncryptionUnavailableError);
+      expect(mockUpsert).not.toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = priorNodeEnv;
+    }
   });
 
   it("still reads legacy plaintext overrides written before encryption", async () => {

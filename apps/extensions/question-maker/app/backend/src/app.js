@@ -22,7 +22,6 @@ import topicRoutes from "./routes/topics.js";
 import authRoutes from "./routes/auth.js";
 import bugReportRoutes from "./routes/bug-reports.js";
 import internalRoutes from "./routes/internal.js";
-import { csrfOriginGuard } from "./middleware/csrf.js";
 import { config } from "./config/settings.js";
 import { checkDatabaseReadiness } from "./config/database.js";
 import { logger } from "./utils/logger.js";
@@ -157,10 +156,6 @@ app.get("/", (req, res) => {
     version: "1.0.0",
   });
 });
-
-// CSRF backstop (#1571): reject cross-origin state-changing requests before any
-// API route runs. Independent of Core's SameSite cookie attribute.
-app.use("/api", csrfOriginGuard);
 
 app.use("/api/questions", questionRoutes);
 app.use("/api/questions", variantRoutes);
