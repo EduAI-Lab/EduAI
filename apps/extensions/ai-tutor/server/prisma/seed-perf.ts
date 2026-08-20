@@ -15,9 +15,11 @@
  *    is missing.
  *  - Reseeding is idempotent: the Core seed mints a NEW Core course id on every
  *    run, so the previous anchor can never be found by `coreOfferingId` alone.
- *    Cleanup re-reads the previous `aitutor.json` manifest (validated via
- *    `perf-pool-manifest.js`) and drops the offering it recorded, so repeated
- *    runs never accumulate stale anchors.
+ *    Cleanup re-reads the previous `aitutor.json` manifest and drops the
+ *    offering it recorded only when it proves generated-pool ownership (the
+ *    `manifestKind` marker plus a complete pool shape, via
+ *    `perf-pool-manifest.js`), so repeated runs never accumulate stale anchors
+ *    and a corrupted manifest can never name a real course for deletion.
  *  - Destructive endpoints (DELETE module/lesson/activity) consume victims → a
  *    perf run may deplete them; re-run this seed between runs.
  *
@@ -28,7 +30,7 @@
 import { PrismaClient } from "@eduai/ai-tutor-prisma-client";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { previousCourseId } from "./perf-pool-manifest.js";
+import { previousCourseId, PERF_POOL_MANIFEST_KIND } from "./perf-pool-manifest.js";
 
 const prisma = new PrismaClient();
 
@@ -238,6 +240,7 @@ async function main() {
   }
 
   const manifest = {
+    manifestKind: PERF_POOL_MANIFEST_KIND,
     generatedAt: new Date().toISOString(),
     poolSize: POOL,
     instructorUserId: CORE_INSTRUCTOR,
