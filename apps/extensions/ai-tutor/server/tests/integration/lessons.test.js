@@ -325,6 +325,34 @@ describe('Lessons routes', () => {
       const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
 
       expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not published/i);
+    });
+
+    it('returns 404 for a nonexistent lesson', async () => {
+      const res = await request(profApp).get('/api/lessons/999999/breadcrumb');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toMatch(/not found/i);
+    });
+
+    it('returns 403 Not authorized when caller has no course relationship', async () => {
+      const stranger = makeStudent();
+      const strangerApp = await createApp({ mockUser: stranger });
+
+      const res = await request(strangerApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/Not authorized/i);
+    });
+
+    it('sets X-Core-Status unavailable when Core course resolution fails', async () => {
+      // resolveCoreCourseById only marks coreUnavailable when the fetch throws
+      vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unreachable'));
+
+      const res = await request(profApp).get(`/api/lessons/${seed.lesson.id}/breadcrumb`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['x-core-status']).toBe('unavailable');
     });
   });
 

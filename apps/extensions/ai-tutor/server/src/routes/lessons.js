@@ -16,6 +16,7 @@ import {
   buildLessonBreadcrumb,
   computeLessonTreeContext,
 } from '../services/lessonBreadcrumb.js';
+import { resolveLessonAccess } from '../services/lessonAccess.js';
 
 const router = express.Router();
 
@@ -187,23 +188,11 @@ router.get('/lessons/:lessonId', async (req, res) => {
     });
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const enrollment = lesson.module.courseOffering.enrollments.find(
-      (e) => e.userId === authUser.id,
-    );
-    const isTa = enrollment?.role === 'TA';
-    const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const isAdmin = authUser.role === 'ADMIN';
-    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
-    const isMember = hasElevatedAccess || isStudent;
-
-    if (!isMember) {
+    const access = await resolveLessonAccess(authUser, lesson);
+    if (!access.isMember) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+    if (access.publishedOnly && !lesson.isPublished) {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
@@ -251,29 +240,16 @@ router.get('/lessons/:lessonId/breadcrumb', async (req, res) => {
     });
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const enrollment = lesson.module.courseOffering.enrollments.find(
-      (e) => e.userId === authUser.id,
-    );
-    const isTa = enrollment?.role === 'TA';
-    const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const isAdmin = authUser.role === 'ADMIN';
-    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
-    const isMember = hasElevatedAccess || isStudent;
-
-    if (!isMember) {
+    const access = await resolveLessonAccess(authUser, lesson);
+    if (!access.isMember) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+    if (access.publishedOnly && !lesson.isPublished) {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    const publishedOnly = isStudent && !hasElevatedAccess;
     const { breadcrumb, coreUnavailable } = await buildLessonBreadcrumb(lesson, {
-      publishedOnly,
+      publishedOnly: access.publishedOnly,
     });
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
@@ -331,25 +307,19 @@ router.get('/lessons/:lessonId/context', async (req, res) => {
     });
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
 
-    const { module } = lesson;
-    const { courseOffering } = module;
-    const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = courseOffering.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === 'TA';
-    const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
-    const isAdmin = authUser.role === 'ADMIN';
-    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
-
-    if (!hasElevatedAccess && !isStudent) {
+    const access = await resolveLessonAccess(authUser, lesson);
+    if (!access.isMember) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+    if (access.publishedOnly && !lesson.isPublished) {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    const publishedOnly = isStudent && !hasElevatedAccess;
-    res.json(await computeLessonTreeContext(lesson, module, { publishedOnly }));
+    res.json(
+      await computeLessonTreeContext(lesson, lesson.module, {
+        publishedOnly: access.publishedOnly,
+      }),
+    );
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
