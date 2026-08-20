@@ -146,9 +146,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- 404 ---
   it("returns 404 for nonexistent course (service key)", async () => {
-    const res = await loader(
-      makeArgs("nonexistent-id", `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs("nonexistent-id", `Bearer ${VALID_SERVICE_KEY}`));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
   });
@@ -173,9 +171,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- 200 service key ---
   it("returns all enrollments via service key", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.enrollments).toHaveLength(3);
@@ -223,9 +219,7 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- Role mapping from real DB ---
   it("maps all three roles correctly from real DB data", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
     const roles = body.enrollments.map((e: Record<string, unknown>) => e.role);
     expect(roles).toContain("STUDENT");
@@ -235,25 +229,19 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 
   // --- Active and inactive ---
   it("returns both active and inactive enrollments", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map(
-      (e: Record<string, unknown>) => e.isActive
-    );
+    const activeStates = body.enrollments.map((e: Record<string, unknown>) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });
 
   // --- Correct field values ---
   it("returns correct student data from real DB", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
     const student = body.enrollments.find(
-      (e: Record<string, unknown>) => e.studentId === studentId
+      (e: Record<string, unknown>) => e.studentId === studentId,
     );
     expect(student).toBeDefined();
     expect(student.studentEmail).toBe("enroll-student@test.com");
@@ -264,13 +252,9 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   });
 
   it("returns inactive TA with correct data", async () => {
-    const res = await loader(
-      makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`)
-    );
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
     const body = await res.json();
-    const ta = body.enrollments.find(
-      (e: Record<string, unknown>) => e.studentId === taId
-    );
+    const ta = body.enrollments.find((e: Record<string, unknown>) => e.studentId === taId);
     expect(ta).toBeDefined();
     expect(ta.studentEmail).toBe("enroll-ta@test.com");
     expect(ta.isActive).toBe(false);
@@ -285,9 +269,8 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
 describe("enrollment management lifecycle (#305)", () => {
   it("create course with 1 instructor → add second → remove first → removing last is 409", async () => {
     const { action: enrollmentsAction } = await import("~/routes/api/courses.enrollments");
-    const { action: enrollmentIdAction } = await import(
-      "~/routes/api/courses.enrollments.$enrollmentId"
-    );
+    const { action: enrollmentIdAction } =
+      await import("~/routes/api/courses.enrollments.$enrollmentId");
     const { createCourse } = await import("~/lib/courses/server");
     const { seedUser, mockSession, cleanupRbac } = await import("../helpers/rbac");
 
@@ -391,6 +374,152 @@ describe("enrollment management lifecycle (#305)", () => {
       });
     } finally {
       await cleanupRbac({ userIds: [instructor.id], courseIds: [course.id] });
+    }
+  });
+
+  it("keeps one active instructor when two removals race", async () => {
+    const { deactivateEnrollment } = await import("~/lib/courses/enrollments.server");
+    const { seedUser, seedCourse, enroll, cleanupRbac } = await import("../helpers/rbac");
+
+    const instructorA = await seedUser({ role: "INSTRUCTOR" });
+    const instructorB = await seedUser({ role: "INSTRUCTOR" });
+    const course = await seedCourse();
+    const enrollmentA = await enroll(course.id, instructorA.id, "INSTRUCTOR");
+    const enrollmentB = await enroll(course.id, instructorB.id, "INSTRUCTOR");
+
+    try {
+      const results = await Promise.all([
+        deactivateEnrollment(course.id, enrollmentA.id),
+        deactivateEnrollment(course.id, enrollmentB.id),
+      ]);
+      const activeInstructorCount = await prisma.enrollment.count({
+        where: { courseId: course.id, role: "INSTRUCTOR", isActive: true },
+      });
+
+      expect(activeInstructorCount).toBe(1);
+      expect(results.map((result) => result.status).sort()).toEqual(["204", "409"]);
+    } finally {
+      await cleanupRbac({
+        userIds: [instructorA.id, instructorB.id],
+        courseIds: [course.id],
+      });
+    }
+  });
+
+  it("DELETE soft-deactivates a student and hides them from the session roster (#813)", async () => {
+    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } =
+      await import("../helpers/rbac");
+    const { action: enrollmentIdAction } =
+      await import("~/routes/api/courses.enrollments.$enrollmentId");
+
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const student = await seedUser({ role: "STUDENT" });
+    const course = await seedCourse();
+    await enroll(course.id, instructor.id, "INSTRUCTOR");
+    const studentEnrollment = await enroll(course.id, student.id, "STUDENT");
+
+    try {
+      mockSession(instructor);
+      const deleted = await enrollmentIdAction({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments/${studentEnrollment.id}`,
+          { method: "DELETE" },
+        ),
+        params: { id: course.id, enrollmentId: studentEnrollment.id },
+        context: {} as never,
+      } as any);
+      expect(deleted.status).toBe(204);
+
+      const row = await prisma.enrollment.findUnique({
+        where: { id: studentEnrollment.id },
+      });
+      expect(row).not.toBeNull();
+      expect(row?.isActive).toBe(false);
+
+      mockSession(instructor);
+      const list = await loader({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`),
+        params: { id: course.id },
+        context: {} as never,
+      } as any);
+      expect(list.status).toBe(200);
+      const body = await list.json();
+      expect(body.enrollments.every((e: { studentId: string }) => e.studentId !== student.id)).toBe(
+        true,
+      );
+      expect(body.total).toBe(0);
+    } finally {
+      await cleanupRbac({
+        userIds: [instructor.id, student.id],
+        courseIds: [course.id],
+      });
+    }
+  });
+
+  it("INSTRUCTOR add/update denied when instructors.canManageEnrollments is off; ADMIN still ok (#813)", async () => {
+    const { setPolicy, invalidatePolicyCache } = await import("~/lib/policy.server");
+    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } =
+      await import("../helpers/rbac");
+    const { action: enrollmentsAction } = await import("~/routes/api/courses.enrollments");
+    const { action: enrollmentIdAction } =
+      await import("~/routes/api/courses.enrollments.$enrollmentId");
+
+    const admin = await seedUser({ role: "ADMIN" });
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const student = await seedUser({ role: "STUDENT" });
+    const student2 = await seedUser({ role: "STUDENT" });
+    const course = await seedCourse();
+    await enroll(course.id, instructor.id, "INSTRUCTOR");
+    const existing = await enroll(course.id, student.id, "STUDENT");
+
+    await setPolicy("instructors.canManageEnrollments", false, admin.id);
+
+    try {
+      mockSession(instructor);
+      const deniedAdd = await enrollmentsAction({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: student2.id, role: "STUDENT" }),
+        }),
+        params: { id: course.id },
+        context: {} as never,
+      } as any);
+      expect(deniedAdd.status).toBe(403);
+
+      mockSession(instructor);
+      const deniedPatch = await enrollmentIdAction({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments/${existing.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "TA" }),
+          },
+        ),
+        params: { id: course.id, enrollmentId: existing.id },
+        context: {} as never,
+      } as any);
+      expect(deniedPatch.status).toBe(403);
+
+      mockSession(admin);
+      const adminAdd = await enrollmentsAction({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: student2.id, role: "STUDENT" }),
+        }),
+        params: { id: course.id },
+        context: {} as never,
+      } as any);
+      expect(adminAdd.status).toBe(201);
+    } finally {
+      await setPolicy("instructors.canManageEnrollments", true, admin.id);
+      invalidatePolicyCache();
+      await cleanupRbac({
+        userIds: [admin.id, instructor.id, student.id, student2.id],
+        courseIds: [course.id],
+      });
     }
   });
 });

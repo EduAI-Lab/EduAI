@@ -21,9 +21,7 @@ const baseProvider = {
 
 describe("ProviderFormDialog — title", () => {
   it("shows 'Create Provider' when no provider is given", () => {
-    render(
-      <ProviderFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />
-    );
+    render(<ProviderFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Create Provider" })).toBeInTheDocument();
   });
 
@@ -34,7 +32,7 @@ describe("ProviderFormDialog — title", () => {
         onOpenChange={vi.fn()}
         provider={baseProvider}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByRole("heading", { name: "Edit Provider" })).toBeInTheDocument();
   });
@@ -52,7 +50,7 @@ describe("ProviderFormDialog — pre-population", () => {
         onOpenChange={vi.fn()}
         provider={baseProvider}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByLabelText("Name (ID)")).toHaveValue("openai");
   });
@@ -64,7 +62,7 @@ describe("ProviderFormDialog — pre-population", () => {
         onOpenChange={vi.fn()}
         provider={baseProvider}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByLabelText("Display Name")).toHaveValue("OpenAI");
   });
@@ -77,9 +75,7 @@ describe("ProviderFormDialog — pre-population", () => {
 describe("ProviderFormDialog — form actions", () => {
   it("calls onOpenChange(false) when Cancel is clicked", () => {
     const onOpenChange = vi.fn();
-    render(
-      <ProviderFormDialog open={true} onOpenChange={onOpenChange} onSubmit={vi.fn()} />
-    );
+    render(<ProviderFormDialog open={true} onOpenChange={onOpenChange} onSubmit={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -92,18 +88,16 @@ describe("ProviderFormDialog — form actions", () => {
         onOpenChange={vi.fn()}
         provider={baseProvider}
         onSubmit={onSubmit}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /update provider/i }));
     expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "openai", displayName: "OpenAI" })
+      expect.objectContaining({ name: "openai", displayName: "OpenAI" }),
     );
   });
 
   it("shows 'Create Provider' submit button when no provider", () => {
-    render(
-      <ProviderFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />
-    );
+    render(<ProviderFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
     expect(screen.getByRole("button", { name: /create provider/i })).toBeInTheDocument();
   });
 });

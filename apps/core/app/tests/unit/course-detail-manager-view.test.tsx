@@ -14,8 +14,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
-import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
-import type { CourseDetail } from "~/hooks/api/use-course-detail";
+import {
+  CourseDetailManagerView,
+  type CourseDetailManagerCourse,
+} from "~/components/courses/course-detail-manager-view";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
@@ -24,9 +26,7 @@ import type { CourseMaterial } from "~/components/course-materials-upload";
 vi.mock("~/components/course-materials-upload", () => ({
   CourseMaterialsUpload: ({ onFileSelect }: { onFileSelect: (f: File) => void }) => (
     <div data-testid="upload-widget">
-      <button onClick={() => onFileSelect(new File(["x"], "notes.pdf"))}>
-        pick file
-      </button>
+      <button onClick={() => onFileSelect(new File(["x"], "notes.pdf"))}>pick file</button>
     </div>
   ),
 }));
@@ -50,7 +50,11 @@ vi.mock("~/components/canvas/canvas-material-sync-dialog", () => ({
 }));
 
 const searchCandidates = vi.fn();
-let candidatesReturn = { candidates: [] as { id: string; name: string; email: string }[], loading: false, search: searchCandidates };
+let candidatesReturn = {
+  candidates: [] as { id: string; name: string; email: string }[],
+  loading: false,
+  search: searchCandidates,
+};
 vi.mock("~/hooks/api/use-student-candidates", () => ({
   useStudentCandidates: (...args: unknown[]) => candidatesReturnFn(...args),
 }));
@@ -59,7 +63,7 @@ function candidatesReturnFn(..._args: unknown[]) {
   return candidatesReturn;
 }
 
-const COURSE: CourseDetail = {
+const COURSE: CourseDetailManagerCourse = {
   id: "c1",
   code: "COSC 101",
   name: "Intro to CS",
@@ -78,6 +82,7 @@ const COURSE: CourseDetail = {
   instructor: { id: "user-instructor", name: "Dr. Instructor", email: "inst@test.com" },
   ragTopK: 4,
   ragSimilarityThreshold: 0.5,
+  courseScopeGuardrailEnabled: false,
 };
 
 const MATERIAL: CourseMaterial = {
@@ -284,16 +289,18 @@ describe("CourseDetailManagerView — materials tab", () => {
   });
 
   it("shows an error message when the rename request fails", async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: "boom" }),
+    });
     renderView();
     fireEvent.click(screen.getByRole("button", { name: /rename material/i }));
     fireEvent.change(screen.getByPlaceholderText("Material name"), {
       target: { value: "New title" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(screen.getByText(/could not rename material/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/could not rename material/i)).toBeInTheDocument());
   });
 
   it("opens the student-visibility dialog, toggles visibility, and saves", async () => {
@@ -509,9 +516,7 @@ describe("CourseDetailManagerView — staff tab", () => {
     renderView({ onRemoveTA });
     clickTab(/staff/i);
     fireEvent.click(screen.getByRole("button", { name: /remove ta/i }));
-    await waitFor(() =>
-      expect(screen.getByText(/could not remove ta/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/could not remove ta/i)).toBeInTheDocument());
   });
 
   it("shows the no-TAs-assigned empty state on the staff tab", () => {
@@ -536,9 +541,7 @@ describe("CourseDetailManagerView — staff tab", () => {
 
     fireEvent.click(panel.getByRole("button", { name: /add 1 ta/i }));
     await waitFor(() => expect(props.onAddTA).toHaveBeenCalledWith("user-newta"));
-    await waitFor(() =>
-      expect(panel.getByText(/1 ta added successfully/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(panel.getByText(/1 ta added successfully/i)).toBeInTheDocument());
   });
 
   it("reports a partial failure when adding TAs", async () => {
@@ -555,13 +558,60 @@ describe("CourseDetailManagerView — staff tab", () => {
     fireEvent.click(combos[combos.length - 1]);
     fireEvent.click(screen.getByText("New TA"));
     fireEvent.click(panel.getByRole("button", { name: /add 1 ta/i }));
-    await waitFor(() =>
-      expect(panel.getByText(/1 of 1 tas failed to add/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(panel.getByText(/1 of 1 tas failed to add/i)).toBeInTheDocument());
   });
 });
 
 describe("CourseDetailManagerView — settings (RAG) tab", () => {
+  it("shows the course-scope toggle off by default and persists it when enabled", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    renderView();
+    clickTab(/settings/i);
+
+    const toggle = screen.getByRole("switch", {
+      name: /restrict course chat to this course/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const [, request] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      courseScopeGuardrailEnabled: true,
+    });
+  });
+
+  it("preserves an enabled course-scope toggle when saving only RAG top-k", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    renderView({ course: { ...COURSE, courseScopeGuardrailEnabled: true } });
+    clickTab(/settings/i);
+
+    const toggle = screen.getByRole("switch", {
+      name: /restrict course chat to this course/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.change(screen.getByLabelText(/results per question/i), {
+      target: { value: "6" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/courses/c1/rag-settings",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+    const [, request] = mockFetch.mock.calls.at(-1) as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      courseScopeGuardrailEnabled: true,
+      ragTopK: 6,
+    });
+  });
+
   it("saves RAG search-tuning settings", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();

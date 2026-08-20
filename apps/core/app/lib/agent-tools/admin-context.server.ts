@@ -1,7 +1,12 @@
 import prisma from "~/lib/prisma.server";
 import type { RbacUser } from "~/lib/auth/course-access.server";
 import { listBugReports } from "~/lib/bug-reports/server";
-import { listAccessibleCourses, getAccessibleCourse, listAccessibleCourseTopics, getAccessibleCourseTopic } from "./course-context.server";
+import {
+  listAccessibleCourses,
+  getAccessibleCourse,
+  listAccessibleCourseTopics,
+  getAccessibleCourseTopic,
+} from "./course-context.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
@@ -187,9 +192,10 @@ export async function listAdminCourseEnrollments(
   // similar-looking match from a truncated list.
   const userId = opts.userId?.trim() || undefined;
   const userEmail = opts.userEmail?.trim() || undefined;
-  const clampedLimit = userId || userEmail
-    ? 1
-    : Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT);
+  const clampedLimit =
+    userId || userEmail
+      ? 1
+      : Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT);
 
   const enrolledAtFilter =
     enrolledSince instanceof Date || enrolledBefore instanceof Date
@@ -258,11 +264,7 @@ export async function listAdminCourseTopics(user: RbacUser, courseId: string) {
 }
 
 /** ADMIN single course topic — same RBAC as GET /api/courses/:id/topics/:topicId. */
-export async function getAdminCourseTopic(
-  user: RbacUser,
-  courseId: string,
-  topicId: string,
-) {
+export async function getAdminCourseTopic(user: RbacUser, courseId: string, topicId: string) {
   const gate = await getAccessibleCourse(user, courseId);
   if ("error" in gate) {
     return gate;

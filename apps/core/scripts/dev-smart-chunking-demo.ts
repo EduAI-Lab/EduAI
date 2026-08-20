@@ -99,7 +99,12 @@ async function seedMaterial(courseId: string) {
   if (existing) {
     await prisma.courseMaterial.update({
       where: { id: existing.id },
-      data: { rawText: content, status: "PROCESSING", mimeType: "text/plain", fileSize: content.length },
+      data: {
+        rawText: content,
+        status: "PROCESSING",
+        mimeType: "text/plain",
+        fileSize: content.length,
+      },
     });
     await processMaterialEmbeddings(existing.id, content, { replace: true });
     await prisma.courseMaterial.update({
@@ -108,7 +113,9 @@ async function seedMaterial(courseId: string) {
     });
     const dbChunkCount = await prisma.materialChunk.count({ where: { materialId: existing.id } });
     if (dbChunkCount === 0) {
-      throw new Error(`Embedding completed but material ${existing.id} has 0 chunks in the database`);
+      throw new Error(
+        `Embedding completed but material ${existing.id} has 0 chunks in the database`,
+      );
     }
     return { materialId: existing.id, chunkCount: dbChunkCount };
   }
@@ -142,8 +149,9 @@ async function main() {
   loadEnvFile();
 
   const user =
-    (await prisma.user.findFirst({ where: { email: { contains: "ssaada08", mode: "insensitive" } } })) ??
-    (await prisma.user.findFirst({ where: { role: "INSTRUCTOR" } }));
+    (await prisma.user.findFirst({
+      where: { email: { contains: "ssaada08", mode: "insensitive" } },
+    })) ?? (await prisma.user.findFirst({ where: { role: "INSTRUCTOR" } }));
   if (!user) throw new Error("No user found for enrollment");
 
   const course = await ensureCourse(user.id);

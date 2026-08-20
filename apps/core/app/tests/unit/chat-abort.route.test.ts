@@ -9,7 +9,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -156,16 +160,16 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) => ({
-      id: CHAT_ID,
-      userId: "user-1",
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-      ...args.data,
-    })) as never,
-  );
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
+    data?: Record<string, unknown>;
+  }) => ({
+    id: CHAT_ID,
+    userId: "user-1",
+    courseId: COURSE_ID,
+    adhdAssist: false,
+    systemPrompt: null,
+    ...args.data,
+  })) as never);
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
@@ -251,9 +255,7 @@ describe("Chat API client abort (#267)", () => {
   });
 
   it("rejects a missing cloud-provider configuration before provider work", async () => {
-    const res = await action(
-      makeRequest(baseBody({ model: "openai:gpt-4o", apiKeys: {} })),
-    );
+    const res = await action(makeRequest(baseBody({ model: "openai:gpt-4o", apiKeys: {} })));
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({

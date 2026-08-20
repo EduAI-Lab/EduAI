@@ -25,9 +25,7 @@ const buildDir = path.resolve(
   args.find((a) => !a.startsWith("--")) ?? "build/client",
 );
 
-const manifest = JSON.parse(
-  readFileSync(path.join(buildDir, ".vite/manifest.json"), "utf8"),
-);
+const manifest = JSON.parse(readFileSync(path.join(buildDir, ".vite/manifest.json"), "utf8"));
 
 const sizeOf = (file) => {
   try {
@@ -58,10 +56,8 @@ const entries = Object.entries(manifest).filter(([, v]) => v.isEntry);
 // would also pick up a route module like `app/routes/rooms-root.tsx`. Route
 // keys carry a query suffix (`app/root.tsx?__react-router-build-client-route`),
 // so strip it before taking the basename.
-const isModule = (key, file) =>
-  path.posix.basename(key.replace(/\?.*$/, "")) === file;
-const findKey = (file) =>
-  entries.find(([k]) => isModule(k, file))?.[0] ?? null;
+const isModule = (key, file) => path.posix.basename(key.replace(/\?.*$/, "")) === file;
+const findKey = (file) => entries.find(([k]) => isModule(k, file))?.[0] ?? null;
 const entryClientKey = findKey("entry.client.tsx");
 const baseKeys = [entryClientKey, findKey("root.tsx")].filter(Boolean);
 
@@ -93,9 +89,7 @@ if (asJson) {
   const pad = Math.max(...rows.map((r) => r.route.length), 5);
   console.log(`${"route".padEnd(pad)}  chunks  initial JS`);
   for (const r of rows) {
-    console.log(
-      `${r.route.padEnd(pad)}  ${String(r.chunks).padStart(6)}  ${kb(r.bytes)}`,
-    );
+    console.log(`${r.route.padEnd(pad)}  ${String(r.chunks).padStart(6)}  ${kb(r.bytes)}`);
   }
   const root = rows.find((r) => isModule(r.key, "root.tsx")) ?? rows[0];
   console.log(

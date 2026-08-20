@@ -1,6 +1,6 @@
-import { IconClock, IconMessage2, IconPencil, IconSparkles } from '@tabler/icons-react';
-import { AnswerOption, Avatar, Badge, Button, cn } from '@eduai/ui';
-import type { SubmissionRow } from '~/lib/types';
+import { IconClock, IconMessage2, IconPencil, IconSparkles } from "@tabler/icons-react";
+import { AnswerOption, Avatar, Badge, Button, cn } from "@eduai/ui";
+import type { SubmissionRow } from "~/lib/types";
 
 type SubmissionCardProps = {
   row: SubmissionRow;
@@ -9,7 +9,7 @@ type SubmissionCardProps = {
   fullTime: string;
   onOpen: (row: SubmissionRow) => void;
   /** `list` is the extended, full-width layout: question shown in full, no clamp. */
-  variant?: 'grid' | 'list';
+  variant?: "grid" | "list";
 };
 
 /** Zero-based MCQ index → "A", "B", "C"… for the answer-option chip. */
@@ -29,14 +29,13 @@ export function SubmissionCard({
   timeLabel,
   fullTime,
   onOpen,
-  variant = 'grid',
+  variant = "grid",
 }: SubmissionCardProps) {
-  const isList = variant === 'list';
+  const isList = variant === "list";
   const response = row.response;
-  const hasText =
-    typeof response?.answerText === 'string' && response.answerText.trim() !== '';
+  const hasText = typeof response?.answerText === "string" && response.answerText.trim() !== "";
   const optionIndex =
-    !hasText && typeof response?.answerOption === 'number' ? response.answerOption : null;
+    !hasText && typeof response?.answerOption === "number" ? response.answerOption : null;
   const feedback = row.aiFeedback?.message ?? null;
 
   const studentLabel = row.studentName?.trim() || row.userId;
@@ -51,18 +50,18 @@ export function SubmissionCard({
     row.attemptNumber > 1 ? `Attempt ${row.attemptNumber}` : null,
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(" · ");
 
   const graded = row.isCorrect != null;
   // The graded verdict tints the MCQ chip green/red; ungraded picks stay neutral.
   const optionState =
     optionIndex == null
-      ? 'default'
+      ? "default"
       : row.isCorrect === true
-        ? 'correct'
+        ? "correct"
         : row.isCorrect === false
-          ? 'incorrect'
-          : 'selected';
+          ? "incorrect"
+          : "selected";
 
   return (
     <div
@@ -70,15 +69,15 @@ export function SubmissionCard({
       tabIndex={0}
       onClick={() => onOpen(row)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onOpen(row);
         }
       }}
       className={cn(
-        '@container/sub flex flex-col rounded-[var(--radius-xl)] border border-border bg-card p-5 text-card-foreground shadow-[var(--shadow-2xs)] transition-colors md:p-6',
-        'cursor-pointer hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        !graded && 'border-l-4 border-l-[var(--color-warning-500)]',
+        "@container/sub flex flex-col rounded-[var(--radius-xl)] border border-border bg-card p-5 text-card-foreground shadow-[var(--shadow-2xs)] transition-colors md:p-6",
+        "cursor-pointer hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        !graded && "border-l-4 border-l-[var(--color-warning-500)]",
       )}
       data-testid="submission-card"
     >
@@ -94,8 +93,8 @@ export function SubmissionCard({
           </span>
         </div>
         {graded ? (
-          <Badge variant={row.isCorrect ? 'success' : 'destructive'} className="shrink-0">
-            {row.isCorrect ? 'Correct' : 'Incorrect'}
+          <Badge variant={row.isCorrect ? "success" : "destructive"} className="shrink-0">
+            {row.isCorrect ? "Correct" : "Incorrect"}
           </Badge>
         ) : (
           <Badge variant="warning" className="shrink-0">
@@ -109,8 +108,8 @@ export function SubmissionCard({
         {row.questionText ? (
           <p
             className={cn(
-              'text-base font-semibold leading-snug text-foreground',
-              !isList && 'line-clamp-2',
+              "text-base font-semibold leading-snug text-foreground",
+              !isList && "line-clamp-2",
             )}
             title={row.questionText}
           >
@@ -159,7 +158,7 @@ export function SubmissionCard({
           ) : null}
           <Button
             type="button"
-            variant={canGrade ? 'outline' : 'ghost'}
+            variant={canGrade ? "outline" : "ghost"}
             size="sm"
             onClick={(event) => {
               event.stopPropagation();

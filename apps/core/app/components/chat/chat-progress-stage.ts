@@ -78,9 +78,7 @@ export type ResolveChatProgressStageInput = {
   awaitingFollowup?: boolean;
 };
 
-export function resolveChatProgressStage(
-  input: ResolveChatProgressStageInput,
-): ChatProgressStage {
+export function resolveChatProgressStage(input: ResolveChatProgressStageInput): ChatProgressStage {
   const id = resolveChatProgressStageId(input);
   return {
     id,
@@ -106,9 +104,7 @@ export type EstimateExpectedResponseMsInput = {
  * “Taking longer than usual”. Use {@link estimateFollowupRemainingMs} + a
  * deadline rebase in the hook instead.
  */
-export function estimateExpectedResponseMs(
-  input: EstimateExpectedResponseMsInput,
-): number {
+export function estimateExpectedResponseMs(input: EstimateExpectedResponseMsInput): number {
   const model = (input.modelId ?? "").toLowerCase();
   let baseMs = 18_000;
 
@@ -120,17 +116,9 @@ export function estimateExpectedResponseMs(
     model.includes("gpt-")
   ) {
     baseMs = 8_000;
-  } else if (
-    model.includes("32b") ||
-    model.includes("70b") ||
-    model.includes("72b")
-  ) {
+  } else if (model.includes("32b") || model.includes("70b") || model.includes("72b")) {
     baseMs = 40_000;
-  } else if (
-    model.startsWith("vllm:") ||
-    model.startsWith("ollama:") ||
-    model.includes("qwen")
-  ) {
+  } else if (model.startsWith("vllm:") || model.startsWith("ollama:") || model.includes("qwen")) {
     baseMs = 22_000;
   } else if (model === "auto" || model.length === 0) {
     baseMs = 20_000;
@@ -197,10 +185,7 @@ export function computeTimedChatProgress(input: {
 }): TimedChatProgress {
   const elapsedMs = Math.max(0, input.elapsedMs);
   const deadlineMs = Math.max(1_000, input.deadlineMs);
-  const typicalExpectedMs = Math.max(
-    1_000,
-    input.typicalExpectedMs ?? deadlineMs,
-  );
+  const typicalExpectedMs = Math.max(1_000, input.typicalExpectedMs ?? deadlineMs);
   const stageFloor = Math.max(0, Math.min(90, input.stageFloor ?? 0));
   const peakPercent = Math.max(0, input.peakPercent ?? 0);
 
@@ -325,21 +310,14 @@ function contentAsDisplayText(content: unknown): string {
 }
 
 /** Stable fingerprint of visible assistant text for follow-up detection. */
-export function assistantTextFingerprint(
-  message: MessageLike | null | undefined,
-): string {
+export function assistantTextFingerprint(message: MessageLike | null | undefined): string {
   if (!message || message.role !== "assistant") return "";
 
   const parts = message.parts;
   if (Array.isArray(parts)) {
     const texts: string[] = [];
     for (const part of parts) {
-      if (
-        part &&
-        part.type === "text" &&
-        typeof part.text === "string" &&
-        part.text.length > 0
-      ) {
+      if (part && part.type === "text" && typeof part.text === "string" && part.text.length > 0) {
         texts.push(part.text);
       }
     }
@@ -353,9 +331,7 @@ export function assistantTextFingerprint(
  * True when the last assistant turn already has visible text (streaming tokens
  * or a buffered dump).
  */
-export function assistantMessageHasText(
-  message: MessageLike | null | undefined,
-): boolean {
+export function assistantMessageHasText(message: MessageLike | null | undefined): boolean {
   return assistantTextFingerprint(message).trim().length > 0;
 }
 
@@ -363,11 +339,7 @@ export function assistantMessageHasText(
 const TOOL_INVOCATION_DONE = new Set(["result"]);
 
 /** Terminal AI SDK tool-* part states (done — not in progress). */
-const TOOL_PART_DONE = new Set([
-  "output-available",
-  "output-error",
-  "result",
-]);
+const TOOL_PART_DONE = new Set(["output-available", "output-error", "result"]);
 
 /**
  * Best-effort *in-progress* tool name on the in-flight assistant message.
@@ -377,9 +349,7 @@ const TOOL_PART_DONE = new Set([
  * Missing `state` is treated as in-progress (optimistic): some stream shapes
  * omit state while the tool is running. Only known terminal states clear it.
  */
-export function activeToolNameFromMessage(
-  message: MessageLike | null | undefined,
-): string | null {
+export function activeToolNameFromMessage(message: MessageLike | null | undefined): string | null {
   if (!message || message.role !== "assistant" || !Array.isArray(message.parts)) {
     return null;
   }
@@ -442,8 +412,7 @@ export function resolveAwaitingFollowup(input: {
   // above) would keep awaitingFollowup true through that first token.
   if (input.prevAwaitingFollowup) {
     const followupTextArrived =
-      input.fingerprint.trim().length > 0 &&
-      input.fingerprint !== input.prevFingerprint;
+      input.fingerprint.trim().length > 0 && input.fingerprint !== input.prevFingerprint;
     return !followupTextArrived;
   }
 

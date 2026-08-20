@@ -31,10 +31,7 @@ export const AUTO_LLM_CHAT_MODEL: ChatModelOption = {
   supportsImages: true,
 };
 
-export const ROUTING_CHAT_MODELS: ChatModelOption[] = [
-  AUTO_LLM_CHAT_MODEL,
-  AUTO_CHAT_MODEL,
-];
+export const ROUTING_CHAT_MODELS: ChatModelOption[] = [AUTO_LLM_CHAT_MODEL, AUTO_CHAT_MODEL];
 
 export function isAutoRoutingModelId(modelId: string): boolean {
   return modelId === AUTO_MODEL_ID || modelId === AUTO_LLM_MODEL_ID;
@@ -51,10 +48,7 @@ export function withAutoChatModel(
   return [...routingModels, ...models];
 }
 
-export function defaultChatModelId(
-  models: ChatModelOption[],
-  routerAutoEnabled: boolean,
-): string {
+export function defaultChatModelId(models: ChatModelOption[], routerAutoEnabled: boolean): string {
   if (routerAutoEnabled) {
     if (models.some((model) => model.id === AUTO_LLM_MODEL_ID)) {
       return AUTO_LLM_MODEL_ID;
@@ -67,9 +61,6 @@ export function defaultChatModelId(
 }
 
 /** Human-readable model name for a registry id (`provider:modelId`). */
-export function displayNameForRegistryId(
-  registryId: string,
-  models: ChatModelOption[],
-): string {
+export function displayNameForRegistryId(registryId: string, models: ChatModelOption[]): string {
   return models.find((m) => m.id === registryId)?.name ?? registryId;
 }

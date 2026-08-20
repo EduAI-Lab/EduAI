@@ -37,10 +37,7 @@ describe("listAdminInvitations", () => {
   });
 
   it("returns invitations for admin with counts", async () => {
-    vi.mocked(listInvitations).mockResolvedValue([
-      { id: "i1" } as never,
-      { id: "i2" } as never,
-    ]);
+    vi.mocked(listInvitations).mockResolvedValue([{ id: "i1" } as never, { id: "i2" } as never]);
     const result = await listAdminInvitations(ADMIN, 10);
     expect(result).toEqual({
       invitations: [{ id: "i1" }, { id: "i2" }],

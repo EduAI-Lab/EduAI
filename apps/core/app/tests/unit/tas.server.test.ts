@@ -37,9 +37,7 @@ beforeEach(() => {
 
 describe("getCourseTA", () => {
   it("returns active TA enrollments shaped as {id, user}", async () => {
-    prismaMock.enrollment.findMany.mockResolvedValue([
-      { id: "enr-1", user: USER },
-    ]);
+    prismaMock.enrollment.findMany.mockResolvedValue([{ id: "enr-1", user: USER }]);
 
     const result = await getCourseTA(COURSE_ID);
 
@@ -143,18 +141,16 @@ describe("reconcileUserTACourses", () => {
       { id: "course-2" },
       { id: "course-3" },
     ]);
-    prismaMock.enrollment.findMany
-      .mockResolvedValueOnce([
-        { id: "student-enrollment", courseId: "course-1", role: "STUDENT", isActive: true },
-        { id: "inactive-ta", courseId: "course-2", role: "TA", isActive: false },
-      ]);
+    prismaMock.enrollment.findMany.mockResolvedValueOnce([
+      { id: "student-enrollment", courseId: "course-1", role: "STUDENT", isActive: true },
+      { id: "inactive-ta", courseId: "course-2", role: "TA", isActive: false },
+    ]);
 
-    const result = await reconcileUserTACourses(
-      prismaMock as never,
-      USER.id,
-      "STUDENT",
-      ["course-1", "course-2", "course-3"],
-    );
+    const result = await reconcileUserTACourses(prismaMock as never, USER.id, "STUDENT", [
+      "course-1",
+      "course-2",
+      "course-3",
+    ]);
 
     expect(result).toEqual({
       ok: true,
@@ -183,12 +179,7 @@ describe("reconcileUserTACourses", () => {
   });
 
   it("demotes all TA assignments when a STUDENT has no desired TA courses", async () => {
-    const result = await reconcileUserTACourses(
-      prismaMock as never,
-      USER.id,
-      "STUDENT",
-      [],
-    );
+    const result = await reconcileUserTACourses(prismaMock as never, USER.id, "STUDENT", []);
 
     expect(result).toEqual({ ok: true, activeTACourseIds: [] });
     expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
@@ -200,12 +191,10 @@ describe("reconcileUserTACourses", () => {
   it("rejects unknown courses before changing enrollments", async () => {
     prismaMock.course.findMany.mockResolvedValue([{ id: "course-1" }]);
 
-    const result = await reconcileUserTACourses(
-      prismaMock as never,
-      USER.id,
-      "STUDENT",
-      ["course-1", "missing-course"],
-    );
+    const result = await reconcileUserTACourses(prismaMock as never, USER.id, "STUDENT", [
+      "course-1",
+      "missing-course",
+    ]);
 
     expect(result).toEqual({ error: "TA_COURSE_NOT_FOUND" });
     expect(prismaMock.enrollment.create).not.toHaveBeenCalled();
@@ -214,24 +203,16 @@ describe("reconcileUserTACourses", () => {
   });
 
   it("rejects assigning TA courses to a non-STUDENT platform role", async () => {
-    const result = await reconcileUserTACourses(
-      prismaMock as never,
-      USER.id,
-      "INSTRUCTOR",
-      ["course-1"],
-    );
+    const result = await reconcileUserTACourses(prismaMock as never, USER.id, "INSTRUCTOR", [
+      "course-1",
+    ]);
 
     expect(result).toEqual({ error: "TA_ROLE_MISMATCH" });
     expect(prismaMock.course.findMany).not.toHaveBeenCalled();
   });
 
   it("clears active TA assignments when the effective role is not STUDENT", async () => {
-    const result = await reconcileUserTACourses(
-      prismaMock as never,
-      USER.id,
-      "ADMIN",
-      [],
-    );
+    const result = await reconcileUserTACourses(prismaMock as never, USER.id, "ADMIN", []);
 
     expect(result).toEqual({ ok: true, activeTACourseIds: [] });
     expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
@@ -246,12 +227,9 @@ describe("reconcileUserTACourses", () => {
       { id: "instructor-enrollment", courseId: "course-1", role: "INSTRUCTOR", isActive: true },
     ]);
 
-    const result = await reconcileUserTACourses(
-      prismaMock as never,
-      USER.id,
-      "STUDENT",
-      ["course-1"],
-    );
+    const result = await reconcileUserTACourses(prismaMock as never, USER.id, "STUDENT", [
+      "course-1",
+    ]);
 
     expect(result).toEqual({ error: "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" });
     expect(prismaMock.enrollment.create).not.toHaveBeenCalled();

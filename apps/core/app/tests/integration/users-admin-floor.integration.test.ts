@@ -133,9 +133,7 @@ describe("PATCH /api/users/:id — admin-floor concurrency (AUTH-04)", () => {
     const statuses = [resA.status, resB.status].sort((a, b) => a - b);
     expect(statuses).toEqual([200, 409]);
     expect(
-      [await resA.json(), await resB.json()].some(
-        (body) => body.error === "ADMIN_FLOOR_VIOLATION",
-      ),
+      [await resA.json(), await resB.json()].some((body) => body.error === "ADMIN_FLOOR_VIOLATION"),
     ).toBe(true);
 
     const remaining = await prisma.user.count({

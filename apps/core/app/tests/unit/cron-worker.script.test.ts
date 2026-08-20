@@ -73,14 +73,19 @@ describe("cron-worker script", () => {
   it("logs and continues when a periodic refresh fails", async () => {
     captureSignalHandlers();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockRefreshCronSchedules.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("db down"));
+    mockRefreshCronSchedules
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("db down"));
 
     await import("../../../scripts/cron-worker");
     await vi.waitFor(() => expect(mockRefreshCronSchedules).toHaveBeenCalledTimes(1));
 
     await vi.advanceTimersByTimeAsync(30_000);
     await vi.waitFor(() => expect(mockRefreshCronSchedules).toHaveBeenCalledTimes(2));
-    expect(errorSpy).toHaveBeenCalledWith("[cron-worker] schedule refresh failed", expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[cron-worker] schedule refresh failed",
+      expect.any(Error),
+    );
 
     // The interval keeps running after a failed refresh.
     await vi.advanceTimersByTimeAsync(30_000);

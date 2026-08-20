@@ -3,15 +3,8 @@ import prisma from "~/lib/prisma.server";
 import { buildCourseListFilter } from "~/lib/auth/course-access.server";
 import { listCoursesForUser } from "~/lib/courses/server";
 import { listChats, type ChatHistoryItem } from "~/lib/chat-history/server";
-import type {
-  DashboardStats,
-  MaterialStatusBreakdown,
-  UserRoleBreakdown,
-} from "~/types/dashboard";
-import type {
-  DashboardCourse,
-  DashboardRecentChat,
-} from "~/components/dashboard/dashboard-view";
+import type { DashboardStats, MaterialStatusBreakdown, UserRoleBreakdown } from "~/types/dashboard";
+import type { DashboardCourse, DashboardRecentChat } from "~/components/dashboard/dashboard-view";
 import type { User } from "~/lib/auth/types";
 
 /** The dashboard reads the session user directly. */
@@ -124,16 +117,23 @@ export async function computeDashboardStats(
   const week = weekAgo();
 
   if (role === "ADMIN") {
-    const [chatCount, chatCountWeek, materialCount, studentCount, instructorCount, totalUsers, activeCourseCount] =
-      await Promise.all([
-        prisma.chat.count(),
-        prisma.chat.count({ where: { createdAt: { gte: week } } }),
-        prisma.courseMaterial.count({ where: { deletedAt: null } }),
-        prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
-        prisma.user.count({ where: { role: "INSTRUCTOR" } }),
-        prisma.user.count(),
-        prisma.course.count({ where: { isActive: true, deletedAt: null } }),
-      ]);
+    const [
+      chatCount,
+      chatCountWeek,
+      materialCount,
+      studentCount,
+      instructorCount,
+      totalUsers,
+      activeCourseCount,
+    ] = await Promise.all([
+      prisma.chat.count(),
+      prisma.chat.count({ where: { createdAt: { gte: week } } }),
+      prisma.courseMaterial.count({ where: { deletedAt: null } }),
+      prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
+      prisma.user.count({ where: { role: "INSTRUCTOR" } }),
+      prisma.user.count(),
+      prisma.course.count({ where: { isActive: true, deletedAt: null } }),
+    ]);
     const [materialStatus, roleBreakdown] = await Promise.all([
       materialsByStatus({}),
       usersByRole(),
@@ -152,22 +152,33 @@ export async function computeDashboardStats(
   }
 
   if (role === "UNIT_ADMIN") {
-    const rbacUser = { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits ?? undefined };
+    const rbacUser = {
+      id: user.id,
+      role: user.role,
+      authorizedUnits: user.authorizedUnits ?? undefined,
+    };
     const courses = opts.unitAdminCourses ?? (await loadUnitAdminCourseScope(rbacUser));
     const courseIds = courses.map((c) => c.id);
     const uniqueInstructorIds = [...new Set(courses.map((c) => c.instructorId).filter(Boolean))];
 
-    const [chatCount, chatCountWeek, materialCount, studentCount, activeCourseCount] = await Promise.all([
-      courseIds.length ? prisma.chat.count({ where: { courseId: { in: courseIds } } }) : Promise.resolve(0),
-      courseIds.length
-        ? prisma.chat.count({ where: { courseId: { in: courseIds }, createdAt: { gte: week } } })
-        : Promise.resolve(0),
-      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, deletedAt: null } }) : Promise.resolve(0),
-      courseIds.length
-        ? prisma.enrollment.count({ where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true } })
-        : Promise.resolve(0),
-      courses.filter((c) => c.isActive).length,
-    ]);
+    const [chatCount, chatCountWeek, materialCount, studentCount, activeCourseCount] =
+      await Promise.all([
+        courseIds.length
+          ? prisma.chat.count({ where: { courseId: { in: courseIds } } })
+          : Promise.resolve(0),
+        courseIds.length
+          ? prisma.chat.count({ where: { courseId: { in: courseIds }, createdAt: { gte: week } } })
+          : Promise.resolve(0),
+        courseIds.length
+          ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, deletedAt: null } })
+          : Promise.resolve(0),
+        courseIds.length
+          ? prisma.enrollment.count({
+              where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true },
+            })
+          : Promise.resolve(0),
+        courses.filter((c) => c.isActive).length,
+      ]);
 
     const materialStatus = courseIds.length
       ? await materialsByStatus({ courseId: { in: courseIds } })
@@ -193,13 +204,19 @@ export async function computeDashboardStats(
     const courseIds = enrollments.map((e) => e.courseId);
 
     const [chatCount, chatCountWeek, materialCount, studentCount] = await Promise.all([
-      courseIds.length ? prisma.chat.count({ where: { courseId: { in: courseIds } } }) : Promise.resolve(0),
+      courseIds.length
+        ? prisma.chat.count({ where: { courseId: { in: courseIds } } })
+        : Promise.resolve(0),
       courseIds.length
         ? prisma.chat.count({ where: { courseId: { in: courseIds }, createdAt: { gte: week } } })
         : Promise.resolve(0),
-      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, deletedAt: null } }) : Promise.resolve(0),
       courseIds.length
-        ? prisma.enrollment.count({ where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true } })
+        ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, deletedAt: null } })
+        : Promise.resolve(0),
+      courseIds.length
+        ? prisma.enrollment.count({
+            where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true },
+          })
         : Promise.resolve(0),
     ]);
 
@@ -232,11 +249,21 @@ export async function computeDashboardStats(
     prisma.chat.count({ where: { userId: user.id } }),
     prisma.chat.count({ where: { userId: user.id, createdAt: { gte: week } } }),
     courseIds.length
-      ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, status: "READY", deletedAt: null } })
+      ? prisma.courseMaterial.count({
+          where: { courseId: { in: courseIds }, status: "READY", deletedAt: null },
+        })
       : Promise.resolve(0),
   ]);
 
-  return { chatCount, chatCountWeek, materialCount, studentCount: 0, instructorCount: 0, totalUsers: 0, activeCourseCount: 0 };
+  return {
+    chatCount,
+    chatCountWeek,
+    materialCount,
+    studentCount: 0,
+    instructorCount: 0,
+    totalUsers: 0,
+    activeCourseCount: 0,
+  };
 }
 
 /** Slim a `listChats` row down to what the recent-conversations panel renders. */
@@ -253,8 +280,20 @@ function toDashboardRecentChat(chat: ChatHistoryItem): DashboardRecentChat {
 }
 
 /** Keep only the five fields the course-card panel renders. */
-function toDashboardCourse(course: { id: string; code: string; name: string; term: string; year: number }): DashboardCourse {
-  return { id: course.id, code: course.code, name: course.name, term: course.term, year: course.year };
+function toDashboardCourse(course: {
+  id: string;
+  code: string;
+  name: string;
+  term: string;
+  year: number;
+}): DashboardCourse {
+  return {
+    id: course.id,
+    code: course.code,
+    name: course.name,
+    term: course.term,
+    year: course.year,
+  };
 }
 
 /**
@@ -275,7 +314,11 @@ function toDashboardCourse(course: { id: string; code: string; name: string; ter
  */
 export async function loadDashboardData(user: DashboardUser): Promise<DashboardData> {
   const role = user.role ?? "STUDENT";
-  const rbacUser = { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits ?? undefined };
+  const rbacUser = {
+    id: user.id,
+    role: user.role,
+    authorizedUnits: user.authorizedUnits ?? undefined,
+  };
   const viewer = { id: user.id, role: user.role };
 
   if (role === "ADMIN") {

@@ -1,10 +1,5 @@
 import { useState } from "react";
-import {
-  IconBook,
-  IconLoader2,
-  IconMessageCircle,
-  IconTrash,
-} from "@tabler/icons-react";
+import { IconBook, IconLoader2, IconMessageCircle, IconTrash } from "@tabler/icons-react";
 import { cn } from "~/lib/utils";
 import { apiFetch } from "~/hooks/api/config";
 import type { ChatHistoryItem } from "~/hooks/api/use-chat-history";
@@ -49,7 +44,9 @@ export function ChatHistoryList({
 
   if (isLoading) {
     return (
-      <div className={cn("flex items-center justify-center py-16 text-muted-foreground", className)}>
+      <div
+        className={cn("flex items-center justify-center py-16 text-muted-foreground", className)}
+      >
         <IconLoader2 className="h-5 w-5 animate-spin" />
       </div>
     );

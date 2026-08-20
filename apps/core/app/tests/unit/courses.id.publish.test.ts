@@ -39,11 +39,7 @@ describe("PATCH /api/courses/:id/publish route", () => {
 
   it("delegates to setPublishState(request, id, true)", async () => {
     await publishAction(makeArgs("course-1"));
-    expect(setPublishState).toHaveBeenCalledWith(
-      expect.any(Request),
-      "course-1",
-      true,
-    );
+    expect(setPublishState).toHaveBeenCalledWith(expect.any(Request), "course-1", true);
   });
 
   it("returns the response from setPublishState", async () => {
@@ -77,10 +73,6 @@ describe("PATCH /api/courses/:id/unpublish route", () => {
 
   it("delegates to setPublishState(request, id, false)", async () => {
     await unpublishAction(makeArgs("course-1"));
-    expect(setPublishState).toHaveBeenCalledWith(
-      expect.any(Request),
-      "course-1",
-      false,
-    );
+    expect(setPublishState).toHaveBeenCalledWith(expect.any(Request), "course-1", false);
   });
 });

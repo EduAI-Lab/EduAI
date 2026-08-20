@@ -1,21 +1,22 @@
-import express from 'express';
-import { requireAuth, requireRole } from '../middleware/auth.js';
-import { config } from '../config/settings.js';
+import express from "express";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import { config } from "../config/settings.js";
+import { QM_AUTHORIZED } from "../middleware/roles.js";
 
 const router = express.Router();
 
-/** POST /api/bug-reports — submit a bug report (any authenticated user). */
-router.post('/bug-reports', requireAuth, async (req, res) => {
+/** POST /api/bug-reports — submit a report from a QM-authorized caller. */
+router.post("/bug-reports", requireAuth, requireRole(QM_AUTHORIZED), async (req, res) => {
   const serviceKey = config.eduaiApiKey;
   if (!serviceKey) {
-    return res.status(503).json({ success: false, error: 'Service key not configured' });
+    return res.status(503).json({ success: false, error: "Service key not configured" });
   }
 
   const { description, isAnonymous, consoleLogs, networkLogs, screenshot, pageUrl, userAgent } =
     req.body || {};
 
   const body = {
-    source: 'QUESTION_MAKER',
+    source: "QUESTION_MAKER",
     userId: req.user.id,
     description,
     isAnonymous: isAnonymous ?? false,
@@ -28,9 +29,9 @@ router.post('/bug-reports', requireAuth, async (req, res) => {
 
   try {
     const response = await fetch(`${config.coreUrl}/api/bug-reports`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${serviceKey}`,
       },
       body: JSON.stringify(body),
@@ -41,25 +42,25 @@ router.post('/bug-reports', requireAuth, async (req, res) => {
       if (response.status === 422) {
         return res.status(422).json({ success: false, ...errorBody });
       }
-      return res.status(502).json({ success: false, error: 'Core request failed' });
+      return res.status(502).json({ success: false, error: "Core request failed" });
     }
 
     return res.status(201).json({ success: true });
   } catch {
-    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+    return res.status(502).json({ success: false, error: "Could not reach Core" });
   }
 });
 
 /** GET /api/admin/bug-reports — ADMIN-only proxy to Core triage API. */
-router.get('/admin/bug-reports', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/bug-reports", requireAuth, requireRole("ADMIN"), async (req, res) => {
   try {
     const url = new URL(`${config.coreUrl}/api/admin/bug-reports`);
     for (const [key, value] of Object.entries(req.query)) {
-      if (value != null && value !== '') url.searchParams.set(key, String(value));
+      if (value != null && value !== "") url.searchParams.set(key, String(value));
     }
 
     const response = await fetch(url.toString(), {
-      headers: { cookie: req.headers.cookie ?? '' },
+      headers: { cookie: req.headers.cookie ?? "" },
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -67,7 +68,7 @@ router.get('/admin/bug-reports', requireAuth, requireRole('ADMIN'), async (req, 
     }
     return res.json({ success: true, data: body });
   } catch {
-    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+    return res.status(502).json({ success: false, error: "Could not reach Core" });
   }
 });
 
@@ -76,12 +77,12 @@ router.get('/admin/bug-reports', requireAuth, requireRole('ADMIN'), async (req, 
  * Core list responses omit console/network/screenshot (#979); the admin UI
  * loads attachments on demand through this proxy.
  */
-router.get('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get("/admin/bug-reports/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
   try {
     const response = await fetch(
       `${config.coreUrl}/api/admin/bug-reports/${encodeURIComponent(req.params.id)}`,
       {
-        headers: { cookie: req.headers.cookie ?? '' },
+        headers: { cookie: req.headers.cookie ?? "" },
       },
     );
     const body = await response.json().catch(() => ({}));
@@ -89,25 +90,25 @@ router.get('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (r
       return res.status(response.status).json({ success: false, ...body });
     }
     // Scope QM triage to Question Maker reports (same filter as the list UI).
-    if (body?.source && body.source !== 'QUESTION_MAKER') {
-      return res.status(404).json({ success: false, error: 'Bug report not found' });
+    if (body?.source && body.source !== "QUESTION_MAKER") {
+      return res.status(404).json({ success: false, error: "Bug report not found" });
     }
     return res.json({ success: true, data: body });
   } catch {
-    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+    return res.status(502).json({ success: false, error: "Could not reach Core" });
   }
 });
 
 /** PATCH /api/admin/bug-reports/:id — ADMIN-only status update via Core. */
-router.patch('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.patch("/admin/bug-reports/:id", requireAuth, requireRole("ADMIN"), async (req, res) => {
   try {
     const response = await fetch(
       `${config.coreUrl}/api/admin/bug-reports/${encodeURIComponent(req.params.id)}`,
       {
-        method: 'PATCH',
+        method: "PATCH",
         headers: {
-          'Content-Type': 'application/json',
-          cookie: req.headers.cookie ?? '',
+          "Content-Type": "application/json",
+          cookie: req.headers.cookie ?? "",
         },
         body: JSON.stringify(req.body ?? {}),
       },
@@ -118,7 +119,7 @@ router.patch('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async 
     }
     return res.json({ success: true, data: body });
   } catch {
-    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+    return res.status(502).json({ success: false, error: "Could not reach Core" });
   }
 });
 

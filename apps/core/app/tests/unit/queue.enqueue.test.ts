@@ -61,6 +61,11 @@ vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logSystemError: vi.fn(),
 }));
+// Exercise the dormant enqueue implementation in isolation. Production entry
+// points are covered separately and always fail closed pre-MVP.
+vi.mock("~/lib/queue/availability.server", () => ({
+  assertAiJobQueueEnabled: vi.fn(),
+}));
 
 import { enqueue } from "~/lib/queue/enqueue.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
@@ -173,7 +178,11 @@ describe("enqueue", () => {
   it("enqueues interactive work at high priority", async () => {
     await enqueue({ ...job, type: "interactive" });
     expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-chat");
-    expect(queueAdd).toHaveBeenCalledWith("question-generation", expect.anything(), expect.objectContaining({ priority: 1 }));
+    expect(queueAdd).toHaveBeenCalledWith(
+      "question-generation",
+      expect.anything(),
+      expect.objectContaining({ priority: 1 }),
+    );
   });
 
   it("passes idempotencyKey through as the BullMQ jobId", async () => {

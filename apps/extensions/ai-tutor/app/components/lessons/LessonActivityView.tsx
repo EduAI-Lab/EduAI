@@ -19,7 +19,7 @@ import {
   IconCircleCheck,
   IconInfoCircle,
   IconSparkles,
-} from '@tabler/icons-react';
+} from "@tabler/icons-react";
 import {
   AnswerOption,
   Badge,
@@ -32,11 +32,11 @@ import {
   Input,
   courseThemeVars,
   type CourseAccentColor,
-} from '@eduai/ui';
-import StudentActivityFeedbackCard from '~/components/StudentActivityFeedbackCard';
-import { Spinner } from '@eduai/ui';
-import type { Activity } from '~/lib/types';
-import { cn } from '~/lib/utils';
+} from "@eduai/ui";
+import StudentActivityFeedbackCard from "~/components/StudentActivityFeedbackCard";
+import { Spinner } from "@eduai/ui";
+import type { Activity } from "~/lib/types";
+import { cn } from "~/lib/utils";
 
 export type LessonActivityFeedbackState = {
   rating: number | null;
@@ -114,8 +114,8 @@ export function LessonActivityView({
   onFeedbackSubmit,
   onFeedbackDismiss,
 }: LessonActivityViewProps) {
-  const accent = accentColor ?? 'var(--primary)';
-  const orderLabel = String(questionNumber).padStart(2, '0');
+  const accent = accentColor ?? "var(--primary)";
+  const orderLabel = String(questionNumber).padStart(2, "0");
 
   return (
     <div className="flex flex-col gap-5">
@@ -132,7 +132,7 @@ export function LessonActivityView({
           className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
           style={{
             background:
-              'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+              "linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))",
           }}
           aria-hidden="true"
         />
@@ -141,7 +141,7 @@ export function LessonActivityView({
         <span
           aria-hidden="true"
           className="pointer-events-none absolute -right-3 top-1/2 -translate-y-1/2 select-none text-[6rem] font-black leading-none tabular-nums"
-          style={{ color: 'color-mix(in oklch, var(--course-accent) 9%, transparent)' }}
+          style={{ color: "color-mix(in oklch, var(--course-accent) 9%, transparent)" }}
         >
           {orderLabel}
         </span>
@@ -152,10 +152,10 @@ export function LessonActivityView({
               <span
                 className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] text-sm font-bold tabular-nums"
                 style={{
-                  background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                  color: 'var(--course-accent)',
+                  background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                  color: "var(--course-accent)",
                   boxShadow:
-                    'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                    "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
                 }}
               >
                 {questionNumber}
@@ -163,7 +163,7 @@ export function LessonActivityView({
               <span
                 className="text-[11px] font-bold uppercase tracking-[0.16em]"
                 style={{
-                  color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))',
+                  color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
                 }}
               >
                 Question {questionNumber} of {questionCount}
@@ -201,14 +201,14 @@ export function LessonActivityView({
           <CardTitle className="flex items-center gap-2">
             <span
               className="size-2 shrink-0 rounded-full"
-              style={{ background: 'var(--course-accent)' }}
+              style={{ background: "var(--course-accent)" }}
               aria-hidden="true"
             />
             Your answer
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          {activity?.type === 'MCQ' ? (
+          {activity?.type === "MCQ" ? (
             Array.isArray(activity?.options?.choices) ? (
               <div className="space-y-3" role="radiogroup" aria-label="Answer choices">
                 {activity.options.choices.map((choice, i) => {
@@ -216,12 +216,12 @@ export function LessonActivityView({
                   const state = graded
                     ? mcq === i
                       ? wasCorrect
-                        ? 'correct'
-                        : 'incorrect'
-                      : 'default'
+                        ? "correct"
+                        : "incorrect"
+                      : "default"
                     : mcq === i
-                      ? 'selected'
-                      : 'default';
+                      ? "selected"
+                      : "default";
                   return (
                     <AnswerOption
                       key={i}
@@ -256,7 +256,9 @@ export function LessonActivityView({
               variant="primary"
               size="lg"
               onClick={onSubmit}
-              disabled={submitting || (activity?.type === 'MCQ' ? mcq === null : text.trim() === '')}
+              disabled={
+                submitting || (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
+              }
             >
               {submitting ? (
                 <>
@@ -287,10 +289,10 @@ export function LessonActivityView({
           {result && (
             <div
               className={cn(
-                'flex items-center gap-3 rounded-[var(--radius-lg)] p-4',
+                "flex items-center gap-3 rounded-[var(--radius-lg)] p-4",
                 wasCorrect
-                  ? 'border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]'
-                  : 'border border-destructive/40 bg-destructive/10 text-destructive',
+                  ? "border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]"
+                  : "border border-destructive/40 bg-destructive/10 text-destructive",
               )}
             >
               {wasCorrect ? (

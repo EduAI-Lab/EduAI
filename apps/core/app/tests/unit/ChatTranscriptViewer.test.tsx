@@ -4,10 +4,9 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 
 function renderViewer(props: React.ComponentProps<typeof ChatTranscriptViewer>) {
-  const router = createMemoryRouter(
-    [{ path: "/", element: <ChatTranscriptViewer {...props} /> }],
-    { initialEntries: ["/"] },
-  );
+  const router = createMemoryRouter([{ path: "/", element: <ChatTranscriptViewer {...props} /> }], {
+    initialEntries: ["/"],
+  });
   return render(<RouterProvider router={router} />);
 }
 

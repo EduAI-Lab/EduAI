@@ -12,6 +12,28 @@ vi.mock("~/lib/auth/rate-limit.server", async (importOriginal) => {
 
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: vi.fn(),
+  validateCompletionRequest: vi.fn((input: unknown) => ({
+    ok: true,
+    request: input,
+  })),
+  resolveCompletionInputLimits: vi.fn(() => ({
+    maxBodyBytes: 2 * 1024 * 1024,
+    maxMessages: 100,
+    maxMessageChars: 32_768,
+    maxTotalMessageChars: 131_072,
+    maxSystemPromptChars: 32_768,
+    maxApiKeyChars: 16_384,
+    maxBaseUrlChars: 2_048,
+    maxModelChars: 512,
+  })),
+  resolveCompletionModelPolicy: vi.fn(async (model: string) => ({
+    ok: true,
+    modelId: model,
+    parsedModel: {
+      providerId: model.split(":")[0],
+      modelId: model.split(":").slice(1).join(":"),
+    },
+  })),
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
@@ -24,10 +46,18 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 import { APICallError } from "ai";
+
+vi.mock("~/lib/ai/admission.server", () => ({
+  acquireAiAdmission: vi.fn().mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
+  AdmissionTimeoutError: class AdmissionTimeoutError extends Error {},
+  withAdmissionRelease: vi.fn((response: Response) => response),
+}));
+
 import { action } from "~/routes/api/completion";
 import { runCompletion } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
+import { acquireAiAdmission, withAdmissionRelease } from "~/lib/ai/admission.server";
 
 function makeArgs(body: unknown, method = "POST") {
   return {
@@ -52,6 +82,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
+  vi.mocked(acquireAiAdmission).mockResolvedValue({ release: vi.fn(), waitedMs: 0 });
 });
 
 afterEach(() => {
@@ -89,7 +120,7 @@ describe("POST /api/completion", () => {
       context: {} as never,
     } as never);
     expect(res.status).toBe(400);
-    expect(checkRateLimitMock).not.toHaveBeenCalled();
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:u1", 2, 60_000);
   });
 
   it("uses the authenticated session user as the rate-limit identity", async () => {
@@ -119,11 +150,7 @@ describe("POST /api/completion", () => {
 
     await action(makeArgs({ model: "gpt", messages: [] }));
 
-    expect(checkRateLimitMock).toHaveBeenCalledWith(
-      "completion:admin-key-owner",
-      2,
-      60_000,
-    );
+    expect(checkRateLimitMock).toHaveBeenCalledWith("completion:admin-key-owner", 2, 60_000);
     expect(auth.api.getSession).not.toHaveBeenCalled();
   });
 
@@ -154,11 +181,28 @@ describe("POST /api/completion", () => {
   });
 
   it("preserves ordinary validation failures as their existing error shape", async () => {
-    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "model is required", status: 400 } as never);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      error: "model is required",
+      status: 400,
+    } as never);
     const res = await action(makeArgs({ model: "bogus", messages: [] }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "model is required" });
     expect(res.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("maps a runCompletion failure to its status", async () => {
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      error: "MODEL_NOT_FOUND",
+      status: 422,
+    } as never);
+
+    const res = await action(makeArgs({ model: "google:test", messages: [] }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "MODEL_NOT_FOUND" });
   });
 
   it("serializes the stable provider failure and a valid retry hint", async () => {
@@ -195,6 +239,23 @@ describe("POST /api/completion", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ text: "hi" });
+  });
+
+  it("acquires and releases local-model admission for a non-streaming completion", async () => {
+    const release = vi.fn();
+    vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: false,
+      body: { text: "hi" },
+      fleetServerId: null,
+    } as never);
+
+    const res = await action(makeArgs({ model: "vllm:test", messages: [] }));
+
+    expect(res.status).toBe(200);
+    expect(acquireAiAdmission).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it("returns a streaming Response for a streaming success", async () => {
@@ -249,5 +310,22 @@ describe("POST /api/completion", () => {
     });
     expect(serialized).not.toContain("sk-do-not-leak");
     expect(serialized).not.toContain("private upstream body");
+  });
+
+  it("holds local-model admission until a streaming response closes", async () => {
+    const release = vi.fn();
+    vi.mocked(acquireAiAdmission).mockResolvedValue({ release, waitedMs: 0 });
+    const streamResponse = new Response("stream", { status: 200 });
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: true,
+      streaming: true,
+      fleetServerId: null,
+      result: { toDataStreamResponse: vi.fn(() => streamResponse) },
+    } as never);
+
+    await action(makeArgs({ model: "ollama:test", messages: [], streaming: true }));
+
+    expect(withAdmissionRelease).toHaveBeenCalledWith(streamResponse, release);
+    expect(release).not.toHaveBeenCalled();
   });
 });

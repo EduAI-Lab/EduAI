@@ -12,19 +12,19 @@
  * `npm run test:pict:gen` from tests/models/ai-judge-scoring.pict). Shared
  * cases/oracle loading comes from tests/helpers/pictModel.js (#1188).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadPictModel } from '../helpers/pictModel.js';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadPictModel } from "../helpers/pictModel.js";
 
 const chat = vi.fn();
 const findOne = vi.fn();
 const enrichCourseDetail = vi.fn();
 const loadOrderedVariantsForAssessment = vi.fn();
 
-vi.mock('../../src/services/eduaiService.js', () => ({
+vi.mock("../../src/services/eduaiService.js", () => ({
   default: { isConfigured: () => true, chat },
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     assessments: { findFirst: findOne },
     assessmentSections: {},
@@ -37,24 +37,24 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-vi.mock('../../src/services/courseListService.js', () => ({
+vi.mock("../../src/services/courseListService.js", () => ({
   enrichCourseDetail,
   formatSemesterDisplay: vi.fn(),
   deriveSemesterDisplayForCourseId: vi.fn(),
 }));
 
-vi.mock('../../src/services/assessmentVariantUtils.js', () => ({
+vi.mock("../../src/services/assessmentVariantUtils.js", () => ({
   loadOrderedVariantsForAssessment,
   aggregateStructure: vi.fn(),
 }));
 
-vi.mock('../../src/services/assessmentVariantMetadataScoring.js', () => ({
+vi.mock("../../src/services/assessmentVariantMetadataScoring.js", () => ({
   scoreMetadataMatch: vi.fn(),
 }));
 
-const { reviewVariantExamWithAi } = await import('../../src/services/assessmentVariantService.js');
+const { reviewVariantExamWithAi } = await import("../../src/services/assessmentVariantService.js");
 
-const { rows, oracle } = await loadPictModel('ai-judge-scoring');
+const { rows, oracle } = await loadPictModel("ai-judge-scoring");
 const { aiJudgeScoringOracle } = oracle;
 
 const LEVEL_SCORE = { low: 1, high: 5 };
@@ -66,18 +66,22 @@ beforeEach(() => {
   enrichCourseDetail.mockReset();
   loadOrderedVariantsForAssessment.mockReset();
 
-  const course = { id: 3, coreCourseId: 'cuid-core-course' };
+  const course = { id: 3, coreCourseId: "cuid-core-course" };
   findOne.mockResolvedValue({ id: 10, courseId: 3, course });
-  enrichCourseDetail.mockResolvedValue({ id: 3, coreCourseId: 'cuid-core-course', code: 'COSC 121' });
+  enrichCourseDetail.mockResolvedValue({
+    id: 3,
+    coreCourseId: "cuid-core-course",
+    code: "COSC 121",
+  });
   loadOrderedVariantsForAssessment.mockResolvedValue([
-    { id: 1, questionText: 'Q?', answer: 'A', choices: [] },
+    { id: 1, questionText: "Q?", answer: "A", choices: [] },
   ]);
 });
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'ai-judge-scoring PICT row #$index',
+  "ai-judge-scoring PICT row #$index",
   ({ row }) => {
-    it('matches the oracle', async () => {
+    it("matches the oracle", async () => {
       chat.mockResolvedValue({
         content: JSON.stringify({
           conceptual_equivalence: LEVEL_SCORE[row.ConceptualEquivalence],
@@ -87,7 +91,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
           topic_alignment: LEVEL_SCORE[row.TopicAlignment],
           distinctness: DISTINCTNESS_SCORE[row.Distinctness],
           usability: row.Usability,
-          brief_reason: 'Reason',
+          brief_reason: "Reason",
         }),
       });
 
@@ -97,16 +101,21 @@ describe.each(rows.map((row, index) => ({ row, index })))(
         courseId: 3,
         apiKeys: { vllm: { isEnabled: true } },
         includeOverallSummary: false,
-        applyUsabilityPenalty: row.ApplyUsabilityPenalty === 'true',
+        applyUsabilityPenalty: row.ApplyUsabilityPenalty === "true",
       });
 
       const expected = aiJudgeScoringOracle(row);
-      expect(result.perQuestion[0].exam_variant_composite_score_1to5).toBeCloseTo(expected.composite1to5, 10);
-      expect(result.perQuestion[0].exam_variant_composite_score_1to5_usability_adjusted).toBeCloseTo(
-        expected.perQuestionUsabilityAdjusted1to5,
+      expect(result.perQuestion[0].exam_variant_composite_score_1to5).toBeCloseTo(
+        expected.composite1to5,
         10,
       );
-      expect(result.examVariantScoreFinal0to100).toBeCloseTo(expected.examVariantScoreFinal0to100, 8);
+      expect(
+        result.perQuestion[0].exam_variant_composite_score_1to5_usability_adjusted,
+      ).toBeCloseTo(expected.perQuestionUsabilityAdjusted1to5, 10);
+      expect(result.examVariantScoreFinal0to100).toBeCloseTo(
+        expected.examVariantScoreFinal0to100,
+        8,
+      );
     });
   },
 );

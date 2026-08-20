@@ -52,8 +52,7 @@ describe("resolveCourseAccess", () => {
       { id: "u1", role: "STUDENT", authorizedUnits: [] },
       "c1",
     );
-    const [forwardedUser, forwardedCourseId] =
-      resolveCourseAccessGateMock.mock.calls[0]!;
+    const [forwardedUser, forwardedCourseId] = resolveCourseAccessGateMock.mock.calls[0]!;
     expect(forwardedUser).not.toHaveProperty("name");
     expect(forwardedCourseId).toBe("c1");
     expect(forwardedCourseId).not.toEqual(COURSE);

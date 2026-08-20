@@ -5,18 +5,23 @@
  * `resolveAccessForCourse` roster fetch — see that function's docstring for
  * the callerEnrollmentRole-vs-roster parity analysis.
  */
-import { prisma } from '../config/database.js';
-import { logger } from '../utils/logger.js';
-import { LEVELS, getAuthorizedUnits } from '../middleware/courseAccess.js';
+import { prisma } from "../config/database.js";
+import { logger } from "../utils/logger.js";
+import { LEVELS, getAuthorizedUnits } from "../middleware/courseAccess.js";
 import {
   getAllCoursesFromCore,
   getCourseFromCore,
   getCoursesByIdsFromCore,
   listCoursesFromCore,
   searchCoursesFromCore,
-} from './coreApiService.js';
-import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
-import { ensureCourseAnchor } from './ensureCourseAnchor.js';
+} from "./coreApiService.js";
+import {
+  dedupeCoursesByCoreId,
+  normalizeCourseCode,
+  courseCodeLookupCandidates,
+} from "./courseCodeUtils.js";
+import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
+import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
@@ -38,7 +43,7 @@ const coreCatalogCache = { courses: null, refreshedAt: 0 };
 const ADMIN_ANCHOR_BACKFILL_BATCH_SIZE = 8;
 
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
-const CORE_UNAVAILABLE_NAME = 'Course unavailable';
+const CORE_UNAVAILABLE_NAME = "Course unavailable";
 
 /**
  * `CourseAccess.role` (`enrollment_role`) is a required column — a caller can
@@ -48,7 +53,7 @@ const CORE_UNAVAILABLE_NAME = 'Course unavailable';
  * `role: 'INSTRUCTOR'` branch of the SQL visibility predicate below — only
  * the department/unit-lock branch can grant access from a row like this.
  */
-const NO_ENROLLMENT_ROLE = 'NONE';
+const NO_ENROLLMENT_ROLE = "NONE";
 
 async function getCachedCoreCatalog() {
   const now = Date.now();
@@ -103,7 +108,7 @@ function projectCoreFields(row, core) {
     // Display-only (QM has no student publish gate — that's AT/Core's job):
     // surfaced so the UI badges the course's real Core publish state instead
     // of a hardcoded value. Null when unresolved.
-    isPublished: typeof core.isPublished === 'boolean' ? core.isPublished : null,
+    isPublished: typeof core.isPublished === "boolean" ? core.isPublished : null,
     coreUnavailable: false,
   };
 }
@@ -125,7 +130,7 @@ function enrichCourseRow(course, coreById, accessLevel) {
  * directly (§3 "detail from GET /api/courses/:id") — degrades gracefully
  * (placeholder, not a hard error) when Core is unreachable.
  */
-export async function enrichCourseDetail(course, { cookie } = {}) {
+export async function enrichCourseDetail(course, { cookie, signal } = {}) {
   const row = course;
 
   let core = null;
@@ -139,8 +144,11 @@ export async function enrichCourseDetail(course, { cookie } = {}) {
       // — a fragile retry edge that silently degraded a resolvable course to
       // a placeholder). `cookie` stays as the fallback variant for
       // environments with no EDUAI_API_KEY configured (#1072 unified contract).
-      core = await getCourseFromCore(row.coreCourseId, { cookie, preferCookie: false });
+      const coreOptions = { cookie, preferCookie: false };
+      if (signal) coreOptions.signal = signal;
+      core = await getCourseFromCore(row.coreCourseId, coreOptions);
     } catch {
+      if (signal?.aborted) assertQmAiDeadline({ signal });
       core = null; // Core unreachable — degrade the detail response, don't hard-error.
     }
   }
@@ -204,10 +212,10 @@ export async function enrichRowWithCourse(row) {
  * via read-through — nothing to change here beyond this note.
  */
 const SEMESTER_TERM_NAMES = {
-  W1: 'Winter Term 1',
-  W2: 'Winter Term 2',
-  S1: 'Summer Term 1',
-  S2: 'Summer Term 2',
+  W1: "Winter Term 1",
+  W2: "Winter Term 2",
+  S1: "Summer Term 1",
+  S2: "Summer Term 2",
 };
 
 export function formatSemesterDisplay(term, year) {
@@ -215,7 +223,7 @@ export function formatSemesterDisplay(term, year) {
   if (name && year != null) return `${name} ${year}`;
   if (name) return name;
   if (year != null) return String(year);
-  return 'Unscheduled';
+  return "Unscheduled";
 }
 
 /**
@@ -249,7 +257,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
   // loop backfilling missing anchors, #1270), which would otherwise let a
   // course show up on two pages while another never appears.
   const allCourses = await prisma.course.findMany({
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
 
   let coreById = new Map();
@@ -258,7 +266,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // Core course below), so that branch still walks every page. Everyone else
     // only ever joins against the local rows, so an `?ids=` lookup suffices.
     const coreCourses =
-      reqUser.role === 'ADMIN'
+      reqUser.role === "ADMIN"
         ? await getCachedCoreCatalog()
         : await getCoursesByIdsFromCore(
             allCourses.map((c) => c.coreCourseId),
@@ -267,10 +275,10 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
           );
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
-    // Core unreachable — list still works without department enrichment.
+    // Core unreachable — linked-course access must fail closed below.
   }
 
-  if (reqUser.role === 'ADMIN') {
+  if (reqUser.role === "ADMIN") {
     // #1074: ADMIN's list = Core's full catalog, not just locally-anchored
     // rows — materialize an anchor for every Core course that doesn't have
     // one yet, so the client always has a real local id to route by (mirrors
@@ -280,9 +288,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // on the same advisory lock. Core unreachable ⇒ coreById is empty ⇒
     // nothing to materialize ⇒ falls through to the existing local rows with
     // placeholder projection (degrade, not error).
-    const existingCoreCourseIds = new Set(
-      allCourses.map((c) => c.coreCourseId).filter(Boolean),
-    );
+    const existingCoreCourseIds = new Set(allCourses.map((c) => c.coreCourseId).filter(Boolean));
     const missingCoreCourseIds = Array.from(coreById.keys()).filter(
       (id) => !existingCoreCourseIds.has(id),
     );
@@ -307,10 +313,10 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
           batch.map((coreCourseId) => ensureCourseAnchor(reqUser.id, coreCourseId)),
         );
         for (const [index, result] of results.entries()) {
-          if (result.status === 'rejected') {
+          if (result.status === "rejected") {
             logger.warn(
               { coreCourseId: batch[index], error: result.reason },
-              'ADMIN course-list anchor backfill failed for one course; continuing',
+              "ADMIN course-list anchor backfill failed for one course; continuing",
             );
           }
         }
@@ -321,14 +327,14 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
       // materialization here doesn't reintroduce the pagination instability
       // that tiebreak exists to prevent.
       adminCourses = await prisma.course.findMany({
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
     }
 
     // Catalog-sourced dedupe: an existing local anchor and a freshly
     // materialized one can both resolve to the same Core course; merge them
     // on Core identity same as before.
-    const enriched = adminCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
+    const enriched = adminCourses.map((course) => enrichCourseRow(course, coreById, "admin"));
     return dedupeCoursesByCoreId(enriched);
   }
 
@@ -351,7 +357,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
   }
 
   const authorizedUnits =
-    reqUser.role === 'UNIT_ADMIN' ? await getAuthorizedUnits(reqUser, cookie) : [];
+    reqUser.role === "UNIT_ADMIN" ? await getAuthorizedUnits(reqUser, cookie) : [];
 
   const visible = [];
   for (const course of allCourses) {
@@ -392,14 +398,17 @@ async function syncCourseAccessMirror(reqUser, cookie) {
     // because there is no enrollment role to record. A row with neither a
     // role nor a department carries no grant at all and is skipped.
     if (!course.callerEnrollmentRole && !course.department) return [];
-    return [{
-      userId: reqUser.id,
-      courseId: anchor.id,
-      role: course.callerEnrollmentRole ?? NO_ENROLLMENT_ROLE,
-      department: course.department ?? null,
-    }];
+    return [
+      {
+        userId: reqUser.id,
+        courseId: anchor.id,
+        role: course.callerEnrollmentRole ?? NO_ENROLLMENT_ROLE,
+        department: course.department ?? null,
+      },
+    ];
   });
-  if (accessRows.length) await prisma.courseAccess.createMany({ data: accessRows, skipDuplicates: true });
+  if (accessRows.length)
+    await prisma.courseAccess.createMany({ data: accessRows, skipDuplicates: true });
   accessSyncedAtByUser.set(reqUser.id, { refreshedAt: now, healthy: true });
   return true;
 }
@@ -410,62 +419,98 @@ export function resetCourseAccessSyncForTests() {
   coreCatalogCache.refreshedAt = 0;
 }
 
-/** SQL-paginated course list. Visibility and totals share one DB predicate. */
-export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+/**
+ * Resolve the SQL predicate used for every multi-course visibility read.
+ * Keeping the access-mirror refresh and fail-closed fallback here prevents
+ * question-bank aggregates from drifting from the course list's RBAC rules.
+ */
+async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
   let accessMirrorHealthy = true;
-  if (reqUser.role === 'ADMIN') {
+  if (reqUser.role === "ADMIN") {
     await listCoursesForUser(reqUser, { cookie });
   } else {
     try {
       accessMirrorHealthy = await syncCourseAccessMirror(reqUser, cookie);
     } catch {
       // Do not use stale grants after a failed refresh. Linked-course owners
-      // retain the documented fallback, while non-owners fail closed.
+      // and non-owners both fail closed; only explicitly unlinked QM-native
+      // courses use the local-owner branch below.
       accessMirrorHealthy = false;
       accessSyncedAtByUser.set(reqUser.id, { refreshedAt: Date.now(), healthy: false });
     }
   }
 
-  const authorizedUnits = reqUser.role === 'UNIT_ADMIN'
-    ? await getAuthorizedUnits(reqUser, cookie)
-    : [];
-  const where = reqUser.role === 'ADMIN'
-    ? {}
-    : {
-        OR: [
-          {
-            userId: reqUser.id,
-            // Owner fallback must fail CLOSED for linked courses when the
-            // Core access refresh failed: a linked course's real access can't
-            // be verified locally, so only QM-native/unlinked owned courses
-            // (`coreCourseId: null`) get automatic visibility here. When the
-            // mirror is healthy the fallback still applies to a linked course
-            // that has no synced grant at all (never enrolled in Core, e.g. a
-            // freshly-linked course pending Core sync) — `importTaughtCoursesFromCore`
-            // creates the anchor and `syncCourseAccessMirror` writes the grant
-            // on separate throttles (routes/course.js), so a just-imported
-            // course would otherwise stay invisible until the next sync
-            // window. See #1270 review: narrowing this to unconditionally
-            // `coreCourseId: null` broke that auto-import path (cascade-delete
-            // E2E) and needs the import/grant timing gap closed first.
+  const authorizedUnits =
+    reqUser.role === "UNIT_ADMIN" ? await getAuthorizedUnits(reqUser, cookie) : [];
+  const where =
+    reqUser.role === "ADMIN"
+      ? {}
+      : {
+          OR: [
+            {
+              userId: reqUser.id,
+              // Owner fallback must fail CLOSED for linked courses when the
+              // Core access refresh failed: a linked course's real access can't
+              // be verified locally, so only QM-native/unlinked owned courses
+              // (`coreCourseId: null`) get automatic visibility here. When the
+              // mirror is healthy the fallback still applies to a linked course
+              // that has no synced grant at all (never enrolled in Core, e.g. a
+              // freshly-linked course pending Core sync) — `importTaughtCoursesFromCore`
+              // creates the anchor and `syncCourseAccessMirror` writes the grant
+              // on separate throttles (routes/course.js), so a just-imported
+              // course would otherwise stay invisible until the next sync
+              // window. See #1270 review: narrowing this to unconditionally
+              // `coreCourseId: null` broke that auto-import path (cascade-delete
+              // E2E) and needs the import/grant timing gap closed first.
+              ...(accessMirrorHealthy
+                ? {
+                    OR: [
+                      { coreCourseId: null },
+                      { accessGrants: { none: { userId: reqUser.id } } },
+                    ],
+                  }
+                : { coreCourseId: null }),
+            },
             ...(accessMirrorHealthy
-              ? { OR: [{ coreCourseId: null }, { accessGrants: { none: { userId: reqUser.id } } }] }
-              : { coreCourseId: null }),
-          },
-          ...(accessMirrorHealthy
-            ? [{ accessGrants: { some: { userId: reqUser.id, role: 'INSTRUCTOR' } } }]
-            : []),
-          ...(accessMirrorHealthy && reqUser.role === 'UNIT_ADMIN' && authorizedUnits.length
-            ? [{ accessGrants: { some: { userId: reqUser.id, department: { in: authorizedUnits } } } }]
-            : []),
-        ],
-      };
+              ? [{ accessGrants: { some: { userId: reqUser.id, role: "INSTRUCTOR" } } }]
+              : []),
+            ...(accessMirrorHealthy && reqUser.role === "UNIT_ADMIN" && authorizedUnits.length
+              ? [
+                  {
+                    accessGrants: {
+                      some: { userId: reqUser.id, department: { in: authorizedUnits } },
+                    },
+                  },
+                ]
+              : []),
+          ],
+        };
+
+  return { where, authorizedUnits, accessMirrorHealthy };
+}
+
+/**
+ * Return the trusted Prisma CourseWhereInput for all courses visible to a
+ * caller. This is intentionally server-derived; request query parameters must
+ * never be accepted as a course predicate.
+ */
+export async function resolveVisibleCourseWhereForUser(reqUser, opts = {}) {
+  const { where } = await resolveCourseVisibilityContext(reqUser, opts);
+  return where;
+}
+
+/** SQL-paginated course list. Visibility and totals share one DB predicate. */
+export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+  const { where, authorizedUnits, accessMirrorHealthy } = await resolveCourseVisibilityContext(
+    reqUser,
+    { cookie },
+  );
 
   const [total, rows] = await Promise.all([
     prisma.course.count({ where }),
     prisma.course.findMany({
       where,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: pagination.offset,
       take: pagination.limit,
       include: accessMirrorHealthy
@@ -481,19 +526,21 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
 
   const courses = rows.map((course) => {
     const grant = course.accessGrants?.[0];
-    const accessLevel = reqUser.role === 'ADMIN'
-      ? 'admin'
-      : grant?.department && authorizedUnits.includes(grant.department)
-        ? 'unit'
-        : grant?.role === 'INSTRUCTOR' || reqUser.id === course.userId
-          ? 'instructor'
-          : null;
-    const { accessGrants, ...plainCourse } = course;
+    const accessLevel =
+      reqUser.role === "ADMIN"
+        ? "admin"
+        : grant?.department && authorizedUnits.includes(grant.department)
+          ? "unit"
+          : grant?.role === "INSTRUCTOR" || reqUser.id === course.userId
+            ? "instructor"
+            : null;
+    const plainCourse = { ...course };
+    delete plainCourse.accessGrants;
     return { ...plainCourse, accessLevel };
   });
 
   let coreById = new Map();
-  if (reqUser.role === 'ADMIN') {
+  if (reqUser.role === "ADMIN") {
     // The ADMIN branch above already fetched (and cached, per-TTL) Core's
     // full catalog via `listCoursesForUser` -> `getCachedCoreCatalog()`. Read
     // that result back rather than issuing a second, separately-failable
@@ -512,7 +559,10 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
       // Core projection degrades to the placeholder, as in the legacy list.
     }
   }
-  return { courses: courses.map((course) => enrichCourseRow(course, coreById, course.accessLevel)), total };
+  return {
+    courses: courses.map((course) => enrichCourseRow(course, coreById, course.accessLevel)),
+    total,
+  };
 }
 
 /**
@@ -539,7 +589,7 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
   // null department is never a match. Department is read from the already-
   // fetched service-key catalog (`coreById`), so this never issues its own
   // Core call, unlike the single-course `resolveAccessForCourse` path.
-  if (reqUser.role === 'UNIT_ADMIN') {
+  if (reqUser.role === "UNIT_ADMIN") {
     const department = coreById.get(row.coreCourseId)?.department ?? null;
     if (department !== null && authorizedUnits.includes(department)) {
       return LEVELS.unit;
@@ -549,11 +599,11 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
 
   const role = roleByCoreId.get(row.coreCourseId) ?? null;
   switch (role) {
-    case 'INSTRUCTOR':
+    case "INSTRUCTOR":
       return LEVELS.instructor;
-    case 'TA':
+    case "TA":
       return LEVELS.ta;
-    case 'STUDENT':
+    case "STUDENT":
       return LEVELS.student;
     default:
       // No cookie-scoped role — fail closed (#1114). Ownership is not access.
@@ -567,24 +617,37 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
  * (`routes/eduai.js`) to authorize a client-supplied course code against a
  * real course — `code` is Core-owned and no longer stored locally (#1072 §4
  * step 10), so matching must read through Core rather than querying the
- * dropped `courses.code` column. One Core-side `?search=` call (#1125)
- * regardless of row count (no N+1, mirrors `listCoursesForUser`).
+ * dropped `courses.code` column.
+ *
+ * Core `?search=` is literal contains (#1125 / #1362), so this issues one
+ * search per whitespace/compact candidate from `courseCodeLookupCandidates`
+ * (not a single query) and unions the results before the exact normalized
+ * match filter. Still no per-row Core fan-out.
  *
  * Returns raw `Course` model instances (not enriched rows) so callers can
  * pass them straight to `resolveAccessForCourse`.
  */
-export async function findCoursesByProjectedCode(codeQuery) {
+export async function findCoursesByProjectedCode(codeQuery, { signal } = {}) {
   const target = normalizeCourseCode(codeQuery);
   if (!target) return [];
 
+  const candidates = courseCodeLookupCandidates(codeQuery);
   let coreById = new Map();
   try {
-    // #1125: let Core do the code match instead of pulling the catalog and
-    // filtering here. The exact-match check below still applies, since Core's
-    // `search` is a substring match.
-    const coreCourses = await searchCoursesFromCore(target, {}, { serviceKeyOnly: true });
-    coreById = new Map(coreCourses.map((c) => [c.id, c]));
+    assertQmAiDeadline({ signal });
+    // #1125 / #1362: Core `search` is literal contains — try whitespace
+    // variants so compact client codes (COSC121) still match spaced Core
+    // codes (COSC 121). Exact normalized match below still applies.
+    for (const candidate of candidates) {
+      const coreCourses = await searchCoursesFromCore(
+        candidate,
+        { signal },
+        { serviceKeyOnly: true },
+      );
+      for (const c of coreCourses) coreById.set(c.id, c);
+    }
   } catch {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
     return []; // Core unreachable — no code-based match is possible; degrade to no access.
   }
 

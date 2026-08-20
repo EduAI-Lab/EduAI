@@ -1,6 +1,6 @@
 /** EduAI Core base URL for cross-app navigation (login, dashboard). */
 export function getCoreUrl(): string {
-  return import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
+  return import.meta.env.VITE_CORE_URL || "http://localhost:3000";
 }
 
 /** Core login URL that breaks the cross-subdomain session redirect loop. */
@@ -15,7 +15,7 @@ export function getCoreDashboardUrl(): string {
 
 /** AI Tutor extension base URL for cross-app preview links. */
 export function getAiTutorUrl(): string {
-  return import.meta.env.VITE_AI_TUTOR_URL || 'http://localhost:3001';
+  return import.meta.env.VITE_AI_TUTOR_URL || "http://localhost:3001";
 }
 
 /**

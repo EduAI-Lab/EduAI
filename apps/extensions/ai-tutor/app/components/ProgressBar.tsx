@@ -1,9 +1,9 @@
-import type { Progress } from '~/lib/types';
+import type { Progress } from "~/lib/types";
 
 interface ProgressBarProps {
   completed: number;
   total: number;
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
   showLabel?: boolean;
   className?: string;
 }
@@ -12,10 +12,10 @@ interface ProgressBarProps {
 // keeping ProgressBar's size variants means call sites that need a compact
 // (list-row) or roomy (course-detail) bar still can, which MeterBar's fixed
 // h-2 track can't do.
-const TRACK_HEIGHTS: Record<NonNullable<ProgressBarProps['size']>, string> = {
-  sm: 'h-1.5',
-  md: 'h-2.5',
-  lg: 'h-3.5',
+const TRACK_HEIGHTS: Record<NonNullable<ProgressBarProps["size"]>, string> = {
+  sm: "h-1.5",
+  md: "h-2.5",
+  lg: "h-3.5",
 };
 
 /**
@@ -28,9 +28,9 @@ const TRACK_HEIGHTS: Record<NonNullable<ProgressBarProps['size']>, string> = {
 export function ProgressBar({
   completed,
   total,
-  size = 'md',
+  size = "md",
   showLabel = true,
-  className = '',
+  className = "",
 }: ProgressBarProps) {
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -61,7 +61,7 @@ export function ProgressBarFromData({
   className,
 }: {
   progress?: Progress;
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
   showLabel?: boolean;
   className?: string;
 }) {

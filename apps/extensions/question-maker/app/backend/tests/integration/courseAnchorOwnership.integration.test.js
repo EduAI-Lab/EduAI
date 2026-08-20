@@ -3,52 +3,52 @@
  * teaching-enrollment gate, concurrency-safe ensure, and fail-closed access.
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md.
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
-import request from 'supertest';
-import { coursePage } from '../helpers/teachingInstructorFetch.js';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
+import request from "supertest";
+import { coursePage } from "../helpers/teachingInstructorFetch.js";
 
-vi.mock('../../src/services/authService.js', () => ({
+vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
-const { default: app } = await import('../../src/app.js');
+const { default: app } = await import("../../src/app.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const ADMIN = { id: 'cuid-anchor-admin', email: 'admin@test.com', role: 'ADMIN', name: 'Admin' };
+const ADMIN = { id: "cuid-anchor-admin", email: "admin@test.com", role: "ADMIN", name: "Admin" };
 const UNIT_ADMIN = {
-  id: 'cuid-anchor-ua',
-  email: 'ua@test.com',
-  role: 'UNIT_ADMIN',
-  name: 'Unit Admin',
+  id: "cuid-anchor-ua",
+  email: "ua@test.com",
+  role: "UNIT_ADMIN",
+  name: "Unit Admin",
 };
 const INSTRUCTOR = {
-  id: 'cuid-anchor-inst',
-  email: 'inst@test.com',
-  role: 'INSTRUCTOR',
-  name: 'Instructor',
+  id: "cuid-anchor-inst",
+  email: "inst@test.com",
+  role: "INSTRUCTOR",
+  name: "Instructor",
 };
-const STUDENT = { id: 'cuid-anchor-stu', email: 'stu@test.com', role: 'STUDENT', name: 'Student' };
-const TA = { id: 'cuid-anchor-ta', email: 'ta@test.com', role: 'TA', name: 'TA' };
+const STUDENT = { id: "cuid-anchor-stu", email: "stu@test.com", role: "STUDENT", name: "Student" };
+const TA = { id: "cuid-anchor-ta", email: "ta@test.com", role: "TA", name: "TA" };
 const INSTRUCTOR_B = {
-  id: 'cuid-anchor-inst-b',
-  email: 'instb@test.com',
-  role: 'INSTRUCTOR',
-  name: 'Instructor B',
+  id: "cuid-anchor-inst-b",
+  email: "instb@test.com",
+  role: "INSTRUCTOR",
+  name: "Instructor B",
 };
 
 function cookieFor(label) {
   return { Cookie: `session=${label}` };
 }
 
-function userFromCookie(cookie = '') {
-  if (cookie.includes('admin')) return ADMIN;
-  if (cookie.includes('ua')) return UNIT_ADMIN;
-  if (cookie.includes('inst-b')) return INSTRUCTOR_B;
-  if (cookie.includes('inst')) return INSTRUCTOR;
-  if (cookie.includes('stu')) return STUDENT;
-  if (cookie.includes('ta')) return TA;
+function userFromCookie(cookie = "") {
+  if (cookie.includes("admin")) return ADMIN;
+  if (cookie.includes("ua")) return UNIT_ADMIN;
+  if (cookie.includes("inst-b")) return INSTRUCTOR_B;
+  if (cookie.includes("inst")) return INSTRUCTOR;
+  if (cookie.includes("stu")) return STUDENT;
+  if (cookie.includes("ta")) return TA;
   return STUDENT;
 }
 
@@ -62,41 +62,39 @@ function userFromCookie(cookie = '') {
 function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = false } = {}) {
   return vi.fn().mockImplementation((url, opts) => {
     const target = String(url);
-    const path = target.split('?')[0];
-    const cookie = opts?.headers?.cookie ?? '';
+    const path = target.split("?")[0];
+    const cookie = opts?.headers?.cookie ?? "";
     const user = userFromCookie(cookie);
 
-    if (path.endsWith('/api/sessions/validate')) {
+    if (path.endsWith("/api/sessions/validate")) {
       return Promise.resolve({ ok: true, json: async () => ({ user }) });
     }
 
-    if (path.endsWith('/enrollments')) {
+    if (path.endsWith("/enrollments")) {
       if (enrollmentsFail) {
-        return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'down' }) });
+        return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "down" }) });
       }
       // Service-key roster is unscoped — return every stubbed teaching enrollment
       // for this Core course (not the caller's cookie identity).
       const coreId = path.match(/\/api\/courses\/([^/]+)\/enrollments$/)?.[1];
       const enrollments = Object.entries(teachingByUserId).flatMap(([userId, taught]) =>
-        taught.includes(coreId)
-          ? [{ studentId: userId, role: 'INSTRUCTOR', isActive: true }]
-          : [],
+        taught.includes(coreId) ? [{ studentId: userId, role: "INSTRUCTOR", isActive: true }] : [],
       );
       return Promise.resolve({ ok: true, json: async () => ({ enrollments }) });
     }
 
-    if (path.endsWith('/api/courses')) {
-      const idsParam = new URL(target).searchParams.get('ids');
-      const ids = idsParam ? idsParam.split(',').filter(Boolean) : scopedIds;
+    if (path.endsWith("/api/courses")) {
+      const idsParam = new URL(target).searchParams.get("ids");
+      const ids = idsParam ? idsParam.split(",").filter(Boolean) : scopedIds;
       const rows = ids
         .filter((id) => scopedIds.includes(id))
         .map((id) => ({
           id,
           name: `Course ${id}`,
-          code: 'C',
+          code: "C",
           callerEnrollmentRole: (teachingByUserId[user.id] ?? []).includes(id)
-            ? 'INSTRUCTOR'
-            : 'STUDENT',
+            ? "INSTRUCTOR"
+            : "STUDENT",
         }));
       return Promise.resolve({ ok: true, json: async () => coursePage(rows) });
     }
@@ -105,7 +103,7 @@ function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = fa
     if (detail) {
       return Promise.resolve({
         ok: true,
-        json: async () => ({ id: detail[1], name: `Course ${detail[1]}`, code: 'C' }),
+        json: async () => ({ id: detail[1], name: `Course ${detail[1]}`, code: "C" }),
       });
     }
 
@@ -113,11 +111,11 @@ function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = fa
   });
 }
 
-describeDb('course anchor ownership (#1114)', () => {
+describeDb("course anchor ownership (#1114)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
   });
@@ -135,93 +133,93 @@ describeDb('course anchor ownership (#1114)', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  describe('POST /api/course role gate', () => {
+  describe("POST /api/course role gate", () => {
     it.each([
-      ['STUDENT', 'stu'],
-      ['TA', 'ta'],
-    ])('rejects %s with 403', async (_role, label) => {
+      ["STUDENT", "stu"],
+      ["TA", "ta"],
+    ])("rejects %s with 403", async (_role, label) => {
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
-          scopedIds: ['core-a'],
-          teachingByUserId: { [STUDENT.id]: ['core-a'], [TA.id]: ['core-a'] },
+          scopedIds: ["core-a"],
+          teachingByUserId: { [STUDENT.id]: ["core-a"], [TA.id]: ["core-a"] },
         }),
       );
       const res = await request(app)
-        .post('/api/course')
+        .post("/api/course")
         .set(cookieFor(label))
-        .send({ coreCourseId: 'core-a' });
+        .send({ coreCourseId: "core-a" });
       expect(res.status).toBe(403);
       expect(res.body.success).toBe(false);
     });
 
     it.each([
-      ['ADMIN', 'admin'],
-      ['UNIT_ADMIN', 'ua'],
-    ])('accepts %s without requiring a teaching enrollment', async (_role, label) => {
-      vi.stubGlobal('fetch', makeFetch({ scopedIds: ['core-admin'] }));
+      ["ADMIN", "admin"],
+      ["UNIT_ADMIN", "ua"],
+    ])("accepts %s without requiring a teaching enrollment", async (_role, label) => {
+      vi.stubGlobal("fetch", makeFetch({ scopedIds: ["core-admin"] }));
       const res = await request(app)
-        .post('/api/course')
+        .post("/api/course")
         .set(cookieFor(label))
-        .send({ coreCourseId: 'core-admin' });
+        .send({ coreCourseId: "core-admin" });
       expect(res.status).toBe(201);
-      expect(res.body.data.coreCourseId).toBe('core-admin');
+      expect(res.body.data.coreCourseId).toBe("core-admin");
     });
 
-    it('accepts INSTRUCTOR who teaches the Core course', async () => {
+    it("accepts INSTRUCTOR who teaches the Core course", async () => {
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
-          scopedIds: ['core-taught'],
-          teachingByUserId: { [INSTRUCTOR.id]: ['core-taught'] },
+          scopedIds: ["core-taught"],
+          teachingByUserId: { [INSTRUCTOR.id]: ["core-taught"] },
         }),
       );
       const res = await request(app)
-        .post('/api/course')
-        .set(cookieFor('inst'))
-        .send({ coreCourseId: 'core-taught' });
+        .post("/api/course")
+        .set(cookieFor("inst"))
+        .send({ coreCourseId: "core-taught" });
       expect(res.status).toBe(201);
       expect(res.body.data.userId).toBe(INSTRUCTOR.id);
     });
 
-    it('rejects INSTRUCTOR for a scoped course they only take as STUDENT', async () => {
+    it("rejects INSTRUCTOR for a scoped course they only take as STUDENT", async () => {
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
-          scopedIds: ['core-student-only'],
+          scopedIds: ["core-student-only"],
           teachingByUserId: {}, // no teaching enrollment
         }),
       );
       const res = await request(app)
-        .post('/api/course')
-        .set(cookieFor('inst'))
-        .send({ coreCourseId: 'core-student-only' });
+        .post("/api/course")
+        .set(cookieFor("inst"))
+        .send({ coreCourseId: "core-student-only" });
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+      expect(res.body.error).toBe("CORE_COURSE_NOT_AUTHORIZED");
     });
 
-    it('rejects INSTRUCTOR for a course not in their scoped list', async () => {
+    it("rejects INSTRUCTOR for a course not in their scoped list", async () => {
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
-          scopedIds: ['core-other'],
-          teachingByUserId: { [INSTRUCTOR.id]: ['core-other'] },
+          scopedIds: ["core-other"],
+          teachingByUserId: { [INSTRUCTOR.id]: ["core-other"] },
         }),
       );
       const res = await request(app)
-        .post('/api/course')
-        .set(cookieFor('inst'))
-        .send({ coreCourseId: 'core-missing' });
+        .post("/api/course")
+        .set(cookieFor("inst"))
+        .send({ coreCourseId: "core-missing" });
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+      expect(res.body.error).toBe("CORE_COURSE_NOT_AUTHORIZED");
     });
   });
 
-  describe('POST /api/course concurrency', () => {
-    it('returns the same persisted owner for concurrent ensures', async () => {
-      const coreCourseId = 'core-race';
+  describe("POST /api/course concurrency", () => {
+    it("returns the same persisted owner for concurrent ensures", async () => {
+      const coreCourseId = "core-race";
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
           scopedIds: [coreCourseId],
           teachingByUserId: {
@@ -232,8 +230,8 @@ describeDb('course anchor ownership (#1114)', () => {
       );
 
       const [a, b] = await Promise.all([
-        request(app).post('/api/course').set(cookieFor('inst')).send({ coreCourseId }),
-        request(app).post('/api/course').set(cookieFor('inst-b')).send({ coreCourseId }),
+        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        request(app).post("/api/course").set(cookieFor("inst-b")).send({ coreCourseId }),
       ]);
 
       expect([a.status, b.status].sort()).toEqual([200, 201]);
@@ -246,38 +244,39 @@ describeDb('course anchor ownership (#1114)', () => {
       expect(await prisma.course.count({ where: { coreCourseId } })).toBe(1);
     });
 
-    it('stays idempotent when POST races auto-import for the same coreCourseId', async () => {
-      const coreCourseId = 'core-race-import';
+    it("stays idempotent when POST races auto-import for the same coreCourseId", async () => {
+      const coreCourseId = "core-race-import";
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
           scopedIds: [coreCourseId],
           teachingByUserId: { [INSTRUCTOR.id]: [coreCourseId] },
         }),
       );
 
-      const { importTaughtCoursesFromCore } = await import(
-        '../../src/services/importTaughtCoursesService.js'
-      );
+      const { importTaughtCoursesFromCore } =
+        await import("../../src/services/importTaughtCoursesService.js");
 
       const [postRes, importResult] = await Promise.all([
-        request(app).post('/api/course').set(cookieFor('inst')).send({ coreCourseId }),
-        importTaughtCoursesFromCore(INSTRUCTOR.id, 'INSTRUCTOR', 'session=inst'),
+        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
+        importTaughtCoursesFromCore(INSTRUCTOR.id, "INSTRUCTOR", "session=inst"),
       ]);
 
       expect([200, 201]).toContain(postRes.status);
       expect(postRes.body.success).toBe(true);
       expect(await prisma.course.count({ where: { coreCourseId } })).toBe(1);
-      expect((importResult.imported ?? 0) + (postRes.status === 201 ? 1 : 0)).toBeGreaterThanOrEqual(1);
+      expect(
+        (importResult.imported ?? 0) + (postRes.status === 201 ? 1 : 0),
+      ).toBeGreaterThanOrEqual(1);
       expect(postRes.body.data.id).toBe(
         (await prisma.course.findUnique({ where: { coreCourseId } })).id,
       );
     });
 
-    it('stays idempotent when POST races ADMIN catalog materialization', async () => {
-      const coreCourseId = 'core-race-admin';
+    it("stays idempotent when POST races ADMIN catalog materialization", async () => {
+      const coreCourseId = "core-race-admin";
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         makeFetch({
           scopedIds: [coreCourseId],
           teachingByUserId: { [INSTRUCTOR.id]: [coreCourseId] },
@@ -286,10 +285,10 @@ describeDb('course anchor ownership (#1114)', () => {
 
       // ADMIN list materialization now calls ensureCourseAnchor per missing id
       // (#1074 / #1270) — race that path directly against POST.
-      const { ensureCourseAnchor } = await import('../../src/services/ensureCourseAnchor.js');
+      const { ensureCourseAnchor } = await import("../../src/services/ensureCourseAnchor.js");
 
       const [postRes] = await Promise.all([
-        request(app).post('/api/course').set(cookieFor('inst')).send({ coreCourseId }),
+        request(app).post("/api/course").set(cookieFor("inst")).send({ coreCourseId }),
         ensureCourseAnchor(ADMIN.id, coreCourseId),
       ]);
 
@@ -301,13 +300,13 @@ describeDb('course anchor ownership (#1114)', () => {
       );
     });
 
-    it('recovers when an unlocked writer inserts between lookup and create (P2002 outside txn)', async () => {
+    it("recovers when an unlocked writer inserts between lookup and create (P2002 outside txn)", async () => {
       // Deterministic stand-in for a legacy unlocked createMany/bare-create path:
       // after the locked transaction sees no row, an unlocked insert wins the
       // unique index. Recovery must reread outside the aborted txn (#1270).
-      const coreCourseId = 'core-race-unlocked';
-      const { ensureCourseAnchor } = await import('../../src/services/ensureCourseAnchor.js');
-      const { prisma: db } = await import('../../src/config/database.js');
+      const coreCourseId = "core-race-unlocked";
+      const { ensureCourseAnchor } = await import("../../src/services/ensureCourseAnchor.js");
+      const { prisma: db } = await import("../../src/config/database.js");
 
       const originalTransaction = db.$transaction.bind(db);
       let injected = false;

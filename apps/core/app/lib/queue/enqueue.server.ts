@@ -16,6 +16,7 @@ import {
 } from "./queue-stats.server";
 import { getQueue } from "./queues.server";
 import { priorityFor, resolveQueueName, type QueueName } from "./resolve-pool.server";
+import { assertAiJobQueueEnabled } from "./availability.server";
 import { isInfrastructureError, toQueueUnavailable } from "./errors.server";
 
 /** True for a unique-constraint violation on `AiJob(queueName, bullJobId)`. */
@@ -185,7 +186,11 @@ async function markAiJobEnqueueFailed(
  * from the status endpoint (#917).
  */
 export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
-  // 1. Validate (throws ZodError → 400 at the route).
+  // This generic seam is guarded independently of every current call site so a
+  // future import cannot accidentally bypass the pre-MVP feature disable.
+  assertAiJobQueueEnabled();
+
+  // 1. Validate (throws on failure → 400 at the route).
   const payload = JobPayloadSchema.parse(job);
 
   // 2. Resolve target queue + priority from the fleet pool for `type` (shim).
@@ -228,7 +233,13 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   // 5. Create the AiJob row as PENDING (payload = the validated job). For a
   //    keyed job, bullJobId is set to the idempotencyKey right here — see the
   //    docstring above for why.
-  let aiJob: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null };
+  let aiJob: {
+    id: string;
+    type: JobType;
+    status: string;
+    createdAt: Date;
+    queueName: string | null;
+  };
   try {
     aiJob = await prisma.aiJob.create({
       data: {

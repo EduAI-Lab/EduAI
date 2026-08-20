@@ -4,28 +4,28 @@
  *
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
-vi.mock('../../src/services/authService.js', () => ({
+vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-describeDb('MCQ multi-correct variant persistence (integration)', () => {
+describeDb("MCQ multi-correct variant persistence (integration)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser, createQuestion, createVariant;
 
-  const USER = { id: 'cuid-mcq-multi-user', email: 'mcq-multi@test.com', name: 'MCQ Multi User' };
+  const USER = { id: "cuid-mcq-multi-user", email: "mcq-multi@test.com", name: "MCQ Multi User" };
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
-    ({ createQuestion, createVariant } = await import('../../src/services/questionService.js'));
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
+    ({ createQuestion, createVariant } = await import("../../src/services/questionService.js"));
   });
 
   let courseId, topicId, questionId;
@@ -41,10 +41,10 @@ describeDb('MCQ multi-correct variant persistence (integration)', () => {
     topicId = topic.id;
 
     const question = await createQuestion(USER.id, {
-      description: 'Multi-correct MCQ fixture',
+      description: "Multi-correct MCQ fixture",
       courseId,
       primaryTopicId: topicId,
-      type: 'MCQ',
+      type: "MCQ",
     });
     questionId = question.id;
   });
@@ -54,59 +54,71 @@ describeDb('MCQ multi-correct variant persistence (integration)', () => {
   });
 
   const choices = [
-    { letter: 'A', text: 'Alpha' },
-    { letter: 'B', text: 'Beta' },
-    { letter: 'C', text: 'Gamma' },
+    { letter: "A", text: "Alpha" },
+    { letter: "B", text: "Beta" },
+    { letter: "C", text: "Gamma" },
   ];
 
-  it('createVariant multi-correct: answer first sorted, correctAnswers sorted, flag true', async () => {
-    const variant = await createVariant(questionId, {
-      questionText: 'Which apply?',
-      difficulty: 'medium',
-      choices,
-      selectAllThatApply: true,
-      correctAnswers: ['C', 'A'],
-    }, USER.id);
+  it("createVariant multi-correct: answer first sorted, correctAnswers sorted, flag true", async () => {
+    const variant = await createVariant(
+      questionId,
+      {
+        questionText: "Which apply?",
+        difficulty: "medium",
+        choices,
+        selectAllThatApply: true,
+        correctAnswers: ["C", "A"],
+      },
+      USER.id,
+    );
 
     const row = await prisma.variants.findUnique({ where: { id: variant.id } });
-    expect(row.answer).toBe('A');
-    expect(row.correctAnswers).toEqual(['A', 'C']);
+    expect(row.answer).toBe("A");
+    expect(row.correctAnswers).toEqual(["A", "C"]);
     expect(row.selectAllThatApply).toBe(true);
   });
 
-  it('createVariant single-correct: flag false and correctAnswers null', async () => {
-    const variant = await createVariant(questionId, {
-      questionText: 'Which one?',
-      difficulty: 'easy',
-      answer: 'B',
-      choices,
-      selectAllThatApply: false,
-    }, USER.id);
+  it("createVariant single-correct: flag false and correctAnswers null", async () => {
+    const variant = await createVariant(
+      questionId,
+      {
+        questionText: "Which one?",
+        difficulty: "easy",
+        answer: "B",
+        choices,
+        selectAllThatApply: false,
+      },
+      USER.id,
+    );
 
     const row = await prisma.variants.findUnique({ where: { id: variant.id } });
-    expect(row.answer).toBe('B');
+    expect(row.answer).toBe("B");
     expect(row.selectAllThatApply).toBe(false);
     expect(row.correctAnswers).toBeNull();
   });
 
-  it('createVariant SA: selectAllThatApply false and correctAnswers null', async () => {
+  it("createVariant SA: selectAllThatApply false and correctAnswers null", async () => {
     const saQuestion = await createQuestion(USER.id, {
-      description: 'SA fixture',
+      description: "SA fixture",
       courseId,
       primaryTopicId: topicId,
-      type: 'SA',
+      type: "SA",
     });
 
-    const variant = await createVariant(saQuestion.id, {
-      questionText: 'Explain briefly',
-      answer: 'A short answer',
-      selectAllThatApply: true,
-      correctAnswers: ['A', 'C'],
-    }, USER.id);
+    const variant = await createVariant(
+      saQuestion.id,
+      {
+        questionText: "Explain briefly",
+        answer: "A short answer",
+        selectAllThatApply: true,
+        correctAnswers: ["A", "C"],
+      },
+      USER.id,
+    );
 
     const row = await prisma.variants.findUnique({ where: { id: variant.id } });
     expect(row.selectAllThatApply).toBe(false);
     expect(row.correctAnswers).toBeNull();
-    expect(row.answer).toBe('A short answer');
+    expect(row.answer).toBe("A short answer");
   });
 });

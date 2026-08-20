@@ -8,10 +8,13 @@
  *
  * In-flight responses are ignored when a newer request has started (page/filter race).
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Question } from '../types/question';
-import { questionService } from '../services/questionService';
-import type { QuestionFilters, QuestionSort } from '@/components/question-bank/QuestionFilterToolbar';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Question } from "../types/question";
+import { questionService } from "../services/questionService";
+import type {
+  QuestionFilters,
+  QuestionSort,
+} from "@/components/question-bank/QuestionFilterToolbar";
 
 export type UseAllQuestionsOptions = {
   courseId?: number;
@@ -73,7 +76,7 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
       if (requestId !== requestIdRef.current) return;
       setQuestions([]);
       setTotal(0);
-      setError(err.response?.data?.error || err.message || 'Failed to fetch questions');
+      setError(err.response?.data?.error || err.message || "Failed to fetch questions");
     } finally {
       if (requestId === requestIdRef.current) {
         setIsLoading(false);

@@ -13,8 +13,7 @@ vi.mock("~/lib/courses/access.server", () => ({
 }));
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
-  findActiveReEmbedJob: vi.fn(),
-  startReEmbedJob: vi.fn(),
+  startOrResumeReEmbedJob: vi.fn(),
   serializeReEmbedJob: vi.fn((job: unknown) => job),
   getReEmbedJobForCourse: vi.fn(),
 }));
@@ -28,12 +27,25 @@ import { action as startAction } from "~/routes/api/courses.re-embed.$";
 import { loader as pollLoader } from "~/routes/api/courses.re-embed.$jobId";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
-import { startReEmbedJob, getReEmbedJobForCourse } from "~/lib/ai/re-embed-job.server";
+import { startOrResumeReEmbedJob, getReEmbedJobForCourse } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
+import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
-function makeStartArgs(method = "POST") {
+function makeStartArgs(
+  method = "POST",
+  options: { idempotencyKey?: string; headerKey?: string } = {},
+) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (options.headerKey) headers["Idempotency-Key"] = options.headerKey;
+  const body = options.idempotencyKey
+    ? JSON.stringify({ idempotencyKey: options.idempotencyKey })
+    : undefined;
   return {
-    request: new Request("http://localhost/api/courses/course-1/re-embed", { method }),
+    request: new Request("http://localhost/api/courses/course-1/re-embed", {
+      method,
+      headers,
+      ...(method === "GET" ? {} : { body }),
+    }),
     params: { courseId: "course-1" },
     context: {} as never,
   } as never;
@@ -77,10 +89,10 @@ describe("POST /api/courses/:courseId/re-embed", () => {
   });
 
   it("starts a new job (202) and logs creation when none is active", async () => {
-    // The route always delegates to startReEmbedJob (#1112) — active-job
-    // dedup happens inside it, not via a separate findActiveReEmbedJob call
-    // from the route.
-    vi.mocked(startReEmbedJob).mockResolvedValue({ job: { id: "job-1" }, created: true } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job-1" },
+      created: true,
+    } as never);
 
     const res = await startAction(makeStartArgs());
     expect(res.status).toBe(202);
@@ -92,7 +104,7 @@ describe("POST /api/courses/:courseId/re-embed", () => {
   });
 
   it("reuses an active job (200) without re-logging creation", async () => {
-    vi.mocked(startReEmbedJob).mockResolvedValue({
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
       job: { id: "job-existing" },
       created: false,
     } as never);
@@ -105,11 +117,30 @@ describe("POST /api/courses/:courseId/re-embed", () => {
   });
 
   it("maps an unexpected error to a 500", async () => {
-    vi.mocked(startReEmbedJob).mockRejectedValue(new Error("db down"));
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValue(new Error("db down"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await startAction(makeStartArgs());
     expect(res.status).toBe(500);
     consoleSpy.mockRestore();
+  });
+
+  it("forwards a header idempotency key and maps queue outages to 503", async () => {
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job-1" },
+      created: false,
+      keyHonored: true,
+    } as never);
+    const replay = await startAction(makeStartArgs("POST", { headerKey: "retry-1" }));
+    expect(replay.status).toBe(200);
+    expect(startOrResumeReEmbedJob).toHaveBeenCalledWith("course-1", {
+      idempotencyKey: "retry-1",
+    });
+
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(
+      new QueueUnavailableError("Database unavailable"),
+    );
+    const unavailable = await startAction(makeStartArgs());
+    expect(unavailable.status).toBe(503);
   });
 });
 
@@ -138,7 +169,10 @@ describe("GET /api/courses/:courseId/re-embed/:jobId", () => {
   });
 
   it("returns the job on success", async () => {
-    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({ id: "job-1", status: "RUNNING" } as never);
+    vi.mocked(getReEmbedJobForCourse).mockResolvedValue({
+      id: "job-1",
+      status: "RUNNING",
+    } as never);
     const res = await pollLoader(makePollArgs());
     expect(res.status).toBe(200);
     const body = await res.json();

@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  messageToText,
-  reviveStoredMessage,
-} from "~/lib/chat/revive-message.server";
+import { messageToText, reviveStoredMessage } from "~/lib/chat/revive-message.server";
 
 /**
  * Regression tests for chat-history restore rendering. The DB has accumulated
@@ -16,9 +13,7 @@ describe("messageToText", () => {
   });
 
   it("extracts text from an AI-SDK content array (Shape 1)", () => {
-    expect(messageToText([{ type: "text", text: "**Knapsack**" }])).toBe(
-      "**Knapsack**",
-    );
+    expect(messageToText([{ type: "text", text: "**Knapsack**" }])).toBe("**Knapsack**");
   });
 
   it("unwraps a double-serialized message object in a text field (Shape 2)", () => {
@@ -27,15 +22,11 @@ describe("messageToText", () => {
       role: "assistant",
       content: [{ type: "text", text: "Yes, **ADHD Assist Mode is on.**" }],
     });
-    expect(messageToText([{ type: "text", text: inner }])).toBe(
-      "Yes, **ADHD Assist Mode is on.**",
-    );
+    expect(messageToText([{ type: "text", text: inner }])).toBe("Yes, **ADHD Assist Mode is on.**");
   });
 
   it("reads UIMessage parts", () => {
-    expect(messageToText({ parts: [{ type: "text", text: "hello" }] })).toBe(
-      "hello",
-    );
+    expect(messageToText({ parts: [{ type: "text", text: "hello" }] })).toBe("hello");
   });
 
   it("returns empty string for null/undefined", () => {

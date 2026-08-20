@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import { ConfirmDialog } from "../confirm-dialog"
+import { ConfirmDialog } from "../confirm-dialog";
 
 describe("ConfirmDialog", () => {
   it("renders title, description, and confirm label when open", () => {
@@ -14,17 +14,17 @@ describe("ConfirmDialog", () => {
         confirmLabel="Delete"
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument()
-    expect(screen.getByText("Delete item?")).toBeInTheDocument()
-    expect(screen.getByText("This cannot be undone.")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
-  })
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText("Delete item?")).toBeInTheDocument();
+    expect(screen.getByText("This cannot be undone.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
 
   it("calls onConfirm when confirm button is clicked", () => {
-    const onConfirm = vi.fn()
+    const onConfirm = vi.fn();
     render(
       <ConfirmDialog
         open={true}
@@ -34,11 +34,11 @@ describe("ConfirmDialog", () => {
         confirmLabel="Delete"
         onConfirm={onConfirm}
       />,
-    )
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
-    expect(onConfirm).toHaveBeenCalledTimes(1)
-  })
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 
   it("does not render when open is false", () => {
     render(
@@ -49,10 +49,10 @@ describe("ConfirmDialog", () => {
         description="This cannot be undone."
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
-  })
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
 
   it('uses "Confirm" as the default label', () => {
     render(
@@ -63,10 +63,10 @@ describe("ConfirmDialog", () => {
         description="Proceeding will make a change."
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument()
-  })
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+  });
 
   it("applies destructive class to confirm button when variant is destructive", () => {
     render(
@@ -79,10 +79,10 @@ describe("ConfirmDialog", () => {
         variant="destructive"
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.getByRole("button", { name: "Delete" }).className).toMatch(/destructive/)
-  })
+    expect(screen.getByRole("button", { name: "Delete" }).className).toMatch(/destructive/);
+  });
 
   it("preserves the last open title while closing after parent clears pending state", () => {
     const { rerender } = render(
@@ -95,7 +95,7 @@ describe("ConfirmDialog", () => {
         variant="default"
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
     rerender(
       <ConfirmDialog
@@ -107,10 +107,10 @@ describe("ConfirmDialog", () => {
         variant="destructive"
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.queryByText('Unpublish "undefined"?')).not.toBeInTheDocument()
-  })
+    expect(screen.queryByText('Unpublish "undefined"?')).not.toBeInTheDocument();
+  });
 
   it("disables both buttons and marks the confirm label while loading", () => {
     render(
@@ -123,14 +123,14 @@ describe("ConfirmDialog", () => {
         isLoading={true}
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.getByRole("button", { name: "Delete…" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled()
-  })
+    expect(screen.getByRole("button", { name: "Delete…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
 
   it("does not fire onConfirm a second time while loading", () => {
-    const onConfirm = vi.fn()
+    const onConfirm = vi.fn();
     render(
       <ConfirmDialog
         open={true}
@@ -141,15 +141,15 @@ describe("ConfirmDialog", () => {
         isLoading={true}
         onConfirm={onConfirm}
       />,
-    )
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete…" }))
-    expect(onConfirm).not.toHaveBeenCalled()
-  })
+    fireEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 
   it("keeps the dialog mounted after confirming when closeOnConfirm is false", () => {
-    const onConfirm = vi.fn()
-    const onOpenChange = vi.fn()
+    const onConfirm = vi.fn();
+    const onOpenChange = vi.fn();
     render(
       <ConfirmDialog
         open={true}
@@ -160,14 +160,14 @@ describe("ConfirmDialog", () => {
         closeOnConfirm={false}
         onConfirm={onConfirm}
       />,
-    )
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
-    expect(onConfirm).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
     // Caller owns closing, so the primitive must not request it itself.
-    expect(onOpenChange).not.toHaveBeenCalledWith(false)
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument()
-  })
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
 
   it("renders a custom cancel label", () => {
     render(
@@ -180,8 +180,8 @@ describe("ConfirmDialog", () => {
         cancelLabel="Keep editing"
         onConfirm={vi.fn()}
       />,
-    )
+    );
 
-    expect(screen.getByRole("button", { name: "Keep editing" })).toBeInTheDocument()
-  })
-})
+    expect(screen.getByRole("button", { name: "Keep editing" })).toBeInTheDocument();
+  });
+});

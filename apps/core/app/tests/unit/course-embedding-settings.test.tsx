@@ -73,9 +73,7 @@ describe("CourseEmbeddingSettings", () => {
   });
 
   it("surfaces a needsReEmbed banner when materials are stale", async () => {
-    mockFetch.mockResolvedValue(
-      jsonResponse({ ...baseSettingsResponse, needsReEmbed: true }),
-    );
+    mockFetch.mockResolvedValue(jsonResponse({ ...baseSettingsResponse, needsReEmbed: true }));
 
     render(<CourseEmbeddingSettings courseId="course-1" />);
 
@@ -147,14 +145,12 @@ describe("CourseEmbeddingSettings", () => {
   });
 
   it("saves settings with the chosen provider/model and re-embed flag", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(baseSettingsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...baseSettingsResponse,
-          success: true,
-        }),
-      );
+    mockFetch.mockResolvedValueOnce(jsonResponse(baseSettingsResponse)).mockResolvedValueOnce(
+      jsonResponse({
+        ...baseSettingsResponse,
+        success: true,
+      }),
+    );
 
     render(<CourseEmbeddingSettings courseId="course-1" />);
     await waitFor(() => expect(screen.getByText("Search settings")).toBeInTheDocument());
@@ -208,9 +204,7 @@ describe("CourseEmbeddingSettings", () => {
   it("polls a re-embed job to completion and reports the final message", async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse(baseSettingsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-1" } }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-1" } }))
       .mockResolvedValueOnce(
         jsonResponse({
           job: {
@@ -255,9 +249,7 @@ describe("CourseEmbeddingSettings", () => {
   it("shows an error when the re-embed job ultimately fails", async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse(baseSettingsResponse))
-      .mockResolvedValueOnce(
-        jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-2" } }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ ...baseSettingsResponse, reEmbedJob: { id: "job-2" } }))
       .mockResolvedValueOnce(
         jsonResponse({
           job: {

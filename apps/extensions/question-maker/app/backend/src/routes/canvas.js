@@ -10,7 +10,7 @@
  *    course owner (`req.qmCourse.userId`) while the personal Canvas creds remain
  *    the caller's (`req.user.id`). TA / STUDENT are rejected.
  */
-import express from 'express';
+import express from "express";
 import {
   getCanvasIntegration,
   saveCanvasIntegration,
@@ -24,18 +24,27 @@ import {
   getCanvasQuestionBankQuestions,
   importQuestionBankFromCanvas,
   parseCanvasNumericId,
-} from '../services/canvasService.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { CANVAS_ROLES } from '../middleware/roles.js';
-import { requireCourseAccess } from '../middleware/courseAccess.js';
-import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
-import { prisma } from '../config/database.js';
-import { validateCanvasUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
+} from "../services/canvasService.js";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { CANVAS_ROLES } from "../middleware/roles.js";
+import { requireCourseAccess } from "../middleware/courseAccess.js";
+import { requireAssessmentAccess } from "../middleware/resourceAccess.js";
+import { prisma } from "../config/database.js";
+import {
+  validateCanvasUrl,
+  canonicalCanvasBaseUrl,
+  CanvasUrlValidationError,
+} from "../utils/canvasUrlGuard.js";
+import { canvasRequestContext } from "../middleware/canvasRequestContext.js";
 
 const router = express.Router();
 
+// Service calls inherit this signal so a browser disconnect cancels in-flight
+// Canvas requests while preserving the route's existing argument contract.
+router.use(canvasRequestContext);
+
 /** GET /api/canvas/integration – returns whether the caller has Canvas configured (own, no key exposed). */
-router.get('/integration', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
+router.get("/integration", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const integration = await getCanvasIntegration(req.user.id);
 
@@ -43,7 +52,7 @@ router.get('/integration', authenticateToken, requireRole(CANVAS_ROLES), async (
       return res.json({
         success: true,
         data: null,
-        message: 'Canvas integration not configured'
+        message: "Canvas integration not configured",
       });
     }
 
@@ -53,8 +62,8 @@ router.get('/integration', authenticateToken, requireRole(CANVAS_ROLES), async (
       data: {
         canvasUrl: integration.canvasUrl,
         isTestMode: integration.isTestMode,
-        isConnected: true
-      }
+        isConnected: true,
+      },
     });
   } catch (error) {
     next(error);
@@ -62,14 +71,14 @@ router.get('/integration', authenticateToken, requireRole(CANVAS_ROLES), async (
 });
 
 /** POST /api/canvas/connect – stores the caller's Canvas credentials/test-mode flag. */
-router.post('/connect', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
+router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const { canvasUrl, apiKey, isTestMode } = req.body;
 
     if (!canvasUrl) {
       return res.status(400).json({
         success: false,
-        error: 'Canvas URL is required'
+        error: "Canvas URL is required",
       });
     }
 
@@ -77,39 +86,41 @@ router.post('/connect', authenticateToken, requireRole(CANVAS_ROLES), async (req
     if (!isTestMode && !apiKey) {
       return res.status(400).json({
         success: false,
-        error: 'API key is required (unless using test mode)'
+        error: "API key is required (unless using test mode)",
       });
     }
 
     // Validate URL format and block SSRF targets (#991) — private/link-local/
-    // loopback IPs and non-HTTPS schemes.
+    // loopback IPs and non-HTTPS schemes. Preserve an HTTPS path prefix so
+    // Canvas installs under a subpath (e.g. /lms) keep working.
+    let canonicalCanvasUrl;
     try {
-      validateCanvasUrl(canvasUrl);
+      canonicalCanvasUrl = canonicalCanvasBaseUrl(validateCanvasUrl(canvasUrl));
     } catch (e) {
       if (e instanceof CanvasUrlValidationError) {
         return res.status(400).json({
           success: false,
-          error: e.message
+          error: e.message,
         });
       }
       throw e;
     }
 
     const integration = await saveCanvasIntegration(req.user.id, {
-      canvasUrl,
-      apiKey: apiKey || 'test-key', // Use placeholder in test mode
-      isTestMode: isTestMode || false
+      canvasUrl: canonicalCanvasUrl,
+      apiKey: apiKey || "test-key", // Use placeholder in test mode
+      isTestMode: isTestMode || false,
     });
 
     res.json({
       success: true,
       message: isTestMode
-        ? 'Canvas test mode enabled. You can test exports without a real Canvas account.'
-        : 'Canvas integration connected successfully',
+        ? "Canvas test mode enabled. You can test exports without a real Canvas account."
+        : "Canvas integration connected successfully",
       data: {
         canvasUrl: integration.canvasUrl,
-        isTestMode: integration.isTestMode
-      }
+        isTestMode: integration.isTestMode,
+      },
     });
   } catch (error) {
     next(error);
@@ -117,31 +128,36 @@ router.post('/connect', authenticateToken, requireRole(CANVAS_ROLES), async (req
 });
 
 /** DELETE /api/canvas/disconnect – removes the caller's saved Canvas integration. */
-router.delete('/disconnect', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
-  try {
-    const integration = await getCanvasIntegration(req.user.id);
+router.delete(
+  "/disconnect",
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  async (req, res, next) => {
+    try {
+      const integration = await getCanvasIntegration(req.user.id);
 
-    if (integration) {
-      await prisma.canvasIntegration.delete({ where: { userId: req.user.id } });
+      if (integration) {
+        await prisma.canvasIntegration.delete({ where: { userId: req.user.id } });
+      }
+
+      res.json({
+        success: true,
+        message: "Canvas integration disconnected",
+      });
+    } catch (error) {
+      next(error);
     }
-
-    res.json({
-      success: true,
-      message: 'Canvas integration disconnected'
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** GET /api/canvas/courses – lists Canvas courses via the caller's integration. */
-router.get('/courses', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
+router.get("/courses", authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const courses = await getCanvasCourses(req.user.id);
 
     res.json({
       success: true,
-      data: courses
+      data: courses,
     });
   } catch (error) {
     next(error);
@@ -150,10 +166,10 @@ router.get('/courses', authenticateToken, requireRole(CANVAS_ROLES), async (req,
 
 /** POST /api/canvas/export/:assessmentId – exports an assessment to Canvas (course-scoped, instructor-only). */
 router.post(
-  '/export/:assessmentId',
+  "/export/:assessmentId",
   authenticateToken,
   requireRole(CANVAS_ROLES),
-  requireAssessmentAccess({ min: 'instructor', param: 'assessmentId' }),
+  requireAssessmentAccess({ min: "instructor", param: "assessmentId" }),
   async (req, res, next) => {
     try {
       const { assessmentId } = req.params;
@@ -162,7 +178,7 @@ router.post(
       if (!canvasCourseId) {
         return res.status(400).json({
           success: false,
-          error: 'Canvas course ID is required'
+          error: "Canvas course ID is required",
         });
       }
 
@@ -170,76 +186,86 @@ router.post(
         req.user.id,
         assessmentId,
         canvasCourseId,
-        req.qmCourse.userId
+        req.qmCourse.userId,
       );
 
       res.json({
         success: true,
-        message: 'Assessment exported to Canvas successfully',
-        data: result
+        message: "Assessment exported to Canvas successfully",
+        data: result,
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/canvas/mapping/:courseId – returns the stored mapping (course-scoped, instructor-only). */
 router.get(
-  '/mapping/:courseId',
+  "/mapping/:courseId",
   authenticateToken,
   requireRole(CANVAS_ROLES),
-  requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.params.courseId }),
+  requireCourseAccess({ min: "instructor", getCourseId: (req) => req.params.courseId }),
   async (req, res, next) => {
     try {
       const mapping = await getCanvasCourseMapping(req.qmCourse.userId, req.qmCourse.id);
 
       res.json({
         success: true,
-        data: mapping
+        data: mapping,
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/canvas/courses/:canvasCourseId/quizzes – fetches quizzes from a Canvas course. */
-router.get('/courses/:canvasCourseId/quizzes', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
-  try {
-    const { canvasCourseId } = req.params;
-    const quizzes = await getCanvasQuizzes(req.user.id, canvasCourseId);
+router.get(
+  "/courses/:canvasCourseId/quizzes",
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  async (req, res, next) => {
+    try {
+      const { canvasCourseId } = req.params;
+      const quizzes = await getCanvasQuizzes(req.user.id, canvasCourseId);
 
-    res.json({
-      success: true,
-      data: quizzes
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      res.json({
+        success: true,
+        data: quizzes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /** GET /api/canvas/courses/:canvasCourseId/quizzes/:quizId/questions – lists Canvas quiz questions. */
-router.get('/courses/:canvasCourseId/quizzes/:quizId/questions', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
-  try {
-    const { canvasCourseId, quizId } = req.params;
-    const questions = await getCanvasQuizQuestions(req.user.id, canvasCourseId, quizId);
+router.get(
+  "/courses/:canvasCourseId/quizzes/:quizId/questions",
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  async (req, res, next) => {
+    try {
+      const { canvasCourseId, quizId } = req.params;
+      const questions = await getCanvasQuizQuestions(req.user.id, canvasCourseId, quizId);
 
-    res.json({
-      success: true,
-      data: questions
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      res.json({
+        success: true,
+        data: questions,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /** POST /api/canvas/import/:canvasCourseId/quizzes/:quizId – imports a Canvas quiz (course-scoped, instructor-only). */
 router.post(
-  '/import/:canvasCourseId/quizzes/:quizId',
+  "/import/:canvasCourseId/quizzes/:quizId",
   authenticateToken,
   requireRole(CANVAS_ROLES),
-  requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.localCourseId }),
+  requireCourseAccess({ min: "instructor", getCourseId: (req) => req.body.localCourseId }),
   async (req, res, next) => {
     try {
       const { canvasCourseId, quizId } = req.params;
@@ -248,7 +274,7 @@ router.post(
       if (!primaryTopicId) {
         return res.status(400).json({
           success: false,
-          error: 'Primary topic ID is required for importing questions'
+          error: "Primary topic ID is required for importing questions",
         });
       }
 
@@ -256,12 +282,12 @@ router.post(
       // creating questions — otherwise the FK insert crashes mid-import (#7). A
       // supplied-but-nonexistent topic is a missing resource, so 404 (#3).
       const topic = await prisma.topics.findFirst({
-        where: { id: primaryTopicId, courseId: req.qmCourse.id }
+        where: { id: primaryTopicId, courseId: req.qmCourse.id },
       });
       if (!topic) {
         return res.status(404).json({
           success: false,
-          error: 'Primary topic not found in this course'
+          error: "Primary topic not found in this course",
         });
       }
 
@@ -273,32 +299,32 @@ router.post(
         {
           assessmentType,
           assessmentName,
-          primaryTopicId
+          primaryTopicId,
         },
-        req.qmCourse.userId
+        req.qmCourse.userId,
       );
 
       res.json({
         success: true,
-        message: 'Quiz imported from Canvas successfully',
-        data: result
+        message: "Quiz imported from Canvas successfully",
+        data: result,
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/canvas/courses/:canvasCourseId/banks – lists Canvas Assessment Question Banks. */
 router.get(
-  '/courses/:canvasCourseId/banks',
+  "/courses/:canvasCourseId/banks",
   authenticateToken,
   requireRole(CANVAS_ROLES),
   async (req, res, next) => {
     try {
       let canvasCourseId;
       try {
-        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, 'canvasCourseId');
+        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, "canvasCourseId");
       } catch (error) {
         return res.status(400).json({ success: false, error: error.message });
       }
@@ -312,15 +338,15 @@ router.get(
 
 /** GET /api/canvas/courses/:canvasCourseId/banks/:canvasBankId/questions */
 router.get(
-  '/courses/:canvasCourseId/banks/:canvasBankId/questions',
+  "/courses/:canvasCourseId/banks/:canvasBankId/questions",
   authenticateToken,
   requireRole(CANVAS_ROLES),
   async (req, res, next) => {
     try {
       let canvasBankId;
       try {
-        parseCanvasNumericId(req.params.canvasCourseId, 'canvasCourseId');
-        canvasBankId = parseCanvasNumericId(req.params.canvasBankId, 'canvasBankId');
+        parseCanvasNumericId(req.params.canvasCourseId, "canvasCourseId");
+        canvasBankId = parseCanvasNumericId(req.params.canvasBankId, "canvasBankId");
       } catch (error) {
         return res.status(400).json({ success: false, error: error.message });
       }
@@ -337,17 +363,17 @@ router.get(
 
 /** POST /api/canvas/import/:canvasCourseId/banks/:canvasBankId – sync Canvas bank → Core bank. */
 router.post(
-  '/import/:canvasCourseId/banks/:canvasBankId',
+  "/import/:canvasCourseId/banks/:canvasBankId",
   authenticateToken,
   requireRole(CANVAS_ROLES),
-  requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.localCourseId }),
+  requireCourseAccess({ min: "instructor", getCourseId: (req) => req.body.localCourseId }),
   async (req, res, next) => {
     try {
       let canvasCourseId;
       let canvasBankId;
       try {
-        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, 'canvasCourseId');
-        canvasBankId = parseCanvasNumericId(req.params.canvasBankId, 'canvasBankId');
+        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, "canvasCourseId");
+        canvasBankId = parseCanvasNumericId(req.params.canvasBankId, "canvasBankId");
       } catch (error) {
         return res.status(400).json({ success: false, error: error.message });
       }
@@ -356,7 +382,7 @@ router.post(
       if (!primaryTopicId) {
         return res.status(400).json({
           success: false,
-          error: 'Primary topic ID is required for importing questions',
+          error: "Primary topic ID is required for importing questions",
         });
       }
 
@@ -366,7 +392,7 @@ router.post(
       if (!topic) {
         return res.status(404).json({
           success: false,
-          error: 'Primary topic not found in this course',
+          error: "Primary topic not found in this course",
         });
       }
 
@@ -384,7 +410,7 @@ router.post(
 
       res.json({
         success: true,
-        message: 'Question bank synced from Canvas successfully',
+        message: "Question bank synced from Canvas successfully",
         data: result,
       });
     } catch (error) {

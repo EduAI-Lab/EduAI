@@ -51,10 +51,7 @@ export function resolveCarbonPolicyMode(params: {
  * - quality: lowest energy per token (proxy for “capable” local model in tier)
  * - balanced: tier 1 → energy, tier 2+ → carbon (matches Phase 1 rule defaults)
  */
-export function tieBreakForTier(
-  tier: 1 | 2 | 3,
-  mode: CarbonPolicyMode,
-): "energy" | "carbon" {
+export function tieBreakForTier(tier: 1 | 2 | 3, mode: CarbonPolicyMode): "energy" | "carbon" {
   if (mode === "greener") {
     return "carbon";
   }

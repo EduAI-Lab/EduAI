@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import request from 'supertest';
+import { describe, it, expect } from "vitest";
+import request from "supertest";
 
 /**
  * Shared row-runner for the QM route-level PICT world-builders (#1188):
@@ -17,21 +17,27 @@ import request from 'supertest';
  * layer) is out of scope for this runner entirely, not just left out of an
  * interface it wouldn't fit.
  */
-export function describePictRoute(name, { app, rows, method, path, setupRow, oracle, isKnownDrift, verify, label }) {
+export function describePictRoute(
+  name,
+  { app, rows, method, path, setupRow, oracle, isKnownDrift, verify, label },
+) {
   const title = label ? `${name} PICT row #$index $label` : `${name} PICT row #$index`;
-  describe.each(rows.map((row, index) => ({ row, index, label: label?.(row) })))(title, ({ row }) => {
-    const run = isKnownDrift?.(row) ? it.fails : it;
-    run('matches the oracle', async () => {
-      const body = setupRow(row);
-      const res = await request(app)
-        [method](typeof path === 'function' ? path(row) : path)
-        .set('Cookie', 'session=v')
-        .send(body);
+  describe.each(rows.map((row, index) => ({ row, index, label: label?.(row) })))(
+    title,
+    ({ row }) => {
+      const run = isKnownDrift?.(row) ? it.fails : it;
+      run("matches the oracle", async () => {
+        const body = setupRow(row);
+        const res = await request(app)
+          [method](typeof path === "function" ? path(row) : path)
+          .set("Cookie", "session=v")
+          .send(body);
 
-      const expected = oracle(row);
-      expect(res.status).toBe(expected.status);
+        const expected = oracle(row);
+        expect(res.status).toBe(expected.status);
 
-      if (verify) await verify({ row, res, expected });
-    });
-  });
+        if (verify) await verify({ row, res, expected });
+      });
+    },
+  );
 }

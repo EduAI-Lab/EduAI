@@ -90,7 +90,14 @@ function isBlockedIPv6(address: string): boolean {
   if (groups === null) return true; // malformed — fail closed
 
   const [g0, g1, g2, g3, g4, g5, g6, g7] = groups as [
-    number, number, number, number, number, number, number, number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
   ];
 
   const leadingZero = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;

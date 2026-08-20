@@ -37,46 +37,53 @@
  * blocking flag or seed state has been arranged.
  */
 
-/** Seeded accounts — apps/core/prisma/seed.ts, SEED_PASSWORD = 'EduAI2026!'. */
+const LOCAL_SEED_PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim();
+if (!LOCAL_SEED_PASSWORD) {
+  throw new Error(
+    "Set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the page profiler",
+  );
+}
+
+/** Seeded accounts — apps/core/prisma/seed.ts, using EDUAI_LOCAL_SEED_PASSWORD. */
 export const ACCOUNTS = {
   anon: null,
-  student: { email: 'student1@eduai.local', password: 'EduAI2026!' },
+  student: { email: "student1@eduai.local", password: LOCAL_SEED_PASSWORD },
   // A TA is a STUDENT-platform user carrying an Enrollment(role=TA) — the
   // distinction is per-course, not platform-wide, so this account is only a
   // "ta" on the courses it is enrolled to TA. Course pages render a third tree
   // for it (CourseDetailTaView), separate from both manager and student.
-  ta: { email: 'ta.cs@eduai.local', password: 'EduAI2026!' },
-  instructor: { email: 'instructor.cs@eduai.local', password: 'EduAI2026!' },
-  unitAdmin: { email: 'unitadmin.cosc@eduai.local', password: 'EduAI2026!' },
-  admin: { email: 'admin@eduai.local', password: 'EduAI2026!' },
+  ta: { email: "ta.cs@eduai.local", password: LOCAL_SEED_PASSWORD },
+  instructor: { email: "instructor.cs@eduai.local", password: LOCAL_SEED_PASSWORD },
+  unitAdmin: { email: "unitadmin.cosc@eduai.local", password: LOCAL_SEED_PASSWORD },
+  admin: { email: "admin@eduai.local", password: LOCAL_SEED_PASSWORD },
 };
 
 export const APPS = {
   core: {
-    baseUrl: process.env.CORE_URL || 'http://localhost:3000',
+    baseUrl: process.env.CORE_URL || "http://localhost:3000",
     pages: [
       // --- public ---
-      { name: 'home', path: '/', role: 'anon' },
-      { name: 'team', path: '/team', role: 'anon' },
-      { name: 'sign-in', path: '/auth/login', role: 'anon' },
-      { name: 'register', path: '/auth/register', role: 'anon' },
+      { name: "home", path: "/", role: "anon" },
+      { name: "team", path: "/team", role: "anon" },
+      { name: "sign-in", path: "/auth/login", role: "anon" },
+      { name: "register", path: "/auth/register", role: "anon" },
       // Renders its invalid-token state without a token — still a real page load.
-      { name: 'accept-invitation', path: '/auth/accept-invitation', role: 'anon' },
+      { name: "accept-invitation", path: "/auth/accept-invitation", role: "anon" },
 
       // --- student-facing ---
-      { name: 'dashboard-student', path: '/dashboard', role: 'student' },
+      { name: "dashboard-student", path: "/dashboard", role: "student" },
       // The loader calls userNeedsStudentIdOnboarding() and sends an already
       // onboarded user to /dashboard. Every seeded student has a student id, so
       // this route is only reachable by an account the seed does not create.
       {
-        name: 'onboarding-student-id',
-        path: '/onboarding/student-id',
-        role: 'student',
-        gated: 'seeded students already have a student id — loader redirects to /dashboard',
+        name: "onboarding-student-id",
+        path: "/onboarding/student-id",
+        role: "student",
+        gated: "seeded students already have a student id — loader redirects to /dashboard",
       },
-      { name: 'chat-student', path: '/chat', role: 'student' },
-      { name: 'chat-thread', path: '/chat/:chatId', role: 'student', params: ['chatId'] },
-      { name: 'courses-student', path: '/courses', role: 'student' },
+      { name: "chat-student", path: "/chat", role: "student" },
+      { name: "chat-thread", path: "/chat/:chatId", role: "student", params: ["chatId"] },
+      { name: "courses-student", path: "/courses", role: "student" },
       // courses.$courseId.tsx has no platform-role gate — access is derived from
       // the enrollment (resolveCourseAccess), and the three access levels render
       // three different trees: manager view for admin/unit/instructor,
@@ -86,44 +93,60 @@ export const APPS = {
       // The id comes from this session's own /api/courses, so it is a course the
       // role is actually enrolled in; an unpublished one still bounces to
       // /courses and would be reported as REDIRECTED rather than measured.
-      { name: 'course-detail-student', path: '/courses/:courseId', role: 'student', params: ['courseId'] },
+      {
+        name: "course-detail-student",
+        path: "/courses/:courseId",
+        role: "student",
+        params: ["courseId"],
+      },
       // settings.tsx and help.tsx guard on session only, not role, and settings
       // has a STUDENT-specific branch loading the student number.
-      { name: 'settings-student', path: '/settings', role: 'student' },
-      { name: 'help-student', path: '/help', role: 'student' },
+      { name: "settings-student", path: "/settings", role: "student" },
+      { name: "help-student", path: "/help", role: "student" },
 
       // --- ta ---
-      { name: 'course-detail-ta', path: '/courses/:courseId', role: 'ta', params: ['courseId'] },
+      { name: "course-detail-ta", path: "/courses/:courseId", role: "ta", params: ["courseId"] },
 
       // --- instructor-facing ---
-      { name: 'dashboard-instructor', path: '/dashboard', role: 'instructor' },
-      { name: 'chat-instructor', path: '/chat', role: 'instructor' },
-      { name: 'courses-instructor', path: '/courses', role: 'instructor' },
-      { name: 'course-detail-instructor', path: '/courses/:courseId', role: 'instructor', params: ['courseId'] },
-      { name: 'settings-instructor', path: '/settings', role: 'instructor' },
-      { name: 'help-instructor', path: '/help', role: 'instructor' },
+      { name: "dashboard-instructor", path: "/dashboard", role: "instructor" },
+      { name: "chat-instructor", path: "/chat", role: "instructor" },
+      { name: "courses-instructor", path: "/courses", role: "instructor" },
+      {
+        name: "course-detail-instructor",
+        path: "/courses/:courseId",
+        role: "instructor",
+        params: ["courseId"],
+      },
+      { name: "settings-instructor", path: "/settings", role: "instructor" },
+      { name: "help-instructor", path: "/help", role: "instructor" },
 
       // --- unit admin ---
-      { name: 'unit-chats', path: '/units/:department/chats', role: 'unitAdmin', params: ['department'] },
+      {
+        name: "unit-chats",
+        path: "/units/:department/chats",
+        role: "unitAdmin",
+        params: ["department"],
+      },
       // Gated on the `unitAdmins.canInvite` policy flag, which defaults to false
       // (opt-in). With it off the loader redirects to /dashboard regardless of
       // role, so the route is unreachable until an admin turns it on.
       {
-        name: 'unit-admin-invitations',
-        path: '/unit-admin/invitations',
-        role: 'unitAdmin',
-        gated: 'policy flag unitAdmins.canInvite defaults to false — loader redirects to /dashboard',
+        name: "unit-admin-invitations",
+        path: "/unit-admin/invitations",
+        role: "unitAdmin",
+        gated:
+          "policy flag unitAdmins.canInvite defaults to false — loader redirects to /dashboard",
       },
 
       // --- admin ---
-      { name: 'admin-users', path: '/admin/users', role: 'admin' },
-      { name: 'admin-ai-models', path: '/admin/ai-models', role: 'admin' },
-      { name: 'admin-invitations', path: '/admin/invitations', role: 'admin' },
-      { name: 'admin-bug-reports', path: '/admin/bug-reports', role: 'admin' },
-      { name: 'admin-chat', path: '/admin/chat', role: 'admin' },
-      { name: 'admin-settings', path: '/admin/settings', role: 'admin' },
-      { name: 'admin-logs', path: '/admin/logs', role: 'admin' },
-      { name: 'admin-cron-jobs', path: '/admin/cron-jobs', role: 'admin' },
+      { name: "admin-users", path: "/admin/users", role: "admin" },
+      { name: "admin-ai-models", path: "/admin/ai-models", role: "admin" },
+      { name: "admin-invitations", path: "/admin/invitations", role: "admin" },
+      { name: "admin-bug-reports", path: "/admin/bug-reports", role: "admin" },
+      { name: "admin-chat", path: "/admin/chat", role: "admin" },
+      { name: "admin-settings", path: "/admin/settings", role: "admin" },
+      { name: "admin-logs", path: "/admin/logs", role: "admin" },
+      { name: "admin-cron-jobs", path: "/admin/cron-jobs", role: "admin" },
 
       // Excluded on purpose:
       //   /auth/logout  — destroys the session mid-run
@@ -132,75 +155,110 @@ export const APPS = {
   },
 
   aiTutor: {
-    baseUrl: process.env.AI_TUTOR_URL || 'http://localhost:3001',
+    baseUrl: process.env.AI_TUTOR_URL || "http://localhost:3001",
     pages: [
-      { name: 'home', path: '/', role: 'student', redirectsTo: '/dashboard' },
+      { name: "home", path: "/", role: "student", redirectsTo: "/dashboard" },
       // Renders, then immediately navigates to routeForRole(user.role) in a
       // useEffect. Every seeded role IS supported, so the measurement is a blend
       // of this page and the dashboard it leaves for — worse than no number.
       {
-        name: 'unsupported-role',
-        path: '/unsupported-role',
-        role: 'student',
-        gated: 'student role is supported — the page client-redirects to /dashboard on mount',
+        name: "unsupported-role",
+        path: "/unsupported-role",
+        role: "student",
+        gated: "student role is supported — the page client-redirects to /dashboard on mount",
       },
-      { name: 'dashboard', path: '/dashboard', role: 'student' },
-      { name: 'settings', path: '/settings', role: 'student' },
-      { name: 'help', path: '/help', role: 'student' },
-      { name: 'admin', path: '/admin', role: 'admin' },
+      { name: "dashboard", path: "/dashboard", role: "student" },
+      { name: "settings", path: "/settings", role: "student" },
+      { name: "help", path: "/help", role: "student" },
+      { name: "admin", path: "/admin", role: "admin" },
 
-      { name: 'student-list', path: '/student', role: 'student' },
-      { name: 'student-course', path: '/student/courses/:courseId', role: 'student', params: ['courseId'] },
-      { name: 'student-module', path: '/student/module/:moduleId', role: 'student', params: ['moduleId'] },
-      { name: 'student-lesson', path: '/student/lesson/:lessonId', role: 'student', params: ['lessonId'] },
+      { name: "student-list", path: "/student", role: "student" },
+      {
+        name: "student-course",
+        path: "/student/courses/:courseId",
+        role: "student",
+        params: ["courseId"],
+      },
+      {
+        name: "student-module",
+        path: "/student/module/:moduleId",
+        role: "student",
+        params: ["moduleId"],
+      },
+      {
+        name: "student-lesson",
+        path: "/student/lesson/:lessonId",
+        role: "student",
+        params: ["lessonId"],
+      },
 
-      { name: 'instructor-list', path: '/instructor', role: 'instructor' },
-      { name: 'instructor-course', path: '/instructor/courses/:courseId', role: 'instructor', params: ['courseId'] },
-      { name: 'instructor-module', path: '/instructor/module/:moduleId', role: 'instructor', params: ['moduleId'] },
-      { name: 'instructor-lesson', path: '/instructor/lesson/:lessonId', role: 'instructor', params: ['lessonId'] },
+      { name: "instructor-list", path: "/instructor", role: "instructor" },
+      {
+        name: "instructor-course",
+        path: "/instructor/courses/:courseId",
+        role: "instructor",
+        params: ["courseId"],
+      },
+      {
+        name: "instructor-module",
+        path: "/instructor/module/:moduleId",
+        role: "instructor",
+        params: ["moduleId"],
+      },
+      {
+        name: "instructor-lesson",
+        path: "/instructor/lesson/:lessonId",
+        role: "instructor",
+        params: ["lessonId"],
+      },
     ],
   },
 
   questionMaker: {
-    baseUrl: process.env.QM_URL || 'http://localhost:5180',
+    baseUrl: process.env.QM_URL || "http://localhost:5180",
     pages: [
-      { name: 'dashboard', path: '/dashboard', role: 'instructor' },
-      { name: 'question-bank', path: '/library', role: 'instructor' },
-      { name: 'settings', path: '/settings', role: 'instructor' },
-      { name: 'help', path: '/help', role: 'instructor' },
-      { name: 'course-selection', path: '/courses', role: 'instructor' },
-      { name: 'course-detail', path: '/courses/:courseId', role: 'instructor', params: ['courseId'] },
+      { name: "dashboard", path: "/dashboard", role: "instructor" },
+      { name: "question-bank", path: "/library", role: "instructor" },
+      { name: "settings", path: "/settings", role: "instructor" },
+      { name: "help", path: "/help", role: "instructor" },
+      { name: "course-selection", path: "/courses", role: "instructor" },
       {
-        name: 'question-composer-new',
-        path: '/courses/:courseId/questions/new',
-        role: 'instructor',
-        params: ['courseId'],
+        name: "course-detail",
+        path: "/courses/:courseId",
+        role: "instructor",
+        params: ["courseId"],
       },
       {
-        name: 'question-composer-edit',
-        path: '/courses/:courseId/questions/:questionId/edit',
-        role: 'instructor',
-        params: ['courseId', 'questionId'],
+        name: "question-composer-new",
+        path: "/courses/:courseId/questions/new",
+        role: "instructor",
+        params: ["courseId"],
       },
       {
-        name: 'assessment-builder',
-        path: '/courses/:courseId/assessments/:assessmentId',
-        role: 'instructor',
-        params: ['courseId', 'assessmentId'],
+        name: "question-composer-edit",
+        path: "/courses/:courseId/questions/:questionId/edit",
+        role: "instructor",
+        params: ["courseId", "questionId"],
       },
       {
-        name: 'assessment-variants',
-        path: '/courses/:courseId/assessments/:assessmentId/variants',
-        role: 'instructor',
-        params: ['courseId', 'assessmentId'],
+        name: "assessment-builder",
+        path: "/courses/:courseId/assessments/:assessmentId",
+        role: "instructor",
+        params: ["courseId", "assessmentId"],
       },
       {
-        name: 'assessment-variants-course',
-        path: '/courses/:courseId/assessments/variants',
-        role: 'instructor',
-        params: ['courseId'],
+        name: "assessment-variants",
+        path: "/courses/:courseId/assessments/:assessmentId/variants",
+        role: "instructor",
+        params: ["courseId", "assessmentId"],
       },
-      { name: 'admin-bug-reports', path: '/admin/bug-reports', role: 'admin' },
+      {
+        name: "assessment-variants-course",
+        path: "/courses/:courseId/assessments/variants",
+        role: "instructor",
+        params: ["courseId"],
+      },
+      { name: "admin-bug-reports", path: "/admin/bug-reports", role: "admin" },
 
       // Excluded: /, /home, /landing, /study, /question-bank, /assessments*,
       // /assessment-variant and the "*" catch-all — all <Navigate> redirects,

@@ -10,9 +10,7 @@ import {
 
 describe("resolveResponseStyleTags", () => {
   it("returns tags in selection order and ignores unknown ids", () => {
-    expect(
-      resolveResponseStyleTags(["concise", "unknown", "socratic"]),
-    ).toEqual([
+    expect(resolveResponseStyleTags(["concise", "unknown", "socratic"])).toEqual([
       RESPONSE_STYLE_TAGS.find((t) => t.id === "concise"),
       RESPONSE_STYLE_TAGS.find((t) => t.id === "socratic"),
     ]);
@@ -32,10 +30,7 @@ describe("buildCourseResponseStylePrompt", () => {
   });
 
   it("includes tag snippets and custom instructions", () => {
-    const prompt = buildCourseResponseStylePrompt(
-      ["concise", "socratic"],
-      "Use course notation.",
-    );
+    const prompt = buildCourseResponseStylePrompt(["concise", "socratic"], "Use course notation.");
     expect(prompt).toContain("## Course response style");
     expect(prompt).toContain("**Concise**");
     expect(prompt).toContain("**Socratic**");

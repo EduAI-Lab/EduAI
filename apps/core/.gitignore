@@ -32,3 +32,7 @@ ecosystem.config.cjs
 !/loadtest/results/run-a-default-admission.json
 !/loadtest/results/run-b-connection-pool.json
 !/loadtest/results/browser-5vu.summary.json
+
+# Playwright visual regression (test:visual) — fixtures are regenerated from
+# component source by global-setup.ts before each run.
+/app/tests/visual/fixtures/

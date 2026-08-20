@@ -135,9 +135,7 @@ async function main() {
   }
 
   const meanConf =
-    confidences.length > 0
-      ? confidences.reduce((a, b) => a + b, 0) / confidences.length
-      : 0;
+    confidences.length > 0 ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0;
 
   console.log("");
   console.log("matched:", matched);

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { QmCourseAccess } from '@/lib/rbac';
-import { courseService } from '@/services/courseService';
+import { useCallback, useEffect, useState } from "react";
+import type { QmCourseAccess } from "@/lib/rbac";
+import { courseService } from "@/services/courseService";
 
 /** Fetches per-course access from GET /api/course/:id/access for UI gating. */
 export function useCourseAccess(courseId: number | null | undefined) {

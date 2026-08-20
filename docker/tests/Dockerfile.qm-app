@@ -99,6 +99,12 @@ COPY apps/extensions/question-maker/app/frontend \
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/frontend
+# These are supplied by docker-compose so the compiled SPA and Playwright use
+# one browser-visible source of truth in host or non-host network topologies.
+ARG VITE_API_URL=http://localhost:8000
+ARG VITE_CORE_URL=http://localhost:3000
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_CORE_URL=${VITE_CORE_URL}
 RUN npm run build
 
 # ── Target: serve ──────────────────────────────────────────────────────────

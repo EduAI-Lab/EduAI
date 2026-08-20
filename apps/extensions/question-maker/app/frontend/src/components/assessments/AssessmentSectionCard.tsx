@@ -15,9 +15,9 @@ import {
   DropdownMenuSeparator,
   questionStatus,
   ConfirmDialog,
-} from '@eduai/ui';
-import type { QuestionCardChoice, QuestionDifficulty } from '@eduai/ui';
-import React, { useState, useEffect } from 'react';
+} from "@eduai/ui";
+import type { QuestionCardChoice, QuestionDifficulty } from "@eduai/ui";
+import React, { useState, useEffect } from "react";
 import {
   IconTrash,
   IconX,
@@ -29,10 +29,14 @@ import {
   IconDots,
   IconChevronUp,
   IconChevronDown,
-} from '@tabler/icons-react';
-import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
-import { reviewStatusConfirm } from '../../lib/review-status';
-import { markCorrectChoices } from '@/lib/mcq';
+} from "@tabler/icons-react";
+import type {
+  AssessmentSection,
+  SectionVariantLink,
+  QuestionVariantEntry,
+} from "../../types/question";
+import { reviewStatusConfirm } from "../../lib/review-status";
+import { markCorrectChoices } from "@/lib/mcq";
 
 interface AssessmentSectionCardProps {
   section: AssessmentSection;
@@ -55,9 +59,9 @@ interface AssessmentSectionCardProps {
 
 /** Map our internal difficulty string to QuestionCard's difficultyLevel type */
 function toDifficultyLevel(diff: string | undefined): QuestionDifficulty {
-  if (diff === 'easy') return 'easy';
-  if (diff === 'hard') return 'hard';
-  return 'medium';
+  if (diff === "easy") return "easy";
+  if (diff === "hard") return "hard";
+  return "medium";
 }
 
 /** Dashed full-width affordance used for empty sections + the "add more" row. */
@@ -142,7 +146,7 @@ export function AssessmentSectionCard({
           className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm font-semibold text-foreground shadow-none focus-visible:ring-0"
         />
         <span className="shrink-0 text-xs text-muted-foreground">
-          {questions.length} {questions.length === 1 ? 'question' : 'questions'}
+          {questions.length} {questions.length === 1 ? "question" : "questions"}
         </span>
         {!readOnly && onMoveUp && (
           <Button
@@ -187,7 +191,9 @@ export function AssessmentSectionCard({
       <div className="space-y-3 p-4">
         {questions.length === 0 ? (
           readOnly ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">No questions in this section.</p>
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No questions in this section.
+            </p>
           ) : (
             <AddQuestionsButton label="Add questions" onClick={onAddQuestions} />
           )
@@ -208,7 +214,7 @@ export function AssessmentSectionCard({
                           {
                             selectAllThatApply: entry.variant.selectAllThatApply,
                             correctAnswers: entry.variant.correctAnswers,
-                          }
+                          },
                         );
                         return variantChoices.map((c, i) => ({
                           letter: c.letter,
@@ -233,7 +239,9 @@ export function AssessmentSectionCard({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {onViewQuestion && (
-                        <DropdownMenuItem onSelect={() => setTimeout(() => onViewQuestion(entry), 0)}>
+                        <DropdownMenuItem
+                          onSelect={() => setTimeout(() => onViewQuestion(entry), 0)}
+                        >
                           <IconEye className="size-4" /> View
                         </DropdownMenuItem>
                       )}
@@ -241,11 +249,14 @@ export function AssessmentSectionCard({
                         <DropdownMenuItem
                           onSelect={() => setPendingDraftToggle({ entry, nextDraft: !isDraft })}
                         >
-                          <IconCircleCheck className="size-4" /> {isDraft ? 'Mark reviewed' : 'Mark as draft'}
+                          <IconCircleCheck className="size-4" />{" "}
+                          {isDraft ? "Mark reviewed" : "Mark as draft"}
                         </DropdownMenuItem>
                       )}
                       {onCreateVariant && !readOnly && (
-                        <DropdownMenuItem onSelect={() => setTimeout(() => onCreateVariant(entry), 0)}>
+                        <DropdownMenuItem
+                          onSelect={() => setTimeout(() => onCreateVariant(entry), 0)}
+                        >
                           <IconGitBranch className="size-4" /> New variant
                         </DropdownMenuItem>
                       )}
@@ -275,15 +286,18 @@ export function AssessmentSectionCard({
                         type={entry.questionType}
                         difficulty={
                           entry.variant.difficulty
-                            ? entry.variant.difficulty.charAt(0).toUpperCase() + entry.variant.difficulty.slice(1)
+                            ? entry.variant.difficulty.charAt(0).toUpperCase() +
+                              entry.variant.difficulty.slice(1)
                             : undefined
                         }
                         difficultyLevel={diffLevel}
                         ai={entry.isAiGenerated ?? entry.variant.isAiGenerated}
-                        question={entry.variant.questionText ?? ''}
+                        question={entry.variant.questionText ?? ""}
                         choices={choices}
                         answer={
-                          !choices && entry.variant.answer != null && String(entry.variant.answer).trim()
+                          !choices &&
+                          entry.variant.answer != null &&
+                          String(entry.variant.answer).trim()
                             ? String(entry.variant.answer)
                             : undefined
                         }
@@ -294,7 +308,9 @@ export function AssessmentSectionCard({
                       {isDraft && (
                         <div className="mt-1 flex items-center gap-1 pl-1">
                           <IconAlertTriangle className="size-3 text-warning-600" />
-                          <span className="text-[10px] text-warning-700">Mark as reviewed before exporting</span>
+                          <span className="text-[10px] text-warning-700">
+                            Mark as reviewed before exporting
+                          </span>
                         </div>
                       )}
                     </div>
@@ -302,7 +318,9 @@ export function AssessmentSectionCard({
                 );
               })}
             </div>
-            {!readOnly && <AddQuestionsButton label="Add more questions" onClick={onAddQuestions} />}
+            {!readOnly && (
+              <AddQuestionsButton label="Add more questions" onClick={onAddQuestions} />
+            )}
           </>
         )}
       </div>

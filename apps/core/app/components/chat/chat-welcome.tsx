@@ -37,9 +37,7 @@ export function ChatWelcome({
         </p>
 
         {selectedModelInfo && (
-          <p className="mt-1.5 text-xs text-muted-foreground/70">
-            {selectedModelInfo.name}
-          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground/70">{selectedModelInfo.name}</p>
         )}
       </ScrollReveal>
 

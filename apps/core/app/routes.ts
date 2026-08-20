@@ -31,11 +31,9 @@ export default [
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/units/:department/chats", "routes/units.$department.chats.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
-  route(
-    "/api/courses/:courseId/materials/:materialId",
-    "routes/api/courses.materials.$.ts",
-    { id: "routes/api/courses.materials.$:materialId" },
-  ),
+  route("/api/courses/:courseId/materials/:materialId", "routes/api/courses.materials.$.ts", {
+    id: "routes/api/courses.materials.$:materialId",
+  }),
   route("/api/courses/:courseId/canvas-materials", "routes/api/courses.canvas-materials.$.ts"),
   route(
     "/api/courses/:courseId/canvas-materials/exclusions",
@@ -46,23 +44,16 @@ export default [
   route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
   route("/api/courses/:courseId/banks", "routes/api/courses.banks.$.ts"),
-  route(
-    "/api/courses/:courseId/banks/*",
-    "routes/api/courses.banks.$.ts",
-    { id: "routes/api/courses.banks.$:*" },
-  ),
+  route("/api/courses/:courseId/banks/*", "routes/api/courses.banks.$.ts", {
+    id: "routes/api/courses.banks.$:*",
+  }),
   route("/api/courses/:courseId/chats", "routes/api/courses.chats.$.ts"),
   route("/api/units/:department/chats", "routes/api/units.chats.$.ts"),
   route("/api/courses/:courseId/tas", "routes/api/courses.tas.$.ts"),
-  route(
-    "/api/courses/:courseId/student-candidates",
-    "routes/api/courses.student-candidates.$.ts",
-  ),
-  route(
-    "/api/courses/:courseId/topics/:topicId",
-    "routes/api/courses.topics.$.ts",
-    { id: "routes/api/courses.topics.$:topicId" },
-  ),
+  route("/api/courses/:courseId/student-candidates", "routes/api/courses.student-candidates.$.ts"),
+  route("/api/courses/:courseId/topics/:topicId", "routes/api/courses.topics.$.ts", {
+    id: "routes/api/courses.topics.$:topicId",
+  }),
   route("/api/courses/:id/publish", "routes/api/courses.id.publish.ts"),
   route("/api/courses/:id/unpublish", "routes/api/courses.id.unpublish.ts"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
@@ -86,10 +77,8 @@ export default [
   route("/admin/cron-jobs", "routes/admin.cron-jobs.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
-  route(
-    "/api/routing-model-settings",
-    "routes/api/routing-model-settings.ts",
-  ),
+  route("/api/routing-model-settings", "routes/api/routing-model-settings.ts"),
+  route("/api/admin/bedrock-settings", "routes/api/admin.bedrock-settings.ts"),
   route("/api/me", "routes/api/me.ts"),
   route("/api/preferences", "routes/api/preferences.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
@@ -101,11 +90,9 @@ export default [
   route("/api/policies", "routes/api/policies.ts"),
   route("/api/bug-reports", "routes/api/bug-reports.ts"),
   route("/api/admin/bug-reports", "routes/api/admin.bug-reports.ts"),
-  route(
-    "/api/admin/bug-reports/:id",
-    "routes/api/admin.bug-reports.ts",
-    { id: "routes/api/admin.bug-reports:id" },
-  ),
+  route("/api/admin/bug-reports/:id", "routes/api/admin.bug-reports.ts", {
+    id: "routes/api/admin.bug-reports:id",
+  }),
   route("/api/admin/cron-jobs", "routes/api/admin.cron-jobs.ts"),
   route("/api/dashboard/stats", "routes/api/dashboard.stats.ts"),
   route("/api/e2e/promote", "routes/api/e2e.promote.ts"),

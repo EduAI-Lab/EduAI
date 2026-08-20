@@ -1,5 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@eduai/ui';
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 
 export function AccessDeniedView() {
   return (

@@ -68,7 +68,10 @@ function mockPagedTransaction(rows = [ROW], total = rows.length) {
  * The `courseId` candidate branch runs a narrow `[count, findMany]`
  * $transaction only — no platform-wide aggregates.
  */
-function mockCandidateTransaction(rows: Array<Pick<typeof ROW, "id" | "name" | "email">>, total = rows.length) {
+function mockCandidateTransaction(
+  rows: Array<Pick<typeof ROW, "id" | "name" | "email">>,
+  total = rows.length,
+) {
   vi.mocked(prisma.$transaction).mockResolvedValue([total, rows] as never);
 }
 
@@ -247,9 +250,11 @@ describe("GET /api/users course student candidates", () => {
 
     expect((await get(candidateQuery)).status).toBe(200);
 
-    const where = (vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
-      where: Record<string, unknown>;
-    }).where;
+    const where = (
+      vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      }
+    ).where;
     expect(where).toMatchObject({
       role: { in: ["STUDENT"] },
       isActive: true,
@@ -336,6 +341,8 @@ describe("GET /api/users course student candidates", () => {
     const response = await get("?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT");
 
     expect(response.status).toBe(400);
-    expect(JSON.stringify(await body(response))).toContain("COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
+    expect(JSON.stringify(await body(response))).toContain(
+      "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS",
+    );
   });
 });

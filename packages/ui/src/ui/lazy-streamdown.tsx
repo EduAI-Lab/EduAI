@@ -1,8 +1,6 @@
 import { lazy, type ComponentType, type ComponentProps } from "react";
 
-type StreamdownProps = ComponentProps<
-  typeof import("streamdown").Streamdown
->;
+type StreamdownProps = ComponentProps<typeof import("streamdown").Streamdown>;
 
 /**
  * Loads an app-owned stylesheet, e.g. `() => import("katex/dist/katex.min.css")`.
@@ -33,9 +31,7 @@ function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
     };
     const { Streamdown } = streamdown;
     return {
-      default: (props: StreamdownProps) => (
-        <Streamdown {...props} plugins={plugins} />
-      ),
+      default: (props: StreamdownProps) => <Streamdown {...props} plugins={plugins} />,
     };
   });
 }
@@ -47,10 +43,7 @@ function loadStreamdown(loadKatexStyles?: MarkdownStyleLoader) {
  */
 export const LazyStreamdown = lazy(() => loadStreamdown());
 
-const mathVariants = new WeakMap<
-  MarkdownStyleLoader,
-  ComponentType<StreamdownProps>
->();
+const mathVariants = new WeakMap<MarkdownStyleLoader, ComponentType<StreamdownProps>>();
 
 /**
  * Variant of {@link LazyStreamdown} that also resolves the KaTeX stylesheet.

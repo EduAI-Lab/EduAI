@@ -93,14 +93,11 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("rejects the legacy auto-hybrid mode before course or model routing", async () => {
-    const res = await action(
-      makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
       error: "Unsupported routing model",
-      details:
-        'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+      details: 'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
     });
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
@@ -111,9 +108,7 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
       autoRulesEnabled: false,
     });
 
-    const res = await action(
-      makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
       error: "Routing model disabled",
@@ -122,9 +117,7 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("rejects Auto (rules) when the administrator disables rule routing", async () => {
-    const res = await action(
-      makeArgs({ messages: [], model: "auto", courseId: "c1" }),
-    );
+    const res = await action(makeArgs({ messages: [], model: "auto", courseId: "c1" }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
       error: "Routing model disabled",
@@ -359,9 +352,7 @@ describe("POST /api/chat — chat isolation guards (#225 RAG-03)", () => {
       chatbotType: null,
     } as never);
 
-    const res = await action(
-      makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }),
-    );
+    const res = await action(makeArgs({ messages: [], chatId: "chat-1", courseId: "c2" }));
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "COURSE_MISMATCH" });
@@ -538,5 +529,59 @@ describe("POST /api/chat — proxyUser delegation", () => {
       expect.objectContaining({ id: "mapped-user", role: "STUDENT" }),
       "c1",
     );
+  });
+});
+
+describe("POST /api/chat — bounded ingress", () => {
+  it("rejects a body that exceeds the byte budget before routing or persistence", async () => {
+    const body = JSON.stringify({
+      model: "auto-hybrid",
+      messages: [],
+      oversized: "x".repeat(2 * 1024 * 1024 + 1),
+    });
+    const args = {
+      request: new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Deliberately omit Content-Length so the stream byte cap is exercised.
+        },
+        body,
+      }),
+      params: {},
+      context: {} as never,
+    } as any;
+
+    const res = await action(args);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "Chat request body exceeds size limit",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized message list before routing or persistence", async () => {
+    const body = {
+      model: "auto-hybrid",
+      messages: Array.from({ length: 101 }, (_, index) => ({
+        id: `message-${index}`,
+        role: "user",
+        content: "hi",
+      })),
+    };
+    const args = makeArgs(body);
+
+    const res = await action(args);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "messages exceeds maximum count",
+    });
+    expect(prisma.chat.create).not.toHaveBeenCalled();
+    expect(routingSettingsMock.getRoutingModelSettings).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 });

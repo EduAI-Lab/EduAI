@@ -26,10 +26,8 @@ describe("getCanvasIntegrationWithDecryptedKey", () => {
   it("throws CanvasStoredCredentialsError when decrypt fails after key rotation", async () => {
     vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
     const { encrypt } = await import("~/lib/canvas/encryption");
-    const {
-      CanvasStoredCredentialsError,
-      getCanvasIntegrationWithDecryptedKey,
-    } = await import("~/lib/canvas/integration.server");
+    const { CanvasStoredCredentialsError, getCanvasIntegrationWithDecryptedKey } =
+      await import("~/lib/canvas/integration.server");
 
     const encryptedApiKey = encrypt("canvas-token");
     vi.mocked(prisma.canvasIntegration.findUnique).mockResolvedValue({
@@ -70,9 +68,7 @@ describe("getDashboardCanvasIntegration", () => {
     vi.mocked(prisma.canvasIntegration.findUnique).mockResolvedValue(connectedRow as never);
 
     const getDashboardCanvasIntegration = await load();
-    await expect(
-      getDashboardCanvasIntegration({ id: "u1", role: "ADMIN" }),
-    ).resolves.toEqual({
+    await expect(getDashboardCanvasIntegration({ id: "u1", role: "ADMIN" })).resolves.toEqual({
       canvasUrl: "https://canvas.ubc.ca",
       isTestMode: false,
       isConnected: true,
@@ -103,9 +99,7 @@ describe("getDashboardCanvasIntegration", () => {
 
   it("returns null for a role that cannot manage Canvas", async () => {
     const getDashboardCanvasIntegration = await load();
-    await expect(
-      getDashboardCanvasIntegration({ id: "u1", role: "STUDENT" }),
-    ).resolves.toBeNull();
+    await expect(getDashboardCanvasIntegration({ id: "u1", role: "STUDENT" })).resolves.toBeNull();
     expect(prisma.canvasIntegration.findUnique).not.toHaveBeenCalled();
   });
 
@@ -113,8 +107,6 @@ describe("getDashboardCanvasIntegration", () => {
     vi.mocked(prisma.canvasIntegration.findUnique).mockResolvedValue(null);
 
     const getDashboardCanvasIntegration = await load();
-    await expect(
-      getDashboardCanvasIntegration({ id: "u1", role: "ADMIN" }),
-    ).resolves.toBeNull();
+    await expect(getDashboardCanvasIntegration({ id: "u1", role: "ADMIN" })).resolves.toBeNull();
   });
 });

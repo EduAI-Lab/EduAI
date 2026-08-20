@@ -91,7 +91,12 @@ describe("GET /api/user-provider-settings", () => {
   it("never exposes the raw or encrypted API key in the response", async () => {
     withSession();
     prismaMock.userProviderSettings.findMany.mockResolvedValue([
-      { isEnabled: true, apiKey: "enc:sk-very-secret", baseUrl: null, provider: { name: "openai" } },
+      {
+        isEnabled: true,
+        apiKey: "enc:sk-very-secret",
+        baseUrl: null,
+        provider: { name: "openai" },
+      },
     ]);
     const res = await loader(getReq());
     const text = await res.text();
@@ -149,6 +154,13 @@ describe("POST /api/user-provider-settings", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 403 when a caller tries to enable bedrock from user settings", async () => {
+    withSession();
+    const res = await action(postReq({ providerName: "bedrock", isEnabled: true }));
+    expect(res.status).toBe(403);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
+  });
+
   it("returns 204 on success and calls upsert with the correct args", async () => {
     withSession("user-7");
     vi.mocked(upsertUserProviderSetting).mockResolvedValue(undefined);
@@ -166,12 +178,45 @@ describe("POST /api/user-provider-settings", () => {
   it("passes baseUrl through to upsert", async () => {
     withSession();
     vi.mocked(upsertUserProviderSetting).mockResolvedValue(undefined);
-    await action(postReq({ providerName: "ollama", isEnabled: true, baseUrl: "http://localhost:11434" }));
+    await action(
+      postReq({ providerName: "ollama", isEnabled: true, baseUrl: "http://localhost:11434" }),
+    );
     expect(upsertUserProviderSetting).toHaveBeenCalledWith(
       expect.any(String),
       "ollama",
       expect.objectContaining({ baseUrl: "http://localhost:11434" }),
     );
+  });
+
+  it("rejects an oversized request body before persistence", async () => {
+    withSession();
+    const request = new Request(BASE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerName: "openai",
+        isEnabled: true,
+        apiKey: "x".repeat(40_000),
+      }),
+    });
+
+    const res = await action({ request } as never);
+
+    expect(res.status).toBe(413);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["providerName", { providerName: "p".repeat(65), isEnabled: true }],
+    ["apiKey", { providerName: "openai", isEnabled: true, apiKey: "x".repeat(16_385) }],
+    ["baseUrl", { providerName: "ollama", isEnabled: true, baseUrl: "x".repeat(2_049) }],
+  ])("rejects an oversized %s field", async (_field, body) => {
+    withSession();
+
+    const res = await action(postReq(body));
+
+    expect(res.status).toBe(400);
+    expect(upsertUserProviderSetting).not.toHaveBeenCalled();
   });
 });
 
@@ -189,6 +234,13 @@ describe("DELETE /api/user-provider-settings", () => {
     withSession();
     const res = await action(deleteReq({}));
     expect(res.status).toBe(400);
+    expect(deleteUserProviderSetting).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when a caller tries to delete bedrock from user settings", async () => {
+    withSession();
+    const res = await action(deleteReq({ providerName: "bedrock" }));
+    expect(res.status).toBe(403);
     expect(deleteUserProviderSetting).not.toHaveBeenCalled();
   });
 

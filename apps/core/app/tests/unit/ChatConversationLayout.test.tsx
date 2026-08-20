@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
+import { CHAT_SCROLL_PANE_CLASS } from "~/components/chat/chat-scroll-pane";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
@@ -58,6 +59,13 @@ describe("ChatConversationLayout — empty state layout", () => {
     expect(root?.className).toMatch(/\bmin-h-0\b/);
     expect(root?.className).not.toMatch(/100vh/);
   });
+
+  it("uses the shared #1320 scroll-pane class including overflow-x-hidden", () => {
+    const { container } = render(<ChatConversationLayout {...baseProps} />);
+    const pane = container.querySelector(".overflow-x-hidden.overflow-y-auto");
+    expect(pane).not.toBeNull();
+    expect(pane?.className).toBe(CHAT_SCROLL_PANE_CLASS);
+  });
 });
 
 describe("ChatConversationLayout — routed model labels", () => {
@@ -74,9 +82,7 @@ describe("ChatConversationLayout — routed model labels", () => {
             provider: "openai",
           },
         ]}
-        messages={[
-          { id: "assistant-1", role: "assistant", content: "Persisted answer" },
-        ]}
+        messages={[{ id: "assistant-1", role: "assistant", content: "Persisted answer" }]}
         routedModelByMessageId={{ "assistant-1": "openai:gpt-4o" }}
       />,
     );
@@ -89,9 +95,7 @@ describe("ChatConversationLayout — routed model labels", () => {
       <ChatConversationLayout
         {...baseProps}
         selectedModel="auto"
-        messages={[
-          { id: "assistant-stream", role: "assistant", content: "Streaming" },
-        ]}
+        messages={[{ id: "assistant-stream", role: "assistant", content: "Streaming" }]}
         isLoading
         streamingRoutedRegistryId="vllm:qwen2.5-7b-instruct"
         streamingWasAutoRouted
@@ -106,9 +110,7 @@ describe("ChatConversationLayout — routed model labels", () => {
       <ChatConversationLayout
         {...baseProps}
         selectedModel="vllm:qwen2.5-7b-instruct"
-        messages={[
-          { id: "assistant-1", role: "assistant", content: "Auto-routed answer" },
-        ]}
+        messages={[{ id: "assistant-1", role: "assistant", content: "Auto-routed answer" }]}
         routedModelByMessageId={{ "assistant-1": "vllm:qwen2.5-7b-instruct" }}
         wasAutoRoutedByMessageId={{ "assistant-1": true }}
       />,
@@ -130,9 +132,7 @@ describe("ChatConversationLayout — routed model labels", () => {
             provider: "openai",
           },
         ]}
-        messages={[
-          { id: "assistant-1", role: "assistant", content: "Explicit answer" },
-        ]}
+        messages={[{ id: "assistant-1", role: "assistant", content: "Explicit answer" }]}
         routedModelByMessageId={{ "assistant-1": "openai:gpt-4o" }}
         wasAutoRoutedByMessageId={{ "assistant-1": false }}
       />,
@@ -195,12 +195,8 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
       />,
     );
 
-    expect(
-      container.querySelector("[data-chat-progress-stage]"),
-    ).not.toBeNull();
-    expect(screen.getAllByText(/waiting for model|routing/i).length).toBeGreaterThan(
-      0,
-    );
+    expect(container.querySelector("[data-chat-progress-stage]")).not.toBeNull();
+    expect(screen.getAllByText(/waiting for model|routing/i).length).toBeGreaterThan(0);
   });
 
   it("hides status while tokens are actively streaming", () => {
@@ -249,13 +245,9 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
     );
 
     expect(
-      container.querySelector(
-        '[data-chat-progress-stage="searching_materials"]',
-      ),
+      container.querySelector('[data-chat-progress-stage="searching_materials"]'),
     ).not.toBeNull();
-    expect(
-      screen.getAllByText(/searching course materials/i).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/searching course materials/i).length).toBeGreaterThan(0);
   });
 
   it("shows Searching… in compact mode when text exists and a tool is active", () => {

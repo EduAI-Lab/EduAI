@@ -1,4 +1,4 @@
-import type { UserRole } from '@eduai/types';
+import type { UserRole } from "@eduai/types";
 
 /**
  * Effective role for AI Tutor's UI/routing: the platform `UserRole` plus the
@@ -9,9 +9,9 @@ import type { UserRole } from '@eduai/types';
  * `EffectiveRole` pattern (#225 AUTH-12). Never compare this to the raw Core
  * `User.role` — that's `UserRole` and never `'TA'`.
  */
-export type Role = UserRole | 'TA';
+export type Role = UserRole | "TA";
 
-export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
+export type EnrollmentRole = "STUDENT" | "TA" | "INSTRUCTOR";
 
 export type User = {
   id: string;
@@ -113,15 +113,15 @@ export type AdminEnrollmentData = {
   availableStudentsPage: { total: number; page: number; pageSize: number };
 };
 
-export type BugReportStatus = 'unhandled' | 'in progress' | 'resolved';
+export type BugReportStatus = "unhandled" | "in progress" | "resolved";
 
 export type BugReportType =
-  | 'UI_DISPLAY'
-  | 'FEATURE_NOT_WORKING'
-  | 'PERFORMANCE'
-  | 'CONTENT_ERROR'
-  | 'ACCESS_PERMISSION'
-  | 'OTHER';
+  | "UI_DISPLAY"
+  | "FEATURE_NOT_WORKING"
+  | "PERFORMANCE"
+  | "CONTENT_ERROR"
+  | "ACCESS_PERMISSION"
+  | "OTHER";
 
 export type BugReportContext = {
   courseOfferingId?: number | null;
@@ -161,14 +161,12 @@ export type AdminBugReportRow = {
   reporterName?: string | null;
   reporterEmail?: string | null;
   reporterRole?: Role | null;
-  user?:
-    | {
-        id: string;
-        name: string | null;
-        email: string | null;
-        role: Role | null;
-      }
-    | null;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    role: Role | null;
+  } | null;
   userName?: string | null;
   userEmail?: string | null;
   role?: Role | null;
@@ -186,13 +184,13 @@ export type AdminBugReportRow = {
 
 export type EduAiApiKeyStatus = {
   configured: boolean;
-  source: 'ADMIN' | 'ENV' | 'NONE';
+  source: "ADMIN" | "ENV" | "NONE";
   hasAdminOverride: boolean;
   envConfigured: boolean;
   updatedAt: string | null;
 };
 
-export type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
+export type CostTier = "LOW" | "MEDIUM" | "HIGH";
 
 export type AdminAiModelPolicy = {
   allowedTutorModelIds: string[];
@@ -208,7 +206,7 @@ export type Progress = {
   percentage: number;
 };
 
-export type CompletionStatus = 'correct' | 'incorrect' | 'not_attempted';
+export type CompletionStatus = "correct" | "incorrect" | "not_attempted";
 
 export type Course = {
   id: number;
@@ -269,7 +267,7 @@ export type Activity = {
   instructionsMd: string;
   position: number;
   question: string;
-  type: 'MCQ' | 'SHORT_TEXT';
+  type: "MCQ" | "SHORT_TEXT";
   options: { choices?: string[] } | null;
   answer?: any;
   hints: string[];
@@ -307,13 +305,13 @@ export type AiModel = {
   costTier?: CostTier | null;
   roleHint?: string | null;
   studentSelectable?: boolean;
-  availability?: 'allowed' | 'admin-only' | 'blocked';
+  availability?: "allowed" | "admin-only" | "blocked";
   isDefaultTutor?: boolean;
 };
 
 export type SuggestedPrompt = {
   id: number;
-  mode: 'teach' | 'guide';
+  mode: "teach" | "guide";
   text: string;
 };
 

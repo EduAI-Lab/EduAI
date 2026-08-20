@@ -51,7 +51,10 @@ describe("notifyExpiringApiKeys", () => {
     const [where] = prismaMock.userProviderSettings.findMany.mock.calls[0];
     expect(where.where.apiKey).toEqual({ not: null });
     expect(where.where.isEnabled).toBe(true);
-    expect(where.where.apiKeyExpiresAt).toMatchObject({ gte: expect.any(Date), lt: expect.any(Date) });
+    expect(where.where.apiKeyExpiresAt).toMatchObject({
+      gte: expect.any(Date),
+      lt: expect.any(Date),
+    });
   });
 
   it("the query window spans exactly one calendar day", async () => {
@@ -67,7 +70,12 @@ describe("notifyExpiringApiKeys", () => {
     sendEmailMock.mockResolvedValue({ delivered: true });
     prismaMock.userProviderSettings.findMany.mockResolvedValue([
       makeRow({ id: "s1", userId: "u1", user: { email: "alice@test.local", name: "Alice" } }),
-      makeRow({ id: "s2", userId: "u2", user: { email: "bob@test.local", name: "Bob" }, provider: { displayName: "Google AI" } }),
+      makeRow({
+        id: "s2",
+        userId: "u2",
+        user: { email: "bob@test.local", name: "Bob" },
+        provider: { displayName: "Google AI" },
+      }),
     ]);
 
     const result = await notifyExpiringApiKeys();

@@ -72,16 +72,10 @@ export function applySecurityHeaders(
   headers.set("X-Frame-Options", "DENY");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=()",
-  );
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 
   if (opts.isProd) {
-    headers.set(
-      "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains",
-    );
+    headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     headers.set(
       "Content-Security-Policy",
       opts.nonce ? buildHtmlCsp(opts.nonce) : buildResourceCsp(),

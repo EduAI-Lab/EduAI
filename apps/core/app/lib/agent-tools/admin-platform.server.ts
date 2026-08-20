@@ -2,7 +2,12 @@ import { Prisma } from "@prisma/client";
 import cron from "node-cron";
 
 import type { RbacUser } from "~/lib/auth/course-access.server";
-import { CreateAIProviderSchema, CreateAIModelSchema, UpdateAIProviderSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
+import {
+  CreateAIProviderSchema,
+  CreateAIModelSchema,
+  UpdateAIProviderSchema,
+  UpdateAIModelSchema,
+} from "~/lib/ai/schemas";
 import {
   isEmbeddingIndexStale,
   parseEmbeddingSettingsUpdate,
@@ -11,16 +16,12 @@ import {
 } from "~/lib/ai/embedding-config";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
 import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
-import {
-  InvalidOllamaBaseUrlError,
-  ollamaTagsUrl,
-} from "~/lib/ai/ollama-url.server";
+import { InvalidOllamaBaseUrlError, ollamaTagsUrl } from "~/lib/ai/ollama-url.server";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import {
-  findActiveReEmbedJob,
   getReEmbedJobForCourse,
   serializeReEmbedJob,
-  startReEmbedJob,
+  startOrResumeReEmbedJob,
 } from "~/lib/ai/re-embed-job.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import {
@@ -28,27 +29,20 @@ import {
   UpdateCourseRagSettingsSchema,
   UpdateCourseSchema,
 } from "~/lib/courses/schemas";
-import {
-  getCourseRagSettings,
-  invalidateCourseRagSettingsCache,
-} from "~/lib/courses/server";
+import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { addCourseTA, getCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
 } from "~/lib/canvas/materials.server";
-import {
-  getPolicies,
-  getPolicyDefinitions,
-  isPolicyKey,
-  setPolicy,
-} from "~/lib/policy.server";
+import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import {
   KNOWN_CRON_JOBS,
   getRecentCronJobRuns,
   listCronJobStatuses,
   resetCronSchedule,
   startCronRun,
+  triggerCronJobAsync,
   updateCronSchedule,
 } from "~/lib/db.cron-jobs.server";
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
@@ -405,13 +399,8 @@ export async function startAdminCourseReEmbed(
   const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
-  const active = await findActiveReEmbedJob(courseId);
-  if (active) {
-    return adminPayload({ job: serializeReEmbedJob(active), alreadyRunning: true });
-  }
-
-  const { job } = await startReEmbedJob(courseId);
-  return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: false });
+  const { job, created } = await startOrResumeReEmbedJob(courseId);
+  return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: !created });
 }
 
 export async function getAdminCourseReEmbedJob(
@@ -497,7 +486,12 @@ export async function listAdminCourseTAs(
 
 export async function addAdminCourseTA(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -512,7 +506,12 @@ export async function addAdminCourseTA(
 
 export async function removeAdminCourseTA(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId: string;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -527,7 +526,12 @@ export async function removeAdminCourseTA(
 
 export async function listAdminCourseChats(
   actor: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; limit?: number },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    limit?: number;
+  },
 ) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -551,11 +555,7 @@ export async function listAdminCourseChats(
   return adminPayload({ chats, count: chats.length });
 }
 
-export async function listAdminUnitChats(
-  actor: RbacUser,
-  department: string,
-  limit = 50,
-) {
+export async function listAdminUnitChats(actor: RbacUser, department: string, limit = 50) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -750,19 +750,11 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { error: "CRON_JOB_NOT_TRIGGERABLE" };
   }
 
-  const { findRunningCronRun, startCronRun } = await import("~/lib/db.cron-jobs.server");
-  const alreadyRunning = await findRunningCronRun(jobName);
-  if (alreadyRunning) {
-    return { ok: true, runId: alreadyRunning.id, jobName, reused: true };
+  const result = await startCronRun(jobName);
+  if (result.created) {
+    triggerCronJobAsync(jobName, job.script, result.runId, result.leaseOwner);
   }
-
-  const { runId, created } = await startCronRun(jobName, {
-    source: "ADMIN_CHAT",
-    triggeredByUserId: actor.id,
-  });
-  // The dedicated cron worker claims ADMIN_CHAT runs during reconciliation so
-  // shell jobs execute under eduai-cron instead of the Core web account.
-  return { ok: true, runId, jobName, reused: !created };
+  return { ok: true, runId: result.runId, jobName, reused: !result.created };
 }
 
 export async function updateAdminCronSchedule(
@@ -800,16 +792,23 @@ export async function getAdminDashboardStats(actor: RbacUser) {
   const week = new Date();
   week.setDate(week.getDate() - 7);
 
-  const [chatCount, chatCountWeek, materialCount, studentCount, instructorCount, totalUsers, activeCourseCount] =
-    await Promise.all([
-      prisma.chat.count(),
-      prisma.chat.count({ where: { createdAt: { gte: week } } }),
-      prisma.courseMaterial.count({ where: { deletedAt: null } }),
-      prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
-      prisma.user.count({ where: { role: "INSTRUCTOR" } }),
-      prisma.user.count(),
-      prisma.course.count({ where: { isActive: true, deletedAt: null } }),
-    ]);
+  const [
+    chatCount,
+    chatCountWeek,
+    materialCount,
+    studentCount,
+    instructorCount,
+    totalUsers,
+    activeCourseCount,
+  ] = await Promise.all([
+    prisma.chat.count(),
+    prisma.chat.count({ where: { createdAt: { gte: week } } }),
+    prisma.courseMaterial.count({ where: { deletedAt: null } }),
+    prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
+    prisma.user.count({ where: { role: "INSTRUCTOR" } }),
+    prisma.user.count(),
+    prisma.course.count({ where: { isActive: true, deletedAt: null } }),
+  ]);
 
   return adminPayload({
     stats: {

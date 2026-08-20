@@ -11,15 +11,22 @@
 // `npm run test:pict:gen` from tests/models/trace-oversight-gate.pict), and
 // one world-builder here.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { createApp } from '../../src/app.js';
-import { makeProfessor, makeAdmin, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { createApp } from "../../src/app.js";
+import {
+  makeProfessor,
+  makeAdmin,
+  makeUnitAdmin,
+  truncateAll,
+  seedMinimalCourse,
+  prisma,
+} from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
@@ -28,18 +35,18 @@ vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
   };
 });
 
-import { listEduAiCoursesServiceKey } from '../../src/services/eduaiClient.js';
+import { listEduAiCoursesServiceKey } from "../../src/services/eduaiClient.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
-const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/models/trace-oversight-gate.cases.json'), 'utf8'));
-const {
-  expectedStatus,
-  expectedCoreStatusHeader,
-  expectedSeesOwnCourseTraces,
-} = await import(path.join(repoRoot, 'tests/models/trace-oversight-gate.oracle.ts'));
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
+const rows = JSON.parse(
+  readFileSync(path.join(repoRoot, "tests/models/trace-oversight-gate.cases.json"), "utf8"),
+);
+const { expectedStatus, expectedCoreStatusHeader, expectedSeesOwnCourseTraces } = await import(
+  path.join(repoRoot, "tests/models/trace-oversight-gate.oracle.ts")
+);
 
-const DEPARTMENT = 'COSC';
-const FOREIGN_DEPARTMENT = 'MATH';
+const DEPARTMENT = "COSC";
+const FOREIGN_DEPARTMENT = "MATH";
 
 beforeEach(async () => {
   await truncateAll();
@@ -57,53 +64,55 @@ async function buildRow(row) {
     data: {
       lessonId: seed.lesson.id,
       mainTopicId: seed.topic.id,
-      instructionsMd: 'Instructions',
-      config: { question: 'Q?', questionType: 'MCQ' },
+      instructionsMd: "Instructions",
+      config: { question: "Q?", questionType: "MCQ" },
     },
   });
   await prisma.aiInteractionTrace.create({
     data: {
-      mode: 'guide',
-      userMessage: 'help',
-      finalResponse: 'sure',
-      finalOutcome: 'completed',
+      mode: "guide",
+      userMessage: "help",
+      finalResponse: "sure",
+      finalOutcome: "completed",
       iterationCount: 1,
       trace: [],
-      userId: 'stu_1',
+      userId: "stu_1",
       activityId: activity.id,
     },
   });
 
-  if (row.CoreAvailable === 'yes') {
+  if (row.CoreAvailable === "yes") {
     listEduAiCoursesServiceKey.mockResolvedValue([
-      { id: seed.course.coreOfferingId, name: 'Seeded Course', department: DEPARTMENT },
+      { id: seed.course.coreOfferingId, name: "Seeded Course", department: DEPARTMENT },
     ]);
   } else {
-    listEduAiCoursesServiceKey.mockRejectedValue(new Error('Core catalog unavailable'));
+    listEduAiCoursesServiceKey.mockRejectedValue(new Error("Core catalog unavailable"));
   }
 
   const mockUser =
-    row.Role === 'ADMIN' ? makeAdmin() : makeUnitAdmin(row.AuthorizedUnits === 'nonempty' ? [DEPARTMENT] : []);
+    row.Role === "ADMIN"
+      ? makeAdmin()
+      : makeUnitAdmin(row.AuthorizedUnits === "nonempty" ? [DEPARTMENT] : []);
   const app = await createApp({ mockUser });
 
   const query = new URLSearchParams();
-  if (row.UnitParam === 'own') query.set('unit', DEPARTMENT);
-  if (row.UnitParam === 'foreign') query.set('unit', FOREIGN_DEPARTMENT);
-  if (row.CourseIdParam === 'valid') query.set('courseId', String(seed.course.id));
-  if (row.CourseIdParam === 'invalid') query.set('courseId', 'abc');
+  if (row.UnitParam === "own") query.set("unit", DEPARTMENT);
+  if (row.UnitParam === "foreign") query.set("unit", FOREIGN_DEPARTMENT);
+  if (row.CourseIdParam === "valid") query.set("courseId", String(seed.course.id));
+  if (row.CourseIdParam === "invalid") query.set("courseId", "abc");
 
   return { app, query: query.toString() };
 }
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  'trace-oversight-gate PICT row #$index $row.Role/$row.AuthorizedUnits/$row.UnitParam/$row.CoreAvailable/$row.CourseIdParam',
+  "trace-oversight-gate PICT row #$index $row.Role/$row.AuthorizedUnits/$row.UnitParam/$row.CoreAvailable/$row.CourseIdParam",
   ({ row }) => {
-    it('matches the oracle', async () => {
+    it("matches the oracle", async () => {
       const { app, query } = await buildRow(row);
-      const res = await request(app).get(`/api/admin/ai-traces${query ? `?${query}` : ''}`);
+      const res = await request(app).get(`/api/admin/ai-traces${query ? `?${query}` : ""}`);
 
       expect(res.status).toBe(expectedStatus(row));
-      expect(res.headers['x-core-status'] === 'unavailable').toBe(expectedCoreStatusHeader(row));
+      expect(res.headers["x-core-status"] === "unavailable").toBe(expectedCoreStatusHeader(row));
 
       const expectedSees = expectedSeesOwnCourseTraces(row);
       if (expectedSees !== null) {

@@ -5,6 +5,17 @@ See `docs/implementations/EduAI_CronJob_DataLifecycle_Spec.md` for the full spec
 
 **Local testing (Windows / WSL / macOS):** [`docs/implementations/server-backup-cron-local-testing.md`](../../docs/implementations/server-backup-cron-local-testing.md) — use `bash infra/cron/dry-run-local.sh all` from repo root.
 
+Every production script records its lifecycle in Core's `cron_job_runs` table.
+When a script is invoked directly (without `CORE_CRON_RUN_ID`), `lib.sh`
+creates a database-timestamped `RUNNING` row with a database-generated owner
+token, heartbeat, and finite expiry. Set `CRON_STANDALONE_LEASE_MS` in
+`/etc/eduai/cron.env` when a direct run can exceed the 10-minute default. A
+start insert failure stops the job before any work runs; completion/error
+updates require the same owner token and an unexpired lease, then clear all
+lease columns. A stale process therefore cannot terminalize a successor's
+run. Core-triggered children keep their `CORE_CRON_RUN_ID` behavior and leave
+all audit transitions to Core.
+
 ## Scripts
 
 | Script | UTC Schedule | Purpose |
@@ -50,11 +61,12 @@ sudo cp infra/cron/logrotate.conf /etc/logrotate.d/eduai-cron
 sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh
 ```
 
-> **Note:** these scripts are scheduled by the dedicated Core cron worker running
-> as `eduai-cron` (`CRON_SCRIPT_DIR=/opt/eduai/cron`). Schedules are managed via
-> the Admin → Cron Jobs panel and stored in the database — there is no system
-> crontab entry for these jobs. Install the worker with
-> `infra/s378/go-live-systemd-install.sh` before the first Core deployment.
+The direct command above uses the standalone lease path. It is safe to invoke
+from an OS scheduler as long as `CRON_STANDALONE_LEASE_MS` is longer than the
+expected runtime. A second invocation for the same job fails closed if the
+database still has a live `RUNNING` lease.
+
+> **Note:** these scripts are scheduled by the Core in-process scheduler (`CRON_SCRIPT_DIR` env var must point to the directory containing them). Schedules are managed via the Admin → Cron Jobs panel and stored in the database — there is no system crontab entry for these jobs.
 
 ## Off-site storage
 

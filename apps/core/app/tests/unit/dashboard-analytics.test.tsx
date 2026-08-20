@@ -41,13 +41,11 @@ describe("DashboardAnalytics", () => {
   });
 
   it("reports weekly vs. total chat counts when activity exists", () => {
-    render(
-      <DashboardAnalytics
-        stats={{ ...baseStats, chatCount: 20, chatCountWeek: 6 }}
-      />,
-    );
+    render(<DashboardAnalytics stats={{ ...baseStats, chatCount: 20, chatCountWeek: 6 }} />);
 
-    expect(screen.getByText("6 of 20 total conversations happened in the last 7 days.")).toBeInTheDocument();
+    expect(
+      screen.getByText("6 of 20 total conversations happened in the last 7 days."),
+    ).toBeInTheDocument();
   });
 
   it("hides the materials panel when materialsByStatus is absent", () => {

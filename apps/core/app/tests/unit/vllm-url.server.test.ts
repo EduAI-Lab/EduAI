@@ -6,8 +6,7 @@ import { InvalidVllmBaseUrlError, resolveAllowedVllmBaseUrl } from "~/lib/ai/vll
 const originalVllmBaseUrl = process.env.VLLM_BASE_URL;
 const originalFleetChatUrls = process.env.VLLM_FLEET_CHAT_URLS;
 const originalFleetHeavyUrl = process.env.VLLM_FLEET_HEAVY_URL;
-const originalTrustedBaseUrls = process.env.VLLM_TRUSTED_BASE_URLS;
-const originalCmpsBaseUrl = process.env.CMPS01_INTERNAL_BASE_URL;
+const originalNodeEnv = process.env.NODE_ENV;
 
 afterEach(() => {
   if (originalVllmBaseUrl === undefined) delete process.env.VLLM_BASE_URL;
@@ -16,10 +15,8 @@ afterEach(() => {
   else process.env.VLLM_FLEET_CHAT_URLS = originalFleetChatUrls;
   if (originalFleetHeavyUrl === undefined) delete process.env.VLLM_FLEET_HEAVY_URL;
   else process.env.VLLM_FLEET_HEAVY_URL = originalFleetHeavyUrl;
-  if (originalTrustedBaseUrls === undefined) delete process.env.VLLM_TRUSTED_BASE_URLS;
-  else process.env.VLLM_TRUSTED_BASE_URLS = originalTrustedBaseUrls;
-  if (originalCmpsBaseUrl === undefined) delete process.env.CMPS01_INTERNAL_BASE_URL;
-  else process.env.CMPS01_INTERNAL_BASE_URL = originalCmpsBaseUrl;
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
 });
 
 describe("resolveAllowedVllmBaseUrl", () => {
@@ -27,8 +24,8 @@ describe("resolveAllowedVllmBaseUrl", () => {
     process.env.VLLM_BASE_URL = "http://vllm.example.edu:8001";
 
     expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:8001")).toBe("http://127.0.0.1:8001");
-    expect(resolveAllowedVllmBaseUrl("http://vllm.example.edu:9443")).toBe(
-      "http://vllm.example.edu:9443",
+    expect(resolveAllowedVllmBaseUrl("http://vllm.example.edu:8001")).toBe(
+      "http://vllm.example.edu:8001",
     );
   });
 
@@ -74,8 +71,59 @@ describe("resolveAllowedVllmBaseUrl", () => {
   });
 
   it("rejects non-HTTP schemes", () => {
-    expect(() => resolveAllowedVllmBaseUrl("file:///etc/passwd")).toThrow(
+    expect(() => resolveAllowedVllmBaseUrl("file:///etc/passwd")).toThrow(InvalidVllmBaseUrlError);
+  });
+
+  it("rejects arbitrary loopback ports and paths in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.VLLM_BASE_URL = "http://vllm.example.edu:8001/v1";
+
+    expect(() => resolveAllowedVllmBaseUrl("http://127.0.0.1:9999/private")).toThrow(
+      InvalidVllmBaseUrlError,
+    );
+    expect(() => resolveAllowedVllmBaseUrl("http://127.0.0.1:8001/v1")).toThrow(
+      InvalidVllmBaseUrlError,
+    );
+    expect(() => resolveAllowedVllmBaseUrl("http://vllm.example.edu:8001/private")).toThrow(
       InvalidVllmBaseUrlError,
     );
   });
+
+  it("preserves an exact deployment-owned loopback base in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.VLLM_BASE_URL = "http://127.0.0.1:8001/v1";
+
+    expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:8001/v1")).toBe("http://127.0.0.1:8001/v1");
+  });
+
+  it.each(["staging", "preview", "qa", "production", undefined])(
+    "rejects loopback Docker/internal targets when NODE_ENV=%s",
+    (nodeEnv) => {
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      process.env.VLLM_BASE_URL = "https://vllm.example.edu:8001/v1";
+
+      expect(() => resolveAllowedVllmBaseUrl("http://127.0.0.1:2375/docker.sock")).toThrow(
+        InvalidVllmBaseUrlError,
+      );
+      expect(() => resolveAllowedVllmBaseUrl("http://[::1]:2376/internal")).toThrow(
+        InvalidVllmBaseUrlError,
+      );
+    },
+  );
+
+  it.each(["development", "test"])(
+    "allows loopback targets only for explicit local NODE_ENV=%s",
+    (nodeEnv) => {
+      process.env.NODE_ENV = nodeEnv;
+      process.env.VLLM_BASE_URL = "https://vllm.example.edu:8001/v1";
+
+      expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:2375/docker.sock")).toBe(
+        "http://127.0.0.1:2375/docker.sock",
+      );
+      expect(resolveAllowedVllmBaseUrl("http://[::1]:2376/internal")).toBe(
+        "http://[::1]:2376/internal",
+      );
+    },
+  );
 });

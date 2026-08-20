@@ -1,5 +1,5 @@
-import { prisma } from '../config/database.js';
-import { listEduAiCourseTopics } from './eduaiClient.js';
+import { prisma } from "../config/database.js";
+import { listEduAiCourseTopics } from "./eduaiClient.js";
 
 /**
  * How long a successful auto-sync is trusted before the next GET /topics
@@ -40,7 +40,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
     // Not an external course; nothing to sync
     const local = await prisma.topic.findMany({
       where: { courseOfferingId },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
     return local;
   }
@@ -50,7 +50,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
     if (lastSync && Date.now() - lastSync < options.ttlMs) {
       const local = await prisma.topic.findMany({
         where: { courseOfferingId },
-        orderBy: { name: 'asc' },
+        orderBy: { name: "asc" },
       });
       return { topics: local, upstreamNames: null, skipped: true };
     }
@@ -61,13 +61,13 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
   try {
     externalTopics = await listEduAiCourseTopics(course.coreOfferingId, { signal: options.signal });
   } catch (e) {
-    e.phase = e.phase || 'fetch';
+    e.phase = e.phase || "fetch";
     throw e;
   }
   const upstreamNames = Array.from(
     new Set(
       externalTopics
-        .map((t) => (t && typeof t.name === 'string' ? t.name.trim() : ''))
+        .map((t) => (t && typeof t.name === "string" ? t.name.trim() : ""))
         .filter((n) => n.length > 0),
     ),
   );
@@ -77,7 +77,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
     lastAutoSyncAt.set(courseOfferingId, Date.now());
     const local = await prisma.topic.findMany({
       where: { courseOfferingId },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
     return { topics: local, upstreamNames: [] };
   }
@@ -98,7 +98,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
         skipDuplicates: true,
       });
     } catch (e) {
-      e.phase = 'write';
+      e.phase = "write";
       throw e;
     }
   }
@@ -107,7 +107,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
 
   const local = await prisma.topic.findMany({
     where: { courseOfferingId },
-    orderBy: { name: 'asc' },
+    orderBy: { name: "asc" },
   });
   return { topics: local, upstreamNames };
 }

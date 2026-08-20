@@ -15,7 +15,12 @@ const rows = stubBugReports.map((r) => ({
 describe("BugReportsAdminView (shared)", () => {
   it("renders bug reports for admin triage", () => {
     render(
-      <BugReportsAdminView reports={rows} isLoading={false} onUpdateStatus={vi.fn()} showSourceColumn />,
+      <BugReportsAdminView
+        reports={rows}
+        isLoading={false}
+        onUpdateStatus={vi.fn()}
+        showSourceColumn
+      />,
     );
 
     expect(screen.getByText("Bug reports")).toBeInTheDocument();
