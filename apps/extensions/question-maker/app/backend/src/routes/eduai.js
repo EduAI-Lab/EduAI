@@ -174,7 +174,11 @@ const generationAdmission = qmAiProviderCallAdmission({
       const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
       const hasCourseCode = typeof body?.courseCode === "string" && body.courseCode.trim() !== "";
       if (!hasCourseId && !hasCourseCode) {
-        return { status: 400, body: { error: "Course id or course code is required" } };
+        return {
+          status: 400,
+          code: "QM_COURSE_REQUIRED",
+          message: "Course id or course code is required",
+        };
       }
       return budget;
     }
@@ -182,7 +186,11 @@ const generationAdmission = qmAiProviderCallAdmission({
     const hasCourseId = body?.courseId != null && String(body.courseId).trim() !== "";
     const hasCourseCode = typeof body?.courseCode === "string" && body.courseCode.trim() !== "";
     if (!hasCourseId && !hasCourseCode) {
-      return { status: 400, body: { error: "Course id or course code is required" } };
+      return {
+        status: 400,
+        code: "QM_COURSE_REQUIRED",
+        message: "Course id or course code is required",
+      };
     }
 
     // generateQuestions makes one provider call and may make one bounded
