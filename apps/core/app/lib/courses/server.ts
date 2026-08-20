@@ -1,4 +1,5 @@
 import { UserRole, type Prisma } from "@prisma/client";
+import { compareByTerm } from "@eduai/ui/term";
 import prisma from "~/lib/prisma.server";
 import {
   paginatedResponse,
@@ -211,6 +212,43 @@ export async function getCourseTopicNamesCached(courseId: string): Promise<strin
   return value;
 }
 
+// ---------------------------------------------------------------------------
+// Course-list search + filter parsing (#1263)
+//
+// Repeated `status`, `term`, and `department` query params narrow the WHOLE
+// accessible dataset before `count`/`skip`/`take`, so a match that sorts past
+// page 1 is found instead of being reported absent. Values use the same
+// `<term>::<year>` key shape `buildTermFilterGroup` emits in packages/ui.
+// ---------------------------------------------------------------------------
+
+/** The two values the Status dimension accepts (mirrors buildStatusFilterGroup). */
+const COURSE_STATUS_VALUES = ["published", "draft"] as const;
+
+/** Upper bound on how many values one repeatable filter param may carry. */
+const MAX_FILTER_VALUES = 25;
+
+/** Parse a `<term>::<year>` filter key into its parts, or null when malformed. */
+function parseTermKey(value: string): { term: string; year: number } | null {
+  const parts = value.split("::");
+  if (parts.length !== 2) return null;
+  const term = parts[0].trim();
+  const year = Number(parts[1].trim());
+  if (!term || !Number.isInteger(year) || year < 0) return null;
+  return { term, year };
+}
+
+/** Read a repeatable multi-select param, de-duped and blank-stripped. */
+function parseRepeatedValues(searchParams: URLSearchParams, key: string): string[] {
+  return [
+    ...new Set(
+      searchParams
+        .getAll(key)
+        .map((v) => v.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 /**
  * GET /api/courses — list active courses.
  *
@@ -266,7 +304,36 @@ export async function getCourses(request: Request) {
 
   const isActiveParam = searchParams.get("isActive");
 
-  /** Narrow an access-scoped filter with the caller's `ids`/`search` selectors. */
+  // #1263: parse repeatable filter params and validate before any query so a
+  // malformed value 400s instead of silently narrowing (or widening) the set.
+  const statusValues = parseRepeatedValues(searchParams, "status");
+  const termValues = parseRepeatedValues(searchParams, "term");
+  const departmentValues = parseRepeatedValues(searchParams, "department");
+
+  if (
+    statusValues.length > MAX_FILTER_VALUES ||
+    termValues.length > MAX_FILTER_VALUES ||
+    departmentValues.length > MAX_FILTER_VALUES
+  ) {
+    return apiError(400, "FILTER_TOO_MANY", {
+      filters: `At most ${MAX_FILTER_VALUES} values per filter`,
+    });
+  }
+  for (const value of statusValues) {
+    if (!(COURSE_STATUS_VALUES as readonly string[]).includes(value)) {
+      return apiError(400, "FILTER_INVALID", { status: `Unsupported value "${value}"` });
+    }
+  }
+  const termKeys: { term: string; year: number }[] = [];
+  for (const value of termValues) {
+    const key = parseTermKey(value);
+    if (!key) {
+      return apiError(400, "FILTER_INVALID", { term: 'Expected "<term>::<year>"' });
+    }
+    termKeys.push(key);
+  }
+
+  /** Narrow an access-scoped filter with the caller's `ids`/`search`/filter selectors. */
   const withSelectors = (base: Prisma.CourseWhereInput): Prisma.CourseWhereInput => {
     const and: Prisma.CourseWhereInput[] = [base];
     if (idsResult.ids) and.push({ id: { in: idsResult.ids } });
@@ -278,6 +345,16 @@ export async function getCourses(request: Request) {
           { name: { contains: search, mode: "insensitive" } },
         ],
       });
+    }
+    // #1263: OR within a group, AND across groups, AND with the auth scope.
+    if (statusValues.length > 0) {
+      and.push({ OR: statusValues.map((v) => ({ isPublished: v === "published" })) });
+    }
+    if (termKeys.length > 0) {
+      and.push({ OR: termKeys.map(({ term, year }) => ({ term, year })) });
+    }
+    if (departmentValues.length > 0) {
+      and.push({ department: { in: departmentValues } });
     }
     return and.length === 1 ? base : { AND: and };
   };
@@ -361,6 +438,61 @@ export async function getCourses(request: Request) {
   return pagination
     ? paginatedResponse(coursesWithCallerRole, total, pagination)
     : unpagedResponse(coursesWithCallerRole);
+}
+
+/**
+ * GET /api/courses/facets — filter option values for the course list (#1263).
+ *
+ * Returns `{ status: string[], term: string[], department: string[] }`, keyed by
+ * the filter-group ids `CourseListView` consumes. Values come from the caller's
+ * WHOLE accessible set (reusing `buildCourseListFilter`, never the current
+ * page) so a dropdown cannot offer — or leak — metadata from a course the
+ * caller cannot see. Scalar-only projection: no full Course rows are fetched.
+ */
+export async function getCourseFacets(request: Request) {
+  const session = await getRequestSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Same scope as the list response, so facets can never disagree with (or
+  // widen) what `getCourses` would return for this caller.
+  const where = await buildCourseListFilter(session.user, false);
+
+  const rows = await prisma.course.findMany({
+    where,
+    select: { isPublished: true, term: true, year: true, department: true },
+  });
+
+  const statuses = new Set<string>();
+  const termByKey = new Map<string, { term: string; year: number }>();
+  const departments = new Set<string>();
+
+  for (const row of rows) {
+    statuses.add(row.isPublished ? "published" : "draft");
+    if (row.term && row.year != null) {
+      // Key shape must byte-match `buildTermFilterGroup` (`${term}::${year}`).
+      const key = `${row.term}::${row.year}`;
+      if (!termByKey.has(key)) termByKey.set(key, { term: row.term, year: row.year });
+    }
+    if (row.department) departments.add(row.department);
+  }
+
+  // Most-recent-first terms (mirrors the list's term section order); the client
+  // still re-sorts via `optionSortKey`, so this only pins a stable order.
+  const term = [...termByKey.values()]
+    .sort(compareByTerm)
+    .map(({ term: t, year }) => `${t}::${year}`);
+  const department = [...departments].sort((a, b) => a.localeCompare(b));
+
+  return jsonResponse(200, {
+    status: COURSE_STATUS_VALUES.filter((value) => statuses.has(value)),
+    term,
+    department,
+  });
 }
 
 /**

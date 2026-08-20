@@ -67,7 +67,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
-  const { courses } = useCourses({ pageSize: 200 });
+  // Facets are only consumed by the course-list filter toolbar, so skip them.
+  const { courses } = useCourses({ pageSize: 200, includeFacets: false });
   // Every chat is course-scoped now (global/no-course chat was removed). The
   // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
   // sees courses in their authorized units, others see their enrollments.
