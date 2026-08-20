@@ -58,10 +58,11 @@ test.describe("Question Maker connectivity probe (course-free, #1109)", () => {
     // Provider unreachable (E2E has no real AI provider, so the campus vLLM
     // path times out). The probe must still have reached Core's course-free
     // /api/completion boundary: `chat()` attempted the authenticated
-    // completion call and surfaced a Core/provider failure — never a course
-    // gate, and never an auth failure.
+    // completion call and the hardened route returned its stable rejection
+    // contract — never a course gate, and never an auth failure.
     const error = String(body.error ?? "");
-    expect(error).toMatch(/^API key test failed: EduAI API /);
+    expect(error).toBe("EduAI API key test failed");
+    expect(body.code).toBe("EDUAI_API_KEY_TEST_REJECTED");
     expect(error.toLowerCase()).not.toContain("course");
     expect(error).not.toContain("COURSE_REQUIRED");
     expect(error).not.toContain("COSC 121");
