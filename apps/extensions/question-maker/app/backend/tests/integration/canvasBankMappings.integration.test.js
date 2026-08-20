@@ -15,17 +15,17 @@
  * which only the real schema can verify. Use the dedicated TEST_DATABASE_URL
  * (never a dev/production database); the suite self-skips when it is unset.
  */
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
+describeDb("canvas bank mapping CUID foreign keys (integration)", () => {
   let prisma, connectTestDatabase, truncateTestDatabase;
 
   // Synthetic Core-style CUID-like ids; no real user data.
-  const USER_ID = 'cuid-1108-bank-user';
-  const MISSING_USER_ID = 'cuid-1108-does-not-exist';
+  const USER_ID = "cuid-1108-bank-user";
+  const MISSING_USER_ID = "cuid-1108-does-not-exist";
 
   let courseA;
   let courseB;
@@ -35,7 +35,7 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
   let questionB;
 
   beforeAll(async () => {
-    const testDb = await import('../helpers/testDb.js');
+    const testDb = await import("../helpers/testDb.js");
     ({ prisma, connectTestDatabase, truncateTestDatabase } = testDb);
     await connectTestDatabase();
   });
@@ -50,28 +50,28 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
     await truncateTestDatabase();
 
     await prisma.user.create({
-      data: { id: USER_ID, email: 'bank-1108@test.com', name: 'Bank User' },
+      data: { id: USER_ID, email: "bank-1108@test.com", name: "Bank User" },
     });
 
     // Minimal supporting rows: two local courses (for the isolation cases), one
     // topic + question-metadata shell each (required by the question mapping FK).
     courseA = await prisma.course.create({
-      data: { userId: USER_ID, coreCourseId: 'core-1108-a' },
+      data: { userId: USER_ID, coreCourseId: "core-1108-a" },
     });
     courseB = await prisma.course.create({
-      data: { userId: USER_ID, coreCourseId: 'core-1108-b' },
+      data: { userId: USER_ID, coreCourseId: "core-1108-b" },
     });
     topicA = await prisma.topics.create({
-      data: { id: 'topic-1108-a', name: 'Topic A', courseId: courseA.id },
+      data: { id: "topic-1108-a", name: "Topic A", courseId: courseA.id },
     });
     topicB = await prisma.topics.create({
-      data: { id: 'topic-1108-b', name: 'Topic B', courseId: courseB.id },
+      data: { id: "topic-1108-b", name: "Topic B", courseId: courseB.id },
     });
     questionA = await prisma.questionMetadata.create({
-      data: { courseId: courseA.id, primaryTopicId: topicA.id, type: 'MCQ', description: 'Q A' },
+      data: { courseId: courseA.id, primaryTopicId: topicA.id, type: "MCQ", description: "Q A" },
     });
     questionB = await prisma.questionMetadata.create({
-      data: { courseId: courseB.id, primaryTopicId: topicB.id, type: 'MCQ', description: 'Q B' },
+      data: { courseId: courseB.id, primaryTopicId: topicB.id, type: "MCQ", description: "Q B" },
     });
   });
 
@@ -79,7 +79,7 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
     return {
       userId: USER_ID,
       localCourseId: courseA.id,
-      localBankId: 'bank-1108',
+      localBankId: "bank-1108",
       canvasCourseId: 100,
       canvasBankId: 200,
       ...overrides,
@@ -92,13 +92,13 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
       localCourseId: courseA.id,
       localQuestionMetadataId: questionA.id,
       canvasAssessmentQuestionId: 300,
-      localBankId: 'bank-1108',
+      localBankId: "bank-1108",
       ...overrides,
     };
   }
 
-  describe('schema', () => {
-    it('backs both user_id columns with a TEXT foreign key to users(id)', async () => {
+  describe("schema", () => {
+    it("backs both user_id columns with a TEXT foreign key to users(id)", async () => {
       const rows = await prisma.$queryRaw`
         SELECT c.relname   AS table_name,
                a.attname   AS column_name,
@@ -118,15 +118,15 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
 
       expect(rows).toHaveLength(2);
       for (const row of rows) {
-        expect(row.column_name).toBe('user_id');
-        expect(row.data_type).toBe('text');
-        expect(row.referenced_table).toBe('users');
+        expect(row.column_name).toBe("user_id");
+        expect(row.data_type).toBe("text");
+        expect(row.referenced_table).toBe("users");
       }
     });
   });
 
-  describe('valid string CUID persistence', () => {
-    it('persists a CanvasBankMapping with the exact string userId and localCourseId', async () => {
+  describe("valid string CUID persistence", () => {
+    it("persists a CanvasBankMapping with the exact string userId and localCourseId", async () => {
       const created = await prisma.canvasBankMapping.create({ data: bankMappingData() });
       expect(created.userId).toBe(USER_ID);
       expect(created.localCourseId).toBe(courseA.id);
@@ -136,7 +136,7 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
       expect(fetched.localCourseId).toBe(courseA.id);
     });
 
-    it('persists a CanvasBankQuestionMapping with the exact string userId and localCourseId', async () => {
+    it("persists a CanvasBankQuestionMapping with the exact string userId and localCourseId", async () => {
       const created = await prisma.canvasBankQuestionMapping.create({
         data: questionMappingData(),
       });
@@ -151,73 +151,73 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
     });
   });
 
-  describe('foreign key enforcement', () => {
-    it('rejects a nonexistent user CUID for CanvasBankMapping and persists no row', async () => {
+  describe("foreign key enforcement", () => {
+    it("rejects a nonexistent user CUID for CanvasBankMapping and persists no row", async () => {
       await expect(
         prisma.canvasBankMapping.create({ data: bankMappingData({ userId: MISSING_USER_ID }) }),
-      ).rejects.toMatchObject({ code: 'P2003' });
+      ).rejects.toMatchObject({ code: "P2003" });
       expect(await prisma.canvasBankMapping.count()).toBe(0);
     });
 
-    it('rejects a nonexistent user CUID for CanvasBankQuestionMapping and persists no row', async () => {
+    it("rejects a nonexistent user CUID for CanvasBankQuestionMapping and persists no row", async () => {
       await expect(
         prisma.canvasBankQuestionMapping.create({
           data: questionMappingData({ userId: MISSING_USER_ID }),
         }),
-      ).rejects.toMatchObject({ code: 'P2003' });
+      ).rejects.toMatchObject({ code: "P2003" });
       expect(await prisma.canvasBankQuestionMapping.count()).toBe(0);
     });
   });
 
-  describe('invalid user ids', () => {
-    it('rejects a null userId for CanvasBankMapping (Prisma client validation)', async () => {
+  describe("invalid user ids", () => {
+    it("rejects a null userId for CanvasBankMapping (Prisma client validation)", async () => {
       await expect(
         prisma.canvasBankMapping.create({ data: bankMappingData({ userId: null }) }),
-      ).rejects.toMatchObject({ name: 'PrismaClientValidationError' });
+      ).rejects.toMatchObject({ name: "PrismaClientValidationError" });
       expect(await prisma.canvasBankMapping.count()).toBe(0);
     });
 
-    it('rejects a null userId for CanvasBankQuestionMapping (Prisma client validation)', async () => {
+    it("rejects a null userId for CanvasBankQuestionMapping (Prisma client validation)", async () => {
       await expect(
         prisma.canvasBankQuestionMapping.create({ data: questionMappingData({ userId: null }) }),
-      ).rejects.toMatchObject({ name: 'PrismaClientValidationError' });
+      ).rejects.toMatchObject({ name: "PrismaClientValidationError" });
       expect(await prisma.canvasBankQuestionMapping.count()).toBe(0);
     });
 
-    it('rejects a numeric userId for CanvasBankMapping before reaching PostgreSQL', async () => {
+    it("rejects a numeric userId for CanvasBankMapping before reaching PostgreSQL", async () => {
       await expect(
         prisma.canvasBankMapping.create({ data: bankMappingData({ userId: 12345 }) }),
-      ).rejects.toMatchObject({ name: 'PrismaClientValidationError' });
+      ).rejects.toMatchObject({ name: "PrismaClientValidationError" });
       expect(await prisma.canvasBankMapping.count()).toBe(0);
     });
 
-    it('rejects a numeric userId for CanvasBankQuestionMapping before reaching PostgreSQL', async () => {
+    it("rejects a numeric userId for CanvasBankQuestionMapping before reaching PostgreSQL", async () => {
       await expect(
         prisma.canvasBankQuestionMapping.create({ data: questionMappingData({ userId: 99999 }) }),
-      ).rejects.toMatchObject({ name: 'PrismaClientValidationError' });
+      ).rejects.toMatchObject({ name: "PrismaClientValidationError" });
       expect(await prisma.canvasBankQuestionMapping.count()).toBe(0);
     });
 
     // An empty string is a valid Prisma String and so passes client validation;
     // it is rejected by the database because no `users` row has id ''. Do not
     // rely on `allowNull` wording here — the actual guard is the foreign key.
-    it('rejects an empty-string userId for CanvasBankMapping via the foreign key', async () => {
+    it("rejects an empty-string userId for CanvasBankMapping via the foreign key", async () => {
       await expect(
-        prisma.canvasBankMapping.create({ data: bankMappingData({ userId: '' }) }),
-      ).rejects.toMatchObject({ code: 'P2003' });
+        prisma.canvasBankMapping.create({ data: bankMappingData({ userId: "" }) }),
+      ).rejects.toMatchObject({ code: "P2003" });
       expect(await prisma.canvasBankMapping.count()).toBe(0);
     });
 
-    it('rejects an empty-string userId for CanvasBankQuestionMapping via the foreign key', async () => {
+    it("rejects an empty-string userId for CanvasBankQuestionMapping via the foreign key", async () => {
       await expect(
-        prisma.canvasBankQuestionMapping.create({ data: questionMappingData({ userId: '' }) }),
-      ).rejects.toMatchObject({ code: 'P2003' });
+        prisma.canvasBankQuestionMapping.create({ data: questionMappingData({ userId: "" }) }),
+      ).rejects.toMatchObject({ code: "P2003" });
       expect(await prisma.canvasBankQuestionMapping.count()).toBe(0);
     });
   });
 
-  describe('per-course isolation', () => {
-    it('keeps one Canvas bank bound to one local course per user', async () => {
+  describe("per-course isolation", () => {
+    it("keeps one Canvas bank bound to one local course per user", async () => {
       await prisma.canvasBankMapping.create({ data: bankMappingData() });
 
       // Same user + canvasBankId against a second local course violates the
@@ -225,7 +225,7 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
       // migration. The original row must never be silently repointed.
       await expect(
         prisma.canvasBankMapping.create({ data: bankMappingData({ localCourseId: courseB.id }) }),
-      ).rejects.toMatchObject({ code: 'P2002' });
+      ).rejects.toMatchObject({ code: "P2002" });
 
       const existing = await prisma.canvasBankMapping.findUnique({
         where: { userId_canvasBankId: { userId: USER_ID, canvasBankId: 200 } },
@@ -233,7 +233,7 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
       expect(existing.localCourseId).toBe(courseA.id);
     });
 
-    it('scopes question mappings by localCourseId so one course never overwrites another', async () => {
+    it("scopes question mappings by localCourseId so one course never overwrites another", async () => {
       const first = await prisma.canvasBankQuestionMapping.create({
         data: questionMappingData(),
       });
@@ -255,7 +255,7 @@ describeDb('canvas bank mapping CUID foreign keys (integration)', () => {
       // must not create a second row for the same (user, question, course).
       await expect(
         prisma.canvasBankQuestionMapping.create({ data: questionMappingData() }),
-      ).rejects.toMatchObject({ code: 'P2002' });
+      ).rejects.toMatchObject({ code: "P2002" });
     });
   });
 });
