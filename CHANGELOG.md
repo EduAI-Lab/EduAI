@@ -14,6 +14,10 @@
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 ## [Week 16 — August 17–23, 2026]
 
+### Added
+
+- [core] feat: Add a shared typed-error hierarchy in `@eduai/types` (`AppError` plus `ValidationError`/`UnauthenticatedError`/`ForbiddenError`/`NotFoundError`/`ConflictError`/`ServiceUnavailableError`, `isAppError`, and a `normalizeError` route-boundary normalizer), and adopt it at Core's API boundary via a `withErrorResponse` wrapper on `api/users.$`, `api/ai-models.$`, `api/ai-providers.$`, `api/invitations` and `api/invitations.$id`. Unhandled failures inside these loaders/actions previously escaped to React Router instead of Core's `{ error: "CODE" }` envelope; the wrapper maps any thrown error to a stable status/code without leaking Prisma model or column text (P2002 collapses to a generic `CONFLICT`, never the constraint's field names). `normalizeError` is scoped to Core here — AI Tutor and question-maker independently landed their own sanitized boundaries (`utils/safeErrors.js` and a hardened `errorHandler`), so this PR no longer touches them. Core's remaining ~47 route handlers, which run a second `{ success, error }` envelope, are tracked separately in #1560. Part of #1279. (@yta3216, 2026-08-20) — [#1515](https://github.com/EduAI-Lab/EduAI/pull/1515)
+
 ### Fixed
 
 - [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
