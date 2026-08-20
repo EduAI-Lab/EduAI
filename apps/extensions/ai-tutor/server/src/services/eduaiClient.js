@@ -179,6 +179,9 @@ export async function postCoreBugReport(userId, payload) {
     source: "AI_TUTOR",
     userId,
     description: payload.description,
+    // Core stores this column; forgetting it here left every AI Tutor report
+    // typeless, so triage's Type filter could never match one.
+    bugType: payload.bugType ?? null,
     isAnonymous: payload.isAnonymous ?? false,
     consoleLogs: payload.consoleLogs ?? null,
     networkLogs: payload.networkLogs ?? null,

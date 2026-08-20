@@ -105,6 +105,30 @@ describe("postCoreBugReport", () => {
     });
   });
 
+  it("forwards bugType to Core rather than dropping it", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 201, text: () => Promise.resolve("") });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await postCoreBugReport("user-1", { description: "Broken", bugType: "PERFORMANCE" });
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).bugType).toBe("PERFORMANCE");
+  });
+
+  it("sends a null bugType when the reporter picked none", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 201, text: () => Promise.resolve("") });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await postCoreBugReport("user-1", { description: "Broken" });
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).bugType).toBeNull();
+  });
+
   it("throws with status when Core responds non-ok", async () => {
     process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(400, "Bad description")));
