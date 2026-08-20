@@ -571,6 +571,34 @@ jobs:
             exit 1
           fi
 
+  visual:
+    name: Diagram Visual Regression (Core)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        env:
+          SKIP_PRISMA_GENERATE: "1"
+        run: npm ci
+      # #1422 review: nothing previously installed a browser for
+      # `npm run test:visual` (apps/core/playwright.visual.config.ts), so a
+      # clean checkout 404s/ENOENTs before any assertion runs. `npx playwright
+      # install` reads the locked `@playwright/test` version from
+      # package-lock.json, so this always matches the version the suite was
+      # authored against.
+      - name: Install locked Playwright Chromium
+        working-directory: apps/core
+        run: npx playwright install --with-deps chromium
+      - name: Run diagram visual regression suite
+        working-directory: apps/core
+        run: npm run test:visual
+
   pict-drift:
     name: PICT Case Drift Check
     runs-on: ubuntu-latest

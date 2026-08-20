@@ -13,6 +13,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.coverage.config.ts",
     "test:mutation": "stryker run",
+    "test:visual": "playwright test --config=playwright.visual.config.ts",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",

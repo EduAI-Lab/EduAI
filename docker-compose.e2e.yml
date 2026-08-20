@@ -160,6 +160,10 @@ services:
       # See e2e-ai-tutor-server's CORE_PUBLIC_ORIGIN comment above.
       CORE_PUBLIC_ORIGIN: http://localhost:3000
       CORS_ORIGINS: http://localhost:5173
+      # Point the QM EduAI proxy (including the connectivity probe) at the
+      # in-stack Core so E2E probes reach the real course-free /api/completion
+      # boundary instead of the public https://eduai.ok.ubc.ca default.
+      EDUAI_API_URL: http://e2e-eduai-app:3000
       EDUAI_API_KEY: test-service-key-not-for-production
     ports:
       - "8000:8000"

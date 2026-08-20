@@ -69,10 +69,17 @@ On branches with `requireServiceKey`, service-key callers skip chat persistence 
   // Optional
   "streaming": false,           // default false for extensions
   "temperature": 0.2,           // default 0.2 (deterministic assist)
-  "maxTokens": 8192,            // default 8192; caller may raise for extraction
-  "courseCode": "COSC 121"      // logging / metrics only — no RAG
+  "maxTokens": 8192            // default 8192; caller may raise for extraction
 }
 ```
+
+**Course context:** the stateless contract is course-free. `CompletionRequest` has no
+`courseId`/`courseCode` fields and `runCompletion` neither resolves nor requires a
+course. This is deliberate: extension connectivity probes (Question Maker's
+`testApiKey`) and stateless assist calls must not depend on a seeded/configured
+course. Interactive `/api/chat` remains the course-aware route and still returns
+`COURSE_REQUIRED` for an ordinary user without course context; `/api/completion`
+does not weaken that gate.
 
 **System prompt resolution (in order):**
 
