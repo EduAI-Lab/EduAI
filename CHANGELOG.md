@@ -9,6 +9,8 @@
 ### Changed
 
 - [core] perf: Move the AI-service status poller into a shared `useAiStatus` store that pauses while the tab is hidden and refreshes once on becoming visible, so a backgrounded tab stops issuing provider probes every 60s. Closes #1454. (@abdullahmoh21, 2026-08-18) — [#1562](https://github.com/EduAI-Lab/EduAI/pull/1562)
+- [ai-tutor] perf: gzip every AI-Tutor API response over 1kb, so large course-tree and lesson `contentMd` payloads stop going over the wire uncompressed. Closes #1450. (@abdullahmoh21, 2026-08-18) — #PR
+- [ai-tutor] perf: gzip every AI-Tutor API response over 1kb, so large course-tree and lesson `contentMd` payloads stop going over the wire uncompressed. Closes #1450. (@abdullahmoh21, 2026-08-18) — [#1563](https://github.com/EduAI-Lab/EduAI/pull/1563)
 - [core] ops: Remove the unused OpenRouter production setting and keep queue enqueue disabled until a worker is deployed and verified. Partially addresses #1424. (@superbolt08, 2026-08-12) — [#1507](https://github.com/EduAI-Lab/EduAI/pull/1507)
 
 ## [Week 15 — August 10–16, 2026]
