@@ -428,4 +428,121 @@ describe("useCourses", () => {
     await waitFor(() => expect(result.current.pagination.pageIndex).toBe(0));
     expect(result.current.total).toBe(0);
   });
+
+  it("does not request facets when includeFacets is false", async () => {
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.startsWith("/api/courses/facets")
+          ? okJson({ status: [], term: [], department: [] })
+          : page(),
+      ),
+    );
+
+    const { result } = renderHook(() => useCourses({ includeFacets: false }));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // The list still loads, but the facet endpoint is never touched and the
+    // caller keeps the default empty facet values.
+    expect(listUrls(mockFetch).length).toBeGreaterThan(0);
+    expect(
+      mockFetch.mock.calls.filter((c) => String(c[0]).startsWith("/api/courses/facets")),
+    ).toHaveLength(0);
+    expect(result.current.availableValues).toEqual({});
+  });
+
+  it("does not request facets on mutation when includeFacets is false", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") return Promise.resolve(okJson(course));
+      if (String(url).startsWith("/api/courses/facets")) {
+        return Promise.resolve(okJson({ status: [], term: [], department: [] }));
+      }
+      return Promise.resolve(page());
+    });
+
+    const { result } = renderHook(() => useCourses({ includeFacets: false }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = listUrls(mockFetch).length;
+
+    await act(async () => {
+      await result.current.updateCourse("course-1", { name: "Renamed" } as never);
+    });
+
+    // The filtered list is still refetched (the server owns filtering), but the
+    // opted-out picker never issues a facet request.
+    expect(listUrls(mockFetch).length).toBeGreaterThan(before);
+    expect(
+      mockFetch.mock.calls.filter((c) => String(c[0]).startsWith("/api/courses/facets")),
+    ).toHaveLength(0);
+  });
+
+  it("ignores a stale facet response that resolves after a newer one", async () => {
+    let resolveFirst!: (value: Response) => void;
+    const firstFacet = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+    let facetCalls = 0;
+    mockFetch.mockImplementation((url: string) => {
+      if (String(url).startsWith("/api/courses/facets")) {
+        facetCalls += 1;
+        // The first facet request hangs; the second resolves immediately with
+        // the newest values.
+        if (facetCalls === 1) return firstFacet;
+        return Promise.resolve(okJson({ status: ["published"], term: [], department: [] }));
+      }
+      return Promise.resolve(page());
+    });
+
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // A newer facet request lands while the first is still in flight.
+    await act(async () => {
+      window.dispatchEvent(new Event("eduai:courses-changed"));
+    });
+    await waitFor(() =>
+      expect(result.current.availableValues).toEqual({
+        status: ["published"],
+        term: [],
+        department: [],
+      }),
+    );
+
+    // The older request finally resolves with stale values — it must be dropped.
+    await act(async () => {
+      resolveFirst(okJson({ status: ["draft"], term: [], department: [] }));
+    });
+    expect(result.current.availableValues).toEqual({
+      status: ["published"],
+      term: [],
+      department: [],
+    });
+  });
+
+  it("changing a filter on a later page does not issue the stale-page request", async () => {
+    mockFetch.mockResolvedValue(page([course], 512));
+    const { result } = renderHook(() => useCourses());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setPagination({ pageIndex: 3, pageSize: 25 }));
+    await waitFor(() => expect(result.current.pagination.pageIndex).toBe(3));
+    // Only observe the filter transition from here.
+    mockFetch.mockClear();
+
+    act(() => result.current.setFilter("status", ["draft"]));
+
+    await waitFor(() =>
+      expect(listUrls(mockFetch).some((u) => u.includes("status=draft"))).toBe(true),
+    );
+    await waitFor(() => expect(result.current.pagination.pageIndex).toBe(0));
+
+    // Every request carrying the new filter must already be on page 1 (the page
+    // reset and the filter change land in the same commit) — never page 4 of the
+    // pre-reset offset.
+    const draftRequests = listUrls(mockFetch).filter((u) => u.includes("status=draft"));
+    expect(draftRequests.length).toBeGreaterThan(0);
+    for (const url of draftRequests) {
+      expect(url).toContain("page=1");
+      expect(url).not.toContain("page=4");
+    }
+  });
 });

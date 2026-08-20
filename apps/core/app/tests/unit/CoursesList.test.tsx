@@ -41,10 +41,13 @@ function CoursesInstructorView(
   return <CoursesView role="instructor" {...CONTROLLED_DEFAULTS} {...props} />;
 }
 function CoursesMixedView(
-  props: Omit<Extract<CoursesViewProps, { role: "mixed" }>, "role" | ControlledKeys> &
-    Partial<typeof CONTROLLED_DEFAULTS>,
+  props: Omit<
+    Extract<CoursesViewProps, { role: "mixed" }>,
+    "role" | ControlledKeys | "instructorCourseIds"
+  > &
+    Partial<typeof CONTROLLED_DEFAULTS> & { instructorCourseIds?: string[] },
 ) {
-  return <CoursesView role="mixed" {...CONTROLLED_DEFAULTS} {...props} />;
+  return <CoursesView role="mixed" instructorCourseIds={[]} {...CONTROLLED_DEFAULTS} {...props} />;
 }
 
 // §541: department labels/options now come from the DB-backed useDisciplines
@@ -1005,6 +1008,32 @@ describe("CoursesMixedView", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("TA")).toBeInTheDocument();
     expect(screen.queryByText("Enrolled")).not.toBeInTheDocument();
+  });
+
+  it("renders an instructor-enrollment course in a teaching section instead of an empty body", () => {
+    const INSTRUCTOR_COURSE: Course = {
+      ...PUBLISHED_COURSE,
+      id: "inst1",
+      code: "COSC 501",
+      name: "Grad Seminar",
+    };
+    wrap(
+      <CoursesMixedView
+        courses={[INSTRUCTOR_COURSE]}
+        instructorCourseIds={["inst1"]}
+        taCourseIds={[]}
+        enrolledCourseIds={[]}
+        search="grad"
+        total={1}
+      />,
+    );
+    // A course reachable through an INSTRUCTOR enrollment (e.g. a STUDENT-platform
+    // grad TA) is reported by `total` and must actually render, not fall through
+    // both old buckets into an empty body.
+    expect(screen.getByText(/1 course found/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /courses you are teaching/i })).toBeInTheDocument();
+    expect(screen.getByText("COSC 501")).toBeInTheDocument();
+    expect(screen.getByText("Instructor")).toBeInTheDocument();
   });
 
   it("keeps the toolbar visible when a controlled search returns zero rows", () => {
