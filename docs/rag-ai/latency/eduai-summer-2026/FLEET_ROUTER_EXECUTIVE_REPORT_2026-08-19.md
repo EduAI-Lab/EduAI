@@ -72,6 +72,8 @@ xychart-beta
     line [193, 292, 468, 701, 1019, 1185, 2101, 3854]
 ```
 
+**Legend — Qwen 3.5 2B:** line 1 = cmps01; line 2 = cmps02; line 3 = cmps03. The colors are assigned by the Mermaid renderer and may vary by GitHub theme.
+
 ### p95 latency by server — Qwen 3.5 9B
 
 ```mermaid
@@ -83,6 +85,8 @@ xychart-beta
     line [90, 125, 140, 154, 157, 221, 372, 638]
     line [520, 587, 814, 1108, 1451, 1675, 2690, 4943]
 ```
+
+**Legend — Qwen 3.5 9B:** line 1 = cmps01; line 2 = cmps02; line 3 = cmps03. The colors are assigned by the Mermaid renderer and may vary by GitHub theme.
 
 **Server-series order:** cmps01, cmps02, cmps03. At concurrency 128, the measured p95/RPS pairs were:
 
