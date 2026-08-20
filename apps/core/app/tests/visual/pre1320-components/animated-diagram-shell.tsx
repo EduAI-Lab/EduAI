@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+/**
+ * Frozen snapshot of animated-diagram-shell.tsx as it existed at commit
+ * 38b095869, the parent of the #1320 fix commit (46ddf63b8). Used by
+ * generate-fixtures.tsx to render a real "base" (pre-fix) diagram for the
+ * base-vs-head regression in diagram-overflow.spec.ts. Do not edit to match
+ * the current shell — if the current shell changes, re-copy from git history
+ * instead, so this stays an honest pre-fix comparison point.
+ */
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@eduai/ui";
 import { IconPlayerPlay } from "@tabler/icons-react";
 import { cn } from "~/lib/utils";
@@ -14,13 +22,6 @@ type AnimatedDiagramShellProps = {
   children: (ctx: { playKey: number; reducedMotion: boolean }) => ReactNode;
 };
 
-/**
- * Fixture-generation override: when true, shells render reduced-motion
- * (visible, no opacity-0 intro) without waiting for matchMedia/effects.
- * Production does not set this.
- */
-export const DiagramReducedMotionContext = createContext<boolean | null>(null);
-
 /** Shared chrome: title, Replay, reduced-motion detection. */
 export function AnimatedDiagramShell({
   title,
@@ -31,28 +32,21 @@ export function AnimatedDiagramShell({
   detail,
   children,
 }: AnimatedDiagramShellProps) {
-  const reducedMotionOverride = useContext(DiagramReducedMotionContext);
   const [playKey, setPlayKey] = useState(0);
-  const [reducedMotion, setReducedMotion] = useState(reducedMotionOverride ?? false);
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
-    if (reducedMotionOverride != null) return;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const sync = () => setReducedMotion(mq.matches);
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
-  }, [reducedMotionOverride]);
+  }, []);
 
   return (
     <div
       className={cn(
-        // #1320: w-full + min-w-0 so this shell shrinks to its message-column
-        // parent instead of growing to fit an unwrapped flex-wrap row of
-        // stage chips (flex items default to min-width: auto, which lets
-        // their content's intrinsic width push an ancestor wider than the
-        // viewport instead of wrapping).
-        "my-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-border/60 bg-muted/30 p-3",
+        "my-3 overflow-hidden rounded-xl border border-border/60 bg-muted/30 p-3",
         className,
       )}
       data-eduai-diagram={diagramId}
@@ -73,7 +67,7 @@ export function AnimatedDiagramShell({
           </Button>
         )}
       </div>
-      <div role="group" aria-label={ariaLabel} className="min-w-0">
+      <div role="group" aria-label={ariaLabel}>
         {children({ playKey, reducedMotion })}
       </div>
       {detail ? (
