@@ -80,6 +80,9 @@ export function StatRowSkeleton({ count = 4 }: { count?: number }) {
 export function ComposerSkeleton() {
   return (
     <div
+      role="status"
+      aria-label="Loading question composer…"
+      aria-busy="true"
       data-testid="composer-skeleton"
       className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
     >
@@ -100,6 +103,9 @@ export function ComposerSkeleton() {
 export function AssessmentBuilderSkeleton() {
   return (
     <div
+      role="status"
+      aria-label="Loading assessment builder…"
+      aria-busy="true"
       data-testid="assessment-builder-skeleton"
       className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6"
     >
@@ -124,7 +130,13 @@ export function AssessmentBuilderSkeleton() {
 /** Course detail hero + tabs + content placeholders. */
 export function CourseDetailSkeleton() {
   return (
-    <div data-testid="course-detail-skeleton" className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6">
+    <div
+      role="status"
+      aria-label="Loading course detail…"
+      aria-busy="true"
+      data-testid="course-detail-skeleton"
+      className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6"
+    >
       <Skeleton className="h-40 w-full rounded-[var(--radius-xl)]" />
       <div className="flex flex-wrap gap-2">
         {Array.from({ length: 5 }).map((_, i) => (

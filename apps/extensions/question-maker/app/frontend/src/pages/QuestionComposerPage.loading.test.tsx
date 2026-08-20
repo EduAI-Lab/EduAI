@@ -110,6 +110,9 @@ describe('QuestionComposerPage loading (#1332)', () => {
     renderEdit();
 
     expect(screen.getByTestId('composer-skeleton')).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: /Loading question composer/i }),
+    ).toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
     expect(document.querySelector('.animate-spin')).toBeNull();
   });

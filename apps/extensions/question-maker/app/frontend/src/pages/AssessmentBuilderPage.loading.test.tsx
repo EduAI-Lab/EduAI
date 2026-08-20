@@ -68,6 +68,9 @@ describe('AssessmentBuilderPage loading (#1332)', () => {
     renderPage();
 
     expect(screen.getByTestId('assessment-builder-skeleton')).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: /Loading assessment builder/i }),
+    ).toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
     expect(document.querySelector('.animate-spin')).toBeNull();
     expect(screen.queryByText(/Loading assessment builder/i)).not.toBeInTheDocument();

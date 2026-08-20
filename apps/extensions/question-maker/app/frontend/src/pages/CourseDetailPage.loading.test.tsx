@@ -145,6 +145,7 @@ describe('CourseDetailPage loading (#1332)', () => {
     renderPage();
 
     expect(screen.getByTestId('course-detail-skeleton')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: /Loading course detail/i })).toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
     expect(document.querySelector('.animate-spin')).toBeNull();
   });
