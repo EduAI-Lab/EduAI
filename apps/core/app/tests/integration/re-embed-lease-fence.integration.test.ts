@@ -30,9 +30,7 @@ vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 let courseId: string;
 let blocker: PrismaClient;
-let activeBlocker:
-  | { release: () => void; transaction: Promise<unknown> }
-  | undefined;
+let activeBlocker: { release: () => void; transaction: Promise<unknown> } | undefined;
 let activeSuccessorClaim: Promise<unknown> | undefined;
 
 function testDatabaseUrl(): string {

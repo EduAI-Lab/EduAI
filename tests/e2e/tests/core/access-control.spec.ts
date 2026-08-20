@@ -6,8 +6,8 @@
  * ADMIN) are asserted via the expected rejection codes — promotion is not
  * available in the E2E environment without an existing admin.
  */
-import { test, expect } from '@playwright/test';
-import { CORE_URL } from '../../playwright.config';
+import { test, expect } from "@playwright/test";
+import { CORE_URL } from "../../playwright.config";
 import {
   coreServiceHeaders,
   signUp,
@@ -15,8 +15,8 @@ import {
   signOut,
   uniqueEmail,
   DEFAULT_PASSWORD,
-} from '../helpers/auth';
-import { listCoreCoursePage } from '../helpers/core-courses';
+} from "../helpers/auth";
+import { listCoreCoursePage } from "../helpers/core-courses";
 
 // ---------------------------------------------------------------------------
 // Unauthenticated guard — every protected route must return 401
@@ -36,7 +36,7 @@ test.describe("Unauthenticated access", () => {
     });
   }
 
-  test('POST /api/sessions/validate returns 401 without cookie', async ({ request }) => {
+  test("POST /api/sessions/validate returns 401 without cookie", async ({ request }) => {
     const res = await request.post(`${CORE_URL}/api/sessions/validate`, {
       headers: coreServiceHeaders(),
     });

@@ -1,10 +1,10 @@
-import type { VariantAiReviewResult } from './assessmentVariantService';
+import type { VariantAiReviewResult } from "./assessmentVariantService";
 
 /** Unsafe pre-account-scoping key. Its contents are discarded, never guessed/migrated. */
-export const AI_REVIEW_HISTORY_LEGACY_KEY = 'assessmentVariant.aiReview.history.v1';
-export const AI_REVIEW_HISTORY_KEY_PREFIX = 'assessmentVariant.aiReview.history.v2:';
+export const AI_REVIEW_HISTORY_LEGACY_KEY = "assessmentVariant.aiReview.history.v1";
+export const AI_REVIEW_HISTORY_KEY_PREFIX = "assessmentVariant.aiReview.history.v2:";
 export const AI_REVIEW_HISTORY_MAX_ITEMS = 40;
-export const AI_REVIEW_HISTORY_CLEARED_EVENT = 'eduai:ai-review-history-cleared';
+export const AI_REVIEW_HISTORY_CLEARED_EVENT = "eduai:ai-review-history-cleared";
 
 export interface AiReviewHistoryItem {
   id: string;
@@ -18,9 +18,7 @@ export interface AiReviewHistoryItem {
   result: VariantAiReviewResult;
 }
 
-export function getAiReviewHistoryStorageKey(
-  userId: string | null | undefined
-): string | null {
+export function getAiReviewHistoryStorageKey(userId: string | null | undefined): string | null {
   const normalizedUserId = userId?.trim();
   return normalizedUserId
     ? `${AI_REVIEW_HISTORY_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}`
@@ -28,7 +26,7 @@ export function getAiReviewHistoryStorageKey(
 }
 
 export function discardLegacyAiReviewHistory(): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(AI_REVIEW_HISTORY_LEGACY_KEY);
   } catch {
@@ -37,7 +35,7 @@ export function discardLegacyAiReviewHistory(): void {
 }
 
 export function loadAiReviewHistory(storageKey: string | null): AiReviewHistoryItem[] {
-  if (typeof window === 'undefined' || !storageKey) return [];
+  if (typeof window === "undefined" || !storageKey) return [];
   discardLegacyAiReviewHistory();
   try {
     const raw = localStorage.getItem(storageKey);
@@ -52,11 +50,8 @@ export function loadAiReviewHistory(storageKey: string | null): AiReviewHistoryI
   }
 }
 
-export function saveAiReviewHistory(
-  storageKey: string | null,
-  items: AiReviewHistoryItem[]
-): void {
-  if (typeof window === 'undefined' || !storageKey) return;
+export function saveAiReviewHistory(storageKey: string | null, items: AiReviewHistoryItem[]): void {
+  if (typeof window === "undefined" || !storageKey) return;
   try {
     const limitedItems = items.slice(0, AI_REVIEW_HISTORY_MAX_ITEMS);
     if (limitedItems.length === 0) {
@@ -70,7 +65,7 @@ export function saveAiReviewHistory(
 }
 
 export function clearAiReviewHistoryForUser(userId: string | null | undefined): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   const storageKey = getAiReviewHistoryStorageKey(userId);
   try {
     if (storageKey) localStorage.removeItem(storageKey);
@@ -78,7 +73,5 @@ export function clearAiReviewHistoryForUser(userId: string | null | undefined): 
   } catch {
     // Continue logout even when browser storage is unavailable.
   }
-  window.dispatchEvent(
-    new CustomEvent(AI_REVIEW_HISTORY_CLEARED_EVENT, { detail: { userId } })
-  );
+  window.dispatchEvent(new CustomEvent(AI_REVIEW_HISTORY_CLEARED_EVENT, { detail: { userId } }));
 }

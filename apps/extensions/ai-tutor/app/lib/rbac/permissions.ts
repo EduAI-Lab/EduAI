@@ -26,7 +26,7 @@ export function isStudentRole(user: AtUser | null | undefined): boolean {
 /** True when the user uses the instructor route shell (authoring or TA read-only). */
 export function usesInstructorShell(user: AtUser | null | undefined): boolean {
   if (!user?.role) return false;
-  return user.role === 'INSTRUCTOR' || user.role === 'UNIT_ADMIN' || user.role === 'TA';
+  return user.role === "INSTRUCTOR" || user.role === "UNIT_ADMIN" || user.role === "TA";
 }
 
 export function resolvePlatformCourseAccess(user: AtUser | null | undefined): AtCourseAccess {
@@ -63,7 +63,7 @@ export function canManageTopics(user: AtUser | null | undefined): boolean {
 
 export function canManageEnrollments(user: AtUser | null | undefined): boolean {
   if (!user?.role) return false;
-  return user.role === 'ADMIN' || user.role === 'UNIT_ADMIN' || user.role === 'INSTRUCTOR';
+  return user.role === "ADMIN" || user.role === "UNIT_ADMIN" || user.role === "INSTRUCTOR";
 }
 
 export function canAssignTaRole(user: AtUser | null | undefined): boolean {

@@ -111,7 +111,9 @@ function reEmbedJobClient() {
   return client;
 }
 
-function toSnapshot(job: Partial<ReEmbedJobRecord> & Pick<ReEmbedJobRecord, "id" | "courseId">): ReEmbedJobSnapshot {
+function toSnapshot(
+  job: Partial<ReEmbedJobRecord> & Pick<ReEmbedJobRecord, "id" | "courseId">,
+): ReEmbedJobSnapshot {
   return {
     id: job.id,
     courseId: job.courseId,
@@ -165,8 +167,8 @@ function isIdempotencyConflict(error: unknown): boolean {
     typeof error === "object" &&
     error !== null &&
     (error as { code?: unknown }).code === "P2002" &&
-    ((error as { meta?: { target?: unknown } }).meta?.target as string[] | undefined)?.some((value) =>
-      value === "idempotencyKey",
+    ((error as { meta?: { target?: unknown } }).meta?.target as string[] | undefined)?.some(
+      (value) => value === "idempotencyKey",
     ) === true
   );
 }
@@ -195,11 +197,7 @@ function isStaleJob(job: ReEmbedJobRecord | ReEmbedJobSnapshot): boolean {
 function claimNeeded(job: ReEmbedJobRecord): boolean {
   if (job.status === "PENDING") return true;
   if (job.status !== "RUNNING") return false;
-  return (
-    !job.leaseOwner ||
-    !job.leaseExpiresAt ||
-    job.leaseExpiresAt.getTime() <= Date.now()
-  );
+  return !job.leaseOwner || !job.leaseExpiresAt || job.leaseExpiresAt.getTime() <= Date.now();
 }
 
 function isInfrastructureOrQueueError(error: unknown): boolean {
@@ -325,15 +323,16 @@ export async function acquireReEmbedJob(
             leaseOwner: null,
             leaseHeartbeatAt: null,
             leaseExpiresAt: null,
-            ...(idempotencyKey && !activeSnapshot.idempotencyKey
-              ? { idempotencyKey }
-              : {}),
+            ...(idempotencyKey && !activeSnapshot.idempotencyKey ? { idempotencyKey } : {}),
           },
         });
         return {
           job: toSnapshot(recycled),
           created: true,
-          keyHonored: !idempotencyKey || !activeSnapshot.idempotencyKey || activeSnapshot.idempotencyKey === idempotencyKey,
+          keyHonored:
+            !idempotencyKey ||
+            !activeSnapshot.idempotencyKey ||
+            activeSnapshot.idempotencyKey === idempotencyKey,
         };
       }
 

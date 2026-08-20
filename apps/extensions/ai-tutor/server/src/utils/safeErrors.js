@@ -43,7 +43,7 @@ export function logSafeError(message, error) {
  * can continue to send that public message directly; unexpected catches should
  * use this helper instead.
  */
-export function sendSafeError(res, error, fallbackMessage = 'Internal server error', options = {}) {
+export function sendSafeError(res, error, fallbackMessage = "Internal server error", options = {}) {
   // Keep the error argument in the API so callers cannot accidentally pass
   // the thrown value into `res.json`; only allowlisted options are serialized.
   void error;
@@ -52,7 +52,7 @@ export function sendSafeError(res, error, fallbackMessage = 'Internal server err
   // mapped status pass it explicitly via `options.status`.
   const status = safeStatus(options.status) ?? 500;
   const body = { error: fallbackMessage };
-  const code = typeof options.code === 'string' ? options.code : null;
+  const code = typeof options.code === "string" ? options.code : null;
 
   if (code) body.code = code;
   return res.status(status).json(body);

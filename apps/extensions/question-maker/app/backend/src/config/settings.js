@@ -94,7 +94,10 @@ export const config = {
   qmChatMaxMessageChars: positiveInt(process.env.QM_CHAT_MAX_MESSAGE_CHARS, 12_000),
   qmChatMaxAggregateChars: positiveInt(process.env.QM_CHAT_MAX_AGGREGATE_CHARS, 80_000),
   qmTestApiKeyMaxBodyBytes: positiveInt(process.env.QM_TEST_API_KEY_MAX_BODY_BYTES, 8_192),
-  qmTestApiKeyMaxProviderKeyChars: positiveInt(process.env.QM_TEST_API_KEY_MAX_PROVIDER_KEY_CHARS, 512),
+  qmTestApiKeyMaxProviderKeyChars: positiveInt(
+    process.env.QM_TEST_API_KEY_MAX_PROVIDER_KEY_CHARS,
+    512,
+  ),
 
   // Canvas outbound request budgets. Every request has a socket/response
   // deadline and every multi-page operation has a shared wall-clock deadline.
@@ -128,7 +131,7 @@ export const config = {
     process.env.CANVAS_MAX_ITEMS,
     positiveInt(process.env.CANVAS_PAGINATION_MAX_ITEMS, 10_000),
   ),
-  
+
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX) || 1000,
@@ -151,14 +154,14 @@ export const config = {
  * localhost, so production and development always require EDUAI_API_KEY.
  */
 export function assertCoreServiceKeyConfigured(settings = config) {
-  const coreUrl = typeof settings?.coreUrl === 'string' ? settings.coreUrl.trim() : '';
+  const coreUrl = typeof settings?.coreUrl === "string" ? settings.coreUrl.trim() : "";
   if (!coreUrl) return;
 
-  const eduaiApiKey = typeof settings?.eduaiApiKey === 'string' ? settings.eduaiApiKey.trim() : '';
+  const eduaiApiKey = typeof settings?.eduaiApiKey === "string" ? settings.eduaiApiKey.trim() : "";
   if (eduaiApiKey) return;
 
   throw new Error(
-    'EDUAI_API_KEY is required when Core is configured. Core session validation rejects requests without a service key.',
+    "EDUAI_API_KEY is required when Core is configured. Core session validation rejects requests without a service key.",
   );
 }
 

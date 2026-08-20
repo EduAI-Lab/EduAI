@@ -7,10 +7,7 @@ import { config } from "../config/settings.js";
 import { prisma } from "../config/database.js";
 import eduaiService from "./eduaiService.js";
 import { enrichCourseDetail } from "./courseListService.js";
-import {
-  generationBudgetError,
-  validateGenerationBudget,
-} from "../middleware/aiAdmission.js";
+import { generationBudgetError, validateGenerationBudget } from "../middleware/aiAdmission.js";
 import { toStableUpstreamError, safeRequestLogFields } from "../utils/safeLogging.js";
 import {
   normalizeExtractText,
@@ -31,17 +28,13 @@ const AI_PROVIDERS = {
 const configuredPositiveInt = (value, fallback) =>
   Number.isInteger(value) && value > 0 ? value : fallback;
 
-const qmMaxExtractTextChars = () =>
-  configuredPositiveInt(config.qmMaxExtractTextChars, 120_000);
+const qmMaxExtractTextChars = () => configuredPositiveInt(config.qmMaxExtractTextChars, 120_000);
 const qmMaxExtractChunks = () => configuredPositiveInt(config.qmMaxExtractChunks, 24);
-const qmMaxExtractProviderCalls = () =>
-  configuredPositiveInt(config.qmMaxExtractProviderCalls, 36);
-const qmExtractDeadlineMs = () =>
-  configuredPositiveInt(config.qmExtractDeadlineMs, 120_000);
-const qmAiProviderTimeoutMs = () =>
-  configuredPositiveInt(config.qmAiProviderTimeoutMs, 30_000);
+const qmMaxExtractProviderCalls = () => configuredPositiveInt(config.qmMaxExtractProviderCalls, 36);
+const qmExtractDeadlineMs = () => configuredPositiveInt(config.qmExtractDeadlineMs, 120_000);
+const qmAiProviderTimeoutMs = () => configuredPositiveInt(config.qmAiProviderTimeoutMs, 30_000);
 
-const extractionBudgetError = (message, status = 413, code = 'QM_EXTRACT_LIMIT') => {
+const extractionBudgetError = (message, status = 413, code = "QM_EXTRACT_LIMIT") => {
   const error = new Error(message);
   // errorHandler uses `status`; statusCode is retained for callers/services
   // that already consume the upstream-style field.
@@ -110,7 +103,7 @@ const callGroqAPI = async (prompt, params) => {
           "Content-Type": "application/json",
         },
         timeout: qmAiProviderTimeoutMs(),
-      }
+      },
     );
 
     return response.data.choices[0].message.content;
@@ -159,7 +152,7 @@ const callOpenAIAPI = async (prompt, params) => {
           "Content-Type": "application/json",
         },
         timeout: qmAiProviderTimeoutMs(),
-      }
+      },
     );
 
     return response.data.choices[0].message.content;
@@ -206,7 +199,7 @@ const callDeepSeekAPI = async (prompt, params) => {
           "Content-Type": "application/json",
         },
         timeout: qmAiProviderTimeoutMs(),
-      }
+      },
     );
 
     return response.data.choices[0].message.content;
@@ -321,13 +314,19 @@ const sanitizeEduAIQuestion = (question) => {
 };
 
 /** Uses EduAI to extract questions from OCR’d text, chunking input and deduplicating outputs. */
-const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.5-flash", apiKeys = {}, { cookie } = {}) => {
+const extractQuestionsWithEduAI = async (
+  text,
+  course,
+  model = "google:gemini-2.5-flash",
+  apiKeys = {},
+  { cookie } = {},
+) => {
   const maxTextChars = qmMaxExtractTextChars();
-  if (typeof text !== 'string' || text.length > maxTextChars) {
+  if (typeof text !== "string" || text.length > maxTextChars) {
     throw extractionBudgetError(
       `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
       413,
-      'QM_EXTRACT_TEXT_TOO_LARGE',
+      "QM_EXTRACT_TEXT_TOO_LARGE",
     );
   }
 
@@ -348,7 +347,7 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
     throw extractionBudgetError(
       `OCR text produces ${chunks.length} chunks; the maximum is ${maxChunks}`,
       413,
-      'QM_EXTRACT_CHUNK_LIMIT',
+      "QM_EXTRACT_CHUNK_LIMIT",
     );
   }
 
@@ -446,16 +445,16 @@ ${chunk}
       const remainingMs = deadlineMs - elapsedMs;
       if (remainingMs <= 0) {
         throw extractionBudgetError(
-          'Question extraction exceeded its time limit; try a smaller upload',
+          "Question extraction exceeded its time limit; try a smaller upload",
           504,
-          'QM_EXTRACT_DEADLINE',
+          "QM_EXTRACT_DEADLINE",
         );
       }
       if (providerCalls >= maxProviderCalls) {
         throw extractionBudgetError(
-          'Question extraction reached its provider-call limit; try a smaller upload',
+          "Question extraction reached its provider-call limit; try a smaller upload",
           429,
-          'QM_EXTRACT_PROVIDER_CALL_LIMIT',
+          "QM_EXTRACT_PROVIDER_CALL_LIMIT",
         );
       }
 
@@ -479,14 +478,12 @@ ${chunk}
         questionsPromise,
         callTimeoutMs,
         extractionBudgetError(
-          'Question extraction provider timed out; try a smaller upload',
+          "Question extraction provider timed out; try a smaller upload",
           504,
-          'QM_EXTRACT_DEADLINE',
+          "QM_EXTRACT_DEADLINE",
         ),
       );
-      return questions
-        .map((question) => sanitizeEduAIQuestion(question))
-        .filter(Boolean);
+      return questions.map((question) => sanitizeEduAIQuestion(question)).filter(Boolean);
     };
 
     try {
@@ -496,7 +493,7 @@ ${chunk}
       }
       extracted.push(...sanitized);
     } catch (error) {
-      if (typeof error?.code === 'string' && error.code.startsWith('QM_EXTRACT_')) {
+      if (typeof error?.code === "string" && error.code.startsWith("QM_EXTRACT_")) {
         throw error;
       }
       console.warn("EduAI extraction chunk failed, retrying with simplified prompt", {
@@ -574,7 +571,7 @@ ${textChunk}
           Authorization: `Bearer ${config.openaiApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
   } catch (error) {
     throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
@@ -674,7 +671,7 @@ Use only IDs from the provided topics. Keep the array order identical to the inp
           Authorization: `Bearer ${config.openaiApiKey}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
   } catch (error) {
     throw toStableUpstreamError(error, { serviceName: "OpenAI API" });
@@ -789,13 +786,19 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
 };
 
 /** Public API to normalize raw upload text and run EduAI extraction for a course. */
-export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys, { cookie } = {}) => {
+export const extractQuestionsFromText = async (
+  rawText,
+  courseId,
+  model,
+  apiKeys,
+  { cookie } = {},
+) => {
   const maxTextChars = qmMaxExtractTextChars();
-  if (typeof rawText === 'string' && rawText.length > maxTextChars) {
+  if (typeof rawText === "string" && rawText.length > maxTextChars) {
     throw extractionBudgetError(
       `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
       413,
-      'QM_EXTRACT_TEXT_TOO_LARGE',
+      "QM_EXTRACT_TEXT_TOO_LARGE",
     );
   }
   const normalized = normalizeExtractText(rawText);
@@ -806,7 +809,7 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
     throw extractionBudgetError(
       `OCR text cannot exceed ${maxTextChars.toLocaleString()} characters`,
       413,
-      'QM_EXTRACT_TEXT_TOO_LARGE',
+      "QM_EXTRACT_TEXT_TOO_LARGE",
     );
   }
 
@@ -826,7 +829,7 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
 
 /** Invokes the selected AI provider to generate structured questions, parsing/validating results. */
 export const generateQuestions = async (prompt, provider, params = {}) => {
-  const safeParams = params && typeof params === 'object' ? params : {};
+  const safeParams = params && typeof params === "object" ? params : {};
   const budget = validateGenerationBudget({
     prompt,
     numQuestions: safeParams.numQuestions,
@@ -848,22 +851,22 @@ export const generateQuestions = async (prompt, provider, params = {}) => {
   let response;
 
   switch (provider) {
-      case AI_PROVIDERS.GROQ:
-        response = await callGroqAPI(budget.prompt, boundedParams);
-        break;
-      case AI_PROVIDERS.OPENAI:
-        response = await callOpenAIAPI(budget.prompt, boundedParams);
-        break;
-      case AI_PROVIDERS.DEEPSEEK:
-        response = await callDeepSeekAPI(budget.prompt, boundedParams);
-        break;
-      default:
-        throw Object.assign(new Error("Unsupported AI provider"), {
-          status: 400,
-          statusCode: 400,
-          code: 'QM_PROVIDER_UNSUPPORTED',
-          isPublic: true,
-        });
+    case AI_PROVIDERS.GROQ:
+      response = await callGroqAPI(budget.prompt, boundedParams);
+      break;
+    case AI_PROVIDERS.OPENAI:
+      response = await callOpenAIAPI(budget.prompt, boundedParams);
+      break;
+    case AI_PROVIDERS.DEEPSEEK:
+      response = await callDeepSeekAPI(budget.prompt, boundedParams);
+      break;
+    default:
+      throw Object.assign(new Error("Unsupported AI provider"), {
+        status: 400,
+        statusCode: 400,
+        code: "QM_PROVIDER_UNSUPPORTED",
+        isPublic: true,
+      });
   }
 
   try {

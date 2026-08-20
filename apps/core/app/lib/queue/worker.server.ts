@@ -7,11 +7,7 @@ import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import redis from "./connection.server";
 import { assertAiJobQueueEnabled } from "./availability.server";
-import {
-  JobPayloadSchema,
-  type JobPayload,
-  type QueuedJobPayload,
-} from "./job-schema";
+import { JobPayloadSchema, type JobPayload, type QueuedJobPayload } from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { type QueueName } from "./resolve-pool.server";
 import { workerConcurrency } from "./concurrency.server";
@@ -371,10 +367,7 @@ export function createAiJobWorker(
   return worker;
 }
 
-export function startAiJobWorkers(): Worker<
-  JobPayload | QueuedJobPayload,
-  AiJobWorkerOutcome
->[] {
+export function startAiJobWorkers(): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>[] {
   assertAiJobQueueEnabled();
   return AI_JOB_QUEUE_NAMES.map((queueName) => createAiJobWorker(queueName));
 }

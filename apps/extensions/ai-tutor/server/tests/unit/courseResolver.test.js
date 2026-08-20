@@ -6,7 +6,7 @@
  * (network/5xx failures degrade to empty/null + `coreUnavailable: true`,
  * never a thrown error) and the #819 isPublished read-through gate.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../src/services/eduaiClient.js", () => ({
   fetchCoreCourseSafe: vi.fn(),
@@ -18,7 +18,7 @@ import {
   fetchCoreCourseSafe,
   listEduAiCourses,
   listEduAiCoursesServiceKey,
-} from '../../src/services/eduaiClient.js';
+} from "../../src/services/eduaiClient.js";
 import {
   indexCoreCoursesById,
   resolveCoreCourseById,
@@ -38,9 +38,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('resolveCoreCourseList', () => {
-  it('returns the courses array and coreUnavailable:false on success', async () => {
-    const courses = [{ id: 'c1' }, { id: 'c2' }];
+describe("resolveCoreCourseList", () => {
+  it("returns the courses array and coreUnavailable:false on success", async () => {
+    const courses = [{ id: "c1" }, { id: "c2" }];
     vi.mocked(listEduAiCourses).mockResolvedValue(courses);
 
     const result = await resolveCoreCourseList({ cookie: "session=abc" });
@@ -50,11 +50,11 @@ describe('resolveCoreCourseList', () => {
     expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: "session=abc", all: true });
   });
 
-  it('degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)', async () => {
-    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+  it("degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)", async () => {
+    const canary = "SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack";
     const error = Object.assign(new Error(canary), { status: 503 });
     vi.mocked(listEduAiCourses).mockRejectedValue(error);
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await resolveCoreCourseList({ cookie: "session=abc" });
 
@@ -81,15 +81,15 @@ describe('resolveCoreCourseList', () => {
   });
 });
 
-describe('indexCoreCoursesById', () => {
-  it('indexes courses by id for O(1) lookup', () => {
+describe("indexCoreCoursesById", () => {
+  it("indexes courses by id for O(1) lookup", () => {
     const byId = indexCoreCoursesById([
-      { id: 'a', name: 'A' },
-      { id: 'b', name: 'B' },
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
     ]);
-    expect(byId.get('a')).toEqual({ id: 'a', name: 'A' });
-    expect(byId.get('b')).toEqual({ id: 'b', name: 'B' });
-    expect(byId.get('missing')).toBeUndefined();
+    expect(byId.get("a")).toEqual({ id: "a", name: "A" });
+    expect(byId.get("b")).toEqual({ id: "b", name: "B" });
+    expect(byId.get("missing")).toBeUndefined();
   });
 
   it("skips entries with no id and handles null/undefined input", () => {
@@ -112,7 +112,7 @@ describe("resolveCoreCourseById", () => {
     const result = await resolveCoreCourseById("core-1");
 
     expect(result).toEqual({
-      course: { id: 'core-1', name: 'Algorithms' },
+      course: { id: "core-1", name: "Algorithms" },
       coreUnavailable: false,
     });
   });
@@ -125,11 +125,11 @@ describe("resolveCoreCourseById", () => {
     expect(result).toEqual({ course: null, coreUnavailable: false });
   });
 
-  it('degrades to null course + coreUnavailable:true on a thrown error (network/5xx)', async () => {
-    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+  it("degrades to null course + coreUnavailable:true on a thrown error (network/5xx)", async () => {
+    const canary = "SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack";
     const error = Object.assign(new Error(canary), { status: 503 });
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(error);
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await resolveCoreCourseById("core-1");
 
@@ -146,9 +146,9 @@ describe("resolveCoreCourseById", () => {
     expect(fetchCoreCourseSafe).toHaveBeenCalledWith("core-1", { signal });
   });
 
-  it('degrades to null course + coreUnavailable:true when the signal aborts (hung Core)', async () => {
+  it("degrades to null course + coreUnavailable:true when the signal aborts (hung Core)", async () => {
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(
-      new DOMException('The operation was aborted', 'TimeoutError'),
+      new DOMException("The operation was aborted", "TimeoutError"),
     );
 
     const result = await resolveCoreCourseById("core-1", { signal: AbortSignal.timeout(3_000) });
@@ -191,11 +191,11 @@ describe("resolveIsPublished (#819)", () => {
 // regardless of the caller's Core enrollment, so the #1082 class of bug
 // (AT-only-enrolled caller's course invisible because the cookie-scoped
 // list omitted it) is impossible by construction — locked in below.
-describe('resolveCoreCourseCatalog', () => {
-  it('returns the full catalog and coreUnavailable:false on success', async () => {
+describe("resolveCoreCourseCatalog", () => {
+  it("returns the full catalog and coreUnavailable:false on success", async () => {
     const catalog = [
-      { id: 'c1', isPublished: true },
-      { id: 'c2', isPublished: false },
+      { id: "c1", isPublished: true },
+      { id: "c2", isPublished: false },
     ];
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(catalog);
 
@@ -230,12 +230,12 @@ describe('resolveCoreCourseCatalog', () => {
     expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
   });
 
-  it('degrades to empty + coreUnavailable:true on a thrown error (Core down / missing service key)', async () => {
-    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+  it("degrades to empty + coreUnavailable:true on a thrown error (Core down / missing service key)", async () => {
+    const canary = "SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack";
     vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(
       Object.assign(new Error(canary), { status: 503 }),
     );
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await resolveCoreCourseCatalog();
 
@@ -243,13 +243,13 @@ describe('resolveCoreCourseCatalog', () => {
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
     // Publish gates keyed off the empty map fail closed.
     expect(
-      resolveIsPublished({ coreOfferingId: 'core-1' }, indexCoreCoursesById(result.courses)),
+      resolveIsPublished({ coreOfferingId: "core-1" }, indexCoreCoursesById(result.courses)),
     ).toBe(false);
   });
 
-  it('a course absent from the catalog (deleted in Core) stays unresolved and fails closed', async () => {
+  it("a course absent from the catalog (deleted in Core) stays unresolved and fails closed", async () => {
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-      { id: 'core-unrelated', isPublished: true },
+      { id: "core-unrelated", isPublished: true },
     ]);
 
     const { courses } = await resolveCoreCourseCatalog();

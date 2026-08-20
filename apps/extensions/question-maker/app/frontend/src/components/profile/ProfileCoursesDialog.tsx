@@ -91,14 +91,14 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleLogout = async () => {
-        try {
-            await logout();
-            onClose();
-        } catch {
-            toast.error('Could not log out', {
-                description: 'Your session is still active. Please try again.',
-            });
-        }
+      try {
+        await logout();
+        onClose();
+      } catch {
+        toast.error("Could not log out", {
+          description: "Your session is still active. Please try again.",
+        });
+      }
     };
   }, [open]);
 

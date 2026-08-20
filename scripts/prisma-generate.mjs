@@ -23,7 +23,9 @@ try {
     if (typeof packageName === "string" && packageName.startsWith("prisma-client-")) {
       generatedClientBackup = `${generatedClientDir}.generate-backup-${process.pid}`;
       if (existsSync(generatedClientBackup)) {
-        throw new Error(`Refusing to overwrite an existing Prisma backup: ${generatedClientBackup}`);
+        throw new Error(
+          `Refusing to overwrite an existing Prisma backup: ${generatedClientBackup}`,
+        );
       }
       renameSync(generatedClientDir, generatedClientBackup);
     }

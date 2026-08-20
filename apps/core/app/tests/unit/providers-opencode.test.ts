@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createOpenAICompatibleMock, createOpenAIMock, createGoogleMock, createOllamaMock } =
   vi.hoisted(() => ({
@@ -10,20 +10,19 @@ const { createOpenAICompatibleMock, createOpenAIMock, createGoogleMock, createOl
     createOllamaMock: vi.fn((_options: Record<string, unknown>) => vi.fn()),
   }));
 
-vi.mock('@ai-sdk/openai-compatible', () => ({
-  createOpenAICompatible: (options: Record<string, unknown>) =>
-    createOpenAICompatibleMock(options),
+vi.mock("@ai-sdk/openai-compatible", () => ({
+  createOpenAICompatible: (options: Record<string, unknown>) => createOpenAICompatibleMock(options),
 }));
-vi.mock('@ai-sdk/openai', () => ({
+vi.mock("@ai-sdk/openai", () => ({
   createOpenAI: (options: Record<string, unknown>) => createOpenAIMock(options),
 }));
-vi.mock('@ai-sdk/google', () => ({
+vi.mock("@ai-sdk/google", () => ({
   createGoogleGenerativeAI: (options: Record<string, unknown>) => createGoogleMock(options),
 }));
-vi.mock('ollama-ai-provider', () => ({
+vi.mock("ollama-ai-provider", () => ({
   createOllama: (options: Record<string, unknown>) => createOllamaMock(options),
 }));
-vi.mock('ai', () => ({
+vi.mock("ai", () => ({
   createProviderRegistry: (providers: unknown) => ({ __providers: providers }),
 }));
 
@@ -31,44 +30,48 @@ import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
   OPENCODE_BASE_URL,
-} from '~/lib/ai/providers';
+} from "~/lib/ai/providers";
 
-describe('OpenCode provider registry', () => {
+describe("OpenCode provider registry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('constructs the dedicated provider with the fixed endpoint and Bearer key source', () => {
+  it("constructs the dedicated provider with the fixed endpoint and Bearer key source", () => {
     const registry = createAIProviderRegistry({
       opencode: {
         isEnabled: true,
-        apiKey: 'opencode-secret',
-        baseUrl: 'https://attacker.example.invalid/v1',
+        apiKey: "opencode-secret",
+        baseUrl: "https://attacker.example.invalid/v1",
       },
     }) as unknown as { __providers: Record<string, unknown> };
 
     expect(createOpenAICompatibleMock).toHaveBeenCalledWith({
-      name: 'opencode',
+      name: "opencode",
       baseURL: OPENCODE_BASE_URL,
-      apiKey: 'opencode-secret',
+      apiKey: "opencode-secret",
     });
     expect(createOpenAICompatibleMock.mock.calls[0][0].baseURL).toBe(
-      'https://opencode.ai/zen/go/v1',
+      "https://opencode.ai/zen/go/v1",
     );
     expect(registry.__providers.opencode).toBeDefined();
-    expect(listEnabledRegistryProviders({
-      opencode: { isEnabled: true, apiKey: 'opencode-secret' },
-    })).toEqual(['opencode']);
+    expect(
+      listEnabledRegistryProviders({
+        opencode: { isEnabled: true, apiKey: "opencode-secret" },
+      }),
+    ).toEqual(["opencode"]);
   });
 
-  it('does not register OpenCode without an enabled key', () => {
+  it("does not register OpenCode without an enabled key", () => {
     const registry = createAIProviderRegistry({
-      opencode: { isEnabled: false, apiKey: 'opencode-secret' },
+      opencode: { isEnabled: false, apiKey: "opencode-secret" },
     }) as unknown as { __providers: Record<string, unknown> };
     expect(createOpenAICompatibleMock).not.toHaveBeenCalled();
     expect(registry.__providers.opencode).toBeUndefined();
-    expect(listEnabledRegistryProviders({
-      opencode: { isEnabled: false, apiKey: 'opencode-secret' },
-    })).toEqual([]);
+    expect(
+      listEnabledRegistryProviders({
+        opencode: { isEnabled: false, apiKey: "opencode-secret" },
+      }),
+    ).toEqual([]);
   });
 });

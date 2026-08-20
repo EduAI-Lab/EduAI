@@ -186,7 +186,9 @@ function runToolSmoke() {
 
 async function main() {
   if (!ADMIN_PASSWORD) {
-    throw new Error("Set SMOKE_ADMIN_PASSWORD or EDUAI_LOCAL_SEED_PASSWORD to the explicit local seed password");
+    throw new Error(
+      "Set SMOKE_ADMIN_PASSWORD or EDUAI_LOCAL_SEED_PASSWORD to the explicit local seed password",
+    );
   }
   console.log("Admin chatbot smoke test");
   await runHttpSmoke();

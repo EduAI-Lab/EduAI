@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import api, { ApiNetworkError } from '~/lib/api';
-import { clearApiKeysForUser, discardLegacyApiKeysFromStorage } from '~/lib/provider-keys';
-import type { User } from '~/lib/types';
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import api, { ApiNetworkError } from "~/lib/api";
+import { clearApiKeysForUser, discardLegacyApiKeysFromStorage } from "~/lib/provider-keys";
+import type { User } from "~/lib/types";
 
 // A fresh dev-stack start can briefly have the AI Tutor frontend reachable
 // before its Express API has finished migrate/generate/seed and started
@@ -73,11 +73,11 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
             await new Promise((resolve) => setTimeout(resolve, ME_RETRY_DELAY_MS));
             continue;
           }
-          if (err instanceof Error && err.message === 'Authentication required') {
+          if (err instanceof Error && err.message === "Authentication required") {
             setAuthError(null);
             setUser(null);
           } else {
-            setAuthError('Authentication service unavailable');
+            setAuthError("Authentication service unavailable");
           }
           return;
         }

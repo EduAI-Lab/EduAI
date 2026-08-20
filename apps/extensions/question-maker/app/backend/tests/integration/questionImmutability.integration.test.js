@@ -80,9 +80,9 @@ function coreFetchStub() {
     }
     return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
-  Object.defineProperty(fn, 'pushCalls', { get: () => pushCalls });
-  Object.defineProperty(fn, 'idempotencyKeys', { get: () => idempotencyKeys });
-  Object.defineProperty(fn, 'payloads', { get: () => payloads });
+  Object.defineProperty(fn, "pushCalls", { get: () => pushCalls });
+  Object.defineProperty(fn, "idempotencyKeys", { get: () => idempotencyKeys });
+  Object.defineProperty(fn, "payloads", { get: () => payloads });
   return fn;
 }
 
@@ -94,7 +94,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-describeDb('Reviewed questions are immutable (#1080)', () => {
+describeDb("Reviewed questions are immutable (#1080)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let setQuestionMutationFenceObserver;
@@ -108,8 +108,9 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     prisma = testDb.prisma;
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
-    ({ setQuestionMutationFenceObserver } = await import('../../src/services/questionMutationFence.js'));
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
+    ({ setQuestionMutationFenceObserver } =
+      await import("../../src/services/questionMutationFence.js"));
   });
 
   beforeEach(async () => {
@@ -189,10 +190,12 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
   }
 
   async function createDraftQuestion() {
-    const createQ = await request(app)
-      .post('/api/questions')
-      .set(cookie())
-      .send({ description: 'Immutability fixture', courseId, primaryTopicId: topicId, type: 'MCQ' });
+    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+      description: "Immutability fixture",
+      courseId,
+      primaryTopicId: topicId,
+      type: "MCQ",
+    });
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
@@ -200,18 +203,21 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .post(`/api/questions/${qid}/variants`)
       .set(cookie())
       .send({
-        questionText: 'What is 2+2?',
-        difficulty: 'easy',
-        reasoningLevel: 'factual',
-        answer: 'A',
-        choices: [{ letter: 'A', text: '4' }, { letter: 'B', text: '5' }],
+        questionText: "What is 2+2?",
+        difficulty: "easy",
+        reasoningLevel: "factual",
+        answer: "A",
+        choices: [
+          { letter: "A", text: "4" },
+          { letter: "B", text: "5" },
+        ],
         isDraft: true,
       });
     expect(createV.status).toBe(201);
     return { qid, vid: createV.body.data.id };
   }
 
-  it('rejects a type change on a reviewed question (409 VARIANT_LOCKED)', async () => {
+  it("rejects a type change on a reviewed question (409 VARIANT_LOCKED)", async () => {
     const { qid } = await createApprovedQuestion();
 
     const res = await request(app).put(`/api/questions/${qid}`).set(cookie()).send({ type: "SA" });
@@ -297,7 +303,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     expect(fetchStub.idempotencyKeys[1]).toMatch(/^qm-variant-\d+-[0-9a-f]{12}$/);
   });
 
-  it('serializes a stale content edit behind approval and preserves the fenced Core snapshot', async () => {
+  it("serializes a stale content edit behind approval and preserves the fenced Core snapshot", async () => {
     const { vid } = await createDraftQuestion();
     const reached = deferred();
     const release = deferred();
@@ -321,7 +327,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       const staleEdit = request(app)
         .put(`/api/questions/variants/${vid}`)
         .set(cookie())
-        .send({ questionText: 'edited after approval' })
+        .send({ questionText: "edited after approval" })
         .then((response) => response);
       await reached.promise;
 
@@ -334,20 +340,20 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       release.resolve();
       const edit = await staleEdit;
       expect(edit.status).toBe(409);
-      expect(edit.body.error).toBe('VARIANT_LOCKED');
+      expect(edit.body.error).toBe("VARIANT_LOCKED");
 
       const persisted = await prisma.variants.findUnique({ where: { id: vid } });
       expect(persisted.isDraft).toBe(false);
-      expect(persisted.questionText).toBe('What is 2+2?');
+      expect(persisted.questionText).toBe("What is 2+2?");
       expect(fetchStub.payloads).toHaveLength(1);
-      expect(fetchStub.payloads[0].content).toBe('What is 2+2?');
+      expect(fetchStub.payloads[0].content).toBe("What is 2+2?");
     } finally {
       release.resolve();
       prisma.variants.findUnique = originalFindUnique;
     }
   });
 
-  it('serializes metadata edits with approval and pushes the authoritative type snapshot', async () => {
+  it("serializes metadata edits with approval and pushes the authoritative type snapshot", async () => {
     const { qid, vid } = await createDraftQuestion();
     const fenceReached = deferred();
     const reviewedCheckReached = deferred();
@@ -381,12 +387,12 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       const metadataEdit = request(app)
         .put(`/api/questions/${qid}`)
         .set(cookie())
-        .send({ type: 'SA' })
+        .send({ type: "SA" })
         .then((response) => response);
 
       const gate = await Promise.race([
-        fenceReached.promise.then(() => 'fence'),
-        reviewedCheckReached.promise.then(() => 'reviewed'),
+        fenceReached.promise.then(() => "fence"),
+        reviewedCheckReached.promise.then(() => "reviewed"),
       ]);
       const approval = request(app)
         .put(`/api/questions/variants/${vid}`)
@@ -394,7 +400,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
         .send({ isDraft: false })
         .then((response) => response);
 
-      if (gate === 'fence') {
+      if (gate === "fence") {
         // Metadata won the fence; approval waits, then pushes the updated type.
         release.resolve();
         const [metadataResult, approvalResult] = await Promise.all([metadataEdit, approval]);
@@ -411,9 +417,9 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       }
 
       const persistedQuestion = await prisma.questionMetadata.findUnique({ where: { id: qid } });
-      expect(persistedQuestion.type).toBe('SA');
+      expect(persistedQuestion.type).toBe("SA");
       expect(fetchStub.payloads).toHaveLength(1);
-      expect(fetchStub.payloads[0].type).toBe('SA');
+      expect(fetchStub.payloads[0].type).toBe("SA");
     } finally {
       release.resolve();
       prisma.variants.findFirst = originalFindFirst;
@@ -421,15 +427,15 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     }
   });
 
-  it('rolls failed Core approval back to a draft with no link, then retries cleanly', async () => {
+  it("rolls failed Core approval back to a draft with no link, then retries cleanly", async () => {
     const { vid } = await createDraftQuestion();
     const successfulFetch = fetchStub.getMockImplementation();
     fetchStub.mockImplementation((url, opts = {}) => {
-      if (String(url).endsWith('/api/questions') && (opts.method ?? 'GET') === 'POST') {
+      if (String(url).endsWith("/api/questions") && (opts.method ?? "GET") === "POST") {
         return Promise.resolve({
           ok: false,
           status: 503,
-          json: () => Promise.resolve({ error: 'CORE_UNAVAILABLE' }),
+          json: () => Promise.resolve({ error: "CORE_UNAVAILABLE" }),
         });
       }
       return successfulFetch(url, opts);
@@ -452,20 +458,20 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .send({ isDraft: false });
     expect(retriedApproval.status).toBe(200);
     expect(retriedApproval.body.data.isDraft).toBe(false);
-    expect(retriedApproval.body.data.coreQuestionId).toBe('core-question-1');
+    expect(retriedApproval.body.data.coreQuestionId).toBe("core-question-1");
 
     const linked = await prisma.variants.findUnique({ where: { id: vid } });
     expect(linked.isDraft).toBe(false);
-    expect(linked.coreQuestionId).toBe('core-question-1');
+    expect(linked.coreQuestionId).toBe("core-question-1");
   });
 
-  it('blocks un-review while a linked-course approval push is in flight', async () => {
+  it("blocks un-review while a linked-course approval push is in flight", async () => {
     const { vid } = await createDraftQuestion();
     const pushReached = deferred();
     const releasePush = deferred();
     const successfulFetch = fetchStub.getMockImplementation();
     fetchStub.mockImplementation((url, opts = {}) => {
-      if (String(url).endsWith('/api/questions') && (opts.method ?? 'GET') === 'POST') {
+      if (String(url).endsWith("/api/questions") && (opts.method ?? "GET") === "POST") {
         pushReached.resolve();
         return releasePush.promise.then(() => successfulFetch(url, opts));
       }
@@ -484,7 +490,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .set(cookie())
       .send({ isDraft: true });
     expect(unreview.status).toBe(409);
-    expect(unreview.body.error).toBe('VARIANT_LOCKED');
+    expect(unreview.body.error).toBe("VARIANT_LOCKED");
 
     releasePush.resolve();
     const approved = await approval;
@@ -493,11 +499,11 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
 
     const persisted = await prisma.variants.findUnique({ where: { id: vid } });
     expect(persisted.isDraft).toBe(false);
-    expect(persisted.coreQuestionId).toBe('core-question-1');
-    expect(approved.body.data.coreQuestionId).toBe('core-question-1');
+    expect(persisted.coreQuestionId).toBe("core-question-1");
+    expect(approved.body.data.coreQuestionId).toBe("core-question-1");
   });
 
-  it('allows an instructor no-op approval retry during an in-flight push', async () => {
+  it("allows an instructor no-op approval retry during an in-flight push", async () => {
     const { vid } = await createDraftQuestion();
     const firstPushReached = deferred();
     const secondPushReached = deferred();
@@ -505,7 +511,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     const successfulFetch = fetchStub.getMockImplementation();
     let pushCount = 0;
     fetchStub.mockImplementation((url, opts = {}) => {
-      if (String(url).endsWith('/api/questions') && (opts.method ?? 'GET') === 'POST') {
+      if (String(url).endsWith("/api/questions") && (opts.method ?? "GET") === "POST") {
         pushCount += 1;
         const thisPush = pushCount;
         if (thisPush === 1) firstPushReached.resolve();
@@ -515,7 +521,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
           // Core idempotency returns the same row for the content-derived key
           // on a concurrent retry; model that response while retaining both
           // captured payloads above.
-          return { ...response, json: () => Promise.resolve({ id: 'core-question-1' }) };
+          return { ...response, json: () => Promise.resolve({ id: "core-question-1" }) };
         });
       }
       return successfulFetch(url, opts);
@@ -541,17 +547,19 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     // response finalizes first wins the fenced link; the other may observe the
     // newer retry snapshot and return a stable conflict, but it cannot clobber
     // the linked local row.
-    expect([firstResult.status, retryResult.status].every((status) => [200, 409].includes(status))).toBe(true);
+    expect(
+      [firstResult.status, retryResult.status].every((status) => [200, 409].includes(status)),
+    ).toBe(true);
     expect([firstResult.status, retryResult.status]).toContain(200);
     expect(fetchStub.payloads).toHaveLength(2);
     expect(fetchStub.payloads[0].idempotencyKey).toBe(fetchStub.payloads[1].idempotencyKey);
 
     const persisted = await prisma.variants.findUnique({ where: { id: vid } });
     expect(persisted.isDraft).toBe(false);
-    expect(persisted.coreQuestionId).toBe('core-question-1');
+    expect(persisted.coreQuestionId).toBe("core-question-1");
   });
 
-  it('serializes deleteVariant behind the Core link fence', async () => {
+  it("serializes deleteVariant behind the Core link fence", async () => {
     const { qid, vid } = await createDraftQuestion();
     const fenceReached = deferred();
     const release = deferred();
@@ -583,17 +591,17 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
         });
 
       const winner = await Promise.race([
-        deletion.then(() => 'deleted'),
-        new Promise((resolve) => setTimeout(() => resolve('blocked'), 100)),
+        deletion.then(() => "deleted"),
+        new Promise((resolve) => setTimeout(() => resolve("blocked"), 100)),
       ]);
-      expect(winner).toBe('blocked');
+      expect(winner).toBe("blocked");
       expect(deleteSettled).toBe(false);
       expect(await prisma.variants.findUnique({ where: { id: vid } })).not.toBeNull();
 
       release.resolve();
       const [approvalResult, deleteResult] = await Promise.all([approval, deletion]);
       expect(approvalResult.status).toBe(200);
-      expect(approvalResult.body.data.coreQuestionId).toBe('core-question-1');
+      expect(approvalResult.body.data.coreQuestionId).toBe("core-question-1");
       expect(deleteResult.status).toBe(200);
       expect(await prisma.variants.findUnique({ where: { id: vid } })).toBeNull();
       expect(fetchStub.pushCalls).toBe(1);
@@ -603,7 +611,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     }
   });
 
-  it('serializes deleteQuestion behind the Core link fence', async () => {
+  it("serializes deleteQuestion behind the Core link fence", async () => {
     const { qid, vid } = await createDraftQuestion();
     const fenceReached = deferred();
     const release = deferred();
@@ -635,17 +643,17 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
         });
 
       const winner = await Promise.race([
-        deletion.then(() => 'deleted'),
-        new Promise((resolve) => setTimeout(() => resolve('blocked'), 100)),
+        deletion.then(() => "deleted"),
+        new Promise((resolve) => setTimeout(() => resolve("blocked"), 100)),
       ]);
-      expect(winner).toBe('blocked');
+      expect(winner).toBe("blocked");
       expect(deleteSettled).toBe(false);
       expect(await prisma.questionMetadata.findUnique({ where: { id: qid } })).not.toBeNull();
 
       release.resolve();
       const [approvalResult, deleteResult] = await Promise.all([approval, deletion]);
       expect(approvalResult.status).toBe(200);
-      expect(approvalResult.body.data.coreQuestionId).toBe('core-question-1');
+      expect(approvalResult.body.data.coreQuestionId).toBe("core-question-1");
       expect(deleteResult.status).toBe(200);
       expect(await prisma.questionMetadata.findUnique({ where: { id: qid } })).toBeNull();
       expect(await prisma.variants.findUnique({ where: { id: vid } })).toBeNull();

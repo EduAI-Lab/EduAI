@@ -7,11 +7,11 @@
  * the client can't verify locally, so a half-applied shift would silently
  * corrupt an order nobody is looking at.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
 
-vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
@@ -32,8 +32,8 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
-import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Move-to-position reordering (#1207)", () => {
   let prof;
@@ -50,11 +50,11 @@ describe("Move-to-position reordering (#1207)", () => {
       isPublished: true,
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         const assigned = course?.instructors?.some((entry) => entry.userId === userId);
-        const role = assigned && allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : null;
+        const role = assigned && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : null;
         const allowed = allowedRoles.includes(role);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        return { allowed, state: allowed ? "allowed" : "denied", role };
       },
     );
   });

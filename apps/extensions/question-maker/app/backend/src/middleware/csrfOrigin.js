@@ -1,12 +1,12 @@
-import { config } from '../config/settings.js';
+import { config } from "../config/settings.js";
 
-const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function normalizeOrigin(value) {
-  if (typeof value !== 'string' || !value.trim() || value.trim() === '*') return null;
+  if (typeof value !== "string" || !value.trim() || value.trim() === "*") return null;
   try {
     const origin = new URL(value.trim()).origin;
-    return origin === 'null' ? null : origin;
+    return origin === "null" ? null : origin;
   } catch {
     return null;
   }
@@ -15,15 +15,11 @@ function normalizeOrigin(value) {
 export function trustedOrigins(settings = config) {
   const configured = Array.isArray(settings.corsOrigins)
     ? settings.corsOrigins
-    : typeof settings.corsOrigins === 'string'
-      ? settings.corsOrigins.split(',')
+    : typeof settings.corsOrigins === "string"
+      ? settings.corsOrigins.split(",")
       : [];
   return new Set(
-    [
-      ...configured,
-      settings.corePublicOrigin,
-      settings.extensionUrl,
-    ]
+    [...configured, settings.corePublicOrigin, settings.extensionUrl]
       .map(normalizeOrigin)
       .filter(Boolean),
   );
@@ -35,20 +31,21 @@ export function trustedOrigins(settings = config) {
  * an explicit Fetch Metadata cross-site signal is still rejected.
  */
 export function csrfOriginGuard(req, res, next) {
-  const method = typeof req.method === 'string' ? req.method.toUpperCase() : '';
+  const method = typeof req.method === "string" ? req.method.toUpperCase() : "";
   if (!UNSAFE_METHODS.has(method) || !req.headers.cookie) return next();
 
   const origin = req.headers.origin;
-  const site = req.headers['sec-fetch-site'];
+  const site = req.headers["sec-fetch-site"];
   const trusted = trustedOrigins();
   const originDenied = origin !== undefined && !trusted.has(normalizeOrigin(origin));
-  const fetchMetadataDenied = !origin && typeof site === 'string' && site.toLowerCase() === 'cross-site';
+  const fetchMetadataDenied =
+    !origin && typeof site === "string" && site.toLowerCase() === "cross-site";
 
   if (originDenied || fetchMetadataDenied) {
     return res.status(403).json({
       success: false,
-      error: 'Cross-site request blocked',
-      code: 'CSRF_ORIGIN_DENIED',
+      error: "Cross-site request blocked",
+      code: "CSRF_ORIGIN_DENIED",
     });
   }
 

@@ -103,14 +103,22 @@ describe("createQuestion", () => {
 
   it("returns DUPLICATE_TOPIC when topicId also appears in secondaryTopicIds", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     const result = await createQuestion({ ...baseBody, secondaryTopicIds: [TOPIC_ID] }, CREATOR);
     expect(result).toEqual({ error: "DUPLICATE_TOPIC", conflictingIds: [TOPIC_ID] });
   });
 
   it("returns INVALID_TOPIC_IDS with the deleted topic's id when a secondary topic is soft-deleted", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.courseTopic.findMany.mockResolvedValue([
       { id: SEC_TOPIC_ID, courseId: COURSE_ID, deletedAt: new Date() },
     ]);
@@ -169,7 +177,11 @@ describe("createQuestion", () => {
 
   it("writes correct data to question.create inside the transaction", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.courseTopic.findMany.mockResolvedValue([
       { id: SEC_TOPIC_ID, courseId: COURSE_ID, deletedAt: null },
     ]);
@@ -298,7 +310,10 @@ describe("createQuestion", () => {
     for (const body of [
       { ...baseBody, content: "x".repeat(20_001) },
       { ...baseBody, answer: "x".repeat(20_001) },
-      { ...baseBody, choices: Array.from({ length: 21 }, (_, i) => ({ letter: String(i), text: "x" })) },
+      {
+        ...baseBody,
+        choices: Array.from({ length: 21 }, (_, i) => ({ letter: String(i), text: "x" })),
+      },
       { ...baseBody, secondaryTopicIds: Array.from({ length: 51 }, (_, i) => `topic-${i}`) },
       { ...baseBody, unexpected: true },
     ]) {
@@ -310,7 +325,11 @@ describe("createQuestion", () => {
 
   it("returns INVALID_TOPIC_IDS when a secondary topic id does not exist at all (no FK 500)", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     // findMany returns nothing — the requested secondary id is absent in Core
     db.courseTopic.findMany.mockResolvedValue([]);
     const result = await createQuestion(
@@ -327,7 +346,11 @@ describe("createQuestion", () => {
 
   it("does NOT call createMany when secondaryTopicIds is empty", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);

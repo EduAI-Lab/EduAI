@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveReEmbedJobStatus } from "~/lib/ai/re-embed-job-status";
-import {
-  formatReEmbedJobMessage,
-  isReEmbedJobTerminal,
-} from "~/lib/api/re-embed-job.client";
+import { formatReEmbedJobMessage, isReEmbedJobTerminal } from "~/lib/api/re-embed-job.client";
 import { serializeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 
 describe("resolveReEmbedJobStatus", () => {

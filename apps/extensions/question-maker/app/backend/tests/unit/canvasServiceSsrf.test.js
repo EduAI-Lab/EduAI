@@ -34,12 +34,8 @@ vi.mock("../../src/config/database.js", () => ({
   },
 }));
 
-const {
-  getCanvasCourses,
-  getCanvasQuizzes,
-  getCanvasQuizQuestions,
-  getCanvasQuizQuestionById,
-} = await import('../../src/services/canvasService.js');
+const { getCanvasCourses, getCanvasQuizzes, getCanvasQuizQuestions, getCanvasQuizQuestionById } =
+  await import("../../src/services/canvasService.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -72,39 +68,39 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     await expect(getCanvasCourses(42)).resolves.toEqual([]);
     expect(axiosRequest).toHaveBeenCalled();
     expect(axiosRequest.mock.calls[0][0].url).toBe(
-      'https://canvas.example.edu/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment',
+      "https://canvas.example.edu/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment",
     );
   });
 
-  it('allows a stored HTTPS subpath prefix through to the Canvas API', async () => {
+  it("allows a stored HTTPS subpath prefix through to the Canvas API", async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
-      canvasUrl: 'https://canvas.example.edu/lms',
-      apiKey: 'secret-token',
+      canvasUrl: "https://canvas.example.edu/lms",
+      apiKey: "secret-token",
     });
     axiosRequest.mockResolvedValue({ data: [] });
 
     await expect(getCanvasCourses(42)).resolves.toEqual([]);
     expect(axiosRequest).toHaveBeenCalled();
     expect(axiosRequest.mock.calls[0][0].url).toBe(
-      'https://canvas.example.edu/lms/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment',
+      "https://canvas.example.edu/lms/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment",
     );
   });
 
   const unsafeSegmentCases = [
-    ['parent traversal', '../admin'],
-    ['encoded slash', 'course%2Fadmin'],
-    ['query delimiter', 'course?admin=true'],
-    ['fragment delimiter', 'course#admin'],
+    ["parent traversal", "../admin"],
+    ["encoded slash", "course%2Fadmin"],
+    ["query delimiter", "course?admin=true"],
+    ["fragment delimiter", "course#admin"],
   ];
 
   it.each(unsafeSegmentCases)(
-    'encodes a canvasCourseId containing %s as one URL path segment',
+    "encodes a canvasCourseId containing %s as one URL path segment",
     async (_label, canvasCourseId) => {
       integrationFindOne.mockResolvedValue({
         isTestMode: false,
-        canvasUrl: 'https://canvas.example.edu',
-        apiKey: 'secret-token',
+        canvasUrl: "https://canvas.example.edu",
+        apiKey: "secret-token",
       });
       axiosRequest.mockResolvedValue({ data: [] });
 
@@ -117,16 +113,16 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
   );
 
   it.each(unsafeSegmentCases)(
-    'encodes a quizId containing %s as one URL path segment',
+    "encodes a quizId containing %s as one URL path segment",
     async (_label, quizId) => {
       integrationFindOne.mockResolvedValue({
         isTestMode: false,
-        canvasUrl: 'https://canvas.example.edu',
-        apiKey: 'secret-token',
+        canvasUrl: "https://canvas.example.edu",
+        apiKey: "secret-token",
       });
       axiosRequest.mockResolvedValue({ data: [] });
 
-      await getCanvasQuizQuestions(42, 'course-1', quizId);
+      await getCanvasQuizQuestions(42, "course-1", quizId);
 
       expect(axiosRequest.mock.calls[0][0].url).toBe(
         `https://canvas.example.edu/api/v1/courses/course-1/quizzes/${encodeURIComponent(quizId)}/questions`,
@@ -135,16 +131,16 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
   );
 
   it.each(unsafeSegmentCases)(
-    'encodes a questionId containing %s as one URL path segment',
+    "encodes a questionId containing %s as one URL path segment",
     async (_label, questionId) => {
       integrationFindOne.mockResolvedValue({
         isTestMode: false,
-        canvasUrl: 'https://canvas.example.edu',
-        apiKey: 'secret-token',
+        canvasUrl: "https://canvas.example.edu",
+        apiKey: "secret-token",
       });
       axiosRequest.mockResolvedValue({ data: {} });
 
-      await getCanvasQuizQuestionById(42, 'course-1', 'quiz-1', questionId);
+      await getCanvasQuizQuestionById(42, "course-1", "quiz-1", questionId);
 
       expect(axiosRequest.mock.calls[0][0].url).toBe(
         `https://canvas.example.edu/api/v1/courses/course-1/quizzes/quiz-1/questions/${encodeURIComponent(questionId)}`,
@@ -152,12 +148,12 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     },
   );
 
-  it('does not expose a Canvas response body through the stable service error', async () => {
-    const bodyCanary = 'AUDIT_CANVAS_ERROR_BODY_CANARY_e4f601';
+  it("does not expose a Canvas response body through the stable service error", async () => {
+    const bodyCanary = "AUDIT_CANVAS_ERROR_BODY_CANARY_e4f601";
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
-      canvasUrl: 'https://canvas.example.edu',
-      apiKey: 'secret-token',
+      canvasUrl: "https://canvas.example.edu",
+      apiKey: "secret-token",
     });
     axiosRequest.mockRejectedValue(
       Object.assign(new Error(`request failed ${bodyCanary}`), {
@@ -172,11 +168,11 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
 
     const thrown = await getCanvasCourses(42).catch((error) => error);
 
-    expect(thrown.message).toBe('Failed to get Canvas courses: Canvas API error (502)');
+    expect(thrown.message).toBe("Failed to get Canvas courses: Canvas API error (502)");
     expect(thrown.message).not.toContain(bodyCanary);
   });
 
-  it('pins the DNS lookup and re-validates each redirect hop, so a resolved/redirected private address cannot be reached', async () => {
+  it("pins the DNS lookup and re-validates each redirect hop, so a resolved/redirected private address cannot be reached", async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
       canvasUrl: "https://canvas.example.edu",
@@ -232,47 +228,47 @@ describe("makeCanvasRequest — SSRF re-validation at request time (#991)", () =
     ).not.toThrow();
   });
 
-  it('beforeRedirect removes bearer authorization on a cross-origin redirect', async () => {
+  it("beforeRedirect removes bearer authorization on a cross-origin redirect", async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
-      canvasUrl: 'https://canvas.example.edu',
-      apiKey: 'secret-token',
+      canvasUrl: "https://canvas.example.edu",
+      apiKey: "secret-token",
     });
     axiosRequest.mockResolvedValue({ data: [] });
     await getCanvasCourses(42);
 
     const { beforeRedirect } = axiosRequest.mock.calls[0][0];
     const redirectOptions = {
-      protocol: 'https:',
-      hostname: 'canvas-cdn.example.edu',
-      path: '/api/v1/courses',
-      headers: { Authorization: 'Bearer secret-token', 'Content-Type': 'application/json' },
+      protocol: "https:",
+      hostname: "canvas-cdn.example.edu",
+      path: "/api/v1/courses",
+      headers: { Authorization: "Bearer secret-token", "Content-Type": "application/json" },
     };
     expect(() => beforeRedirect(redirectOptions)).not.toThrow();
-    expect(redirectOptions.headers).not.toHaveProperty('Authorization');
+    expect(redirectOptions.headers).not.toHaveProperty("Authorization");
   });
 
-  it('beforeRedirect preserves bearer authorization for a same-origin Canvas redirect', async () => {
+  it("beforeRedirect preserves bearer authorization for a same-origin Canvas redirect", async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
-      canvasUrl: 'https://canvas.example.edu',
-      apiKey: 'secret-token',
+      canvasUrl: "https://canvas.example.edu",
+      apiKey: "secret-token",
     });
     axiosRequest.mockResolvedValue({ data: [] });
     await getCanvasCourses(42);
 
     const { beforeRedirect } = axiosRequest.mock.calls[0][0];
     const redirectOptions = {
-      protocol: 'https:',
-      hostname: 'canvas.example.edu',
-      path: '/api/v1/courses/',
-      headers: { Authorization: 'Bearer secret-token' },
+      protocol: "https:",
+      hostname: "canvas.example.edu",
+      path: "/api/v1/courses/",
+      headers: { Authorization: "Bearer secret-token" },
     };
     beforeRedirect(redirectOptions);
-    expect(redirectOptions.headers.Authorization).toBe('Bearer secret-token');
+    expect(redirectOptions.headers.Authorization).toBe("Bearer secret-token");
   });
 
-  it('beforeRedirect re-brackets an IPv6 hostname before validating, so a public IPv6 hop is not wrongly rejected as malformed', async () => {
+  it("beforeRedirect re-brackets an IPv6 hostname before validating, so a public IPv6 hop is not wrongly rejected as malformed", async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
       canvasUrl: "https://canvas.example.edu",

@@ -14,16 +14,14 @@ const migrationSql = readFileSync(
 
 describe("Better Auth API-key contract migration", () => {
   it("hardens old unrestricted rows instead of only changing insert defaults", () => {
-    const hardening = migrationSql.match(
-      /UPDATE "apiKey"\s+SET[\s\S]*?WHERE[\s\S]*?;/,
-    )?.[0];
+    const hardening = migrationSql.match(/UPDATE "apiKey"\s+SET[\s\S]*?WHERE[\s\S]*?;/)?.[0];
 
     expect(hardening).toBeDefined();
     expect(hardening).toContain('"rateLimitEnabled" = true');
     expect(hardening).toContain('"rateLimitTimeWindow" = COALESCE');
     expect(hardening).toContain('"rateLimitMax" = COALESCE');
     expect(hardening).toContain('"expiresAt" = LEAST');
-    expect(hardening).toContain('"createdAt" + INTERVAL \'365 days\'');
+    expect(hardening).toContain("\"createdAt\" + INTERVAL '365 days'");
 
     // The migration must not rewrite the credential or its ownership/metadata
     // while it adds the bounded policy to legacy rows.
@@ -35,9 +33,7 @@ describe("Better Auth API-key contract migration", () => {
 
   it("hardens rows before installing Better Auth defaults", () => {
     const hardeningAt = migrationSql.indexOf('UPDATE "apiKey"');
-    const defaultsAt = migrationSql.indexOf(
-      'ALTER COLUMN "rateLimitEnabled" SET DEFAULT true',
-    );
+    const defaultsAt = migrationSql.indexOf('ALTER COLUMN "rateLimitEnabled" SET DEFAULT true');
 
     expect(hardeningAt).toBeGreaterThanOrEqual(0);
     expect(defaultsAt).toBeGreaterThan(hardeningAt);

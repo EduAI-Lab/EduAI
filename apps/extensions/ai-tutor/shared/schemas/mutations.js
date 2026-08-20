@@ -1,9 +1,9 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 const NumericIdSchema = z
   .union([z.number().int(), z.string().regex(/^\d+$/)])
   .transform((value) => Number(value))
-  .refine((value) => Number.isSafeInteger(value) && value > 0, 'Expected a positive integer');
+  .refine((value) => Number.isSafeInteger(value) && value > 0, "Expected a positive integer");
 
 const OptionalTextSchema = z.string().nullable().optional();
 
@@ -33,7 +33,7 @@ export const CreateLessonSchema = z.object({
 const UpdatePositionSchema = z
   .union([z.number(), z.string().trim().min(1)])
   .transform((value) => Number(value))
-  .refine((value) => Number.isFinite(value), 'Expected a number');
+  .refine((value) => Number.isFinite(value), "Expected a number");
 
 export const UpdateModuleSchema = z
   .object({
@@ -42,7 +42,7 @@ export const UpdateModuleSchema = z
     position: UpdatePositionSchema.optional(),
   })
   .refine((payload) => Object.values(payload).some((value) => value !== undefined), {
-    message: 'Nothing to update',
+    message: "Nothing to update",
   });
 
 export const UpdateLessonSchema = z
@@ -52,7 +52,7 @@ export const UpdateLessonSchema = z
     position: UpdatePositionSchema.optional(),
   })
   .refine((payload) => Object.values(payload).some((value) => value !== undefined), {
-    message: 'Nothing to update',
+    message: "Nothing to update",
   });
 
 export const CreateTopicSchema = z.object({
@@ -65,7 +65,7 @@ const TopicMappingSchema = z
     toTopicId: z.string().trim().min(1),
   })
   .refine((mapping) => mapping.fromTopicId !== mapping.toTopicId, {
-    message: 'Source and target topics must differ',
+    message: "Source and target topics must differ",
   });
 
 export const TopicRemapSchema = z.object({
@@ -85,12 +85,12 @@ export const BugReportCreateSchema = z.object({
   description: z.string().trim().min(10).max(2000),
   bugType: z
     .enum([
-      'UI_DISPLAY',
-      'FEATURE_NOT_WORKING',
-      'PERFORMANCE',
-      'CONTENT_ERROR',
-      'ACCESS_PERMISSION',
-      'OTHER',
+      "UI_DISPLAY",
+      "FEATURE_NOT_WORKING",
+      "PERFORMANCE",
+      "CONTENT_ERROR",
+      "ACCESS_PERMISSION",
+      "OTHER",
     ])
     .nullish(),
   consoleLogs: OptionalTextSchema,
@@ -103,7 +103,7 @@ export const BugReportCreateSchema = z.object({
 });
 
 export const BugReportStatusUpdateSchema = z.object({
-  status: z.enum(['unhandled', 'in progress', 'resolved']),
+  status: z.enum(["unhandled", "in progress", "resolved"]),
 });
 
 export default {

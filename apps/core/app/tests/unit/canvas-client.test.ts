@@ -773,38 +773,33 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
   it.each([
     "http://localhost:9090/api/v1/courses/42/users?page=2",
     "https://localhost:8080/api/v1/courses/42/users?page=2",
-    "<http://[invalid>; rel=\"next\"",
-    "<not a valid URI>; rel=\"next\"",
-  ])(
-    "rejects an unsafe or malformed next link before forwarding the bearer (%s)",
-    async (link) => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify([{ id: 1 }]), {
-          status: 200,
-          headers: {
-            link: link.startsWith("<") ? link : `<${link}>; rel="next"`,
-          },
-        }),
-      );
+    '<http://[invalid>; rel="next"',
+    '<not a valid URI>; rel="next"',
+  ])("rejects an unsafe or malformed next link before forwarding the bearer (%s)", async (link) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1 }]), {
+        status: 200,
+        headers: {
+          link: link.startsWith("<") ? link : `<${link}>; rel="next"`,
+        },
+      }),
+    );
 
-      await expect(
-        canvasGetPaginated(
-          NON_TEST_CREDENTIALS,
-          "/courses/42/users",
-          fetchMock,
-          { maxPages: 10, maxItems: 100 },
-        ),
-      ).rejects.toMatchObject({
-        message: CANVAS_PAGINATION_LINK_ERROR,
-        statusCode: 502,
-      });
+    await expect(
+      canvasGetPaginated(NON_TEST_CREDENTIALS, "/courses/42/users", fetchMock, {
+        maxPages: 10,
+        maxItems: 100,
+      }),
+    ).rejects.toMatchObject({
+      message: CANVAS_PAGINATION_LINK_ERROR,
+      statusCode: 502,
+    });
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-        headers: { Authorization: "Bearer token" },
-      });
-    },
-  );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: "Bearer token" },
+    });
+  });
 
   it("terminates a self-referential next link without a second request", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -817,12 +812,10 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
     );
 
     await expect(
-      canvasGetPaginated(
-        NON_TEST_CREDENTIALS,
-        "/courses/42/users",
-        fetchMock,
-        { maxPages: 10, maxItems: 100 },
-      ),
+      canvasGetPaginated(NON_TEST_CREDENTIALS, "/courses/42/users", fetchMock, {
+        maxPages: 10,
+        maxItems: 100,
+      }),
     ).rejects.toMatchObject({
       message: CANVAS_PAGINATION_CYCLE_ERROR,
       statusCode: 502,
@@ -851,12 +844,10 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
       );
 
     await expect(
-      canvasGetPaginated(
-        NON_TEST_CREDENTIALS,
-        "/courses/42/users",
-        fetchMock,
-        { maxPages: 2, maxItems: 10 },
-      ),
+      canvasGetPaginated(NON_TEST_CREDENTIALS, "/courses/42/users", fetchMock, {
+        maxPages: 2,
+        maxItems: 10,
+      }),
     ).rejects.toMatchObject({
       message: CANVAS_PAGINATION_PAGE_LIMIT_ERROR,
       statusCode: 502,
@@ -875,12 +866,10 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
     );
 
     await expect(
-      canvasGetPaginated(
-        NON_TEST_CREDENTIALS,
-        "/courses/42/users",
-        fetchMock,
-        { maxPages: 10, maxItems: 2 },
-      ),
+      canvasGetPaginated(NON_TEST_CREDENTIALS, "/courses/42/users", fetchMock, {
+        maxPages: 10,
+        maxItems: 2,
+      }),
     ).rejects.toMatchObject({
       message: CANVAS_PAGINATION_ITEM_LIMIT_ERROR,
       statusCode: 502,
@@ -889,21 +878,21 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
   });
 
   it("cancels an in-flight request when the pagination deadline expires", async () => {
-    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
-          once: true,
-        });
-      }),
+    const fetchMock = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+        }),
     );
 
     await expect(
-      canvasGetPaginated(
-        NON_TEST_CREDENTIALS,
-        "/courses/42/users",
-        fetchMock,
-        { deadlineMs: 10, maxPages: 10, maxItems: 100 },
-      ),
+      canvasGetPaginated(NON_TEST_CREDENTIALS, "/courses/42/users", fetchMock, {
+        deadlineMs: 10,
+        maxPages: 10,
+        maxItems: 100,
+      }),
     ).rejects.toMatchObject({
       message: CANVAS_PAGINATION_DEADLINE_ERROR,
       statusCode: 504,
@@ -914,22 +903,22 @@ describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
 
   it("composes caller cancellation with the per-request signal", async () => {
     const controller = new AbortController();
-    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
-          once: true,
-        });
-        controller.abort();
-      }),
+    const fetchMock = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+          controller.abort();
+        }),
     );
 
     await expect(
-      canvasGetPaginated(
-        NON_TEST_CREDENTIALS,
-        "/courses/42/users",
-        fetchMock,
-        { signal: controller.signal, maxPages: 10, maxItems: 100 },
-      ),
+      canvasGetPaginated(NON_TEST_CREDENTIALS, "/courses/42/users", fetchMock, {
+        signal: controller.signal,
+        maxPages: 10,
+        maxItems: 100,
+      }),
     ).rejects.toMatchObject({
       message: CANVAS_PAGINATION_CANCELLED_ERROR,
       statusCode: 499,

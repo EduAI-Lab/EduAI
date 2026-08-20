@@ -1,7 +1,7 @@
-import { useSyncExternalStore, useCallback } from 'react';
-import { useCurrentUserId } from '~/contexts/current-user';
-import type { UserProviderSettings } from '~/lib/ai/provider-types';
-import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/provider-types';
+import { useSyncExternalStore, useCallback } from "react";
+import { useCurrentUserId } from "~/contexts/current-user";
+import type { UserProviderSettings } from "~/lib/ai/provider-types";
+import { LOCAL_INFERENCE_PROVIDERS } from "~/lib/ai/provider-types";
 
 /**
  * Sentinel stored in the client-side state when the real key lives in the DB.
@@ -59,14 +59,14 @@ function setState(next: ApiKeysStore) {
 }
 
 function normalizeOwnerId(userId: string | null): string {
-  return userId?.trim() || '__anonymous__';
+  return userId?.trim() || "__anonymous__";
 }
 
 // Load once per authenticated account, not once per JavaScript runtime. Core
 // uses client-side logout/login navigation, so the same module can serve two
 // different users without a document reload.
 function ensureLoaded(userId: string | null) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
 
   const ownerId = normalizeOwnerId(userId);
   if (storeOwnerId !== ownerId) {
@@ -146,10 +146,7 @@ export function useApiKeys(ownerIdOverride?: string | null) {
   const isLoading = store.isLoading;
 
   const updateProviderSettings = useCallback(
-    (
-      providerId: string,
-      settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean },
-    ) => {
+    (providerId: string, settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean }) => {
       const mutationOwnerId = ownerId;
       const previous = storeState;
 
@@ -159,10 +156,10 @@ export function useApiKeys(ownerIdOverride?: string | null) {
         apiKey: settings.apiKey ?? storeState.data[providerId]?.apiKey,
       });
 
-      void fetch('/api/user-provider-settings', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+      void fetch("/api/user-provider-settings", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerName: providerId, ...settings }),
       })
         .then((response) => {
@@ -181,27 +178,30 @@ export function useApiKeys(ownerIdOverride?: string | null) {
     [ownerId],
   );
 
-  const removeProviderSettings = useCallback((providerId: string) => {
-    const mutationOwnerId = ownerId;
-    const previous = storeState;
-    optimisticDelete(providerId);
+  const removeProviderSettings = useCallback(
+    (providerId: string) => {
+      const mutationOwnerId = ownerId;
+      const previous = storeState;
+      optimisticDelete(providerId);
 
-    void fetch('/api/user-provider-settings', {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerName: providerId }),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to remove provider settings: ${response.status}`);
-        }
+      void fetch("/api/user-provider-settings", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerName: providerId }),
       })
-      .catch((error) => {
-        if (storeOwnerId === mutationOwnerId) setState(previous);
-        console.error(error);
-      });
-  }, [ownerId]);
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to remove provider settings: ${response.status}`);
+          }
+        })
+        .catch((error) => {
+          if (storeOwnerId === mutationOwnerId) setState(previous);
+          console.error(error);
+        });
+    },
+    [ownerId],
+  );
 
   const getValidApiKeys = useCallback((): UserProviderSettings => {
     const valid: UserProviderSettings = {};

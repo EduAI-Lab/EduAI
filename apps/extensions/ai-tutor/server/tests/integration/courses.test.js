@@ -32,12 +32,12 @@ import {
   listEduAiCourses,
   listEduAiCoursesServiceKey,
   listEduAiCourseEnrollmentsServiceKey,
-} from '../../src/services/eduaiClient.js';
-import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
+} from "../../src/services/eduaiClient.js";
+import { syncExternalCourseTopics } from "../../src/services/topicSync.js";
 import {
   authorizeLiveStudentEnrollment,
   syncCourseEnrollments,
-} from '../../src/services/enrollmentSync.js';
+} from "../../src/services/enrollmentSync.js";
 
 // Course routes call Core's policy service (instructors.canCreateCourses) via
 // requireInstructorPolicy. Core isn't reachable in the integration env, so the
@@ -58,8 +58,8 @@ vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
   LIVE_ENROLLMENT_SYNC_TIMEOUT_MS: 3_000,
-  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE: 'ENROLLMENT_AUTH_UNAVAILABLE',
-  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE: 'Enrollment authorization unavailable',
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE: "ENROLLMENT_AUTH_UNAVAILABLE",
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE: "Enrollment authorization unavailable",
   authorizeLiveStudentEnrollment: vi.fn(),
   syncCourseEnrollments: vi
     .fn()
@@ -84,15 +84,15 @@ describe("Courses routes", () => {
     vi.mocked(authorizeLiveStudentEnrollment)
       .mockReset()
       .mockImplementation(
-        async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+        async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
           const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
           const instructor = course?.instructors?.some((entry) => entry.userId === userId);
           const role =
-            instructor && allowedRoles.includes('INSTRUCTOR')
-              ? 'INSTRUCTOR'
+            instructor && allowedRoles.includes("INSTRUCTOR")
+              ? "INSTRUCTOR"
               : (enrollment?.role ?? null);
           const allowed = allowedRoles.includes(role);
-          return { allowed, state: allowed ? 'allowed' : 'denied', role };
+          return { allowed, state: allowed ? "allowed" : "denied", role };
         },
       );
     vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
@@ -151,12 +151,12 @@ describe("Courses routes", () => {
 
   // ── GET /api/courses ──────────────────────────────────────────────
 
-  describe('GET /api/courses', () => {
-    it('professor sees their courses', async () => {
+  describe("GET /api/courses", () => {
+    it("professor sees their courses", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'INSTRUCTOR' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "INSTRUCTOR" },
       ]);
-      const res = await request(profApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(profApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -167,30 +167,30 @@ describe("Courses routes", () => {
       expect(res.body.data[0].progress).toBeUndefined();
     });
 
-    it('does not list a stale local instructor assignment after Core demotion', async () => {
+    it("does not list a stale local instructor assignment after Core demotion", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'TA' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "TA" },
       ]);
 
-      const res = await request(profApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(profApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(200);
       expect(res.body.total).toBe(0);
       expect(res.body.data).toEqual([]);
     });
 
-    it('fails closed on a malformed caller-scoped Core response', async () => {
-      vi.mocked(listEduAiCourses).mockResolvedValue({ data: 'malformed' });
+    it("fails closed on a malformed caller-scoped Core response", async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue({ data: "malformed" });
 
-      const res = await request(profApp).get('/api/courses?page=1&pageSize=200');
+      const res = await request(profApp).get("/api/courses?page=1&pageSize=200");
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('COURSE_COLLECTION_AUTH_UNAVAILABLE');
+      expect(res.body.code).toBe("COURSE_COLLECTION_AUTH_UNAVAILABLE");
     });
 
-    it('student sees published+enrolled courses with progress object', async () => {
+    it("student sees published+enrolled courses with progress object", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'STUDENT' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "STUDENT" },
       ]);
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
@@ -215,7 +215,7 @@ describe("Courses routes", () => {
         { id: seed.course.coreOfferingId, name: "Test Course", isPublished: false },
       ]);
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'TA' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "TA" },
       ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -255,7 +255,7 @@ describe("Courses routes", () => {
     // without a matching Core enrollment, so Core's cookie-scoped list
     // (`listEduAiCourses`) silently omits the course — reproduces the raw-HTTP
     // repro that motivated this fix.
-    it('STUDENT does not see a stale AT enrollment absent from their live Core list', async () => {
+    it("STUDENT does not see a stale AT enrollment absent from their live Core list", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]); // not in the caller's Core-scoped list
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
         { id: seed.course.coreOfferingId, name: "Test Course", isPublished: true },
@@ -299,7 +299,7 @@ describe("Courses routes", () => {
       expect(res.body.total).toBe(0);
     });
 
-    it('TA does not see a stale AT enrollment absent from their live Core list', async () => {
+    it("TA does not see a stale AT enrollment absent from their live Core list", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
         { id: seed.course.coreOfferingId, name: "Test Course", isPublished: false },
@@ -364,8 +364,8 @@ describe("Courses routes", () => {
       const taApp = await createApp({ mockUser: ta });
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: true,
-        state: 'allowed',
-        role: 'TA',
+        state: "allowed",
+        role: "TA",
       });
 
       const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
@@ -384,8 +384,8 @@ describe("Courses routes", () => {
       const taApp = await createApp({ mockUser: ta });
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: true,
-        state: 'allowed',
-        role: 'TA',
+        state: "allowed",
+        role: "TA",
       });
 
       const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
@@ -419,9 +419,9 @@ describe("Courses routes", () => {
       );
     });
 
-    it('fails closed with a stable 503 when live enrollment authorization is unavailable', async () => {
+    it("fails closed with a stable 503 when live enrollment authorization is unavailable", async () => {
       vi.mocked(authorizeLiveStudentEnrollment).mockRejectedValueOnce(
-        new Error('Core unavailable'),
+        new Error("Core unavailable"),
       );
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -430,15 +430,15 @@ describe("Courses routes", () => {
 
       expect(res.status).toBe(503);
       expect(res.body).toEqual({
-        error: 'Enrollment authorization unavailable',
-        code: 'ENROLLMENT_AUTH_UNAVAILABLE',
+        error: "Enrollment authorization unavailable",
+        code: "ENROLLMENT_AUTH_UNAVAILABLE",
       });
     });
 
-    it('returns 403 when live enrollment sync succeeds but the caller is not enrolled', async () => {
+    it("returns 403 when live enrollment sync succeeds but the caller is not enrolled", async () => {
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: false,
-        state: 'denied',
+        state: "denied",
         role: null,
       });
       const student = makeStudent();
@@ -447,7 +447,7 @@ describe("Courses routes", () => {
       const res = await request(studentApp).get(`/api/courses/${seed.course.id}`);
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: 'Not authorized for this course' });
+      expect(res.body).toEqual({ error: "Not authorized for this course" });
     });
 
     it("bounds the Core course-field lookup with a signal, not just the enrollment sync (#1173 review)", async () => {
@@ -509,24 +509,24 @@ describe("Courses routes", () => {
 
       const res = await request(profApp)
         .patch(`/api/courses/${seed.course.id}/publish`)
-        .set('Cookie', 'session=user-session')
-        .set('Sec-Fetch-Site', 'same-origin');
+        .set("Cookie", "session=user-session")
+        .set("Sec-Fetch-Site", "same-origin");
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(true);
     });
 
-    it('denies publish when Core no longer reports the local instructor as INSTRUCTOR', async () => {
+    it("denies publish when Core no longer reports the local instructor as INSTRUCTOR", async () => {
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: false,
-        state: 'denied',
-        role: 'STUDENT',
+        state: "denied",
+        role: "STUDENT",
       });
 
       const res = await request(profApp)
         .patch(`/api/courses/${seed.course.id}/publish`)
-        .set('Cookie', 'session=user-session')
-        .set('Sec-Fetch-Site', 'same-origin');
+        .set("Cookie", "session=user-session")
+        .set("Sec-Fetch-Site", "same-origin");
 
       expect(res.status).toBe(403);
     });
@@ -561,8 +561,8 @@ describe("Courses routes", () => {
 
       const res = await request(profApp)
         .patch(`/api/courses/${seed.course.id}/unpublish`)
-        .set('Cookie', 'session=user-session')
-        .set('Sec-Fetch-Site', 'same-origin');
+        .set("Cookie", "session=user-session")
+        .set("Sec-Fetch-Site", "same-origin");
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(false);
@@ -583,16 +583,16 @@ describe("Courses routes", () => {
 
   // ── POST /api/courses/import-external (#578) ─────────────────────
 
-  describe('POST /api/courses/import-external', () => {
+  describe("POST /api/courses/import-external", () => {
     it.each([
-      ['ADMIN', 'TA', () => makeAdmin()],
-      ['ADMIN', 'STUDENT', () => makeAdmin()],
-      ['ADMIN', 'INSTRUCTOR', () => makeAdmin()],
-      ['UNIT_ADMIN', 'TA', () => makeUnitAdmin()],
-      ['UNIT_ADMIN', 'STUDENT', () => makeUnitAdmin()],
-      ['UNIT_ADMIN', 'INSTRUCTOR', () => makeUnitAdmin()],
+      ["ADMIN", "TA", () => makeAdmin()],
+      ["ADMIN", "STUDENT", () => makeAdmin()],
+      ["ADMIN", "INSTRUCTOR", () => makeAdmin()],
+      ["UNIT_ADMIN", "TA", () => makeUnitAdmin()],
+      ["UNIT_ADMIN", "STUDENT", () => makeUnitAdmin()],
+      ["UNIT_ADMIN", "INSTRUCTOR", () => makeUnitAdmin()],
     ])(
-      'lets %s ensure a %s-visible anchor without creating CourseInstructor',
+      "lets %s ensure a %s-visible anchor without creating CourseInstructor",
       async (_role, courseRole, user) => {
         vi.mocked(findEduAiCourseById).mockResolvedValue({
           id: `core-${_role.toLowerCase()}-${courseRole.toLowerCase()}-anchor`,
@@ -600,9 +600,9 @@ describe("Courses routes", () => {
         });
 
         const res = await request(await createApp({ mockUser: user() }))
-          .post('/api/courses/import-external')
-          .set('Cookie', 'session=valid')
-          .set('Sec-Fetch-Site', 'same-origin')
+          .post("/api/courses/import-external")
+          .set("Cookie", "session=valid")
+          .set("Sec-Fetch-Site", "same-origin")
           .send({
             externalCourseId: `core-${_role.toLowerCase()}-${courseRole.toLowerCase()}-anchor`,
           });
@@ -614,8 +614,8 @@ describe("Courses routes", () => {
       },
     );
 
-    it.each(['TA', 'STUDENT'])(
-      'rejects a platform instructor whose requested-course role is %s',
+    it.each(["TA", "STUDENT"])(
+      "rejects a platform instructor whose requested-course role is %s",
       async (courseRole) => {
         vi.mocked(findEduAiCourseById).mockResolvedValue({
           id: `core-course-${courseRole.toLowerCase()}`,
@@ -623,32 +623,32 @@ describe("Courses routes", () => {
         });
 
         const res = await request(profApp)
-          .post('/api/courses/import-external')
-          .set('Cookie', 'session=valid')
-          .set('Sec-Fetch-Site', 'same-origin')
+          .post("/api/courses/import-external")
+          .set("Cookie", "session=valid")
+          .set("Sec-Fetch-Site", "same-origin")
           .send({ externalCourseId: `core-course-${courseRole.toLowerCase()}` });
 
         expect(res.status).toBe(403);
-        expect(res.body.error).toBe('CORE_COURSE_INSTRUCTOR_REQUIRED');
+        expect(res.body.error).toBe("CORE_COURSE_INSTRUCTOR_REQUIRED");
         expect(await prisma.courseInstructor.count({ where: { userId: prof.id } })).toBe(1);
       },
     );
 
-    it('imports a Core course the instructor is enrolled in', async () => {
+    it("imports a Core course the instructor is enrolled in", async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: 'core-course-1',
-        callerEnrollmentRole: 'INSTRUCTOR',
-        code: 'COSC 111',
-        name: 'Computing I',
-        term: 'Fall',
+        id: "core-course-1",
+        callerEnrollmentRole: "INSTRUCTOR",
+        code: "COSC 111",
+        name: "Computing I",
+        term: "Fall",
         year: 2026,
       });
 
       const res = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .set('Sec-Fetch-Site', 'same-origin')
-        .send({ externalCourseId: 'core-course-1' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ externalCourseId: "core-course-1" });
 
       expect(res.status).toBe(201);
       expect(res.body.coreOfferingId).toBe("core-course-1");
@@ -660,28 +660,28 @@ describe("Courses routes", () => {
 
     it("is an idempotent ensure: re-importing an already-anchored course returns 200 with the same offering", async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue({
-        id: 'core-course-1',
-        callerEnrollmentRole: 'INSTRUCTOR',
-        code: 'COSC 111',
-        name: 'Computing I',
-        term: 'W1',
+        id: "core-course-1",
+        callerEnrollmentRole: "INSTRUCTOR",
+        code: "COSC 111",
+        name: "Computing I",
+        term: "W1",
         year: 2026,
       });
 
       const first = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .set('Sec-Fetch-Site', 'same-origin')
-        .send({ externalCourseId: 'core-course-1' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ externalCourseId: "core-course-1" });
       expect(first.status).toBe(201);
 
       // Second import (e.g. the caller raced the background mirror, or simply
       // retried) succeeds with the existing row rather than conflicting.
       const second = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .set('Sec-Fetch-Site', 'same-origin')
-        .send({ externalCourseId: 'core-course-1' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ externalCourseId: "core-course-1" });
       expect(second.status).toBe(200);
       expect(second.body.id).toBe(first.body.id);
       expect(second.body.coreOfferingId).toBe("core-course-1");
@@ -691,17 +691,17 @@ describe("Courses routes", () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue(null);
 
       const res = await request(profApp)
-        .post('/api/courses/import-external')
-        .set('Cookie', 'session=valid')
-        .set('Sec-Fetch-Site', 'same-origin')
-        .send({ externalCourseId: 'core-course-not-mine' });
+        .post("/api/courses/import-external")
+        .set("Cookie", "session=valid")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ externalCourseId: "core-course-not-mine" });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toBe("CORE_COURSE_NOT_AUTHORIZED");
     });
 
-    it('returns 400 without externalCourseId', async () => {
-      const res = await request(profApp).post('/api/courses/import-external').send({});
+    it("returns 400 without externalCourseId", async () => {
+      const res = await request(profApp).post("/api/courses/import-external").send({});
 
       expect(res.status).toBe(400);
     });
@@ -716,8 +716,8 @@ describe("Courses routes", () => {
 
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/sync-enrollments`)
-        .set('Cookie', 'session=valid')
-        .set('Sec-Fetch-Site', 'same-origin');
+        .set("Cookie", "session=valid")
+        .set("Sec-Fetch-Site", "same-origin");
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ synced: 2, created: 1, deleted: 0, errors: [] });
@@ -906,12 +906,12 @@ describe("Courses routes", () => {
       expect(res.status).toBe(403);
     });
 
-    it('400 when take is not a number', async () => {
+    it("400 when take is not a number", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback?take=lots`);
       expect(res.status).toBe(400);
     });
 
-    it('400 when skip is not a number', async () => {
+    it("400 when skip is not a number", async () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback?skip=lots`);
       expect(res.status).toBe(400);
     });
@@ -956,7 +956,7 @@ describe("Courses routes", () => {
       expect(res.body.error).toMatch(/sourceCourseId/i);
     });
 
-    it('returns 400 when neither moduleIds nor lessonIds are provided', async () => {
+    it("returns 400 when neither moduleIds nor lessonIds are provided", async () => {
       const res = await request(profApp).post(`/api/courses/${seed.course.id}/import`).send({});
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/nothing to import/i);
@@ -1074,12 +1074,12 @@ describe("Courses routes", () => {
 
   // ── GET /api/me/dashboard-stats (role-aware rollup) ───────────────
 
-  describe('GET /api/me/dashboard-stats', () => {
-    it('INSTRUCTOR gets their course rollup', async () => {
+  describe("GET /api/me/dashboard-stats", () => {
+    it("INSTRUCTOR gets their course rollup", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'INSTRUCTOR' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "INSTRUCTOR" },
       ]);
-      const res = await request(profApp).get('/api/me/dashboard-stats');
+      const res = await request(profApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
       expect(res.body.role).toBe("INSTRUCTOR");
@@ -1088,30 +1088,30 @@ describe("Courses routes", () => {
       expect(res.body).toHaveProperty("submissionsToReview");
     });
 
-    it('excludes stale instructor assignments from the live rollup', async () => {
+    it("excludes stale instructor assignments from the live rollup", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'STUDENT' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "STUDENT" },
       ]);
 
-      const res = await request(profApp).get('/api/me/dashboard-stats');
+      const res = await request(profApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
       expect(res.body.yourCourses).toBe(0);
       expect(res.body.totalCourses).toBe(0);
     });
 
-    it('fails closed when live dashboard course authorization is unavailable', async () => {
-      vi.mocked(listEduAiCourses).mockRejectedValue(new Error('Core unavailable'));
+    it("fails closed when live dashboard course authorization is unavailable", async () => {
+      vi.mocked(listEduAiCourses).mockRejectedValue(new Error("Core unavailable"));
 
-      const res = await request(profApp).get('/api/me/dashboard-stats');
+      const res = await request(profApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('COURSE_COLLECTION_AUTH_UNAVAILABLE');
+      expect(res.body.code).toBe("COURSE_COLLECTION_AUTH_UNAVAILABLE");
     });
 
-    it('STUDENT gets an enrolled/progress rollup', async () => {
+    it("STUDENT gets an enrolled/progress rollup", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'STUDENT' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "STUDENT" },
       ]);
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
@@ -1123,9 +1123,9 @@ describe("Courses routes", () => {
       expect(res.body).toHaveProperty("correctAnswerPercentage");
     });
 
-    it('TA gets a TA rollup', async () => {
+    it("TA gets a TA rollup", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, callerEnrollmentRole: 'TA' },
+        { id: seed.course.coreOfferingId, callerEnrollmentRole: "TA" },
       ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -1149,7 +1149,7 @@ describe("Courses routes", () => {
     // #1082: dashboard-stats counterpart of the GET /courses fallback tests
     // above — the publish count must read through the same service-key
     // fallback, not just the caller-facing list.
-    it('STUDENT rollup excludes a stale AT enrollment absent from Core', async () => {
+    it("STUDENT rollup excludes a stale AT enrollment absent from Core", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
         { id: seed.course.coreOfferingId, name: "Test Course", isPublished: true },
@@ -1160,11 +1160,11 @@ describe("Courses routes", () => {
       const res = await request(studentApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('STUDENT');
+      expect(res.body.role).toBe("STUDENT");
       expect(res.body.enrolledCourses).toBe(0);
     });
 
-    it('TA rollup excludes a stale AT enrollment absent from Core', async () => {
+    it("TA rollup excludes a stale AT enrollment absent from Core", async () => {
       vi.mocked(listEduAiCourses).mockResolvedValue([]);
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
         { id: seed.course.coreOfferingId, name: "Test Course", isPublished: true },
@@ -1175,7 +1175,7 @@ describe("Courses routes", () => {
       const res = await request(taApp).get("/api/me/dashboard-stats");
 
       expect(res.status).toBe(200);
-      expect(res.body.role).toBe('TA');
+      expect(res.body.role).toBe("TA");
       expect(res.body.yourCourses).toBe(0);
       expect(res.body.publishedCourses).toBe(0);
     });
@@ -1226,15 +1226,15 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/publish`)
-      .set('Cookie', 'session=user-session')
-      .set('Sec-Fetch-Site', 'same-origin');
+      .set("Cookie", "session=user-session")
+      .set("Sec-Fetch-Site", "same-origin");
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
 
     // Verify Core was called with the right URL and method.
     const coreCalls = mockFetch.mock.calls.filter(
-      ([url]) => typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
+      ([url]) => typeof url === "string" && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
     );
     expect(coreCalls).toHaveLength(1);
     expect(coreCalls[0][1].method).toBe("PATCH");
@@ -1258,14 +1258,14 @@ describe("Course publish state — Core write-through (#477)", () => {
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/unpublish`)
-      .set('Cookie', 'session=user-session')
-      .set('Sec-Fetch-Site', 'same-origin');
+      .set("Cookie", "session=user-session")
+      .set("Sec-Fetch-Site", "same-origin");
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
 
     const coreCalls = mockFetch.mock.calls.filter(
-      ([url]) => typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
+      ([url]) => typeof url === "string" && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
     );
     expect(coreCalls).toHaveLength(1);
 
@@ -1276,20 +1276,20 @@ describe("Course publish state — Core write-through (#477)", () => {
     expect(updatedLesson.isPublished).toBe(false);
   });
 
-  it('publish — surfaces Core errors as 500 without touching local DB', async () => {
+  it("publish — surfaces Core errors as 500 without touching local DB", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
         status: 403,
-        text: () => Promise.resolve('Forbidden'),
+        text: () => Promise.resolve("Forbidden"),
       }),
     );
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/publish`)
-      .set('Cookie', 'session=user-session')
-      .set('Sec-Fetch-Site', 'same-origin');
+      .set("Cookie", "session=user-session")
+      .set("Sec-Fetch-Site", "same-origin");
 
     expect(res.status).toBe(500);
     // No local `isPublished` column exists anymore (#1072 step 4) — there is
@@ -1301,22 +1301,22 @@ describe("Course publish state — Core write-through (#477)", () => {
   // builds the response fails. The route must report the write's own result
   // rather than letting the failed read fall back to "unpublished" — a
   // successful publish must never come back looking like a failure.
-  it('publish — re-read failure after a successful write reports isPublished:true, not a false failure', async () => {
+  it("publish — re-read failure after a successful write reports isPublished:true, not a false failure", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(''),
+        text: () => Promise.resolve(""),
         json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
       }),
     );
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/publish`)
-      .set('Cookie', 'session=user-session')
-      .set('Sec-Fetch-Site', 'same-origin');
+      .set("Cookie", "session=user-session")
+      .set("Sec-Fetch-Site", "same-origin");
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(true);
@@ -1324,22 +1324,22 @@ describe("Course publish state — Core write-through (#477)", () => {
     expect(res.headers["x-core-status"]).toBe("unavailable");
   });
 
-  it('unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally', async () => {
+  it("unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(''),
+        text: () => Promise.resolve(""),
         json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
       }),
     );
-    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
 
     const res = await request(profApp)
       .patch(`/api/courses/${seed.course.id}/unpublish`)
-      .set('Cookie', 'session=user-session')
-      .set('Sec-Fetch-Site', 'same-origin');
+      .set("Cookie", "session=user-session")
+      .set("Sec-Fetch-Site", "same-origin");
 
     expect(res.status).toBe(200);
     expect(res.body.isPublished).toBe(false);
@@ -1364,15 +1364,15 @@ describe("Course publish state — Core write-through (#477)", () => {
       code: "COSC 999",
       name: "Published Course",
       isPublished: true,
-      callerEnrollmentRole: 'INSTRUCTOR',
+      callerEnrollmentRole: "INSTRUCTOR",
     };
 
     vi.mocked(findEduAiCourseById).mockResolvedValue(coreCourse);
 
     const res = await request(profApp)
-      .post('/api/courses/import-external')
-      .set('Cookie', 'session=valid')
-      .set('Sec-Fetch-Site', 'same-origin')
+      .post("/api/courses/import-external")
+      .set("Cookie", "session=valid")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ externalCourseId: EXTERNAL_COURSE_ID });
 
     expect(res.status).toBe(201);

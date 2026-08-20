@@ -193,7 +193,11 @@ describe("POST /api/completion", () => {
   });
 
   it("maps a runCompletion failure to its status", async () => {
-    vi.mocked(runCompletion).mockResolvedValue({ ok: false, error: "MODEL_NOT_FOUND", status: 422 } as never);
+    vi.mocked(runCompletion).mockResolvedValue({
+      ok: false,
+      error: "MODEL_NOT_FOUND",
+      status: 422,
+    } as never);
 
     const res = await action(makeArgs({ model: "google:test", messages: [] }));
 

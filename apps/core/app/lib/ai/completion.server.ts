@@ -16,10 +16,7 @@ import {
   createProviderFailure,
   providerErrorDiagnostic,
 } from "~/lib/ai/provider-errors.server";
-import {
-  FleetUnavailableError,
-  resolveFleetHost,
-} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import { composeSecurityPrompt, sanitizeSystemPrompt } from "~/lib/ai/prompt-safety";
@@ -68,9 +65,7 @@ export function resolveCompletionInputLimits(
 ): CompletionInputLimits {
   const fromEnv = (name: string, fallback: number, explicit?: number) => {
     if (explicit !== undefined) {
-      return Number.isSafeInteger(explicit) && explicit > 0
-        ? explicit
-        : fallback;
+      return Number.isSafeInteger(explicit) && explicit > 0 ? explicit : fallback;
     }
     return positiveEnvInt(name, fallback);
   };
@@ -138,10 +133,7 @@ export type CompletionRequest = {
   signal?: AbortSignal;
 };
 
-function completionValidationError(
-  status: 400 | 422,
-  error: string,
-): CompletionValidationResult {
+function completionValidationError(status: 400 | 422, error: string): CompletionValidationResult {
   return { ok: false, status, error };
 }
 
@@ -169,29 +161,16 @@ function validateApiKeys(
 
   for (const [providerId, providerValue] of Object.entries(value)) {
     if (providerId.length > limits.maxModelChars) {
-      return completionValidationError(
-        422,
-        "apiKeys provider id exceeds maximum length",
-      );
+      return completionValidationError(422, "apiKeys provider id exceeds maximum length");
     }
-    if (
-      !providerValue ||
-      typeof providerValue !== "object" ||
-      Array.isArray(providerValue)
-    ) {
-      return completionValidationError(
-        422,
-        `apiKeys.${providerId} must be an object`,
-      );
+    if (!providerValue || typeof providerValue !== "object" || Array.isArray(providerValue)) {
+      return completionValidationError(422, `apiKeys.${providerId} must be an object`);
     }
 
     const entry = providerValue as Record<string, unknown>;
     if (entry.apiKey !== undefined) {
       if (typeof entry.apiKey !== "string") {
-        return completionValidationError(
-          422,
-          `apiKeys.${providerId}.apiKey must be a string`,
-        );
+        return completionValidationError(422, `apiKeys.${providerId}.apiKey must be a string`);
       }
       if (entry.apiKey.length > limits.maxApiKeyChars) {
         return completionValidationError(422, "apiKey exceeds maximum length");
@@ -199,10 +178,7 @@ function validateApiKeys(
     }
     if (entry.baseUrl !== undefined) {
       if (typeof entry.baseUrl !== "string") {
-        return completionValidationError(
-          422,
-          `apiKeys.${providerId}.baseUrl must be a string`,
-        );
+        return completionValidationError(422, `apiKeys.${providerId}.baseUrl must be a string`);
       }
       if (entry.baseUrl.length > limits.maxBaseUrlChars) {
         return completionValidationError(422, "baseUrl exceeds maximum length");
@@ -240,10 +216,7 @@ export function validateCompletionRequest(
       return completionValidationError(422, "systemPrompt must be a string");
     }
     if (body.systemPrompt.length > limits.maxSystemPromptChars) {
-      return completionValidationError(
-        422,
-        "systemPrompt exceeds maximum length",
-      );
+      return completionValidationError(422, "systemPrompt exceeds maximum length");
     }
   }
 
@@ -262,36 +235,21 @@ export function validateCompletionRequest(
     }
     const candidate = message as Record<string, unknown>;
     if (typeof candidate.role !== "string") {
-      return completionValidationError(
-        422,
-        "each message role must be a string",
-      );
+      return completionValidationError(422, "each message role must be a string");
     }
     if (!COMPLETION_MESSAGE_ROLES.has(candidate.role)) {
-      return completionValidationError(
-        422,
-        `Unsupported message role: ${candidate.role}`,
-      );
+      return completionValidationError(422, `Unsupported message role: ${candidate.role}`);
     }
     const contentChars = serializedContentChars(candidate.content);
     if (contentChars === null) {
-      return completionValidationError(
-        422,
-        "each message content must be a string or parts array",
-      );
+      return completionValidationError(422, "each message content must be a string or parts array");
     }
     if (contentChars > limits.maxMessageChars) {
-      return completionValidationError(
-        422,
-        "message content exceeds maximum length",
-      );
+      return completionValidationError(422, "message content exceeds maximum length");
     }
     totalMessageChars += contentChars;
     if (totalMessageChars > limits.maxTotalMessageChars) {
-      return completionValidationError(
-        422,
-        "messages exceed aggregate character limit",
-      );
+      return completionValidationError(422, "messages exceed aggregate character limit");
     }
   }
 
@@ -367,8 +325,7 @@ export async function resolveCompletionModelPolicy(
     return {
       ok: false,
       status: 400,
-      error:
-        "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
+      error: "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
     };
   }
 
@@ -548,8 +505,7 @@ export async function runCompletion(request: CompletionRequest) {
     typeof request.temperature === "number" && Number.isFinite(request.temperature)
       ? request.temperature
       : DEFAULT_TEMPERATURE;
-  const maxTokens =
-    typeof request.maxTokens === "number" ? request.maxTokens : DEFAULT_MAX_TOKENS;
+  const maxTokens = typeof request.maxTokens === "number" ? request.maxTokens : DEFAULT_MAX_TOKENS;
 
   let result;
   try {

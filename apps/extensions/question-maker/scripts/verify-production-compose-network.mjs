@@ -1,24 +1,24 @@
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const extensionDir = resolve(scriptDir, '..');
-const repoRoot = resolve(extensionDir, '../../..');
-const composeFile = resolve(extensionDir, 'docker-compose.yml');
-const envFile = resolve(extensionDir, '.env');
+const extensionDir = resolve(scriptDir, "..");
+const repoRoot = resolve(extensionDir, "../../..");
+const composeFile = resolve(extensionDir, "docker-compose.yml");
+const envFile = resolve(extensionDir, ".env");
 
 // The production Compose file intentionally requires an extension-local .env.
 // Create a disposable minimum file when this check runs in a clean checkout;
 // never overwrite an operator's real environment file.
 let createdEnvFile = false;
 if (!existsSync(envFile)) {
-  writeFileSync(
-    envFile,
-    'POSTGRES_PASSWORD_PRODUCTION=qm-compose-network-check\n',
-    { encoding: 'utf8', mode: 0o600, flag: 'wx' },
-  );
+  writeFileSync(envFile, "POSTGRES_PASSWORD_PRODUCTION=qm-compose-network-check\n", {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx",
+  });
   createdEnvFile = true;
 }
 
@@ -26,20 +26,16 @@ const failures = [];
 const composeEnv = {
   ...process.env,
   POSTGRES_PASSWORD_PRODUCTION:
-    process.env.POSTGRES_PASSWORD_PRODUCTION || 'qm-compose-network-check',
+    process.env.POSTGRES_PASSWORD_PRODUCTION || "qm-compose-network-check",
 };
 
 try {
-  const result = spawnSync(
-    'docker',
-    ['compose', '-f', composeFile, 'config', '--format', 'json'],
-    {
-      cwd: repoRoot,
-      env: composeEnv,
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
+  const result = spawnSync("docker", ["compose", "-f", composeFile, "config", "--format", "json"], {
+    cwd: repoRoot,
+    env: composeEnv,
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
 
   if (result.error) {
     throw result.error;
@@ -47,9 +43,7 @@ try {
 
   if (result.status !== 0) {
     const details = result.stderr?.trim();
-    throw new Error(
-      `docker compose config failed${details ? `: ${details}` : ''}`,
-    );
+    throw new Error(`docker compose config failed${details ? `: ${details}` : ""}`);
   }
 
   let config;
@@ -64,48 +58,48 @@ try {
   const frontend = config.services?.frontend;
 
   if (!postgres) {
-    failures.push('postgres service is missing');
+    failures.push("postgres service is missing");
   } else {
     const configuredPorts = postgres.ports || [];
     if (configuredPorts.length > 0) {
       failures.push(
         `postgres configures host ports: ${configuredPorts
           .map((port) => `${port.published}:${port.target}`)
-          .join(', ')}`,
+          .join(", ")}`,
       );
     }
-    if (postgres.network_mode === 'host') {
-      failures.push('postgres uses host networking');
+    if (postgres.network_mode === "host") {
+      failures.push("postgres uses host networking");
     }
   }
 
   if (!backend) {
-    failures.push('backend service is missing');
+    failures.push("backend service is missing");
   } else {
     const databaseUrl = backend.environment?.DATABASE_URL;
-    if (databaseUrl !== 'postgresql://postgres@postgres:5432/eduquery') {
+    if (databaseUrl !== "postgresql://postgres@postgres:5432/eduquery") {
       failures.push(
-        `backend DATABASE_URL must use postgres:5432, got ${databaseUrl || '<missing>'}`,
+        `backend DATABASE_URL must use postgres:5432, got ${databaseUrl || "<missing>"}`,
       );
     }
-    if (backend.depends_on?.postgres?.condition !== 'service_healthy') {
-      failures.push('backend must wait for postgres health before starting');
+    if (backend.depends_on?.postgres?.condition !== "service_healthy") {
+      failures.push("backend must wait for postgres health before starting");
     }
-    assertPublishedPort(backend, '8000', '8000', 'backend', failures);
+    assertPublishedPort(backend, "8000", "8000", "backend", failures);
   }
 
   if (!frontend) {
-    failures.push('frontend service is missing');
+    failures.push("frontend service is missing");
   } else {
-    assertPublishedPort(frontend, '3005', '8080', 'frontend', failures);
+    assertPublishedPort(frontend, "3005", "8080", "frontend", failures);
   }
 
   if (failures.length > 0) {
-    throw new Error(failures.join('; '));
+    throw new Error(failures.join("; "));
   }
 
   console.log(
-    'PASS: production Compose keeps PostgreSQL internal on postgres:5432 and preserves the 8000/3005 application ports.',
+    "PASS: production Compose keeps PostgreSQL internal on postgres:5432 and preserves the 8000/3005 application ports.",
   );
 } catch (error) {
   console.error(`FAIL: ${error.message}`);

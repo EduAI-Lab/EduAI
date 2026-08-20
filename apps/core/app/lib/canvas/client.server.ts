@@ -29,16 +29,11 @@ export type CanvasPaginationOptions = {
 export const CANVAS_PAGINATION_LINK_ERROR =
   "Canvas pagination link is invalid or outside the configured Canvas origin";
 export const CANVAS_PAGINATION_CYCLE_ERROR = "Canvas pagination cycle detected";
-export const CANVAS_PAGINATION_PAGE_LIMIT_ERROR =
-  "Canvas pagination exceeded the page limit";
-export const CANVAS_PAGINATION_ITEM_LIMIT_ERROR =
-  "Canvas pagination exceeded the item limit";
-export const CANVAS_PAGINATION_DEADLINE_ERROR =
-  "Canvas pagination exceeded its deadline";
-export const CANVAS_PAGINATION_CANCELLED_ERROR =
-  "Canvas pagination was cancelled";
-const CANVAS_PAGINATION_CONFIG_ERROR =
-  "Canvas pagination limits must be positive integers";
+export const CANVAS_PAGINATION_PAGE_LIMIT_ERROR = "Canvas pagination exceeded the page limit";
+export const CANVAS_PAGINATION_ITEM_LIMIT_ERROR = "Canvas pagination exceeded the item limit";
+export const CANVAS_PAGINATION_DEADLINE_ERROR = "Canvas pagination exceeded its deadline";
+export const CANVAS_PAGINATION_CANCELLED_ERROR = "Canvas pagination was cancelled";
+const CANVAS_PAGINATION_CONFIG_ERROR = "Canvas pagination limits must be positive integers";
 
 /** Absolute cap for streamed Canvas response bytes. */
 const MAX_CANVAS_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -294,9 +289,10 @@ function resolvePaginationOption(
   return parsePositiveInteger(process.env[envName]) ?? fallback;
 }
 
-function resolvePaginationOptions(options: CanvasPaginationOptions): Required<
-  Pick<CanvasPaginationOptions, "maxPages" | "maxItems" | "deadlineMs">
-> & Pick<CanvasPaginationOptions, "signal"> {
+function resolvePaginationOptions(
+  options: CanvasPaginationOptions,
+): Required<Pick<CanvasPaginationOptions, "maxPages" | "maxItems" | "deadlineMs">> &
+  Pick<CanvasPaginationOptions, "signal"> {
   return {
     maxPages: resolvePaginationOption(
       options.maxPages,
@@ -669,8 +665,7 @@ export async function canvasGetPaginated<T>(
   }
 
   const fetchImpl = typeof fetchImplOrOptions === "function" ? fetchImplOrOptions : fetch;
-  const options =
-    typeof fetchImplOrOptions === "function" ? suppliedOptions : fetchImplOrOptions;
+  const options = typeof fetchImplOrOptions === "function" ? suppliedOptions : fetchImplOrOptions;
   const limits = resolvePaginationOptions(options);
 
   const separator = path.includes("?") ? "&" : "?";
@@ -679,10 +674,7 @@ export async function canvasGetPaginated<T>(
     `${path}${separator}per_page=${CANVAS_PAGE_SIZE}`,
   );
 
-  const deadline = createAbortDeadline(
-    limits.deadlineMs,
-    CANVAS_PAGINATION_DEADLINE_ERROR,
-  );
+  const deadline = createAbortDeadline(limits.deadlineMs, CANVAS_PAGINATION_DEADLINE_ERROR);
   const paginationSignal = composeAbortSignals([deadline.signal, limits.signal]);
 
   const results: T[] = [];
@@ -975,7 +967,11 @@ function responseMimeMatchesExpected(actual: string | null, expected: string): b
     expected === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     expected === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
   ) {
-    return actual === expected || actual === "application/zip" || actual === "application/x-zip-compressed";
+    return (
+      actual === expected ||
+      actual === "application/zip" ||
+      actual === "application/x-zip-compressed"
+    );
   }
 
   return actual === expected;
@@ -1030,7 +1026,9 @@ function bytesMatchExpectedType(bytes: Uint8Array, expectedMime: string): boolea
   if (expectedMime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     return containsAscii(bytes, "word/");
   }
-  if (expectedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+  if (
+    expectedMime === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
     return containsAscii(bytes, "ppt/");
   }
 
@@ -1051,7 +1049,9 @@ function parseCanvasContentLength(value: string | null): number | null {
   return parsed;
 }
 
-function createWebDownloadBody(stream: ReadableStream<Uint8Array> | null): CanvasFileDownloadBody | null {
+function createWebDownloadBody(
+  stream: ReadableStream<Uint8Array> | null,
+): CanvasFileDownloadBody | null {
   if (!stream) return null;
   const reader = stream.getReader();
   let released = false;
@@ -1111,7 +1111,10 @@ async function readCanvasFileResponse(
     const expectedMime = resolveExpectedCanvasFileMime(file);
     const responseMime = normalizeResponseMimeType(response.getHeader("content-type"));
     if (!responseMimeMatchesExpected(responseMime, expectedMime)) {
-      throw new CanvasApiError("Canvas file response type did not match the requested document", 415);
+      throw new CanvasApiError(
+        "Canvas file response type did not match the requested document",
+        415,
+      );
     }
 
     const declaredLength = parseCanvasContentLength(response.getHeader("content-length"));
@@ -1141,7 +1144,10 @@ async function readCanvasFileResponse(
     }
 
     if (compareDeclaredLength && declaredLength !== null && totalBytes !== declaredLength) {
-      throw new CanvasApiError("Canvas file response did not match its declared Content-Length", 502);
+      throw new CanvasApiError(
+        "Canvas file response did not match its declared Content-Length",
+        502,
+      );
     }
 
     const bytes = new Uint8Array(totalBytes);
@@ -1152,7 +1158,10 @@ async function readCanvasFileResponse(
     }
 
     if (!bytesMatchExpectedType(bytes, expectedMime)) {
-      throw new CanvasApiError("Canvas file contents did not match the requested document type", 415);
+      throw new CanvasApiError(
+        "Canvas file contents did not match the requested document type",
+        415,
+      );
     }
 
     return bytes;
@@ -1236,7 +1245,10 @@ async function fetchCanvasFileBytes(
       if (!location) {
         await cancelCanvasFileBody(
           response,
-          new CanvasApiError(`Canvas file download redirect missing Location (${response.status})`, 502),
+          new CanvasApiError(
+            `Canvas file download redirect missing Location (${response.status})`,
+            502,
+          ),
         );
         response.body?.release();
         throw new CanvasApiError(

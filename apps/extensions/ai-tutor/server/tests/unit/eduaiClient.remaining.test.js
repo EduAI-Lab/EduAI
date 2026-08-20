@@ -357,6 +357,7 @@ describe("patchCoreEnrollmentRole", () => {
     await expect(patchCoreEnrollmentRole("core-1", "e1", "TA", "")).rejects.toMatchObject({
       status: 401,
     });
+  });
 
   it("PATCHes the enrollment role and returns the response body", async () => {
     process.env.EDUAI_API_KEY = "svc-key";

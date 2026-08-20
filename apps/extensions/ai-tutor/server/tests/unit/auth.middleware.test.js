@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
-import request from 'supertest';
-import { EventEmitter } from 'node:events';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import express from "express";
+import request from "supertest";
+import { EventEmitter } from "node:events";
 
 vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn(),
@@ -9,15 +9,15 @@ vi.mock("../../src/services/policyService.js", () => ({
 
 const authorizeLiveCoursePrincipal = vi.fn();
 
-vi.mock('../../src/services/liveCoursePrincipal.js', () => ({
+vi.mock("../../src/services/liveCoursePrincipal.js", () => ({
   authorizeLiveCoursePrincipal: (...args) => authorizeLiveCoursePrincipal(...args),
   isAllowedLiveCourseStaffPrincipal: (principal) =>
-    principal?.state === 'allowed' &&
-    ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'].includes(principal.kind),
+    principal?.state === "allowed" &&
+    ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"].includes(principal.kind),
   resolveLiveCoreCourseById: (...args) => resolveCoreCourseById(...args),
 }));
 
-vi.mock('../../src/services/courseResolver.js', () => ({
+vi.mock("../../src/services/courseResolver.js", () => ({
   resolveCoreCourseById: vi.fn(),
 }));
 
@@ -31,8 +31,8 @@ import {
 import { getPolicy } from "../../src/services/policyService.js";
 import { resolveCoreCourseById } from "../../src/services/courseResolver.js";
 
-process.env.CORE_URL = 'http://core.test';
-process.env.EDUAI_API_KEY = 'test-service-key';
+process.env.CORE_URL = "http://core.test";
+process.env.EDUAI_API_KEY = "test-service-key";
 const originalCoreAuthTimeoutMs = process.env.CORE_AUTH_TIMEOUT_MS;
 
 function makeRes() {
@@ -50,9 +50,9 @@ function makeRes() {
 
 function makeReq(overrides = {}) {
   return {
-    headers: { cookie: 'session=test' },
-    path: '/api/something',
-    originalUrl: '/api/something',
+    headers: { cookie: "session=test" },
+    path: "/api/something",
+    originalUrl: "/api/something",
     ...overrides,
   };
 }
@@ -73,14 +73,14 @@ describe("requireAuth", () => {
     }
   });
 
-  it('calls next and populates req.user on a valid session', async () => {
+  it("calls next and populates req.user on a valid session", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
-            user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'INSTRUCTOR' },
+            user: { id: "u1", email: "a@b.com", name: "Alice", role: "INSTRUCTOR" },
           }),
       }),
     );
@@ -93,20 +93,20 @@ describe("requireAuth", () => {
     expect(req.user).toMatchObject({ id: "u1", email: "a@b.com", role: "INSTRUCTOR" });
   });
 
-  it('does not treat normal Express POST body completion as caller cancellation', async () => {
+  it("does not treat normal Express POST body completion as caller cancellation", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn(
         (_url, { signal }) =>
           new Promise((resolve, reject) => {
-            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
             setImmediate(() =>
               resolve({
                 ok: true,
                 status: 200,
                 json: () =>
                   Promise.resolve({
-                    user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'INSTRUCTOR' },
+                    user: { id: "u1", email: "a@b.com", name: "Alice", role: "INSTRUCTOR" },
                   }),
               }),
             );
@@ -116,19 +116,19 @@ describe("requireAuth", () => {
 
     const app = express();
     app.use(express.json());
-    app.post('/protected', requireAuth, (_req, res) => res.json({ ok: true }));
+    app.post("/protected", requireAuth, (_req, res) => res.json({ ok: true }));
 
     const response = await request(app)
-      .post('/protected')
-      .set('Cookie', 'session=test')
-      .send({ provider: 'opencode' });
+      .post("/protected")
+      .set("Cookie", "session=test")
+      .send({ provider: "opencode" });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
   });
 
-  it('returns 401 only when Core verifies that the session is unauthorized', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+  it("returns 401 only when Core verifies that the session is unauthorized", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const req = makeReq();
     const res = makeRes();
 
@@ -139,8 +139,8 @@ describe("requireAuth", () => {
     expect(res.json).toHaveBeenCalledWith({ error: "Authentication required" });
   });
 
-  it('preserves a verified Core 403 response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+  it("preserves a verified Core 403 response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
     const req = makeReq();
     const res = makeRes();
 
@@ -148,11 +148,11 @@ describe("requireAuth", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication forbidden' });
+    expect(res.json).toHaveBeenCalledWith({ error: "Authentication forbidden" });
   });
 
-  it('returns 503 when Core session validation responds with a 5xx', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+  it("returns 503 when Core session validation responds with a 5xx", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     const req = makeReq();
     const res = makeRes();
 
@@ -160,17 +160,17 @@ describe("requireAuth", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication service unavailable' });
+    expect(res.json).toHaveBeenCalledWith({ error: "Authentication service unavailable" });
   });
 
-  it('returns 504 when Core session validation never responds before the configured deadline', async () => {
-    process.env.CORE_AUTH_TIMEOUT_MS = '5';
+  it("returns 504 when Core session validation never responds before the configured deadline", async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = "5";
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn(
         (_url, { signal }) =>
           new Promise((_resolve, reject) => {
-            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
           }),
       ),
     );
@@ -181,19 +181,19 @@ describe("requireAuth", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(504);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication service timed out' });
+    expect(res.json).toHaveBeenCalledWith({ error: "Authentication service timed out" });
   });
 
-  it('composes an available caller cancellation signal with the deadline', async () => {
-    process.env.CORE_AUTH_TIMEOUT_MS = '1000';
+  it("composes an available caller cancellation signal with the deadline", async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = "1000";
     const caller = new AbortController();
     let forwardedSignal;
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn((_url, { signal }) => {
         forwardedSignal = signal;
         return new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
           caller.abort();
         });
       }),
@@ -209,17 +209,17 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalledWith(401);
   });
 
-  it('cancels Core authentication when an Express request is actually aborted', async () => {
-    process.env.CORE_AUTH_TIMEOUT_MS = '1000';
+  it("cancels Core authentication when an Express request is actually aborted", async () => {
+    process.env.CORE_AUTH_TIMEOUT_MS = "1000";
     const req = Object.assign(new EventEmitter(), makeReq());
     let forwardedSignal;
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn((_url, { signal }) => {
         forwardedSignal = signal;
         return new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-          setImmediate(() => req.emit('aborted'));
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          setImmediate(() => req.emit("aborted"));
         });
       }),
     );
@@ -276,8 +276,8 @@ describe("requireAuth", () => {
     expect(res.json).toHaveBeenCalledWith({ error: "Rate limited", retryAfter: null });
   });
 
-  it('returns 503 when Core is unreachable (fetch throws)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+  it("returns 503 when Core is unreachable (fetch throws)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
     const req = makeReq();
     const res = makeRes();
 
@@ -285,7 +285,7 @@ describe("requireAuth", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication service unavailable' });
+    expect(res.json).toHaveBeenCalledWith({ error: "Authentication service unavailable" });
   });
 
   it("forwards the incoming cookie header to Core", async () => {
@@ -302,32 +302,32 @@ describe("requireAuth", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://core.test/api/sessions/validate",
       expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ cookie: 'session=abc123; other=x' }),
+        method: "POST",
+        headers: expect.objectContaining({ cookie: "session=abc123; other=x" }),
       }),
     );
   });
 
-  it('forwards verified service auth and isolates clients by trusted rightmost XFF', async () => {
+  it("forwards verified service auth and isolates clients by trusted rightmost XFF", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+      json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal("fetch", mockFetch);
 
     await requireAuth(
       makeReq({
-        headers: { cookie: 'session=a', 'x-forwarded-for': '203.0.113.99, 198.51.100.10' },
-        socket: { remoteAddress: '127.0.0.1' },
+        headers: { cookie: "session=a", "x-forwarded-for": "203.0.113.99, 198.51.100.10" },
+        socket: { remoteAddress: "127.0.0.1" },
       }),
       makeRes(),
       next,
     );
     await requireAuth(
       makeReq({
-        headers: { cookie: 'session=b', 'x-forwarded-for': '203.0.113.99, 198.51.100.11' },
-        socket: { remoteAddress: '127.0.0.1' },
+        headers: { cookie: "session=b", "x-forwarded-for": "203.0.113.99, 198.51.100.11" },
+        socket: { remoteAddress: "127.0.0.1" },
       }),
       makeRes(),
       next,
@@ -335,36 +335,36 @@ describe("requireAuth", () => {
 
     expect(mockFetch.mock.calls.map(([, init]) => init.headers)).toEqual([
       expect.objectContaining({
-        authorization: 'Bearer test-service-key',
-        'x-eduai-client-ip': '198.51.100.10',
+        authorization: "Bearer test-service-key",
+        "x-eduai-client-ip": "198.51.100.10",
       }),
       expect.objectContaining({
-        authorization: 'Bearer test-service-key',
-        'x-eduai-client-ip': '198.51.100.11',
+        authorization: "Bearer test-service-key",
+        "x-eduai-client-ip": "198.51.100.11",
       }),
     ]);
   });
 
-  it('falls back to the socket peer when trusted XFF is missing', async () => {
+  it("falls back to the socket peer when trusted XFF is missing", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'STUDENT' } }),
+      json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "STUDENT" } }),
     });
-    vi.stubGlobal('fetch', mockFetch);
-    const req = makeReq({ socket: { remoteAddress: '192.0.2.44' } });
+    vi.stubGlobal("fetch", mockFetch);
+    const req = makeReq({ socket: { remoteAddress: "192.0.2.44" } });
 
     await requireAuth(req, makeRes(), next);
 
     expect(mockFetch.mock.calls[0][1].headers).toMatchObject({
-      authorization: 'Bearer test-service-key',
-      'x-eduai-client-ip': '192.0.2.44',
+      authorization: "Bearer test-service-key",
+      "x-eduai-client-ip": "192.0.2.44",
     });
   });
 
-  it('returns 401 without calling Core when the request has no cookie header', async () => {
+  it("returns 401 without calling Core when the request has no cookie header", async () => {
     const mockFetch = vi.fn();
-    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal("fetch", mockFetch);
     const req = makeReq({ headers: {} });
     const res = makeRes();
 
@@ -373,15 +373,15 @@ describe("requireAuth", () => {
     expect(mockFetch).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Authentication required' });
+    expect(res.json).toHaveBeenCalledWith({ error: "Authentication required" });
   });
 
-  it('normalizes an unrecognized role to STUDENT (least privilege)', async () => {
+  it("normalizes an unrecognized role to STUDENT (least privilege)", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role: 'SUPERUSER' } }),
+        json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role: "SUPERUSER" } }),
       }),
     );
     const req = makeReq();
@@ -396,10 +396,10 @@ describe("requireAuth", () => {
     "preserves valid role %s unchanged",
     async (role) => {
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         vi.fn().mockResolvedValue({
           ok: true,
-          json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', role } }),
+          json: () => Promise.resolve({ user: { id: "u1", email: "a@b.com", role } }),
         }),
       );
       const req = makeReq();
@@ -572,18 +572,18 @@ describe("isUnitAdminForCourse", () => {
     });
   });
 
-  describe('isCourseAdmin', () => {
-    it('accepts an exact live instructor when the preloaded mirror is absent', async () => {
+  describe("isCourseAdmin", () => {
+    it("accepts an exact live instructor when the preloaded mirror is absent", async () => {
       authorizeLiveCoursePrincipal.mockResolvedValue({
-        state: 'allowed',
-        kind: 'INSTRUCTOR',
-        role: 'INSTRUCTOR',
+        state: "allowed",
+        kind: "INSTRUCTOR",
+        role: "INSTRUCTOR",
       });
 
-      const { isCourseAdmin } = await import('../../src/middleware/auth.js');
+      const { isCourseAdmin } = await import("../../src/middleware/auth.js");
       const result = await isCourseAdmin(
-        { id: 'instructor-1', role: 'INSTRUCTOR' },
-        { id: 1, coreOfferingId: 'core-1', instructors: [] },
+        { id: "instructor-1", role: "INSTRUCTOR" },
+        { id: 1, coreOfferingId: "core-1", instructors: [] },
       );
 
       expect(result).toBe(true);

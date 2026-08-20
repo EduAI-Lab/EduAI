@@ -61,8 +61,8 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
-import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../");
 const allCases = JSON.parse(
@@ -101,10 +101,10 @@ function levelFromEnrollment(row) {
 async function runRow(row) {
   const platformRole = platformRoleForRow(row, APP);
   const enrollment = effectiveEnrollment(row);
-  const liveRole = enrollment.startsWith('active-') ? enrollment.slice('active-'.length) : null;
+  const liveRole = enrollment.startsWith("active-") ? enrollment.slice("active-".length) : null;
   vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
     allowed: liveRole !== null,
-    state: liveRole === null ? 'denied' : 'allowed',
+    state: liveRole === null ? "denied" : "allowed",
     role: liveRole,
   });
 
@@ -140,7 +140,7 @@ async function runRow(row) {
       isPublished: row.CourseState === "published",
     });
 
-    if (enrollment === 'active-INSTRUCTOR') {
+    if (enrollment === "active-INSTRUCTOR") {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: courseId, userId: user.id, role: "INSTRUCTOR" },
       });

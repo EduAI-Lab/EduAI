@@ -72,11 +72,9 @@ describe("cron scheduler initialization", () => {
     expect(reapExpiredCronRunsMock).toHaveBeenCalledOnce();
     expect(overrideFindManyMock).toHaveBeenCalledOnce();
     expect(scheduleMock).toHaveBeenCalledOnce();
-    expect(scheduleMock).toHaveBeenCalledWith(
-      "0 2 * * *",
-      expect.any(Function),
-      { timezone: "UTC" },
-    );
+    expect(scheduleMock).toHaveBeenCalledWith("0 2 * * *", expect.any(Function), {
+      timezone: "UTC",
+    });
   });
 
   it("passes the acquired owner token to the spawned job", async () => {

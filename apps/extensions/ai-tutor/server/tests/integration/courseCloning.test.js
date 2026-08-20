@@ -97,8 +97,8 @@ describe("courseCloning service", () => {
       };
       await createActivity(source.lesson.id, source.topic.id, {
         config,
-        customPrompt: 'Use a Socratic hint only.',
-        customPromptTitle: 'Custom hint',
+        customPrompt: "Use a Socratic hint only.",
+        customPromptTitle: "Custom hint",
         enableTeachMode: false,
         enableGuideMode: true,
         enableCustomMode: true,
@@ -114,8 +114,8 @@ describe("courseCloning service", () => {
 
       expect(clonedActivities.length).toBe(1);
       expect(clonedActivities[0].config).toEqual(config);
-      expect(clonedActivities[0].customPrompt).toBe('Use a Socratic hint only.');
-      expect(clonedActivities[0].customPromptTitle).toBe('Custom hint');
+      expect(clonedActivities[0].customPrompt).toBe("Use a Socratic hint only.");
+      expect(clonedActivities[0].customPromptTitle).toBe("Custom hint");
       expect(clonedActivities[0].enableTeachMode).toBe(false);
       expect(clonedActivities[0].enableGuideMode).toBe(true);
       expect(clonedActivities[0].enableCustomMode).toBe(true);

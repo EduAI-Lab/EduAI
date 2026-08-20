@@ -1,8 +1,5 @@
 import { APICallError, NoSuchModelError, NoSuchProviderError } from "ai";
-import {
-  redactErrorForConsole,
-  redactSecretValuesInString,
-} from "~/lib/redact.server";
+import { redactErrorForConsole, redactSecretValuesInString } from "~/lib/redact.server";
 
 export const PROVIDER_ERROR_CODES = [
   "INVALID_PROVIDER_CONFIG",
@@ -68,10 +65,7 @@ export function createProviderFailure(
   };
 }
 
-function classifyProviderFailure(
-  provider: string,
-  error: unknown,
-): ProviderFailure {
+function classifyProviderFailure(provider: string, error: unknown): ProviderFailure {
   const shape = isObject(error) ? (error as ErrorShape) : {};
   const name = typeof shape.name === "string" ? shape.name : "";
 
@@ -216,11 +210,7 @@ export function isProviderAbortError(error: unknown): boolean {
     error && typeof error === "object" && "code" in error
       ? (error as { code?: unknown }).code
       : undefined;
-  return (
-    name === "AbortError" ||
-    code === "ABORT_ERR" ||
-    code === "ERR_ABORTED"
-  );
+  return name === "AbortError" || code === "ABORT_ERR" || code === "ERR_ABORTED";
 }
 
 /** AI SDK validation errors are useful to callers, but their message can include raw arguments. */
@@ -288,10 +278,7 @@ export function providerErrorDiagnostic(error: unknown): {
   };
 }
 
-export function classifyProviderError(
-  provider: string,
-  error: unknown,
-): ProviderFailure;
+export function classifyProviderError(provider: string, error: unknown): ProviderFailure;
 export function classifyProviderError(
   error: unknown,
   phase: ProviderErrorPhase,

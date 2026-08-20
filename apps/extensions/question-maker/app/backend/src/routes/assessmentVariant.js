@@ -19,15 +19,15 @@ import {
   assembleEquivalentExamVariants,
   assembleExamVariantsByMetadataSimilarity,
   generateBankVariantsForQuestions,
-  reviewVariantExamWithAi
-} from '../services/assessmentVariantService.js';
+  reviewVariantExamWithAi,
+} from "../services/assessmentVariantService.js";
 import {
   qmAiProviderCallAdmission,
   qmAiUserRateLimit,
   validateBankVariantAdmission,
   validateReviewAdmission,
   isQmAiDeadlineError,
-} from '../middleware/aiAdmission.js';
+} from "../middleware/aiAdmission.js";
 
 const router = express.Router();
 
@@ -54,18 +54,18 @@ function sendStableAiFailure(res, error, fallbackCode) {
   if (statusCode === 429) {
     return res.status(429).json({
       success: false,
-      error: 'AI provider rate limit exceeded; try again later',
-      code: 'EDUAI_UPSTREAM_RATE_LIMITED',
+      error: "AI provider rate limit exceeded; try again later",
+      code: "EDUAI_UPSTREAM_RATE_LIMITED",
     });
   }
   if (isQmAiDeadlineError(error) || statusCode === 504) {
     return res.status(504).json({
       success: false,
-      error: 'AI operation timed out; try again later',
-      code: 'QM_AI_OPERATION_DEADLINE',
+      error: "AI operation timed out; try again later",
+      code: "QM_AI_OPERATION_DEADLINE",
     });
   }
-  return res.status(500).json({ success: false, error: 'AI operation failed', code: fallbackCode });
+  return res.status(500).json({ success: false, error: "AI operation failed", code: fallbackCode });
 }
 
 /** PATCH /api/assessment-variant/assessments/:id/role — set blueprintConfig.studyRole (instructor-only). */
@@ -121,7 +121,7 @@ router.patch(
 router.get(
   "/assessments/:id/blueprint-snapshot",
   authenticateToken,
-  requireAssessmentAccess({ min: 'ta' }),
+  requireAssessmentAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const snapshot = await getBlueprintSnapshot(Number(req.params.id), req.qmCourse.userId);
@@ -136,7 +136,7 @@ router.get(
 router.get(
   "/assessments/:id/variant-readiness",
   authenticateToken,
-  requireAssessmentAccess({ min: 'ta' }),
+  requireAssessmentAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       // Course is derived from the authorized assessment (req.qmCourse), not the
@@ -231,59 +231,86 @@ router.post(
 );
 
 /** POST /api/assessment-variant/generate-bank-variants (instructor-only). */
-router.post('/generate-bank-variants', authenticateToken, requireRole(QM_AUTHORIZED), qmAiUserRateLimit, bankVariantAdmission, writeByCourseBody, async (req, res, next) => {
-  try {
-    const { model, apiKeys, variantPromptInstructions } = req.body;
-    const { questionIds, variantsToAdd } = req.aiAdmission;
+router.post(
+  "/generate-bank-variants",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  qmAiUserRateLimit,
+  bankVariantAdmission,
+  writeByCourseBody,
+  async (req, res, next) => {
+    try {
+      const { model, apiKeys, variantPromptInstructions } = req.body;
+      const { questionIds, variantsToAdd } = req.aiAdmission;
 
-    const result = await generateBankVariantsForQuestions(req.qmCourse.userId, {
-      questionIds,
-      courseId: req.qmCourse.id,
-      model: typeof model === 'string' ? model : undefined,
-      apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
-      variantsToAdd,
-      variantPromptInstructions: typeof variantPromptInstructions === 'string' ? variantPromptInstructions : null,
-      cookie: req.headers.cookie ?? '',
-      signal: req.aiOperation?.signal,
-      deadlineAt: req.aiOperation?.deadlineAt,
-    });
+      const result = await generateBankVariantsForQuestions(req.qmCourse.userId, {
+        questionIds,
+        courseId: req.qmCourse.id,
+        model: typeof model === "string" ? model : undefined,
+        apiKeys: apiKeys && typeof apiKeys === "object" ? apiKeys : {},
+        variantsToAdd,
+        variantPromptInstructions:
+          typeof variantPromptInstructions === "string" ? variantPromptInstructions : null,
+        cookie: req.headers.cookie ?? "",
+        signal: req.aiOperation?.signal,
+        deadlineAt: req.aiOperation?.deadlineAt,
+      });
 
-    res.status(201).json({ success: true, data: result });
-  } catch (error) {
-    if (Number(error?.statusCode ?? error?.status) === 429 || isQmAiDeadlineError(error) || Number(error?.statusCode ?? error?.status) === 504) {
-      return sendStableAiFailure(res, error, 'EDUAI_BANK_VARIANT_FAILED');
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      if (
+        Number(error?.statusCode ?? error?.status) === 429 ||
+        isQmAiDeadlineError(error) ||
+        Number(error?.statusCode ?? error?.status) === 504
+      ) {
+        return sendStableAiFailure(res, error, "EDUAI_BANK_VARIANT_FAILED");
+      }
+      next(error);
     }
-    next(error);
-  }
-});
+  },
+);
 
 /** POST /api/assessment-variant/review-variant-ai (instructor-only). */
-router.post('/review-variant-ai', authenticateToken, requireRole(QM_AUTHORIZED), qmAiUserRateLimit, reviewVariantAdmission, writeByCourseBody, async (req, res, next) => {
-  try {
-    const { model, apiKeys, rubricText, applyUsabilityPenalty } = req.body;
-    const { baselineAssessmentId, variantAssessmentId, includeOverallSummary } = req.aiAdmission;
+router.post(
+  "/review-variant-ai",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  qmAiUserRateLimit,
+  reviewVariantAdmission,
+  writeByCourseBody,
+  async (req, res, next) => {
+    try {
+      const { model, apiKeys, rubricText, applyUsabilityPenalty } = req.body;
+      const { baselineAssessmentId, variantAssessmentId, includeOverallSummary } = req.aiAdmission;
 
-    const data = await reviewVariantExamWithAi(req.qmCourse.userId, {
-      baselineAssessmentId,
-      variantAssessmentId,
-      courseId: req.qmCourse.id,
-      model: typeof model === 'string' ? model : undefined,
-      apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
-      rubricText: typeof rubricText === 'string' ? rubricText : '',
-      applyUsabilityPenalty: typeof applyUsabilityPenalty === 'boolean' ? applyUsabilityPenalty : undefined,
-      includeOverallSummary: typeof includeOverallSummary === 'boolean' ? includeOverallSummary : undefined,
-      cookie: req.headers.cookie ?? '',
-      signal: req.aiOperation?.signal,
-      deadlineAt: req.aiOperation?.deadlineAt,
-    });
+      const data = await reviewVariantExamWithAi(req.qmCourse.userId, {
+        baselineAssessmentId,
+        variantAssessmentId,
+        courseId: req.qmCourse.id,
+        model: typeof model === "string" ? model : undefined,
+        apiKeys: apiKeys && typeof apiKeys === "object" ? apiKeys : {},
+        rubricText: typeof rubricText === "string" ? rubricText : "",
+        applyUsabilityPenalty:
+          typeof applyUsabilityPenalty === "boolean" ? applyUsabilityPenalty : undefined,
+        includeOverallSummary:
+          typeof includeOverallSummary === "boolean" ? includeOverallSummary : undefined,
+        cookie: req.headers.cookie ?? "",
+        signal: req.aiOperation?.signal,
+        deadlineAt: req.aiOperation?.deadlineAt,
+      });
 
-    res.json({ success: true, data });
-  } catch (error) {
-    if (Number(error?.statusCode ?? error?.status) === 429 || isQmAiDeadlineError(error) || Number(error?.statusCode ?? error?.status) === 504) {
-      return sendStableAiFailure(res, error, 'EDUAI_VARIANT_REVIEW_FAILED');
+      res.json({ success: true, data });
+    } catch (error) {
+      if (
+        Number(error?.statusCode ?? error?.status) === 429 ||
+        isQmAiDeadlineError(error) ||
+        Number(error?.statusCode ?? error?.status) === 504
+      ) {
+        return sendStableAiFailure(res, error, "EDUAI_VARIANT_REVIEW_FAILED");
+      }
+      next(error);
     }
-    next(error);
-  }
-});
+  },
+);
 
 export default router;

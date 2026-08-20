@@ -52,19 +52,19 @@ import {
   IconSchool,
   IconRoute,
   IconWand,
-} from '@tabler/icons-react';
-import AddActivityPanel from '../components/AddActivityPanel';
-import ActivityDetailsCard from '../components/ActivityDetailsCard';
-import EditActivityPanel from '../components/EditActivityPanel';
-import { contentExcerpt } from '../components/lessons/LessonCard';
-import { ModuleHero } from '../components/lessons/ModuleHero';
-import { accentForCourse } from '~/lib/course-display';
-import api from '../lib/api';
-import type { ImportableActivity } from '../lib/api';
-import type { Activity, Course, Lesson, Module, ModuleDetail, Topic } from '../lib/types';
-import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
-import type { Route } from './+types/instructor.lesson';
-import { requireClientUser } from '~/lib/client-auth';
+} from "@tabler/icons-react";
+import AddActivityPanel from "../components/AddActivityPanel";
+import ActivityDetailsCard from "../components/ActivityDetailsCard";
+import EditActivityPanel from "../components/EditActivityPanel";
+import { contentExcerpt } from "../components/lessons/LessonCard";
+import { ModuleHero } from "../components/lessons/ModuleHero";
+import { accentForCourse } from "~/lib/course-display";
+import api from "../lib/api";
+import type { ImportableActivity } from "../lib/api";
+import type { Activity, Course, Lesson, Module, ModuleDetail, Topic } from "../lib/types";
+import { CourseTopicsProvider, useCourseTopics } from "../hooks/useCourseTopics";
+import type { Route } from "./+types/instructor.lesson";
+import { requireClientUser } from "~/lib/client-auth";
 
 import type { ActivityUpdatePayload } from "../lib/activityForm";
 import {
@@ -947,7 +947,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   <IconListCheck size={22} aria-hidden="true" />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {searching ? 'No activities match your search.' : 'No activities yet.'}
+                  {searching ? "No activities match your search." : "No activities yet."}
                 </p>
               </CardContent>
             </Card>
@@ -983,14 +983,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                       {({ handleProps }) => (
                         <Card
                           className="group relative overflow-hidden"
-                          style={courseThemeVars(accentColor ?? 'var(--primary)')}
+                          style={courseThemeVars(accentColor ?? "var(--primary)")}
                         >
                           {/* Accent rail — ties the activity to its parent course. */}
                           <div
                             className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
                             style={{
                               background:
-                                'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+                                "linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))",
                             }}
                             aria-hidden="true"
                           />
@@ -999,7 +999,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                             aria-hidden="true"
                             className="pointer-events-none absolute -bottom-8 right-2 select-none text-[7rem] font-black leading-none tabular-nums"
                             style={{
-                              color: 'color-mix(in oklch, var(--course-accent) 8%, transparent)',
+                              color: "color-mix(in oklch, var(--course-accent) 8%, transparent)",
                             }}
                           >
                             {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, "0")}
@@ -1008,7 +1008,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                             {canReorderActivity && (
                               <DragHandle
                                 handleProps={handleProps}
-                                label={`Drag to reorder ${activity.title ?? 'activity'}`}
+                                label={`Drag to reorder ${activity.title ?? "activity"}`}
                                 className="mt-0.5"
                               />
                             )}
@@ -1016,13 +1016,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               className="flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
                               style={{
                                 background:
-                                  'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                                color: 'var(--course-accent)',
+                                  "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                                color: "var(--course-accent)",
                                 boxShadow:
-                                  'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                                  "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
                               }}
                             >
-                              {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, '0')}
+                              {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, "0")}
                             </span>
                             <div className="min-w-0 flex-1 space-y-1.5">
                               <div className="flex flex-wrap items-center gap-2">
@@ -1038,10 +1038,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                   <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
                                     <Spinner size="xs" />
                                     {isSaving
-                                      ? 'Saving…'
+                                      ? "Saving…"
                                       : isDeleting
-                                        ? 'Removing…'
-                                        : 'Duplicating…'}
+                                        ? "Removing…"
+                                        : "Duplicating…"}
                                   </span>
                                 )}
                               </div>
@@ -1168,7 +1168,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                         Main topic
                                       </Label>
                                       <Select
-                                        value={mainTopicId !== '' ? String(mainTopicId) : undefined}
+                                        value={mainTopicId !== "" ? String(mainTopicId) : undefined}
                                         onValueChange={(value) =>
                                           handleActivityMainTopicChange(activity.id, value)
                                         }
@@ -1236,20 +1236,20 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                   {(
                                     [
                                       {
-                                        key: 'teach',
-                                        label: 'Teach me',
+                                        key: "teach",
+                                        label: "Teach me",
                                         icon: IconSchool,
                                         enabled: activity.enableTeachMode,
                                       },
                                       {
-                                        key: 'guide',
-                                        label: 'Guide me',
+                                        key: "guide",
+                                        label: "Guide me",
                                         icon: IconRoute,
                                         enabled: activity.enableGuideMode,
                                       },
                                       {
-                                        key: 'custom',
-                                        label: 'Custom prompt',
+                                        key: "custom",
+                                        label: "Custom prompt",
                                         icon: IconWand,
                                         enabled: activity.enableCustomMode,
                                       },
@@ -1270,11 +1270,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                           )
                                         }
                                         className={cn(
-                                          'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition',
+                                          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
                                           mode.enabled
-                                            ? 'border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]'
-                                            : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
-                                          isUpdatingModes && 'opacity-60',
+                                            ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                                            : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                                          isUpdatingModes && "opacity-60",
                                         )}
                                       >
                                         <ModeIcon className="size-3.5" aria-hidden="true" />
@@ -1304,7 +1304,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                         value={
                                           titleDrafts[activity.id] ??
                                           activity.customPromptTitle ??
-                                          ''
+                                          ""
                                         }
                                         onChange={(event) => {
                                           const value = event.target.value.slice(0, 20);
@@ -1326,7 +1326,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                           (
                                             titleDrafts[activity.id] ??
                                             activity.customPromptTitle ??
-                                            ''
+                                            ""
                                           ).length
                                         }
                                         /20 characters
@@ -1359,14 +1359,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                         disabled={isSavingPrompt}
                                       />
                                       <div className="text-[0.65rem] text-muted-foreground">
-                                        Tip: Use{' '}
+                                        Tip: Use{" "}
                                         <code className="rounded bg-muted px-1 text-foreground">
                                           [INSERT TOPIC HERE]
-                                        </code>{' '}
-                                        and{' '}
+                                        </code>{" "}
+                                        and{" "}
                                         <code className="rounded bg-muted px-1 text-foreground">
                                           [ENTER KNOWLEDGE LEVEL]
-                                        </code>{' '}
+                                        </code>{" "}
                                         as placeholders.
                                       </div>
                                     </div>
@@ -1378,10 +1378,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                         disabled={isSavingPrompt}
                                       >
                                         {isSavingPrompt
-                                          ? 'Saving…'
+                                          ? "Saving…"
                                           : isPromptSaved
-                                            ? 'Saved'
-                                            : 'Save prompt'}
+                                            ? "Saved"
+                                            : "Save prompt"}
                                       </Button>
                                       {promptError && (
                                         <span className="text-[0.75rem] text-destructive">
@@ -1413,7 +1413,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             pageSize={pageSize}
             total={activitiesTotal}
             onPageChange={goToPage}
-            disabled={navigation.state === 'loading' || reorderingActivities}
+            disabled={navigation.state === "loading" || reorderingActivities}
           />
         </div>
       </div>

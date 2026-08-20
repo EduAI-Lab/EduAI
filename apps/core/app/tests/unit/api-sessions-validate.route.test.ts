@@ -42,7 +42,10 @@ function makeArgs(method = "POST", headers: HeadersInit = {}) {
   const requestHeaders = new Headers({ Authorization: "Bearer test-service-key" });
   new Headers(headers).forEach((value, key) => requestHeaders.set(key, value));
   return {
-    request: new Request("http://localhost/api/sessions/validate", { method, headers: requestHeaders }),
+    request: new Request("http://localhost/api/sessions/validate", {
+      method,
+      headers: requestHeaders,
+    }),
     params: {},
     context: {} as never,
   } as never;
@@ -87,14 +90,18 @@ describe("POST /api/sessions/validate", () => {
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(false);
 
-    const junk = await action(makeArgs("POST", {
-      Cookie: "better-auth.session_token=junk",
-      "X-Forwarded-For": "198.51.100.10",
-    }));
-    const legitimate = await action(makeArgs("POST", {
-      Cookie: "better-auth.session_token=valid",
-      "X-Forwarded-For": "198.51.100.10",
-    }));
+    const junk = await action(
+      makeArgs("POST", {
+        Cookie: "better-auth.session_token=junk",
+        "X-Forwarded-For": "198.51.100.10",
+      }),
+    );
+    const legitimate = await action(
+      makeArgs("POST", {
+        Cookie: "better-auth.session_token=valid",
+        "X-Forwarded-For": "198.51.100.10",
+      }),
+    );
 
     expect(junk.status).toBe(429);
     expect(legitimate.status).toBe(200);
@@ -120,14 +127,18 @@ describe("POST /api/sessions/validate", () => {
   it("uses a verified extension's forwarded client identity for isolated pre-auth buckets", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
 
-    await action(makeArgs("POST", {
-      "X-Forwarded-For": "127.0.0.1",
-      "X-EduAI-Client-IP": "198.51.100.30",
-    }));
-    await action(makeArgs("POST", {
-      "X-Forwarded-For": "127.0.0.1",
-      "X-EduAI-Client-IP": "198.51.100.31",
-    }));
+    await action(
+      makeArgs("POST", {
+        "X-Forwarded-For": "127.0.0.1",
+        "X-EduAI-Client-IP": "198.51.100.30",
+      }),
+    );
+    await action(
+      makeArgs("POST", {
+        "X-Forwarded-For": "127.0.0.1",
+        "X-EduAI-Client-IP": "198.51.100.31",
+      }),
+    );
 
     expect(vi.mocked(isRateLimited).mock.calls.map(([key]) => key)).toEqual([
       "session-validate:preauth:198.51.100.30",
@@ -139,10 +150,12 @@ describe("POST /api/sessions/validate", () => {
 
   it("rejects missing or fake service auth before trusting identity or looking up a session", async () => {
     for (const authorization of ["", "Bearer fake-key"]) {
-      const res = await action(makeArgs("POST", {
-        Authorization: authorization,
-        "X-EduAI-Client-IP": "203.0.113.250",
-      }));
+      const res = await action(
+        makeArgs("POST", {
+          Authorization: authorization,
+          "X-EduAI-Client-IP": "203.0.113.250",
+        }),
+      );
       expect([401, 403]).toContain(res.status);
     }
 
@@ -164,24 +177,32 @@ describe("POST /api/sessions/validate", () => {
       return false;
     });
 
-    const first = await action(makeArgs("POST", {
-      Authorization: "Bearer fake-key",
-      "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
-      "X-EduAI-Client-IP": "192.0.2.250",
-    }));
-    const exhaustedSameIp = await action(makeArgs("POST", {
-      Authorization: "Bearer fake-key",
-      "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
-      "X-EduAI-Client-IP": "192.0.2.251",
-    }));
-    const alreadyExhaustedOtherIp = await action(makeArgs("POST", {
-      Authorization: "Bearer fake-key",
-      "X-Forwarded-For": "198.51.100.60",
-    }));
-    const freshOtherIp = await action(makeArgs("POST", {
-      Authorization: "Bearer fake-key",
-      "X-Forwarded-For": "198.51.100.62",
-    }));
+    const first = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
+        "X-EduAI-Client-IP": "192.0.2.250",
+      }),
+    );
+    const exhaustedSameIp = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "203.0.113.99, 198.51.100.61",
+        "X-EduAI-Client-IP": "192.0.2.251",
+      }),
+    );
+    const alreadyExhaustedOtherIp = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "198.51.100.60",
+      }),
+    );
+    const freshOtherIp = await action(
+      makeArgs("POST", {
+        Authorization: "Bearer fake-key",
+        "X-Forwarded-For": "198.51.100.62",
+      }),
+    );
 
     expect(first.status).toBe(403);
     expect(exhaustedSameIp.status).toBe(429);
@@ -206,10 +227,12 @@ describe("POST /api/sessions/validate", () => {
       user: { id: "u3", email: "u3@ubc.ca", name: "U3", image: null, role: "STUDENT" },
     } as never);
 
-    const res = await action(makeArgs("POST", {
-      "X-Forwarded-For": "198.51.100.70",
-      "X-EduAI-Client-IP": "192.0.2.70",
-    }));
+    const res = await action(
+      makeArgs("POST", {
+        "X-Forwarded-For": "198.51.100.70",
+        "X-EduAI-Client-IP": "192.0.2.70",
+      }),
+    );
 
     expect(res.status).toBe(200);
     expect(requireServiceKey).not.toHaveBeenCalled();

@@ -9,7 +9,8 @@
  */
 import { vi, describe, it, expect, afterEach } from "vitest";
 
-const { prisma, connectDatabase, checkDatabaseReadiness } = await import('../../src/config/database.js');
+const { prisma, connectDatabase, checkDatabaseReadiness } =
+  await import("../../src/config/database.js");
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -76,10 +77,10 @@ describe("connectDatabase", () => {
   });
 });
 
-describe('checkDatabaseReadiness', () => {
-  it('returns false within the configured deadline when the query never settles', async () => {
+describe("checkDatabaseReadiness", () => {
+  it("returns false within the configured deadline when the query never settles", async () => {
     vi.useFakeTimers();
-    vi.spyOn(prisma, '$queryRaw').mockImplementationOnce(() => new Promise(() => {}));
+    vi.spyOn(prisma, "$queryRaw").mockImplementationOnce(() => new Promise(() => {}));
 
     const probe = checkDatabaseReadiness({ timeoutMs: 25 });
     const assertion = expect(probe).resolves.toBe(false);

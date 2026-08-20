@@ -42,10 +42,7 @@ import { loader, action } from "~/routes/api/courses.embedding-settings.$";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
-import {
-  parseEmbeddingSettingsUpdate,
-  validateEmbeddingSettingsUpdate,
-} from "~/lib/ai/embedding";
+import { parseEmbeddingSettingsUpdate, validateEmbeddingSettingsUpdate } from "~/lib/ai/embedding";
 import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
@@ -267,7 +264,11 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     );
 
     const res = await action(
-      makeActionArgs({ embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large", reEmbed: true }),
+      makeActionArgs({
+        embeddingProvider: "ollama",
+        embeddingModel: "mxbai-embed-large",
+        reEmbed: true,
+      }),
     );
     expect(res.status).toBe(503);
   });

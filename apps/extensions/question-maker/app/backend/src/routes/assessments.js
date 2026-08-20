@@ -33,15 +33,20 @@ import {
   removeVariantFromSection,
   updateVariantOrderInSection,
   removeQuestionFromAllSections,
-  checkQuestionInAssessments
-} from '../services/assessmentSectionService.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { QM_AUTHORIZED } from '../middleware/roles.js';
-import { requireCourseAccess, requireOptionalCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
-import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
-import { parseLimitOffset } from '../utils/listPagination.js';
-import { parsePaginationParams, pageOf } from '../utils/pagination.js';
-import { parsePositiveSafeInteger } from '../utils/questionOrder.js';
+  checkQuestionInAssessments,
+} from "../services/assessmentSectionService.js";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { QM_AUTHORIZED } from "../middleware/roles.js";
+import {
+  requireCourseAccess,
+  requireOptionalCourseAccess,
+  resolveCourseAccessWithCourse,
+  LEVELS,
+} from "../middleware/courseAccess.js";
+import { requireAssessmentAccess, requireQuestionAccess } from "../middleware/resourceAccess.js";
+import { parseLimitOffset } from "../utils/listPagination.js";
+import { parsePaginationParams, pageOf } from "../utils/pagination.js";
+import { parsePositiveSafeInteger } from "../utils/questionOrder.js";
 
 const router = express.Router();
 
@@ -102,7 +107,7 @@ router.post(
  * course owner. Without a courseId the list stays caller-scoped to the user's
  * own courses.
  */
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const { courseId } = req.query;
 
@@ -126,7 +131,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
       // A TA must select a concrete course so the enrollment-aware gate can
       // resolve course scope. Do not turn this legacy aggregate endpoint into
       // blanket platform-STUDENT access.
-      return res.status(403).json({ success: false, error: 'Assessment courseId is required' });
+      return res.status(403).json({ success: false, error: "Assessment courseId is required" });
     }
 
     const { limit, offset } = parseLimitOffset(req.query);
@@ -147,48 +152,51 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 /** GET /api/assessments/:id – fetches a single assessment. */
-router.get('/:id', authenticateToken, viewAssessment, async (req, res, next) => {
+router.get("/:id", authenticateToken, viewAssessment, async (req, res, next) => {
   try {
     const assessment = await getAssessmentById(req.params.id, req.qmCourse.userId);
 
+    res.json({
+      success: true,
+      data: assessment,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** PUT /api/assessments/:id – updates assessment metadata/blueprint (instructor-only). */
+router.put(
+  "/:id",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  writeAssessment,
+  requireOptionalCourseAccess({ min: "instructor", getCourseId: (req) => req.body?.courseId }),
+  async (req, res, next) => {
+    try {
+      const { type, name, description, courseId, blueprintConfig } = req.body;
+
+      const assessment = await updateAssessment(
+        req.params.id,
+        {
+          type,
+          name,
+          description,
+          courseId,
+          blueprintConfig,
+        },
+        req.qmCourse.userId,
+      );
+
       res.json({
         success: true,
+        message: "Assessment updated successfully",
         data: assessment,
       });
     } catch (error) {
       next(error);
     }
   },
-);
-
-/** PUT /api/assessments/:id – updates assessment metadata/blueprint (instructor-only). */
-router.put(
-  '/:id',
-  authenticateToken,
-  requireRole(QM_AUTHORIZED),
-  writeAssessment,
-  requireOptionalCourseAccess({ min: 'instructor', getCourseId: (req) => req.body?.courseId }),
-  async (req, res, next) => {
-    try {
-      const { type, name, description, courseId, blueprintConfig } = req.body;
-
-      const assessment = await updateAssessment(req.params.id, {
-        type,
-        name,
-        description,
-        courseId,
-        blueprintConfig
-      }, req.qmCourse.userId);
-
-      res.json({
-        success: true,
-        message: 'Assessment updated successfully',
-        data: assessment
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
 );
 
 /** DELETE /api/assessments/:id – deletes the specified assessment (instructor-only). */
@@ -228,10 +236,18 @@ router.post(
         });
       }
 
+      const normalizedOrderNumber = parsePositiveSafeInteger(orderNumber);
+      if (normalizedOrderNumber === null) {
+        return res.status(400).json({
+          success: false,
+          error: "Order number must be a positive safe integer",
+        });
+      }
+
       const question = await addQuestionToAssessment(
         req.params.id,
         questionId,
-        orderNumber,
+        normalizedOrderNumber,
         req.qmCourse.userId,
       );
 
@@ -243,31 +259,8 @@ router.post(
     } catch (error) {
       next(error);
     }
-
-    const normalizedOrderNumber = parsePositiveSafeInteger(orderNumber);
-    if (normalizedOrderNumber === null) {
-      return res.status(400).json({
-        success: false,
-        error: 'Order number must be a positive safe integer',
-      });
-    }
-
-    const question = await addQuestionToAssessment(
-      req.params.id,
-      questionId,
-      normalizedOrderNumber,
-      req.qmCourse.userId
-    );
-
-    res.json({
-      success: true,
-      message: 'Question added to assessment successfully',
-      data: question
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 /** DELETE /api/assessments/:id/questions/:questionId – unlinks a question (instructor-only). */
 router.delete(
@@ -295,7 +288,7 @@ router.delete(
 );
 
 /** GET /api/assessments/:id/questions – returns questions associated with the assessment (TA view). */
-router.get('/:id/questions', authenticateToken, viewAssessment, async (req, res, next) => {
+router.get("/:id/questions", authenticateToken, viewAssessment, async (req, res, next) => {
   try {
     // Structure-bounded (#1044): always a bounded page. Params are optional so
     // a caller that sends none still gets a valid first page instead of a 400,
@@ -307,16 +300,15 @@ router.get('/:id/questions', authenticateToken, viewAssessment, async (req, res,
     const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const all = await getQuestionsInAssessment(req.params.id, req.qmCourse.userId);
 
-      res.json(pageOf(all, pagination));
-    } catch (error) {
-      next(error);
-    }
-  },
-);
+    res.json(pageOf(all, pagination));
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Section routes
 /** GET /api/assessments/:id/sections – lists sections tied to the assessment (TA view). */
-router.get('/:id/sections', authenticateToken, viewAssessment, async (req, res, next) => {
+router.get("/:id/sections", authenticateToken, viewAssessment, async (req, res, next) => {
   try {
     // Structure-bounded (#1044): always a bounded page — a caller that sends no
     // params gets the first page at `defaultPageSize`, not the whole set.
@@ -326,12 +318,11 @@ router.get('/:id/sections', authenticateToken, viewAssessment, async (req, res, 
     const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const all = await getSectionsForAssessment(req.params.id, req.qmCourse.userId);
 
-      res.json(pageOf(all, pagination));
-    } catch (error) {
-      next(error);
-    }
-  },
-);
+    res.json(pageOf(all, pagination));
+  } catch (error) {
+    next(error);
+  }
+});
 
 /** POST /api/assessments/:id/sections – creates a new section (instructor-only). */
 router.post(
@@ -524,12 +515,16 @@ router.delete(
 );
 
 /** GET /api/assessments/questions/:questionId/check-in-assessments – whether a question appears in any sections (TA view). */
-router.get('/questions/:questionId/check-in-assessments', authenticateToken, requireQuestionAccess({ min: 'ta', param: 'questionId' }), async (req, res, next) => {
-  try {
-    const result = await checkQuestionInAssessments(
-      Number(req.params.questionId),
-      req.qmCourse.userId
-    );
+router.get(
+  "/questions/:questionId/check-in-assessments",
+  authenticateToken,
+  requireQuestionAccess({ min: "ta", param: "questionId" }),
+  async (req, res, next) => {
+    try {
+      const result = await checkQuestionInAssessments(
+        Number(req.params.questionId),
+        req.qmCourse.userId,
+      );
 
       res.json({
         success: true,
@@ -542,13 +537,18 @@ router.get('/questions/:questionId/check-in-assessments', authenticateToken, req
 );
 
 /** DELETE /api/assessments/questions/:questionId/remove-from-all-sections – bulk removes a question (instructor-only). */
-router.delete('/questions/:questionId/remove-from-all-sections', authenticateToken, requireRole(QM_AUTHORIZED), requireQuestionAccess({ min: 'instructor', param: 'questionId' }), async (req, res, next) => {
-  try {
-    const result = await removeQuestionFromAllSections(
-      Number(req.params.questionId),
-      req.qmCourse.userId,
-      req.qmCourse.id,
-    );
+router.delete(
+  "/questions/:questionId/remove-from-all-sections",
+  authenticateToken,
+  requireRole(QM_AUTHORIZED),
+  requireQuestionAccess({ min: "instructor", param: "questionId" }),
+  async (req, res, next) => {
+    try {
+      const result = await removeQuestionFromAllSections(
+        Number(req.params.questionId),
+        req.qmCourse.userId,
+        req.qmCourse.id,
+      );
 
       res.json({
         success: true,

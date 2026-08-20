@@ -87,7 +87,6 @@ describe("auth/login loader", () => {
       forceReauth: false,
     });
   });
-
 });
 
 describe("auth/login action", () => {

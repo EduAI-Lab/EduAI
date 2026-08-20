@@ -1316,60 +1316,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
       return <Dialog open={false} onOpenChange={() => {}} />;
     }
 
-    // ── CREATE/VARIANT MODE render ────────────────────────────────────────────
-    const cp = createProps!;
-    const presetVariant = cp.presetVariant;
-
-    const aiControlsNode = (
-        <QuestionAIControls
-            value={{ generationPrompt: form.generationPrompt, generationModel: form.generationModel }}
-            onChange={(field, value) => handleFieldChange(field, value)}
-            onGenerate={handleGenerateWithAI}
-            isGenerating={isGenerating}
-            availableModels={availableModels}
-            providerApiKey={providerApiKey}
-            onProviderApiKeyChange={(value) => { setProviderApiKey(value); setApiKeySaveState('idle'); }}
-            keySaved={providerKeySaved}
-            onClearSavedKey={() => {
-                const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
-                if (provider) apiKeyStorage.removeApiKey(provider);
-                setProviderKeySaved(false);
-                setProviderApiKey('');
-                setApiKeySaveState('idle');
-                void eduaiStatus.refresh();
-            }}
-            onSaveProviderApiKey={async () => {
-                const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
-                if (!provider || !providerApiKey.trim()) return;
-                setApiKeySaveState('saving');
-                try {
-                    await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
-                    setProviderKeySaved(true);
-                    setProviderApiKey('');
-                    setApiKeySaveState('saved');
-                    toast('API key saved', {
-                        description: 'Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.',
-                    });
-                    // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
-                    void eduaiStatus.refresh();
-                } catch {
-                    setApiKeySaveState('error');
-                    toast.error('Failed to save API key', {
-                        description: 'Could not store the key locally. Try again.',
-                    });
-                }
-            }}
-            apiKeySaveState={apiKeySaveState}
-            status={eduaiStatus.status}
-            statusMessage={eduaiStatus.message}
-            statusProvider={eduaiStatus.provider}
-            onRefreshStatus={eduaiStatus.refresh}
-            questionGenerationPhase={eduaiStatus.questionGenerationPhase}
-            courseWarningMessage={courseWarningMessage}
-            mode={createMode}
-            disabled={isSubmitting}
-        />
-    );
+    const viewDifficulty = normalizeDifficulty(viewVariant.difficulty);
 
     return (
       <Dialog open={isOpen} onOpenChange={(o) => !o && vp.onClose()}>
@@ -2129,7 +2076,8 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
           setProviderApiKey("");
           setApiKeySaveState("saved");
           toast("API key saved", {
-            description: "Stored locally in your browser for this provider.",
+            description:
+              "Stored for your account in this browser and sent through EduAI services when you use AI. Signing out removes it.",
           });
           // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
           void eduaiStatus.refresh();

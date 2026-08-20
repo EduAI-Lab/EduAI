@@ -507,16 +507,16 @@ describe("mapActivity", () => {
   });
 
   // -- answer --
-  it('omits config.answer by default, including when a student role is supplied', () => {
-    const activity = baseActivity({ config: { answer: '42' } });
-    expect(mapActivity(activity)).not.toHaveProperty('answer');
-    expect(mapActivity(activity, { role: 'STUDENT' })).not.toHaveProperty('answer');
+  it("omits config.answer by default, including when a student role is supplied", () => {
+    const activity = baseActivity({ config: { answer: "42" } });
+    expect(mapActivity(activity)).not.toHaveProperty("answer");
+    expect(mapActivity(activity, { role: "STUDENT" })).not.toHaveProperty("answer");
   });
 
-  it('includes config.answer only for an explicit authoring view', () => {
+  it("includes config.answer only for an explicit authoring view", () => {
     expect(
-      mapActivity(baseActivity({ config: { answer: '42' } }), { includeAnswer: true }).answer,
-    ).toBe('42');
+      mapActivity(baseActivity({ config: { answer: "42" } }), { includeAnswer: true }).answer,
+    ).toBe("42");
     expect(mapActivity(baseActivity({ config: {} }), { includeAnswer: true }).answer).toBeNull();
   });
 });

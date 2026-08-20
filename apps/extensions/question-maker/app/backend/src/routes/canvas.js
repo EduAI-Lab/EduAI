@@ -24,14 +24,18 @@ import {
   getCanvasQuestionBankQuestions,
   importQuestionBankFromCanvas,
   parseCanvasNumericId,
-} from '../services/canvasService.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { CANVAS_ROLES } from '../middleware/roles.js';
-import { requireCourseAccess } from '../middleware/courseAccess.js';
-import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
-import { prisma } from '../config/database.js';
-import { validateCanvasUrl, canonicalCanvasBaseUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
-import { canvasRequestContext } from '../middleware/canvasRequestContext.js';
+} from "../services/canvasService.js";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { CANVAS_ROLES } from "../middleware/roles.js";
+import { requireCourseAccess } from "../middleware/courseAccess.js";
+import { requireAssessmentAccess } from "../middleware/resourceAccess.js";
+import { prisma } from "../config/database.js";
+import {
+  validateCanvasUrl,
+  canonicalCanvasBaseUrl,
+  CanvasUrlValidationError,
+} from "../utils/canvasUrlGuard.js";
+import { canvasRequestContext } from "../middleware/canvasRequestContext.js";
 
 const router = express.Router();
 
@@ -104,8 +108,8 @@ router.post("/connect", authenticateToken, requireRole(CANVAS_ROLES), async (req
 
     const integration = await saveCanvasIntegration(req.user.id, {
       canvasUrl: canonicalCanvasUrl,
-      apiKey: apiKey || 'test-key', // Use placeholder in test mode
-      isTestMode: isTestMode || false
+      apiKey: apiKey || "test-key", // Use placeholder in test mode
+      isTestMode: isTestMode || false,
     });
 
     res.json({

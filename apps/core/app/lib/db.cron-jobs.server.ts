@@ -246,19 +246,12 @@ async function findRunningCronRunWithDb(
   return rows[0] ?? null;
 }
 
-export async function findRunningCronRun(
-  jobName: string,
-): Promise<{ id: string } | null> {
+export async function findRunningCronRun(jobName: string): Promise<{ id: string } | null> {
   return findRunningCronRunWithDb(prisma, jobName);
 }
 
-async function reapExpiredCronRunsWithDb(
-  db: CronRunDb,
-  jobName?: string,
-): Promise<number> {
-  const jobFilter = jobName
-    ? Prisma.sql`AND "jobName" = ${jobName}`
-    : Prisma.empty;
+async function reapExpiredCronRunsWithDb(db: CronRunDb, jobName?: string): Promise<number> {
+  const jobFilter = jobName ? Prisma.sql`AND "jobName" = ${jobName}` : Prisma.empty;
   return db.$executeRaw`
     UPDATE cron_job_runs
     SET status = 'ERROR'::"CronJobStatus",
@@ -282,9 +275,7 @@ export async function reapExpiredCronRuns(): Promise<number> {
   return reapExpiredCronRunsWithDb(prisma);
 }
 
-export async function startCronRun(
-  jobName: string,
-): Promise<StartCronRunResult> {
+export async function startCronRun(jobName: string): Promise<StartCronRunResult> {
   const leaseOwner = randomUUID();
   const leaseMs = resolveCronRunLeaseMs();
 
@@ -441,13 +432,24 @@ export function triggerCronJobAsync(
     void import("~/lib/cron-notify-api-key-expiry.server")
       .then(({ notifyExpiringApiKeys }) => notifyExpiringApiKeys())
       .then(({ notified }) =>
-        finishCronRun(runId, leaseOwner, "SUCCESS", `Sent ${notified} API key expiry notification(s)`, 0),
+        finishCronRun(
+          runId,
+          leaseOwner,
+          "SUCCESS",
+          `Sent ${notified} API key expiry notification(s)`,
+          0,
+        ),
       )
       .catch((err: unknown) =>
-        finishCronRun(runId, leaseOwner, "ERROR", `Core handler failed: ${redactErrorForConsole(err)}`, 1)
-          .catch((finishErr: unknown) =>
-            console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
-          ),
+        finishCronRun(
+          runId,
+          leaseOwner,
+          "ERROR",
+          `Core handler failed: ${redactErrorForConsole(err)}`,
+          1,
+        ).catch((finishErr: unknown) =>
+          console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
+        ),
       );
     return;
   }
@@ -541,10 +543,7 @@ export function triggerCronJobAsync(
   }, leaseHeartbeatMs);
   heartbeatTimer.unref?.();
 
-  const finalize = (
-    code: number | null,
-    overrideMessage?: string,
-  ): void => {
+  const finalize = (code: number | null, overrideMessage?: string): void => {
     if (finalized) return;
     finalized = true;
     clearInterval(heartbeatTimer);
@@ -583,7 +582,8 @@ export function triggerCronJobAsync(
  * the Core web process only records the requested run in Postgres.
  */
 export async function dispatchManualCronRuns(): Promise<void> {
-  const claimed = globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
+  const claimed =
+    globalThis.__manualCronRunIds ?? (globalThis.__manualCronRunIds = new Set<string>());
   const rows = await prisma.$queryRaw<Array<{ id: string; jobName: string; leaseOwner: string }>>`
     SELECT id, "jobName", "leaseOwner"
     FROM cron_job_runs

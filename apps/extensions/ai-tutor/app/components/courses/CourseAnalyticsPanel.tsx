@@ -126,10 +126,10 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
         <StatCard label="Students" value={metrics.length} />
         <StatCard label="Submissions" value={totals.submissions} />
-        <StatCard label="Accuracy" value={accuracy != null ? `${accuracy}%` : '—'} />
+        <StatCard label="Accuracy" value={accuracy != null ? `${accuracy}%` : "—"} />
         <StatCard
           label="Avg rating"
-          value={stats.avgRating != null ? stats.avgRating.toFixed(1) : '—'}
+          value={stats.avgRating != null ? stats.avgRating.toFixed(1) : "—"}
         />
         <StatCard label="Total feedback" value={stats.totalFeedback} />
         <StatCard label="Help requests" value={totals.helpRequests} />

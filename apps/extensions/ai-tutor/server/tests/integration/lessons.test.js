@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
 import {
   makeProfessor,
   makeAdmin,
@@ -9,7 +9,7 @@ import {
   truncateAll,
   seedMinimalCourse,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
 // `isPublished` is Core-owned (#1072 step 4) — the "parent course is
 // published" gate on lesson publish resolves it live via
@@ -19,13 +19,13 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
-vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
-import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Lessons routes", () => {
   let prof;
@@ -42,13 +42,13 @@ describe("Lessons routes", () => {
       isPublished: true,
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
         const instructor = course.instructors?.some((row) => row.userId === userId);
         const effectiveRole =
-          instructor && allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+          instructor && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : role;
         const allowed = allowedRoles.includes(effectiveRole);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
+        return { allowed, state: allowed ? "allowed" : "denied", role: effectiveRole };
       },
     );
   });
@@ -79,11 +79,11 @@ describe("Lessons routes", () => {
     return ta;
   }
 
-  it('fails closed when Core cannot authorize a direct TA lesson list', async () => {
+  it("fails closed when Core cannot authorize a direct TA lesson list", async () => {
     const ta = await enrollTa();
     vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
       allowed: false,
-      state: 'unavailable',
+      state: "unavailable",
       role: null,
     });
 
@@ -92,7 +92,7 @@ describe("Lessons routes", () => {
     );
 
     expect(res.status).toBe(503);
-    expect(res.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+    expect(res.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
   });
 
   // ── GET /api/modules/:moduleId/lessons ────────────────────────────
@@ -447,8 +447,8 @@ describe("Lessons routes", () => {
       expect(res.status).toBe(400);
     });
 
-    it('returns 404 for non-existent lesson', async () => {
-      const res = await request(profApp).patch('/api/lessons/9999999').send({ title: 'Ghost' });
+    it("returns 404 for non-existent lesson", async () => {
+      const res = await request(profApp).patch("/api/lessons/9999999").send({ title: "Ghost" });
       expect(res.status).toBe(404);
     });
   });

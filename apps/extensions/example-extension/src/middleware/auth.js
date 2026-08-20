@@ -21,7 +21,7 @@ function normalizeRole(role) {
  */
 export async function requireAuth(req, res, next) {
   try {
-    const headers = { cookie: req.headers.cookie ?? '' };
+    const headers = { cookie: req.headers.cookie ?? "" };
     // Core now requires EDUAI_API_KEY on POST /api/sessions/validate.
     // Unset keys produce 403. Still attempt the request so this template can
     // run without Core (e.g. local UI-only experiments).
@@ -31,7 +31,7 @@ export async function requireAuth(req, res, next) {
     const response = await fetch(
       `${process.env.CORE_URL || "http://localhost:3000"}/api/sessions/validate`,
       {
-        method: 'POST',
+        method: "POST",
         headers,
       },
     );

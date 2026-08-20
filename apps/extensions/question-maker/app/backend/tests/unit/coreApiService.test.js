@@ -27,7 +27,7 @@ const {
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
   searchCoursesFromCore,
-} = await import('../../src/services/coreApiService.js');
+} = await import("../../src/services/coreApiService.js");
 
 const ok = (data, status = 200) => ({
   ok: status < 400,
@@ -249,21 +249,26 @@ describe("getCourseEnrollmentsFromCore", () => {
     await expect(getCourseEnrollmentsFromCore("c")).rejects.toMatchObject({ status: 500 });
   });
 
-  it('threads an abort signal into the roster fetch and rejects with the stable QM deadline', async () => {
+  it("threads an abort signal into the roster fetch and rejects with the stable QM deadline", async () => {
     const controller = new AbortController();
     let observedSignal;
-    vi.stubGlobal('fetch', vi.fn((_url, options = {}) => {
-      observedSignal = options.signal;
-      return new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
-      });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, options = {}) => {
+        observedSignal = options.signal;
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+            once: true,
+          });
+        });
+      }),
+    );
 
-    const pending = getCourseEnrollmentsFromCore('core-c1', { signal: controller.signal });
+    const pending = getCourseEnrollmentsFromCore("core-c1", { signal: controller.signal });
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({
-      code: 'QM_AI_OPERATION_DEADLINE',
+      code: "QM_AI_OPERATION_DEADLINE",
       statusCode: 504,
     });
     expect(observedSignal).toBe(controller.signal);
@@ -332,47 +337,62 @@ describe("getCourseFromCore", () => {
   });
 });
 
-describe('searchCoursesFromCore', () => {
-  it('threads a signal through a service-key search and cancels a hung fetch', async () => {
+describe("searchCoursesFromCore", () => {
+  it("threads a signal through a service-key search and cancels a hung fetch", async () => {
     const controller = new AbortController();
     let observedSignal;
-    vi.stubGlobal('fetch', vi.fn((_url, options = {}) => {
-      observedSignal = options.signal;
-      return new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
-      });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, options = {}) => {
+        observedSignal = options.signal;
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+            once: true,
+          });
+        });
+      }),
+    );
 
-    const pending = searchCoursesFromCore('COSC 101', { signal: controller.signal }, { serviceKeyOnly: true });
+    const pending = searchCoursesFromCore(
+      "COSC 101",
+      { signal: controller.signal },
+      { serviceKeyOnly: true },
+    );
     controller.abort();
 
-    await expect(pending).rejects.toMatchObject({ code: 'QM_AI_OPERATION_DEADLINE', statusCode: 504 });
+    await expect(pending).rejects.toMatchObject({
+      code: "QM_AI_OPERATION_DEADLINE",
+      statusCode: 504,
+    });
     expect(observedSignal).toBe(controller.signal);
     expect(observedSignal.aborted).toBe(true);
   });
 });
 
-describe('getMyProfileFromCore', () => {
-  it('forwards the caller cookie (no service key) and returns the profile', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ role: 'UNIT_ADMIN', authorizedUnits: ['COSC'] })));
+describe("getMyProfileFromCore", () => {
+  it("forwards the caller cookie (no service key) and returns the profile", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(ok({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] })),
+    );
 
-    const result = await getMyProfileFromCore('session=abc');
+    const result = await getMyProfileFromCore("session=abc");
 
-    expect(result).toEqual({ role: 'UNIT_ADMIN', authorizedUnits: ['COSC'] });
+    expect(result).toEqual({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
     const [url, opts] = fetch.mock.calls[0];
-    expect(url).toBe('http://core.test/api/me');
-    expect(opts.headers.cookie).toBe('session=abc');
+    expect(url).toBe("http://core.test/api/me");
+    expect(opts.headers.cookie).toBe("session=abc");
     expect(opts.headers.Authorization).toBeUndefined();
   });
 
-  it('throws on a 401 (no/invalid session)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'Unauthorized' }, 401)));
-    await expect(getMyProfileFromCore('')).rejects.toMatchObject({ status: 401 });
+  it("throws on a 401 (no/invalid session)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok({ error: "Unauthorized" }, 401)));
+    await expect(getMyProfileFromCore("")).rejects.toMatchObject({ status: 401 });
   });
 });
 
-describe('listCoursesFromCore', () => {
-  it('forwards the caller cookie (no service key) and returns scoped courses', async () => {
+describe("listCoursesFromCore", () => {
+  it("forwards the caller cookie (no service key) and returns scoped courses", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValueOnce(ok({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] })),

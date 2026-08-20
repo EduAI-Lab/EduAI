@@ -23,15 +23,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('listCourseTestableQuestions', () => {
-  it('throws a 502 error when Core returns an envelope with no questions key', async () => {
+describe("listCourseTestableQuestions", () => {
+  it("throws a 502 error when Core returns an envelope with no questions key", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(''),
-        json: () => Promise.resolve({ data: 'unexpected shape — no questions key' }),
+        text: () => Promise.resolve(""),
+        json: () => Promise.resolve({ data: "unexpected shape — no questions key" }),
       }),
     );
 
@@ -40,14 +40,14 @@ describe('listCourseTestableQuestions', () => {
     });
   });
 
-  it('throws a 502 error when questions field is not an array', async () => {
+  it("throws a 502 error when questions field is not an array", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(''),
-        json: () => Promise.resolve({ questions: 'not-an-array', total: 1, limit: 20, offset: 0 }),
+        text: () => Promise.resolve(""),
+        json: () => Promise.resolve({ questions: "not-an-array", total: 1, limit: 20, offset: 0 }),
       }),
     );
 
@@ -68,11 +68,11 @@ describe('listCourseTestableQuestions', () => {
       },
     ];
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(''),
+        text: () => Promise.resolve(""),
         json: () => Promise.resolve({ questions, total: 1, limit: 20, offset: 0 }),
       }),
     );
@@ -81,13 +81,13 @@ describe('listCourseTestableQuestions', () => {
     expect(result).toEqual(questions);
   });
 
-  it('returns an empty array when questions is an empty array', async () => {
+  it("returns an empty array when questions is an empty array", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(''),
+        text: () => Promise.resolve(""),
         json: () => Promise.resolve({ questions: [], total: 0, limit: 20, offset: 0 }),
       }),
     );

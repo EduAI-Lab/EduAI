@@ -5,16 +5,7 @@
  * User + course data is seeded directly via Prisma.
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
-import {
-  vi,
-  describe,
-  it,
-  expect,
-  beforeAll,
-  beforeEach,
-  afterAll,
-  afterEach,
-} from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import request from "supertest";
 import { teachingInstructorFetch } from "../helpers/teachingInstructorFetch.js";
 
@@ -23,8 +14,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
-const { resetCourseAccessSyncForTests } =
-  await import("../../src/services/courseListService.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -57,9 +47,7 @@ function sessionFetch(user) {
         ok: true,
         json: () =>
           Promise.resolve({
-            enrollments: [
-              { studentId: user.id, role: "INSTRUCTOR", isActive: true },
-            ],
+            enrollments: [{ studentId: user.id, role: "INSTRUCTOR", isActive: true }],
           }),
       });
     }
@@ -81,9 +69,7 @@ function twoUserFetch() {
     }
     if (path.endsWith("/enrollments")) {
       const enrollments =
-        user.id === USER_A.id
-          ? [{ studentId: USER_A.id, role: "INSTRUCTOR", isActive: true }]
-          : [];
+        user.id === USER_A.id ? [{ studentId: USER_A.id, role: "INSTRUCTOR", isActive: true }] : [];
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ enrollments }),
@@ -110,8 +96,7 @@ describeDb("Plan coverage (integration)", () => {
     prisma = testDb.prisma;
     await connectTestDatabase();
 
-    ({ seedCoursesForNewUser } =
-      await import("../helpers/seedCoursesFixture.js"));
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
   });
 
   beforeEach(async () => {
@@ -183,25 +168,17 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const createQ = await request(app)
-      .post("/api/questions")
-      .set(cookieA())
-      .send({
-        description: "Assembly baseline metadata",
-        courseId,
-        primaryTopicId: topicId,
-        type: "MCQ",
-      });
+    const createQ = await request(app).post("/api/questions").set(cookieA()).send({
+      description: "Assembly baseline metadata",
+      courseId,
+      primaryTopicId: topicId,
+      type: "MCQ",
+    });
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 
-    const alist = await request(app)
-      .get("/api/assessments")
-      .set(cookieA())
-      .query({ courseId });
-    const practice = alist.body.data.items.find(
-      (a) => a.name === "Practice Exam",
-    );
+    const alist = await request(app).get("/api/assessments").set(cookieA()).query({ courseId });
+    const practice = alist.body.data.items.find((a) => a.name === "Practice Exam");
     expect(practice).toBeTruthy();
 
     // The assemble flow reads questions from the reference assessment's sections,
@@ -232,9 +209,7 @@ describeDb("Plan coverage (integration)", () => {
     expect(v.status).toBe(201);
 
     const addToSection = await request(app)
-      .post(
-        `/api/assessments/${practice.id}/sections/${section.body.data.id}/variants`,
-      )
+      .post(`/api/assessments/${practice.id}/sections/${section.body.data.id}/variants`)
       .set(cookieA())
       .send({ variantId: v.body.data.id, displayOrder: 0 });
     expect(addToSection.status).toBe(201);
@@ -258,15 +233,12 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const createQ = await request(app)
-      .post("/api/questions")
-      .set(cookieA())
-      .send({
-        description: "Round-robin assembly metadata",
-        courseId,
-        primaryTopicId: topicId,
-        type: "MCQ",
-      });
+    const createQ = await request(app).post("/api/questions").set(cookieA()).send({
+      description: "Round-robin assembly metadata",
+      courseId,
+      primaryTopicId: topicId,
+      type: "MCQ",
+    });
     expect(createQ.status).toBe(201);
     const questionId = createQ.body.data.id;
 
@@ -370,27 +342,21 @@ describeDb("Plan coverage (integration)", () => {
     const { courseId, topicId } = await seedUser(USER_A);
     vi.stubGlobal("fetch", sessionFetch(USER_A));
 
-    const createQ = await request(app)
-      .post("/api/questions")
-      .set(cookieA())
-      .send({
-        description: "Concurrent assembly metadata",
-        courseId,
-        primaryTopicId: topicId,
-        type: "MCQ",
-      });
+    const createQ = await request(app).post("/api/questions").set(cookieA()).send({
+      description: "Concurrent assembly metadata",
+      courseId,
+      primaryTopicId: topicId,
+      type: "MCQ",
+    });
     expect(createQ.status).toBe(201);
     const questionId = createQ.body.data.id;
 
-    const baseline = await request(app)
-      .post("/api/assessments")
-      .set(cookieA())
-      .send({
-        type: "Quiz",
-        name: "Concurrent Baseline",
-        semester: "2026W",
-        courseId,
-      });
+    const baseline = await request(app).post("/api/assessments").set(cookieA()).send({
+      type: "Quiz",
+      name: "Concurrent Baseline",
+      semester: "2026W",
+      courseId,
+    });
     expect(baseline.status).toBe(201);
     const baselineId = baseline.body.data.id;
 

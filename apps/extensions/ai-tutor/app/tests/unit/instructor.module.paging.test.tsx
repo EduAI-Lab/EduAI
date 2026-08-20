@@ -88,11 +88,11 @@ vi.mock("@eduai/ui", async (importOriginal) => {
 
 import InstructorModuleLessons from "~/routes/instructor.module";
 
-const course = { id: 42, title: 'Test Course', code: 'COSC 101', isPublished: true };
+const course = { id: 42, title: "Test Course", code: "COSC 101", isPublished: true };
 const module_ = {
   id: 7,
-  title: 'Module 1',
-  description: '',
+  title: "Module 1",
+  description: "",
   position: 0,
   isPublished: true,
   courseOfferingId: 42,

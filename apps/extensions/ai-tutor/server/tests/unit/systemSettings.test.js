@@ -55,9 +55,9 @@ describe("setSystemSetting", () => {
     await expect(setSystemSetting("", "value")).rejects.toThrow("System setting key is required");
   });
 
-  it('throws when value is not a string', async () => {
-    await expect(setSystemSetting('K', 42)).rejects.toThrow(
-      'System setting value must be a string',
+  it("throws when value is not a string", async () => {
+    await expect(setSystemSetting("K", 42)).rejects.toThrow(
+      "System setting value must be a string",
     );
   });
 

@@ -1,14 +1,14 @@
-import type { Route } from './+types/home';
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { useLocalUser } from '../hooks/useLocalUser';
-import { Button } from '@eduai/ui';
-import { IconAlertTriangle, IconBrain } from '@tabler/icons-react';
-import { routeForRole } from '../lib/role-routing';
-import { getCoreLoginUrl } from '../lib/coreUrl';
+import type { Route } from "./+types/home";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { useLocalUser } from "../hooks/useLocalUser";
+import { Button } from "@eduai/ui";
+import { IconAlertTriangle, IconBrain } from "@tabler/icons-react";
+import { routeForRole } from "../lib/role-routing";
+import { getCoreLoginUrl } from "../lib/coreUrl";
 
 export function meta(_: Route.MetaArgs) {
-  return [{ title: 'AI Tutor' }, { name: 'description', content: 'AI Tutor — Loading' }];
+  return [{ title: "AI Tutor" }, { name: "description", content: "AI Tutor — Loading" }];
 }
 
 export default function Home() {

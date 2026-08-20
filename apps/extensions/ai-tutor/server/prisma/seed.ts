@@ -117,18 +117,18 @@ Keep responses extremely short and focused. The student cannot reply, so give on
 
 async function seedSuggestedPrompts() {
   const prompts = [
-    { mode: 'teach', text: 'Can you explain this concept in simpler terms?', position: 1 },
+    { mode: "teach", text: "Can you explain this concept in simpler terms?", position: 1 },
     {
-      mode: 'teach',
-      text: 'What are the key things I should understand about this topic?',
+      mode: "teach",
+      text: "What are the key things I should understand about this topic?",
       position: 2,
     },
-    { mode: 'teach', text: 'Can you give me an example to help me understand?', position: 3 },
-    { mode: 'teach', text: 'Why is this concept important?', position: 4 },
-    { mode: 'guide', text: "I'm stuck, can you give me a hint?", position: 1 },
-    { mode: 'guide', text: 'What should I think about to solve this?', position: 2 },
-    { mode: 'guide', text: 'Am I on the right track with my approach?', position: 3 },
-    { mode: 'guide', text: 'What concept should I review to answer this?', position: 4 },
+    { mode: "teach", text: "Can you give me an example to help me understand?", position: 3 },
+    { mode: "teach", text: "Why is this concept important?", position: 4 },
+    { mode: "guide", text: "I'm stuck, can you give me a hint?", position: 1 },
+    { mode: "guide", text: "What should I think about to solve this?", position: 2 },
+    { mode: "guide", text: "Am I on the right track with my approach?", position: 3 },
+    { mode: "guide", text: "What concept should I review to answer this?", position: 4 },
   ];
 
   await prisma.suggestedPrompt.deleteMany();
@@ -202,20 +202,20 @@ const COURSE_FIXTURES: CourseFixture[] = [
     studentIds: [CORE.users.student1, CORE.users.student2, CORE.users.student3],
     topics: [
       {
-        slug: 'computational_thinking',
-        name: 'Computational Thinking',
-        coreTopicSlug: 'computational_thinking',
+        slug: "computational_thinking",
+        name: "Computational Thinking",
+        coreTopicSlug: "computational_thinking",
       },
-      { slug: 'digital_literacy', name: 'Digital Literacy', coreTopicSlug: 'digital_literacy' },
+      { slug: "digital_literacy", name: "Digital Literacy", coreTopicSlug: "digital_literacy" },
       {
-        slug: 'data_representation',
-        name: 'Data Representation',
-        coreTopicSlug: 'data_representation',
+        slug: "data_representation",
+        name: "Data Representation",
+        coreTopicSlug: "data_representation",
       },
       {
-        slug: 'algorithms_basics',
-        name: 'Algorithms (Basics)',
-        coreTopicSlug: 'algorithms_basics',
+        slug: "algorithms_basics",
+        name: "Algorithms (Basics)",
+        coreTopicSlug: "algorithms_basics",
       },
     ],
     modules: [
@@ -224,9 +224,9 @@ const COURSE_FIXTURES: CourseFixture[] = [
         description: "How computers represent and process information.",
         lessons: [
           {
-            title: 'Lesson 1.1 — Thinking Computationally',
+            title: "Lesson 1.1 — Thinking Computationally",
             contentMd:
-              '# Computational thinking\n\nDecomposition, pattern recognition, abstraction, and algorithms.',
+              "# Computational thinking\n\nDecomposition, pattern recognition, abstraction, and algorithms.",
             activities: [
               {
                 title: "Decomposition warm-up",
@@ -235,7 +235,7 @@ const COURSE_FIXTURES: CourseFixture[] = [
                 config: {
                   question:
                     'Which of the following best describes "decomposition" in computational thinking?',
-                  questionType: 'MCQ',
+                  questionType: "MCQ",
                   options: [
                     "Combining many small problems into one",
                     "Breaking a complex problem into smaller, manageable parts",
@@ -261,9 +261,9 @@ const COURSE_FIXTURES: CourseFixture[] = [
             ],
           },
           {
-            title: 'Lesson 1.2 — Algorithms in Everyday Life',
+            title: "Lesson 1.2 — Algorithms in Everyday Life",
             contentMd:
-              '# Algorithms\n\nThey are not just for computers — recipes are algorithms too.',
+              "# Algorithms\n\nThey are not just for computers — recipes are algorithms too.",
             activities: [
               {
                 title: "Why efficiency matters",
@@ -272,12 +272,12 @@ const COURSE_FIXTURES: CourseFixture[] = [
                 secondaryTopicSlugs: ["computational_thinking"],
                 config: {
                   question:
-                    'Briefly explain why algorithm efficiency matters even when computers are fast.',
-                  questionType: 'SHORT_TEXT',
+                    "Briefly explain why algorithm efficiency matters even when computers are fast.",
+                  questionType: "SHORT_TEXT",
                   answer: {
-                    text: 'Inputs grow; inefficient algorithms scale poorly even on fast machines.',
+                    text: "Inputs grow; inefficient algorithms scale poorly even on fast machines.",
                   },
-                  hints: ['Consider what happens when n doubles.'],
+                  hints: ["Consider what happens when n doubles."],
                 },
               },
             ],
@@ -297,19 +297,19 @@ const COURSE_FIXTURES: CourseFixture[] = [
       CORE.users.student5,
     ],
     topics: [
-      { slug: 'oop', name: 'Object-Oriented Design', coreTopicSlug: 'oop' },
+      { slug: "oop", name: "Object-Oriented Design", coreTopicSlug: "oop" },
       {
-        slug: 'ds_fundamentals',
-        name: 'Data Structures Fundamentals',
-        coreTopicSlug: 'ds_fundamentals',
+        slug: "ds_fundamentals",
+        name: "Data Structures Fundamentals",
+        coreTopicSlug: "ds_fundamentals",
       },
       {
-        slug: 'algorithm_analysis',
-        name: 'Algorithm Analysis',
-        coreTopicSlug: 'algorithm_analysis',
+        slug: "algorithm_analysis",
+        name: "Algorithm Analysis",
+        coreTopicSlug: "algorithm_analysis",
       },
-      { slug: 'testing', name: 'Testing and Debugging', coreTopicSlug: 'testing' },
-      { slug: 'recursion', name: 'Recursion Patterns', coreTopicSlug: 'recursion' },
+      { slug: "testing", name: "Testing and Debugging", coreTopicSlug: "testing" },
+      { slug: "recursion", name: "Recursion Patterns", coreTopicSlug: "recursion" },
     ],
     modules: [
       {
@@ -325,12 +325,12 @@ const COURSE_FIXTURES: CourseFixture[] = [
                 instructions: "Compare and contrast.",
                 mainTopicSlug: "ds_fundamentals",
                 config: {
-                  question: 'When would you choose a linked list over an array?',
-                  questionType: 'SHORT_TEXT',
+                  question: "When would you choose a linked list over an array?",
+                  questionType: "SHORT_TEXT",
                   answer: {
-                    text: 'Frequent insert/remove at known positions, dynamic size, no random access by index.',
+                    text: "Frequent insert/remove at known positions, dynamic size, no random access by index.",
                   },
-                  hints: ['Think about what each structure is O(1) at.'],
+                  hints: ["Think about what each structure is O(1) at."],
                 },
               },
             ],
@@ -346,12 +346,12 @@ const COURSE_FIXTURES: CourseFixture[] = [
                 secondaryTopicSlugs: ["algorithm_analysis"],
                 config: {
                   question:
-                    'Describe a recursive implementation of binary search. State the base case.',
-                  questionType: 'SHORT_TEXT',
+                    "Describe a recursive implementation of binary search. State the base case.",
+                  questionType: "SHORT_TEXT",
                   answer: {
-                    text: 'Base case: empty range. Recursive case: compare midpoint, recurse on one half. O(log n).',
+                    text: "Base case: empty range. Recursive case: compare midpoint, recurse on one half. O(log n).",
                   },
-                  hints: ['What is the smallest interesting input?'],
+                  hints: ["What is the smallest interesting input?"],
                 },
               },
             ],
@@ -395,13 +395,13 @@ const COURSE_FIXTURES: CourseFixture[] = [
     instructorId: CORE.users.instructorMath,
     studentIds: [CORE.users.student3, CORE.users.student4, CORE.users.student5],
     topics: [
-      { slug: 'partials', name: 'Partial Derivatives', coreTopicSlug: 'partials' },
+      { slug: "partials", name: "Partial Derivatives", coreTopicSlug: "partials" },
       {
-        slug: 'multiple_integrals',
-        name: 'Multiple Integrals',
-        coreTopicSlug: 'multiple_integrals',
+        slug: "multiple_integrals",
+        name: "Multiple Integrals",
+        coreTopicSlug: "multiple_integrals",
       },
-      { slug: 'vector_fields', name: 'Vector Fields', coreTopicSlug: 'vector_fields' },
+      { slug: "vector_fields", name: "Vector Fields", coreTopicSlug: "vector_fields" },
     ],
     modules: [
       {
@@ -418,12 +418,12 @@ const COURSE_FIXTURES: CourseFixture[] = [
                 mainTopicSlug: "partials",
                 config: {
                   question:
-                    'State the definition of the partial derivative of f(x, y) with respect to x at (a, b).',
-                  questionType: 'SHORT_TEXT',
+                    "State the definition of the partial derivative of f(x, y) with respect to x at (a, b).",
+                  questionType: "SHORT_TEXT",
                   answer: {
-                    text: 'f_x(a,b) = lim_{h->0} [f(a+h, b) - f(a, b)] / h, holding y constant.',
+                    text: "f_x(a,b) = lim_{h->0} [f(a+h, b) - f(a, b)] / h, holding y constant.",
                   },
-                  hints: ['Treat y as a constant.'],
+                  hints: ["Treat y as a constant."],
                 },
               },
             ],

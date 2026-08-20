@@ -324,14 +324,17 @@ describe("runFetchPage - egress boundaries", () => {
     expect(execute).toBeDefined();
 
     const startedAt = Date.now();
-    const resultPromise = execute!({
-      url: "https://example.com",
-      timeoutMs: 10_000,
-    }, {
-      toolCallId: "tool-1",
-      messages: [],
-      abortSignal: controller.signal,
-    });
+    const resultPromise = execute!(
+      {
+        url: "https://example.com",
+        timeoutMs: 10_000,
+      },
+      {
+        toolCallId: "tool-1",
+        messages: [],
+        abortSignal: controller.signal,
+      },
+    );
     await Promise.resolve();
     controller.abort();
 

@@ -75,10 +75,10 @@ describe("StudentHome — server-side filters (#1208)", () => {
     renderStudentHome([course({ progress: { completed: 4, total: 4, percentage: 100 } })], {
       selection: {
         page: 1,
-        search: '',
-        filters: { term: [], status: [], progress: ['not-started'] },
+        search: "",
+        filters: { term: [], status: [], progress: ["not-started"] },
       },
-      facets: { terms: [], statuses: [], progress: ['not-started', 'in-progress', 'completed'] },
+      facets: { terms: [], statuses: [], progress: ["not-started", "in-progress", "completed"] },
     });
 
     expect(screen.getByText("Linear Algebra")).toBeInTheDocument();

@@ -63,11 +63,7 @@ export async function createQuestion(
     where: { id: topicId },
     select: { id: true, courseId: true, deletedAt: true },
   });
-  if (
-    !primaryTopic
-    || primaryTopic.deletedAt !== null
-    || primaryTopic.courseId !== courseId
-  ) {
+  if (!primaryTopic || primaryTopic.deletedAt !== null || primaryTopic.courseId !== courseId) {
     return { error: "TOPIC_NOT_FOUND" };
   }
 
@@ -99,7 +95,11 @@ export async function createQuestion(
       // Keep `deletedTopicIds` for extension API compatibility. The field is
       // the established remediation list for every unusable Core topic ID,
       // including missing and cross-course references.
-      return { error: "INVALID_TOPIC_IDS", deletedTopicIds: invalidTopicIds, conflictingWithPrimary: [] };
+      return {
+        error: "INVALID_TOPIC_IDS",
+        deletedTopicIds: invalidTopicIds,
+        conflictingWithPrimary: [],
+      };
     }
   }
 

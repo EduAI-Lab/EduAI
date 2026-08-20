@@ -95,12 +95,12 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
 }));
 
-vi.mock('../../src/services/courseListService.js', async (importOriginal) => ({
+vi.mock("../../src/services/courseListService.js", async (importOriginal) => ({
   ...(await importOriginal()),
   resolveVisibleCourseWhereForUser: mockVisibleCourseWhere,
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     course: { findUnique: mockCourseFindOne },
     questionMetadata: { findUnique: mockQuestionFindOne },
@@ -113,12 +113,12 @@ vi.mock('../../src/config/database.js', () => ({
 
 const { default: app } = await import("../../src/app.js");
 
-const INSTRUCTOR = { id: 'inst-1', role: 'INSTRUCTOR', email: 'i@t.co', name: 'I' };
-const ADMIN = { id: 'admin-1', role: 'ADMIN', email: 'admin@t.co', name: 'Admin' };
+const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const ADMIN = { id: "admin-1", role: "ADMIN", email: "admin@t.co", name: "Admin" };
 // Not the course owner and not enrolled — used to exercise the "insufficient
 // course access" branch (the local-owner fallback only applies to explicitly
 // unlinked QM-native courses).
-const OUTSIDER_INSTRUCTOR = { id: 'inst-2', role: 'INSTRUCTOR', email: 'i2@t.co', name: 'I2' };
+const OUTSIDER_INSTRUCTOR = { id: "inst-2", role: "INSTRUCTOR", email: "i2@t.co", name: "I2" };
 // Real course TA: platform role STUDENT + course enrollment TA (#225 AUTH-12).
 const TA = { id: "ta-1", role: "STUDENT", email: "t@t.co", name: "TA" };
 const STUDENT = { id: "stu-1", role: "STUDENT", email: "s@t.co", name: "S" };
@@ -182,18 +182,18 @@ describe("GET /api/questions/stats", () => {
     expect(mockStats).toHaveBeenCalledWith(COURSE.userId, { courseId: COURSE.id });
   });
 
-  it('scopes global stats to every course visible to a non-owner instructor', async () => {
+  it("scopes global stats to every course visible to a non-owner instructor", async () => {
     authAs(INSTRUCTOR, null);
     mockStats.mockResolvedValue({ total: 1 });
     const courseWhere = {
-      accessGrants: { some: { userId: INSTRUCTOR.id, role: 'INSTRUCTOR' } },
+      accessGrants: { some: { userId: INSTRUCTOR.id, role: "INSTRUCTOR" } },
     };
     mockVisibleCourseWhere.mockResolvedValue(courseWhere);
 
     const res = await request(app).get("/api/questions/stats").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
-    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(INSTRUCTOR, { cookie: 'session=v' });
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(INSTRUCTOR, { cookie: "session=v" });
     expect(mockStats).toHaveBeenCalledWith(INSTRUCTOR.id, {
       courseId: undefined,
       courseWhere,
@@ -201,26 +201,26 @@ describe("GET /api/questions/stats", () => {
   });
 });
 
-describe('GET /api/questions global visibility', () => {
-  it('uses the full ADMIN course visibility predicate instead of ownership', async () => {
+describe("GET /api/questions global visibility", () => {
+  it("uses the full ADMIN course visibility predicate instead of ownership", async () => {
     authAs(ADMIN, null);
     mockVisibleCourseWhere.mockResolvedValue({});
 
-    const res = await request(app).get('/api/questions').set('Cookie', 'session=v');
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
-    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(ADMIN, { cookie: 'session=v' });
+    expect(mockVisibleCourseWhere).toHaveBeenCalledWith(ADMIN, { cookie: "session=v" });
     expect(mockList).toHaveBeenCalledWith(ADMIN.id, expect.objectContaining({ courseWhere: {} }));
   });
 
-  it('uses permitted non-owner courses for an instructor', async () => {
+  it("uses permitted non-owner courses for an instructor", async () => {
     authAs(INSTRUCTOR, null);
     const courseWhere = {
-      accessGrants: { some: { userId: INSTRUCTOR.id, role: 'INSTRUCTOR' } },
+      accessGrants: { some: { userId: INSTRUCTOR.id, role: "INSTRUCTOR" } },
     };
     mockVisibleCourseWhere.mockResolvedValue(courseWhere);
 
-    const res = await request(app).get('/api/questions').set('Cookie', 'session=v');
+    const res = await request(app).get("/api/questions").set("Cookie", "session=v");
 
     expect(res.status).toBe(200);
     expect(mockList).toHaveBeenCalledWith(
@@ -324,7 +324,7 @@ describe("GET /api/questions/export", () => {
   });
 });
 
-describe('PUT /api/questions/:id', () => {
+describe("PUT /api/questions/:id", () => {
   // TA own-only behavior is covered in questionRbac.test.js and the real-Postgres
   // qmTaAuthorization.integration.test.js; these cases focus on payload validation.
 
@@ -399,19 +399,22 @@ describe('PUT /api/questions/:id', () => {
 // DELETE /api/questions/:id has no additional branches to cover beyond PUT's
 // dead-code denyTaNotOwner note above and the shared resourceAccess gate.
 
-describe('POST /api/questions/generate', () => {
-  it('requires a prompt', async () => {
-    authAs(INSTRUCTOR, 'INSTRUCTOR');
-    const res = await request(app).post('/api/questions/generate').set('Cookie', 'session=v').send({ courseId: 1 });
+describe("POST /api/questions/generate", () => {
+  it("requires a prompt", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/questions/generate")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1 });
     expect(res.status).toBe(400);
   });
 
   it("rejects numQuestions above the configured max", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
     const res = await request(app)
-      .post('/api/questions/generate')
-      .set('Cookie', 'session=v')
-      .send({ courseId: 1, prompt: 'x', numQuestions: 999 });
+      .post("/api/questions/generate")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, prompt: "x", numQuestions: 999 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/cannot exceed/);
   });
@@ -421,9 +424,9 @@ describe('POST /api/questions/generate', () => {
     mockGenerateQuestions.mockResolvedValue([{ id: "q1" }]);
 
     const res = await request(app)
-      .post('/api/questions/generate')
-      .set('Cookie', 'session=v')
-      .send({ courseId: 1, prompt: 'Generate some questions', numQuestions: 3 });
+      .post("/api/questions/generate")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, prompt: "Generate some questions", numQuestions: 3 });
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([{ id: "q1" }]);
@@ -489,9 +492,9 @@ describe("POST /api/questions/extract/save", () => {
   });
 });
 
-describe('POST /api/questions/approve', () => {
-  it('requires authentication before validating the request target', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+describe("POST /api/questions/approve", () => {
+  it("requires authentication before validating the request target", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
 
     const res = await request(app).post("/api/questions/approve").send({ questions: [] });
 
@@ -711,16 +714,16 @@ describe('POST /api/questions/approve', () => {
     ]);
   });
 
-  it('rejects approval batches above config.maxQuestions before access or mutation', async () => {
-    authAs(INSTRUCTOR, 'INSTRUCTOR');
+  it("rejects approval batches above config.maxQuestions before access or mutation", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
     const questions = Array.from({ length: 6 }, (_, index) => ({
       primaryTopicId: `topic-${index + 1}`,
       description: `question ${index + 1}`,
     }));
 
     const res = await request(app)
-      .post('/api/questions/approve')
-      .set('Cookie', 'session=v')
+      .post("/api/questions/approve")
+      .set("Cookie", "session=v")
       .send({ courseId: COURSE.id, questions });
 
     expect(res.status).toBe(400);
@@ -768,18 +771,18 @@ describe("PUT /api/questions/:id/order", () => {
   });
 
   it.each([
-    ['zero', 0],
-    ['negative', -1],
-    ['fractional', 1.5],
-    ['infinite', 'Infinity'],
-    ['unsafe', Number.MAX_SAFE_INTEGER + 1],
-  ])('rejects %s orderNumber before the assessment lookup', async (_label, orderNumber) => {
-    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    ["zero", 0],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["infinite", "Infinity"],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ])("rejects %s orderNumber before the assessment lookup", async (_label, orderNumber) => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
     loadQuestion(INSTRUCTOR.id);
 
     const res = await request(app)
-      .put('/api/questions/7/order')
-      .set('Cookie', 'session=v')
+      .put("/api/questions/7/order")
+      .set("Cookie", "session=v")
       .send({ assessmentId: 5, orderNumber });
 
     expect(res.status).toBe(400);
@@ -788,8 +791,8 @@ describe("PUT /api/questions/:id/order", () => {
     expect(mockUpdateOrder).not.toHaveBeenCalled();
   });
 
-  it('updates the order on success', async () => {
-    authAs(INSTRUCTOR, 'INSTRUCTOR');
+  it("updates the order on success", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
     loadQuestion(INSTRUCTOR.id);
     mockAssessmentFindOne.mockResolvedValue({ id: 5, courseId: COURSE.id });
     mockUpdateOrder.mockResolvedValue({ id: 7, questionOrder: { 5: 1 } });

@@ -7,12 +7,9 @@ import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
   formatSemesterDisplay,
-  deriveSemesterDisplayForCourseId
-} from './courseListService.js';
-import {
-  normalizeQuestionOrder,
-  requirePositiveSafeInteger,
-} from '../utils/questionOrder.js';
+  deriveSemesterDisplayForCourseId,
+} from "./courseListService.js";
+import { normalizeQuestionOrder, requirePositiveSafeInteger } from "../utils/questionOrder.js";
 
 /** Keep foreign child-resource writes on the same typed 404 contract as other relation guards. */
 const relationNotFound = (message) => Object.assign(new Error(message), { status: 404 });
@@ -248,70 +245,80 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     where: { id: Number(assessmentId), course: { userId } },
   });
 
-    if (!assessment) {
-      throw new Error('Assessment not found');
+  if (!assessment) {
+    throw new Error("Assessment not found");
+  }
+
+  if (updateData.courseId !== undefined) {
+    const parsedCourseId = Number(updateData.courseId);
+    if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
+      throw new Error("Valid courseId is required");
     }
 
-    if (updateData.courseId !== undefined) {
-      const parsedCourseId = Number(updateData.courseId);
-      if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
-        throw new Error('Valid courseId is required');
-      }
-
-      // Course relocation is intentionally not a supported primitive. An
-      // assessment carries variants, section links, and question-order state;
-      // moving only its course row would leave those relations cross-course.
-      // The route checks caller access to the requested target first, while
-      // this service guard remains authoritative for direct callers and
-      // same-owner ID-knowledge cases.
-      if (parsedCourseId !== assessment.courseId) {
-        throw Object.assign(new Error('Assessment course relocation is not supported'), {
-          status: 409,
-          code: 'COURSE_RELOCATION_NOT_ALLOWED',
-          isPublic: true,
-        });
-      }
-
-      const targetCourse = await prisma.course.findFirst({
-        where: { id: parsedCourseId, userId },
-        select: { id: true }
+    // Course relocation is intentionally not a supported primitive. An
+    // assessment carries variants, section links, and question-order state;
+    // moving only its course row would leave those relations cross-course.
+    // The route checks caller access to the requested target first, while
+    // this service guard remains authoritative for direct callers and
+    // same-owner ID-knowledge cases.
+    if (parsedCourseId !== assessment.courseId) {
+      throw Object.assign(new Error("Assessment course relocation is not supported"), {
+        status: 409,
+        code: "COURSE_RELOCATION_NOT_ALLOWED",
+        isPublic: true,
       });
-
-      if (!targetCourse) {
-        throw new Error('Course not found');
-      }
-
-      updateData = { ...updateData, courseId: parsedCourseId };
     }
 
-    // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
-    // even if a legacy caller still sends one.
-    const ALLOWED_ASSESSMENT_UPDATE_FIELDS = ['type', 'name', 'courseId', 'description', 'blueprintConfig'];
-    const { semester: _ignoredSemester, ...updateFields } = updateData;
-    const normalizedUpdates = {
-      ...Object.fromEntries(
-        Object.entries(updateFields).filter(([key]) => ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key))
-      ),
-      ...(updateData.courseId !== undefined && { courseId: Number(updateData.courseId) }),
-      description: updateData.description !== undefined
-        ? (updateData.description?.trim() || null)
-        : assessment.description,
-      blueprintConfig: updateData.blueprintConfig !== undefined
-        ? updateData.blueprintConfig
-        : assessment.blueprintConfig
-    };
-
-    // `include: { course: true }` returns the POST-update course relation — if
-    // the update moved the assessment to another course, the response's
-    // course/semester projection describes the NEW course (no separate reload
-    // needed, unlike Sequelize's `.update()` + `.reload()` two-step).
-    const updated = await prisma.assessments.update({
-      where: { id: assessment.id },
-      data: normalizedUpdates,
-      include: { course: true }
+    const targetCourse = await prisma.course.findFirst({
+      where: { id: parsedCourseId, userId },
+      select: { id: true },
     });
 
-    return withDerivedSemester(await enrichRowWithCourse(updated));
+    if (!targetCourse) {
+      throw new Error("Course not found");
+    }
+
+    updateData = { ...updateData, courseId: parsedCourseId };
+  }
+
+  // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
+  // even if a legacy caller still sends one.
+  const ALLOWED_ASSESSMENT_UPDATE_FIELDS = [
+    "type",
+    "name",
+    "courseId",
+    "description",
+    "blueprintConfig",
+  ];
+  const { semester: _ignoredSemester, ...updateFields } = updateData;
+  const normalizedUpdates = {
+    ...Object.fromEntries(
+      Object.entries(updateFields).filter(([key]) =>
+        ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key),
+      ),
+    ),
+    ...(updateData.courseId !== undefined && { courseId: Number(updateData.courseId) }),
+    description:
+      updateData.description !== undefined
+        ? updateData.description?.trim() || null
+        : assessment.description,
+    blueprintConfig:
+      updateData.blueprintConfig !== undefined
+        ? updateData.blueprintConfig
+        : assessment.blueprintConfig,
+  };
+
+  // `include: { course: true }` returns the POST-update course relation — if
+  // the update moved the assessment to another course, the response's
+  // course/semester projection describes the NEW course (no separate reload
+  // needed, unlike Sequelize's `.update()` + `.reload()` two-step).
+  const updated = await prisma.assessments.update({
+    where: { id: assessment.id },
+    data: normalizedUpdates,
+    include: { course: true },
+  });
+
+  return withDerivedSemester(await enrichRowWithCourse(updated));
 };
 
 /**
@@ -342,119 +349,121 @@ export const deleteAssessment = async (assessmentId, userId) => {
 
 /** Adds a question to an assessment by updating its per-assessment `questionOrder`. */
 export const addQuestionToAssessment = async (assessmentId, questionId, orderNumber, userId) => {
-  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
-    const parsedOrderNumber = requirePositiveSafeInteger(orderNumber, 'Order number');
-    const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, "Assessment ID");
+  const parsedOrderNumber = requirePositiveSafeInteger(orderNumber, "Order number");
+  const parsedQuestionId = requirePositiveSafeInteger(questionId, "Question ID");
 
-    // Verify user owns the question
-    const question = await prisma.questionMetadata.findFirst({
-      where: { id: parsedQuestionId, course: { userId } }
-    });
+  // Verify user owns the question
+  const question = await prisma.questionMetadata.findFirst({
+    where: { id: parsedQuestionId, course: { userId } },
+  });
 
-    if (!question) {
-      throw new Error('Question not found');
-    }
+  if (!question) {
+    throw new Error("Question not found");
+  }
 
-    // Verify assessment exists and belongs to user
-    const assessment = await prisma.assessments.findFirst({
-      where: { id: parsedAssessmentId, course: { userId } }
-    });
-    if (!assessment) {
-      throw new Error('Assessment not found');
-    }
+  // Verify assessment exists and belongs to user
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: parsedAssessmentId, course: { userId } },
+  });
+  if (!assessment) {
+    throw new Error("Assessment not found");
+  }
 
-    // The question and assessment must live in the same course — owner scoping alone
-    // would let a question from another course the user owns be linked here (#1).
-    if (question.courseId !== assessment.courseId) {
-      throw relationNotFound('Question not found');
-    }
+  // The question and assessment must live in the same course — owner scoping alone
+  // would let a question from another course the user owns be linked here (#1).
+  if (question.courseId !== assessment.courseId) {
+    throw relationNotFound("Question not found");
+  }
 
-    // Update question order
-    const currentOrder = normalizeQuestionOrder(question.questionOrder || {});
-    currentOrder[String(parsedAssessmentId)] = parsedOrderNumber;
-    const orderAssessmentIds = Object.keys(currentOrder).map(Number);
-    const validOrderAssessments = await prisma.assessments.findMany({
-      where: { id: { in: orderAssessmentIds }, courseId: assessment.courseId },
-      select: { id: true },
-    });
-    if (validOrderAssessments.length !== orderAssessmentIds.length) {
-      throw new Error('Assessment not found for this course');
-    }
+  // Update question order
+  const currentOrder = normalizeQuestionOrder(question.questionOrder || {});
+  currentOrder[String(parsedAssessmentId)] = parsedOrderNumber;
+  const orderAssessmentIds = Object.keys(currentOrder).map(Number);
+  const validOrderAssessments = await prisma.assessments.findMany({
+    where: { id: { in: orderAssessmentIds }, courseId: assessment.courseId },
+    select: { id: true },
+  });
+  if (validOrderAssessments.length !== orderAssessmentIds.length) {
+    throw new Error("Assessment not found for this course");
+  }
 
-    const updated = await prisma.questionMetadata.update({
-      where: { id: question.id },
-      data: { questionOrder: currentOrder }
-    });
+  const updated = await prisma.questionMetadata.update({
+    where: { id: question.id },
+    data: { questionOrder: currentOrder },
+  });
 
   return updated;
 };
 
 /** Removes a question from an assessment's ordering payload after verifying ownership. */
 export const removeQuestionFromAssessment = async (assessmentId, questionId, userId) => {
-  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
-    const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
-    // Verify user owns the question
-    const question = await prisma.questionMetadata.findFirst({
-      where: { id: parsedQuestionId, course: { userId } }
-    });
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, "Assessment ID");
+  const parsedQuestionId = requirePositiveSafeInteger(questionId, "Question ID");
+  // Verify user owns the question
+  const question = await prisma.questionMetadata.findFirst({
+    where: { id: parsedQuestionId, course: { userId } },
+  });
 
-    if (!question) {
-      throw new Error('Question not found');
-    }
+  if (!question) {
+    throw new Error("Question not found");
+  }
 
-    // Verify assessment belongs to the user
-    const assessment = await prisma.assessments.findFirst({
-      where: { id: parsedAssessmentId, course: { userId } }
-    });
+  // Verify assessment belongs to the user
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: parsedAssessmentId, course: { userId } },
+  });
 
-    if (!assessment) {
-      throw new Error('Assessment not found');
-    }
+  if (!assessment) {
+    throw new Error("Assessment not found");
+  }
 
-    // The question and assessment must live in the same course (#1).
-    if (question.courseId !== assessment.courseId) {
-      throw relationNotFound('Question not found');
-    }
+  // The question and assessment must live in the same course (#1).
+  if (question.courseId !== assessment.courseId) {
+    throw relationNotFound("Question not found");
+  }
 
-    // Remove from question order
-    const currentOrder = {
-      ...(question.questionOrder && typeof question.questionOrder === 'object' && !Array.isArray(question.questionOrder)
-        ? question.questionOrder
-        : {}),
-    };
-    delete currentOrder[String(parsedAssessmentId)];
+  // Remove from question order
+  const currentOrder = {
+    ...(question.questionOrder &&
+    typeof question.questionOrder === "object" &&
+    !Array.isArray(question.questionOrder)
+      ? question.questionOrder
+      : {}),
+  };
+  delete currentOrder[String(parsedAssessmentId)];
 
-    const updated = await prisma.questionMetadata.update({
-      where: { id: question.id },
-      data: { questionOrder: currentOrder }
-    });
+  const updated = await prisma.questionMetadata.update({
+    where: { id: question.id },
+    data: { questionOrder: currentOrder },
+  });
 
   return updated;
 };
 
 /** Returns questions scheduled for a given assessment ordered by their stored display order. */
 export const getQuestionsInAssessment = async (assessmentId, userId) => {
-  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
-    // Verify assessment exists and belongs to user
-    const assessment = await prisma.assessments.findFirst({
-      where: { id: parsedAssessmentId, course: { userId } }
-    });
-    if (!assessment) {
-      throw new Error('Assessment not found');
-    }
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, "Assessment ID");
+  // Verify assessment exists and belongs to user
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: parsedAssessmentId, course: { userId } },
+  });
+  if (!assessment) {
+    throw new Error("Assessment not found");
+  }
 
-    // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
-    // operator is unavailable. Use `->>` key extraction, which works on `json`
-    // and mirrors the ORDER BY clause below. Both the key and the ownership
-    // filter are bound as query parameters (Prisma's tagged-template
-    // `$queryRaw`), not string-interpolated into the SQL.
-    //
-    // `qm.id` breaks ties so the ordering is total (#1044). The display order in
-    // `question_order` is not guaranteed unique — a bulk add writes the same
-    // index to several rows — and without a tiebreak tied rows can shuffle
-    // between requests, so a LIMIT/OFFSET page can repeat and drop them.
-    const assessmentKey = String(parsedAssessmentId);
-    const orderedRows = await prisma.$queryRaw`
+  // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
+  // operator is unavailable. Use `->>` key extraction, which works on `json`
+  // and mirrors the ORDER BY clause below. Both the key and the ownership
+  // filter are bound as query parameters (Prisma's tagged-template
+  // `$queryRaw`), not string-interpolated into the SQL.
+  //
+  // `qm.id` breaks ties so the ordering is total (#1044). The display order in
+  // `question_order` is not guaranteed unique — a bulk add writes the same
+  // index to several rows — and without a tiebreak tied rows can shuffle
+  // between requests, so a LIMIT/OFFSET page can repeat and drop them.
+  const assessmentKey = String(parsedAssessmentId);
+  const orderedRows = await prisma.$queryRaw`
       SELECT qm.id
       FROM question_metadata qm
       JOIN courses c ON c.id = qm.course_id
@@ -468,28 +477,33 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
         ELSE NULL
       END ASC, qm.id ASC
     `;
-    const orderedIds = orderedRows.map((row) => row.id);
+  const orderedIds = orderedRows.map((row) => row.id);
 
   if (orderedIds.length === 0) {
     return [];
   }
 
-    // Get all questions that have this assessment in their questionOrder
-    const questions = await prisma.questionMetadata.findMany({
-      where: { id: { in: orderedIds }, courseId: assessment.courseId },
-      include: {
-        // Ownership filter only — this endpoint returns rows unenriched, and
-        // `Course` has no local name/code to select anymore (#1072 §4 step 10).
-        course: { select: { id: true } },
-        variants: {
-          where: { assessmentId: parsedAssessmentId },
-          select: {
-            id: true, questionText: true, difficulty: true, answer: true, choices: true,
-            selectAllThatApply: true, correctAnswers: true,
-          }
-        }
-      }
-    });
+  // Get all questions that have this assessment in their questionOrder
+  const questions = await prisma.questionMetadata.findMany({
+    where: { id: { in: orderedIds }, courseId: assessment.courseId },
+    include: {
+      // Ownership filter only — this endpoint returns rows unenriched, and
+      // `Course` has no local name/code to select anymore (#1072 §4 step 10).
+      course: { select: { id: true } },
+      variants: {
+        where: { assessmentId: parsedAssessmentId },
+        select: {
+          id: true,
+          questionText: true,
+          difficulty: true,
+          answer: true,
+          choices: true,
+          selectAllThatApply: true,
+          correctAnswers: true,
+        },
+      },
+    },
+  });
 
   // `findMany({ where: { id: { in } } })` doesn't preserve `in`-list order —
   // re-sort to match the CAST(question_order->>...) ordering computed above.

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { canAccessStudentTour, resolveSuggestedTourId } from '~/lib/tours/tour-storage';
+import { describe, expect, it } from "vitest";
+import { canAccessStudentTour, resolveSuggestedTourId } from "~/lib/tours/tour-storage";
 
 describe("tour access helpers", () => {
   it("allows students on student routes", () => {
@@ -25,7 +25,7 @@ describe("tour access helpers", () => {
     expect(resolveSuggestedTourId("TA", "/instructor")).toBe("student-journey");
   });
 
-  it('suggests lesson help on student lesson routes', () => {
-    expect(resolveSuggestedTourId('STUDENT', '/student/lesson/1')).toBe('student-lesson-help');
+  it("suggests lesson help on student lesson routes", () => {
+    expect(resolveSuggestedTourId("STUDENT", "/student/lesson/1")).toBe("student-lesson-help");
   });
 });

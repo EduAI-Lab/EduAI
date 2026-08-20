@@ -45,7 +45,7 @@ describe("DashboardAdminView", () => {
     // One row loaded, 500 platform-wide — the old `.length` read would show 1.
     renderView({
       adminUsers: makeUserPage({ total: 500, active: 480, byRole: { STUDENT: 400 } }, [
-        { id: 'u1' },
+        { id: "u1" },
       ]),
     });
 

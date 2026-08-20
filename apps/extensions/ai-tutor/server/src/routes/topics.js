@@ -33,36 +33,36 @@
  * Related: services/topicSync.js, services/eduaiAuth.js
  */
 
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole, isCourseAdmin } from '../middleware/auth.js';
-import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
-import { mapTopic } from '../utils/mappers.js';
-import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
+import { mapTopic } from "../utils/mappers.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import {
   parsePaginationParams,
   paginated,
   parseSearchParam,
   searchWhere,
   PaginationError,
-} from '../utils/pagination.js';
+} from "../utils/pagination.js";
 import {
   syncExternalCourseTopics,
   AUTO_SYNC_TTL_MS,
   AUTO_SYNC_TIMEOUT_MS,
-} from '../services/topicSync.js';
+} from "../services/topicSync.js";
 import {
   ensureCourseTopicAccess,
   remapCourseTopics,
   TopicMutationError,
-} from '../services/topicManagement.js';
-import { CreateTopicSchema, TopicRemapSchema } from '../../../shared/schemas/mutations.js';
+} from "../services/topicManagement.js";
+import { CreateTopicSchema, TopicRemapSchema } from "../../../shared/schemas/mutations.js";
 
 const router = express.Router();
 
 // Keep this router independently fenced. It is mounted separately from the
 // course router, so topic authorization must not depend on mount order.
-router.use('/courses/:courseId/topics', gateCourseById());
+router.use("/courses/:courseId/topics", gateCourseById());
 
 /**
  * GET /courses/:courseId/topics — list topics for a course.
@@ -118,7 +118,7 @@ router.get("/courses/:courseId/topics", async (req, res) => {
           signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
         });
       } catch (e) {
-        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+        const phase = e?.phase === "write" ? "local write" : "Core fetch";
         logSafeError(`[topics] Auto-sync (${phase}) failed; serving local mirror`, e);
       }
     }
@@ -137,7 +137,7 @@ router.get("/courses/:courseId/topics", async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -151,34 +151,34 @@ router.get("/courses/:courseId/topics", async (req, res) => {
  * manual addition would be wiped on next sync (or worse, drift silently).
  */
 router.post(
-  '/courses/:courseId/topics',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/topics",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const instructor = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     const parsedBody = CreateTopicSchema.safeParse(req.body);
     if (!parsedBody.success) {
-      return res.status(400).json({ error: 'name is required' });
+      return res.status(400).json({ error: "name is required" });
     }
     const { name } = parsedBody.data;
 
     try {
       const { course } = await ensureCourseTopicAccess(courseId, instructor);
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
       if (!(await isCourseAdmin(instructor, course))) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       // Block manual topic creation for imported (external) courses
       if (course.coreOfferingId) {
         return res.status(403).json({
-          error: 'Topics for imported courses are managed by EduAI and cannot be added here',
+          error: "Topics for imported courses are managed by EduAI and cannot be added here",
         });
       }
 
@@ -191,10 +191,10 @@ router.post(
 
       res.status(201).json(topic);
     } catch (e) {
-      if (e?.code === 'P2002') {
-        return res.status(409).json({ error: 'Topic name already exists for this course' });
+      if (e?.code === "P2002") {
+        return res.status(409).json({ error: "Topic name already exists for this course" });
       }
-      sendSafeError(res, e, 'Internal server error');
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -219,13 +219,13 @@ export default router;
  * is renamed upstream — the instructor can use `/topics/remap` to consolidate.
  */
 router.post(
-  '/courses/:courseId/topics/sync',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/topics/sync",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const instructor = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     try {
@@ -234,14 +234,14 @@ router.post(
         include: { instructors: { select: { userId: true } } },
       });
       if (!course) {
-        return res.status(404).json({ error: 'Course not found' });
+        return res.status(404).json({ error: "Course not found" });
       }
       if (!(await isCourseAdmin(instructor, course))) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       if (!course.coreOfferingId) {
-        return res.status(400).json({ error: 'Course is not imported from EduAI' });
+        return res.status(400).json({ error: "Course is not imported from EduAI" });
       }
 
       let upstreamNames = [];
@@ -250,19 +250,19 @@ router.post(
         upstreamNames = upstream || [];
       } catch (e) {
         const status = Number.isInteger(e?.status) ? e.status : 502;
-        logSafeError('[topics] Explicit sync failed', e);
-        return sendSafeError(res, e, 'Failed to sync topics from EduAI', { status });
+        logSafeError("[topics] Explicit sync failed", e);
+        return sendSafeError(res, e, "Failed to sync topics from EduAI", { status });
       }
 
       const topics = await prisma.topic.findMany({
         where: { courseOfferingId: courseId },
-        orderBy: { name: 'asc' },
+        orderBy: { name: "asc" },
       });
       const upstreamSet = new Set(upstreamNames);
       const missingTopics = topics.filter((t) => !upstreamSet.has(t.name));
       res.json({ ok: true, topics, missingTopics });
     } catch (e) {
-      sendSafeError(res, e, 'Internal server error');
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -299,17 +299,17 @@ router.post(
  * Requests whose pairs observe each other keep the per-pair path.
  */
 router.post(
-  '/courses/:courseId/topics/remap',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/topics/remap",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const instructor = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
     const parsedBody = TopicRemapSchema.safeParse(req.body);
     if (!parsedBody.success) {
-      return res.status(400).json({ error: 'No valid mappings provided' });
+      return res.status(400).json({ error: "No valid mappings provided" });
     }
 
     try {
@@ -323,7 +323,7 @@ router.post(
       if (e instanceof TopicMutationError) {
         return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
       }
-      sendSafeError(res, e, 'Internal server error');
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );

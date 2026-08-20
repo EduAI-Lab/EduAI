@@ -27,10 +27,15 @@ const { default: app } = await import("../../src/app.js");
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
-const OWNER = { id: 'cuid-rbac-owner', email: 'owner@test.com', role: 'INSTRUCTOR', name: 'Owner' };
-const STUDENT_OWNER = { ...OWNER, role: 'STUDENT' };
-const STRANGER = { id: 'cuid-rbac-stranger', email: 'stranger@test.com', role: 'INSTRUCTOR', name: 'Stranger' };
-const ADMIN = { id: 'cuid-rbac-admin', email: 'admin@test.com', role: 'ADMIN', name: 'Admin' };
+const OWNER = { id: "cuid-rbac-owner", email: "owner@test.com", role: "INSTRUCTOR", name: "Owner" };
+const STUDENT_OWNER = { ...OWNER, role: "STUDENT" };
+const STRANGER = {
+  id: "cuid-rbac-stranger",
+  email: "stranger@test.com",
+  role: "INSTRUCTOR",
+  name: "Stranger",
+};
+const ADMIN = { id: "cuid-rbac-admin", email: "admin@test.com", role: "ADMIN", name: "Admin" };
 
 /** Routes the session-validate fetch to a user based on the cookie value. */
 function multiUserHandlers(ownerFetch) {
@@ -39,12 +44,12 @@ function multiUserHandlers(ownerFetch) {
     const path = target.split("?")[0];
     const cookie = opts?.headers?.cookie ?? "";
 
-    if (path.endsWith('/api/sessions/validate')) {
-      const user = cookie.includes('student-owner')
+    if (path.endsWith("/api/sessions/validate")) {
+      const user = cookie.includes("student-owner")
         ? STUDENT_OWNER
-        : cookie.includes('owner')
+        : cookie.includes("owner")
           ? OWNER
-          : cookie.includes('admin')
+          : cookie.includes("admin")
             ? ADMIN
             : STRANGER;
       return { ok: true, json: async () => ({ user }) };
@@ -61,10 +66,10 @@ function multiUserHandlers(ownerFetch) {
   };
 }
 
-const asOwner = () => ({ Cookie: 'session=owner' });
-const asStudentOwner = () => ({ Cookie: 'session=student-owner' });
-const asStranger = () => ({ Cookie: 'session=stranger' });
-const asAdmin = () => ({ Cookie: 'session=admin' });
+const asOwner = () => ({ Cookie: "session=owner" });
+const asStudentOwner = () => ({ Cookie: "session=student-owner" });
+const asStranger = () => ({ Cookie: "session=stranger" });
+const asAdmin = () => ({ Cookie: "session=admin" });
 
 describeDb("course RBAC (integration)", () => {
   let connectTestDatabase, truncateTestDatabase, prisma;
@@ -106,16 +111,14 @@ describeDb("course RBAC (integration)", () => {
         "fetch",
         vi.fn().mockImplementation(
           multiUserHandlers(async (url) => {
-            if (String(url).split("?")[0].endsWith('/enrollments')) {
+            if (String(url).split("?")[0].endsWith("/enrollments")) {
               return { ok: true, json: async () => ({ enrollments: [] }) };
             }
             return { ok: false, status: 404, json: async () => ({}) };
           }),
         ),
       );
-      const res = await request(app)
-        .get(`/api/course/${courseId}/access`)
-        .set(asOwner());
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
@@ -126,9 +129,7 @@ describeDb("course RBAC (integration)", () => {
         data: { coreCourseId: null },
       });
 
-      const res = await request(app)
-        .get(`/api/course/${courseId}/access`)
-        .set(asOwner());
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });
@@ -139,9 +140,7 @@ describeDb("course RBAC (integration)", () => {
         data: { coreCourseId: null },
       });
 
-      const res = await request(app)
-        .get(`/api/course/${courseId}/access`)
-        .set(asStudentOwner());
+      const res = await request(app).get(`/api/course/${courseId}/access`).set(asStudentOwner());
       expect(res.status).toBe(200);
       expect(res.body.data).toBeNull();
     });

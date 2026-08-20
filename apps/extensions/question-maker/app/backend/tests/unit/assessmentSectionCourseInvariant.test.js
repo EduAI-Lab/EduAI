@@ -3,7 +3,7 @@
  * the current add guard, so remove/reorder/remove-all must re-check ownership
  * at mutation time rather than trusting an existing SectionVariants link.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   assessmentFindFirst,
@@ -25,7 +25,7 @@ const {
   questionUpdate: vi.fn(),
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     assessmentSections: { findFirst: assessmentFindFirst },
     variants: {
@@ -44,7 +44,7 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-const svc = await import('../../src/services/assessmentSectionService.js');
+const svc = await import("../../src/services/assessmentSectionService.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,29 +65,35 @@ beforeEach(() => {
   questionUpdate.mockResolvedValue({});
 });
 
-describe('assessment section course invariants', () => {
-  it('rejects removing a foreign-course variant before deleting a legacy link', async () => {
-    await expect(svc.removeVariantFromSection(10, 'owner', 20)).rejects.toThrow(/Variant not found/);
+describe("assessment section course invariants", () => {
+  it("rejects removing a foreign-course variant before deleting a legacy link", async () => {
+    await expect(svc.removeVariantFromSection(10, "owner", 20)).rejects.toThrow(
+      /Variant not found/,
+    );
     expect(sectionVariantsDeleteMany).not.toHaveBeenCalled();
   });
 
-  it('rejects reordering a foreign-course variant before updating a legacy link', async () => {
-    await expect(svc.updateVariantOrderInSection(10, 'owner', 20, 4)).rejects.toThrow(/Variant not found/);
+  it("rejects reordering a foreign-course variant before updating a legacy link", async () => {
+    await expect(svc.updateVariantOrderInSection(10, "owner", 20, 4)).rejects.toThrow(
+      /Variant not found/,
+    );
     expect(sectionVariantsFindMany).not.toHaveBeenCalled();
   });
 
-  it('scopes remove-all discovery to the question course', async () => {
-    await expect(svc.removeQuestionFromAllSections(30, 'owner', 1)).resolves.toEqual({
+  it("scopes remove-all discovery to the question course", async () => {
+    await expect(svc.removeQuestionFromAllSections(30, "owner", 1)).resolves.toEqual({
       removedLinks: 0,
       affectedAssessments: [],
     });
 
-    expect(sectionVariantsFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: {
-        variantId: { in: [20] },
-        section: { assessment: { courseId: 1 } },
-      },
-    }));
+    expect(sectionVariantsFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          variantId: { in: [20] },
+          section: { assessment: { courseId: 1 } },
+        },
+      }),
+    );
     expect(sectionVariantsDeleteMany).not.toHaveBeenCalled();
     expect(questionUpdate).not.toHaveBeenCalled();
   });

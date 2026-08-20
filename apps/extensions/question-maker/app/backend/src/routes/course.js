@@ -29,12 +29,12 @@ import {
   addQuestionToBank,
   removeQuestionFromBank,
   ensureDefaultBank,
-} from '../services/questionBankService.js';
+} from "../services/questionBankService.js";
 import {
   safeRequestLogFields,
   safeStatusCode,
   toStableUpstreamError,
-} from '../utils/safeLogging.js';
+} from "../utils/safeLogging.js";
 
 const router = express.Router();
 
@@ -52,11 +52,11 @@ function stableCoreFailure(error, fallbackMessage) {
   const status = statusCode !== null && statusCode >= 400 ? statusCode : 502;
   const publicCode =
     error?.isPublic === true &&
-    typeof error?.code === 'string' &&
+    typeof error?.code === "string" &&
     PUBLIC_CORE_ERROR_RE.test(error.code)
       ? error.code
       : null;
-  const stable = toStableUpstreamError(error, { serviceName: 'Core API' });
+  const stable = toStableUpstreamError(error, { serviceName: "Core API" });
 
   return {
     status,
@@ -121,8 +121,8 @@ router.post("/", authenticateToken, requireRole(INSTRUCTORS), async (req, res, n
     try {
       linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
     } catch (err) {
-      const failure = stableCoreFailure(err, 'Failed to verify Core course access');
-      logger.warn(failure.logFields, 'Core course access check failed');
+      const failure = stableCoreFailure(err, "Failed to verify Core course access");
+      logger.warn(failure.logFields, "Core course access check failed");
       return res.status(failure.status).json({
         success: false,
         error: failure.message,
@@ -491,40 +491,50 @@ router.patch(
   authenticateToken,
   requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
-  try {
-    const { coreCourseId } = req.body;
-
-    if (!coreCourseId || typeof coreCourseId !== 'string') {
-      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
-    }
-
-    const course = req.qmCourse;
-
-    // A linked QM course is a local anchor for the Core course that owns all
-    // of its topics/questions/assessments. Relinking it would leave that
-    // content under the old Core identity while reads and future writes use a
-    // different one. Keep the anchor immutable once set; importantly, reject
-    // before looking up the requested target so an unauthorized target cannot
-    // be probed through this endpoint. Re-sending the existing id remains the
-    // idempotent path below.
-    if (course.coreCourseId && course.coreCourseId !== coreCourseId) {
-      return res.status(409).json({
-        success: false,
-        error: 'Core course link is immutable',
-        code: 'CORE_COURSE_LINK_IMMUTABLE',
-      });
-    }
-
-    const cookie = req.headers.cookie ?? '';
-    let linkable = false;
     try {
-      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
-    } catch (err) {
-      const failure = stableCoreFailure(err, 'Failed to verify Core course access');
-      logger.warn(failure.logFields, 'Core course access check failed');
-      return res.status(failure.status).json({
-        success: false,
-        error: failure.message,
+      const { coreCourseId } = req.body;
+
+      if (!coreCourseId || typeof coreCourseId !== "string") {
+        return res.status(400).json({ success: false, error: "coreCourseId is required" });
+      }
+
+      const course = req.qmCourse;
+
+      // A linked QM course is a local anchor for the Core course that owns all
+      // of its topics/questions/assessments. Relinking it would leave that
+      // content under the old Core identity while reads and future writes use a
+      // different one. Keep the anchor immutable once set; importantly, reject
+      // before looking up the requested target so an unauthorized target cannot
+      // be probed through this endpoint. Re-sending the existing id remains the
+      // idempotent path below.
+      if (course.coreCourseId && course.coreCourseId !== coreCourseId) {
+        return res.status(409).json({
+          success: false,
+          error: "Core course link is immutable",
+          code: "CORE_COURSE_LINK_IMMUTABLE",
+        });
+      }
+
+      const cookie = req.headers.cookie ?? "";
+      let linkable = false;
+      try {
+        linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+      } catch (err) {
+        const failure = stableCoreFailure(err, "Failed to verify Core course access");
+        logger.warn(failure.logFields, "Core course access check failed");
+        return res.status(failure.status).json({
+          success: false,
+          error: failure.message,
+        });
+      }
+
+      if (!linkable) {
+        return res.status(403).json({ success: false, error: "CORE_COURSE_NOT_AUTHORIZED" });
+      }
+
+      const updatedCourse = await prisma.course.update({
+        where: { id: course.id },
+        data: { coreCourseId },
       });
 
       res.json({
@@ -544,15 +554,7 @@ router.post(
   requireCourseAccess({ min: "instructor", getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
-      synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
-    } catch (err) {
-      const failure = stableCoreFailure(err, 'Core request failed');
-      logger.warn(failure.logFields, 'Core topic sync failed');
-      return res.status(failure.status).json({
-        success: false,
-        error: failure.message,
-      });
-    }
+      const course = req.qmCourse;
 
       const cookie = req.headers.cookie ?? "";
       if (!course.coreCourseId) {
@@ -563,9 +565,11 @@ router.post(
       try {
         synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
       } catch (err) {
-        return res.status(502).json({
+        const failure = stableCoreFailure(err, "Core request failed");
+        logger.warn(failure.logFields, "Core topic sync failed");
+        return res.status(failure.status).json({
           success: false,
-          error: err.message || "Core request failed",
+          error: failure.message,
         });
       }
 

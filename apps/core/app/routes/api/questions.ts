@@ -10,10 +10,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { createQuestion, listQuestions } from "~/lib/questions/server";
 import { withIdempotency } from "~/lib/idempotency.server";
-import {
-  MAX_CREATE_QUESTION_BODY_BYTES,
-  validateCreateQuestion,
-} from "~/lib/questions/schema";
+import { MAX_CREATE_QUESTION_BODY_BYTES, validateCreateQuestion } from "~/lib/questions/schema";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
@@ -23,10 +20,9 @@ function json(status: number, body: unknown) {
   });
 }
 
-async function readBoundedJsonBody(request: Request): Promise<
-  | { ok: true; body: Record<string, unknown> | null }
-  | { ok: false; response: Response }
-> {
+async function readBoundedJsonBody(
+  request: Request,
+): Promise<{ ok: true; body: Record<string, unknown> | null } | { ok: false; response: Response }> {
   const declaredLength = request.headers.get("content-length");
   if (declaredLength !== null) {
     const bytes = Number(declaredLength);
@@ -60,9 +56,10 @@ async function readBoundedJsonBody(request: Request): Promise<
 
   try {
     const value: unknown = JSON.parse(new TextDecoder().decode(raw));
-    const body = value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
+    const body =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
     return { ok: true, body };
   } catch {
     return { ok: true, body: null };
@@ -131,8 +128,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const topicId = url.searchParams.get("topicId") ?? undefined;
   const testableParam = url.searchParams.get("testable");
-  const testable =
-    testableParam === "true" ? true : testableParam === "false" ? false : undefined;
+  const testable = testableParam === "true" ? true : testableParam === "false" ? false : undefined;
   const rawLimit = url.searchParams.get("limit");
   const rawOffset = url.searchParams.get("offset");
   const limit = rawLimit === null || rawLimit.trim() === "" ? undefined : Number(rawLimit);

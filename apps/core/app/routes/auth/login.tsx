@@ -1,21 +1,21 @@
 import { Form, useActionData, useLoaderData, redirect } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { LoginForm } from "~/components/login-form"
-import { signInSchema, type SignInInput } from "~/lib/auth"
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
-import { auth } from "~/lib/auth/server"
-import { validateRedirectUrl } from "~/lib/auth/guards.server"
-import { getPolicy } from "~/lib/policy.server"
-import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
-import { getActorContext, getRequestContext } from "~/lib/request-context.server"
+import { LoginForm } from "~/components/login-form";
+import { signInSchema, type SignInInput } from "~/lib/auth";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
+import { auth } from "~/lib/auth/server";
+import { validateRedirectUrl } from "~/lib/auth/guards.server";
+import { getPolicy } from "~/lib/policy.server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
   readBoundedFormData,
-} from "~/lib/multipart.server"
+} from "~/lib/multipart.server";
 
 export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 
@@ -255,7 +255,6 @@ export default function LoginPage() {
             allowRegistration={allowRegistration}
           />
         </Form>
-
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">

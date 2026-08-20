@@ -8,23 +8,23 @@
  *   2. search is ANDed onto the visibility scope, so a student can never
  *      surface an unpublished row by searching for it.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
-import { MAX_SEARCH_LENGTH } from '../../src/utils/pagination.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
+import { MAX_SEARCH_LENGTH } from "../../src/utils/pagination.js";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
-vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
-import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Tree endpoint search (#1207)", () => {
   let prof;
@@ -41,11 +41,11 @@ describe("Tree endpoint search (#1207)", () => {
       isPublished: true,
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
-        const effectiveRole = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+        const effectiveRole = allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : role;
         const allowed = allowedRoles.includes(effectiveRole);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
+        return { allowed, state: allowed ? "allowed" : "denied", role: effectiveRole };
       },
     );
   });

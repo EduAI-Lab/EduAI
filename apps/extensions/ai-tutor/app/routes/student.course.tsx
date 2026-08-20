@@ -1,24 +1,24 @@
-import { useMemo } from 'react';
-import { useNavigate, useNavigation, useSearchParams } from 'react-router';
-import { IconFolders } from '@tabler/icons-react';
-import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from '@eduai/ui';
-import { ModuleCard } from '../components/courses/ModuleCard';
+import { useMemo } from "react";
+import { useNavigate, useNavigation, useSearchParams } from "react-router";
+import { IconFolders } from "@tabler/icons-react";
+import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from "@eduai/ui";
+import { ModuleCard } from "../components/courses/ModuleCard";
 import {
   accentForCourse,
   courseCode,
   courseName,
   courseTerm,
   courseYear,
-} from '../lib/course-display';
-import type { Course, Module } from '../lib/types';
-import type { Route } from './+types/student.course';
-import { useCourseTopics } from '../hooks/useCourseTopics';
-import api from '~/lib/api';
-import { requireClientUser } from '~/lib/client-auth';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-import { PaginationControls } from '~/components/common/PaginationControls';
-import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
+} from "../lib/course-display";
+import type { Course, Module } from "../lib/types";
+import type { Route } from "./+types/student.course";
+import { useCourseTopics } from "../hooks/useCourseTopics";
+import api from "~/lib/api";
+import { requireClientUser } from "~/lib/client-auth";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { CourseSwitcher } from "~/components/layout/CourseSwitcher";
+import { PaginationControls } from "~/components/common/PaginationControls";
+import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from "~/lib/list-params";
 
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   await requireClientUser(["STUDENT", "TA"]);
@@ -75,13 +75,13 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   useShellBreadcrumbs([
     { label: "Courses", href: "/student" },
     {
-      label: course?.title || 'Course',
+      label: course?.title || "Course",
       node:
         course?.id != null ? (
           <CourseSwitcher
             courseId={course.id}
             basePath="/student"
-            currentTitle={course?.title || 'Course'}
+            currentTitle={course?.title || "Course"}
           />
         ) : undefined,
     },

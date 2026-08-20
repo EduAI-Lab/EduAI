@@ -145,8 +145,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
       }
 
       const apiKey =
-        userSettings.vllm?.apiKey ||
-        (clientVllmUrlSupplied ? "vllm-local" : resolveVllmApiKey());
+        userSettings.vllm?.apiKey || (clientVllmUrlSupplied ? "vllm-local" : resolveVllmApiKey());
       if (apiKey) {
         providers.vllm = createOpenAI({
           apiKey,
@@ -243,8 +242,7 @@ export function listEnabledRegistryProviders(userSettings: UserProviderSettings)
   if (userSettings.ollama?.isEnabled) ids.push("ollama");
   const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
   const clientVllmUrlSupplied =
-    Boolean(clientVllmBaseUrl) &&
-    !isDeploymentManagedProviderSettings(userSettings.vllm ?? {});
+    Boolean(clientVllmBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.vllm ?? {});
   if (
     userSettings.vllm?.isEnabled &&
     (userSettings.vllm.apiKey || clientVllmUrlSupplied || resolveVllmApiKey())

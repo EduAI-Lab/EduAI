@@ -3,12 +3,12 @@ import { useLocation } from "react-router";
 
 import { AppShell, CommandSearchButton, ThemeToggle, type AppSidebarProps } from "@eduai/ui";
 
-import { useCoreSidebarProps, type UseCoreSidebarPropsOptions } from "~/components/app-sidebar"
-import { AIServiceIndicators } from "~/components/ai/ai-service-indicators"
-import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog"
-import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette"
-import { CurrentUserIdProvider } from "~/contexts/current-user"
-import type { User } from "~/lib/auth/types"
+import { useCoreSidebarProps, type UseCoreSidebarPropsOptions } from "~/components/app-sidebar";
+import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
+import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
+import { CommandPalette, CORE_COMMAND_EVENT } from "~/components/command/command-palette";
+import { CurrentUserIdProvider } from "~/contexts/current-user";
+import type { User } from "~/lib/auth/types";
 
 /**
  * Route → header title fallback map, ported verbatim from the old bespoke
@@ -138,5 +138,5 @@ export function CoreAppShell({
         {children}
       </AppShell>
     </CurrentUserIdProvider>
-  )
+  );
 }

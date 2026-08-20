@@ -41,12 +41,12 @@ const CORE_URL = APPS.core.baseUrl;
 const LOCAL_SEED_PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim();
 if (!LOCAL_SEED_PASSWORD) {
   console.error(
-    'FATAL: set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the mobile audit',
+    "FATAL: set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the mobile audit",
   );
   process.exit(2);
 }
 const CREDENTIALS = {
-  email: process.env.AUDIT_EMAIL || 'instructor.cs@eduai.local',
+  email: process.env.AUDIT_EMAIL || "instructor.cs@eduai.local",
   password: LOCAL_SEED_PASSWORD,
 };
 

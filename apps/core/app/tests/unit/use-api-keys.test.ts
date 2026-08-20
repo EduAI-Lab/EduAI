@@ -86,10 +86,9 @@ describe("useApiKeys — server loading", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result, rerender } = renderHook(
-      ({ ownerId }) => useApiKeys(ownerId),
-      { initialProps: { ownerId: "user-a" } },
-    );
+    const { result, rerender } = renderHook(({ ownerId }) => useApiKeys(ownerId), {
+      initialProps: { ownerId: "user-a" },
+    });
     await waitFor(() => expect(result.current.apiKeys.openai).toBeDefined());
 
     rerender({ ownerId: "user-b" });
@@ -125,10 +124,9 @@ describe("useApiKeys — legacy localStorage cleanup", () => {
     expect(result.current.apiKeys).toEqual({});
     expect(localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/user-provider-settings",
-      { credentials: "include" },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/user-provider-settings", {
+      credentials: "include",
+    });
   });
 
   it("never restores an unowned legacy key when the server is unavailable", async () => {

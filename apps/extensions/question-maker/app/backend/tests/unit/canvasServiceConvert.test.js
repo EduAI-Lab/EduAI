@@ -68,26 +68,27 @@ describe("parseChoicesFromQuestionText", () => {
   });
 });
 
-describe('convertCanvasQuestionToVariant', () => {
-  it('never logs Canvas question or answer content', () => {
-    const questionCanary = 'AUDIT_CANVAS_QUESTION_CANARY_226cc9';
-    const answerCanary = 'AUDIT_CANVAS_ANSWER_CANARY_76ff03';
+describe("convertCanvasQuestionToVariant", () => {
+  it("never logs Canvas question or answer content", () => {
+    const questionCanary = "AUDIT_CANVAS_QUESTION_CANARY_226cc9";
+    const answerCanary = "AUDIT_CANVAS_ANSWER_CANARY_76ff03";
 
     convertCanvasQuestionToVariant({
-      question_name: '1. Sensitive question',
+      question_name: "1. Sensitive question",
       question_text: `${questionCanary}\nA) ${answerCanary}\nB) decoy`,
-      question_type: 'multiple_choice_question',
+      question_type: "multiple_choice_question",
       answers: [],
     });
 
-    const output = console.log.mock.calls.flat().map((value) => (
-      typeof value === 'string' ? value : JSON.stringify(value)
-    )).join('\n');
+    const output = console.log.mock.calls
+      .flat()
+      .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
+      .join("\n");
     expect(output).not.toContain(questionCanary);
     expect(output).not.toContain(answerCanary);
   });
 
-  it('converts an MCQ with an answers array and flags the correct letter', () => {
+  it("converts an MCQ with an answers array and flags the correct letter", () => {
     const out = convertCanvasQuestionToVariant({
       question_name: "1. Arithmetic",
       question_text: "<p>What is 2+2?</p>",

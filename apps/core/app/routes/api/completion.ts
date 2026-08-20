@@ -122,8 +122,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return jsonError("Request aborted", 499);
   }
 
-  const needsAdmission =
-    model.startsWith("vllm:") || model.startsWith("ollama:");
+  const needsAdmission = model.startsWith("vllm:") || model.startsWith("ollama:");
   let admissionRelease: (() => void) | null = null;
   let admissionWaitedMs = 0;
   if (needsAdmission) {
@@ -135,8 +134,7 @@ export async function action({ request }: ActionFunctionArgs) {
       if (error instanceof AdmissionTimeoutError) {
         return new Response(
           JSON.stringify({
-            error:
-              "Server busy — too many concurrent AI requests. Try again shortly.",
+            error: "Server busy — too many concurrent AI requests. Try again shortly.",
             code: "AI_ADMISSION_TIMEOUT",
           }),
           { status: 503, headers: JSON_HEADERS },
@@ -194,20 +192,14 @@ export async function action({ request }: ActionFunctionArgs) {
       const response = outcome.result.toDataStreamResponse({
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
-          ...(outcome.fleetServerId
-            ? { "X-Fleet-Server": outcome.fleetServerId }
-            : {}),
-          ...(admissionWaitedMs > 0
-            ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) }
-            : {}),
+          ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
+          ...(admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {}),
         },
         // HTTP status/headers are immutable once this 200 stream begins. Route
         // late provider errors through the same sanitized contract as the
         // pre-stream path via the AI SDK stream error channel.
         getErrorMessage: (error) =>
-          JSON.stringify(
-            providerFailureBody(classifyProviderError(outcome.provider, error)),
-          ),
+          JSON.stringify(providerFailureBody(classifyProviderError(outcome.provider, error))),
       });
       const release = admissionRelease;
       admissionRelease = null;
@@ -223,12 +215,8 @@ export async function action({ request }: ActionFunctionArgs) {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...(outcome.fleetServerId
-        ? { "X-Fleet-Server": outcome.fleetServerId }
-        : {}),
-      ...(admissionWaitedMs > 0
-        ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) }
-        : {}),
+      ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
+      ...(admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {}),
     },
   });
 }

@@ -139,10 +139,12 @@ function setup({ updated } = {}) {
   // Fresh object per call so a prior rollback mutation cannot poison later asserts.
   if (updated) {
     mockUpdateVariant.mockImplementation(async () => ({ ...updated }));
-    mockLinkVariantToCore.mockImplementation(async (variantId, userId, snapshot, coreQuestionId) => ({
-      applied: true,
-      variant: { ...snapshot, coreQuestionId },
-    }));
+    mockLinkVariantToCore.mockImplementation(
+      async (variantId, userId, snapshot, coreQuestionId) => ({
+        applied: true,
+        variant: { ...snapshot, coreQuestionId },
+      }),
+    );
     mockRollbackVariantApproval.mockResolvedValue({
       applied: true,
       variant: { ...updated, isDraft: true, coreQuestionId: null },
@@ -172,7 +174,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       42,
       COURSE.userId,
       expect.objectContaining({ id: 42, isDraft: false }),
-      'cuid-core-q',
+      "cuid-core-q",
     );
   });
 
@@ -217,7 +219,10 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("INVALID_TOPIC_IDS");
     expect(res.body.deletedTopicIds).toEqual(deletedTopicIds);
-    expect(mockTopicsUpdateMany).toHaveBeenCalledWith({ where: { coreTopicId: { in: deletedTopicIds } }, data: { coreTopicId: null } });
+    expect(mockTopicsUpdateMany).toHaveBeenCalledWith({
+      where: { coreTopicId: { in: deletedTopicIds } },
+      data: { coreTopicId: null },
+    });
     expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
       42,
       COURSE.userId,
@@ -260,7 +265,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       42,
       COURSE.userId,
       expect.objectContaining({ id: 42, isDraft: false }),
-      'cuid-core-q-recovered',
+      "cuid-core-q-recovered",
     );
   });
 
@@ -278,7 +283,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       .send({ isDraft: false });
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe('DUPLICATE_TOPIC');
+    expect(res.body.error).toBe("DUPLICATE_TOPIC");
     expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
       42,
       COURSE.userId,
@@ -299,7 +304,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.success).toBe(false);
-    expect(res.body.error).toBe('CORE_PUSH_FAILED');
+    expect(res.body.error).toBe("CORE_PUSH_FAILED");
     expect(mockRollbackVariantApproval).toHaveBeenCalledWith(
       42,
       COURSE.userId,
@@ -312,39 +317,39 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
     );
   });
 
-  it('returns an explicit rollback failure when Core and local rollback both fail', async () => {
+  it("returns an explicit rollback failure when Core and local rollback both fail", async () => {
     setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
-    mockPushVariantToCore.mockRejectedValueOnce(new Error('ECONNREFUSED'));
-    mockRollbackVariantApproval.mockRejectedValueOnce(new Error('DB unavailable'));
+    mockPushVariantToCore.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    mockRollbackVariantApproval.mockRejectedValueOnce(new Error("DB unavailable"));
 
     const res = await request(app)
-      .put('/api/questions/variants/42')
-      .set('Cookie', 'session=valid')
+      .put("/api/questions/variants/42")
+      .set("Cookie", "session=valid")
       .send({ isDraft: false });
 
     expect(res.status).toBe(500);
     expect(res.body.success).toBe(false);
-    expect(res.body.error).toBe('VARIANT_ROLLBACK_FAILED');
+    expect(res.body.error).toBe("VARIANT_ROLLBACK_FAILED");
   });
 
-  it('does not claim draft state when rollback reports a non-draft concurrent state', async () => {
+  it("does not claim draft state when rollback reports a non-draft concurrent state", async () => {
     setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
-    mockPushVariantToCore.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    mockPushVariantToCore.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     mockRollbackVariantApproval.mockResolvedValueOnce({
       applied: false,
-      variant: makeVariant({ isDraft: false, coreQuestionId: 'core-from-retry' }),
+      variant: makeVariant({ isDraft: false, coreQuestionId: "core-from-retry" }),
     });
 
     const res = await request(app)
-      .put('/api/questions/variants/42')
-      .set('Cookie', 'session=valid')
+      .put("/api/questions/variants/42")
+      .set("Cookie", "session=valid")
       .send({ isDraft: false });
 
     expect(res.status).toBe(500);
-    expect(res.body.error).toBe('VARIANT_ROLLBACK_FAILED');
+    expect(res.body.error).toBe("VARIANT_ROLLBACK_FAILED");
   });
 
-  it('re-approval after a transient Core push failure retries the push (state-based gating)', async () => {
+  it("re-approval after a transient Core push failure retries the push (state-based gating)", async () => {
     setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
 
     mockPushVariantToCore.mockRejectedValueOnce(new Error("ECONNREFUSED"));
@@ -373,7 +378,7 @@ describe("PUT /api/questions/variants/:id — Core push on approval", () => {
       42,
       COURSE.userId,
       expect.objectContaining({ id: 42, isDraft: false }),
-      'cuid-core-q-retry',
+      "cuid-core-q-retry",
     );
   });
 });

@@ -7,22 +7,22 @@
  * between endpoints.
  */
 
-import { prisma } from '../config/database.js';
-import { CourseContentImportSchema } from '../../../shared/schemas/mutations.js';
-import { cloneCourseContent, cloneLessonsFromOffering } from './courseCloning.js';
-import { resolveCoreCourseById } from './courseResolver.js';
-import { setCoreCoursePublishState } from './eduaiClient.js';
+import { prisma } from "../config/database.js";
+import { CourseContentImportSchema } from "../../../shared/schemas/mutations.js";
+import { cloneCourseContent, cloneLessonsFromOffering } from "./courseCloning.js";
+import { resolveCoreCourseById } from "./courseResolver.js";
+import { setCoreCoursePublishState } from "./eduaiClient.js";
 import {
   authorizeLiveCoursePrincipal,
   isAllowedLiveCourseStaffPrincipal,
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
-} from './liveCoursePrincipal.js';
+} from "./liveCoursePrincipal.js";
 
 export class CourseMutationError extends Error {
   constructor(message, status = 400, code) {
     super(message);
-    this.name = 'CourseMutationError';
+    this.name = "CourseMutationError";
     this.status = status;
     if (code) this.code = code;
   }
@@ -35,7 +35,7 @@ function parseImportRequest(body = {}) {
   if (!parsed.success) {
     const field = parsed.error.issues[0]?.path[0];
     throw new CourseMutationError(
-      field === 'sourceCourseId' ? 'Invalid sourceCourseId' : 'Invalid import request',
+      field === "sourceCourseId" ? "Invalid sourceCourseId" : "Invalid import request",
     );
   }
   const {
@@ -45,7 +45,7 @@ function parseImportRequest(body = {}) {
     targetModuleId: numericTargetModuleId = null,
   } = parsed.data;
   if (normalizedModuleIds.length === 0 && normalizedLessonIds.length === 0) {
-    throw new CourseMutationError('Nothing to import');
+    throw new CourseMutationError("Nothing to import");
   }
   return {
     normalizedModuleIds,
@@ -57,7 +57,7 @@ function parseImportRequest(body = {}) {
 
 async function loadCourseForAdmin(
   courseId,
-  missingMessage = 'Course not found',
+  missingMessage = "Course not found",
   missingStatus = 404,
 ) {
   const course = await prisma.courseOffering.findUnique({
@@ -68,9 +68,9 @@ async function loadCourseForAdmin(
   return course;
 }
 
-async function requireLiveCourseAdmin(course, user, message = 'Not authorized for this course') {
+async function requireLiveCourseAdmin(course, user, message = "Not authorized for this course") {
   const principal = await authorizeLiveCoursePrincipal(course, user);
-  if (principal.state === 'unavailable') {
+  if (principal.state === "unavailable") {
     throw new CourseMutationError(
       LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
       503,
@@ -95,19 +95,19 @@ export async function importCourseContentForUser({ courseId, body, user }) {
   // source authored content is read until every distinct source course has
   // passed the live Core principal check below.
   if (normalizedModuleIds.length > 0 && numericSourceCourseId === null) {
-    throw new CourseMutationError('sourceCourseId required when importing modules');
+    throw new CourseMutationError("sourceCourseId required when importing modules");
   }
   let lessonSources = null;
   if (normalizedLessonIds.length > 0) {
     if (numericTargetModuleId === null || !Number.isFinite(numericTargetModuleId)) {
-      throw new CourseMutationError('targetModuleId required when importing lessons');
+      throw new CourseMutationError("targetModuleId required when importing lessons");
     }
     const targetModule = await prisma.module.findUnique({
       where: { id: numericTargetModuleId },
       select: { courseOfferingId: true },
     });
     if (!targetModule || targetModule.courseOfferingId !== courseId) {
-      throw new CourseMutationError('targetModuleId does not belong to destination course');
+      throw new CourseMutationError("targetModuleId does not belong to destination course");
     }
 
     // First resolve only the parent course ids. This metadata lookup lets us
@@ -117,7 +117,7 @@ export async function importCourseContentForUser({ courseId, body, user }) {
       select: { id: true, module: { select: { courseOfferingId: true } } },
     });
     if (lessonSources.length !== normalizedLessonIds.length) {
-      throw new CourseMutationError('One or more lessons were not found');
+      throw new CourseMutationError("One or more lessons were not found");
     }
   }
 
@@ -131,16 +131,16 @@ export async function importCourseContentForUser({ courseId, body, user }) {
     const sourceCourse = await loadCourseForAdmin(
       sourceCourseId,
       normalizedModuleIds.length > 0 && sourceCourseId === numericSourceCourseId
-        ? 'Not authorized for source course'
-        : 'Not authorized for lesson source course',
+        ? "Not authorized for source course"
+        : "Not authorized for lesson source course",
       403,
     );
     await requireLiveCourseAdmin(
       sourceCourse,
       user,
       normalizedModuleIds.length > 0 && sourceCourseId === numericSourceCourseId
-        ? 'Not authorized for source course'
-        : 'Not authorized for lesson source course',
+        ? "Not authorized for source course"
+        : "Not authorized for lesson source course",
     );
   }
 
@@ -154,7 +154,7 @@ export async function importCourseContentForUser({ courseId, body, user }) {
       },
     });
     if (moduleCount !== normalizedModuleIds.length) {
-      throw new CourseMutationError('One or more modules do not belong to source course');
+      throw new CourseMutationError("One or more modules do not belong to source course");
     }
     moduleImport = { sourceCourseId: numericSourceCourseId, moduleIds: normalizedModuleIds };
   }
@@ -167,7 +167,7 @@ export async function importCourseContentForUser({ courseId, body, user }) {
       include: { module: { select: { courseOfferingId: true } } },
     });
     if (lessons.length !== normalizedLessonIds.length) {
-      throw new CourseMutationError('One or more lessons were not found');
+      throw new CourseMutationError("One or more lessons were not found");
     }
     lessonImport = { lessonIds: normalizedLessonIds, targetModuleId: numericTargetModuleId };
   }
@@ -190,11 +190,11 @@ export async function importCourseContentForUser({ courseId, body, user }) {
     where: { id: courseId },
     include: {
       modules: {
-        orderBy: { position: 'asc' },
+        orderBy: { position: "asc" },
         include: {
           lessons: {
-            orderBy: { position: 'asc' },
-            include: { activities: { orderBy: { position: 'asc' } } },
+            orderBy: { position: "asc" },
+            include: { activities: { orderBy: { position: "asc" } } },
           },
         },
       },

@@ -3,8 +3,8 @@
  * Each function maps to one Core endpoint and throws on non-success responses
  * (status stored on the error as .status, parsed body as .body).
  */
-import { config } from '../config/settings.js';
-import { assertQmAiDeadline } from '../middleware/aiAdmission.js';
+import { config } from "../config/settings.js";
+import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -129,7 +129,7 @@ async function fetchCoursePages(
  */
 async function fetchFromCore(
   path,
-  { method = 'GET', body, cookie, preferCookie = false, cookieOnly = false, signal } = {},
+  { method = "GET", body, cookie, preferCookie = false, cookieOnly = false, signal } = {},
 ) {
   assertQmAiDeadline({ signal });
   const url = `${config.coreUrl}${path}`;
@@ -150,7 +150,7 @@ async function fetchFromCore(
     try {
       res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         ...(signal ? { signal } : {}),
       });
@@ -174,10 +174,11 @@ async function fetchFromCore(
 }
 
 function coreError(message, status, body) {
-  const code = typeof body?.error === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(body.error)
-    ? body.error
-    : null;
-  return Object.assign(new Error(code || 'Core request failed'), {
+  const code =
+    typeof body?.error === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(body.error)
+      ? body.error
+      : null;
+  return Object.assign(new Error(code || "Core request failed"), {
     status,
     body,
     ...(code ? { code, isPublic: true } : {}),
@@ -375,7 +376,7 @@ export async function getMyProfileFromCore(cookieHeader, opts = {}) {
   let res;
   try {
     res = await fetch(`${config.coreUrl}/api/me`, {
-      headers: { cookie: cookieHeader ?? '' },
+      headers: { cookie: cookieHeader ?? "" },
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
   } catch (error) {

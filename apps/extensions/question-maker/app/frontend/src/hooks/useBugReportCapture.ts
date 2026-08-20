@@ -140,7 +140,7 @@ export function useBugReportCapture(enabled: boolean) {
   }, [enabled]);
 
   const captureScreenshot = useCallback(async (): Promise<string | null> => {
-    if (!enabled || typeof window === 'undefined') return null;
+    if (!enabled || typeof window === "undefined") return null;
     if (capturePromiseRef.current) return capturePromiseRef.current;
 
     const generation = captureGenerationRef.current;
@@ -150,11 +150,11 @@ export function useBugReportCapture(enabled: boolean) {
         const canvas = await html2canvas(document.body, {
           logging: false,
           useCORS: true,
-          scale: 0.5
+          scale: 0.5,
         });
         // JPEG keeps the report below Core's screenshot size cap.
         if (captureGenerationRef.current === generation) {
-          screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
+          screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
           return screenshotRef.current;
         }
         return null;

@@ -211,7 +211,14 @@ describe("POST /api/admin/cron-jobs (action) — intent: trigger", () => {
 
   it("reuses an existing RUNNING run instead of spawning again", async () => {
     vi.mocked(startCronRun).mockResolvedValue({ runId: "run-existing", created: false });
-    const res = await action(makeArgs(makeRequest("/api/admin/cron-jobs", "POST", { intent: "trigger", jobName: "backup-nightly" })));
+    const res = await action(
+      makeArgs(
+        makeRequest("/api/admin/cron-jobs", "POST", {
+          intent: "trigger",
+          jobName: "backup-nightly",
+        }),
+      ),
+    );
     expect(status(res)).toBe(200);
     expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
     expect(triggerCronJobAsync).not.toHaveBeenCalled();

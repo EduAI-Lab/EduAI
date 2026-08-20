@@ -51,13 +51,15 @@ const CHOICES = [
 describe("questionService MCQ multi-correct persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockTransaction.mockImplementation(async (operation) => operation({
-      $executeRaw: mockExecuteRaw,
-      variants: {
-        findFirst: mockVariantFindFirst,
-        update: mockVariantUpdate,
-      },
-    }));
+    mockTransaction.mockImplementation(async (operation) =>
+      operation({
+        $executeRaw: mockExecuteRaw,
+        variants: {
+          findFirst: mockVariantFindFirst,
+          update: mockVariantUpdate,
+        },
+      }),
+    );
   });
 
   describe("createVariant", () => {
@@ -152,7 +154,7 @@ describe("questionService MCQ multi-correct persistence", () => {
         correctAnswers: null,
         questionMetadata: {
           id: 10,
-          type: 'MCQ',
+          type: "MCQ",
           courseId: 1,
           course: { id: 1, coreCourseId: null },
         },
@@ -190,7 +192,7 @@ describe("questionService MCQ multi-correct persistence", () => {
         correctAnswers: null,
         questionMetadata: {
           id: 10,
-          type: 'MCQ',
+          type: "MCQ",
           courseId: 1,
           course: { id: 1, coreCourseId: null },
         },
@@ -237,7 +239,7 @@ describe("questionService MCQ multi-correct persistence", () => {
         correctAnswers: null,
         questionMetadata: {
           id: 11,
-          type: 'SA',
+          type: "SA",
           courseId: 1,
           course: { id: 1, coreCourseId: null },
         },

@@ -240,7 +240,7 @@ export default function AddActivityPanel({
               />
             </div>
 
-            {type === 'MCQ' ? (
+            {type === "MCQ" ? (
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -259,10 +259,10 @@ export default function AddActivityPanel({
                       <div
                         key={index}
                         className={cn(
-                          'relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors',
+                          "relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors",
                           isCorrect
-                            ? 'border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10'
-                            : 'border-transparent',
+                            ? "border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10"
+                            : "border-transparent",
                         )}
                       >
                         <button
@@ -277,12 +277,12 @@ export default function AddActivityPanel({
                               ? `Option ${letter} (correct answer)`
                               : `Mark option ${letter} correct`
                           }
-                          title={isCorrect ? 'Correct answer' : 'Mark as correct answer'}
+                          title={isCorrect ? "Correct answer" : "Mark as correct answer"}
                           className={cn(
-                            'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            "flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             isCorrect
-                              ? 'bg-[var(--color-success-500)] text-white'
-                              : 'bg-primary/15 text-foreground hover:bg-primary/30',
+                              ? "bg-[var(--color-success-500)] text-white"
+                              : "bg-primary/15 text-foreground hover:bg-primary/30",
                           )}
                         >
                           {letter}
@@ -356,9 +356,9 @@ export default function AddActivityPanel({
                 Main topic
               </Label>
               <Select
-                value={selectedMainTopicId !== '' ? selectedMainTopicId : undefined}
+                value={selectedMainTopicId !== "" ? selectedMainTopicId : undefined}
                 onValueChange={(value) => {
-                  const newMainTopicId = value ?? '';
+                  const newMainTopicId = value ?? "";
                   setSelectedMainTopicId(newMainTopicId);
                   // Remove new main topic from secondary topics if it was selected there
                   if (newMainTopicId) {
@@ -387,20 +387,20 @@ export default function AddActivityPanel({
                 course's topics would be unreachable and unmentioned. */}
               {topics.length < topicsTotal && (
                 <p className="text-xs text-muted-foreground">
-                  Showing {topics.length} of {topicsTotal} topics.{' '}
+                  Showing {topics.length} of {topicsTotal} topics.{" "}
                   <button
                     type="button"
                     className="font-medium text-primary underline underline-offset-2 disabled:opacity-60"
                     onClick={() => void loadMoreTopics()}
                     disabled={loadingMoreTopics}
                   >
-                    {loadingMoreTopics ? 'Loading…' : 'Load more'}
+                    {loadingMoreTopics ? "Loading…" : "Load more"}
                   </button>
                 </p>
               )}
               {!loadingTopics && !topicsError && topics.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No topics on this course yet. Open the course page and use{' '}
+                  No topics on this course yet. Open the course page and use{" "}
                   <span className="font-medium text-foreground">Sync topics from EduAI Core</span>,
                   then try again.
                 </p>
@@ -410,7 +410,7 @@ export default function AddActivityPanel({
             <div className="space-y-2">
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
-                Secondary topics{' '}
+                Secondary topics{" "}
                 <span className="font-normal text-muted-foreground">(optional)</span>
               </span>
               <MultiSelect
@@ -467,16 +467,16 @@ export default function AddActivityPanel({
                       aria-pressed={mode.enabled}
                       onClick={() => {
                         if (mode.enabled && !mode.other) {
-                          alert('At least one AI mode must be enabled');
+                          alert("At least one AI mode must be enabled");
                           return;
                         }
                         mode.set(!mode.enabled);
                       }}
                       className={cn(
-                        'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition',
+                        "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
                         mode.enabled
-                          ? 'border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]'
-                          : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                          ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
                       )}
                     >
                       <ModeIcon className="size-3.5" aria-hidden="true" />
@@ -490,7 +490,7 @@ export default function AddActivityPanel({
             <div className="space-y-2">
               <Label htmlFor="new-activity-hint" className="flex items-center gap-1.5">
                 <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
-                Hint{' '}
+                Hint{" "}
                 <span className="font-normal normal-case text-muted-foreground">(optional)</span>
               </Label>
               <Input
@@ -513,7 +513,7 @@ export default function AddActivityPanel({
           )}
           <Button type="submit" disabled={busy || !question.trim()}>
             <IconPlus className="size-4" aria-hidden="true" />
-            {busy ? 'Adding…' : 'Add activity'}
+            {busy ? "Adding…" : "Add activity"}
           </Button>
         </DialogFooter>
       </form>

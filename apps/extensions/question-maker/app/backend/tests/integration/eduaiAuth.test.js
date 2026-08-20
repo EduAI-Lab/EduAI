@@ -1,12 +1,12 @@
 /**
  * Ensures EduAI proxy routes require authentication (no DB).
  */
-import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import app from '../../src/app.js';
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import app from "../../src/app.js";
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
 });
 
 afterEach(() => {

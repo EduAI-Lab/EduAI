@@ -5,10 +5,7 @@
 import axios from "axios";
 import { config } from "../config/settings.js";
 import { logger } from "../utils/logger.js";
-import {
-  safeRequestLogFields,
-  toStableUpstreamError,
-} from "../utils/safeLogging.js";
+import { safeRequestLogFields, toStableUpstreamError } from "../utils/safeLogging.js";
 import {
   generationBudgetError,
   validateGenerationBudget,
@@ -30,9 +27,10 @@ function perCallAbortSignal(parentSignal, timeoutMs) {
   const timeoutController = new AbortController();
   const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
   timer.unref?.();
-  const signal = parentSignal && typeof AbortSignal.any === 'function'
-    ? AbortSignal.any([parentSignal, timeoutController.signal])
-    : parentSignal || timeoutController.signal;
+  const signal =
+    parentSignal && typeof AbortSignal.any === "function"
+      ? AbortSignal.any([parentSignal, timeoutController.signal])
+      : parentSignal || timeoutController.signal;
   return {
     signal,
     timedOut: () => timeoutController.signal.aborted,
@@ -297,18 +295,14 @@ class EduAIService {
         messageCount: (requestPayload.messages || []).length,
       });
 
-      const response = await axios.post(
-        `${this.baseURL}/api/completion`,
-        requestPayload,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
-          timeout: timeoutMs,
-          signal: callSignal.signal,
-        }
-      );
+      const response = await axios.post(`${this.baseURL}/api/completion`, requestPayload, {
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        timeout: timeoutMs,
+        signal: callSignal.signal,
+      });
 
       const elapsedMs = Date.now() - chatStartMs;
       const responseData = response.data;
@@ -323,7 +317,12 @@ class EduAIService {
       if (error?.response?.status === 429 || error?.statusCode === 429) {
         throw toStableUpstreamError(error);
       }
-      if (isQmAiDeadlineError(error) || params?.signal?.aborted || (deadlineAt != null && deadlineAt <= Date.now()) || callSignal?.timedOut()) {
+      if (
+        isQmAiDeadlineError(error) ||
+        params?.signal?.aborted ||
+        (deadlineAt != null && deadlineAt <= Date.now()) ||
+        callSignal?.timedOut()
+      ) {
         throw createQmAiDeadlineError();
       }
       if (error.response) {
@@ -373,9 +372,7 @@ class EduAIService {
     }
 
     if (!courseCode && !courseId) {
-      throw new Error(
-        "Prompt and courseCode (or courseId) are required for question generation"
-      );
+      throw new Error("Prompt and courseCode (or courseId) are required for question generation");
     }
 
     const boundedPrompt = budget.prompt;
@@ -497,9 +494,12 @@ OUTPUT RULES (mandatory):
         const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload ?? "");
         parsedResponse = parseQuestionsPayloadFromText(str);
         if (parsedResponse == null) {
-          console.warn(`${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`, {
-            attemptCount: 1,
-          });
+          console.warn(
+            `${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`,
+            {
+              attemptCount: 1,
+            },
+          );
           const repairSystem = `${systemPrompt}
 
 CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}). No markdown, no code fences, no prose before or after the JSON.`;
@@ -541,7 +541,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       }
 
       // Check if the response is an error object
-      if (parsedResponse && typeof parsedResponse === 'object' && parsedResponse.error === true) {
+      if (parsedResponse && typeof parsedResponse === "object" && parsedResponse.error === true) {
         throw new Error("AI was unable to generate questions");
       }
 
@@ -621,148 +621,151 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       // boundary authoritative so one response cannot fan out into an
       // unbounded approval/upload batch; `boundedNumQuestions` already applies
       // the deployment-wide config.maxQuestions ceiling.
-      const normalizedQuestions = validQuestions.slice(0, boundedNumQuestions).map((question, index) => {
-        console.log(`${DEBUG_PREFIX} normalizing question`, {
-          questionIndex: index + 1,
-          choiceCount: Array.isArray(question.choices) ? question.choices.length : 0,
-        });
+      const normalizedQuestions = validQuestions
+        .slice(0, boundedNumQuestions)
+        .map((question, index) => {
+          console.log(`${DEBUG_PREFIX} normalizing question`, {
+            questionIndex: index + 1,
+            choiceCount: Array.isArray(question.choices) ? question.choices.length : 0,
+          });
 
-        let content = question.content.trim();
+          let content = question.content.trim();
 
-        const description =
-          typeof question.description === "string" && question.description.trim().length > 0
-            ? question.description.trim()
-            : "";
+          const description =
+            typeof question.description === "string" && question.description.trim().length > 0
+              ? question.description.trim()
+              : "";
 
-        const primaryCandidate = Number(question.primary_topic_id);
-        const primaryTopicId = Number.isInteger(primaryCandidate) ? primaryCandidate : null;
+          const primaryCandidate = Number(question.primary_topic_id);
+          const primaryTopicId = Number.isInteger(primaryCandidate) ? primaryCandidate : null;
 
-        const secondaryTopicIds = Array.isArray(question.secondary_topic_ids)
-          ? Array.from(
-              new Set(
-                question.secondary_topic_ids
-                  .map((value) => Number(value))
-                  .filter((value) => Number.isInteger(value) && value !== primaryTopicId),
-              ),
-            )
-          : [];
+          const secondaryTopicIds = Array.isArray(question.secondary_topic_ids)
+            ? Array.from(
+                new Set(
+                  question.secondary_topic_ids
+                    .map((value) => Number(value))
+                    .filter((value) => Number.isInteger(value) && value !== primaryTopicId),
+                ),
+              )
+            : [];
 
-        const questionType =
-          typeof question.type === "string" && question.type.toUpperCase().trim() === "SA"
-            ? "SA"
-            : typeof question.type === "string" && question.type.toUpperCase().trim() === "LA"
-              ? "LA"
-              : "MCQ";
+          const questionType =
+            typeof question.type === "string" && question.type.toUpperCase().trim() === "SA"
+              ? "SA"
+              : typeof question.type === "string" && question.type.toUpperCase().trim() === "LA"
+                ? "LA"
+                : "MCQ";
 
-        // Handle choices for MCQ questions
-        let choices = null;
-        let answer = null;
+          // Handle choices for MCQ questions
+          let choices = null;
+          let answer = null;
 
-        if (questionType === "MCQ") {
-          // Normalize choices: accept array of {letter, text} or object like { "A": "text", "B": "text" }
-          let rawChoices = question.choices;
-          if (rawChoices !== null && typeof rawChoices === "object" && !Array.isArray(rawChoices)) {
-            rawChoices = Object.entries(rawChoices)
-              .map(([letter, text]) => ({
-                letter: String(letter).trim().toUpperCase() || null,
-                text: typeof text === "string" ? text.trim() : String(text || ""),
-              }))
-              .filter((c) => c.letter && c.text);
-          }
-          if (Array.isArray(rawChoices) && rawChoices.length > 0) {
-            choices = rawChoices
-              .map((choice) => {
-                if (typeof choice === "object" && choice !== null) {
-                  const letter =
-                    typeof choice.letter === "string" ? choice.letter.toUpperCase().trim() : null;
-                  const text = typeof choice.text === "string" ? choice.text.trim() : "";
+          if (questionType === "MCQ") {
+            // Normalize choices: accept array of {letter, text} or object like { "A": "text", "B": "text" }
+            let rawChoices = question.choices;
+            if (
+              rawChoices !== null &&
+              typeof rawChoices === "object" &&
+              !Array.isArray(rawChoices)
+            ) {
+              rawChoices = Object.entries(rawChoices)
+                .map(([letter, text]) => ({
+                  letter: String(letter).trim().toUpperCase() || null,
+                  text: typeof text === "string" ? text.trim() : String(text || ""),
+                }))
+                .filter((c) => c.letter && c.text);
+            }
+            if (Array.isArray(rawChoices) && rawChoices.length > 0) {
+              choices = rawChoices
+                .map((choice) => {
+                  if (typeof choice === "object" && choice !== null) {
+                    const letter =
+                      typeof choice.letter === "string" ? choice.letter.toUpperCase().trim() : null;
+                    const text = typeof choice.text === "string" ? choice.text.trim() : "";
 
-                  if (letter && text) {
-                    return { letter, text };
+                    if (letter && text) {
+                      return { letter, text };
+                    }
                   }
+                  return null;
+                })
+                .filter((choice) => choice !== null);
+
+              // Ensure unique letters
+              const seenLetters = new Set();
+              choices = choices.filter((choice) => {
+                if (seenLetters.has(choice.letter)) {
+                  return false;
                 }
-                return null;
-              })
-              .filter((choice) => choice !== null);
-
-            // Ensure unique letters
-            const seenLetters = new Set();
-            choices = choices.filter((choice) => {
-              if (seenLetters.has(choice.letter)) {
-                return false;
-              }
-              seenLetters.add(choice.letter);
-              return true;
-            });
-          }
-
-          // Fallback 1: model may omit "choices" or embed them in content (e.g. "Question?\nA) ...\nB) ...")
-          if ((!choices || choices.length === 0) && content) {
-            const parsed = parseChoicesFromContent(content);
-            if (parsed.choices.length >= 2) {
-              content = parsed.questionText;
-              choices = parsed.choices;
-              console.log(`${DEBUG_PREFIX} MCQ choices parsed from content`, {
-                count: choices.length,
+                seenLetters.add(choice.letter);
+                return true;
               });
             }
-          }
 
-          // Fallback 2: model returned MCQ but no choices – use placeholders so user can edit
-          if (!choices || choices.length === 0) {
-            if (mcqCountEnforced) {
-              choices = [];
-              console.log(
-                `${DEBUG_PREFIX} MCQ had no choices; leaving empty (strict choice count — caller must retry)`,
-              );
-            } else {
-              choices = [
-                { letter: "A", text: "Option A" },
-                { letter: "B", text: "Option B" },
-                { letter: "C", text: "Option C" },
-                { letter: "D", text: "Option D" },
-              ];
-              console.log(`${DEBUG_PREFIX} MCQ had no choices; using placeholders`);
+            // Fallback 1: model may omit "choices" or embed them in content (e.g. "Question?\nA) ...\nB) ...")
+            if ((!choices || choices.length === 0) && content) {
+              const parsed = parseChoicesFromContent(content);
+              if (parsed.choices.length >= 2) {
+                content = parsed.questionText;
+                choices = parsed.choices;
+                console.log(`${DEBUG_PREFIX} MCQ choices parsed from content`, {
+                  count: choices.length,
+                });
+              }
             }
+
+            // Fallback 2: model returned MCQ but no choices – use placeholders so user can edit
+            if (!choices || choices.length === 0) {
+              if (mcqCountEnforced) {
+                choices = [];
+                console.log(
+                  `${DEBUG_PREFIX} MCQ had no choices; leaving empty (strict choice count — caller must retry)`,
+                );
+              } else {
+                choices = [
+                  { letter: "A", text: "Option A" },
+                  { letter: "B", text: "Option B" },
+                  { letter: "C", text: "Option C" },
+                  { letter: "D", text: "Option D" },
+                ];
+                console.log(`${DEBUG_PREFIX} MCQ had no choices; using placeholders`);
+              }
+            }
+
+            // Normalize answer to just the letter for MCQ
+            if (typeof question.answer === "string" && question.answer.trim().length > 0) {
+              const answerText = question.answer.trim();
+              // Extract letter from formats like "B", "B)", "B) Option B", etc.
+              const letterMatch = answerText.match(/^([A-Za-z])/);
+              answer = letterMatch ? letterMatch[1].toUpperCase() : answerText;
+            }
+          } else {
+            // For SA/LA, keep full answer text
+            answer =
+              typeof question.answer === "string" && question.answer.trim().length > 0
+                ? question.answer.trim()
+                : null;
           }
 
-          // Normalize answer to just the letter for MCQ
-          if (typeof question.answer === "string" && question.answer.trim().length > 0) {
-            const answerText = question.answer.trim();
-            // Extract letter from formats like "B", "B)", "B) Option B", etc.
-            const letterMatch = answerText.match(/^([A-Za-z])/);
-            answer = letterMatch ? letterMatch[1].toUpperCase() : answerText;
-          }
-        } else {
-          // For SA/LA, keep full answer text
-          answer =
-            typeof question.answer === "string" && question.answer.trim().length > 0
-              ? question.answer.trim()
-              : null;
-        }
-
-        return {
-          content,
-          description,
-          difficulty: question.difficulty,
-          reasoning_level: question.reasoning_level,
-          type: questionType,
-          answer,
-          choices, // Will be null for SA/LA, array for MCQ
-          primary_topic_id: primaryTopicId,
-          secondary_topic_ids: secondaryTopicIds,
-        };
-      });
+          return {
+            content,
+            description,
+            difficulty: question.difficulty,
+            reasoning_level: question.reasoning_level,
+            type: questionType,
+            answer,
+            choices, // Will be null for SA/LA, array for MCQ
+            primary_topic_id: primaryTopicId,
+            secondary_topic_ids: secondaryTopicIds,
+          };
+        });
 
       console.log(`${DEBUG_PREFIX} generateQuestions success`, {
         count: normalizedQuestions.length,
       });
       return normalizedQuestions;
     } catch (error) {
-      console.error(
-        `${DEBUG_PREFIX} generateQuestions failed`,
-        safeRequestLogFields(error),
-      );
+      console.error(`${DEBUG_PREFIX} generateQuestions failed`, safeRequestLogFields(error));
       if (isQmAiDeadlineError(error) || Number(error?.statusCode) === 429) {
         throw error;
       }
@@ -810,10 +813,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         return !ignored.some((k) => code === k || id === k);
       });
     } catch (error) {
-      console.error(
-        `${DEBUG_PREFIX} courses request failed`,
-        safeRequestLogFields(error),
-      );
+      console.error(`${DEBUG_PREFIX} courses request failed`, safeRequestLogFields(error));
       throw toStableUpstreamError(error);
     }
   }
@@ -843,10 +843,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
 
       return response.data;
     } catch (error) {
-      console.error(
-        `${DEBUG_PREFIX} topics request failed`,
-        safeRequestLogFields(error),
-      );
+      console.error(`${DEBUG_PREFIX} topics request failed`, safeRequestLogFields(error));
       throw toStableUpstreamError(error);
     }
   }
@@ -908,7 +905,13 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
    * UI can tell the user which path is live. `forceProvider` pins the probe to a
    * specific path (e.g. `'ollama'` for the independent UBC status chip).
    */
-  async testApiKey({ cookie, apiKeys: clientApiKeys = {}, forceProvider, signal, deadlineAt } = {}) {
+  async testApiKey({
+    cookie,
+    apiKeys: clientApiKeys = {},
+    forceProvider,
+    signal,
+    deadlineAt,
+  } = {}) {
     const admission = validateTestApiKeyAdmission({
       apiKeys: clientApiKeys,
       ...(forceProvider != null ? { provider: forceProvider } : {}),
@@ -966,11 +969,15 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         return {
           success: false,
           provider,
-          error: 'AI provider rate limit exceeded; try again later',
+          error: "AI provider rate limit exceeded; try again later",
           statusCode: 429,
         };
       }
-      if (isQmAiDeadlineError(error) || signal?.aborted || (deadlineAt != null && deadlineAt <= Date.now())) {
+      if (
+        isQmAiDeadlineError(error) ||
+        signal?.aborted ||
+        (deadlineAt != null && deadlineAt <= Date.now())
+      ) {
         throw createQmAiDeadlineError();
       }
       if (error.statusCode === 401) {

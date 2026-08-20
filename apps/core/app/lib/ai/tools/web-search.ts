@@ -57,10 +57,7 @@ async function runWithinDeadline<T>(
       callback();
     };
     const onAbort = () => finish(() => reject(createAbortError()));
-    const timer = setTimeout(
-      () => finish(() => reject(createDeadlineError())),
-      remainingMs,
-    );
+    const timer = setTimeout(() => finish(() => reject(createDeadlineError())), remainingMs);
     timer.unref?.();
     signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -219,14 +216,18 @@ export async function runWebSearch({
 
     // Shape 1: { web: [...], news: [...] }
     if (r && typeof r === "object" && !Array.isArray(r)) {
-      const webArr = Array.isArray((r as { web?: unknown[] }).web) ? (r as { web: unknown[] }).web : [];
+      const webArr = Array.isArray((r as { web?: unknown[] }).web)
+        ? (r as { web: unknown[] }).web
+        : [];
       for (const entry of webArr) {
         if (out.length >= max) break;
         const parsed = parseWebSearchResult(entry);
         if (parsed) out.push(parsed);
       }
 
-      const newsArr = Array.isArray((r as { news?: unknown[] }).news) ? (r as { news: unknown[] }).news : [];
+      const newsArr = Array.isArray((r as { news?: unknown[] }).news)
+        ? (r as { news: unknown[] }).news
+        : [];
       for (const entry of newsArr) {
         if (out.length >= max) break;
         const parsed = parseNewsSearchResult(entry);
@@ -236,11 +237,15 @@ export async function runWebSearch({
 
     // Shape 2: { success: true, data: [...] }
     if (out.length < max && r && typeof r === "object" && !Array.isArray(r)) {
-      const dataArr = Array.isArray((r as { data?: unknown[] }).data) ? (r as { data: unknown[] }).data : [];
+      const dataArr = Array.isArray((r as { data?: unknown[] }).data)
+        ? (r as { data: unknown[] }).data
+        : [];
       for (const entry of dataArr) {
         if (out.length >= max) break;
         // Try as document first, then as generic SERP item
-        const docParsed = isFirecrawlDocument(entry) ? parseDocumentResult(entry as Document) : null;
+        const docParsed = isFirecrawlDocument(entry)
+          ? parseDocumentResult(entry as Document)
+          : null;
         if (docParsed) {
           out.push(docParsed);
           continue;
@@ -281,10 +286,7 @@ export async function runWebSearch({
     // fall through to second attempt with alternate signature
   }
 
-  let aggregated: ExternalSearchResult[] = collectFromResponse(
-    response,
-    boundedLimit,
-  );
+  let aggregated: ExternalSearchResult[] = collectFromResponse(response, boundedLimit);
 
   // Second attempt: request markdown scraping if the first came back empty
   if (aggregated.length === 0) {

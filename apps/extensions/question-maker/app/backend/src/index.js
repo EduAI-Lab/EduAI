@@ -1,11 +1,11 @@
 /**
  * Application entrypoint: starts the HTTP server and initializes the database connection in the background.
  */
-import app from './app.js';
-import { connectDatabase, prisma } from './config/database.js';
-import { config, assertCoreServiceKeyConfigured } from './config/settings.js';
-import { logger } from './utils/logger.js';
-import { initScheduler } from './jobs/scheduler.js';
+import app from "./app.js";
+import { connectDatabase, prisma } from "./config/database.js";
+import { config, assertCoreServiceKeyConfigured } from "./config/settings.js";
+import { logger } from "./utils/logger.js";
+import { initScheduler } from "./jobs/scheduler.js";
 
 const PORT = config.port;
 
@@ -55,12 +55,15 @@ const startServer = async () => {
   try {
     assertCoreServiceKeyConfigured();
 
-    server = app.listen(PORT, '0.0.0.0', () => {
-      logger.info({
-        port: PORT,
-        logLevel: config.logLevel,
-        nodeEnv: config.nodeEnv,
-      }, '🚀 Server running and ready for requests');
+    server = app.listen(PORT, "0.0.0.0", () => {
+      logger.info(
+        {
+          port: PORT,
+          logLevel: config.logLevel,
+          nodeEnv: config.nodeEnv,
+        },
+        "🚀 Server running and ready for requests",
+      );
 
       initScheduler();
     });

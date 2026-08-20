@@ -19,8 +19,8 @@ vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
-const { default: app } = await import('../../src/app.js');
-const { resetCourseAccessSyncForTests } = await import('../../src/services/courseListService.js');
+const { default: app } = await import("../../src/app.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -90,28 +90,28 @@ describeDb("course.js route coverage (integration)", () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  describe('POST /api/course', () => {
-    it('blocks a platform STUDENT before creating a local course anchor', async () => {
+  describe("POST /api/course", () => {
+    it("blocks a platform STUDENT before creating a local course anchor", async () => {
       vi.stubGlobal(
-        'fetch',
+        "fetch",
         vi.fn().mockResolvedValue({
           ok: true,
-          json: () => Promise.resolve({ user: { ...USER, role: 'STUDENT' } }),
+          json: () => Promise.resolve({ user: { ...USER, role: "STUDENT" } }),
         }),
       );
 
       const res = await request(app)
-        .post('/api/course')
+        .post("/api/course")
         .set(cookie())
-        .send({ coreCourseId: 'core-student-must-not-create' });
+        .send({ coreCourseId: "core-student-must-not-create" });
 
       expect(res.status).toBe(403);
       expect(
-        await prisma.course.findUnique({ where: { coreCourseId: 'core-student-must-not-create' } }),
+        await prisma.course.findUnique({ where: { coreCourseId: "core-student-must-not-create" } }),
       ).toBeNull();
     });
 
-    it('creates a new course anchor when the Core course is in the caller scoped list', async () => {
+    it("creates a new course anchor when the Core course is in the caller scoped list", async () => {
       vi.stubGlobal(
         "fetch",
         routedFetch([
@@ -304,15 +304,33 @@ describeDb("course.js route coverage (integration)", () => {
         "fetch",
         routedFetch([
           {
-            test: (u) => u.includes('/enrollments'),
+            test: (u) => u.includes("/enrollments"),
             reply: jsonRes({
               enrollments: [
-                { studentId: 's1', studentName: 'Alice', studentEmail: 'a@t.co', role: 'STUDENT', isActive: true },
-                { studentId: 's2', studentName: 'Bob', studentEmail: 'b@t.co', role: 'STUDENT', isActive: false },
+                {
+                  studentId: "s1",
+                  studentName: "Alice",
+                  studentEmail: "a@t.co",
+                  role: "STUDENT",
+                  isActive: true,
+                },
+                {
+                  studentId: "s2",
+                  studentName: "Bob",
+                  studentEmail: "b@t.co",
+                  role: "STUDENT",
+                  isActive: false,
+                },
                 // The route's access gate also consumes this authoritative
                 // roster; keep the requesting instructor enrolled while
                 // retaining separate active/inactive mapping coverage.
-                { studentId: USER.id, studentName: USER.name, studentEmail: USER.email, role: 'INSTRUCTOR', isActive: true },
+                {
+                  studentId: USER.id,
+                  studentName: USER.name,
+                  studentEmail: USER.email,
+                  role: "INSTRUCTOR",
+                  isActive: true,
+                },
               ],
             }),
           },
@@ -323,8 +341,8 @@ describeDb("course.js route coverage (integration)", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([
-        { userId: 's1', name: 'Alice', email: 'a@t.co', role: 'STUDENT' },
-        { userId: USER.id, name: USER.name, email: USER.email, role: 'INSTRUCTOR' },
+        { userId: "s1", name: "Alice", email: "a@t.co", role: "STUDENT" },
+        { userId: USER.id, name: USER.name, email: USER.email, role: "INSTRUCTOR" },
       ]);
     });
   });

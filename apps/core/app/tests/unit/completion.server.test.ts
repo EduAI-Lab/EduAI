@@ -56,9 +56,7 @@ describe("resolveCompletionPrompt", () => {
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     expect(result.system).toContain("You are a question generator.");
-    expect(result.messages).toEqual([
-      { role: "user", content: "Generate one MCQ." },
-    ]);
+    expect(result.messages).toEqual([{ role: "user", content: "Generate one MCQ." }]);
   });
 
   it("prepends the security policy block", () => {
@@ -170,9 +168,7 @@ describe("validateCompletionRequest", () => {
       error: "baseUrl exceeds maximum length",
     });
 
-    expect(
-      validateCompletionRequest({ ...validRequest, temperature: 2.01 }),
-    ).toEqual({
+    expect(validateCompletionRequest({ ...validRequest, temperature: 2.01 })).toEqual({
       ok: false,
       status: 422,
       error: "temperature must be between 0 and 2",
@@ -182,28 +178,21 @@ describe("validateCompletionRequest", () => {
 
 describe("resolveCompletionModelPolicy", () => {
   it("allows an active catalog model, including the seeded OpenCode model", async () => {
-    await expect(
-      resolveCompletionModelPolicy("opencode:deepseek-v4-flash"),
-    ).resolves.toEqual({
+    await expect(resolveCompletionModelPolicy("opencode:deepseek-v4-flash")).resolves.toEqual({
       ok: true,
       modelId: "opencode:deepseek-v4-flash",
       parsedModel: { providerId: "opencode", modelId: "deepseek-v4-flash" },
     });
-    expect(resolveActiveChatModel).toHaveBeenCalledWith(
-      "opencode:deepseek-v4-flash",
-    );
+    expect(resolveActiveChatModel).toHaveBeenCalledWith("opencode:deepseek-v4-flash");
   });
 
   it("denies models missing from the active catalog", async () => {
     vi.mocked(resolveActiveChatModel).mockResolvedValue(null);
 
-    await expect(
-      resolveCompletionModelPolicy("opencode:inactive-model"),
-    ).resolves.toEqual({
+    await expect(resolveCompletionModelPolicy("opencode:inactive-model")).resolves.toEqual({
       ok: false,
       status: 422,
-      error:
-        'Model "opencode:inactive-model" is not active in the Core model catalog',
+      error: 'Model "opencode:inactive-model" is not active in the Core model catalog',
     });
   });
 
@@ -211,8 +200,7 @@ describe("resolveCompletionModelPolicy", () => {
     await expect(resolveCompletionModelPolicy("not-a-provider-model")).resolves.toEqual({
       ok: false,
       status: 400,
-      error:
-        "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
+      error: "Invalid model id. Use provider:modelId (e.g. google:gemini-2.5-flash).",
     });
     expect(resolveActiveChatModel).not.toHaveBeenCalled();
   });

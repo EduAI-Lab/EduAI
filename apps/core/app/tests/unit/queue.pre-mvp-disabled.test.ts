@@ -37,10 +37,7 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
-import {
-  createAiJobWorker,
-  startAiJobWorkers,
-} from "~/lib/queue/worker.server";
+import { createAiJobWorker, startAiJobWorkers } from "~/lib/queue/worker.server";
 import { enqueue } from "~/lib/queue/enqueue.server";
 
 describe("pre-MVP AI-job queue disable", () => {
@@ -77,9 +74,7 @@ describe("pre-MVP AI-job queue disable", () => {
   });
 
   it("rejects direct worker construction before touching BullMQ", () => {
-    expect(() => createAiJobWorker("ai-jobs-chat")).toThrow(
-      /disabled.*pre-MVP/i,
-    );
+    expect(() => createAiJobWorker("ai-jobs-chat")).toThrow(/disabled.*pre-MVP/i);
     expect(workerConstructor).not.toHaveBeenCalled();
   });
 });

@@ -969,7 +969,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored for your account on this device and sent through EduAI services to{' '}
+              Stored for your account on this device and sent through EduAI services to{" "}
               {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
               device. You can also manage keys in Settings → Providers.
             </DialogDescription>

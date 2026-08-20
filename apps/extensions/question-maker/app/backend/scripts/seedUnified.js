@@ -33,7 +33,7 @@ if (existsSync(envPath)) {
 }
 
 if (!process.env.DATABASE_URL) {
-  console.error('Error: DATABASE_URL must be set in the environment or .env');
+  console.error("Error: DATABASE_URL must be set in the environment or .env");
   process.exit(1);
 }
 

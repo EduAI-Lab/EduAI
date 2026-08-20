@@ -23,11 +23,11 @@
 /** Roles AI Tutor understands on a course surface. */
 export function isSupportedCourseRole(role) {
   return (
-    role === 'STUDENT' ||
-    role === 'INSTRUCTOR' ||
-    role === 'TA' ||
-    role === 'ADMIN' ||
-    role === 'UNIT_ADMIN'
+    role === "STUDENT" ||
+    role === "INSTRUCTOR" ||
+    role === "TA" ||
+    role === "ADMIN" ||
+    role === "UNIT_ADMIN"
   );
 }
 
@@ -48,7 +48,7 @@ export async function resolveCourseAccess(
   authUser,
   { catalogCourses, publishedCoreIds, callerCourses = [] },
 ) {
-  if (authUser.role === 'ADMIN') {
+  if (authUser.role === "ADMIN") {
     // Platform admins see Core's full course catalog (#1074) — no local scoping.
     return {
       kind: "admin",
@@ -59,12 +59,12 @@ export async function resolveCourseAccess(
     };
   }
 
-  if (authUser.role === 'INSTRUCTOR') {
+  if (authUser.role === "INSTRUCTOR") {
     const taughtCoreIds = callerCourses
-      .filter((course) => course?.callerEnrollmentRole === 'INSTRUCTOR')
+      .filter((course) => course?.callerEnrollmentRole === "INSTRUCTOR")
       .map((course) => course.id);
     return {
-      kind: 'instructor',
+      kind: "instructor",
       where: { coreOfferingId: { in: taughtCoreIds } },
       isEmpty: taughtCoreIds.length === 0,
       taCoreIdSet: new Set(),
@@ -91,11 +91,11 @@ export async function resolveCourseAccess(
             .map((c) => c.id)
         : [];
     const taughtCoreIds = callerCourses
-      .filter((course) => course?.callerEnrollmentRole === 'INSTRUCTOR')
+      .filter((course) => course?.callerEnrollmentRole === "INSTRUCTOR")
       .map((course) => course.id);
     const visibleCoreIds = [...new Set([...deptCoreIds, ...taughtCoreIds])];
     return {
-      kind: 'unitAdmin',
+      kind: "unitAdmin",
       where: { coreOfferingId: { in: visibleCoreIds } },
       isEmpty: visibleCoreIds.length === 0,
       taCoreIdSet: new Set(),
@@ -104,18 +104,18 @@ export async function resolveCourseAccess(
   }
 
   const taCoreIds = callerCourses
-    .filter((course) => course?.callerEnrollmentRole === 'TA')
+    .filter((course) => course?.callerEnrollmentRole === "TA")
     .map((course) => course.id);
   const instructorCoreIds = callerCourses
-    .filter((course) => course?.callerEnrollmentRole === 'INSTRUCTOR')
+    .filter((course) => course?.callerEnrollmentRole === "INSTRUCTOR")
     .map((course) => course.id);
   const studentCoreIds = callerCourses
-    .filter((course) => course?.callerEnrollmentRole === 'STUDENT')
+    .filter((course) => course?.callerEnrollmentRole === "STUDENT")
     .map((course) => course.id);
 
   if (
-    authUser.role === 'TA' ||
-    (authUser.role === 'STUDENT' && (taCoreIds.length > 0 || instructorCoreIds.length > 0))
+    authUser.role === "TA" ||
+    (authUser.role === "STUDENT" && (taCoreIds.length > 0 || instructorCoreIds.length > 0))
   ) {
     // TAs see all TA-enrolled courses regardless of publish state (no progress),
     // plus published student-enrolled courses (with progress). The publish gate
@@ -128,9 +128,7 @@ export async function resolveCourseAccess(
     // and a student enrollment.
     const noProgressCoreIds = [...new Set([...taCoreIds, ...instructorCoreIds])];
     const OR = [
-      ...(noProgressCoreIds.length > 0
-        ? [{ coreOfferingId: { in: noProgressCoreIds } }]
-        : []),
+      ...(noProgressCoreIds.length > 0 ? [{ coreOfferingId: { in: noProgressCoreIds } }] : []),
       ...(studentCoreIds.length > 0
         ? [{ coreOfferingId: { in: studentCoreIds.filter((id) => publishedCoreIds.includes(id)) } }]
         : []),

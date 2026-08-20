@@ -1,10 +1,10 @@
-import { PrismaClient } from '@prisma/client';
-import { execSync } from 'child_process';
-import { SEED_IDS } from './seed';
+import { PrismaClient } from "@prisma/client";
+import { execSync } from "child_process";
+import { SEED_IDS } from "./seed";
 import {
   assertLocalDemoEnvironment,
   getLocalSeedPassword,
-} from '../app/lib/deployment-safety.server';
+} from "../app/lib/deployment-safety.server";
 
 const prisma = new PrismaClient();
 
@@ -35,20 +35,23 @@ async function main() {
   await prisma.$disconnect();
 
   if (userCount === 0) {
-    console.log('[auto-seed] No data found, seeding core database...');
-    execSync('npm run db:seed', { stdio: 'inherit' });
+    console.log("[auto-seed] No data found, seeding core database...");
+    execSync("npm run db:seed", { stdio: "inherit" });
   } else if (seedStudentsNeedingBackfill > 0) {
     console.log(
       `[auto-seed] ${seedStudentsNeedingBackfill} seed student(s) need student ID backfill — running targeted update...`,
     );
-    execSync('tsx prisma/seed-backfill-student-ids.ts', { stdio: 'inherit' });
+    execSync("tsx prisma/seed-backfill-student-ids.ts", { stdio: "inherit" });
   } else {
     console.log(`[auto-seed] Core database already has ${userCount} users, skipping seed.`);
   }
 }
 
 main().catch(async (error) => {
-  console.error('[auto-seed] Refused or failed:', error instanceof Error ? error.message : String(error));
+  console.error(
+    "[auto-seed] Refused or failed:",
+    error instanceof Error ? error.message : String(error),
+  );
   await prisma.$disconnect();
   process.exit(1);
 });

@@ -53,7 +53,7 @@ export interface CourseListSelection {
 
 /** Read the current selection out of a request URL, for use in a loader. */
 export function readCourseListSelection(url: URL): CourseListSelection {
-  const requestedPage = Number(url.searchParams.get('page'));
+  const requestedPage = Number(url.searchParams.get("page"));
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
   const filters = {} as Record<CourseFilterKey, string[]>;

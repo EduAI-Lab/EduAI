@@ -151,7 +151,8 @@ export function BugReportDialog({
         <DialogHeader>
           <DialogTitle>Report a bug</DialogTitle>
           <DialogDescription>
-            Describe the issue you encountered. Diagnostic attachments are optional and off by default.
+            Describe the issue you encountered. Diagnostic attachments are optional and off by
+            default.
           </DialogDescription>
         </DialogHeader>
 
@@ -227,8 +228,8 @@ export function BugReportDialog({
               <div>
                 <Label htmlFor="bug-report-diagnostics">Include diagnostics</Label>
                 <p className="text-xs text-muted-foreground">
-                  Attaches recent console and request metadata plus a screenshot of the current page.
-                  Review the page for sensitive course or student information first.
+                  Attaches recent console and request metadata plus a screenshot of the current
+                  page. Review the page for sensitive course or student information first.
                 </p>
               </div>
               <Switch

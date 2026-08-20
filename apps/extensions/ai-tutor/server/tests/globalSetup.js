@@ -63,7 +63,7 @@ function ensureTestDatabase(dbName) {
   // Windows often has no psql — use the dev Docker container when available.
   try {
     const out = execSync(`docker exec eduai-ai-tutor-db psql -U postgres -tc "${existsSql}"`, {
-      encoding: 'utf8',
+      encoding: "utf8",
     });
     if (!out.trim()) {
       execSync(`docker exec eduai-ai-tutor-db psql -U postgres -c "CREATE DATABASE ${quoted}"`, {

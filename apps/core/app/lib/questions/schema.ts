@@ -12,10 +12,12 @@ const CreateQuestionSchema = z
     reasoningLevel: z.enum(["FACTUAL", "ANALYTICAL", "APPLICATION"]).optional(),
     choices: z
       .array(
-        z.object({
-          letter: z.string().min(1).max(16),
-          text: z.string().min(1).max(20_000),
-        }).strict(),
+        z
+          .object({
+            letter: z.string().min(1).max(16),
+            text: z.string().min(1).max(20_000),
+          })
+          .strict(),
       )
       .max(20)
       .optional(),
@@ -75,9 +77,9 @@ const CreateQuestionSchema = z
     if (data.selectAllThatApply !== true) {
       return { ...data, selectAllThatApply: false, correctAnswers: null };
     }
-    const correctAnswers = [...new Set(
-      (data.correctAnswers ?? []).map((answer) => answer.trim().toUpperCase()),
-    )].sort();
+    const correctAnswers = [
+      ...new Set((data.correctAnswers ?? []).map((answer) => answer.trim().toUpperCase())),
+    ].sort();
     return {
       ...data,
       selectAllThatApply: true,

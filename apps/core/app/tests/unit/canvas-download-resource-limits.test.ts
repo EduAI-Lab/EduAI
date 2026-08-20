@@ -113,30 +113,27 @@ describe("Canvas file download resource and content validation", () => {
       mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       packagePath: "ppt/presentation.xml",
     },
-  ])(
-    "accepts a $filename OOXML package signature",
-    async ({ filename, mimeType, packagePath }) => {
-      const { default: JSZip } = await import("jszip");
-      const zip = new JSZip();
-      zip.file("[Content_Types].xml", "<Types />");
-      zip.file(packagePath, "<document />");
-      const bytes = await zip.generateAsync({ type: "uint8array" });
-      const fetchImpl = responseFetch(
-        new Response(Uint8Array.from(bytes).buffer, {
-          status: 200,
-          headers: { "content-type": mimeType },
-        }),
-      );
+  ])("accepts a $filename OOXML package signature", async ({ filename, mimeType, packagePath }) => {
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types />");
+    zip.file(packagePath, "<document />");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const fetchImpl = responseFetch(
+      new Response(Uint8Array.from(bytes).buffer, {
+        status: 200,
+        headers: { "content-type": mimeType },
+      }),
+    );
 
-      await expect(
-        downloadCanvasFile(
-          CREDENTIALS,
-          canvasFile({ filename, "content-type": mimeType }),
-          fetchImpl,
-        ),
-      ).resolves.toEqual(bytes);
-    },
-  );
+    await expect(
+      downloadCanvasFile(
+        CREDENTIALS,
+        canvasFile({ filename, "content-type": mimeType }),
+        fetchImpl,
+      ),
+    ).resolves.toEqual(bytes);
+  });
 
   it("cancels a chunked response as soon as actual bytes exceed the absolute cap", async () => {
     const cancel = vi.fn();

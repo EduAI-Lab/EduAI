@@ -13,15 +13,19 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   ensureCronSchedulerRunningMock.mockReset().mockResolvedValue(undefined);
-  const retryTimer = (globalThis as typeof globalThis & {
-    __coreServerRuntimeRetryTimer?: ReturnType<typeof setTimeout>;
-  }).__coreServerRuntimeRetryTimer;
+  const retryTimer = (
+    globalThis as typeof globalThis & {
+      __coreServerRuntimeRetryTimer?: ReturnType<typeof setTimeout>;
+    }
+  ).__coreServerRuntimeRetryTimer;
   if (retryTimer) clearTimeout(retryTimer);
   delete (globalThis as typeof globalThis & { __coreServerRuntimeStarted?: boolean })
     .__coreServerRuntimeStarted;
-  delete (globalThis as typeof globalThis & {
-    __coreServerRuntimeRetryTimer?: ReturnType<typeof setTimeout>;
-  }).__coreServerRuntimeRetryTimer;
+  delete (
+    globalThis as typeof globalThis & {
+      __coreServerRuntimeRetryTimer?: ReturnType<typeof setTimeout>;
+    }
+  ).__coreServerRuntimeRetryTimer;
 });
 
 afterEach(() => {

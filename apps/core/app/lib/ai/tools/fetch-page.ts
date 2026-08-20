@@ -31,10 +31,7 @@ export type FetchPageResult = {
   code?: FetchPageErrorCode;
 };
 
-export type FetchPageErrorCode =
-  | "UNSAFE_URL_TARGET"
-  | "REQUEST_ABORTED"
-  | "FETCH_FAILED";
+export type FetchPageErrorCode = "UNSAFE_URL_TARGET" | "REQUEST_ABORTED" | "FETCH_FAILED";
 
 class UnsafeFetchPageUrlError extends Error {
   constructor() {
@@ -69,7 +66,10 @@ function parseAndValidateTarget(raw: string): URL {
     throw new UnsafeFetchPageUrlError();
   }
 
-  const hostname = target.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  const hostname = target.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
   if (BLOCKED_HOSTNAMES.has(hostname) || isIP(hostname)) {
     // Literal checks are synchronous and happen before any vendor SDK call.
     try {
@@ -114,11 +114,7 @@ function failureResult(url: string, error: unknown): FetchPageResult {
       : isAbort
         ? "Fetch cancelled"
         : "Failed to fetch page content",
-    code: isUnsafe
-      ? "UNSAFE_URL_TARGET"
-      : isAbort
-        ? "REQUEST_ABORTED"
-        : "FETCH_FAILED",
+    code: isUnsafe ? "UNSAFE_URL_TARGET" : isAbort ? "REQUEST_ABORTED" : "FETCH_FAILED",
   };
 }
 

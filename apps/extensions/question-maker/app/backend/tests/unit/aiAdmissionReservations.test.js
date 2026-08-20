@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock('../../src/config/settings.js', () => ({
+vi.mock("../../src/config/settings.js", () => ({
   config: {
     qmAiRateLimitWindowMs: 60_000,
     qmAiProviderCallLimit: 60,
@@ -12,25 +12,25 @@ const {
   resetQmAiAdmissionForTests,
   setQmAiProviderReservationLimitForTests,
   qmAiCallerKey,
-} = await import('../../src/middleware/aiAdmission.js');
+} = await import("../../src/middleware/aiAdmission.js");
 
 function reqFor(id) {
   return { user: { id } };
 }
 
-describe('QM AI provider reservation LRU eviction', () => {
+describe("QM AI provider reservation LRU eviction", () => {
   afterEach(() => {
     resetQmAiAdmissionForTests();
     setQmAiProviderReservationLimitForTests(10_000);
   });
 
-  it('evicts the least-recently-refreshed identity, not a just-refreshed caller', () => {
+  it("evicts the least-recently-refreshed identity, not a just-refreshed caller", () => {
     setQmAiProviderReservationLimitForTests(2);
 
-    const a = reqFor('A');
-    const b = reqFor('B');
-    const c = reqFor('C');
-    expect(qmAiCallerKey(a)).toBe('qm-ai:user:A');
+    const a = reqFor("A");
+    const b = reqFor("B");
+    const c = reqFor("C");
+    expect(qmAiCallerKey(a)).toBe("qm-ai:user:A");
 
     expect(reserveQmAiProviderCalls(a, 5)).toMatchObject({ ok: true, used: 5 });
     expect(reserveQmAiProviderCalls(b, 7)).toMatchObject({ ok: true, used: 7 });
@@ -43,12 +43,12 @@ describe('QM AI provider reservation LRU eviction', () => {
     expect(retainedA.used).toBe(9);
   });
 
-  it('resets used to 0 for an evicted identity while retaining the live caller budget', () => {
+  it("resets used to 0 for an evicted identity while retaining the live caller budget", () => {
     setQmAiProviderReservationLimitForTests(2);
 
-    const a = reqFor('A');
-    const b = reqFor('B');
-    const c = reqFor('C');
+    const a = reqFor("A");
+    const b = reqFor("B");
+    const c = reqFor("C");
 
     expect(reserveQmAiProviderCalls(a, 5)).toMatchObject({ ok: true, used: 5 });
     expect(reserveQmAiProviderCalls(b, 7)).toMatchObject({ ok: true, used: 7 });

@@ -1,7 +1,7 @@
 /**
  * Unit tests for importTaughtCoursesFromCore (AI Tutor server).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const courseOfferingFindFirst = vi.fn();
 const courseOfferingFindMany = vi.fn();
@@ -46,7 +46,7 @@ vi.mock("../../src/services/topicSync.js", () => ({
   syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../src/services/enrollmentSync.js', () => ({
+vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TIMEOUT_MS: 3_000,
   syncCourseEnrollments,
   withCourseEnrollmentLock: vi.fn((courseOfferingId, operation) =>
@@ -93,13 +93,13 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
     });
   });
 
-  it('enforces exact Core INSTRUCTOR role inside the explicit import helper', async () => {
+  it("enforces exact Core INSTRUCTOR role inside the explicit import helper", async () => {
     await expect(
       importExternalCourseForUser(instructor, {
-        id: 'core-ta-only',
-        callerEnrollmentRole: 'TA',
+        id: "core-ta-only",
+        callerEnrollmentRole: "TA",
       }),
-    ).rejects.toMatchObject({ status: 403, code: 'CORE_COURSE_INSTRUCTOR_REQUIRED' });
+    ).rejects.toMatchObject({ status: 403, code: "CORE_COURSE_INSTRUCTOR_REQUIRED" });
 
     expect(courseOfferingFindFirst).not.toHaveBeenCalled();
     expect(courseInstructorCreate).not.toHaveBeenCalled();
@@ -109,23 +109,23 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
     vi.restoreAllMocks();
   });
 
-  it('does not return upstream error details when Core course listing fails', async () => {
-    const canary = 'SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack';
+  it("does not return upstream error details when Core course listing fails", async () => {
+    const canary = "SECRET_DB_PASSWORD https://core.invalid/private?token=secret stack";
     listEduAiCourses.mockRejectedValue(new Error(canary));
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
+    const result = await importTaughtCoursesFromCore(instructor, "session=abc");
 
     expect(result).toEqual({
       imported: 0,
       skipped: 0,
-      error: 'Core course listing unavailable',
+      error: "Core course listing unavailable",
     });
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
   });
 
-  it('skips auto-import for students', async () => {
-    const result = await importTaughtCoursesFromCore({ id: 's1', role: 'STUDENT' }, 'session=abc');
+  it("skips auto-import for students", async () => {
+    const result = await importTaughtCoursesFromCore({ id: "s1", role: "STUDENT" }, "session=abc");
 
     expect(result).toEqual({ imported: 0, skipped: 0 });
     expect(listEduAiCourses).not.toHaveBeenCalled();
@@ -134,10 +134,10 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
   it("imports Core courses not yet present locally as anchor-only rows", async () => {
     listEduAiCourses.mockResolvedValue([
       {
-        id: 'core-1',
-        code: 'COSC 111',
-        name: 'Computing Science',
-        callerEnrollmentRole: 'INSTRUCTOR',
+        id: "core-1",
+        code: "COSC 111",
+        name: "Computing Science",
+        callerEnrollmentRole: "INSTRUCTOR",
       },
     ]);
 
@@ -151,24 +151,24 @@ describe("importTaughtCoursesFromCore (AI Tutor)", () => {
     );
   });
 
-  it('does not promote a platform instructor who is a course TA to CourseInstructor LEAD', async () => {
+  it("does not promote a platform instructor who is a course TA to CourseInstructor LEAD", async () => {
     listEduAiCourses.mockResolvedValue([
-      { id: 'core-1', callerEnrollmentRole: 'TA', isPublished: true },
+      { id: "core-1", callerEnrollmentRole: "TA", isPublished: true },
     ]);
 
-    const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
+    const result = await importTaughtCoursesFromCore(instructor, "session=abc");
 
     expect(result.imported).toBe(0);
     expect(courseInstructorCreate).not.toHaveBeenCalled();
   });
 
-  it('skips courses already imported by the instructor', async () => {
+  it("skips courses already imported by the instructor", async () => {
     listEduAiCourses.mockResolvedValue([
       {
-        id: 'core-1',
-        code: 'COSC 111',
-        name: 'Computing Science',
-        callerEnrollmentRole: 'INSTRUCTOR',
+        id: "core-1",
+        code: "COSC 111",
+        name: "Computing Science",
+        callerEnrollmentRole: "INSTRUCTOR",
       },
     ]);
     courseOfferingFindMany.mockResolvedValue([{ coreOfferingId: "core-1" }]);
@@ -208,10 +208,10 @@ describe("ensureOfferingAnchors (AI Tutor, #1072 step 3 / #1074 admin create-on-
     vi.clearAllMocks();
   });
 
-  it('does nothing when every id already has a local anchor', async () => {
+  it("does nothing when every id already has a local anchor", async () => {
     courseOfferingFindMany.mockResolvedValue([
-      { coreOfferingId: 'core-1' },
-      { coreOfferingId: 'core-2' },
+      { coreOfferingId: "core-1" },
+      { coreOfferingId: "core-2" },
     ]);
 
     await ensureOfferingAnchors(["core-1", "core-2"]);
@@ -227,7 +227,7 @@ describe("ensureOfferingAnchors (AI Tutor, #1072 step 3 / #1074 admin create-on-
     expect(courseOfferingFindMany).toHaveBeenCalledTimes(1);
     expect(courseOfferingCreateMany).toHaveBeenCalledTimes(1);
     expect(courseOfferingCreateMany).toHaveBeenCalledWith({
-      data: [{ coreOfferingId: 'core-2' }, { coreOfferingId: 'core-3' }],
+      data: [{ coreOfferingId: "core-2" }, { coreOfferingId: "core-3" }],
       skipDuplicates: true,
     });
   });
@@ -261,10 +261,10 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
     });
   });
 
-  it('skips enrollment mirror for instructors', async () => {
+  it("skips enrollment mirror for instructors", async () => {
     const result = await importEnrolledCoursesFromCore(
-      { id: 'prof-1', role: 'INSTRUCTOR' },
-      'session=abc',
+      { id: "prof-1", role: "INSTRUCTOR" },
+      "session=abc",
     );
 
     expect(result).toEqual({ enrolled: 0, skipped: 0, removed: 0 });
@@ -286,28 +286,28 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
 
     expect(result.enrolled).toBe(1);
     expect(syncCourseEnrollments).toHaveBeenCalledWith(20, {
-      course: { id: 20, coreOfferingId: 'core-1' },
+      course: { id: 20, coreOfferingId: "core-1" },
       signal: expect.any(AbortSignal),
     });
     expect(courseEnrollmentUpsert).not.toHaveBeenCalled();
   });
 
-  it('bounds each authoritative mirror fetch before entering the enrollment lock', async () => {
+  it("bounds each authoritative mirror fetch before entering the enrollment lock", async () => {
     listEduAiCourses.mockResolvedValue([
       {
-        id: 'core-1',
-        callerEnrollmentRole: 'STUDENT',
+        id: "core-1",
+        callerEnrollmentRole: "STUDENT",
       },
     ]);
     const timeoutSpy = vi
-      .spyOn(AbortSignal, 'timeout')
+      .spyOn(AbortSignal, "timeout")
       .mockReturnValue(new AbortController().signal);
 
-    await importEnrolledCoursesFromCore(student, 'session=abc');
+    await importEnrolledCoursesFromCore(student, "session=abc");
 
     expect(timeoutSpy).toHaveBeenCalledWith(3_000);
     expect(syncCourseEnrollments).toHaveBeenCalledWith(20, {
-      course: { id: 20, coreOfferingId: 'core-1' },
+      course: { id: 20, coreOfferingId: "core-1" },
       signal: expect.any(AbortSignal),
     });
   });
@@ -359,8 +359,8 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
     expect(result.removed).toBe(1);
     expect(courseEnrollmentDeleteMany).toHaveBeenCalledWith({
       where: {
-        userId: 'student-1',
-        role: { in: ['STUDENT', 'TA'] },
+        userId: "student-1",
+        role: { in: ["STUDENT", "TA"] },
         courseOfferingId: 30,
       },
     });
@@ -373,31 +373,31 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
   it("removes stale TA enrollments no longer in Core, not just STUDENT ones", async () => {
     listEduAiCourses.mockResolvedValue([
       {
-        id: 'core-current-student',
-        code: 'COSC 111',
-        name: 'Computing',
-        callerEnrollmentRole: 'STUDENT',
+        id: "core-current-student",
+        code: "COSC 111",
+        name: "Computing",
+        callerEnrollmentRole: "STUDENT",
       },
       {
-        id: 'core-current-ta',
-        code: 'COSC 211',
-        name: 'Data Structures',
-        callerEnrollmentRole: 'TA',
+        id: "core-current-ta",
+        code: "COSC 211",
+        name: "Data Structures",
+        callerEnrollmentRole: "TA",
       },
     ]);
     courseEnrollmentFindMany.mockResolvedValue([
       {
         courseOfferingId: 30,
-        role: 'STUDENT',
-        courseOffering: { coreOfferingId: 'core-old-student' },
+        role: "STUDENT",
+        courseOffering: { coreOfferingId: "core-old-student" },
       },
       {
         courseOfferingId: 31,
-        role: 'STUDENT',
-        courseOffering: { coreOfferingId: 'core-current-student' },
+        role: "STUDENT",
+        courseOffering: { coreOfferingId: "core-current-student" },
       },
-      { courseOfferingId: 40, role: 'TA', courseOffering: { coreOfferingId: 'core-old-ta' } },
-      { courseOfferingId: 41, role: 'TA', courseOffering: { coreOfferingId: 'core-current-ta' } },
+      { courseOfferingId: 40, role: "TA", courseOffering: { coreOfferingId: "core-old-ta" } },
+      { courseOfferingId: 41, role: "TA", courseOffering: { coreOfferingId: "core-current-ta" } },
     ]);
     courseEnrollmentDeleteMany.mockResolvedValue({ count: 1 });
 
@@ -406,15 +406,15 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
     expect(result.removed).toBe(2);
     expect(courseEnrollmentDeleteMany).toHaveBeenNthCalledWith(1, {
       where: {
-        userId: 'student-1',
-        role: { in: ['STUDENT', 'TA'] },
+        userId: "student-1",
+        role: { in: ["STUDENT", "TA"] },
         courseOfferingId: 30,
       },
     });
     expect(courseEnrollmentDeleteMany).toHaveBeenNthCalledWith(2, {
       where: {
-        userId: 'student-1',
-        role: { in: ['STUDENT', 'TA'] },
+        userId: "student-1",
+        role: { in: ["STUDENT", "TA"] },
         courseOfferingId: 40,
       },
     });
@@ -426,17 +426,17 @@ describe("importEnrolledCoursesFromCore (AI Tutor)", () => {
     // nothing" guard (that guard only fires when BOTH sets are empty).
     listEduAiCourses.mockResolvedValue([
       {
-        id: 'core-current-student',
-        code: 'COSC 111',
-        name: 'Computing',
-        callerEnrollmentRole: 'STUDENT',
+        id: "core-current-student",
+        code: "COSC 111",
+        name: "Computing",
+        callerEnrollmentRole: "STUDENT",
       },
     ]);
     courseEnrollmentFindMany.mockResolvedValue([
       {
         courseOfferingId: 31,
-        role: 'STUDENT',
-        courseOffering: { coreOfferingId: 'core-current-student' },
+        role: "STUDENT",
+        courseOffering: { coreOfferingId: "core-current-student" },
       },
     ]);
 

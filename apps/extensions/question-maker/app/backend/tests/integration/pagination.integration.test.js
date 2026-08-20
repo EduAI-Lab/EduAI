@@ -15,16 +15,7 @@
  * seeded directly via Prisma. Requires TEST_DATABASE_URL — see
  * docs/TEST_PLAN.md. Run: npm run test:integration
  */
-import {
-  vi,
-  describe,
-  it,
-  expect,
-  beforeAll,
-  beforeEach,
-  afterAll,
-  afterEach,
-} from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import request from "supertest";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -35,14 +26,11 @@ vi.mock("../../src/services/authService.js", () => ({
 // Keep the fire-and-forget Core import mirror from racing truncate/seed (#1114
 // enrollment stubs made the catalog look "teaching" and re-wrote anchors).
 vi.mock("../../src/services/importTaughtCoursesService.js", () => ({
-  importTaughtCoursesFromCore: vi
-    .fn()
-    .mockResolvedValue({ imported: 0, skipped: 0 }),
+  importTaughtCoursesFromCore: vi.fn().mockResolvedValue({ imported: 0, skipped: 0 }),
 }));
 
 const { default: app } = await import("../../src/app.js");
-const { resetCourseAccessSyncForTests } =
-  await import("../../src/services/courseListService.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -71,9 +59,7 @@ function sessionFetch() {
         ok: true,
         json: () =>
           Promise.resolve({
-            enrollments: [
-              { studentId: TEST_USER.id, role: "INSTRUCTOR", isActive: true },
-            ],
+            enrollments: [{ studentId: TEST_USER.id, role: "INSTRUCTOR", isActive: true }],
           }),
       });
     }
@@ -92,13 +78,11 @@ function sessionFetch() {
 function stubRejectedSession() {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({}),
-      }),
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({}),
+    }),
   );
 }
 
@@ -113,8 +97,7 @@ describeDb("Pagination contract (integration)", () => {
     truncateTestDatabase = testDb.truncateTestDatabase;
     await testDb.connectTestDatabase();
 
-    ({ seedCoursesForNewUser } =
-      await import("../helpers/seedCoursesFixture.js"));
+    ({ seedCoursesForNewUser } = await import("../helpers/seedCoursesFixture.js"));
   });
 
   beforeEach(async () => {
@@ -197,16 +180,11 @@ describeDb("Pagination contract (integration)", () => {
   describe("GET /api/course/:id/topics — page boundaries", () => {
     it("walks first/middle/last pages with no overlap and no gaps", async () => {
       // 25 rows at pageSize 10 => pages of 10, 10, 5 (a partial last page).
-      await seedTiedTopics(
-        25 - (await prisma.topics.count({ where: { courseId } })),
-      );
+      await seedTiedTopics(25 - (await prisma.topics.count({ where: { courseId } })));
       const total = await prisma.topics.count({ where: { courseId } });
       expect(total).toBe(25);
 
-      const { rows, pages } = await walkPages(
-        `/api/course/${courseId}/topics`,
-        10,
-      );
+      const { rows, pages } = await walkPages(`/api/course/${courseId}/topics`, 10);
 
       expect(pages.map((p) => p.data.length)).toEqual([10, 10, 5]);
       pages.forEach((p) => expect(p.total).toBe(25));
@@ -234,9 +212,7 @@ describeDb("Pagination contract (integration)", () => {
     it("bounds an unpaged caller to a page instead of the whole set", async () => {
       // The regression this PR's review asked for: no params must not mean
       // "every row". 12 rows at a forced pageSize of 5 proves the cap applies.
-      await seedTiedTopics(
-        12 - (await prisma.topics.count({ where: { courseId } })),
-      );
+      await seedTiedTopics(12 - (await prisma.topics.count({ where: { courseId } })));
 
       const capped = await request(app)
         .get(`/api/course/${courseId}/topics?pageSize=5`)
@@ -250,9 +226,7 @@ describeDb("Pagination contract (integration)", () => {
       expect(capped.body.total).toBe(12);
 
       // And with no params at all the response is still a bounded envelope.
-      const bare = await request(app)
-        .get(`/api/course/${courseId}/topics`)
-        .set(cookie());
+      const bare = await request(app).get(`/api/course/${courseId}/topics`).set(cookie());
       expect(bare.status).toBe(200);
       expect(typeof bare.body.pageSize).toBe("number");
       expect(bare.body.pageSize).toBeLessThanOrEqual(200);
@@ -284,17 +258,13 @@ describeDb("Pagination contract (integration)", () => {
     });
 
     it("400s with PAGINATION_REQUIRED when only pageSize is supplied", async () => {
-      const res = await request(app)
-        .get("/api/course?pageSize=10")
-        .set(cookie());
+      const res = await request(app).get("/api/course?pageSize=10").set(cookie());
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("PAGINATION_REQUIRED");
     });
 
     it("400s with PAGINATION_INVALID for non-numeric params", async () => {
-      const res = await request(app)
-        .get("/api/course?page=abc&pageSize=10")
-        .set(cookie());
+      const res = await request(app).get("/api/course?page=abc&pageSize=10").set(cookie());
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("PAGINATION_INVALID");
     });
@@ -309,9 +279,7 @@ describeDb("Pagination contract (integration)", () => {
     });
 
     it("returns an empty page past the end with the true total", async () => {
-      const res = await request(app)
-        .get("/api/course?page=999&pageSize=25")
-        .set(cookie());
+      const res = await request(app).get("/api/course?page=999&pageSize=25").set(cookie());
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
       expect(typeof res.body.total).toBe("number");
@@ -335,10 +303,7 @@ describeDb("Pagination contract (integration)", () => {
         })),
       });
 
-      const { rows, pages } = await walkPages(
-        `/api/questions/${question.id}/variants`,
-        2,
-      );
+      const { rows, pages } = await walkPages(`/api/questions/${question.id}/variants`, 2);
 
       expect(pages[0].total).toBe(7);
       expect(rows).toHaveLength(7);

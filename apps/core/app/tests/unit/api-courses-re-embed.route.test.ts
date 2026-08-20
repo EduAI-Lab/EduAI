@@ -27,17 +27,19 @@ import { action as startAction } from "~/routes/api/courses.re-embed.$";
 import { loader as pollLoader } from "~/routes/api/courses.re-embed.$jobId";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
-import {
-  startOrResumeReEmbedJob,
-  getReEmbedJobForCourse,
-} from "~/lib/ai/re-embed-job.server";
+import { startOrResumeReEmbedJob, getReEmbedJobForCourse } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
-function makeStartArgs(method = "POST", options: { idempotencyKey?: string; headerKey?: string } = {}) {
+function makeStartArgs(
+  method = "POST",
+  options: { idempotencyKey?: string; headerKey?: string } = {},
+) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (options.headerKey) headers["Idempotency-Key"] = options.headerKey;
-  const body = options.idempotencyKey ? JSON.stringify({ idempotencyKey: options.idempotencyKey }) : undefined;
+  const body = options.idempotencyKey
+    ? JSON.stringify({ idempotencyKey: options.idempotencyKey })
+    : undefined;
   return {
     request: new Request("http://localhost/api/courses/course-1/re-embed", {
       method,

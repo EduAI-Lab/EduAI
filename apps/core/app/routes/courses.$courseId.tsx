@@ -17,17 +17,14 @@ import {
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbSeparator,
-} from '@eduai/ui'
-import { CourseSwitcher } from '~/components/layout/course-switcher'
-import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
-import type { CourseDetail } from '~/hooks/api/use-course-detail'
-import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
-import type { RbacUser } from '~/lib/rbac'
-import {
-  COURSE_STAFF_SELECT,
-  serializeCourseForApi,
-} from '~/lib/courses/dto.server'
-import { getRequestSession } from '~/lib/auth/request-session.server'
+} from "@eduai/ui";
+import { CourseSwitcher } from "~/components/layout/course-switcher";
+import type { CourseMaterial as UploadMaterial } from "~/components/course-materials-upload";
+import type { CourseDetail } from "~/hooks/api/use-course-detail";
+import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
+import type { RbacUser } from "~/lib/rbac";
+import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -39,7 +36,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     select: COURSE_STAFF_SELECT,
-  })
+  });
 
   if (!course) return redirect("/courses");
 
@@ -88,7 +85,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const isStudent = access === "student";
 
-  const audience = isStudent ? 'student' : 'staff'
+  const audience = isStudent ? "student" : "staff";
 
   return {
     course: serializeCourseForApi(course, {

@@ -71,7 +71,7 @@ function sessionOk(user) {
 
 function activeInstructorEnrollment() {
   getCourseEnrollmentsFromCore.mockResolvedValue({
-    enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }],
+    enrollments: [{ studentId: INSTRUCTOR.id, role: "INSTRUCTOR", isActive: true }],
   });
 }
 
@@ -80,9 +80,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('GET /api/topics/sync-status/:courseId', () => {
-  it('rejects unauthenticated requests with 401', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+describe("GET /api/topics/sync-status/:courseId", () => {
+  it("rejects unauthenticated requests with 401", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
 
     const res = await request(app).get("/api/topics/sync-status/1");
 

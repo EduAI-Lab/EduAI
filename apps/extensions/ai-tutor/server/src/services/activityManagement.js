@@ -7,18 +7,18 @@
  * business-logic layer while preserving the existing endpoint contract.
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   authorizeLiveCoursePrincipal,
   isAllowedLiveCourseStaffPrincipal,
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
-} from './liveCoursePrincipal.js';
+} from "./liveCoursePrincipal.js";
 
 export class ActivityMutationError extends Error {
   constructor(message, status = 400, code) {
     super(message);
-    this.name = 'ActivityMutationError';
+    this.name = "ActivityMutationError";
     this.status = status;
     if (code) this.code = code;
   }
@@ -33,27 +33,27 @@ const ACTIVITY_INCLUDE = {
 };
 
 function normalizeCustomPrompt(value) {
-  if (typeof value !== 'string') return null;
+  if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
 function normalizeCustomPromptTitle(value) {
-  if (typeof value !== 'string') return null;
+  if (typeof value !== "string") return null;
   const trimmed = value.trim().slice(0, 20);
   return trimmed.length > 0 ? trimmed : null;
 }
 
 function assertAtLeastOneMode(payload) {
   if (!payload.enableTeachMode && !payload.enableGuideMode && !payload.enableCustomMode) {
-    throw new ActivityMutationError('At least one AI mode must be enabled');
+    throw new ActivityMutationError("At least one AI mode must be enabled");
   }
 }
 
 async function assertLessonEditor(lesson, user) {
   const course = lesson.module.courseOffering;
   const principal = await authorizeLiveCoursePrincipal(course, user);
-  if (principal.state === 'unavailable') {
+  if (principal.state === "unavailable") {
     throw new ActivityMutationError(
       LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
       503,
@@ -61,7 +61,7 @@ async function assertLessonEditor(lesson, user) {
     );
   }
   if (!isAllowedLiveCourseStaffPrincipal(principal)) {
-    throw new ActivityMutationError('Not authorized for this lesson', 403);
+    throw new ActivityMutationError("Not authorized for this lesson", 403);
   }
   return course;
 }
@@ -69,7 +69,7 @@ async function assertLessonEditor(lesson, user) {
 async function assertActivityEditor(activity, user) {
   const course = activity.lesson.module.courseOffering;
   const principal = await authorizeLiveCoursePrincipal(course, user);
-  if (principal.state === 'unavailable') {
+  if (principal.state === "unavailable") {
     throw new ActivityMutationError(
       LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
       503,
@@ -77,7 +77,7 @@ async function assertActivityEditor(activity, user) {
     );
   }
   if (!isAllowedLiveCourseStaffPrincipal(principal)) {
-    throw new ActivityMutationError('Not authorized for this activity', 403);
+    throw new ActivityMutationError("Not authorized for this activity", 403);
   }
   return course;
 }
@@ -86,7 +86,7 @@ function normalizeSecondaryTopicIds(ids, mainTopicId) {
   return Array.from(
     new Set(
       (Array.isArray(ids) ? ids : []).filter(
-        (value) => typeof value === 'string' && value.length > 0 && value !== mainTopicId,
+        (value) => typeof value === "string" && value.length > 0 && value !== mainTopicId,
       ),
     ),
   );
@@ -95,7 +95,7 @@ function normalizeSecondaryTopicIds(ids, mainTopicId) {
 async function assertTopicsBelongToCourse(courseOfferingId, mainTopicId, secondaryTopicIds) {
   const mainTopic = await prisma.topic.findUnique({ where: { id: mainTopicId } });
   if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-    throw new ActivityMutationError('mainTopicId must belong to the lesson course');
+    throw new ActivityMutationError("mainTopicId must belong to the lesson course");
   }
 
   const normalizedSecondaryIds = normalizeSecondaryTopicIds(secondaryTopicIds, mainTopicId);
@@ -105,7 +105,7 @@ async function assertTopicsBelongToCourse(courseOfferingId, mainTopicId, seconda
     });
     const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
     if (invalid || topics.length !== normalizedSecondaryIds.length) {
-      throw new ActivityMutationError('secondaryTopicIds must belong to the lesson course');
+      throw new ActivityMutationError("secondaryTopicIds must belong to the lesson course");
     }
   }
   return normalizedSecondaryIds;
@@ -126,7 +126,7 @@ export async function createActivityForLesson({ lessonId, payload, user }) {
     },
   });
 
-  if (!lesson) throw new ActivityMutationError('Lesson not found', 404);
+  if (!lesson) throw new ActivityMutationError("Lesson not found", 404);
   const course = await assertLessonEditor(lesson, user);
   const normalizedSecondaryIds = await assertTopicsBelongToCourse(
     course.id,
@@ -138,7 +138,7 @@ export async function createActivityForLesson({ lessonId, payload, user }) {
   // after deletes, so the existing max+1 behavior is intentional.
   const lastActivity = await prisma.activity.findFirst({
     where: { lessonId },
-    orderBy: { position: 'desc' },
+    orderBy: { position: "desc" },
     select: { position: true },
   });
   const resolvedPosition = lastActivity ? lastActivity.position + 1 : 0;
@@ -146,7 +146,7 @@ export async function createActivityForLesson({ lessonId, payload, user }) {
   return prisma.activity.create({
     data: {
       title: payload.title ?? null,
-      instructionsMd: payload.instructionsMd ?? 'Answer the question.',
+      instructionsMd: payload.instructionsMd ?? "Answer the question.",
       position: resolvedPosition,
       lessonId,
       promptTemplateId: payload.promptTemplateId ?? null,
@@ -158,7 +158,7 @@ export async function createActivityForLesson({ lessonId, payload, user }) {
       enableCustomMode: payload.enableCustomMode ?? false,
       config: {
         question: payload.question,
-        questionType: payload.type ?? 'MCQ',
+        questionType: payload.type ?? "MCQ",
         options: payload.options,
         answer: payload.answer ?? null,
         hints: Array.isArray(payload.hints) ? payload.hints : [],
@@ -178,54 +178,54 @@ export async function createActivityForLesson({ lessonId, payload, user }) {
 
 function hasUpdateFields(payload) {
   return [
-    'promptTemplateId',
-    'customPrompt',
-    'customPromptTitle',
-    'enableCustomMode',
-    'mainTopicId',
-    'secondaryTopicIds',
-    'title',
-    'instructionsMd',
-    'question',
-    'type',
-    'options',
-    'answer',
-    'hints',
-    'enableTeachMode',
-    'enableGuideMode',
-  ].some((field) => typeof payload[field] !== 'undefined');
+    "promptTemplateId",
+    "customPrompt",
+    "customPromptTitle",
+    "enableCustomMode",
+    "mainTopicId",
+    "secondaryTopicIds",
+    "title",
+    "instructionsMd",
+    "question",
+    "type",
+    "options",
+    "answer",
+    "hints",
+    "enableTeachMode",
+    "enableGuideMode",
+  ].some((field) => typeof payload[field] !== "undefined");
 }
 
 function setConfigFields(payload, currentConfig) {
   let changed = false;
 
-  if (typeof payload.question !== 'undefined') {
+  if (typeof payload.question !== "undefined") {
     const questionText = payload.question.trim();
     if (questionText.length === 0) {
-      throw new ActivityMutationError('question must not be empty');
+      throw new ActivityMutationError("question must not be empty");
     }
     currentConfig.question = questionText;
     changed = true;
   }
 
-  if (typeof payload.type !== 'undefined') {
+  if (typeof payload.type !== "undefined") {
     currentConfig.questionType = payload.type;
-    if (payload.type === 'SHORT_TEXT') currentConfig.options = null;
+    if (payload.type === "SHORT_TEXT") currentConfig.options = null;
     changed = true;
   }
 
-  if (typeof payload.options !== 'undefined') {
+  if (typeof payload.options !== "undefined") {
     currentConfig.options =
       payload.options === null ? null : payload.options.map((choice) => choice);
     changed = true;
   }
 
-  if (typeof payload.answer !== 'undefined') {
+  if (typeof payload.answer !== "undefined") {
     currentConfig.answer = payload.answer;
     changed = true;
   }
 
-  if (typeof payload.hints !== 'undefined') {
+  if (typeof payload.hints !== "undefined") {
     currentConfig.hints = Array.isArray(payload.hints)
       ? payload.hints.map((hint) => hint.trim()).filter((hint) => hint.length > 0)
       : [];
@@ -236,7 +236,7 @@ function setConfigFields(payload, currentConfig) {
 }
 
 function setTextFields(payload, updateData) {
-  if (typeof payload.title !== 'undefined') {
+  if (typeof payload.title !== "undefined") {
     if (payload.title === null) {
       updateData.title = null;
     } else {
@@ -244,55 +244,55 @@ function setTextFields(payload, updateData) {
       updateData.title = trimmedTitle.length > 0 ? trimmedTitle : null;
     }
   }
-  if (typeof payload.instructionsMd !== 'undefined')
+  if (typeof payload.instructionsMd !== "undefined")
     updateData.instructionsMd = payload.instructionsMd;
 }
 
 async function setPromptFields(payload, updateData) {
-  if (typeof payload.promptTemplateId !== 'undefined') {
+  if (typeof payload.promptTemplateId !== "undefined") {
     if (payload.promptTemplateId === null) {
       updateData.promptTemplateId = null;
-    } else if (typeof payload.promptTemplateId === 'number') {
+    } else if (typeof payload.promptTemplateId === "number") {
       const prompt = await prisma.promptTemplate.findUnique({
         where: { id: payload.promptTemplateId },
       });
-      if (!prompt) throw new ActivityMutationError('Invalid promptTemplateId');
+      if (!prompt) throw new ActivityMutationError("Invalid promptTemplateId");
       updateData.promptTemplateId = payload.promptTemplateId;
     } else {
-      throw new ActivityMutationError('promptTemplateId must be a number or null');
+      throw new ActivityMutationError("promptTemplateId must be a number or null");
     }
   }
-  if (typeof payload.customPrompt !== 'undefined') {
+  if (typeof payload.customPrompt !== "undefined") {
     if (payload.customPrompt === null) updateData.customPrompt = null;
-    else if (typeof payload.customPrompt === 'string') {
+    else if (typeof payload.customPrompt === "string") {
       updateData.customPrompt = normalizeCustomPrompt(payload.customPrompt);
-    } else throw new ActivityMutationError('customPrompt must be a string or null');
+    } else throw new ActivityMutationError("customPrompt must be a string or null");
   }
-  if (typeof payload.customPromptTitle !== 'undefined') {
+  if (typeof payload.customPromptTitle !== "undefined") {
     if (payload.customPromptTitle === null) updateData.customPromptTitle = null;
-    else if (typeof payload.customPromptTitle === 'string') {
+    else if (typeof payload.customPromptTitle === "string") {
       updateData.customPromptTitle = normalizeCustomPromptTitle(payload.customPromptTitle);
-    } else throw new ActivityMutationError('customPromptTitle must be a string or null');
+    } else throw new ActivityMutationError("customPromptTitle must be a string or null");
   }
 }
 
 async function setTopicFields(payload, activity, courseOfferingId, updateData) {
   let resolvedMainTopicId = activity.mainTopicId;
-  if (typeof payload.mainTopicId !== 'undefined') {
-    if (typeof payload.mainTopicId !== 'string' || payload.mainTopicId.length === 0) {
-      throw new ActivityMutationError('mainTopicId must be a string');
+  if (typeof payload.mainTopicId !== "undefined") {
+    if (typeof payload.mainTopicId !== "string" || payload.mainTopicId.length === 0) {
+      throw new ActivityMutationError("mainTopicId must be a string");
     }
     const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
     if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-      throw new ActivityMutationError('mainTopicId must belong to the activity course');
+      throw new ActivityMutationError("mainTopicId must belong to the activity course");
     }
     updateData.mainTopicId = payload.mainTopicId;
     resolvedMainTopicId = payload.mainTopicId;
   }
 
-  if (typeof payload.secondaryTopicIds === 'undefined') return;
+  if (typeof payload.secondaryTopicIds === "undefined") return;
   if (!Array.isArray(payload.secondaryTopicIds)) {
-    throw new ActivityMutationError('secondaryTopicIds must be an array of ids');
+    throw new ActivityMutationError("secondaryTopicIds must be an array of ids");
   }
   const normalizedSecondaryIds = normalizeSecondaryTopicIds(
     payload.secondaryTopicIds,
@@ -304,7 +304,7 @@ async function setTopicFields(payload, activity, courseOfferingId, updateData) {
     });
     const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
     if (invalid || topics.length !== normalizedSecondaryIds.length) {
-      throw new ActivityMutationError('secondaryTopicIds must belong to the activity course');
+      throw new ActivityMutationError("secondaryTopicIds must belong to the activity course");
     }
   }
   updateData.secondaryTopics = {
@@ -317,38 +317,38 @@ async function setTopicFields(payload, activity, courseOfferingId, updateData) {
 
 function setModeFields(payload, activity, updateData) {
   const requestedModeUpdate =
-    typeof payload.enableTeachMode !== 'undefined' ||
-    typeof payload.enableGuideMode !== 'undefined' ||
-    typeof payload.enableCustomMode !== 'undefined';
+    typeof payload.enableTeachMode !== "undefined" ||
+    typeof payload.enableGuideMode !== "undefined" ||
+    typeof payload.enableCustomMode !== "undefined";
   if (!requestedModeUpdate) return;
 
   const newTeachMode =
-    typeof payload.enableTeachMode !== 'undefined'
+    typeof payload.enableTeachMode !== "undefined"
       ? payload.enableTeachMode
       : activity.enableTeachMode;
   const newGuideMode =
-    typeof payload.enableGuideMode !== 'undefined'
+    typeof payload.enableGuideMode !== "undefined"
       ? payload.enableGuideMode
       : activity.enableGuideMode;
   const newCustomMode =
-    typeof payload.enableCustomMode !== 'undefined'
+    typeof payload.enableCustomMode !== "undefined"
       ? payload.enableCustomMode
       : activity.enableCustomMode;
 
   if (!newTeachMode && !newGuideMode && !newCustomMode) {
-    throw new ActivityMutationError('At least one AI mode must be enabled');
+    throw new ActivityMutationError("At least one AI mode must be enabled");
   }
-  if (typeof payload.enableTeachMode !== 'undefined')
+  if (typeof payload.enableTeachMode !== "undefined")
     updateData.enableTeachMode = payload.enableTeachMode;
-  if (typeof payload.enableGuideMode !== 'undefined')
+  if (typeof payload.enableGuideMode !== "undefined")
     updateData.enableGuideMode = payload.enableGuideMode;
-  if (typeof payload.enableCustomMode !== 'undefined')
+  if (typeof payload.enableCustomMode !== "undefined")
     updateData.enableCustomMode = payload.enableCustomMode;
 }
 
 /** Update an activity while preserving its config and topic invariants. */
 export async function updateActivityForEditor({ activityId, payload, user }) {
-  if (!hasUpdateFields(payload)) throw new ActivityMutationError('Nothing to update');
+  if (!hasUpdateFields(payload)) throw new ActivityMutationError("Nothing to update");
 
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
@@ -368,13 +368,13 @@ export async function updateActivityForEditor({ activityId, payload, user }) {
     },
   });
 
-  if (!activity) throw new ActivityMutationError('Activity not found', 404);
+  if (!activity) throw new ActivityMutationError("Activity not found", 404);
   const course = await assertActivityEditor(activity, user);
   const updateData = {};
 
   setTextFields(payload, updateData);
   const currentConfig =
-    activity.config && typeof activity.config === 'object' ? { ...activity.config } : {};
+    activity.config && typeof activity.config === "object" ? { ...activity.config } : {};
   if (setConfigFields(payload, currentConfig)) updateData.config = currentConfig;
   await setPromptFields(payload, updateData);
   await setTopicFields(payload, activity, course.id, updateData);

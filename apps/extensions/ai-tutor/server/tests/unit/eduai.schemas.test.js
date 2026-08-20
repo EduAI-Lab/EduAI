@@ -80,7 +80,7 @@ describe("EduAiEnrollmentSchema", () => {
     expect(result.role).toBe("STUDENT");
   });
 
-  it('parses an enrollment list envelope with no id fields', () => {
+  it("parses an enrollment list envelope with no id fields", () => {
     expect(() => EduAiEnrollmentListSchema.parse({ enrollments: [CORE_ENROLLMENT] })).not.toThrow();
   });
 

@@ -39,7 +39,7 @@ export default defineConfig({
      * browser does. These API flows are same-origin calls to their target app;
      * negative CSRF tests set explicit cross-site headers in app-level suites.
      */
-    extraHTTPHeaders: { 'Sec-Fetch-Site': 'same-origin' },
+    extraHTTPHeaders: { "Sec-Fetch-Site": "same-origin" },
     /* Capture trace on first retry for easier debugging */
     trace: "on-first-retry",
     screenshot: "only-on-failure",

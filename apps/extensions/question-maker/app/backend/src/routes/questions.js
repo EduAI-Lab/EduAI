@@ -18,7 +18,7 @@
  *    STUDENT + TA enrollment) may create question_metadata shells, so the
  *    per-course gate alone authorizes that route (see its inline comment).
  */
-import express from 'express';
+import express from "express";
 import {
   createQuestion,
   getQuestionsByUser,
@@ -31,27 +31,29 @@ import {
   updateQuestionOrder,
   removeQuestionFromAssessment,
   saveExtractedQuestions,
-  normalizePrimaryTopicId
-} from '../services/questionService.js';
-import { generateQuestions, AI_PROVIDERS, extractQuestionsFromText } from '../services/aiService.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { QM_AUTHORIZED } from '../middleware/roles.js';
-import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
-import { requireQuestionAccess } from '../middleware/resourceAccess.js';
-import { prisma } from '../config/database.js';
-import { config } from '../config/settings.js';
-import { parseLimitOffset } from '../utils/listPagination.js';
-import { parseQuestionListFilters } from '../utils/questionListQuery.js';
+  normalizePrimaryTopicId,
+} from "../services/questionService.js";
 import {
-  parseApprovalTarget,
-  prepareApprovalQuestions
-} from '../utils/questionApproval.js';
-import { resolveVisibleCourseWhereForUser } from '../services/courseListService.js';
-import { parsePositiveSafeInteger } from '../utils/questionOrder.js';
+  generateQuestions,
+  AI_PROVIDERS,
+  extractQuestionsFromText,
+} from "../services/aiService.js";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { QM_AUTHORIZED } from "../middleware/roles.js";
 import {
-  qmAiUserRateLimit,
-  validateGenerationBudget,
-} from '../middleware/aiAdmission.js';
+  requireCourseAccess,
+  resolveCourseAccessWithCourse,
+  LEVELS,
+} from "../middleware/courseAccess.js";
+import { requireQuestionAccess } from "../middleware/resourceAccess.js";
+import { prisma } from "../config/database.js";
+import { config } from "../config/settings.js";
+import { parseLimitOffset } from "../utils/listPagination.js";
+import { parseQuestionListFilters } from "../utils/questionListQuery.js";
+import { parseApprovalTarget, prepareApprovalQuestions } from "../utils/questionApproval.js";
+import { resolveVisibleCourseWhereForUser } from "../services/courseListService.js";
+import { parsePositiveSafeInteger } from "../utils/questionOrder.js";
+import { qmAiUserRateLimit, validateGenerationBudget } from "../middleware/aiAdmission.js";
 
 const router = express.Router();
 
@@ -59,7 +61,6 @@ const qmMaxExtractTextChars = () =>
   Number.isInteger(config.qmMaxExtractTextChars) && config.qmMaxExtractTextChars > 0
     ? config.qmMaxExtractTextChars
     : 120_000;
-
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
 function denyTaNotOwner(req, res) {
@@ -80,9 +81,8 @@ function validateApprovalTarget(req, res, next) {
     });
   }
 
-  const maxQuestions = Number.isInteger(config.maxQuestions) && config.maxQuestions > 0
-    ? config.maxQuestions
-    : 50;
+  const maxQuestions =
+    Number.isInteger(config.maxQuestions) && config.maxQuestions > 0 ? config.maxQuestions : 50;
   if (questions.length > maxQuestions) {
     return res.status(400).json({
       success: false,
@@ -111,7 +111,7 @@ async function assessmentInCourse(assessmentId, courseId) {
 router.post(
   "/",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId ?? req.body.classId }),
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId ?? req.body.classId }),
   async (req, res, next) => {
     try {
       const rawDescription = req.body.description ?? req.body.content;
@@ -172,7 +172,7 @@ router.post(
  * predicate includes every course the caller can author in (ADMIN catalog,
  * UNIT_ADMIN units, and instructor enrollments), including non-owned anchors.
  */
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get("/", authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -202,7 +202,9 @@ router.get('/', authenticateToken, async (req, res, next) => {
       // path restricted to platform authoring roles; otherwise a STUDENT
       // session would gain an unscoped list merely by clearing `courseId`.
       if (!QM_AUTHORIZED.includes(req.user.role)) {
-        return res.status(403).json({ success: false, error: 'Question bank courseId is required' });
+        return res
+          .status(403)
+          .json({ success: false, error: "Question bank courseId is required" });
       }
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
@@ -230,7 +232,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 /** GET /api/questions/stats – returns aggregate stats (counts, types) for the user’s question bank. */
-router.get('/stats', authenticateToken, async (req, res, next) => {
+router.get("/stats", authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -252,7 +254,9 @@ router.get('/stats', authenticateToken, async (req, res, next) => {
       scopeCourseId = course.id;
     } else {
       if (!QM_AUTHORIZED.includes(req.user.role)) {
-        return res.status(403).json({ success: false, error: 'Question bank courseId is required' });
+        return res
+          .status(403)
+          .json({ success: false, error: "Question bank courseId is required" });
       }
       courseWhere = await resolveVisibleCourseWhereForUser(req.user, {
         cookie: req.headers.cookie,
@@ -289,7 +293,7 @@ function csvCell(value) {
  * above). Reuses getQuestionsByUser (eager-loads course + variants, so no N+1).
  * Registered before `/:id` so the static `export` segment isn't captured as an id.
  */
-router.get('/export', authenticateToken, async (req, res, next) => {
+router.get("/export", authenticateToken, async (req, res, next) => {
   try {
     const { courseId, classId, format = "json" } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -406,7 +410,7 @@ router.get('/export', authenticateToken, async (req, res, next) => {
 router.get(
   "/:id",
   authenticateToken,
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const question = await getQuestionById(req.params.id, req.qmCourse.userId);
@@ -425,7 +429,7 @@ router.get(
 router.put(
   "/:id",
   authenticateToken,
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       if (denyTaNotOwner(req, res)) return;
@@ -463,8 +467,8 @@ router.put(
         if (resolvedCourseId !== Number(req.qmCourse.id)) {
           return res.status(409).json({
             success: false,
-            error: 'Question course relocation is not supported',
-            code: 'COURSE_RELOCATION_NOT_ALLOWED',
+            error: "Question course relocation is not supported",
+            code: "COURSE_RELOCATION_NOT_ALLOWED",
           });
         }
         updates.courseId = resolvedCourseId;
@@ -528,7 +532,7 @@ router.put(
 router.delete(
   "/:id",
   authenticateToken,
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       if (denyTaNotOwner(req, res)) return;
@@ -547,16 +551,21 @@ router.delete(
 
 /** POST /api/questions/generate – triggers legacy AI providers to generate draft questions. */
 router.post(
-  '/generate',
+  "/generate",
   authenticateToken,
   // Legacy generation used to be course-free. Keep it available only when
   // the caller supplies a course they can author in; otherwise deployment API
   // keys could be used as an unscoped generation oracle.
-  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   qmAiUserRateLimit,
   async (req, res, next) => {
     try {
-      const { prompt, provider = AI_PROVIDERS.GROQ, numQuestions = 15, difficultyDistribution } = req.body;
+      const {
+        prompt,
+        provider = AI_PROVIDERS.GROQ,
+        numQuestions = 15,
+        difficultyDistribution,
+      } = req.body;
 
       const budget = validateGenerationBudget({ prompt, numQuestions });
       if (budget.status) {
@@ -572,16 +581,16 @@ router.post(
         difficultyDistribution: difficultyDistribution || {
           easy: 5,
           medium: 5,
-          hard: 5
-        }
+          hard: 5,
+        },
       };
 
       const questions = await generateQuestions(budget.prompt, provider, params);
 
       res.json({
         success: true,
-        message: 'Questions generated successfully',
-        data: questions
+        message: "Questions generated successfully",
+        data: questions,
       });
     } catch (error) {
       next(error);
@@ -593,7 +602,7 @@ router.post(
 router.post(
   "/extract",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   qmAiUserRateLimit,
   async (req, res, next) => {
     try {
@@ -614,13 +623,9 @@ router.post(
         });
       }
 
-      const questions = await extractQuestionsFromText(
-        text,
-        req.qmCourse.id,
-        model,
-        apiKeys,
-        { cookie: req.headers.cookie ?? '' },
-      );
+      const questions = await extractQuestionsFromText(text, req.qmCourse.id, model, apiKeys, {
+        cookie: req.headers.cookie ?? "",
+      });
 
       res.json({
         success: true,
@@ -636,7 +641,7 @@ router.post(
 router.post(
   "/extract/save",
   authenticateToken,
-  requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
+  requireCourseAccess({ min: "ta", getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
       const { primaryTopicId, topicName, questions, assessment } = req.body;
@@ -739,25 +744,25 @@ router.put(
 
       const normalizedAssessmentId = parsePositiveSafeInteger(assessmentId);
       if (normalizedAssessmentId === null) {
-        return res.status(404).json({ success: false, error: 'Assessment not found' });
+        return res.status(404).json({ success: false, error: "Assessment not found" });
       }
       const normalizedOrderNumber = parsePositiveSafeInteger(orderNumber);
       if (normalizedOrderNumber === null) {
         return res.status(400).json({
           success: false,
-          error: 'Order number must be a positive safe integer',
+          error: "Order number must be a positive safe integer",
         });
       }
 
       if (!(await assessmentInCourse(normalizedAssessmentId, req.qmCourse.id))) {
-        return res.status(404).json({ success: false, error: 'Assessment not found' });
+        return res.status(404).json({ success: false, error: "Assessment not found" });
       }
 
       const question = await updateQuestionOrder(
         req.params.id,
         normalizedAssessmentId,
         normalizedOrderNumber,
-        req.qmCourse.userId
+        req.qmCourse.userId,
       );
 
       res.json({

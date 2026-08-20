@@ -41,17 +41,19 @@ export interface OCRJob {
 
 // Constants for account-bound history management
 /** Legacy unscoped key. Its contents are discarded because no owner can be established safely. */
-export const OCR_HISTORY_KEY = 'ocr-upload-history';
+export const OCR_HISTORY_KEY = "ocr-upload-history";
 export const OCR_HISTORY_KEY_PREFIX = `${OCR_HISTORY_KEY}:v2:`;
-export const OCR_HISTORY_CLEARED_EVENT = 'eduai:ocr-history-cleared';
+export const OCR_HISTORY_CLEARED_EVENT = "eduai:ocr-history-cleared";
 
 export function getOCRHistoryStorageKey(userId: string | null | undefined): string | null {
   const normalizedUserId = userId?.trim();
-  return normalizedUserId ? `${OCR_HISTORY_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}` : null;
+  return normalizedUserId
+    ? `${OCR_HISTORY_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}`
+    : null;
 }
 
 export function clearOCRHistoryForUser(userId: string | null | undefined): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   const storageKey = getOCRHistoryStorageKey(userId);
   try {
     if (storageKey) localStorage.removeItem(storageKey);

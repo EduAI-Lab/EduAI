@@ -44,7 +44,7 @@ import {
   fetchCoreCourseSafe,
   getEduAiCourseEnrollmentServiceKey,
   listEduAiCourseEnrollmentsServiceKey,
-} from '../../src/services/eduaiClient.js';
+} from "../../src/services/eduaiClient.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
@@ -56,7 +56,7 @@ const { expectedActivitiesListStatus, expectedModulesListStatus, expectedModuleV
 const DEPARTMENT = "COSC";
 const NOT_FOUND_ID = 999_999_999;
 
-function coreEnrollment(userId, role = 'STUDENT') {
+function coreEnrollment(userId, role = "STUDENT") {
   return {
     studentId: userId,
     studentEmail: `${userId}@test.com`,
@@ -110,16 +110,18 @@ async function buildRow(row) {
     case "INSTRUCTOR": {
       // seedMinimalCourse already made `owner` this course's instructor.
       vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
-        coreEnrollment(owner.id, 'INSTRUCTOR'),
+        coreEnrollment(owner.id, "INSTRUCTOR"),
       ]);
       app = await createApp({ mockUser: owner });
       break;
     }
     case "TA": {
       const ta = makeTA();
-      await prisma.courseEnrollment.create({ data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' } });
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: "TA" },
+      });
       vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
-        coreEnrollment(ta.id, 'TA'),
+        coreEnrollment(ta.id, "TA"),
       ]);
       app = await createApp({ mockUser: ta });
       break;

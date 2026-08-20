@@ -35,7 +35,7 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
 import {
   fetchCoreCourseSafe,
   listEduAiCourseEnrollmentsServiceKey,
-} from '../../src/services/eduaiClient.js';
+} from "../../src/services/eduaiClient.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
 const rows = JSON.parse(
@@ -67,7 +67,7 @@ const MODE_PAYLOAD = {
   custom: { message: "Custom question", knowledgeLevel: "beginner", apiKey: "test-key" },
 };
 
-function coreEnrollment(userId, role = 'STUDENT') {
+function coreEnrollment(userId, role = "STUDENT") {
   return {
     studentId: userId,
     studentEmail: `${userId}@test.com`,
@@ -139,7 +139,7 @@ async function buildRow(row) {
     case "NON_STUDENT":
       mockUser = owner; // platform role INSTRUCTOR
       vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
-        coreEnrollment(mockUser.id, 'INSTRUCTOR'),
+        coreEnrollment(mockUser.id, "INSTRUCTOR"),
       ]);
       break;
     case "STUDENT_NOT_ENROLLED":

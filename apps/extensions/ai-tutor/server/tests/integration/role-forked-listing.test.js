@@ -15,12 +15,12 @@
  * too, matching Core's counterpart row for the same (PlatformRole,
  * Enrollment) pair.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { createApp } from '../../src/app.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import request from "supertest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { createApp } from "../../src/app.js";
 import {
   makeStudent,
   makeAdmin,
@@ -28,7 +28,7 @@ import {
   makeProfessor,
   truncateAll,
   prisma,
-} from '../helpers.js';
+} from "../helpers.js";
 
 vi.mock("../../src/services/policyService.js", () => ({
   getPolicy: vi.fn().mockResolvedValue(true),
@@ -53,7 +53,7 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   };
 });
 
-import { listEduAiCourses, listEduAiCoursesServiceKey } from '../../src/services/eduaiClient.js';
+import { listEduAiCourses, listEduAiCoursesServiceKey } from "../../src/services/eduaiClient.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../");
 const allCases = JSON.parse(
@@ -91,13 +91,13 @@ describe.each(rows.map((row, index) => [index, row]))(
       vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
         {
           id: course.coreOfferingId,
-          name: 'PICT Course',
+          name: "PICT Course",
           department: DEPARTMENT,
-          isPublished: row.Published === 'yes',
+          isPublished: row.Published === "yes",
         },
       ]);
       vi.mocked(listEduAiCourses).mockResolvedValue(
-        row.Enrollment === 'none'
+        row.Enrollment === "none"
           ? []
           : [
               {

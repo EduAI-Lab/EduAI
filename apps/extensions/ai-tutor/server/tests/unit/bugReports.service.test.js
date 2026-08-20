@@ -75,9 +75,9 @@ describe("createBugReport — content validation", () => {
     await expect(createBugReport(STUDENT, {})).rejects.toMatchObject({ status: 400 });
   });
 
-  it('throws 400 when description is under 10 characters', async () => {
+  it("throws 400 when description is under 10 characters", async () => {
     await expect(
-      createBugReport(STUDENT, validPayload({ description: 'short' })),
+      createBugReport(STUDENT, validPayload({ description: "short" })),
     ).rejects.toMatchObject({
       status: 400,
     });
@@ -122,7 +122,7 @@ describe("createBugReport — content validation", () => {
     );
   });
 
-  it('throws 400 when consoleLogs is not a string', async () => {
+  it("throws 400 when consoleLogs is not a string", async () => {
     await expect(createBugReport(STUDENT, validPayload({ consoleLogs: 42 }))).rejects.toMatchObject(
       {
         status: 400,
@@ -130,15 +130,15 @@ describe("createBugReport — content validation", () => {
     );
   });
 
-  it('throws 400 when isAnonymous is not a boolean', async () => {
+  it("throws 400 when isAnonymous is not a boolean", async () => {
     await expect(
-      createBugReport(STUDENT, validPayload({ isAnonymous: 'yes' })),
+      createBugReport(STUDENT, validPayload({ isAnonymous: "yes" })),
     ).rejects.toMatchObject({
       status: 400,
     });
   });
 
-  it('defaults isAnonymous to false when omitted', async () => {
+  it("defaults isAnonymous to false when omitted", async () => {
     mockPostCoreBugReport.mockResolvedValue(null);
     await createBugReport(STUDENT, validPayload());
     expect(mockPostCoreBugReport).toHaveBeenCalledWith(
@@ -361,7 +361,7 @@ describe("createBugReport — bare courseOfferingId context branch", () => {
 
     await createBugReport(
       STUDENT,
-      validPayload({ context, pageUrl: '/course/1', userAgent: 'UA' }),
+      validPayload({ context, pageUrl: "/course/1", userAgent: "UA" }),
     );
 
     expect(mockPostCoreBugReport).toHaveBeenCalledWith("user-1", {
@@ -442,14 +442,14 @@ describe("getAdminBugReport", () => {
     await expect(getAdminBugReport("cookie=abc", "br-1")).rejects.toMatchObject({ status: 404 });
   });
 
-  it('passes through a 404 from Core as a BugReportError', async () => {
+  it("passes through a 404 from Core as a BugReportError", async () => {
     mockGetCoreAdminBugReport.mockRejectedValue(
-      Object.assign(new Error('not found'), { status: 404 }),
+      Object.assign(new Error("not found"), { status: 404 }),
     );
-    await expect(getAdminBugReport('cookie=abc', 'br-missing')).rejects.toMatchObject({
+    await expect(getAdminBugReport("cookie=abc", "br-missing")).rejects.toMatchObject({
       status: 404,
     });
-    await expect(getAdminBugReport('cookie=abc', 'br-missing')).rejects.toBeInstanceOf(
+    await expect(getAdminBugReport("cookie=abc", "br-missing")).rejects.toBeInstanceOf(
       BugReportError,
     );
   });
@@ -482,9 +482,9 @@ describe("validateBugReportStatus", () => {
   });
 });
 
-describe('updateBugReportStatus', () => {
-  it('throws 400 for an invalid id', async () => {
-    await expect(updateBugReportStatus('', 'resolved', 'cookie')).rejects.toMatchObject({
+describe("updateBugReportStatus", () => {
+  it("throws 400 for an invalid id", async () => {
+    await expect(updateBugReportStatus("", "resolved", "cookie")).rejects.toMatchObject({
       status: 400,
     });
   });
@@ -506,11 +506,11 @@ describe('updateBugReportStatus', () => {
     const result = await updateBugReportStatus("br-1", "resolved", "cookie=abc");
 
     expect(mockPatchCoreAdminBugReportStatus).toHaveBeenCalledWith(
-      'cookie=abc',
-      'br-1',
-      'RESOLVED',
+      "cookie=abc",
+      "br-1",
+      "RESOLVED",
     );
-    expect(result).toEqual({ id: 'br-1', status: 'resolved' });
+    expect(result).toEqual({ id: "br-1", status: "resolved" });
   });
 
   it("throws 404 when Core returns no id after patch", async () => {

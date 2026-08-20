@@ -261,8 +261,11 @@ describeDb("Core wiring DB integration", () => {
       expect(ch2.coreTopicId).toBe("cuid-t2");
     });
 
-    it('preserves Core service-unavailable status when topic sync fails', async () => {
-      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
+    it("preserves Core service-unavailable status when topic sync fails", async () => {
+      await prisma.course.update({
+        where: { id: courseId },
+        data: { coreCourseId: "cuid-core-course" },
+      });
 
       vi.stubGlobal("fetch", makeFetch(coreErr({ error: "Service Unavailable" }, 503)));
 

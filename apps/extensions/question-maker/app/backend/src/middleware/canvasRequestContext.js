@@ -2,7 +2,7 @@
  * Carries an Express caller-disconnect signal into Canvas service calls
  * without changing the existing service function argument contracts.
  */
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const canvasRequestStorage = new AsyncLocalStorage();
 
@@ -12,16 +12,16 @@ export function canvasRequestContext(req, res, next) {
   let cleaned = false;
   const abortForDisconnect = () => {
     if (!controller.signal.aborted) {
-      controller.abort(new DOMException('Client disconnected', 'AbortError'));
+      controller.abort(new DOMException("Client disconnected", "AbortError"));
     }
   };
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
-    req.off?.('aborted', abortForDisconnect);
-    req.off?.('close', onRequestClose);
-    res.off?.('finish', onFinish);
-    res.off?.('close', onResponseClose);
+    req.off?.("aborted", abortForDisconnect);
+    req.off?.("close", onRequestClose);
+    res.off?.("finish", onFinish);
+    res.off?.("close", onResponseClose);
   };
   const onFinish = () => {
     finished = true;
@@ -49,10 +49,10 @@ export function canvasRequestContext(req, res, next) {
   };
 
   if (req.aborted) abortForDisconnect();
-  else req.once?.('aborted', abortForDisconnect);
-  req.once?.('close', onRequestClose);
-  res.once?.('finish', onFinish);
-  res.once?.('close', onResponseClose);
+  else req.once?.("aborted", abortForDisconnect);
+  req.once?.("close", onRequestClose);
+  res.once?.("finish", onFinish);
+  res.once?.("close", onResponseClose);
 
   canvasRequestStorage.run({ signal: controller.signal }, next);
 }

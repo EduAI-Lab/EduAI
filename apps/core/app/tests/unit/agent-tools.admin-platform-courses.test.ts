@@ -44,10 +44,7 @@ import { resolveAdminCourseId } from "~/lib/agent-tools/admin-context.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
-import {
-  getReEmbedJobForCourse,
-  startOrResumeReEmbedJob,
-} from "~/lib/ai/re-embed-job.server";
+import { getReEmbedJobForCourse, startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,

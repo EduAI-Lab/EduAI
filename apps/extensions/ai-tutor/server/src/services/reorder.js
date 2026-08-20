@@ -53,9 +53,9 @@ export class ReorderError extends Error {
  * @throws {ReorderError} `POSITION_INVALID`
  */
 export function parsePositionBody(raw) {
-  const value = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new ReorderError('position must be a non-negative integer', 400, 'POSITION_INVALID');
+  const value = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : raw;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new ReorderError("position must be a non-negative integer", 400, "POSITION_INVALID");
   }
   return value;
 }

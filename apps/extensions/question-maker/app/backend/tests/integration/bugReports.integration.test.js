@@ -37,8 +37,18 @@ vi.mock("../../src/config/settings.js", () => {
 
 const { default: app } = await import("../../src/app.js");
 
-const TEST_USER = { id: 'cuid-test-abc123', email: 'instructor@test.com', role: 'INSTRUCTOR', name: 'Test Instructor' };
-const STUDENT = { id: 'cuid-student-abc123', email: 'student@test.com', role: 'STUDENT', name: 'Test Student' };
+const TEST_USER = {
+  id: "cuid-test-abc123",
+  email: "instructor@test.com",
+  role: "INSTRUCTOR",
+  name: "Test Instructor",
+};
+const STUDENT = {
+  id: "cuid-student-abc123",
+  email: "student@test.com",
+  role: "STUDENT",
+  name: "Test Student",
+};
 
 function sessionOk(user = TEST_USER) {
   return { ok: true, json: () => Promise.resolve({ user }) };
@@ -53,8 +63,8 @@ describe("POST /api/bug-reports (proxy to Core)", () => {
     vi.restoreAllMocks();
   });
 
-  it('rejects unauthenticated requests with 401', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }));
+  it("rejects unauthenticated requests with 401", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }));
 
     const res = await request(app).post("/api/bug-reports").send({ description: "test" });
 
@@ -77,20 +87,20 @@ describe("POST /api/bug-reports (proxy to Core)", () => {
     expect(res.body.success).toBe(true);
   });
 
-  it('blocks platform STUDENT callers before proxying to Core', async () => {
+  it("blocks platform STUDENT callers before proxying to Core", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(sessionOk(STUDENT));
-    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal("fetch", mockFetch);
 
     const res = await request(app)
-      .post('/api/bug-reports')
-      .set('Cookie', 'session=valid-token')
-      .send({ description: 'Students cannot submit QM proxy reports.' });
+      .post("/api/bug-reports")
+      .set("Cookie", "session=valid-token")
+      .send({ description: "Students cannot submit QM proxy reports." });
 
     expect(res.status).toBe(403);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('sends QUESTION_MAKER source and authenticated userId to Core', async () => {
+  it("sends QUESTION_MAKER source and authenticated userId to Core", async () => {
     const mockFetch = vi
       .fn()
       .mockResolvedValueOnce(sessionOk())

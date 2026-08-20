@@ -50,9 +50,9 @@
  *   services/progressCalculation.js
  */
 
-import express from 'express';
-import { prisma } from '../config/database.js';
-import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import express from "express";
+import { prisma } from "../config/database.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
 import {
   mapCourseOffering,
   mapCourseOfferingAfterPublishWrite,
@@ -70,30 +70,30 @@ import {
   COURSE_STATUS_VALUES,
   coreFacetWhere,
   coreFacets,
-} from '../utils/courseSearch.js';
-import { calculateCourseProgressBatch, progressBucket } from '../services/progressCalculation.js';
+} from "../utils/courseSearch.js";
+import { calculateCourseProgressBatch, progressBucket } from "../services/progressCalculation.js";
 import {
   CourseMutationError,
   importCourseContentForUser,
   publishCourseForUser,
   unpublishCourseForUser,
-} from '../services/courseManagement.js';
-import { isSupportedCourseRole, resolveCourseAccess } from '../services/courseAccess.js';
+} from "../services/courseManagement.js";
+import { isSupportedCourseRole, resolveCourseAccess } from "../services/courseAccess.js";
 import {
   findEduAiCourseById,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   listEduAiCourses,
-} from '../services/eduaiClient.js';
+} from "../services/eduaiClient.js";
 import {
   indexCoreCoursesById,
   resolveCoreCourseById,
   resolveCoreCourseCatalog,
   resolveCoreCourseList,
   resolveIsPublished,
-} from '../services/courseResolver.js';
-import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
-import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+} from "../services/courseResolver.js";
+import { mapEduAiServiceKeyError } from "../services/eduaiServiceKeyErrors.js";
+import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
 import {
   authorizeLiveStudentEnrollment,
   AUTO_SYNC_TIMEOUT_MS,
@@ -101,35 +101,35 @@ import {
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
   LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
   syncCourseEnrollments,
-} from '../services/enrollmentSync.js';
+} from "../services/enrollmentSync.js";
 import {
   ensureOfferingAnchors,
   importExternalCourseForUser,
-} from '../services/importTaughtCoursesService.js';
-import { listAdminBugReports } from '../services/bugReports.js';
-import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
-import { gateCourseById } from '../middleware/liveCoursePrincipal.js';
+} from "../services/importTaughtCoursesService.js";
+import { listAdminBugReports } from "../services/bugReports.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
+import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
 import {
   authorizeLiveCoursePrincipal,
   isAllowedLiveCourseStaffPrincipal,
   LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
   LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
-} from '../services/liveCoursePrincipal.js';
+} from "../services/liveCoursePrincipal.js";
 import {
   CourseContentImportSchema,
   ExternalCourseImportSchema,
-} from '../../../shared/schemas/mutations.js';
+} from "../../../shared/schemas/mutations.js";
 
 const router = express.Router();
 
-router.use('/courses/:courseId', gateCourseById());
+router.use("/courses/:courseId", gateCourseById());
 
-const COURSE_COLLECTION_AUTH_UNAVAILABLE_CODE = 'COURSE_COLLECTION_AUTH_UNAVAILABLE';
-const COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE = 'Course collection authorization unavailable';
+const COURSE_COLLECTION_AUTH_UNAVAILABLE_CODE = "COURSE_COLLECTION_AUTH_UNAVAILABLE";
+const COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE = "Course collection authorization unavailable";
 
 async function resolveCourseStaffMembership(course, authUser) {
   const principal = await authorizeLiveCoursePrincipal(course, authUser);
-  const liveTa = principal.state === 'allowed' && principal.role === 'TA';
+  const liveTa = principal.state === "allowed" && principal.role === "TA";
   return {
     principal,
     hasAdminAccess: isAllowedLiveCourseStaffPrincipal(principal),
@@ -139,7 +139,7 @@ async function resolveCourseStaffMembership(course, authUser) {
 
 async function resolveCourseCollectionContext(req, res) {
   const authUser = req.user;
-  const needsCallerRoles = ['INSTRUCTOR', 'STUDENT', 'TA'].includes(authUser.role);
+  const needsCallerRoles = ["INSTRUCTOR", "STUDENT", "TA"].includes(authUser.role);
   const cookie = getEduAiCookieForRequest(req);
   const [catalog, caller] = await Promise.all([
     resolveCoreCourseCatalog(),
@@ -148,7 +148,7 @@ async function resolveCourseCollectionContext(req, res) {
       : Promise.resolve({ courses: [], coreUnavailable: false }),
   ]);
 
-  if (authUser.role !== 'ADMIN' && (catalog.coreUnavailable || caller.coreUnavailable)) {
+  if (authUser.role !== "ADMIN" && (catalog.coreUnavailable || caller.coreUnavailable)) {
     res.status(503).json({
       error: COURSE_COLLECTION_AUTH_UNAVAILABLE_MESSAGE,
       code: COURSE_COLLECTION_AUTH_UNAVAILABLE_CODE,
@@ -156,7 +156,7 @@ async function resolveCourseCollectionContext(req, res) {
     return null;
   }
 
-  if (catalog.coreUnavailable) res.set('X-Core-Status', 'unavailable');
+  if (catalog.coreUnavailable) res.set("X-Core-Status", "unavailable");
   return {
     catalogCourses: catalog.courses,
     callerCourses: caller.courses,
@@ -166,7 +166,7 @@ async function resolveCourseCollectionContext(req, res) {
 
 async function ensureAuthorizedCollectionAnchors(authUser, catalogCourses, callerCourses) {
   let coreIds = callerCourses.map((course) => course?.id).filter(Boolean);
-  if (authUser.role === 'UNIT_ADMIN') {
+  if (authUser.role === "UNIT_ADMIN") {
     const units = new Set(Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : []);
     coreIds = catalogCourses
       .filter((course) => course?.department && units.has(course.department))
@@ -212,7 +212,7 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
   if (mapped) {
     return res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
   }
-  logSafeError('[courses] EduAI upstream request failed', error);
+  logSafeError("[courses] EduAI upstream request failed", error);
   const status = Number.isInteger(error?.status) ? error.status : 502;
   return sendSafeError(res, error, fallbackMessage, { status });
 }
@@ -228,8 +228,8 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
  * import the same EduAI course independently into their own offerings.
  */
 router.get(
-  '/eduai/courses',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/eduai/courses",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     try {
       // #578: list the caller's Core-scoped courses using their session cookie
@@ -247,13 +247,13 @@ router.get(
 
       const importedIds = new Set(imported.map((row) => row.coreOfferingId).filter(Boolean));
       const filtered = Array.isArray(courses)
-        ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
+        ? courses.filter((c) => c && typeof c.id === "string" && !importedIds.has(c.id))
         : [];
 
       res.json(filtered);
     } catch (error) {
-      logSafeError('[eduai] Failed to list courses', error);
-      return respondEduAiUpstreamError(res, error, 'Unable to fetch EduAI courses');
+      logSafeError("[eduai] Failed to list courses", error);
+      return respondEduAiUpstreamError(res, error, "Unable to fetch EduAI courses");
     }
   },
 );
@@ -393,7 +393,7 @@ router.get("/courses", async (req, res) => {
       const scopedIds = candidates
         .map((c) => c.id)
         .filter((id) => {
-          if (access.kind !== 'taUnion') return true;
+          if (access.kind !== "taUnion") return true;
           const course = candidates.find((candidate) => candidate.id === id);
           return !access.taCoreIdSet.has(course?.coreOfferingId);
         });
@@ -425,8 +425,8 @@ router.get("/courses", async (req, res) => {
     const progressIds = courses
       .filter(
         (course) =>
-          access.kind === 'student' ||
-          (access.kind === 'taUnion' && !access.taCoreIdSet.has(course.coreOfferingId)),
+          access.kind === "student" ||
+          (access.kind === "taUnion" && !access.taCoreIdSet.has(course.coreOfferingId)),
       )
       .map((course) => course.id);
     const progressById = await calculateCourseProgressBatch(progressIds, authUser.id);
@@ -442,7 +442,7 @@ router.get("/courses", async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -532,7 +532,7 @@ router.get("/courses/facets", async (req, res) => {
         progress = [];
       } else {
         const ids = scopedOfferingIds.filter((id) => {
-          if (access.kind !== 'taUnion') return true;
+          if (access.kind !== "taUnion") return true;
           const course = visible.find((candidate) => candidate.id === id);
           return !access.taCoreIdSet.has(course?.coreOfferingId);
         });
@@ -553,7 +553,7 @@ router.get("/courses/facets", async (req, res) => {
       coreUnavailable,
     });
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -570,13 +570,13 @@ router.get("/courses/facets", async (req, res) => {
  * import. The instructor can rerun sync explicitly afterwards.
  */
 router.post(
-  '/courses/import-external',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/import-external",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const instructor = req.user;
     const parsedBody = ExternalCourseImportSchema.safeParse(req.body);
     if (!parsedBody.success) {
-      return res.status(400).json({ error: 'externalCourseId is required' });
+      return res.status(400).json({ error: "externalCourseId is required" });
     }
     const { externalCourseId } = parsedBody.data;
 
@@ -587,13 +587,13 @@ router.post(
         cookie: req.headers.cookie,
       });
       if (!externalCourse) {
-        return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
+        return res.status(403).json({ error: "CORE_COURSE_NOT_AUTHORIZED" });
       }
       if (
-        instructor.role === 'INSTRUCTOR' &&
-        externalCourse.callerEnrollmentRole !== 'INSTRUCTOR'
+        instructor.role === "INSTRUCTOR" &&
+        externalCourse.callerEnrollmentRole !== "INSTRUCTOR"
       ) {
-        return res.status(403).json({ error: 'CORE_COURSE_INSTRUCTOR_REQUIRED' });
+        return res.status(403).json({ error: "CORE_COURSE_INSTRUCTOR_REQUIRED" });
       }
 
       // coreOfferingId is @unique — one AI Tutor offering per Core course
@@ -609,8 +609,8 @@ router.post(
       // second Core call.
       res.status(created ? 201 : 200).json(mapCourseOffering(offering, externalCourse));
     } catch (error) {
-      logSafeError('[eduai] Failed to import course', error);
-      return respondEduAiUpstreamError(res, error, 'Unable to import course');
+      logSafeError("[eduai] Failed to import course", error);
+      return respondEduAiUpstreamError(res, error, "Unable to import course");
     }
   },
 );
@@ -629,13 +629,13 @@ router.post(
  * pull from, so it returns 400 rather than a misleading empty sync.
  */
 router.post(
-  '/courses/:courseId/sync-enrollments',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/sync-enrollments",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     try {
@@ -643,19 +643,19 @@ router.post(
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!course) return res.status(404).json({ error: 'Course not found' });
+      if (!course) return res.status(404).json({ error: "Course not found" });
       if (!(await isCourseAdmin(authUser, course))) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
       if (!course.coreOfferingId) {
-        return res.status(400).json({ error: 'Course was not imported from EduAI' });
+        return res.status(400).json({ error: "Course was not imported from EduAI" });
       }
 
       const result = await syncCourseEnrollments(courseId, { course });
       res.json(result);
     } catch (error) {
-      logSafeError('[eduai] Failed to sync enrollments', error);
-      return respondEduAiUpstreamError(res, error, 'Unable to sync enrollments');
+      logSafeError("[eduai] Failed to sync enrollments", error);
+      return respondEduAiUpstreamError(res, error, "Unable to sync enrollments");
     }
   },
 );
@@ -698,7 +698,7 @@ router.get("/courses/:courseId", async (req, res) => {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    const isLearner = authUser.role === 'STUDENT' || authUser.role === 'TA';
+    const isLearner = authUser.role === "STUDENT" || authUser.role === "TA";
     let liveEnrollment = null;
     let liveStaffPrincipal = null;
 
@@ -706,13 +706,13 @@ router.get("/courses/:courseId", async (req, res) => {
       try {
         liveEnrollment = await authorizeLiveStudentEnrollment(courseId, authUser.id, {
           course,
-          allowedRoles: ['STUDENT', 'TA'],
+          allowedRoles: ["STUDENT", "TA"],
         });
       } catch {
-        liveEnrollment = { allowed: false, state: 'unavailable', role: null };
+        liveEnrollment = { allowed: false, state: "unavailable", role: null };
       }
 
-      if (liveEnrollment?.state === 'unavailable') {
+      if (liveEnrollment?.state === "unavailable") {
         return res.status(503).json({
           error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
           code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
@@ -722,16 +722,16 @@ router.get("/courses/:courseId", async (req, res) => {
       try {
         liveStaffPrincipal = await authorizeLiveCoursePrincipal(course, authUser);
       } catch {
-        liveStaffPrincipal = { state: 'unavailable', kind: null, role: null };
+        liveStaffPrincipal = { state: "unavailable", kind: null, role: null };
       }
-      if (liveStaffPrincipal.state === 'unavailable') {
+      if (liveStaffPrincipal.state === "unavailable") {
         return res.status(503).json({
           error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
           code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
         });
       }
       if (!isAllowedLiveCourseStaffPrincipal(liveStaffPrincipal)) {
-        return res.status(403).json({ error: 'Not authorized for this course' });
+        return res.status(403).json({ error: "Not authorized for this course" });
       }
 
       if (course.coreOfferingId) {
@@ -745,7 +745,7 @@ router.get("/courses/:courseId", async (req, res) => {
             signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
           });
         } catch (e) {
-          const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+          const phase = e?.phase === "write" ? "local write" : "Core fetch";
           logSafeError(
             `[courses] Staff enrollment auto-sync (${phase}) failed after live authorization`,
             e,
@@ -781,7 +781,7 @@ router.get("/courses/:courseId", async (req, res) => {
 
     res.json(mapCourseOffering(course, coreCourse));
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -791,7 +791,7 @@ router.get("/courses/:courseId", async (req, res) => {
  */
 router.post("/courses", requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]), async (_req, res) => {
   return res.status(403).json({
-    error: 'Course creation is managed in EduAI Core. Import or enable courses from Core instead.',
+    error: "Course creation is managed in EduAI Core. Import or enable courses from Core instead.",
   });
 });
 
@@ -810,19 +810,19 @@ router.post("/courses", requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]), asyn
  * their structure.
  */
 router.post(
-  '/courses/:courseId/import',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/import",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
     const parsedBody = CourseContentImportSchema.safeParse(req.body);
     if (!parsedBody.success) {
       const field = parsedBody.error.issues[0]?.path[0];
       return res.status(400).json({
-        error: field === 'sourceCourseId' ? 'Invalid sourceCourseId' : 'Invalid import request',
+        error: field === "sourceCourseId" ? "Invalid sourceCourseId" : "Invalid import request",
       });
     }
 
@@ -837,7 +837,7 @@ router.post(
       if (e instanceof CourseMutationError) {
         return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
       }
-      sendSafeError(res, e, 'Internal server error');
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -852,13 +852,13 @@ router.post(
  * half-finished module can't leak to students.
  */
 router.patch(
-  '/courses/:courseId/publish',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/publish",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     try {
@@ -868,14 +868,14 @@ router.patch(
         cookie: req.headers.cookie,
       });
       if (resolved.coreUnavailable) {
-        res.set('X-Core-Status', 'unavailable');
+        res.set("X-Core-Status", "unavailable");
       }
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
     } catch (e) {
       if (e instanceof CourseMutationError) {
         return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
       }
-      sendSafeError(res, e, 'Internal server error');
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -894,13 +894,13 @@ router.patch(
  * module/lesson could remain reachable by direct URL.
  */
 router.patch(
-  '/courses/:courseId/unpublish',
-  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  "/courses/:courseId/unpublish",
+  requireRole(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]),
   async (req, res) => {
     const authUser = req.user;
     const courseId = Number(req.params.courseId);
     if (!Number.isFinite(courseId)) {
-      return res.status(400).json({ error: 'Invalid course id' });
+      return res.status(400).json({ error: "Invalid course id" });
     }
 
     try {
@@ -910,14 +910,14 @@ router.patch(
         cookie: req.headers.cookie,
       });
       if (resolved.coreUnavailable) {
-        res.set('X-Core-Status', 'unavailable');
+        res.set("X-Core-Status", "unavailable");
       }
       res.json(mapCourseOfferingAfterPublishWrite(course, resolved, false));
     } catch (e) {
       if (e instanceof CourseMutationError) {
         return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
       }
-      sendSafeError(res, e, 'Internal server error');
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -947,10 +947,10 @@ router.get("/courses/:courseId/feedback", async (req, res) => {
     if (!course) return res.status(404).json({ error: "Course not found" });
 
     const membership = await resolveCourseStaffMembership(course, authUser);
-    if (membership.principal.state === 'unavailable') {
+    if (membership.principal.state === "unavailable") {
       return res.status(503).json({
-        error: 'Course authorization unavailable',
-        code: 'COURSE_AUTH_UNAVAILABLE',
+        error: "Course authorization unavailable",
+        code: "COURSE_AUTH_UNAVAILABLE",
       });
     }
     const { hasAdminAccess, isTa } = membership;
@@ -988,7 +988,7 @@ router.get("/courses/:courseId/feedback", async (req, res) => {
 
     res.json(feedback);
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1015,10 +1015,10 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
     if (!course) return res.status(404).json({ error: "Course not found" });
 
     const membership = await resolveCourseStaffMembership(course, authUser);
-    if (membership.principal.state === 'unavailable') {
+    if (membership.principal.state === "unavailable") {
       return res.status(503).json({
-        error: 'Course authorization unavailable',
-        code: 'COURSE_AUTH_UNAVAILABLE',
+        error: "Course authorization unavailable",
+        code: "COURSE_AUTH_UNAVAILABLE",
       });
     }
     const { hasAdminAccess, isTa } = membership;
@@ -1051,7 +1051,7 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
       where,
       // `id` last: Submission has no unique constraint covering the leading
       // keys, so without it tied rows could shift between offset pages.
-      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }, { id: 'asc' }],
+      orderBy: [{ activityId: "asc" }, { userId: "asc" }, { attemptNumber: "asc" }, { id: "asc" }],
       take,
       skip,
       include: {
@@ -1106,7 +1106,7 @@ router.get("/courses/:courseId/submissions", async (req, res) => {
 
     res.json(enriched);
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1132,10 +1132,10 @@ router.get("/courses/:courseId/student-metrics", async (req, res) => {
     if (!course) return res.status(404).json({ error: "Course not found" });
 
     const membership = await resolveCourseStaffMembership(course, authUser);
-    if (membership.principal.state === 'unavailable') {
+    if (membership.principal.state === "unavailable") {
       return res.status(503).json({
-        error: 'Course authorization unavailable',
-        code: 'COURSE_AUTH_UNAVAILABLE',
+        error: "Course authorization unavailable",
+        code: "COURSE_AUTH_UNAVAILABLE",
       });
     }
     const { hasAdminAccess, isTa } = membership;
@@ -1166,7 +1166,7 @@ router.get("/courses/:courseId/student-metrics", async (req, res) => {
 
     res.json(Object.values(byStudent));
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1192,10 +1192,10 @@ router.get("/courses/:courseId/analytics", async (req, res) => {
     if (!course) return res.status(404).json({ error: "Course not found" });
 
     const membership = await resolveCourseStaffMembership(course, authUser);
-    if (membership.principal.state === 'unavailable') {
+    if (membership.principal.state === "unavailable") {
       return res.status(503).json({
-        error: 'Course authorization unavailable',
-        code: 'COURSE_AUTH_UNAVAILABLE',
+        error: "Course authorization unavailable",
+        code: "COURSE_AUTH_UNAVAILABLE",
       });
     }
     const { hasAdminAccess, isTa } = membership;
@@ -1211,7 +1211,7 @@ router.get("/courses/:courseId/analytics", async (req, res) => {
 
     res.json(analytics);
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1272,7 +1272,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
         const users = await listCoreAdminUsers(req.headers.cookie ?? "", { pageSize: 1 });
         if (typeof users?.total === "number") stats.totalUsers = users.total;
       } catch (err) {
-        logSafeError('[me/dashboard-stats] Could not fetch Core users', err);
+        logSafeError("[me/dashboard-stats] Could not fetch Core users", err);
       }
 
       try {
@@ -1281,7 +1281,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
           stats.openBugReports = reports.filter((r) => r.status === "unhandled").length;
         }
       } catch (err) {
-        logSafeError('[me/dashboard-stats] Could not fetch bug reports', err);
+        logSafeError("[me/dashboard-stats] Could not fetch bug reports", err);
       }
 
       return res.json(stats);
@@ -1295,7 +1295,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
       callerCourses,
     });
 
-    if (authUser.role === 'INSTRUCTOR' || authUser.role === 'UNIT_ADMIN') {
+    if (authUser.role === "INSTRUCTOR" || authUser.role === "UNIT_ADMIN") {
       // `department` is Core-owned (#1072 step 4) — join the batch fetched
       // above rather than filtering by a local column. Same fail-soft
       // posture as `GET /courses`'s UNIT_ADMIN branch: an empty/unavailable
@@ -1342,7 +1342,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
 
     // TA — either the platform role is TA, or a STUDENT account also holds a
     // TA enrollment on at least one course (mirrors GET /courses §174).
-    const isEffectiveTa = authUser.role === 'TA' || access.kind === 'taUnion';
+    const isEffectiveTa = authUser.role === "TA" || access.kind === "taUnion";
 
     if (isEffectiveTa) {
       const taCourses = await prisma.courseOffering.findMany({
@@ -1406,7 +1406,7 @@ router.get("/me/dashboard-stats", async (req, res) => {
       correctAnswerPercentage,
     });
   } catch (e) {
-    sendSafeError(res, e, 'Internal server error');
+    sendSafeError(res, e, "Internal server error");
   }
 });
 

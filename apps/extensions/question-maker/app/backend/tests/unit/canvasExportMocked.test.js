@@ -136,21 +136,21 @@ describe("exportAssessmentToCanvas (Canvas API mocked via axios)", () => {
     expect(axiosRequest).not.toHaveBeenCalled();
   });
 
-  it('encodes both caller-provided and Canvas-returned IDs before building export paths', async () => {
+  it("encodes both caller-provided and Canvas-returned IDs before building export paths", async () => {
     axiosRequest
-      .mockResolvedValueOnce({ data: { id: 'quiz?admin=true', title: 'Unit export quiz' } })
+      .mockResolvedValueOnce({ data: { id: "quiz?admin=true", title: "Unit export quiz" } })
       .mockResolvedValueOnce({ data: { id: 9001, position: 1 } });
 
-    const result = await exportAssessmentToCanvas(42, 100, '../admin');
+    const result = await exportAssessmentToCanvas(42, 100, "../admin");
 
     expect(axiosRequest.mock.calls[0][0].url).toBe(
-      'https://canvas.example.edu/api/v1/courses/..%2Fadmin/quizzes',
+      "https://canvas.example.edu/api/v1/courses/..%2Fadmin/quizzes",
     );
     expect(axiosRequest.mock.calls[1][0].url).toBe(
-      'https://canvas.example.edu/api/v1/courses/..%2Fadmin/quizzes/quiz%3Fadmin%3Dtrue/questions',
+      "https://canvas.example.edu/api/v1/courses/..%2Fadmin/quizzes/quiz%3Fadmin%3Dtrue/questions",
     );
     expect(result.canvasUrl).toBe(
-      'https://canvas.example.edu/courses/..%2Fadmin/quizzes/quiz%3Fadmin%3Dtrue',
+      "https://canvas.example.edu/courses/..%2Fadmin/quizzes/quiz%3Fadmin%3Dtrue",
     );
   });
 });

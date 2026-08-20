@@ -10,10 +10,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { setCoreCoursePublishState } from "../../src/services/eduaiClient.js";
 
-const OFFERING_ID = 'core-cuid-1';
+const OFFERING_ID = "core-cuid-1";
 beforeEach(() => {
-  process.env.EDUAI_BASE_URL = 'http://core.test/api';
-  process.env.EDUAI_API_KEY = 'service-provenance-key';
+  process.env.EDUAI_BASE_URL = "http://core.test/api";
+  process.env.EDUAI_API_KEY = "service-provenance-key";
 });
 
 afterEach(() => {
@@ -22,14 +22,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('setCoreCoursePublishState', () => {
-  it('throws when the acting user session is not provided', async () => {
+describe("setCoreCoursePublishState", () => {
+  it("throws when the acting user session is not provided", async () => {
     await expect(setCoreCoursePublishState(OFFERING_ID, true)).rejects.toThrow(
-      'Session cookie is required',
+      "Session cookie is required",
     );
   });
 
-  it('calls PATCH /courses/:id/publish with the user cookie and service provenance', async () => {
+  it("calls PATCH /courses/:id/publish with the user cookie and service provenance", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -38,23 +38,23 @@ describe('setCoreCoursePublishState', () => {
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    await setCoreCoursePublishState(OFFERING_ID, true, { cookie: 'session=user-session' });
+    await setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" });
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://core.test/api/courses/${OFFERING_ID}/publish`);
-    expect(opts.method).toBe('PATCH');
-    expect(opts.headers.cookie).toBe('session=user-session');
-    expect(opts.headers.Authorization).toBe('Bearer service-provenance-key');
+    expect(opts.method).toBe("PATCH");
+    expect(opts.headers.cookie).toBe("session=user-session");
+    expect(opts.headers.Authorization).toBe("Bearer service-provenance-key");
   });
 
-  it('fails closed when service provenance is not configured', async () => {
+  it("fails closed when service provenance is not configured", async () => {
     delete process.env.EDUAI_API_KEY;
-    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal("fetch", vi.fn());
 
     await expect(
-      setCoreCoursePublishState(OFFERING_ID, true, { cookie: 'session=user-session' }),
-    ).rejects.toThrow('EDUAI_API_KEY not configured');
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" }),
+    ).rejects.toThrow("EDUAI_API_KEY not configured");
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -67,41 +67,41 @@ describe('setCoreCoursePublishState', () => {
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    await setCoreCoursePublishState(OFFERING_ID, false, { cookie: 'session=user-session' });
+    await setCoreCoursePublishState(OFFERING_ID, false, { cookie: "session=user-session" });
 
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://core.test/api/courses/${OFFERING_ID}/unpublish`);
   });
 
-  it('throws with status on a Core HTTP error so the AI Tutor route can propagate it', async () => {
+  it("throws with status on a Core HTTP error so the AI Tutor route can propagate it", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
         status: 403,
-        text: () => Promise.resolve('Forbidden'),
+        text: () => Promise.resolve("Forbidden"),
       }),
     );
 
     await expect(
-      setCoreCoursePublishState(OFFERING_ID, true, { cookie: 'session=user-session' }),
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" }),
     ).rejects.toMatchObject({
       status: 403,
     });
   });
 
-  it('throws with status 404 when Core reports course not found', async () => {
+  it("throws with status 404 when Core reports course not found", async () => {
     vi.stubGlobal(
-      'fetch',
+      "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        text: () => Promise.resolve('COURSE_NOT_FOUND'),
+        text: () => Promise.resolve("COURSE_NOT_FOUND"),
       }),
     );
 
     await expect(
-      setCoreCoursePublishState(OFFERING_ID, true, { cookie: 'session=user-session' }),
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" }),
     ).rejects.toMatchObject({
       status: 404,
     });

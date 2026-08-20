@@ -7,26 +7,26 @@ import {
   getAdminBugReport,
   listAdminBugReports,
   updateBugReportStatus,
-} from '../services/bugReports.js';
-import { logSafeError, sendSafeError } from '../utils/safeErrors.js';
+} from "../services/bugReports.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import {
   BugReportCreateSchema,
   BugReportStatusUpdateSchema,
-} from '../../../shared/schemas/mutations.js';
+} from "../../../shared/schemas/mutations.js";
 
 const router = express.Router();
 
 router.post("/bug-reports", async (req, res) => {
   const authUser = req.user;
-  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  if (!authUser) return res.status(401).json({ error: "Authentication required" });
   const parsedBody = BugReportCreateSchema.safeParse(req.body);
   if (!parsedBody.success) {
     const issue = parsedBody.error.issues[0];
-    const descriptionIssue = issue?.path[0] === 'description';
+    const descriptionIssue = issue?.path[0] === "description";
     return res.status(400).json({
       error: descriptionIssue
-        ? 'description must be between 10 and 2000 characters'
-        : 'Invalid payload',
+        ? "description must be between 10 and 2000 characters"
+        : "Invalid payload",
     });
   }
   try {
@@ -36,8 +36,8 @@ router.post("/bug-reports", async (req, res) => {
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });
     }
-    logSafeError('[bug-reports] create failed', error);
-    sendSafeError(res, error, 'Unable to submit bug report');
+    logSafeError("[bug-reports] create failed", error);
+    sendSafeError(res, error, "Unable to submit bug report");
   }
 });
 
@@ -47,9 +47,9 @@ router.get("/admin/bug-reports", requireRole("ADMIN"), async (req, res) => {
     const rows = await listAdminBugReports(cookie);
     res.json(rows);
   } catch (error) {
-    logSafeError('[bug-reports] list failed', error);
-    const status = typeof error?.status === 'number' ? error.status : 500;
-    sendSafeError(res, error, 'Unable to load bug reports', { status });
+    logSafeError("[bug-reports] list failed", error);
+    const status = typeof error?.status === "number" ? error.status : 500;
+    sendSafeError(res, error, "Unable to load bug reports", { status });
   }
 });
 
@@ -62,16 +62,16 @@ router.get("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req, 
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });
     }
-    logSafeError('[bug-reports] get failed', error);
-    const status = typeof error?.status === 'number' ? error.status : 500;
-    sendSafeError(res, error, 'Unable to load bug report', { status });
+    logSafeError("[bug-reports] get failed", error);
+    const status = typeof error?.status === "number" ? error.status : 500;
+    sendSafeError(res, error, "Unable to load bug report", { status });
   }
 });
 
-router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
+router.patch("/admin/bug-reports/:bugReportId", requireRole("ADMIN"), async (req, res) => {
   const parsedBody = BugReportStatusUpdateSchema.safeParse(req.body);
   if (!parsedBody.success) {
-    return res.status(400).json({ error: 'Invalid bug report status' });
+    return res.status(400).json({ error: "Invalid bug report status" });
   }
   try {
     const cookie = getEduAiCookieForRequest(req);
@@ -85,8 +85,8 @@ router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });
     }
-    logSafeError('[bug-reports] update failed', error);
-    sendSafeError(res, error, 'Unable to update bug report');
+    logSafeError("[bug-reports] update failed", error);
+    sendSafeError(res, error, "Unable to update bug report");
   }
 });
 

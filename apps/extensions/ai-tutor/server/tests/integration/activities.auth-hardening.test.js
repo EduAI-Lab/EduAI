@@ -1,22 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
 
-vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
-import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
-describe('activity auth hardening', () => {
+describe("activity auth hardening", () => {
   let seed;
   let professor;
 
@@ -25,15 +25,15 @@ describe('activity auth hardening', () => {
       data: {
         lessonId: seed.lesson.id,
         mainTopicId: seed.topic.id,
-        instructionsMd: 'Answer the question.',
+        instructionsMd: "Answer the question.",
         enableTeachMode: true,
         enableGuideMode: true,
         enableCustomMode: true,
-        customPrompt: 'Help the student reason about this problem.',
+        customPrompt: "Help the student reason about this problem.",
         config: {
-          question: 'What is 2 + 2?',
-          questionType: 'MCQ',
-          options: ['3', '4'],
+          question: "What is 2 + 2?",
+          questionType: "MCQ",
+          options: ["3", "4"],
           answer: 1,
           hints: [],
         },
@@ -57,13 +57,13 @@ describe('activity auth hardening', () => {
       isPublished: true,
     });
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseOfferingId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+      async (_courseOfferingId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
-        const role = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : enrollment?.role;
+        const role = allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : enrollment?.role;
         const allowed = allowedRoles.includes(role);
         return {
           allowed,
-          state: allowed ? 'allowed' : 'denied',
+          state: allowed ? "allowed" : "denied",
           role: role ?? null,
         };
       },
@@ -74,16 +74,16 @@ describe('activity auth hardening', () => {
     vi.unstubAllGlobals();
   });
 
-  it('does not expose the answer key in the student activity list', async () => {
+  it("does not expose the answer key in the student activity list", async () => {
     await prisma.activity.create({
       data: {
         lessonId: seed.lesson.id,
         mainTopicId: seed.topic.id,
-        instructionsMd: 'Answer the question.',
+        instructionsMd: "Answer the question.",
         config: {
-          question: 'What is 2 + 2?',
-          questionType: 'MCQ',
-          options: ['3', '4'],
+          question: "What is 2 + 2?",
+          questionType: "MCQ",
+          options: ["3", "4"],
           answer: 1,
           hints: [],
         },
@@ -92,7 +92,7 @@ describe('activity auth hardening', () => {
 
     const student = makeStudent();
     await prisma.courseEnrollment.create({
-      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: "STUDENT" },
     });
 
     const res = await request(await createApp({ mockUser: student })).get(
@@ -101,16 +101,16 @@ describe('activity auth hardening', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(1);
-    expect(res.body.data[0]).not.toHaveProperty('answer');
+    expect(res.body.data[0]).not.toHaveProperty("answer");
   });
 
-  it('fails closed before a revoked student can read the direct activity list', async () => {
+  it("fails closed before a revoked student can read the direct activity list", async () => {
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     await createActivity();
     vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
       allowed: false,
-      state: 'unavailable',
+      state: "unavailable",
       role: null,
     });
 
@@ -119,15 +119,15 @@ describe('activity auth hardening', () => {
     );
 
     expect(response.status).toBe(503);
-    expect(response.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+    expect(response.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
   });
 
-  it('denies a stale local instructor after Core reports a per-course TA role', async () => {
+  it("denies a stale local instructor after Core reports a per-course TA role", async () => {
     await createActivity();
     vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
       allowed: false,
-      state: 'denied',
-      role: 'TA',
+      state: "denied",
+      role: "TA",
     });
 
     const response = await request(await createApp({ mockUser: professor })).get(
@@ -138,11 +138,11 @@ describe('activity auth hardening', () => {
     expect(response.body.data).toBeUndefined();
   });
 
-  it('retains the answer key for an instructor activity list', async () => {
+  it("retains the answer key for an instructor activity list", async () => {
     await createActivity();
     const assignedProfessor = makeProfessor();
     await prisma.courseInstructor.create({
-      data: { courseOfferingId: seed.course.id, userId: assignedProfessor.id, role: 'LEAD' },
+      data: { courseOfferingId: seed.course.id, userId: assignedProfessor.id, role: "LEAD" },
     });
 
     const res = await request(await createApp({ mockUser: assignedProfessor })).get(
@@ -153,10 +153,10 @@ describe('activity auth hardening', () => {
     expect(res.body.data[0].answer).toBe(1);
   });
 
-  it('retains the answer key for a platform STUDENT serving as a course TA', async () => {
+  it("retains the answer key for a platform STUDENT serving as a course TA", async () => {
     await createActivity();
     const taEnrollmentStudent = makeStudent();
-    await enroll(taEnrollmentStudent, 'TA');
+    await enroll(taEnrollmentStudent, "TA");
 
     const res = await request(await createApp({ mockUser: taEnrollmentStudent })).get(
       `/api/lessons/${seed.lesson.id}/activities`,
@@ -166,12 +166,12 @@ describe('activity auth hardening', () => {
     expect(res.body.data[0].answer).toBe(1);
   });
 
-  it('does not let a platform STUDENT use a stale CourseInstructor mirror for answers', async () => {
+  it("does not let a platform STUDENT use a stale CourseInstructor mirror for answers", async () => {
     await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     await prisma.courseInstructor.create({
-      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'LEAD' },
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: "LEAD" },
     });
 
     const res = await request(await createApp({ mockUser: student })).get(
@@ -179,15 +179,15 @@ describe('activity auth hardening', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(res.body.data[0]).not.toHaveProperty('answer');
+    expect(res.body.data[0]).not.toHaveProperty("answer");
   });
 
-  it('does not let a platform STUDENT use a stale CourseInstructor mirror for staff reads', async () => {
+  it("does not let a platform STUDENT use a stale CourseInstructor mirror for staff reads", async () => {
     const activity = await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     await prisma.courseInstructor.create({
-      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'LEAD' },
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: "LEAD" },
     });
     const submission = await prisma.submission.create({
       data: {
@@ -195,7 +195,7 @@ describe('activity auth hardening', () => {
         userId: student.id,
         attemptNumber: 1,
         response: { answerOption: 0 },
-        aiFeedback: { message: 'Try again.' },
+        aiFeedback: { message: "Try again." },
         isCorrect: false,
       },
     });
@@ -211,12 +211,12 @@ describe('activity auth hardening', () => {
     expect(feedback.status).toBe(403);
   });
 
-  it('does not let a platform TA keep staff access after live demotion to STUDENT', async () => {
+  it("does not let a platform TA keep staff access after live demotion to STUDENT", async () => {
     const activity = await createActivity();
-    const ta = makeStudent({ role: 'TA' });
-    await enroll(ta, 'TA');
+    const ta = makeStudent({ role: "TA" });
+    await enroll(ta, "TA");
     await prisma.courseInstructor.create({
-      data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'LEAD' },
+      data: { courseOfferingId: seed.course.id, userId: ta.id, role: "LEAD" },
     });
     const submission = await prisma.submission.create({
       data: {
@@ -224,7 +224,7 @@ describe('activity auth hardening', () => {
         userId: ta.id,
         attemptNumber: 1,
         response: { answerOption: 0 },
-        aiFeedback: { message: 'Try again.' },
+        aiFeedback: { message: "Try again." },
         isCorrect: false,
       },
     });
@@ -238,14 +238,14 @@ describe('activity auth hardening', () => {
     // second authorization boundary realistic.
     let liveLookup = 0;
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseOfferingId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+      async (_courseOfferingId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         liveLookup += 1;
         if (liveLookup % 2 === 1) {
-          return { allowed: true, state: 'allowed', role: 'STUDENT' };
+          return { allowed: true, state: "allowed", role: "STUDENT" };
         }
         const role = course?.enrollments?.find((entry) => entry.userId === userId)?.role ?? null;
         const allowed = allowedRoles.includes(role);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role };
+        return { allowed, state: allowed ? "allowed" : "denied", role };
       },
     );
 
@@ -255,17 +255,17 @@ describe('activity auth hardening', () => {
     const feedback = await request(app).get(`/api/activities/${activity.id}/feedback`);
 
     expect(activities.status).toBe(200);
-    expect(activities.body.data[0]).not.toHaveProperty('answer');
+    expect(activities.body.data[0]).not.toHaveProperty("answer");
     expect(submissions.status).toBe(403);
     expect(feedback.status).toBe(403);
   });
 
-  it.each(['teach', 'guide', 'custom'])(
-    'rejects a platform STUDENT with a TA enrollment from /%s',
+  it.each(["teach", "guide", "custom"])(
+    "rejects a platform STUDENT with a TA enrollment from /%s",
     async (mode) => {
       const activity = await createActivity();
       const taEnrollmentStudent = makeStudent();
-      await enroll(taEnrollmentStudent, 'TA');
+      await enroll(taEnrollmentStudent, "TA");
 
       const res = await request(await createApp({ mockUser: taEnrollmentStudent }))
         .post(`/api/activities/${activity.id}/${mode}`)
@@ -276,16 +276,16 @@ describe('activity auth hardening', () => {
     },
   );
 
-  it('rejects TA enrollment from student feedback and chat-session routes', async () => {
+  it("rejects TA enrollment from student feedback and chat-session routes", async () => {
     const activity = await createActivity();
     const taEnrollmentStudent = makeStudent();
-    await enroll(taEnrollmentStudent, 'TA');
+    await enroll(taEnrollmentStudent, "TA");
     await prisma.aiChatSession.create({
       data: {
         userId: taEnrollmentStudent.id,
         activityId: activity.id,
-        mode: 'teach',
-        chatId: 'ta-enrollment-chat',
+        mode: "teach",
+        chatId: "ta-enrollment-chat",
       },
     });
 
@@ -304,16 +304,16 @@ describe('activity auth hardening', () => {
     expect(messages.status).toBe(403);
   });
 
-  it('allows a published STUDENT to list chat sessions', async () => {
+  it("allows a published STUDENT to list chat sessions", async () => {
     const activity = await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     await prisma.aiChatSession.create({
       data: {
         userId: student.id,
         activityId: activity.id,
-        mode: 'teach',
-        chatId: 'published-chat',
+        mode: "teach",
+        chatId: "published-chat",
       },
     });
 
@@ -323,21 +323,21 @@ describe('activity auth hardening', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
-    expect(res.body[0].chatId).toBe('published-chat');
+    expect(res.body[0].chatId).toBe("published-chat");
   });
 
-  it('fails closed with a stable 503 when live enrollment authorization is unavailable', async () => {
+  it("fails closed with a stable 503 when live enrollment authorization is unavailable", async () => {
     const activity = await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     const app = await createApp({ mockUser: student });
     vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
       allowed: false,
-      state: 'unavailable',
+      state: "unavailable",
       role: null,
     });
     const provider = vi.fn();
-    vi.stubGlobal('fetch', provider);
+    vi.stubGlobal("fetch", provider);
 
     const beforeSubmissions = await prisma.submission.count({ where: { activityId: activity.id } });
     const response = await request(app)
@@ -346,8 +346,8 @@ describe('activity auth hardening', () => {
 
     expect(response.status).toBe(503);
     expect(response.body).toEqual({
-      error: 'Enrollment authorization unavailable',
-      code: 'ENROLLMENT_AUTH_UNAVAILABLE',
+      error: "Enrollment authorization unavailable",
+      code: "ENROLLMENT_AUTH_UNAVAILABLE",
     });
     expect(await prisma.submission.count({ where: { activityId: activity.id } })).toBe(
       beforeSubmissions,
@@ -355,44 +355,44 @@ describe('activity auth hardening', () => {
     expect(provider).not.toHaveBeenCalled();
   });
 
-  it('does not proxy chat messages when live enrollment authorization is unavailable', async () => {
+  it("does not proxy chat messages when live enrollment authorization is unavailable", async () => {
     const activity = await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     await prisma.aiChatSession.create({
       data: {
         userId: student.id,
         activityId: activity.id,
-        mode: 'teach',
-        chatId: 'unavailable-chat',
+        mode: "teach",
+        chatId: "unavailable-chat",
       },
     });
     const app = await createApp({ mockUser: student });
     vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
       allowed: false,
-      state: 'unavailable',
+      state: "unavailable",
       role: null,
     });
     const provider = vi.fn();
-    vi.stubGlobal('fetch', provider);
+    vi.stubGlobal("fetch", provider);
 
     const response = await request(app).get(
       `/api/activities/${activity.id}/chat-sessions/unavailable-chat/messages`,
     );
 
     expect(response.status).toBe(503);
-    expect(response.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+    expect(response.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
     expect(provider).not.toHaveBeenCalled();
   });
 
-  it('does not write activity feedback when live enrollment authorization is unavailable', async () => {
+  it("does not write activity feedback when live enrollment authorization is unavailable", async () => {
     const activity = await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     const app = await createApp({ mockUser: student });
     vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
       allowed: false,
-      state: 'unavailable',
+      state: "unavailable",
       role: null,
     });
 
@@ -401,7 +401,7 @@ describe('activity auth hardening', () => {
       .send({ rating: 4 });
 
     expect(response.status).toBe(503);
-    expect(response.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+    expect(response.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
     expect(
       await prisma.activityFeedback.count({
         where: { activityId: activity.id, userId: student.id },
@@ -409,22 +409,22 @@ describe('activity auth hardening', () => {
     ).toBe(0);
   });
 
-  it('applies the publication gate to direct chat-message reads', async () => {
+  it("applies the publication gate to direct chat-message reads", async () => {
     const activity = await createActivity();
     const student = makeStudent();
-    await enroll(student, 'STUDENT');
+    await enroll(student, "STUDENT");
     await prisma.aiChatSession.create({
       data: {
         userId: student.id,
         activityId: activity.id,
-        mode: 'teach',
-        chatId: 'unpublished-message-chat',
+        mode: "teach",
+        chatId: "unpublished-message-chat",
       },
     });
     await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
     const app = await createApp({ mockUser: student });
     const provider = vi.fn();
-    vi.stubGlobal('fetch', provider);
+    vi.stubGlobal("fetch", provider);
 
     const response = await request(app).get(
       `/api/activities/${activity.id}/chat-sessions/unpublished-message-chat/messages`,
@@ -437,30 +437,30 @@ describe('activity auth hardening', () => {
 
   it.each([
     [
-      'course',
+      "course",
       async () => vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: false }),
     ],
     [
-      'module',
+      "module",
       async () =>
         prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } }),
     ],
     [
-      'lesson',
+      "lesson",
       async () =>
         prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } }),
     ],
   ])(
-    'denies chat-session listing when the %s ancestor is unpublished',
+    "denies chat-session listing when the %s ancestor is unpublished",
     async (_ancestor, unpublish) => {
       const activity = await createActivity();
       const student = makeStudent();
-      await enroll(student, 'STUDENT');
+      await enroll(student, "STUDENT");
       await prisma.aiChatSession.create({
         data: {
           userId: student.id,
           activityId: activity.id,
-          mode: 'teach',
+          mode: "teach",
           chatId: `${_ancestor}-chat`,
         },
       });

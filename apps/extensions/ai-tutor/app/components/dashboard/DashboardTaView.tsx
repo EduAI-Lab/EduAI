@@ -55,11 +55,11 @@ export function DashboardTaView({
       icon: <IconBooks size={16} stroke={1.75} />,
     },
     {
-      label: 'Continue learning',
+      label: "Continue learning",
       description: resumeCourse
         ? `Pick up ${resumeCourse.title}.`
-        : 'Resume a course you’re enrolled in.',
-      href: resumeCourse ? `/student/courses/${resumeCourse.id}` : '/instructor',
+        : "Resume a course you’re enrolled in.",
+      href: resumeCourse ? `/student/courses/${resumeCourse.id}` : "/instructor",
       icon: <IconMessageChatbot size={16} stroke={1.75} />,
     },
     {

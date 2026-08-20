@@ -18,9 +18,9 @@ import {
   IconMessageChatbot,
   IconSettings,
   IconShieldLock,
-} from '@tabler/icons-react';
-import type { Icon } from '@tabler/icons-react';
-import { toast } from 'sonner';
+} from "@tabler/icons-react";
+import type { Icon } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 import api from "~/lib/api";
 import { useLocalUser } from "~/hooks/useLocalUser";
@@ -109,10 +109,10 @@ function AppLayoutInner() {
   const handleLogout = async () => {
     try {
       await logout();
-      navigate('/');
+      navigate("/");
     } catch {
-      toast.error('Could not log out', {
-        description: 'Your session is still active. Please try again.',
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
       });
     }
   };

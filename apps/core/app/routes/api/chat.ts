@@ -556,20 +556,14 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const chatInputLimits = resolveChatInputLimits();
-    const bodyResult = await readBoundedChatJson(
-      request,
-      chatInputLimits.maxBodyBytes,
-    );
+    const bodyResult = await readBoundedChatJson(request, chatInputLimits.maxBodyBytes);
     if (!bodyResult.ok) {
       return new Response(JSON.stringify({ error: bodyResult.error }), {
         status: bodyResult.status,
         headers: { "Content-Type": "application/json" },
       });
     }
-    const validationResult = validateChatBody(
-      bodyResult.body,
-      chatInputLimits,
-    );
+    const validationResult = validateChatBody(bodyResult.body, chatInputLimits);
     if (!validationResult.ok) {
       return new Response(JSON.stringify({ error: validationResult.error }), {
         status: validationResult.status,
@@ -1537,14 +1531,11 @@ export async function action({ request }: ActionFunctionArgs) {
     // turns that were already trimmed from this request also prevents a caller
     // from turning a single bounded POST into an unbounded storage write.
     const persistableMessageIds = new Set(
-      trimmedMessages
-        .map((message) => message.id)
-        .filter(isNonEmptyString),
+      trimmedMessages.map((message) => message.id).filter(isNonEmptyString),
     );
     await appendMessages(
       normalizedIncomingMessages.filter(
-        (message) =>
-          message.role !== "assistant" && persistableMessageIds.has(message.id),
+        (message) => message.role !== "assistant" && persistableMessageIds.has(message.id),
       ),
     );
 

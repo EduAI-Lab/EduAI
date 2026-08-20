@@ -10,11 +10,7 @@ export function CurrentUserIdProvider({
   userId: string;
   children: ReactNode;
 }) {
-  return (
-    <CurrentUserIdContext.Provider value={userId}>
-      {children}
-    </CurrentUserIdContext.Provider>
-  );
+  return <CurrentUserIdContext.Provider value={userId}>{children}</CurrentUserIdContext.Provider>;
 }
 
 export function useCurrentUserId(): string | null {

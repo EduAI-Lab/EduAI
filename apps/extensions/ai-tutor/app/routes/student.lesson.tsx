@@ -637,7 +637,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           progress={
             activitiesTotal > 0
               ? {
-                  completed: orderedActivities.filter((a) => a.completionStatus === 'correct')
+                  completed: orderedActivities.filter((a) => a.completionStatus === "correct")
                     .length,
                   total: activitiesTotal,
                 }

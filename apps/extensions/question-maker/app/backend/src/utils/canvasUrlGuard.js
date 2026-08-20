@@ -22,7 +22,7 @@ export class CanvasUrlValidationError extends Error {
 }
 
 function ipv4ToInteger(address) {
-  const parts = address.split('.').map(Number);
+  const parts = address.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
     return null;
   }
@@ -38,26 +38,29 @@ function ipv4IsInCidr(value, base, prefixLength) {
 // complete enclosing blocks is deliberately conservative for an LMS origin:
 // a legitimate Canvas installation should never need one as an IP literal.
 const NON_GLOBAL_IPV4_RANGES = [
-  ['0.0.0.0', 8],
-  ['10.0.0.0', 8],
-  ['100.64.0.0', 10],
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
-  ['172.16.0.0', 12],
-  ['192.0.0.0', 24],
-  ['192.0.2.0', 24],
-  ['192.88.99.0', 24],
-  ['192.168.0.0', 16],
-  ['198.18.0.0', 15],
-  ['198.51.100.0', 24],
-  ['203.0.113.0', 24],
-  ['224.0.0.0', 4],
-  ['240.0.0.0', 4],
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
 ];
 
 function isNonGlobalIPv4(address) {
   const value = ipv4ToInteger(address);
-  return value === null || NON_GLOBAL_IPV4_RANGES.some(([base, prefix]) => ipv4IsInCidr(value, base, prefix));
+  return (
+    value === null ||
+    NON_GLOBAL_IPV4_RANGES.some(([base, prefix]) => ipv4IsInCidr(value, base, prefix))
+  );
 }
 
 /**
@@ -93,8 +96,8 @@ export function isPrivateIPv6(address) {
   if (normalized.startsWith("::ffff:")) {
     // Node's URL parser normalizes an IPv4-mapped literal to hex groups
     // (e.g. `::ffff:127.0.0.1` -> `::ffff:7f00:1`), so handle both forms.
-    const embedded = normalized.slice('::ffff:'.length);
-    if (embedded.includes('.')) {
+    const embedded = normalized.slice("::ffff:".length);
+    if (embedded.includes(".")) {
       return isNonGlobalIPv4(embedded);
     }
     const [hi, lo] = embedded.split(":").map((part) => parseInt(part, 16));
@@ -148,13 +151,13 @@ export function validateCanvasUrl(rawUrl) {
   }
 
   if (parsed.username || parsed.password) {
-    throw new CanvasUrlValidationError('Canvas URL may not contain credentials');
+    throw new CanvasUrlValidationError("Canvas URL may not contain credentials");
   }
   if (parsed.search || parsed.hash) {
-    throw new CanvasUrlValidationError('Canvas URL may not contain a query or fragment');
+    throw new CanvasUrlValidationError("Canvas URL may not contain a query or fragment");
   }
 
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const ipVersion = net.isIP(hostname);
   if (
     (ipVersion === 4 && isNonGlobalIPv4(hostname)) ||
@@ -174,7 +177,7 @@ export function validateCanvasUrl(rawUrl) {
  * Call after `validateCanvasUrl` so query, fragment, and userinfo are absent.
  */
 export function canonicalCanvasBaseUrl(parsedUrl) {
-  const trimmedPath = parsedUrl.pathname.replace(/\/+$/, '');
+  const trimmedPath = parsedUrl.pathname.replace(/\/+$/, "");
   return `${parsedUrl.origin}${trimmedPath}`;
 }
 

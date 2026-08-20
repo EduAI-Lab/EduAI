@@ -10,10 +10,7 @@ import { renderToPipeableStream } from "react-dom/server";
 import { NonceProvider } from "~/lib/nonce";
 import { redactErrorForConsole } from "~/lib/redact.server";
 import { startCoreServerRuntime } from "~/lib/server-runtime.server";
-import {
-  applySecurityHeaders,
-  generateNonce,
-} from "~/lib/security-headers.server";
+import { applySecurityHeaders, generateNonce } from "~/lib/security-headers.server";
 
 if (process.env.NODE_ENV !== "test") {
   startCoreServerRuntime();

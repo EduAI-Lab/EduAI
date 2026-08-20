@@ -1,8 +1,8 @@
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 import {
   getEduAiCourseEnrollmentServiceKey,
   listEduAiCourseEnrollmentsServiceKey,
-} from './eduaiClient.js';
+} from "./eduaiClient.js";
 
 // AI Tutor local enrollments mirror STUDENT and TA access (#1065); INSTRUCTOR
 // access is tracked separately via CourseInstructor and never mirrored here.
@@ -35,13 +35,13 @@ export const AUTO_SYNC_TIMEOUT_MS = 3_000;
  */
 export const LIVE_ENROLLMENT_SYNC_TIMEOUT_MS = 3_000;
 export const LIVE_ENROLLMENT_CACHE_TTL_MS = 3_000;
-export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE = 'ENROLLMENT_AUTH_UNAVAILABLE';
-export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE = 'Enrollment authorization unavailable';
+export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE = "ENROLLMENT_AUTH_UNAVAILABLE";
+export const LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE = "Enrollment authorization unavailable";
 
 const lastAutoSyncAt = new Map();
 const liveEnrollmentCache = new Map();
 const localCourseLockTails = new Map();
-const COURSE_ENROLLMENT_LOCK_PREFIX = 'ai-tutor:course-enrollment:';
+const COURSE_ENROLLMENT_LOCK_PREFIX = "ai-tutor:course-enrollment:";
 
 /**
  * Serialize a course's roster fetch, local reconciliation, and any effective
@@ -56,9 +56,9 @@ const COURSE_ENROLLMENT_LOCK_PREFIX = 'ai-tutor:course-enrollment:';
  * `withCourseEnrollmentLock` callback for the same course.
  */
 export async function withCourseEnrollmentLock(courseOfferingId, operation) {
-  if (typeof prisma.$transaction === 'function') {
+  if (typeof prisma.$transaction === "function") {
     return prisma.$transaction(async (tx) => {
-      if (typeof tx.$executeRaw === 'function') {
+      if (typeof tx.$executeRaw === "function") {
         // `pg_advisory_xact_lock` returns PostgreSQL `void`, which Prisma
         // cannot deserialize through `$queryRaw` (P2010). Execute the SELECT
         // for its locking side effect instead.
@@ -97,23 +97,27 @@ export async function withCourseEnrollmentLock(courseOfferingId, operation) {
  * @returns {Promise<{allowed: boolean, state: 'allowed'|'denied'|'unavailable', role: string|null}>}
  */
 export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, options = {}) {
-  if (!Number.isFinite(courseOfferingId) || typeof userId !== 'string' || userId.length === 0) {
-    return { allowed: false, state: 'denied', role: null };
+  if (!Number.isFinite(courseOfferingId) || typeof userId !== "string" || userId.length === 0) {
+    return { allowed: false, state: "denied", role: null };
   }
 
   try {
     const course =
-      options.course ?? (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
-    if (!course?.coreOfferingId) return { allowed: false, state: 'denied', role: null };
+      options.course ??
+      (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+    if (!course?.coreOfferingId) return { allowed: false, state: "denied", role: null };
 
     const cacheKey = `${course.coreOfferingId}:${userId}`;
     const cached = liveEnrollmentCache.get(cacheKey);
     const ttlMs = options.ttlMs ?? LIVE_ENROLLMENT_CACHE_TTL_MS;
-    let enrollment = cached && Date.now() - cached.checkedAt < ttlMs ? cached.enrollment : undefined;
+    let enrollment =
+      cached && Date.now() - cached.checkedAt < ttlMs ? cached.enrollment : undefined;
     if (enrollment === undefined) {
       const signal =
         options.signal ?? AbortSignal.timeout(options.timeoutMs ?? LIVE_ENROLLMENT_SYNC_TIMEOUT_MS);
-      enrollment = await getEduAiCourseEnrollmentServiceKey(course.coreOfferingId, userId, { signal });
+      enrollment = await getEduAiCourseEnrollmentServiceKey(course.coreOfferingId, userId, {
+        signal,
+      });
       liveEnrollmentCache.set(cacheKey, { checkedAt: Date.now(), enrollment });
     }
 
@@ -121,14 +125,14 @@ export async function authorizeLiveStudentEnrollment(courseOfferingId, userId, o
     const allowedRoles = new Set(
       Array.isArray(options.allowedRoles) && options.allowedRoles.length > 0
         ? options.allowedRoles
-        : ['STUDENT'],
+        : ["STUDENT"],
     );
     const allowed = role !== null && allowedRoles.has(role);
-    return { allowed, state: allowed ? 'allowed' : 'denied', role };
+    return { allowed, state: allowed ? "allowed" : "denied", role };
   } catch {
     return {
       allowed: false,
-      state: 'unavailable',
+      state: "unavailable",
       role: null,
     };
   }

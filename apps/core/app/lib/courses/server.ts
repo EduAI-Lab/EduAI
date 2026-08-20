@@ -318,15 +318,9 @@ export async function getCourses(request: Request) {
 
   // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
   if (caller.kind === "serviceKey") {
-    const { rows, total } = await listCourses(
-      withSelectors({ deletedAt: null }),
-    );
-    const data = rows.map((row) =>
-      serializeCourseForApi(row, { audience: "service" }),
-    );
-    return pagination
-      ? paginatedResponse(data, total, pagination)
-      : unpagedResponse(data);
+    const { rows, total } = await listCourses(withSelectors({ deletedAt: null }));
+    const data = rows.map((row) => serializeCourseForApi(row, { audience: "service" }));
+    return pagination ? paginatedResponse(data, total, pagination) : unpagedResponse(data);
   }
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
@@ -345,9 +339,7 @@ export async function getCourses(request: Request) {
     },
     select: { courseId: true, role: true },
   });
-  const roleByCourseId = new Map(
-    enrollmentRows.map((row) => [row.courseId, row.role]),
-  );
+  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
   const coursesWithCallerRole = courses.map((course) => {
     const callerEnrollmentRole = roleByCourseId.get(course.id) ?? null;
     // Audience follows the resolved course relationship, not merely the
@@ -464,10 +456,7 @@ export async function createCourse(request: Request) {
     return created;
   });
 
-  return jsonResponse(
-    201,
-    serializeCourseForApi(course, { audience: "staff", detail: true }),
-  );
+  return jsonResponse(201, serializeCourseForApi(course, { audience: "staff", detail: true }));
 }
 
 /**
@@ -525,9 +514,7 @@ export async function updateCourse(request: Request, courseId: string) {
       },
     });
     return new Response(
-      JSON.stringify(
-        serializeCourseForApi(updated, { audience: "staff", detail: true }),
-      ),
+      JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
       {
         status: 200,
         headers: { "Content-Type": "application/json" } as const,
@@ -601,9 +588,7 @@ export async function updateCourse(request: Request, courseId: string) {
   });
 
   return new Response(
-    JSON.stringify(
-      serializeCourseForApi(updated, { audience: "staff", detail: true }),
-    ),
+    JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
     {
       status: 200,
       headers: { "Content-Type": "application/json" } as const,
@@ -683,11 +668,7 @@ export async function deleteCourse(request: Request, courseId: string) {
  * Accepts service key (extensions) or user session (ADMIN / UNIT_ADMIN(D) /
  * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
  */
-export async function setPublishState(
-  request: Request,
-  courseId: string,
-  publish: boolean,
-) {
+export async function setPublishState(request: Request, courseId: string, publish: boolean) {
   // A forwarded user session remains the actor even when a trusted extension
   // also supplies its service key as server provenance. Resolve the session
   // once so bearer presence cannot bypass user access or publish policy.
@@ -695,10 +676,7 @@ export async function setPublishState(
 
   // Service-only requests retain trusted extension access. Invalid bearer
   // credentials still fail the guard.
-  if (
-    !session?.user &&
-    request.headers.get("Authorization")?.startsWith("Bearer ")
-  ) {
+  if (!session?.user && request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
 
@@ -718,9 +696,7 @@ export async function setPublishState(
       data: { isPublished: publish },
     });
     return new Response(
-      JSON.stringify(
-        serializeCourseForApi(updated, { audience: "service", detail: true }),
-      ),
+      JSON.stringify(serializeCourseForApi(updated, { audience: "service", detail: true })),
       {
         status: 200,
         headers: { "Content-Type": "application/json" } as const,
@@ -769,9 +745,7 @@ export async function setPublishState(
     data: { isPublished: publish },
   });
   return new Response(
-    JSON.stringify(
-      serializeCourseForApi(updated, { audience: "staff", detail: true }),
-    ),
+    JSON.stringify(serializeCourseForApi(updated, { audience: "staff", detail: true })),
     {
       status: 200,
       headers: { "Content-Type": "application/json" } as const,

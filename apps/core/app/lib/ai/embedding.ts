@@ -162,10 +162,13 @@ async function pgvectorSupportsIterativeScan(): Promise<boolean> {
           IVFFLAT_ITERATIVE_SCAN_MIN_VERSION,
         );
       } catch (err) {
-        console.warn("[embeddings] failed to read pgvector extension version; " +
-          "skipping ivfflat.iterative_scan / ivfflat.max_probes", {
-          error: providerErrorDiagnostic(err),
-        });
+        console.warn(
+          "[embeddings] failed to read pgvector extension version; " +
+            "skipping ivfflat.iterative_scan / ivfflat.max_probes",
+          {
+            error: providerErrorDiagnostic(err),
+          },
+        );
         return false;
       }
     })();
@@ -213,10 +216,7 @@ export class EmbeddingRequestTimeoutError extends Error {
 
 export function resolveEmbeddingRequestTimeoutMs(): number {
   const configured = Number(process.env.EMBEDDING_REQUEST_TIMEOUT_MS);
-  if (
-    !Number.isSafeInteger(configured) ||
-    configured < MIN_EMBEDDING_REQUEST_TIMEOUT_MS
-  ) {
+  if (!Number.isSafeInteger(configured) || configured < MIN_EMBEDDING_REQUEST_TIMEOUT_MS) {
     return DEFAULT_EMBEDDING_REQUEST_TIMEOUT_MS;
   }
   return Math.min(configured, MAX_EMBEDDING_REQUEST_TIMEOUT_MS);
@@ -269,16 +269,14 @@ async function withEmbeddingRequestDeadline<T>(
 
   const timeoutMs = resolveEmbeddingRequestTimeoutMs();
   const controller = new AbortController();
-  const abortFromUpstream = () =>
-    controller.abort(abortSignalReason(upstreamSignal!));
+  const abortFromUpstream = () => controller.abort(abortSignalReason(upstreamSignal!));
   upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
 
   let rejectCancellation: (reason: unknown) => void = () => undefined;
   const cancellation = new Promise<never>((_resolve, reject) => {
     rejectCancellation = reject;
   });
-  const onAbort = () =>
-    rejectCancellation(abortSignalReason(controller.signal));
+  const onAbort = () => rejectCancellation(abortSignalReason(controller.signal));
   controller.signal.addEventListener("abort", onAbort, { once: true });
 
   const timer = setTimeout(() => {
@@ -320,10 +318,7 @@ function isTransientEmbeddingError(err: unknown): boolean {
   return /\b(429|503)\b|rate limit|too many requests|service unavailable/i.test(message);
 }
 
-async function waitForEmbeddingRetry(
-  delayMs: number,
-  signal?: AbortSignal,
-): Promise<void> {
+async function waitForEmbeddingRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw abortSignalReason(signal);
 
   await new Promise<void>((resolve, reject) => {
@@ -360,11 +355,8 @@ async function retryTransientEmbeddingError<T>(
         throw err;
       }
 
-      const exponentialDelayMs =
-        TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
-      const delayMs = Math.round(
-        exponentialDelayMs * (0.75 + Math.random() * 0.5),
-      );
+      const exponentialDelayMs = TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      const delayMs = Math.round(exponentialDelayMs * (0.75 + Math.random() * 0.5));
       console.warn("[embeddings] transient provider failure; retrying", {
         attempt,
         maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
@@ -503,16 +495,8 @@ async function embedManyOllamaNative(
       throw err;
     }
     const mid = Math.floor(values.length / 2);
-    const left = await embedManyOllamaNative(
-      modelId,
-      values.slice(0, mid),
-      upstreamSignal,
-    );
-    const right = await embedManyOllamaNative(
-      modelId,
-      values.slice(mid),
-      upstreamSignal,
-    );
+    const left = await embedManyOllamaNative(modelId, values.slice(0, mid), upstreamSignal);
+    const right = await embedManyOllamaNative(modelId, values.slice(mid), upstreamSignal);
     return [...left, ...right];
   }
 }
@@ -950,11 +934,7 @@ async function embedWithConfiguredProvider<T>(
 
   try {
     return await retryTransientEmbeddingError(
-      () =>
-        withEmbeddingRequestDeadline(
-          (signal) => run(model, signal),
-          requestOptions?.signal,
-        ),
+      () => withEmbeddingRequestDeadline((signal) => run(model, signal), requestOptions?.signal),
       requestOptions?.signal,
     );
   } catch (err) {
@@ -985,30 +965,29 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += batchSize) {
     const batch = chunks.slice(i, i + batchSize);
-    const embeddings = settings.wantsLocal && !usesVllmEmbeddingEndpoint()
-      ? await embedManyOllamaNative(
-          settings.model,
-          batch,
-          requestOptions?.signal,
-        ).catch((err) => {
-          if (requestOptions?.signal?.aborted) {
-            throw abortSignalReason(requestOptions.signal);
-          }
-          throw wrapLocalEmbeddingError(settings.model, err);
-        })
-      : await embedWithConfiguredProvider(
-          async (model, abortSignal) => {
-            const result = await embedMany({
-              model,
-              values: batch,
-              abortSignal,
-            });
-            return result.embeddings;
-          },
-          courseId,
-          settingsSnapshot,
-          requestOptions,
-        );
+    const embeddings =
+      settings.wantsLocal && !usesVllmEmbeddingEndpoint()
+        ? await embedManyOllamaNative(settings.model, batch, requestOptions?.signal).catch(
+            (err) => {
+              if (requestOptions?.signal?.aborted) {
+                throw abortSignalReason(requestOptions.signal);
+              }
+              throw wrapLocalEmbeddingError(settings.model, err);
+            },
+          )
+        : await embedWithConfiguredProvider(
+            async (model, abortSignal) => {
+              const result = await embedMany({
+                model,
+                values: batch,
+                abortSignal,
+              });
+              return result.embeddings;
+            },
+            courseId,
+            settingsSnapshot,
+            requestOptions,
+          );
 
     if (embeddings.length !== batch.length) {
       throw new Error(
@@ -1042,31 +1021,29 @@ export async function generateEmbedding(
     return hit.embedding;
   }
 
-  const embedding = settings.wantsLocal && !usesVllmEmbeddingEndpoint()
-    ? (
-        await embedManyOllamaNative(
-          settings.model,
-          [query],
-          requestOptions?.signal,
-        ).catch((err) => {
-          if (requestOptions?.signal?.aborted) {
-            throw abortSignalReason(requestOptions.signal);
-          }
-          throw wrapLocalEmbeddingError(settings.model, err);
-        })
-      )[0]
-    : settings.wantsLocal
+  const embedding =
+    settings.wantsLocal && !usesVllmEmbeddingEndpoint()
       ? (
-          await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId)
-        ).embedding
-    : (
-        await embedWithConfiguredProvider(
-          (model, abortSignal) => embed({ model, value: query, abortSignal }),
-          courseId,
-          undefined,
-          requestOptions,
-        )
-      ).embedding;
+          await embedManyOllamaNative(settings.model, [query], requestOptions?.signal).catch(
+            (err) => {
+              if (requestOptions?.signal?.aborted) {
+                throw abortSignalReason(requestOptions.signal);
+              }
+              throw wrapLocalEmbeddingError(settings.model, err);
+            },
+          )
+        )[0]
+      : settings.wantsLocal
+        ? (await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId))
+            .embedding
+        : (
+            await embedWithConfiguredProvider(
+              (model, abortSignal) => embed({ model, value: query, abortSignal }),
+              courseId,
+              undefined,
+              requestOptions,
+            )
+          ).embedding;
 
   assertEmbeddingDimension(embedding, "generateEmbedding");
 
@@ -1373,9 +1350,8 @@ async function markCourseEmbedded(
     lastEmbeddedAt: new Date(),
   };
   if (leaseFence) {
-    await runFencedReEmbedTransaction(
-      leaseFence,
-      (tx) => tx.course.update({ where: { id: courseId }, data }).then(() => undefined),
+    await runFencedReEmbedTransaction(leaseFence, (tx) =>
+      tx.course.update({ where: { id: courseId }, data }).then(() => undefined),
     );
   } else {
     await prisma.course.update({ where: { id: courseId }, data });
@@ -1466,13 +1442,17 @@ export async function reEmbedCourseMaterials(
         const content = material.rawText!.trim();
 
         try {
-          await updateMaterialStatus(material.id, { status: "PROCESSING" }, {
-            leaseFence: options?.leaseFence,
-            transactionOptions: {
-              maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
-              timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+          await updateMaterialStatus(
+            material.id,
+            { status: "PROCESSING" },
+            {
+              leaseFence: options?.leaseFence,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
             },
-          });
+          );
           await processMaterialEmbeddings(material.id, content, {
             replace: true,
             transactionOptions: {
@@ -1485,13 +1465,17 @@ export async function reEmbedCourseMaterials(
             signal: options?.signal,
           });
           await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
-          await updateMaterialStatus(material.id, { status: "READY", processedAt: new Date() }, {
-            leaseFence: options?.leaseFence,
-            transactionOptions: {
-              maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
-              timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+          await updateMaterialStatus(
+            material.id,
+            { status: "READY", processedAt: new Date() },
+            {
+              leaseFence: options?.leaseFence,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
             },
-          });
+          );
           processed += 1;
         } catch (err) {
           if (err instanceof ReEmbedInterruptedError || options?.signal?.aborted) throw err;
@@ -1501,13 +1485,17 @@ export async function reEmbedCourseMaterials(
           await assertReEmbedCanContinue(options?.shouldContinue, options?.signal);
           failed.push(material.id);
           try {
-            await updateMaterialStatus(material.id, { status: "FAILED" }, {
-              leaseFence: options?.leaseFence,
-              transactionOptions: {
-                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
-                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+            await updateMaterialStatus(
+              material.id,
+              { status: "FAILED" },
+              {
+                leaseFence: options?.leaseFence,
+                transactionOptions: {
+                  maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                  timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+                },
               },
-            });
+            );
           } catch (statusError) {
             if (statusError instanceof ReEmbedInterruptedError) throw statusError;
             console.error("[re-embed] failed to persist material failure", {
@@ -1672,11 +1660,7 @@ export async function processMaterialEmbeddings(
   };
 
   if (options?.leaseFence) {
-    await runFencedReEmbedTransaction(
-      options.leaseFence,
-      writeChunks,
-      options.transactionOptions,
-    );
+    await runFencedReEmbedTransaction(options.leaseFence, writeChunks, options.transactionOptions);
   } else {
     await prisma.$transaction(writeChunks, options?.transactionOptions);
   }

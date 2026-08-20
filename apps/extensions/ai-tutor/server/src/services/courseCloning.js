@@ -25,7 +25,7 @@
 import { prisma } from "../config/database.js";
 
 async function runInCloneTransaction(db, operation) {
-  if (typeof db.$transaction === 'function') {
+  if (typeof db.$transaction === "function") {
     return db.$transaction(operation);
   }
   return operation(db);

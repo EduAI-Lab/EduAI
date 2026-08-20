@@ -74,7 +74,7 @@ function validateVariantEnums({ difficulty, reasoningLevel }) {
 router.post(
   "/:id/variants",
   authenticateToken,
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const {
@@ -139,7 +139,7 @@ router.post(
 router.get(
   "/:id/variants",
   authenticateToken,
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       // Structure-bounded (#1044): always a bounded page — params are optional,
@@ -161,7 +161,7 @@ router.get(
 router.put(
   "/variants/:variantId",
   authenticateToken,
-  requireVariantAccess({ min: 'ta' }),
+  requireVariantAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const {
@@ -223,7 +223,7 @@ router.put(
           correctAnswers === undefined &&
           referenceId === undefined;
         if (!reverting && !aiTagOnly && !approvalRetry) {
-          return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
+          return res.status(409).json({ success: false, error: "VARIANT_LOCKED" });
         }
         // §19 TA own-only edit applies here too: the aiTagOnly path is still an edit.
         if (aiTagOnly && access.level === "ta" && current.createdBy !== req.user.id) {
@@ -237,8 +237,10 @@ router.put(
             .status(403)
             .json({ success: false, error: "Only instructors can approve variants" });
         }
-        if (access.level === 'ta' && current.createdBy !== req.user.id) {
-          return res.status(403).json({ success: false, error: 'TAs can only edit their own variants' });
+        if (access.level === "ta" && current.createdBy !== req.user.id) {
+          return res
+            .status(403)
+            .json({ success: false, error: "TAs can only edit their own variants" });
         }
       }
 
@@ -280,7 +282,7 @@ router.put(
               pushResult.coreQuestionId,
             );
             if (!linkResult.applied) {
-              return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
+              return res.status(409).json({ success: false, error: "VARIANT_LOCKED" });
             }
             // Prisma's update() returns a new object rather than mutating `variant`
             // in place (unlike Sequelize's `.update()`) — patch it locally so the
@@ -292,7 +294,11 @@ router.put(
             // VARIANT_LOCKED on the next approve and block the promised retry.
             let rollbackFailed = false;
             try {
-              const rollbackResult = await rollbackVariantApproval(variant.id, req.qmCourse.userId, variant);
+              const rollbackResult = await rollbackVariantApproval(
+                variant.id,
+                req.qmCourse.userId,
+                variant,
+              );
               // A concurrent retry may have moved the row to another state;
               // only a demonstrably draft row makes the error response below
               // truthful. Treat any other outcome as an explicit local/Core
@@ -302,14 +308,18 @@ router.put(
               }
             } catch (rollbackErr) {
               rollbackFailed = true;
-              logger.error({ err: rollbackErr, variantId: variant.id }, 'Failed to roll variant back after Core push failure');
+              logger.error(
+                { err: rollbackErr, variantId: variant.id },
+                "Failed to roll variant back after Core push failure",
+              );
             }
 
             if (rollbackFailed) {
               return res.status(500).json({
                 success: false,
-                error: 'VARIANT_ROLLBACK_FAILED',
-                message: 'Core publish failed and the local approval rollback could not be confirmed.',
+                error: "VARIANT_ROLLBACK_FAILED",
+                message:
+                  "Core publish failed and the local approval rollback could not be confirmed.",
               });
             }
 
@@ -408,7 +418,7 @@ router.patch(
 router.delete(
   "/variants/:variantId",
   authenticateToken,
-  requireVariantAccess({ min: 'ta' }),
+  requireVariantAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       // §19 TA own-only delete (null createdBy = no owner → TA denied).

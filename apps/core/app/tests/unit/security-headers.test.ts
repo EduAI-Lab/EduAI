@@ -259,7 +259,9 @@ describe("root middleware", () => {
     });
 
     expect((await (middleware[0] as any)({ request: refererRequest }, next)).status).toBe(204);
-    expect((await (middleware[0] as any)({ request: fetchMetadataRequest }, next)).status).toBe(204);
+    expect((await (middleware[0] as any)({ request: fetchMetadataRequest }, next)).status).toBe(
+      204,
+    );
     expect(next).toHaveBeenCalledTimes(2);
   });
 
@@ -282,10 +284,13 @@ describe("root middleware", () => {
 
   it("lets authenticated extension session validation reach the action without browser Origin", async () => {
     vi.stubEnv("EDUAI_API_KEY", "verified-service-key");
-    const next = vi.fn(async () => new Response(JSON.stringify({ user: { id: "u1" } }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    const next = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ user: { id: "u1" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
     const request = new Request("https://eduai.example/api/sessions/validate", {
       method: "POST",
       headers: {

@@ -136,10 +136,10 @@ export function ModuleCard({
             <span
               className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold tabular-nums"
               style={{
-                background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                color: 'var(--course-accent)',
+                background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                color: "var(--course-accent)",
                 boxShadow:
-                  'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                  "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
               }}
             >
               {orderLabel}
@@ -147,7 +147,7 @@ export function ModuleCard({
             <span
               className="text-[11px] font-bold uppercase tracking-[0.16em]"
               style={{
-                color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))',
+                color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
               }}
             >
               Module

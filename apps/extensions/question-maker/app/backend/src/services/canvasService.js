@@ -2,22 +2,22 @@
  * Canvas integration service that manages token storage, course mappings, exports, and imports.
  * Supports both real Canvas API calls and a mock test mode for development/demo flows.
  */
-import axios from 'axios';
-import { prisma } from '../config/database.js';
-import { encrypt, decrypt, isEncrypted } from '../utils/encryption.js';
-import { getAssessmentById, createAssessment } from './assessmentService.js';
-import { createAssessmentSection } from './assessmentSectionService.js';
-import { validateCanvasUrl, canonicalCanvasBaseUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
-import { logger } from '../utils/logger.js';
-import { toStableUpstreamError } from '../utils/safeLogging.js';
-import { config } from '../config/settings.js';
-import { currentCanvasRequestSignal } from '../middleware/canvasRequestContext.js';
-import net from 'node:net';
+import axios from "axios";
+import { prisma } from "../config/database.js";
+import { encrypt, decrypt, isEncrypted } from "../utils/encryption.js";
+import { getAssessmentById, createAssessment } from "./assessmentService.js";
+import { createAssessmentSection } from "./assessmentSectionService.js";
 import {
-  createBrotliDecompress,
-  createGunzip,
-  createInflate,
-} from 'node:zlib';
+  validateCanvasUrl,
+  canonicalCanvasBaseUrl,
+  createPinnedLookup,
+} from "../utils/canvasUrlGuard.js";
+import { logger } from "../utils/logger.js";
+import { toStableUpstreamError } from "../utils/safeLogging.js";
+import { config } from "../config/settings.js";
+import { currentCanvasRequestSignal } from "../middleware/canvasRequestContext.js";
+import net from "node:net";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 /**
  * Canvas LMS API Service
@@ -82,8 +82,8 @@ export const saveCanvasIntegration = async (userId, { canvasUrl, apiKey, isTestM
 /** Encodes one opaque Canvas identifier without allowing it to change URL structure. */
 const canvasPathSegment = (value, label) => {
   if (
-    (typeof value !== 'string' && typeof value !== 'number') ||
-    (typeof value === 'number' && !Number.isFinite(value)) ||
+    (typeof value !== "string" && typeof value !== "number") ||
+    (typeof value === "number" && !Number.isFinite(value)) ||
     String(value).length === 0
   ) {
     throw new Error(`${label} must be a non-empty string or finite number`);
@@ -105,25 +105,29 @@ const configuredPositiveInt = (value, fallback) => {
 };
 
 const CANVAS_SETTING_ALIASES = {
-  canvasRequestTimeoutMs: ['canvasPerRequestTimeoutMs'],
-  canvasOperationTimeoutMs: ['canvasPaginationDeadlineMs'],
-  canvasMaxCompressedResponseBytes: ['canvasMaxWireBytes'],
-  canvasMaxResponseBytes: ['canvasMaxDecompressedResponseBytes'],
-  canvasMaxRequestBodyBytes: ['canvasMaxBodyBytes'],
-  canvasMaxPages: ['canvasPaginationMaxPages'],
-  canvasMaxItems: ['canvasPaginationMaxItems'],
+  canvasRequestTimeoutMs: ["canvasPerRequestTimeoutMs"],
+  canvasOperationTimeoutMs: ["canvasPaginationDeadlineMs"],
+  canvasMaxCompressedResponseBytes: ["canvasMaxWireBytes"],
+  canvasMaxResponseBytes: ["canvasMaxDecompressedResponseBytes"],
+  canvasMaxRequestBodyBytes: ["canvasMaxBodyBytes"],
+  canvasMaxPages: ["canvasPaginationMaxPages"],
+  canvasMaxItems: ["canvasPaginationMaxItems"],
 };
 
 const canvasLimit = (name, fallback) => {
-  const value = config?.[name] ?? CANVAS_SETTING_ALIASES[name]?.map((alias) => config?.[alias]).find((candidate) => candidate != null);
+  const value =
+    config?.[name] ??
+    CANVAS_SETTING_ALIASES[name]
+      ?.map((alias) => config?.[alias])
+      .find((candidate) => candidate != null);
   return configuredPositiveInt(value, fallback);
 };
 
 export class CanvasResponseLimitError extends Error {
-  constructor(message = 'Canvas response exceeded the configured size limit') {
+  constructor(message = "Canvas response exceeded the configured size limit") {
     super(message);
-    this.name = 'CanvasResponseLimitError';
-    this.code = 'CANVAS_RESPONSE_TOO_LARGE';
+    this.name = "CanvasResponseLimitError";
+    this.code = "CANVAS_RESPONSE_TOO_LARGE";
     this.status = 502;
     this.isPublic = true;
     this.isSanitizedUpstreamError = true;
@@ -131,10 +135,10 @@ export class CanvasResponseLimitError extends Error {
 }
 
 export class CanvasPaginationError extends Error {
-  constructor(message = 'Canvas pagination exceeded the configured safety limits') {
+  constructor(message = "Canvas pagination exceeded the configured safety limits") {
     super(message);
-    this.name = 'CanvasPaginationError';
-    this.code = 'CANVAS_PAGINATION_INVALID';
+    this.name = "CanvasPaginationError";
+    this.code = "CANVAS_PAGINATION_INVALID";
     this.status = 502;
     this.isPublic = true;
     this.isSanitizedUpstreamError = true;
@@ -142,17 +146,17 @@ export class CanvasPaginationError extends Error {
 }
 
 export class CanvasDeadlineError extends Error {
-  constructor(message = 'Canvas request deadline exceeded', options) {
+  constructor(message = "Canvas request deadline exceeded", options) {
     super(message, options);
-    this.name = 'CanvasDeadlineError';
-    this.code = 'CANVAS_DEADLINE_EXCEEDED';
+    this.name = "CanvasDeadlineError";
+    this.code = "CANVAS_DEADLINE_EXCEEDED";
     this.status = 504;
     this.isPublic = true;
     this.isSanitizedUpstreamError = true;
   }
 }
 
-function abortReason(signal, fallback = new DOMException('Canvas request aborted', 'AbortError')) {
+function abortReason(signal, fallback = new DOMException("Canvas request aborted", "AbortError")) {
   if (!signal?.aborted) return null;
   return signal.reason instanceof Error ? signal.reason : fallback;
 }
@@ -168,18 +172,22 @@ function combineAbortSignals(signals) {
       if (!controller.signal.aborted) controller.abort(signal.reason);
     };
     if (signal.aborted) onAbort();
-    else signal.addEventListener('abort', onAbort, { once: true });
+    else signal.addEventListener("abort", onAbort, { once: true });
     return { signal, onAbort };
   });
 
   return {
     signal: controller.signal,
-    cleanup: () => listeners.forEach(({ signal, onAbort }) => signal.removeEventListener('abort', onAbort)),
+    cleanup: () =>
+      listeners.forEach(({ signal, onAbort }) => signal.removeEventListener("abort", onAbort)),
   };
 }
 
 function createOperationContext(requestOptions = {}) {
-  const configuredTimeoutMs = canvasLimit('canvasOperationTimeoutMs', CANVAS_DEFAULT_OPERATION_TIMEOUT_MS);
+  const configuredTimeoutMs = canvasLimit(
+    "canvasOperationTimeoutMs",
+    CANVAS_DEFAULT_OPERATION_TIMEOUT_MS,
+  );
   const timeoutMs = Math.min(
     configuredTimeoutMs,
     configuredPositiveInt(requestOptions.deadlineMs, configuredTimeoutMs),
@@ -214,23 +222,24 @@ function remainingOperationMs(context) {
   return Math.max(1, context.deadlineAt - Date.now());
 }
 
-const delayWithSignal = (delayMs, signal) => new Promise((resolve, reject) => {
-  let settled = false;
-  const timer = setTimeout(() => {
-    settled = true;
-    signal?.removeEventListener('abort', onAbort);
-    resolve();
-  }, delayMs);
-  const onAbort = () => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timer);
-    signal?.removeEventListener('abort', onAbort);
-    reject(abortReason(signal));
-  };
-  if (signal?.aborted) onAbort();
-  else signal?.addEventListener('abort', onAbort, { once: true });
-});
+const delayWithSignal = (delayMs, signal) =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(abortReason(signal));
+    };
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
+  });
 
 function awaitWithAbort(promise, signal) {
   if (!signal) return promise;
@@ -238,50 +247,57 @@ function awaitWithAbort(promise, signal) {
   let onAbort;
   const abortPromise = new Promise((_, reject) => {
     onAbort = () => reject(abortReason(signal));
-    signal.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
   });
   return Promise.race([promise, abortPromise]).finally(() => {
-    signal.removeEventListener('abort', onAbort);
+    signal.removeEventListener("abort", onAbort);
   });
 }
 
 function readHeader(headers, name) {
   if (!headers) return null;
-  if (typeof headers.get === 'function') {
+  if (typeof headers.get === "function") {
     const value = headers.get(name);
     return value == null ? null : String(value);
   }
-  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  const key = Object.keys(headers).find(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+  );
   return key && headers[key] != null ? String(headers[key]) : null;
 }
 
 async function decodeBody(raw, contentEncoding, maxResponseBytes) {
-  const encoding = String(contentEncoding || '').split(',')[0].trim().toLowerCase();
-  if (!encoding || encoding === 'identity') return raw;
+  const encoding = String(contentEncoding || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  if (!encoding || encoding === "identity") return raw;
   let decoder;
-  if (encoding === 'gzip' || encoding === 'x-gzip') decoder = createGunzip();
-  else if (encoding === 'deflate') decoder = createInflate();
-  else if (encoding === 'br') decoder = createBrotliDecompress();
+  if (encoding === "gzip" || encoding === "x-gzip") decoder = createGunzip();
+  else if (encoding === "deflate") decoder = createInflate();
+  else if (encoding === "br") decoder = createBrotliDecompress();
   else return raw;
 
   const chunks = [];
   let outputBytes = 0;
   await new Promise((resolve, reject) => {
-    decoder.on('data', (chunk) => {
+    decoder.on("data", (chunk) => {
       outputBytes += chunk.byteLength;
       if (outputBytes > maxResponseBytes) {
-        decoder.destroy(new CanvasResponseLimitError('Canvas response exceeded the decompressed size limit'));
+        decoder.destroy(
+          new CanvasResponseLimitError("Canvas response exceeded the decompressed size limit"),
+        );
         return;
       }
       chunks.push(chunk);
     });
-    decoder.once('end', resolve);
-    decoder.once('error', reject);
+    decoder.once("end", resolve);
+    decoder.once("error", reject);
     decoder.end(raw);
   }).catch((error) => {
     if (error instanceof CanvasResponseLimitError) throw error;
-    const stable = toStableUpstreamError(error, { serviceName: 'Canvas API' });
-    stable.code = 'CANVAS_RESPONSE_DECODE_FAILED';
+    const stable = toStableUpstreamError(error, { serviceName: "Canvas API" });
+    stable.code = "CANVAS_RESPONSE_DECODE_FAILED";
     stable.status = 502;
     stable.isPublic = true;
     throw stable;
@@ -292,8 +308,8 @@ async function decodeBody(raw, contentEncoding, maxResponseBytes) {
 function parseResponseBody(raw, response) {
   if (raw == null) return raw;
   if (!Buffer.isBuffer(raw)) return raw;
-  const text = raw.toString('utf8');
-  const contentType = readHeader(response?.headers, 'content-type') || '';
+  const text = raw.toString("utf8");
+  const contentType = readHeader(response?.headers, "content-type") || "";
   if (/json/i.test(contentType) || /^[\s[{]/.test(text)) {
     try {
       return text.length ? JSON.parse(text) : null;
@@ -307,22 +323,27 @@ function parseResponseBody(raw, response) {
 
 async function consumeCanvasBody(response, signal) {
   const maxCompressed = canvasLimit(
-    'canvasMaxCompressedResponseBytes',
+    "canvasMaxCompressedResponseBytes",
     CANVAS_DEFAULT_COMPRESSED_RESPONSE_BYTES,
   );
-  const maxResponse = canvasLimit('canvasMaxResponseBytes', CANVAS_DEFAULT_RESPONSE_BYTES);
-  const declaredLength = Number.parseInt(readHeader(response?.headers, 'content-length'), 10);
+  const maxResponse = canvasLimit("canvasMaxResponseBytes", CANVAS_DEFAULT_RESPONSE_BYTES);
+  const declaredLength = Number.parseInt(readHeader(response?.headers, "content-length"), 10);
   if (Number.isSafeInteger(declaredLength) && declaredLength > maxCompressed) {
     response?.data?.destroy?.();
-    throw new CanvasResponseLimitError('Canvas response exceeded the compressed size limit');
+    throw new CanvasResponseLimitError("Canvas response exceeded the compressed size limit");
   }
 
   const body = response?.data;
-  if (body && typeof body !== 'string' && !Buffer.isBuffer(body) && typeof body[Symbol.asyncIterator] === 'function') {
+  if (
+    body &&
+    typeof body !== "string" &&
+    !Buffer.isBuffer(body) &&
+    typeof body[Symbol.asyncIterator] === "function"
+  ) {
     const chunks = [];
     let compressedBytes = 0;
     const onAbort = () => body.destroy?.(abortReason(signal));
-    signal?.addEventListener('abort', onAbort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
     try {
       const iterator = body[Symbol.asyncIterator]();
       while (true) {
@@ -333,32 +354,36 @@ async function consumeCanvasBody(response, signal) {
         compressedBytes += buffer.byteLength;
         if (compressedBytes > maxCompressed) {
           body.destroy?.();
-          throw new CanvasResponseLimitError('Canvas response exceeded the compressed size limit');
+          throw new CanvasResponseLimitError("Canvas response exceeded the compressed size limit");
         }
         chunks.push(buffer);
       }
     } finally {
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener("abort", onAbort);
     }
     const decoded = await decodeBody(
       Buffer.concat(chunks),
-      readHeader(response?.headers, 'content-encoding'),
+      readHeader(response?.headers, "content-encoding"),
       maxResponse,
     );
     if (decoded.byteLength > maxResponse) {
-      throw new CanvasResponseLimitError('Canvas response exceeded the decompressed size limit');
+      throw new CanvasResponseLimitError("Canvas response exceeded the decompressed size limit");
     }
     return parseResponseBody(decoded, response);
   }
 
-  if (typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array) {
+  if (typeof body === "string" || Buffer.isBuffer(body) || body instanceof Uint8Array) {
     const raw = Buffer.isBuffer(body) ? body : Buffer.from(body);
     if (raw.byteLength > maxCompressed) {
-      throw new CanvasResponseLimitError('Canvas response exceeded the compressed size limit');
+      throw new CanvasResponseLimitError("Canvas response exceeded the compressed size limit");
     }
-    const decoded = await decodeBody(raw, readHeader(response?.headers, 'content-encoding'), maxResponse);
+    const decoded = await decodeBody(
+      raw,
+      readHeader(response?.headers, "content-encoding"),
+      maxResponse,
+    );
     if (decoded.byteLength > maxResponse) {
-      throw new CanvasResponseLimitError('Canvas response exceeded the decompressed size limit');
+      throw new CanvasResponseLimitError("Canvas response exceeded the decompressed size limit");
     }
     return parseResponseBody(decoded, response);
   }
@@ -371,10 +396,10 @@ async function consumeCanvasBody(response, signal) {
     try {
       serialized = JSON.stringify(body);
     } catch {
-      throw new CanvasResponseLimitError('Canvas response could not be bounded');
+      throw new CanvasResponseLimitError("Canvas response could not be bounded");
     }
-    if (Buffer.byteLength(serialized || '') > maxResponse) {
-      throw new CanvasResponseLimitError('Canvas response exceeded the decompressed size limit');
+    if (Buffer.byteLength(serialized || "") > maxResponse) {
+      throw new CanvasResponseLimitError("Canvas response exceeded the decompressed size limit");
     }
   }
   return body;
@@ -386,31 +411,44 @@ function canvasRequestUrl(integration, endpoint) {
   const baseWithTrailingSlash = `${canonicalCanvasBaseUrl(parsedBase)}/`;
   if (/^https?:\/\//i.test(endpoint)) {
     const parsed = new URL(endpoint);
-    if (parsed.origin !== canvasOrigin || parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-      throw new CanvasPaginationError('Canvas pagination link must remain on the configured Canvas origin');
+    if (
+      parsed.origin !== canvasOrigin ||
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password
+    ) {
+      throw new CanvasPaginationError(
+        "Canvas pagination link must remain on the configured Canvas origin",
+      );
     }
     return { canvasOrigin, url: parsed.href };
   }
-  if (endpoint.startsWith('/api/v1/')) {
-    return { canvasOrigin, url: new URL(endpoint.replace(/^\//, ''), baseWithTrailingSlash).href };
+  if (endpoint.startsWith("/api/v1/")) {
+    return { canvasOrigin, url: new URL(endpoint.replace(/^\//, ""), baseWithTrailingSlash).href };
   }
-  const apiRoot = new URL('api/v1/', baseWithTrailingSlash);
-  return { canvasOrigin, url: new URL(endpoint.replace(/^\//, ''), apiRoot).href };
+  const apiRoot = new URL("api/v1/", baseWithTrailingSlash);
+  return { canvasOrigin, url: new URL(endpoint.replace(/^\//, ""), apiRoot).href };
 }
 
 /** Executes one bounded Canvas API request, returning mock data when test mode is enabled. */
-const makeCanvasRequest = async (integration, method, endpoint, data = null, requestOptions = {}) => {
+const makeCanvasRequest = async (
+  integration,
+  method,
+  endpoint,
+  data = null,
+  requestOptions = {},
+) => {
   const requestSignal = requestOptions.signal || currentCanvasRequestSignal();
   const perRequestTimeout = Math.max(
     1,
     Math.min(
-      canvasLimit('canvasRequestTimeoutMs', CANVAS_DEFAULT_REQUEST_TIMEOUT_MS),
+      canvasLimit("canvasRequestTimeoutMs", CANVAS_DEFAULT_REQUEST_TIMEOUT_MS),
       remainingOperationMs(requestOptions.operationContext),
     ),
   );
   const timeoutController = new AbortController();
   const timeout = setTimeout(
-    () => timeoutController.abort(new CanvasDeadlineError('Canvas request deadline exceeded')),
+    () => timeoutController.abort(new CanvasDeadlineError("Canvas request deadline exceeded")),
     perRequestTimeout,
   );
   const combined = combineAbortSignals([requestSignal, timeoutController.signal]);
@@ -421,10 +459,12 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null, req
       try {
         bodySize = Buffer.byteLength(JSON.stringify(data));
       } catch {
-        throw new CanvasResponseLimitError('Canvas request body could not be bounded');
+        throw new CanvasResponseLimitError("Canvas request body could not be bounded");
       }
-      if (bodySize > canvasLimit('canvasMaxRequestBodyBytes', CANVAS_DEFAULT_REQUEST_BODY_BYTES)) {
-        throw new CanvasResponseLimitError('Canvas request body exceeded the configured size limit');
+      if (bodySize > canvasLimit("canvasMaxRequestBodyBytes", CANVAS_DEFAULT_REQUEST_BODY_BYTES)) {
+        throw new CanvasResponseLimitError(
+          "Canvas request body exceeded the configured size limit",
+        );
       }
     }
 
@@ -433,44 +473,61 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null, req
       await delayWithSignal(300, combined.signal);
 
       // Return mock responses based on endpoint
-      if (endpoint.includes('/courses') && method === 'GET' && !endpoint.includes('/quizzes')) {
+      if (endpoint.includes("/courses") && method === "GET" && !endpoint.includes("/quizzes")) {
         return { data: MOCK_CANVAS_COURSES, headers: {} };
       }
-      if (endpoint.includes('/quizzes') && method === 'POST') {
-        return { data: { id: Math.floor(Math.random() * 1000), title: data?.quiz?.title || 'Test Quiz' }, headers: {} };
+      if (endpoint.includes("/quizzes") && method === "POST") {
+        return {
+          data: { id: Math.floor(Math.random() * 1000), title: data?.quiz?.title || "Test Quiz" },
+          headers: {},
+        };
       }
-      if (endpoint.includes('/quizzes') && method === 'GET' && !endpoint.includes('/questions')) {
-        return { data: [
-          { id: 1, title: 'Test Quiz 1', quiz_type: 'assignment', published: false },
-          { id: 2, title: 'Test Quiz 2', quiz_type: 'assignment', published: true }
-        ], headers: {} };
+      if (endpoint.includes("/quizzes") && method === "GET" && !endpoint.includes("/questions")) {
+        return {
+          data: [
+            { id: 1, title: "Test Quiz 1", quiz_type: "assignment", published: false },
+            { id: 2, title: "Test Quiz 2", quiz_type: "assignment", published: true },
+          ],
+          headers: {},
+        };
       }
-      if (endpoint.includes('/questions') && method === 'POST') {
+      if (endpoint.includes("/questions") && method === "POST") {
         return { data: { id: Math.floor(Math.random() * 1000) }, headers: {} };
       }
-      if (endpoint.includes('/questions') && method === 'GET') {
+      if (endpoint.includes("/questions") && method === "GET") {
         const singleQuestionMatch = endpoint.match(/\/questions\/(\d+)$/);
         const singleQuestion = {
           id: 1,
-          question_name: '1. Test Question',
-          question_text: 'What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6',
-          question_type: 'multiple_choice_question',
+          question_name: "1. Test Question",
+          question_text: "What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6",
+          question_type: "multiple_choice_question",
           position: 1,
           answers: [
-            { id: 1, answer_text: '3', answer_weight: 0 },
-            { id: 2, answer_text: '4', answer_weight: 100 },
-            { id: 3, answer_text: '5', answer_weight: 0 },
-            { id: 4, answer_text: '6', answer_weight: 0 }
-          ]
+            { id: 1, answer_text: "3", answer_weight: 0 },
+            { id: 2, answer_text: "4", answer_weight: 100 },
+            { id: 3, answer_text: "5", answer_weight: 0 },
+            { id: 4, answer_text: "6", answer_weight: 0 },
+          ],
         };
         if (singleQuestionMatch) {
-          return { data: { ...singleQuestion, id: parseInt(singleQuestionMatch[1], 10) }, headers: {} };
+          return {
+            data: { ...singleQuestion, id: parseInt(singleQuestionMatch[1], 10) },
+            headers: {},
+          };
         }
         return { data: [singleQuestion], headers: {} };
       }
-      if (endpoint.includes('/quizzes') && method === 'GET' && endpoint.match(/\/quizzes\/\d+$/)) {
+      if (endpoint.includes("/quizzes") && method === "GET" && endpoint.match(/\/quizzes\/\d+$/)) {
         const quizId = endpoint.match(/\/quizzes\/(\d+)$/)?.[1];
-        return { data: { id: parseInt(quizId), title: 'Test Quiz', quiz_type: 'assignment', published: false }, headers: {} };
+        return {
+          data: {
+            id: parseInt(quizId),
+            title: "Test Quiz",
+            quiz_type: "assignment",
+            published: false,
+          },
+          headers: {},
+        };
       }
       return { data: { success: true }, headers: {} };
     }
@@ -484,34 +541,36 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null, req
       method,
       url,
       headers: {
-        'Authorization': `Bearer ${integration.apiKey}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${integration.apiKey}`,
+        "Content-Type": "application/json",
       },
       signal: combined.signal,
       timeout: perRequestTimeout,
-      responseType: 'stream',
+      responseType: "stream",
       // Count raw wire bytes ourselves before decoding, then enforce the
       // decompressed cap while consuming the bounded stream.
       decompress: false,
       maxContentLength: canvasLimit(
-        'canvasMaxCompressedResponseBytes',
+        "canvasMaxCompressedResponseBytes",
         CANVAS_DEFAULT_COMPRESSED_RESPONSE_BYTES,
       ),
-      maxBodyLength: canvasLimit('canvasMaxRequestBodyBytes', CANVAS_DEFAULT_REQUEST_BODY_BYTES),
+      maxBodyLength: canvasLimit("canvasMaxRequestBodyBytes", CANVAS_DEFAULT_REQUEST_BODY_BYTES),
       lookup: createPinnedLookup(),
       maxRedirects: 5,
       beforeRedirect: (redirectOptions) => {
         const { protocol, hostname, port } = redirectOptions;
         const host = net.isIP(hostname) === 6 ? `[${hostname}]` : hostname;
-        const redirectOrigin = validateCanvasUrl(`${protocol}//${host}${port ? `:${port}` : ''}`).origin;
+        const redirectOrigin = validateCanvasUrl(
+          `${protocol}//${host}${port ? `:${port}` : ""}`,
+        ).origin;
         if (redirectOrigin !== canvasOrigin && redirectOptions.headers) {
           for (const headerName of Object.keys(redirectOptions.headers)) {
-            if (headerName.toLowerCase() === 'authorization') {
+            if (headerName.toLowerCase() === "authorization") {
               delete redirectOptions.headers[headerName];
             }
           }
         }
-      }
+      },
     };
 
     if (data != null) axiosConfig.data = data;
@@ -530,11 +589,11 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null, req
         if (requestSignal?.aborted) throw abortReason(requestSignal, error);
         if (timeoutController.signal.aborted) throw abortReason(timeoutController.signal, error);
       }
-      if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
-        throw new CanvasDeadlineError('Canvas request deadline exceeded', { cause: error });
+      if (error?.code === "ECONNABORTED" || error?.code === "ETIMEDOUT") {
+        throw new CanvasDeadlineError("Canvas request deadline exceeded", { cause: error });
       }
       error?.response?.data?.destroy?.();
-      throw toStableUpstreamError(error, { serviceName: 'Canvas API' });
+      throw toStableUpstreamError(error, { serviceName: "Canvas API" });
     }
   } finally {
     clearTimeout(timeout);
@@ -543,17 +602,27 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null, req
 };
 
 function isCancellationError(error) {
-  return error?.name === 'AbortError' || error?.code === 'ERR_CANCELED' || error?.name === 'CanvasDeadlineError';
+  return (
+    error?.name === "AbortError" ||
+    error?.code === "ERR_CANCELED" ||
+    error?.name === "CanvasDeadlineError"
+  );
 }
 
 function rethrowCanvasServiceError(prefix, error) {
-  if (isCancellationError(error) || error?.name === 'CanvasPaginationError' || error?.name === 'CanvasResponseLimitError') {
+  if (
+    isCancellationError(error) ||
+    error?.name === "CanvasPaginationError" ||
+    error?.name === "CanvasResponseLimitError"
+  ) {
     throw error;
   }
-  const wrapped = new Error(`${prefix}: ${error?.message || 'Canvas request failed'}`, { cause: error });
+  const wrapped = new Error(`${prefix}: ${error?.message || "Canvas request failed"}`, {
+    cause: error,
+  });
   if (error?.statusCode != null) wrapped.statusCode = error.statusCode;
   if (error?.status != null) wrapped.status = error.status;
-  if (error?.code?.startsWith?.('CANVAS_')) wrapped.code = error.code;
+  if (error?.code?.startsWith?.("CANVAS_")) wrapped.code = error.code;
   if (error?.isPublic) wrapped.isPublic = true;
   if (error?.isSanitizedUpstreamError) wrapped.isSanitizedUpstreamError = true;
   throw wrapped;
@@ -565,18 +634,18 @@ function normalizeCollectionData(data) {
 }
 
 function nextLinkFrom(response) {
-  const header = readHeader(response?.headers, 'link');
+  const header = readHeader(response?.headers, "link");
   if (!header) return null;
   // Canvas emits RFC 8288 links. Parse only the `next` relation and ignore
   // malformed entries rather than treating an arbitrary URL as a page.
   const expression = /<([^>]+)>\s*;\s*rel\s*=\s*(?:"([^"]+)"|'([^']+)'|([^,;\s]+))/gi;
   let match;
   while ((match = expression.exec(header)) !== null) {
-    const relations = (match[2] || match[3] || match[4] || '').split(/\s+/);
-    if (relations.some((relation) => relation.toLowerCase() === 'next')) return match[1];
+    const relations = (match[2] || match[3] || match[4] || "").split(/\s+/);
+    if (relations.some((relation) => relation.toLowerCase() === "next")) return match[1];
   }
   if (/\brel\s*=\s*["']?[^,;"']*\bnext\b/i.test(header)) {
-    throw new CanvasPaginationError('Canvas returned a malformed next pagination link');
+    throw new CanvasPaginationError("Canvas returned a malformed next pagination link");
   }
   return null;
 }
@@ -586,19 +655,21 @@ function validateNextCanvasUrl(integration, next, previousUrl) {
   try {
     parsed = new URL(next, previousUrl);
   } catch {
-    throw new CanvasPaginationError('Canvas returned an invalid pagination link');
+    throw new CanvasPaginationError("Canvas returned an invalid pagination link");
   }
   const parsedBase = validateCanvasUrl(integration.canvasUrl);
   const canvasOrigin = parsedBase.origin;
-  const apiPrefix = new URL('api/v1/', `${canonicalCanvasBaseUrl(parsedBase)}/`).pathname;
+  const apiPrefix = new URL("api/v1/", `${canonicalCanvasBaseUrl(parsedBase)}/`).pathname;
   if (
-    parsed.protocol !== 'https:' ||
+    parsed.protocol !== "https:" ||
     parsed.origin !== canvasOrigin ||
     parsed.username ||
     parsed.password ||
     !parsed.pathname.startsWith(apiPrefix)
   ) {
-    throw new CanvasPaginationError('Canvas pagination link must remain on the configured Canvas API origin');
+    throw new CanvasPaginationError(
+      "Canvas pagination link must remain on the configured Canvas API origin",
+    );
   }
   // Re-run the hostname/IP-literal guard on every hop, not just the persisted
   // integration URL. DNS pinning in makeCanvasRequest covers rebinding.
@@ -608,10 +679,16 @@ function validateNextCanvasUrl(integration, next, previousUrl) {
 
 async function fetchCanvasCollection(integration, endpoint, requestOptions = {}) {
   const { context, ownsContext } = operationContextFrom(requestOptions);
-  const configuredMaxPages = canvasLimit('canvasMaxPages', CANVAS_DEFAULT_MAX_PAGES);
-  const configuredMaxItems = canvasLimit('canvasMaxItems', CANVAS_DEFAULT_MAX_ITEMS);
-  const maxPages = Math.min(configuredMaxPages, configuredPositiveInt(requestOptions.maxPages, configuredMaxPages));
-  const maxItems = Math.min(configuredMaxItems, configuredPositiveInt(requestOptions.maxItems, configuredMaxItems));
+  const configuredMaxPages = canvasLimit("canvasMaxPages", CANVAS_DEFAULT_MAX_PAGES);
+  const configuredMaxItems = canvasLimit("canvasMaxItems", CANVAS_DEFAULT_MAX_ITEMS);
+  const maxPages = Math.min(
+    configuredMaxPages,
+    configuredPositiveInt(requestOptions.maxPages, configuredMaxPages),
+  );
+  const maxItems = Math.min(
+    configuredMaxItems,
+    configuredPositiveInt(requestOptions.maxItems, configuredMaxItems),
+  );
   const aggregate = [];
   const seen = new Set();
   let current = endpoint;
@@ -621,14 +698,14 @@ async function fetchCanvasCollection(integration, endpoint, requestOptions = {})
     while (current) {
       if (context.signal?.aborted) throw abortReason(context.signal);
       if (pageCount >= maxPages) {
-        throw new CanvasPaginationError('Canvas pagination exceeded the maximum page limit');
+        throw new CanvasPaginationError("Canvas pagination exceeded the maximum page limit");
       }
 
       const { url } = canvasRequestUrl(integration, current);
-      if (seen.has(url)) throw new CanvasPaginationError('Canvas pagination link cycle detected');
+      if (seen.has(url)) throw new CanvasPaginationError("Canvas pagination link cycle detected");
       seen.add(url);
 
-      const response = await makeCanvasRequest(integration, 'GET', current, null, {
+      const response = await makeCanvasRequest(integration, "GET", current, null, {
         signal: context.signal,
         operationContext: context,
       });
@@ -636,7 +713,7 @@ async function fetchCanvasCollection(integration, endpoint, requestOptions = {})
 
       const pageItems = normalizeCollectionData(response.data);
       if (aggregate.length + pageItems.length > maxItems) {
-        throw new CanvasPaginationError('Canvas pagination exceeded the maximum item limit');
+        throw new CanvasPaginationError("Canvas pagination exceeded the maximum item limit");
       }
       aggregate.push(...pageItems);
 
@@ -665,11 +742,11 @@ export const getCanvasCourses = async (userId, requestOptions = {}) => {
 
     return await fetchCanvasCollection(
       integration,
-      '/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment',
+      "/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment",
       requestOptions,
     );
   } catch (error) {
-    rethrowCanvasServiceError('Failed to get Canvas courses', error);
+    rethrowCanvasServiceError("Failed to get Canvas courses", error);
   }
 };
 
@@ -728,7 +805,7 @@ export const exportAssessmentToCanvas = async (
       throw new Error("Assessment has no questions to export");
     }
 
-    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, "Canvas course ID");
 
     // Create quiz in Canvas
     const quizData = {
@@ -744,14 +821,14 @@ export const exportAssessmentToCanvas = async (
 
     const quizResponse = await makeCanvasRequest(
       integration,
-      'POST',
+      "POST",
       `/courses/${canvasCoursePathSegment}/quizzes`,
       quizData,
       { signal: context.signal, operationContext: context },
     );
 
     const quizId = quizResponse.data.id;
-    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
+    const quizPathSegment = canvasPathSegment(quizId, "Canvas quiz ID");
 
     // Create questions in Canvas
     const createdQuestions = [];
@@ -770,7 +847,7 @@ export const exportAssessmentToCanvas = async (
 
       const questionResponse = await makeCanvasRequest(
         integration,
-        'POST',
+        "POST",
         `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}/questions`,
         { question: canvasQuestion },
         { signal: context.signal, operationContext: context },
@@ -801,12 +878,12 @@ export const exportAssessmentToCanvas = async (
       quizId,
       quizTitle: quizResponse.data.title,
       questionsCreated: createdQuestions.length,
-      canvasUrl: integration.isTestMode 
+      canvasUrl: integration.isTestMode
         ? `[TEST MODE] Quiz would be created at: ${integration.canvasUrl}/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`
-        : `${integration.canvasUrl}/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`
+        : `${integration.canvasUrl}/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`,
     };
   } catch (error) {
-    rethrowCanvasServiceError('Failed to export assessment to Canvas', error);
+    rethrowCanvasServiceError("Failed to export assessment to Canvas", error);
   } finally {
     if (ownsContext) context.cleanup();
   }
@@ -815,11 +892,11 @@ export const exportAssessmentToCanvas = async (
 /** Converts a local variant into a Canvas quiz question payload (MCQ/SA/LA supported). */
 const convertVariantToCanvasQuestion = (variant, questionMetadata, position, sectionName) => {
   void sectionName;
-  const questionText = variant.questionText || '';
-  const answerText = variant.answer || '';
-  const isMCQ = questionMetadata.type === 'MCQ';
-  const isLongAnswer = questionMetadata.type === 'LA';
-  
+  const questionText = variant.questionText || "";
+  const answerText = variant.answer || "";
+  const isMCQ = questionMetadata.type === "MCQ";
+  const isLongAnswer = questionMetadata.type === "LA";
+
   const baseQuestion = {
     question_name: `${position}. ${questionMetadata.description || "Question"}`,
     question_text: questionText,
@@ -943,7 +1020,7 @@ export const getCanvasQuizzes = async (userId, canvasCourseId, requestOptions = 
       );
     }
 
-    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, "Canvas course ID");
 
     // Filter to only return assignment-type quizzes (what we export), after
     // aggregating every bounded Canvas Link page.
@@ -952,9 +1029,11 @@ export const getCanvasQuizzes = async (userId, canvasCourseId, requestOptions = 
       `/courses/${canvasCoursePathSegment}/quizzes`,
       requestOptions,
     );
-    return quizzes.filter(quiz => quiz.quiz_type === 'assignment' || quiz.quiz_type === 'graded_survey');
+    return quizzes.filter(
+      (quiz) => quiz.quiz_type === "assignment" || quiz.quiz_type === "graded_survey",
+    );
   } catch (error) {
-    rethrowCanvasServiceError('Failed to get Canvas quizzes', error);
+    rethrowCanvasServiceError("Failed to get Canvas quizzes", error);
   }
 };
 
@@ -962,7 +1041,12 @@ export const getCanvasQuizzes = async (userId, canvasCourseId, requestOptions = 
 const DEBUG_PREFIX = "[Canvas Import]";
 
 /** Fetches the question list for a Canvas quiz. Note: list endpoint often returns answers as null; use getCanvasQuizQuestionById for full details. */
-export const getCanvasQuizQuestions = async (userId, canvasCourseId, quizId, requestOptions = {}) => {
+export const getCanvasQuizQuestions = async (
+  userId,
+  canvasCourseId,
+  quizId,
+  requestOptions = {},
+) => {
   try {
     const integration = await getCanvasIntegration(userId);
 
@@ -972,8 +1056,8 @@ export const getCanvasQuizQuestions = async (userId, canvasCourseId, quizId, req
       );
     }
 
-    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
-    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, "Canvas course ID");
+    const quizPathSegment = canvasPathSegment(quizId, "Canvas quiz ID");
 
     const list = await fetchCanvasCollection(
       integration,
@@ -987,12 +1071,18 @@ export const getCanvasQuizQuestions = async (userId, canvasCourseId, quizId, req
     });
     return list;
   } catch (error) {
-    rethrowCanvasServiceError('Failed to get Canvas quiz questions', error);
+    rethrowCanvasServiceError("Failed to get Canvas quiz questions", error);
   }
 };
 
 /** Fetches a single Canvas quiz question by ID, including the answers array (required for MCQ choices and correct answer). */
-export const getCanvasQuizQuestionById = async (userId, canvasCourseId, quizId, questionId, requestOptions = {}) => {
+export const getCanvasQuizQuestionById = async (
+  userId,
+  canvasCourseId,
+  quizId,
+  questionId,
+  requestOptions = {},
+) => {
   const { context, ownsContext } = operationContextFrom(requestOptions);
   try {
     const integration = await getCanvasIntegration(userId);
@@ -1003,13 +1093,13 @@ export const getCanvasQuizQuestionById = async (userId, canvasCourseId, quizId, 
       );
     }
 
-    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
-    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
-    const questionPathSegment = canvasPathSegment(questionId, 'Canvas question ID');
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, "Canvas course ID");
+    const quizPathSegment = canvasPathSegment(quizId, "Canvas quiz ID");
+    const questionPathSegment = canvasPathSegment(questionId, "Canvas question ID");
 
     const response = await makeCanvasRequest(
       integration,
-      'GET',
+      "GET",
       `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}/questions/${questionPathSegment}`,
       null,
       { signal: context.signal, operationContext: context },
@@ -1018,14 +1108,15 @@ export const getCanvasQuizQuestionById = async (userId, canvasCourseId, quizId, 
     const data = response.data;
 
     // Some Canvas API responses wrap the question in a 'question' key
-    const question = (data && typeof data === 'object' && data.question != null) ? data.question : data;
+    const question =
+      data && typeof data === "object" && data.question != null ? data.question : data;
     const answers = question?.answers;
     console.log(`${DEBUG_PREFIX} quiz question detail received`, {
       answerCount: Array.isArray(answers) ? answers.length : 0,
     });
     return question;
   } catch (error) {
-    rethrowCanvasServiceError('Failed to get Canvas quiz question', error);
+    rethrowCanvasServiceError("Failed to get Canvas quiz question", error);
   } finally {
     if (ownsContext) context.cleanup();
   }
@@ -1298,13 +1389,13 @@ export const importQuizFromCanvas = async (
       throw new Error("Local course not found");
     }
 
-    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, 'Canvas course ID');
-    const quizPathSegment = canvasPathSegment(quizId, 'Canvas quiz ID');
+    const canvasCoursePathSegment = canvasPathSegment(canvasCourseId, "Canvas course ID");
+    const quizPathSegment = canvasPathSegment(quizId, "Canvas quiz ID");
 
     // Get quiz details
     const quizResponse = await makeCanvasRequest(
       integration,
-      'GET',
+      "GET",
       `/courses/${canvasCoursePathSegment}/quizzes/${quizPathSegment}`,
       null,
       { signal: context.signal, operationContext: context },
@@ -1369,23 +1460,31 @@ export const importQuizFromCanvas = async (
         // Fetch full question by ID so we get the answers array (list endpoint often returns answers: null)
         if (questionId != null) {
           try {
-            canvasQuestion = await getCanvasQuizQuestionById(callerId, canvasCourseId, quizId, questionId, {
-              signal: context.signal,
-              operationContext: context,
-            });
+            canvasQuestion = await getCanvasQuizQuestionById(
+              callerId,
+              canvasCourseId,
+              quizId,
+              questionId,
+              {
+                signal: context.signal,
+                operationContext: context,
+              },
+            );
             // Preserve position from list if full question doesn't have it
             if (canvasQuestion.position == null && listItem.position != null) {
               canvasQuestion = { ...canvasQuestion, position: listItem.position };
             }
             console.log(`${DEBUG_PREFIX} Canvas question detail fetched`, {
               questionIndex: i + 1,
-              answerCount: Array.isArray(canvasQuestion?.answers) ? canvasQuestion.answers.length : 0,
+              answerCount: Array.isArray(canvasQuestion?.answers)
+                ? canvasQuestion.answers.length
+                : 0,
             });
           } catch (error) {
             if (
               isCancellationError(error) ||
-              error?.name === 'CanvasPaginationError' ||
-              error?.name === 'CanvasResponseLimitError'
+              error?.name === "CanvasPaginationError" ||
+              error?.name === "CanvasResponseLimitError"
             ) {
               throw error;
             }
@@ -1454,8 +1553,8 @@ export const importQuizFromCanvas = async (
         // successful partial assessment by recording it as a skipped item.
         if (
           isCancellationError(error) ||
-          error?.name === 'CanvasPaginationError' ||
-          error?.name === 'CanvasResponseLimitError'
+          error?.name === "CanvasPaginationError" ||
+          error?.name === "CanvasResponseLimitError"
         ) {
           throw error;
         }
@@ -1505,7 +1604,7 @@ export const importQuizFromCanvas = async (
       sectionId: section.id,
     };
   } catch (error) {
-    rethrowCanvasServiceError('Failed to import quiz from Canvas', error);
+    rethrowCanvasServiceError("Failed to import quiz from Canvas", error);
   } finally {
     if (ownsContext) context.cleanup();
   }
@@ -1599,12 +1698,8 @@ export const importQuestionBankFromCanvas = async (
 ) => {
   // Dynamic import avoids a static cycle: questionService → questionBankService
   // and this module → questionBankService (and createQuestion from questionService).
-  const {
-    listBanks,
-    createBank,
-    addQuestionsToBank,
-  } = await import('./questionBankService.js');
-  const { createQuestion } = await import('./questionService.js');
+  const { listBanks, createBank, addQuestionsToBank } = await import("./questionBankService.js");
+  const { createQuestion } = await import("./questionService.js");
 
   const integration = await getCanvasIntegration(userId);
   if (!integration) {

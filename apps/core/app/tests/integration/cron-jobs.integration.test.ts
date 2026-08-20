@@ -3,11 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import prisma from "~/lib/prisma.server";
-import {
-  finishCronRun,
-  renewCronRunLease,
-  startCronRun,
-} from "~/lib/db.cron-jobs.server";
+import { finishCronRun, renewCronRunLease, startCronRun } from "~/lib/db.cron-jobs.server";
 
 const testJobNames = new Set<string>();
 
@@ -38,9 +34,7 @@ describe("durable cron run leases", () => {
   it("converges concurrent starts on one leased owner", async () => {
     const jobName = testJobName();
 
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => startCronRun(jobName)),
-    );
+    const results = await Promise.all(Array.from({ length: 8 }, () => startCronRun(jobName)));
 
     const winners = results.filter((result) => result.created);
     expect(winners).toHaveLength(1);
@@ -75,16 +69,12 @@ describe("durable cron run leases", () => {
       )
     `;
 
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => startCronRun(jobName)),
-    );
+    const results = await Promise.all(Array.from({ length: 8 }, () => startCronRun(jobName)));
     const winners = results.filter((result) => result.created);
 
     expect(winners).toHaveLength(1);
     expect(winners[0].runId).not.toBe(staleId);
-    expect(new Set(results.map((result) => result.runId))).toEqual(
-      new Set([winners[0].runId]),
-    );
+    expect(new Set(results.map((result) => result.runId))).toEqual(new Set([winners[0].runId]));
     await expect(renewCronRunLease(staleId, staleOwner)).resolves.toBe(false);
     await expect(
       finishCronRun(staleId, staleOwner, "SUCCESS", "late stale success", 0),

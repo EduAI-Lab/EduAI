@@ -2,19 +2,19 @@ import { Form, Link, useActionData, useLoaderData, redirect } from "react-router
 import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { RegisterForm } from "~/components/register-form"
-import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server"
-import { signUpSchema, type SignUpInput } from "~/lib/auth"
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
-import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
-import { auth } from "~/lib/auth/server"
-import { getPolicy } from "~/lib/policy.server"
+import { RegisterForm } from "~/components/register-form";
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
+import { signUpSchema, type SignUpInput } from "~/lib/auth";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
+import { auth } from "~/lib/auth/server";
+import { getPolicy } from "~/lib/policy.server";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
   readBoundedFormData,
-} from "~/lib/multipart.server"
-import { getRequestSession } from "~/lib/auth/request-session.server"
+} from "~/lib/multipart.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 
@@ -213,5 +213,5 @@ export default function RegisterPage() {
         University of British Columbia · EduAI Platform
       </p>
     </div>
-  )
+  );
 }

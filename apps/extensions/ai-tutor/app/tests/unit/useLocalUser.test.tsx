@@ -17,8 +17,8 @@ vi.mock("~/lib/api", async () => {
   };
 });
 
-import api, { ApiNetworkError } from '~/lib/api';
-import { getApiKeysStorageKey, saveApiKeysToStorage } from '~/lib/provider-keys';
+import api, { ApiNetworkError } from "~/lib/api";
+import { getApiKeysStorageKey, saveApiKeysToStorage } from "~/lib/provider-keys";
 
 // Reset call history (not the mockResolvedValue default) between tests so
 // call-count assertions aren't polluted by earlier tests' `api.me()` calls.
@@ -131,7 +131,7 @@ describe("AuthProvider", () => {
     });
   });
 
-  it('surfaces a persistent dependency outage instead of treating it as logout', async () => {
+  it("surfaces a persistent dependency outage instead of treating it as logout", async () => {
     const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
     meMock.mockRejectedValue(new ApiNetworkError());
 
@@ -148,10 +148,10 @@ describe("AuthProvider", () => {
 
     expect(meMock).toHaveBeenCalledTimes(5);
     expect(result.current.user).toBeNull();
-    expect(result.current.authError).toBe('Authentication service unavailable');
+    expect(result.current.authError).toBe("Authentication service unavailable");
   });
 
-  it('gives up and treats the caller as logged out on a non-network error', async () => {
+  it("gives up and treats the caller as logged out on a non-network error", async () => {
     const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
     meMock.mockRejectedValueOnce(new Error("Authentication required"));
 
@@ -218,11 +218,11 @@ describe("AuthProvider", () => {
     expect(result.current.user).toEqual(newUser);
   });
 
-  it('clears local provider keys but keeps the user and propagates a logout failure', async () => {
-    const logoutError = new Error('Logout service unavailable');
+  it("clears local provider keys but keeps the user and propagates a logout failure", async () => {
+    const logoutError = new Error("Logout service unavailable");
     const logoutMock = api.logout as unknown as ReturnType<typeof vi.fn>;
     logoutMock.mockRejectedValueOnce(logoutError);
-    saveApiKeysToStorage(testUser.id, { google: 'student-secret' });
+    saveApiKeysToStorage(testUser.id, { google: "student-secret" });
 
     const { result } = renderHook(() => useLocalUser(), {
       wrapper: makeWrapper(testUser),

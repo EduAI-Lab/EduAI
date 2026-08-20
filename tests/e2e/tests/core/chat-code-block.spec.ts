@@ -79,9 +79,9 @@ test.describe("Chat code-block toolbar (#667)", () => {
       expect(pubRes.status()).toBe(200);
 
       await injectSession(page, studentCtx);
-      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
       await page.addInitScript((userId) => {
-        window.localStorage.setItem(`eduai:chat-privacy-notice:${userId}`, '1');
+        window.localStorage.setItem(`eduai:chat-privacy-notice:${userId}`, "1");
       }, studentId);
 
       const streamBody = buildMockStreamBody(ASSISTANT_MARKDOWN);
@@ -102,7 +102,7 @@ test.describe("Chat code-block toolbar (#667)", () => {
 
       await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent(courseCode)}`);
 
-      const input = page.locator('#chat-message-input');
+      const input = page.locator("#chat-message-input");
       await expect(input).toBeEnabled({ timeout: 15_000 });
 
       await input.fill("Show me hello world in JavaScript");

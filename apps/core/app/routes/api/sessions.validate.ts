@@ -8,10 +8,7 @@ import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
-const PREAUTH_RATE_LIMIT = parseEnvInt(
-  process.env.SESSION_VALIDATE_PREAUTH_RATE_LIMIT,
-  1_200,
-);
+const PREAUTH_RATE_LIMIT = parseEnvInt(process.env.SESSION_VALIDATE_PREAUTH_RATE_LIMIT, 1_200);
 
 const INVALID_SERVICE_AUTH_AUDIT_LIMIT = 1;
 
@@ -31,28 +28,32 @@ export async function action({ request }: ActionFunctionArgs) {
   // extensions never enter or consume this invalid-auth bucket.
   if (!hasValidServiceKey(request)) {
     const directIp = requestContext.ipAddress ?? "unknown";
-    if (isRateLimited(
-      `session-validate:invalid-service-auth:${directIp}`,
-      INVALID_SERVICE_AUTH_AUDIT_LIMIT,
-    )) {
+    if (
+      isRateLimited(
+        `session-validate:invalid-service-auth:${directIp}`,
+        INVALID_SERVICE_AUTH_AUDIT_LIMIT,
+      )
+    ) {
       return new Response(JSON.stringify({ error: "Too Many Requests" }), {
         status: 429,
         headers: { "Content-Type": "application/json" },
       });
     }
     const denial = await requireServiceKey(request);
-    return denial ?? new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
+    return (
+      denial ??
+      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
   }
 
   // The verified extension identity wins; direct service-authenticated Core
   // callers fall back to the trusted proxy-appended rightmost XFF entry.
   const forwardedClientIp = request.headers.get("x-eduai-client-ip")?.trim() ?? "";
-  const ip = (isIP(forwardedClientIp) ? forwardedClientIp : null)
-    ?? requestContext.ipAddress
-    ?? "unknown";
+  const ip =
+    (isIP(forwardedClientIp) ? forwardedClientIp : null) ?? requestContext.ipAddress ?? "unknown";
   const clientRequestContext = { ...requestContext, ipAddress: ip };
 
   // Reject abusive sources before Better Auth touches its session store. This

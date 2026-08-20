@@ -97,12 +97,12 @@ export function DashboardAdminView({
       icon: <IconBooks size={16} stroke={1.75} />,
     },
     {
-      label: 'Triage bug reports',
+      label: "Triage bug reports",
       description:
         openReports.length > 0
           ? `${openReports.length} waiting for review.`
-          : 'Nothing waiting for review.',
-      href: '/admin',
+          : "Nothing waiting for review.",
+      href: "/admin",
       icon: <IconBug size={16} stroke={1.75} />,
     },
     {

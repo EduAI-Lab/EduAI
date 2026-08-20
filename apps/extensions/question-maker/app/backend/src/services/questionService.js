@@ -2,26 +2,20 @@
  * Question service providing CRUD for metadata/variants plus assessment ordering helpers.
  * Validates ownership via course relationships and keeps variant-topic links normalized.
  */
-import { createId } from '@paralleldrive/cuid2';
-import { prisma } from '../config/database.js';
-import { withQuestionMutationFence } from './questionMutationFence.js';
-import { config } from '../config/settings.js';
-import { normalizeMcqCorrectness } from '../lib/mcqCorrectness.js';
+import { createId } from "@paralleldrive/cuid2";
+import { prisma } from "../config/database.js";
+import { withQuestionMutationFence } from "./questionMutationFence.js";
+import { config } from "../config/settings.js";
+import { normalizeMcqCorrectness } from "../lib/mcqCorrectness.js";
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
-  formatSemesterDisplay
-} from './courseListService.js';
-import { buildQuestionListQuery } from '../utils/questionListQuery.js';
-import {
-  attachQuestionToBanks,
-  listExternalQuestionIdsForBank,
-} from './questionBankService.js';
-import { logger } from '../utils/logger.js';
-import {
-  normalizeQuestionOrder,
-  requirePositiveSafeInteger,
-} from '../utils/questionOrder.js';
+  formatSemesterDisplay,
+} from "./courseListService.js";
+import { buildQuestionListQuery } from "../utils/questionListQuery.js";
+import { attachQuestionToBanks, listExternalQuestionIdsForBank } from "./questionBankService.js";
+import { logger } from "../utils/logger.js";
+import { normalizeQuestionOrder, requirePositiveSafeInteger } from "../utils/questionOrder.js";
 
 /**
  * `saveExtractedQuestions` writes each question's metadata/variant/section-link
@@ -105,7 +99,7 @@ const parseCourseId = (value) => {
 };
 
 /** Ensure a primary/secondary topic belongs to the question's effective course. */
-async function assertTopicsInCourse(topicIds, courseId, label = 'Topic', db = prisma) {
+async function assertTopicsInCourse(topicIds, courseId, label = "Topic", db = prisma) {
   const ids = [...new Set(topicIds.filter(Boolean))];
   if (ids.length === 0) return;
 
@@ -131,7 +125,7 @@ async function assertQuestionOrderAssessments(questionOrder, courseId, db = pris
     select: { id: true },
   });
   if (assessments.length !== assessmentIds.length) {
-    throw relationNotFound('Assessment not found for this course');
+    throw relationNotFound("Assessment not found for this course");
   }
 
   return normalized;
@@ -148,32 +142,37 @@ async function assertVariantRelationsInCourse({
   if (assessmentId !== undefined && assessmentId !== null) {
     const parsedAssessmentId = Number(assessmentId);
     if (!Number.isInteger(parsedAssessmentId) || parsedAssessmentId <= 0) {
-      throw relationNotFound('Assessment not found for this course');
+      throw relationNotFound("Assessment not found for this course");
     }
     const assessment = await db.assessments.findFirst({
       where: { id: parsedAssessmentId, courseId },
       select: { id: true },
     });
     if (!assessment) {
-      throw relationNotFound('Assessment not found for this course');
+      throw relationNotFound("Assessment not found for this course");
     }
   }
 
   if (secondaryTopicsId !== undefined && secondaryTopicsId !== null) {
-    await assertTopicsInCourse(normalizeSecondaryTopics(secondaryTopicsId), courseId, 'Secondary topic', db);
+    await assertTopicsInCourse(
+      normalizeSecondaryTopics(secondaryTopicsId),
+      courseId,
+      "Secondary topic",
+      db,
+    );
   }
 
   if (referenceId !== undefined && referenceId !== null) {
     const parsedReferenceId = Number(referenceId);
     if (!Number.isInteger(parsedReferenceId) || parsedReferenceId <= 0) {
-      throw relationNotFound('Reference variant not found for this course');
+      throw relationNotFound("Reference variant not found for this course");
     }
     const reference = await db.variants.findFirst({
       where: { id: parsedReferenceId, questionMetadata: { courseId } },
       select: { id: true },
     });
     if (!reference) {
-      throw relationNotFound('Reference variant not found for this course');
+      throw relationNotFound("Reference variant not found for this course");
     }
   }
 }
@@ -278,62 +277,65 @@ export const createQuestion = async (userId, questionData) => {
 
   const parsedCourseId = parseCourseId(courseId);
   if (!parsedCourseId) {
-    throw new Error('Valid courseId is required');
+    throw new Error("Valid courseId is required");
   }
 
   const parsedPrimaryTopicId = normalizePrimaryTopicId(primaryTopicId);
   if (!parsedPrimaryTopicId) {
-    throw new Error('Valid primaryTopicId is required');
+    throw new Error("Valid primaryTopicId is required");
   }
 
-    const course = await prisma.course.findFirst({
-      where: { id: parsedCourseId, userId },
-      select: { id: true }
-    });
+  const course = await prisma.course.findFirst({
+    where: { id: parsedCourseId, userId },
+    select: { id: true },
+  });
 
-    if (!course) {
-      throw new Error('Course not found');
-    }
+  if (!course) {
+    throw new Error("Course not found");
+  }
 
-    // Topic ids are globally addressable CUIDs, so an FK alone is not enough:
-    // the selected topic must belong to this course as well.
-    await assertTopicsInCourse([parsedPrimaryTopicId], parsedCourseId, 'Primary topic');
-    const normalizedQuestionOrder = await assertQuestionOrderAssessments(
-      questionOrder,
-      parsedCourseId,
-    );
+  // Topic ids are globally addressable CUIDs, so an FK alone is not enough:
+  // the selected topic must belong to this course as well.
+  await assertTopicsInCourse([parsedPrimaryTopicId], parsedCourseId, "Primary topic");
+  const normalizedQuestionOrder = await assertQuestionOrderAssessments(
+    questionOrder,
+    parsedCourseId,
+  );
 
-    const allowedTypes = ['MCQ', 'SA', 'LA'];
-    const normalizedType = allowedTypes.includes(type) ? type : 'MCQ';
+  const allowedTypes = ["MCQ", "SA", "LA"];
+  const normalizedType = allowedTypes.includes(type) ? type : "MCQ";
 
-    const question = await prisma.questionMetadata.create({
-      data: {
-        courseId: parsedCourseId,
-        primaryTopicId: parsedPrimaryTopicId,
-        type: normalizedType,
-        description: normalizedDescription,
-        questionOrder: normalizedQuestionOrder,
-        createdBy: questionData.createdBy ?? null
+  const question = await prisma.questionMetadata.create({
+    data: {
+      courseId: parsedCourseId,
+      primaryTopicId: parsedPrimaryTopicId,
+      type: normalizedType,
+      description: normalizedDescription,
+      questionOrder: normalizedQuestionOrder,
+      createdBy: questionData.createdBy ?? null,
+    },
+  });
+
+  // Soft-fail default attach when Core is unlinked; fail loud for explicit banks.
+  if (!skipBankAttach) {
+    const hasExplicitBank =
+      (questionBankId != null && questionBankId !== "") ||
+      (Array.isArray(questionBankIds) && questionBankIds.length > 0);
+    try {
+      await attachQuestionToBanks(parsedCourseId, userId, question.id, {
+        questionBankId,
+        questionBankIds,
+      });
+    } catch (attachError) {
+      logger.warn(
+        { err: attachError, questionId: question.id },
+        "Failed to attach question to Core bank(s)",
+      );
+      if (hasExplicitBank) {
+        throw attachError;
       }
-    });
-
-    // Soft-fail default attach when Core is unlinked; fail loud for explicit banks.
-    if (!skipBankAttach) {
-      const hasExplicitBank =
-        (questionBankId != null && questionBankId !== '') ||
-        (Array.isArray(questionBankIds) && questionBankIds.length > 0);
-      try {
-        await attachQuestionToBanks(parsedCourseId, userId, question.id, {
-          questionBankId,
-          questionBankIds,
-        });
-      } catch (attachError) {
-        logger.warn({ err: attachError, questionId: question.id }, 'Failed to attach question to Core bank(s)');
-        if (hasExplicitBank) {
-          throw attachError;
-        }
-      }
     }
+  }
 
   return question;
 };
@@ -364,19 +366,19 @@ export const enrichQuestionRows = async (rows) => {
  */
 export const getQuestionsByUser = async (userId, options = {}) => {
   const {
-      courseId,
-      questionBankId,
-      courseWhere,
-      search,
-      types,
-      difficulties,
-      reasoningLevels,
-      aiGenerated,
-      draftStatus,
-      sortBy,
-      limit = 50,
-      offset = 0,
-      enrich = true,
+    courseId,
+    questionBankId,
+    courseWhere,
+    search,
+    types,
+    difficulties,
+    reasoningLevels,
+    aiGenerated,
+    draftStatus,
+    sortBy,
+    limit = 50,
+    offset = 0,
+    enrich = true,
   } = options;
   const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
   const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
@@ -391,12 +393,12 @@ export const getQuestionsByUser = async (userId, options = {}) => {
     sortBy,
   });
 
-    // Global bank reads pass the same trusted CourseWhereInput used by the
-    // course list. Legacy and course-specific callers keep the owner scope.
-    const whereClause = {
-      ...filterWhere,
-      course: courseWhere === undefined ? { userId } : courseWhere,
-    };
+  // Global bank reads pass the same trusted CourseWhereInput used by the
+  // course list. Legacy and course-specific callers keep the owner scope.
+  const whereClause = {
+    ...filterWhere,
+    course: courseWhere === undefined ? { userId } : courseWhere,
+  };
 
   if (courseId) {
     const parsedCourseId = Number(courseId);
@@ -509,129 +511,135 @@ export const getQuestionById = async (questionId, userId) => {
 /** Updates metadata fields while ensuring provided IDs and types remain valid. */
 export const updateQuestion = async (questionId, userId, updateData) => {
   const parsedQuestionId = Number(questionId);
-    const existing = await prisma.questionMetadata.findFirst({
-      where: { id: parsedQuestionId, course: { userId } },
-      select: { id: true },
+  const existing = await prisma.questionMetadata.findFirst({
+    where: { id: parsedQuestionId, course: { userId } },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    throw new Error("Question not found");
+  }
+
+  return await withQuestionMutationFence(existing.id, async (db) => {
+    // The middleware's resource snapshot may be stale by the time the
+    // request reaches this service. Re-read the authoritative row after the
+    // fence, then make the review check and metadata update one serial unit.
+    const question = await db.questionMetadata.findFirst({
+      where: { id: existing.id, course: { userId } },
     });
 
-    if (!existing) {
-      throw new Error('Question not found');
+    if (!question) {
+      throw new Error("Question not found");
     }
 
-    return await withQuestionMutationFence(existing.id, async (db) => {
-      // The middleware's resource snapshot may be stale by the time the
-      // request reaches this service. Re-read the authoritative row after the
-      // fence, then make the review check and metadata update one serial unit.
-      const question = await db.questionMetadata.findFirst({
-        where: { id: existing.id, course: { userId } },
+    const updates = { ...updateData };
+
+    if (updates.description !== undefined) {
+      const desc = updates.description;
+      updates.description = typeof desc === "string" && desc.trim() ? desc.trim() : null;
+    }
+
+    if (updates.courseId !== undefined) {
+      const parsedCourseId = parseCourseId(updates.courseId);
+      if (!parsedCourseId) {
+        throw new Error("Valid courseId is required");
+      }
+
+      // Course relocation is intentionally not a supported primitive. Moving
+      // a question would also require atomically migrating its primary topic,
+      // variants, assessment links, and ordering maps; rejecting it keeps
+      // the pre-MVP data model's same-course invariant intact. The route
+      // performs target access authorization first, while this service guard
+      // remains authoritative for direct/service-key callers and
+      // owner-sharing cases.
+      if (parsedCourseId !== question.courseId) {
+        throw Object.assign(new Error("Question course relocation is not supported"), {
+          status: 409,
+          code: "COURSE_RELOCATION_NOT_ALLOWED",
+          isPublic: true,
+        });
+      }
+
+      const course = await db.course.findFirst({
+        where: { id: parsedCourseId, userId },
+        select: { id: true },
       });
 
-      if (!question) {
-        throw new Error('Question not found');
+      if (!course) {
+        throw new Error("Course not found");
       }
 
-      const updates = { ...updateData };
+      updates.courseId = parsedCourseId;
+    }
 
-      if (updates.description !== undefined) {
-        const desc = updates.description;
-        updates.description = typeof desc === 'string' && desc.trim()
-          ? desc.trim()
-          : null;
+    if (updates.primaryTopicId !== undefined) {
+      const parsedPrimaryTopicId = normalizePrimaryTopicId(updates.primaryTopicId);
+      if (!parsedPrimaryTopicId) {
+        throw new Error("Valid primaryTopicId is required");
       }
+      updates.primaryTopicId = parsedPrimaryTopicId;
+    }
 
-      if (updates.courseId !== undefined) {
-        const parsedCourseId = parseCourseId(updates.courseId);
-        if (!parsedCourseId) {
-          throw new Error('Valid courseId is required');
-        }
+    const effectiveCourseId = updates.courseId ?? question.courseId;
+    if (updates.primaryTopicId !== undefined) {
+      await assertTopicsInCourse([updates.primaryTopicId], effectiveCourseId, "Primary topic", db);
+    } else {
+      // Also check the existing relation when a caller attempts a course
+      // update. This protects rows created before the scoped topic invariant
+      // existed and prevents a same-course check from masking stale data.
+      await assertTopicsInCourse([question.primaryTopicId], effectiveCourseId, "Primary topic", db);
+    }
 
-        // Course relocation is intentionally not a supported primitive. Moving
-        // a question would also require atomically migrating its primary topic,
-        // variants, assessment links, and ordering maps; rejecting it keeps
-        // the pre-MVP data model's same-course invariant intact. The route
-        // performs target access authorization first, while this service guard
-        // remains authoritative for direct/service-key callers and
-        // owner-sharing cases.
-        if (parsedCourseId !== question.courseId) {
-          throw Object.assign(new Error('Question course relocation is not supported'), {
-            status: 409,
-            code: 'COURSE_RELOCATION_NOT_ALLOWED',
-            isPublic: true,
-          });
-        }
-
-        const course = await db.course.findFirst({
-          where: { id: parsedCourseId, userId },
-          select: { id: true }
-        });
-
-        if (!course) {
-          throw new Error('Course not found');
-        }
-
-        updates.courseId = parsedCourseId;
+    if (updates.type !== undefined) {
+      const allowedTypes = ["MCQ", "SA", "LA"];
+      if (!allowedTypes.includes(updates.type)) {
+        throw new Error(`Invalid question type. Allowed values: ${allowedTypes.join(", ")}`);
       }
+    }
 
-      if (updates.primaryTopicId !== undefined) {
-        const parsedPrimaryTopicId = normalizePrimaryTopicId(updates.primaryTopicId);
-        if (!parsedPrimaryTopicId) {
-          throw new Error('Valid primaryTopicId is required');
-        }
-        updates.primaryTopicId = parsedPrimaryTopicId;
-      }
-
-      const effectiveCourseId = updates.courseId ?? question.courseId;
-      if (updates.primaryTopicId !== undefined) {
-        await assertTopicsInCourse([updates.primaryTopicId], effectiveCourseId, 'Primary topic', db);
-      } else {
-        // Also check the existing relation when a caller attempts a course
-        // update. This protects rows created before the scoped topic invariant
-        // existed and prevents a same-course check from masking stale data.
-        await assertTopicsInCourse([question.primaryTopicId], effectiveCourseId, 'Primary topic', db);
-      }
-
-      if (updates.type !== undefined) {
-        const allowedTypes = ['MCQ', 'SA', 'LA'];
-        if (!allowedTypes.includes(updates.type)) {
-          throw new Error(`Invalid question type. Allowed values: ${allowedTypes.join(', ')}`);
-        }
-      }
-
-      if (updates.questionOrder !== undefined) {
-        updates.questionOrder = await assertQuestionOrderAssessments(
-          updates.questionOrder,
-          effectiveCourseId,
-          db,
-        );
-      }
-
-      // isAiGenerated and isDraft are variant-level fields and should not be
-      // updated via updateQuestion. They should be updated via updateVariant.
-      if (updates.isAiGenerated !== undefined || updates.isDraft !== undefined) {
-        throw new Error('isAiGenerated and isDraft are variant-level fields. Use updateVariant to update individual variants.');
-      }
-
-      // §19/#1080 post-review lock, extended: `type` and `primaryTopicId` feed
-      // the Core push payload (`type`/`topicId`) exactly like a variant's
-      // questionText/difficulty. The sibling check is inside the same fence as
-      // the metadata update, so approval cannot commit between the check and
-      // write.
-      if (updates.type !== undefined || updates.primaryTopicId !== undefined) {
-        const reviewedVariant = await db.variants.findFirst({
-          where: { questionMetadataId: question.id, isDraft: false }
-        });
-        if (reviewedVariant) {
-          throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409, isPublic: true });
-        }
-      }
-
-      const ALLOWED_QUESTION_UPDATE_FIELDS = ['description', 'courseId', 'primaryTopicId', 'type', 'questionOrder'];
-      const data = Object.fromEntries(
-        Object.entries(updates).filter(([key]) => ALLOWED_QUESTION_UPDATE_FIELDS.includes(key))
+    if (updates.questionOrder !== undefined) {
+      updates.questionOrder = await assertQuestionOrderAssessments(
+        updates.questionOrder,
+        effectiveCourseId,
+        db,
       );
+    }
 
-      return db.questionMetadata.update({ where: { id: question.id }, data });
-    });
+    // isAiGenerated and isDraft are variant-level fields and should not be
+    // updated via updateQuestion. They should be updated via updateVariant.
+    if (updates.isAiGenerated !== undefined || updates.isDraft !== undefined) {
+      throw new Error(
+        "isAiGenerated and isDraft are variant-level fields. Use updateVariant to update individual variants.",
+      );
+    }
+
+    // §19/#1080 post-review lock, extended: `type` and `primaryTopicId` feed
+    // the Core push payload (`type`/`topicId`) exactly like a variant's
+    // questionText/difficulty. The sibling check is inside the same fence as
+    // the metadata update, so approval cannot commit between the check and
+    // write.
+    if (updates.type !== undefined || updates.primaryTopicId !== undefined) {
+      const reviewedVariant = await db.variants.findFirst({
+        where: { questionMetadataId: question.id, isDraft: false },
+      });
+      if (reviewedVariant) {
+        throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+      }
+    }
+
+    const ALLOWED_QUESTION_UPDATE_FIELDS = [
+      "description",
+      "courseId",
+      "primaryTopicId",
+      "type",
+      "questionOrder",
+    ];
+    const data = Object.fromEntries(
+      Object.entries(updates).filter(([key]) => ALLOWED_QUESTION_UPDATE_FIELDS.includes(key)),
+    );
+
+    return db.questionMetadata.update({ where: { id: question.id }, data });
+  });
 };
 
 /** Deletes a question (and cascades variants) after verifying the user owns the course. */
@@ -646,11 +654,11 @@ export const deleteQuestion = async (questionId, userId) => {
 
   return await withQuestionMutationFence(question.id, async (db) => {
     const current = await db.questionMetadata.findFirst({
-      where: { id: question.id, course: { userId } }
+      where: { id: question.id, course: { userId } },
     });
 
     if (!current) {
-      throw new Error('Question not found');
+      throw new Error("Question not found");
     }
 
     await db.questionMetadata.delete({ where: { id: current.id } });
@@ -660,30 +668,29 @@ export const deleteQuestion = async (questionId, userId) => {
 
 /** Bulk-creates multiple questions for approvals, short-circuiting on validation issues. */
 export const createMultipleQuestions = async (userId, questionsData) => {
-  const maxQuestions = Number.isInteger(config.maxQuestions) && config.maxQuestions > 0
-      ? config.maxQuestions
-      : 50;
-    if (!Array.isArray(questionsData) || questionsData.length === 0) {
-      throw new Error('Questions array is required');
-    }
-    if (questionsData.length > maxQuestions) {
-      const error = new Error(`Cannot approve more than ${maxQuestions} questions at once`);
-      error.status = 400;
-      error.statusCode = 400;
-      error.code = 'QM_QUESTION_BATCH_TOO_LARGE';
-      error.isPublic = true;
-      throw error;
-    }
+  const maxQuestions =
+    Number.isInteger(config.maxQuestions) && config.maxQuestions > 0 ? config.maxQuestions : 50;
+  if (!Array.isArray(questionsData) || questionsData.length === 0) {
+    throw new Error("Questions array is required");
+  }
+  if (questionsData.length > maxQuestions) {
+    const error = new Error(`Cannot approve more than ${maxQuestions} questions at once`);
+    error.status = 400;
+    error.statusCode = 400;
+    error.code = "QM_QUESTION_BATCH_TOO_LARGE";
+    error.isPublic = true;
+    throw error;
+  }
 
   const createdQuestions = [];
 
   for (const q of questionsData) {
-      const rawDesc = q.description ?? q.content;
-      const description = typeof rawDesc === 'string' && rawDesc.trim() ? rawDesc.trim() : null;
-      const courseId = Number(q.courseId ?? q.classId);
-      const primaryTopicId = q.primaryTopicId;
-      const type = ['MCQ', 'SA', 'LA'].includes(q.type) ? q.type : 'MCQ';
-      const questionOrder = q.questionOrder;
+    const rawDesc = q.description ?? q.content;
+    const description = typeof rawDesc === "string" && rawDesc.trim() ? rawDesc.trim() : null;
+    const courseId = Number(q.courseId ?? q.classId);
+    const primaryTopicId = q.primaryTopicId;
+    const type = ["MCQ", "SA", "LA"].includes(q.type) ? q.type : "MCQ";
+    const questionOrder = q.questionOrder;
 
     const question = await createQuestion(userId, {
       description,
@@ -980,15 +987,15 @@ export const saveExtractedQuestions = async (userId, payload) => {
  */
 export const getQuestionStats = async (userId, options = {}) => {
   const { courseId, courseWhere } = options;
-    const metadataWhere = {
-      course: courseWhere === undefined ? { userId } : courseWhere,
-    };
-    if (courseId != null && courseId !== '') {
-      const parsedCourseId = Number(courseId);
-      if (Number.isInteger(parsedCourseId)) {
-        metadataWhere.courseId = parsedCourseId;
-      }
+  const metadataWhere = {
+    course: courseWhere === undefined ? { userId } : courseWhere,
+  };
+  if (courseId != null && courseId !== "") {
+    const parsedCourseId = Number(courseId);
+    if (Number.isInteger(parsedCourseId)) {
+      metadataWhere.courseId = parsedCourseId;
     }
+  }
 
   const totalQuestions = await prisma.questionMetadata.count({
     where: metadataWhere,
@@ -1056,80 +1063,82 @@ export const getQuestionStats = async (userId, options = {}) => {
 
 /** Updates the per-assessment ordering map stored on a question metadata row. */
 export const updateQuestionOrder = async (questionId, assessmentId, orderNumber, userId) => {
-  const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
-    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
-    const parsedOrderNumber = requirePositiveSafeInteger(orderNumber, 'Order number');
+  const parsedQuestionId = requirePositiveSafeInteger(questionId, "Question ID");
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, "Assessment ID");
+  const parsedOrderNumber = requirePositiveSafeInteger(orderNumber, "Order number");
 
-    const question = await prisma.questionMetadata.findFirst({
-      where: { id: parsedQuestionId, course: { userId } }
-    });
+  const question = await prisma.questionMetadata.findFirst({
+    where: { id: parsedQuestionId, course: { userId } },
+  });
 
-    if (!question) {
-      throw new Error('Question not found');
-    }
+  if (!question) {
+    throw new Error("Question not found");
+  }
 
-    const assessment = await prisma.assessments.findFirst({
-      where: { id: parsedAssessmentId, courseId: question.courseId },
-      select: { id: true },
-    });
-    if (!assessment) {
-      throw relationNotFound('Assessment not found for this course');
-    }
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: parsedAssessmentId, courseId: question.courseId },
+    select: { id: true },
+  });
+  if (!assessment) {
+    throw relationNotFound("Assessment not found for this course");
+  }
 
-    // Get current questionOrder or initialize empty object.
-    const currentOrder = await assertQuestionOrderAssessments(
-      question.questionOrder || {},
-      question.courseId,
-    );
+  // Get current questionOrder or initialize empty object.
+  const currentOrder = await assertQuestionOrderAssessments(
+    question.questionOrder || {},
+    question.courseId,
+  );
 
-    // Update the order for the specific assessment
-    currentOrder[String(parsedAssessmentId)] = parsedOrderNumber;
+  // Update the order for the specific assessment
+  currentOrder[String(parsedAssessmentId)] = parsedOrderNumber;
 
-    // Update the question with new order
-    const updated = await prisma.questionMetadata.update({
-      where: { id: question.id },
-      data: { questionOrder: currentOrder }
-    });
+  // Update the question with new order
+  const updated = await prisma.questionMetadata.update({
+    where: { id: question.id },
+    data: { questionOrder: currentOrder },
+  });
 
   return updated;
 };
 
 /** Removes a question from a specific assessment’s order map and detaches variants if needed. */
 export const removeQuestionFromAssessment = async (questionId, assessmentId, userId) => {
-  const parsedQuestionId = requirePositiveSafeInteger(questionId, 'Question ID');
-    const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, 'Assessment ID');
+  const parsedQuestionId = requirePositiveSafeInteger(questionId, "Question ID");
+  const parsedAssessmentId = requirePositiveSafeInteger(assessmentId, "Assessment ID");
 
-    const question = await prisma.questionMetadata.findFirst({
-      where: { id: parsedQuestionId, course: { userId } }
-    });
+  const question = await prisma.questionMetadata.findFirst({
+    where: { id: parsedQuestionId, course: { userId } },
+  });
 
-    if (!question) {
-      throw new Error('Question not found');
-    }
+  if (!question) {
+    throw new Error("Question not found");
+  }
 
-    const assessment = await prisma.assessments.findFirst({
-      where: { id: parsedAssessmentId, courseId: question.courseId },
-      select: { id: true },
-    });
-    if (!assessment) {
-      throw relationNotFound('Assessment not found for this course');
-    }
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: parsedAssessmentId, courseId: question.courseId },
+    select: { id: true },
+  });
+  if (!assessment) {
+    throw relationNotFound("Assessment not found for this course");
+  }
 
-    // Get current questionOrder or initialize empty object
-    const currentOrder = {
-      ...(question.questionOrder && typeof question.questionOrder === 'object' && !Array.isArray(question.questionOrder)
-        ? question.questionOrder
-        : {}),
-    };
+  // Get current questionOrder or initialize empty object
+  const currentOrder = {
+    ...(question.questionOrder &&
+    typeof question.questionOrder === "object" &&
+    !Array.isArray(question.questionOrder)
+      ? question.questionOrder
+      : {}),
+  };
 
-    // Remove the assessment from the order
-    delete currentOrder[String(parsedAssessmentId)];
+  // Remove the assessment from the order
+  delete currentOrder[String(parsedAssessmentId)];
 
-    // Update the question with new order
-    const updated = await prisma.questionMetadata.update({
-      where: { id: question.id },
-      data: { questionOrder: currentOrder }
-    });
+  // Update the question with new order
+  const updated = await prisma.questionMetadata.update({
+    where: { id: question.id },
+    data: { questionOrder: currentOrder },
+  });
 
   return updated;
 };
@@ -1143,77 +1152,81 @@ export const createVariant = async (questionId, variantData, userId) => {
     where: { id: questionId, course: { userId } },
   });
 
-    if (!question) {
-      throw new Error('Question not found');
-    }
+  if (!question) {
+    throw new Error("Question not found");
+  }
 
-    const secondaryTopics = normalizeSecondaryTopics(variantData.secondaryTopicsId);
-    await assertVariantRelationsInCourse({
-      courseId: question.courseId,
-      assessmentId: variantData.assessmentId,
-      secondaryTopicsId: secondaryTopics,
-      referenceId: variantData.referenceId,
-    });
-    const validReasoningLevels = ['factual', 'analytical', 'application'];
-    const reasoningLevel = variantData.reasoningLevel && validReasoningLevels.includes(variantData.reasoningLevel)
+  const secondaryTopics = normalizeSecondaryTopics(variantData.secondaryTopicsId);
+  await assertVariantRelationsInCourse({
+    courseId: question.courseId,
+    assessmentId: variantData.assessmentId,
+    secondaryTopicsId: secondaryTopics,
+    referenceId: variantData.referenceId,
+  });
+  const validReasoningLevels = ["factual", "analytical", "application"];
+  const reasoningLevel =
+    variantData.reasoningLevel && validReasoningLevels.includes(variantData.reasoningLevel)
       ? variantData.reasoningLevel
-      : 'factual';
+      : "factual";
 
-    // Handle choices for MCQ questions
-    let choices = null;
-    let answer = variantData.answer;
-    let selectAllThatApply = false;
-    let correctAnswers = null;
+  // Handle choices for MCQ questions
+  let choices = null;
+  let answer = variantData.answer;
+  let selectAllThatApply = false;
+  let correctAnswers = null;
 
-    if (question.type === 'MCQ') {
-      if (variantData.choices !== undefined) {
-        choices = validateMCQChoices(variantData.choices, question.type);
-        // If choices are provided but invalid, throw error
-        if (variantData.choices !== null && choices === null) {
-          throw new Error('Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.');
-        }
+  if (question.type === "MCQ") {
+    if (variantData.choices !== undefined) {
+      choices = validateMCQChoices(variantData.choices, question.type);
+      // If choices are provided but invalid, throw error
+      if (variantData.choices !== null && choices === null) {
+        throw new Error(
+          "Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.",
+        );
       }
-
-      // Normalize answer to just letter for MCQ
-      if (typeof answer === 'string' && answer.trim()) {
-        answer = extractAnswerLetter(answer) || answer.trim();
-      }
-
-      const normalized = normalizeMcqCorrectness({
-        selectAllThatApply: Boolean(variantData.selectAllThatApply),
-        answer,
-        correctAnswers: variantData.correctAnswers,
-        choiceLetters: (choices || []).map((c) => c.letter),
-      });
-      answer = normalized.answer;
-      selectAllThatApply = normalized.selectAllThatApply;
-      correctAnswers = normalized.correctAnswers;
-    } else if (typeof answer === 'string' && answer.trim()) {
-      answer = answer.trim();
-    } else {
-      answer = null;
     }
 
-    const variant = await prisma.variants.create({
-      data: {
-        questionMetadataId: questionId,
-        questionText: variantData.questionText,
-        difficulty: variantData.difficulty || 'medium',
-        reasoningLevel,
-        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null,
-        secondaryTopicsId: secondaryTopics,
-        answer,
-        choices,
-        selectAllThatApply,
-        correctAnswers,
-        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
-        isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
-        isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
-        createdBy: variantData.createdBy ?? null
-      }
-    });
+    // Normalize answer to just letter for MCQ
+    if (typeof answer === "string" && answer.trim()) {
+      answer = extractAnswerLetter(answer) || answer.trim();
+    }
 
-    return variant;
+    const normalized = normalizeMcqCorrectness({
+      selectAllThatApply: Boolean(variantData.selectAllThatApply),
+      answer,
+      correctAnswers: variantData.correctAnswers,
+      choiceLetters: (choices || []).map((c) => c.letter),
+    });
+    answer = normalized.answer;
+    selectAllThatApply = normalized.selectAllThatApply;
+    correctAnswers = normalized.correctAnswers;
+  } else if (typeof answer === "string" && answer.trim()) {
+    answer = answer.trim();
+  } else {
+    answer = null;
+  }
+
+  const variant = await prisma.variants.create({
+    data: {
+      questionMetadataId: questionId,
+      questionText: variantData.questionText,
+      difficulty: variantData.difficulty || "medium",
+      reasoningLevel,
+      assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null,
+      secondaryTopicsId: secondaryTopics,
+      answer,
+      choices,
+      selectAllThatApply,
+      correctAnswers,
+      referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
+      isAiGenerated:
+        variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
+      isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
+      createdBy: variantData.createdBy ?? null,
+    },
+  });
+
+  return variant;
 };
 
 /**
@@ -1226,218 +1239,250 @@ export const createVariant = async (questionId, variantData, userId) => {
  */
 export const updateVariant = async (variantId, variantData = {}, userId, mutationContext = {}) => {
   const parsedVariantId = Number(variantId);
-    const existing = await prisma.variants.findFirst({
-      where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
-      select: { id: true, questionMetadataId: true },
-    });
+  const existing = await prisma.variants.findFirst({
+    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+    select: { id: true, questionMetadataId: true },
+  });
 
-    if (!existing) {
-      throw new Error('Variant not found');
-    }
-    return await withQuestionMutationFence(existing.questionMetadataId, async (db) => {
-      const variant = await db.variants.findFirst({
-        where: { id: existing.id, questionMetadata: { course: { userId } } },
-        include: {
-          questionMetadata: {
-            select: {
-              id: true,
-              type: true,
-              courseId: true,
-              primaryTopicId: true,
-              course: { select: { id: true, coreCourseId: true } },
-            },
+  if (!existing) {
+    throw new Error("Variant not found");
+  }
+  return await withQuestionMutationFence(existing.questionMetadataId, async (db) => {
+    const variant = await db.variants.findFirst({
+      where: { id: existing.id, questionMetadata: { course: { userId } } },
+      include: {
+        questionMetadata: {
+          select: {
+            id: true,
+            type: true,
+            courseId: true,
+            primaryTopicId: true,
+            course: { select: { id: true, coreCourseId: true } },
           },
         },
-      });
+      },
+    });
 
-      if (!variant) {
-        throw new Error('Variant not found');
-      }
+    if (!variant) {
+      throw new Error("Variant not found");
+    }
 
-      // Direct/service callers do not inherit route RBAC. Fail closed unless
-      // the route explicitly supplies the resolved instructor privilege.
-      const isInstructorPlus = mutationContext.isInstructorPlus ?? false;
-      const accessLevel = mutationContext.accessLevel;
-      const requestUserId = mutationContext.requestUserId;
-      const nextIsDraft = variantData.isDraft !== undefined
-        ? Boolean(variantData.isDraft)
-        : undefined;
+    // Direct/service callers do not inherit route RBAC. Fail closed unless
+    // the route explicitly supplies the resolved instructor privilege.
+    const isInstructorPlus = mutationContext.isInstructorPlus ?? false;
+    const accessLevel = mutationContext.accessLevel;
+    const requestUserId = mutationContext.requestUserId;
+    const nextIsDraft =
+      variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : undefined;
 
-      const contentFields = [
-        'questionText', 'difficulty', 'reasoningLevel', 'assessmentId',
-        'secondaryTopicsId', 'answer', 'choices', 'selectAllThatApply',
-        'correctAnswers', 'referenceId',
-      ];
-      const hasContentEdit = contentFields.some((field) => variantData[field] !== undefined);
-      const aiTagOnly =
-        variantData.isAiGenerated !== undefined &&
-        nextIsDraft === undefined &&
-        !hasContentEdit;
-      const reverting = nextIsDraft === true && isInstructorPlus;
-      const approvalInFlight =
-        variant.isDraft === false &&
-        variant.coreQuestionId === null &&
-        Boolean(variant.questionMetadata?.course?.coreCourseId);
-      const approvalRetry =
-        approvalInFlight &&
-        nextIsDraft === false &&
-        isInstructorPlus &&
-        !hasContentEdit &&
-        variantData.isAiGenerated === undefined;
+    const contentFields = [
+      "questionText",
+      "difficulty",
+      "reasoningLevel",
+      "assessmentId",
+      "secondaryTopicsId",
+      "answer",
+      "choices",
+      "selectAllThatApply",
+      "correctAnswers",
+      "referenceId",
+    ];
+    const hasContentEdit = contentFields.some((field) => variantData[field] !== undefined);
+    const aiTagOnly =
+      variantData.isAiGenerated !== undefined && nextIsDraft === undefined && !hasContentEdit;
+    const reverting = nextIsDraft === true && isInstructorPlus;
+    const approvalInFlight =
+      variant.isDraft === false &&
+      variant.coreQuestionId === null &&
+      Boolean(variant.questionMetadata?.course?.coreCourseId);
+    const approvalRetry =
+      approvalInFlight &&
+      nextIsDraft === false &&
+      isInstructorPlus &&
+      !hasContentEdit &&
+      variantData.isAiGenerated === undefined;
 
-      // Approval commits its reviewed state before the outbound Core request.
-      // While that request is in flight, do not let an un-review/content edit
-      // change the row that the request is about. An instructor's no-op
-      // isDraft:false retry is the one safe exception: the content-derived
-      // Core idempotency key lets it resume a crashed/late push.
-      if (approvalInFlight && !approvalRetry) {
-        throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409, isPublic: true });
-      }
+    // Approval commits its reviewed state before the outbound Core request.
+    // While that request is in flight, do not let an un-review/content edit
+    // change the row that the request is about. An instructor's no-op
+    // isDraft:false retry is the one safe exception: the content-derived
+    // Core idempotency key lets it resume a crashed/late push.
+    if (approvalInFlight && !approvalRetry) {
+      throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
+    }
 
-      // §19 approved-variant lock: once approved, content edits are blocked
-      // except reverting to draft (instructor+) or toggling the AI tag. This
-      // check is deliberately after the fenced re-read, closing the stale
-      // `req.variant` TOCTOU window.
-      if (variant.isDraft === false) {
-        if (!reverting && !aiTagOnly) {
-          if (!approvalRetry) {
-            throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409, isPublic: true });
-          }
-        }
-      } else {
-        // Draft branch — instructor-only approval (§16).
-        if (nextIsDraft === false && !isInstructorPlus) {
-          throw Object.assign(new Error('Only instructors can approve variants'), { status: 403, isPublic: true });
-        }
-        // §19 TA own-only edit: a TA may edit only a draft they created.
-        if (accessLevel === 'ta' && variant.createdBy !== requestUserId) {
-          throw Object.assign(new Error('TAs can only edit their own variants'), { status: 403, isPublic: true });
+    // §19 approved-variant lock: once approved, content edits are blocked
+    // except reverting to draft (instructor+) or toggling the AI tag. This
+    // check is deliberately after the fenced re-read, closing the stale
+    // `req.variant` TOCTOU window.
+    if (variant.isDraft === false) {
+      if (!reverting && !aiTagOnly) {
+        if (!approvalRetry) {
+          throw Object.assign(new Error("VARIANT_LOCKED"), { status: 409, isPublic: true });
         }
       }
+    } else {
+      // Draft branch — instructor-only approval (§16).
+      if (nextIsDraft === false && !isInstructorPlus) {
+        throw Object.assign(new Error("Only instructors can approve variants"), {
+          status: 403,
+          isPublic: true,
+        });
+      }
+      // §19 TA own-only edit: a TA may edit only a draft they created.
+      if (accessLevel === "ta" && variant.createdBy !== requestUserId) {
+        throw Object.assign(new Error("TAs can only edit their own variants"), {
+          status: 403,
+          isPublic: true,
+        });
+      }
+    }
 
-      // Handle choices and answer normalization for MCQ.
-      let normalizedChoices = variantData.choices;
-      let normalizedAnswer = variantData.answer;
-      let normalizedSelectAllThatApply;
-      let normalizedCorrectAnswers;
-      const isMcq = variant.questionMetadata?.type === 'MCQ';
-      const touchesCorrectness = isMcq && (
-        variantData.answer !== undefined
-        || variantData.correctAnswers !== undefined
-        || variantData.selectAllThatApply !== undefined
-      );
+    // Handle choices and answer normalization for MCQ.
+    let normalizedChoices = variantData.choices;
+    let normalizedAnswer = variantData.answer;
+    let normalizedSelectAllThatApply;
+    let normalizedCorrectAnswers;
+    const isMcq = variant.questionMetadata?.type === "MCQ";
+    const touchesCorrectness =
+      isMcq &&
+      (variantData.answer !== undefined ||
+        variantData.correctAnswers !== undefined ||
+        variantData.selectAllThatApply !== undefined);
 
-      if (isMcq) {
-        if (variantData.choices !== undefined) {
-          normalizedChoices = validateMCQChoices(variantData.choices, 'MCQ');
-          // If choices are provided but invalid, throw error.
-          if (variantData.choices !== null && normalizedChoices === null) {
-            throw new Error('Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.');
-          }
+    if (isMcq) {
+      if (variantData.choices !== undefined) {
+        normalizedChoices = validateMCQChoices(variantData.choices, "MCQ");
+        // If choices are provided but invalid, throw error.
+        if (variantData.choices !== null && normalizedChoices === null) {
+          throw new Error(
+            "Invalid choices format for MCQ. Choices must be an array of objects with letter and text properties.",
+          );
         }
+      }
 
-        // Normalize answer to just letter for MCQ.
-        if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
-          normalizedAnswer = extractAnswerLetter(variantData.answer) || variantData.answer.trim();
-        }
+      // Normalize answer to just letter for MCQ.
+      if (
+        variantData.answer !== undefined &&
+        typeof variantData.answer === "string" &&
+        variantData.answer.trim()
+      ) {
+        normalizedAnswer = extractAnswerLetter(variantData.answer) || variantData.answer.trim();
+      }
 
-        if (touchesCorrectness) {
-          const choiceSource = normalizedChoices !== undefined ? normalizedChoices : variant.choices;
-          const normalized = normalizeMcqCorrectness({
-            selectAllThatApply: variantData.selectAllThatApply !== undefined
+      if (touchesCorrectness) {
+        const choiceSource = normalizedChoices !== undefined ? normalizedChoices : variant.choices;
+        const normalized = normalizeMcqCorrectness({
+          selectAllThatApply:
+            variantData.selectAllThatApply !== undefined
               ? Boolean(variantData.selectAllThatApply)
               : Boolean(variant.selectAllThatApply),
-            answer: normalizedAnswer !== undefined ? normalizedAnswer : variant.answer,
-            correctAnswers: variantData.correctAnswers !== undefined
+          answer: normalizedAnswer !== undefined ? normalizedAnswer : variant.answer,
+          correctAnswers:
+            variantData.correctAnswers !== undefined
               ? variantData.correctAnswers
               : variant.correctAnswers,
-            choiceLetters: (choiceSource || []).map((choice) => choice.letter),
-          });
-          normalizedAnswer = normalized.answer;
-          normalizedSelectAllThatApply = normalized.selectAllThatApply;
-          normalizedCorrectAnswers = normalized.correctAnswers;
-        }
-      } else {
-        // Non-MCQ variants cannot persist multi-correct state.
-        normalizedSelectAllThatApply = false;
-        normalizedCorrectAnswers = null;
-        if (variantData.answer !== undefined && typeof variantData.answer === 'string' && variantData.answer.trim()) {
-          normalizedAnswer = variantData.answer.trim();
-        }
+          choiceLetters: (choiceSource || []).map((choice) => choice.letter),
+        });
+        normalizedAnswer = normalized.answer;
+        normalizedSelectAllThatApply = normalized.selectAllThatApply;
+        normalizedCorrectAnswers = normalized.correctAnswers;
       }
+    } else {
+      // Non-MCQ variants cannot persist multi-correct state.
+      normalizedSelectAllThatApply = false;
+      normalizedCorrectAnswers = null;
+      if (
+        variantData.answer !== undefined &&
+        typeof variantData.answer === "string" &&
+        variantData.answer.trim()
+      ) {
+        normalizedAnswer = variantData.answer.trim();
+      }
+    }
 
-      // Variant relation IDs are globally guessable. Validate each supplied
-      // assessment/topic/reference against the owning question's course before
-      // allowing Prisma to persist the scalar FK/array value.
-      await assertVariantRelationsInCourse({
-        courseId: variant.questionMetadata.courseId,
-        assessmentId: variantData.assessmentId,
-        secondaryTopicsId: variantData.secondaryTopicsId,
-        referenceId: variantData.referenceId,
-        db,
-      });
+    // Variant relation IDs are globally guessable. Validate each supplied
+    // assessment/topic/reference against the owning question's course before
+    // allowing Prisma to persist the scalar FK/array value.
+    await assertVariantRelationsInCourse({
+      courseId: variant.questionMetadata.courseId,
+      assessmentId: variantData.assessmentId,
+      secondaryTopicsId: variantData.secondaryTopicsId,
+      referenceId: variantData.referenceId,
+      db,
+    });
 
-      // #1080 un-review: reopening a reviewed variant back to draft must clear
-      // its Core link so the next approval re-pushes a fresh copy.
-      const unreviewing = variant.isDraft === false && nextIsDraft === true;
-      const ALLOWED_VARIANT_UPDATE_FIELDS = [
-        'questionText', 'difficulty', 'reasoningLevel', 'assessmentId', 'secondaryTopicsId',
-        'answer', 'choices', 'selectAllThatApply', 'correctAnswers',
-        'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
-      ];
-      const normalizedData = {
-        ...Object.fromEntries(
-          Object.entries(variantData).filter(([key]) => ALLOWED_VARIANT_UPDATE_FIELDS.includes(key))
-        ),
-        ...(variantData.assessmentId !== undefined && {
-          assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null
-        }),
-        ...(variantData.referenceId !== undefined && {
-          referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null
-        }),
-        ...(variantData.secondaryTopicsId !== undefined && {
-          secondaryTopicsId: normalizeSecondaryTopics(variantData.secondaryTopicsId)
-        }),
-        ...(variantData.isAiGenerated !== undefined && {
-          isAiGenerated: Boolean(variantData.isAiGenerated)
-        }),
-        ...(nextIsDraft !== undefined && {
-          isDraft: nextIsDraft
-        }),
-        ...(normalizedChoices !== undefined && {
-          choices: normalizedChoices
-        }),
-        ...(normalizedAnswer !== undefined && {
-          answer: normalizedAnswer
-        }),
-        ...(normalizedSelectAllThatApply !== undefined && {
-          selectAllThatApply: normalizedSelectAllThatApply
-        }),
-        ...(normalizedCorrectAnswers !== undefined && {
-          correctAnswers: normalizedCorrectAnswers
-        }),
-        ...(unreviewing && {
-          coreQuestionId: null
-        })
-      };
+    // #1080 un-review: reopening a reviewed variant back to draft must clear
+    // its Core link so the next approval re-pushes a fresh copy.
+    const unreviewing = variant.isDraft === false && nextIsDraft === true;
+    const ALLOWED_VARIANT_UPDATE_FIELDS = [
+      "questionText",
+      "difficulty",
+      "reasoningLevel",
+      "assessmentId",
+      "secondaryTopicsId",
+      "answer",
+      "choices",
+      "selectAllThatApply",
+      "correctAnswers",
+      "referenceId",
+      "isAiGenerated",
+      "isDraft",
+      "coreQuestionId",
+    ];
+    const normalizedData = {
+      ...Object.fromEntries(
+        Object.entries(variantData).filter(([key]) => ALLOWED_VARIANT_UPDATE_FIELDS.includes(key)),
+      ),
+      ...(variantData.assessmentId !== undefined && {
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null,
+      }),
+      ...(variantData.referenceId !== undefined && {
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
+      }),
+      ...(variantData.secondaryTopicsId !== undefined && {
+        secondaryTopicsId: normalizeSecondaryTopics(variantData.secondaryTopicsId),
+      }),
+      ...(variantData.isAiGenerated !== undefined && {
+        isAiGenerated: Boolean(variantData.isAiGenerated),
+      }),
+      ...(nextIsDraft !== undefined && {
+        isDraft: nextIsDraft,
+      }),
+      ...(normalizedChoices !== undefined && {
+        choices: normalizedChoices,
+      }),
+      ...(normalizedAnswer !== undefined && {
+        answer: normalizedAnswer,
+      }),
+      ...(normalizedSelectAllThatApply !== undefined && {
+        selectAllThatApply: normalizedSelectAllThatApply,
+      }),
+      ...(normalizedCorrectAnswers !== undefined && {
+        correctAnswers: normalizedCorrectAnswers,
+      }),
+      ...(unreviewing && {
+        coreQuestionId: null,
+      }),
+    };
 
-      // `variants.js`'s post-approval Core push reads
-      // `variant.questionMetadata.course.coreCourseId` from this return value.
-      return db.variants.update({
-        where: { id: variant.id },
-        data: normalizedData,
-        include: {
-          questionMetadata: {
-            select: {
-              id: true,
-              type: true,
-              primaryTopicId: true,
-              course: { select: { id: true, coreCourseId: true } },
-            },
+    // `variants.js`'s post-approval Core push reads
+    // `variant.questionMetadata.course.coreCourseId` from this return value.
+    return db.variants.update({
+      where: { id: variant.id },
+      data: normalizedData,
+      include: {
+        questionMetadata: {
+          select: {
+            id: true,
+            type: true,
+            primaryTopicId: true,
+            course: { select: { id: true, coreCourseId: true } },
           },
         },
-      });
+      },
     });
+  });
 };
 
 const variantSnapshotInclude = {
@@ -1451,26 +1496,40 @@ const variantSnapshotInclude = {
   },
 };
 
-const sameJsonValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+const sameJsonValue = (left, right) =>
+  JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 
 /** True when the local row still represents the exact snapshot sent to Core. */
 function matchesCoreApprovalSnapshot(current, snapshot) {
   if (!snapshot || current.isDraft !== false || current.coreQuestionId !== null) return false;
 
-  if (snapshot.updatedAt && current.updatedAt &&
-      new Date(snapshot.updatedAt).getTime() !== new Date(current.updatedAt).getTime()) {
+  if (
+    snapshot.updatedAt &&
+    current.updatedAt &&
+    new Date(snapshot.updatedAt).getTime() !== new Date(current.updatedAt).getTime()
+  ) {
     return false;
   }
 
-  const scalarFields = ['questionText', 'difficulty', 'reasoningLevel', 'answer', 'assessmentId', 'referenceId'];
+  const scalarFields = [
+    "questionText",
+    "difficulty",
+    "reasoningLevel",
+    "answer",
+    "assessmentId",
+    "referenceId",
+  ];
   if (scalarFields.some((field) => current[field] !== snapshot[field])) return false;
   if (!sameJsonValue(current.choices, snapshot.choices)) return false;
   if (!sameJsonValue(current.secondaryTopicsId, snapshot.secondaryTopicsId)) return false;
 
-  return current.questionMetadata?.type === snapshot.questionMetadata?.type &&
+  return (
+    current.questionMetadata?.type === snapshot.questionMetadata?.type &&
     current.questionMetadata?.primaryTopicId === snapshot.questionMetadata?.primaryTopicId &&
     current.questionMetadata?.course?.id === snapshot.questionMetadata?.course?.id &&
-    current.questionMetadata?.course?.coreCourseId === snapshot.questionMetadata?.course?.coreCourseId;
+    current.questionMetadata?.course?.coreCourseId ===
+      snapshot.questionMetadata?.course?.coreCourseId
+  );
 }
 
 /**
@@ -1480,13 +1539,17 @@ function matchesCoreApprovalSnapshot(current, snapshot) {
  */
 export const linkVariantToCore = async (variantId, userId, snapshot, coreQuestionId) => {
   const parsedVariantId = Number(variantId);
-  const questionId = snapshot?.questionMetadata?.id ?? (await prisma.variants.findFirst({
-    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
-    select: { questionMetadataId: true },
-  }))?.questionMetadataId;
+  const questionId =
+    snapshot?.questionMetadata?.id ??
+    (
+      await prisma.variants.findFirst({
+        where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+        select: { questionMetadataId: true },
+      })
+    )?.questionMetadataId;
 
   if (!questionId) {
-    throw new Error('Variant not found');
+    throw new Error("Variant not found");
   }
 
   return withQuestionMutationFence(questionId, async (db) => {
@@ -1494,7 +1557,7 @@ export const linkVariantToCore = async (variantId, userId, snapshot, coreQuestio
       where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
       include: variantSnapshotInclude,
     });
-    if (!current) throw new Error('Variant not found');
+    if (!current) throw new Error("Variant not found");
 
     if (current.coreQuestionId === coreQuestionId) {
       return { applied: true, variant: current };
@@ -1516,13 +1579,17 @@ export const linkVariantToCore = async (variantId, userId, snapshot, coreQuestio
 /** Roll an approved/no-Core-link row back to draft after a failed push. */
 export const rollbackVariantApproval = async (variantId, userId, snapshot) => {
   const parsedVariantId = Number(variantId);
-  const questionId = snapshot?.questionMetadata?.id ?? (await prisma.variants.findFirst({
-    where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
-    select: { questionMetadataId: true },
-  }))?.questionMetadataId;
+  const questionId =
+    snapshot?.questionMetadata?.id ??
+    (
+      await prisma.variants.findFirst({
+        where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
+        select: { questionMetadataId: true },
+      })
+    )?.questionMetadataId;
 
   if (!questionId) {
-    throw new Error('Variant not found');
+    throw new Error("Variant not found");
   }
 
   return withQuestionMutationFence(questionId, async (db) => {
@@ -1530,7 +1597,7 @@ export const rollbackVariantApproval = async (variantId, userId, snapshot) => {
       where: { id: parsedVariantId, questionMetadata: { course: { userId } } },
       include: variantSnapshotInclude,
     });
-    if (!current) throw new Error('Variant not found');
+    if (!current) throw new Error("Variant not found");
 
     // A concurrent un-review already restored draft state; do not overwrite
     // that newer state. If the row is still the pending approval, rollback is
@@ -1560,11 +1627,11 @@ export const deleteVariant = async (variantId, userId) => {
 
   return await withQuestionMutationFence(variant.questionMetadataId, async (db) => {
     const current = await db.variants.findFirst({
-      where: { id: variant.id, questionMetadata: { course: { userId } } }
+      where: { id: variant.id, questionMetadata: { course: { userId } } },
     });
 
     if (!current) {
-      throw new Error('Variant not found');
+      throw new Error("Variant not found");
     }
 
     await db.variants.delete({ where: { id: current.id } });

@@ -1,12 +1,12 @@
-import type { Course } from '~/lib/types';
+import type { Course } from "~/lib/types";
 import {
   accentForCourse,
   courseCode,
   courseName,
   courseTerm,
   courseYear,
-} from '~/lib/course-display';
-import type { DashboardCourseRow } from './DashboardView';
+} from "~/lib/course-display";
+import type { DashboardCourseRow } from "./DashboardView";
 
 /** Time-of-day greeting — mirrors Core's dashboard hero (`apps/core/app/routes/dashboard.tsx`)
  *  and the pre-existing `/student` landing page so every AI Tutor + Core surface

@@ -38,8 +38,8 @@ describe("parsePaginationParams", () => {
       expect(() => parsePaginationParams(reqWith({ page: "1" }))).toThrow(PaginationError);
     });
 
-    it('throws PAGINATION_REQUIRED when params are empty strings', () => {
-      expect(() => parsePaginationParams(reqWith({ page: '', pageSize: '' }))).toThrow(/required/);
+    it("throws PAGINATION_REQUIRED when params are empty strings", () => {
+      expect(() => parsePaginationParams(reqWith({ page: "", pageSize: "" }))).toThrow(/required/);
     });
 
     it("throws PAGINATION_INVALID when params are non-numeric", () => {
@@ -252,10 +252,10 @@ describe("parseFilterParam", () => {
     ]);
   });
 
-  it('de-dupes and drops blanks', () => {
-    expect(parseFilterParam(reqWith({ term: ['a', 'a', '', '  ', ' b '] }), 'term')).toEqual([
-      'a',
-      'b',
+  it("de-dupes and drops blanks", () => {
+    expect(parseFilterParam(reqWith({ term: ["a", "a", "", "  ", " b "] }), "term")).toEqual([
+      "a",
+      "b",
     ]);
   });
 

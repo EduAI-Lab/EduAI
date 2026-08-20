@@ -99,7 +99,11 @@ describe("POST /api/courses/:courseId/re-embed (#1112)", () => {
   });
 
   it("returns 200 on idempotent retry with the same job", async () => {
-    vi.mocked(startOrResumeReEmbedJob).mockResolvedValueOnce({ job, created: false, keyHonored: true });
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValueOnce({
+      job,
+      created: false,
+      keyHonored: true,
+    });
     const res = await action(postArgs({ headerKey: "k1" }));
     expect(res.status).toBe(200);
     const body = await res.json();

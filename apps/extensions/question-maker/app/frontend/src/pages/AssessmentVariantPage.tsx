@@ -25,37 +25,54 @@ import {
 } from "@tabler/icons-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
-import {
-  Button, Textarea, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent,
-  DialogDescription, DialogFooter, DialogHeader, DialogTitle, ScrollArea, Badge,
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, Separator, cn,
-} from '@eduai/ui';
-import { PermissionGate } from '@eduai/ui';
-import { Tooltip } from '@/components/ui/tooltip';
-import { useCourses } from '../hooks/useCourses';
-import { courseService } from '../services/courseService';
-import assessmentService from '../services/assessmentService';
-import assessmentVariantService, { type BaselineVariantReadiness, type GenerateBankVariantsResult } from '../services/assessmentVariantService';
-import { eduaiService, type EduAIModelOption } from '../services/eduaiService';
-import { QuestionUploadDialog } from '../components/question-bank/QuestionUploadDialog';
-import { GeneratedVariantsReviewDialog } from '../components/assessments/GeneratedVariantsReviewDialog';
-import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import type { Assessment, Course, Question } from '../types/question';
-import type { Topic } from '../types/topic';
-import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import {
-  useAiReviewHistory,
-  type AiReviewHistoryItem,
-} from '../hooks/use-ai-review-history';
-import { AI_REVIEW_HISTORY_MAX_ITEMS } from '../services/aiReviewHistoryStorage';
-import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from '../utils/aiModels';
-import { toast } from 'sonner';
+  Button,
+  Textarea,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  ScrollArea,
+  Badge,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  Separator,
+  cn,
+} from "@eduai/ui";
+import { PermissionGate } from "@eduai/ui";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useCourses } from "../hooks/useCourses";
+import { courseService } from "../services/courseService";
+import assessmentService from "../services/assessmentService";
+import assessmentVariantService, {
+  type BaselineVariantReadiness,
+  type GenerateBankVariantsResult,
+} from "../services/assessmentVariantService";
+import { eduaiService, type EduAIModelOption } from "../services/eduaiService";
+import { QuestionUploadDialog } from "../components/question-bank/QuestionUploadDialog";
+import { GeneratedVariantsReviewDialog } from "../components/assessments/GeneratedVariantsReviewDialog";
+import { CanvasImportDialog } from "../components/canvas/CanvasImportDialog";
+import type { Assessment, Course, Question } from "../types/question";
+import type { Topic } from "../types/topic";
+import { buildAiReviewDocxBlob } from "../utils/aiReviewExportDocx";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import { useAiReviewHistory, type AiReviewHistoryItem } from "../hooks/use-ai-review-history";
+import { AI_REVIEW_HISTORY_MAX_ITEMS } from "../services/aiReviewHistoryStorage";
+import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from "../utils/aiModels";
+import { toast } from "sonner";
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
-  'Number of reviewed variants for this question in the bank. Draft variants are not included.';
+  "Number of reviewed variants for this question in the bank. Draft variants are not included.";
 
 const DEFAULT_AI_JUDGE_RUBRIC = `Conceptual equivalence (1-5)
 Score 5: The variant assesses the same concept and reasoning process as the original.

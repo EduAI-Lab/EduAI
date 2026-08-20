@@ -13,19 +13,19 @@ import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
   type AccessLevel,
-} from '~/lib/auth/course-access.server';
-import { getPolicy, denyByPolicy } from '~/lib/policy.server';
-import type { Session } from '~/lib/auth/server';
-import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
-import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
-import { getActorContext, getRequestContext } from '~/lib/request-context.server';
-import { parseCursorParams, splitPage } from '~/lib/cursor-list.server';
+} from "~/lib/auth/course-access.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import type { Session } from "~/lib/auth/server";
+import { fireAndForget, logAuditAction, logSystemError } from "~/lib/logging.server";
+import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
   readBoundedFormData,
-} from '~/lib/multipart.server';
-import { getRequestSession } from '~/lib/auth/request-session.server';
+} from "~/lib/multipart.server";
+import { getRequestSession } from "~/lib/auth/request-session.server";
 
 // File extraction itself caps a file at 50 MiB. Leave room for multipart
 // boundaries and metadata while still bounding the transport before parsing.
@@ -417,14 +417,14 @@ async function uploadMaterial(
     formData = await readBoundedFormData(request, MATERIAL_UPLOAD_BODY_MAX_BYTES);
   } catch (error) {
     if (error instanceof MultipartBodyTooLargeError) {
-      return json(413, { error: 'PAYLOAD_TOO_LARGE' });
+      return json(413, { error: "PAYLOAD_TOO_LARGE" });
     }
     if (error instanceof MultipartBodyInvalidError) {
       return json(400, { error: error.message });
     }
     throw error;
   }
-  const file = formData.get('file') as File;
+  const file = formData.get("file") as File;
 
   if (!file) {
     return json(400, { error: "No file provided" });

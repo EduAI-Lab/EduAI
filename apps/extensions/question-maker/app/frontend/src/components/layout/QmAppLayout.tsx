@@ -23,21 +23,21 @@ import {
   IconHelpCircle,
   IconRoute,
   type Icon,
-} from '@tabler/icons-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useQmLayout, QmLayoutProvider } from '@/components/layout/QmLayoutContext';
-import { ProfileCoursesDialog } from '@/components/profile/ProfileCoursesDialog';
-import { useCourses } from '@/hooks/useCourses';
-import { useAiServicesStatus } from '@/hooks/useAiServicesStatus';
-import { useGuidedTour } from '@/contexts/GuidedTourContext';
-import { useBugReport } from '@/contexts/BugReportContext';
-import { getNavForUser, getNavSecondaryForUser } from '@/lib/rbac/nav';
-import type { QmNavItemKey } from '@/lib/rbac/types';
-import { Tooltip } from '@/components/ui/tooltip';
-import { CourseSwitcher } from '@/components/layout/CourseSwitcher';
-import { CommandPalette } from '@/components/command/CommandPalette';
-import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
-import { toast } from 'sonner';
+} from "@tabler/icons-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQmLayout, QmLayoutProvider } from "@/components/layout/QmLayoutContext";
+import { ProfileCoursesDialog } from "@/components/profile/ProfileCoursesDialog";
+import { useCourses } from "@/hooks/useCourses";
+import { useAiServicesStatus } from "@/hooks/useAiServicesStatus";
+import { useGuidedTour } from "@/contexts/GuidedTourContext";
+import { useBugReport } from "@/contexts/BugReportContext";
+import { getNavForUser, getNavSecondaryForUser } from "@/lib/rbac/nav";
+import type { QmNavItemKey } from "@/lib/rbac/types";
+import { Tooltip } from "@/components/ui/tooltip";
+import { CourseSwitcher } from "@/components/layout/CourseSwitcher";
+import { CommandPalette } from "@/components/command/CommandPalette";
+import { CURRENT_APP_ID, getLauncherApps } from "@/lib/apps";
+import { toast } from "sonner";
 
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -151,8 +151,8 @@ function QmAppLayoutInner() {
   const bugReport = useBugReport();
   const handleLogout = () => {
     void logout().catch(() => {
-      toast.error('Could not log out', {
-        description: 'Your session is still active. Please try again.',
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
       });
     });
   };
@@ -291,8 +291,8 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const handleLogout = () => {
     void logout().catch(() => {
-      toast.error('Could not log out', {
-        description: 'Your session is still active. Please try again.',
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
       });
     });
   };
@@ -323,8 +323,13 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           LinkComponent: Link,
           launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
           user: user
-            ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
-            : { name: 'Guest', email: '', role: 'GUEST' },
+            ? {
+                name: user.name ?? user.email,
+                email: user.email,
+                image: user.image,
+                role: user.role,
+              }
+            : { name: "Guest", email: "", role: "GUEST" },
           navUser: user ? { items: [], onLogout: handleLogout } : undefined,
         }}
         title="Question Maker"

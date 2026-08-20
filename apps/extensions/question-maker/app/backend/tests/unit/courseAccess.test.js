@@ -21,9 +21,8 @@ vi.mock("../../src/services/coreApiService.js", () => ({
   getMyProfileFromCore: mockMe,
 }));
 
-const { resolveCourseAccess, requireCourseAccess, requireOptionalCourseAccess, LEVELS } = await import(
-  '../../src/middleware/courseAccess.js'
-);
+const { resolveCourseAccess, requireCourseAccess, requireOptionalCourseAccess, LEVELS } =
+  await import("../../src/middleware/courseAccess.js");
 
 const LINKED = { id: 1, userId: "owner-1", coreCourseId: "core-c1" };
 
@@ -66,14 +65,14 @@ describe("resolveCourseAccess", () => {
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
-    it('denies a STUDENT owner access to an unlinked course', async () => {
-      const access = await resolveCourseAccess({ id: 'owner-1', role: 'STUDENT' }, 2);
+    it("denies a STUDENT owner access to an unlinked course", async () => {
+      const access = await resolveCourseAccess({ id: "owner-1", role: "STUDENT" }, 2);
       expect(access).toBeNull();
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
-    it('denies a non-owner (even a TA enrolled elsewhere)', async () => {
-      const access = await resolveCourseAccess({ id: 'someone-else', role: 'TA' }, 2);
+    it("denies a non-owner (even a TA enrolled elsewhere)", async () => {
+      const access = await resolveCourseAccess({ id: "someone-else", role: "TA" }, 2);
       expect(access).toBeNull();
     });
   });
@@ -127,9 +126,11 @@ describe("resolveCourseAccess", () => {
       expect(access).toBeNull();
     });
 
-    it('fails closed when Core returns a malformed enrollment payload', async () => {
-      mockEnrollments.mockResolvedValueOnce({ enrollments: { studentId: 'u1', role: 'INSTRUCTOR' } });
-      const access = await resolveCourseAccess({ id: 'u1', role: 'INSTRUCTOR' }, 1);
+    it("fails closed when Core returns a malformed enrollment payload", async () => {
+      mockEnrollments.mockResolvedValueOnce({
+        enrollments: { studentId: "u1", role: "INSTRUCTOR" },
+      });
+      const access = await resolveCourseAccess({ id: "u1", role: "INSTRUCTOR" }, 1);
       expect(access).toBeNull();
     });
   });
@@ -221,11 +222,11 @@ describe("resolveCourseAccess", () => {
   });
 });
 
-describe('requireOptionalCourseAccess', () => {
-  it('returns a validation error before resolving malformed target ids', async () => {
+describe("requireOptionalCourseAccess", () => {
+  it("returns a validation error before resolving malformed target ids", async () => {
     const req = {
-      user: { id: 'u1', role: 'INSTRUCTOR' },
-      body: { courseId: 'not-a-number' },
+      user: { id: "u1", role: "INSTRUCTOR" },
+      body: { courseId: "not-a-number" },
       headers: {},
     };
     const res = {
@@ -235,21 +236,21 @@ describe('requireOptionalCourseAccess', () => {
     const next = vi.fn();
 
     await requireOptionalCourseAccess({
-      min: 'instructor',
+      min: "instructor",
       getCourseId: (request) => request.body.courseId,
     })(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
-      error: 'Valid courseId is required',
+      error: "Valid courseId is required",
     });
     expect(mockCourseFindOne).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 });
 
-describe('requireCourseAccess', () => {
+describe("requireCourseAccess", () => {
   function makeRes() {
     const res = { status: vi.fn(), json: vi.fn() };
     res.status.mockReturnValue(res);

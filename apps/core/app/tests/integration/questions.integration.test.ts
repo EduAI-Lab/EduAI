@@ -309,7 +309,11 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u-ta", role: "STUDENT" } });
     mockCourseAccess("TA");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
@@ -341,7 +345,11 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } });
     db.course.findFirst.mockResolvedValue(COURSE_ROW);
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
@@ -354,7 +362,11 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     const res = await postAction(
       makePostArgs({ ...validPostBody, secondaryTopicIds: [TOPIC_ID] }, "session=abc"),
     );
@@ -366,7 +378,11 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.courseTopic.findMany.mockResolvedValue([
       { id: "sec-topic", courseId: COURSE_ID, deletedAt: new Date() },
     ]);
@@ -381,7 +397,11 @@ describe("POST /api/questions", () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       return fn(db);
@@ -667,7 +687,11 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
     // POST
     mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, courseId: COURSE_ID, deletedAt: null });
+    db.courseTopic.findUnique.mockResolvedValue({
+      id: TOPIC_ID,
+      courseId: COURSE_ID,
+      deletedAt: null,
+    });
     db.question.findUnique.mockResolvedValue(null);
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });

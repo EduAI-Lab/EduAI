@@ -8,21 +8,20 @@ import {
   readBoundedFormData,
 } from "~/lib/multipart.server";
 
-function streamRequest(
-  chunks: string[],
-  headers: Record<string, string> = {},
-  close = true,
-) {
+function streamRequest(chunks: string[], headers: Record<string, string> = {}, close = true) {
   const cancel = vi.fn();
   let index = 0;
-  const stream = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      const chunk = chunks[index++];
-      if (chunk !== undefined) controller.enqueue(new TextEncoder().encode(chunk));
-      else if (close) controller.close();
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        const chunk = chunks[index++];
+        if (chunk !== undefined) controller.enqueue(new TextEncoder().encode(chunk));
+        else if (close) controller.close();
+      },
+      cancel,
     },
-    cancel,
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   // Keep the source stream directly on this Request-shaped fixture so the
   // cancellation assertion observes the adapter's reader.cancel() call.
   const request = {
@@ -95,10 +94,14 @@ async function requestThroughNodeAdapter(
 
 describe("readBoundedFormData", () => {
   it("rejects declared overflow before reading or parsing the body", async () => {
-    const { request, cancel } = streamRequest([], {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Content-Length": "97",
-    }, false);
+    const { request, cancel } = streamRequest(
+      [],
+      {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": "97",
+      },
+      false,
+    );
 
     await expect(readBoundedFormData(request, 96)).rejects.toBeInstanceOf(
       MultipartBodyTooLargeError,
@@ -107,10 +110,14 @@ describe("readBoundedFormData", () => {
   });
 
   it("cancels a body with a malformed declared length", async () => {
-    const { request, cancel } = streamRequest([], {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Content-Length": "not-a-length",
-    }, false);
+    const { request, cancel } = streamRequest(
+      [],
+      {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": "not-a-length",
+      },
+      false,
+    );
 
     await expect(readBoundedFormData(request, 96)).rejects.toBeInstanceOf(
       MultipartBodyInvalidError,
@@ -119,10 +126,9 @@ describe("readBoundedFormData", () => {
   });
 
   it("rejects chunked overflow and cancels the source stream", async () => {
-    const { request, cancel } = streamRequest(
-      ["a".repeat(80), "b".repeat(40)],
-      { "Content-Type": "application/x-www-form-urlencoded" },
-    );
+    const { request, cancel } = streamRequest(["a".repeat(80), "b".repeat(40)], {
+      "Content-Type": "application/x-www-form-urlencoded",
+    });
 
     await expect(readBoundedFormData(request, 96)).rejects.toBeInstanceOf(
       MultipartBodyTooLargeError,

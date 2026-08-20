@@ -41,9 +41,7 @@ function isLoopbackAuthUrl(value: string | undefined): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
-export function isLocalDemoEnabled(
-  environment: DeploymentEnvironment = process.env,
-): boolean {
+export function isLocalDemoEnabled(environment: DeploymentEnvironment = process.env): boolean {
   return (
     normalized(environment.NODE_ENV) === "development" &&
     normalized(environment.EDUAI_DEPLOYMENT_MODE) === "local" &&
@@ -53,9 +51,7 @@ export function isLocalDemoEnabled(
 }
 
 /** Return the explicit local fixture password; never provide a known default. */
-export function getLocalSeedPassword(
-  environment: DeploymentEnvironment = process.env,
-): string {
+export function getLocalSeedPassword(environment: DeploymentEnvironment = process.env): string {
   assertLocalDemoEnvironment(environment);
   const password = environment.EDUAI_LOCAL_SEED_PASSWORD?.trim();
   if (!password) {
@@ -67,9 +63,7 @@ export function getLocalSeedPassword(
 }
 
 /** Throw before any fixed demo credentials or seed rows can be provisioned. */
-export function assertLocalDemoEnvironment(
-  environment: DeploymentEnvironment = process.env,
-): void {
+export function assertLocalDemoEnvironment(environment: DeploymentEnvironment = process.env): void {
   if (!isLocalDemoEnabled(environment)) {
     throw new Error(
       "Refusing local demo fixtures: set NODE_ENV=development, EDUAI_DEPLOYMENT_MODE=local, EDUAI_ENABLE_LOCAL_DEMO=true, and BETTER_AUTH_URL to a loopback http(s) URL",

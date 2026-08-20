@@ -7,10 +7,14 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 
 function cookieHeaderFrom(response: Response): string {
-  const setCookies = typeof response.headers.getSetCookie === "function"
-    ? response.headers.getSetCookie()
-    : [response.headers.get("set-cookie") ?? ""];
-  return setCookies.map((cookie) => cookie.split(";")[0]).filter(Boolean).join("; ");
+  const setCookies =
+    typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : [response.headers.get("set-cookie") ?? ""];
+  return setCookies
+    .map((cookie) => cookie.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
 }
 
 describe("Better Auth API-key Prisma contract", () => {
@@ -106,7 +110,12 @@ describe("Better Auth API-key Prisma contract", () => {
       expect(created.key).toEqual(expect.any(String));
 
       const before = await prisma.$queryRaw<
-        Array<{ key: string; referenceId: string; metadata: string | null; permissions: string | null }>
+        Array<{
+          key: string;
+          referenceId: string;
+          metadata: string | null;
+          permissions: string | null;
+        }>
       >`
         SELECT "key", "referenceId", "metadata", "permissions"
         FROM "apiKey"
@@ -149,9 +158,7 @@ describe("Better Auth API-key Prisma contract", () => {
         ),
         "utf8",
       );
-      const hardening = migrationSql.match(
-        /UPDATE "apiKey"\s+SET[\s\S]*?WHERE[\s\S]*?;/,
-      )?.[0];
+      const hardening = migrationSql.match(/UPDATE "apiKey"\s+SET[\s\S]*?WHERE[\s\S]*?;/)?.[0];
       expect(hardening).toBeDefined();
       await prisma.$executeRawUnsafe(hardening!);
 

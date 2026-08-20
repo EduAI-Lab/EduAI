@@ -7,23 +7,23 @@
  * that namespace on logout; no API may fall back to another user's entries.
  */
 
-const LEGACY_STORAGE_KEY_PREFIX = 'eduai_api_key_';
-const LEGACY_ENCRYPTION_KEY_NAME = 'eduai_encryption_key';
-const STORAGE_KEY_PREFIX = 'eduai_api_key_v2:';
-const ENCRYPTION_KEY_PREFIX = 'eduai_encryption_key_v2:';
+const LEGACY_STORAGE_KEY_PREFIX = "eduai_api_key_";
+const LEGACY_ENCRYPTION_KEY_NAME = "eduai_encryption_key";
+const STORAGE_KEY_PREFIX = "eduai_api_key_v2:";
+const ENCRYPTION_KEY_PREFIX = "eduai_encryption_key_v2:";
 
-export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic' | 'opencode';
+export type AIProvider = "google" | "openai" | "deepseek" | "anthropic" | "opencode";
 
 /** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
 export type CampusProvider = "vllm" | "ollama";
 
 /** Cloud (key-bearing) providers, as opposed to the UBC-hosted campus path. */
 export const CLOUD_PROVIDERS: AIProvider[] = [
-  'google',
-  'openai',
-  'deepseek',
-  'anthropic',
-  'opencode',
+  "google",
+  "openai",
+  "deepseek",
+  "anthropic",
+  "opencode",
 ];
 
 type AccountScope = {
@@ -86,7 +86,7 @@ async function getEncryptionKey(userId: string): Promise<CryptoKey> {
 
   if (!salt) {
     const saltArray = crypto.getRandomValues(new Uint8Array(16));
-    salt = Array.from(saltArray, byte => byte.toString(16).padStart(2, '0')).join('');
+    salt = Array.from(saltArray, (byte) => byte.toString(16).padStart(2, "0")).join("");
     localStorage.setItem(keyName, salt);
   }
 
@@ -177,9 +177,7 @@ export const apiKeyStorage = {
     const normalizedUserId = normalizeUserId(userId);
     if (!normalizedUserId) return;
     try {
-      removeStorageKeysWithPrefix(
-        `${STORAGE_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}:`
-      );
+      removeStorageKeysWithPrefix(`${STORAGE_KEY_PREFIX}${encodeURIComponent(normalizedUserId)}:`);
       localStorage.removeItem(encryptionKeyNameFor(normalizedUserId));
     } catch {
       // Continue logout even when browser storage is unavailable.
@@ -190,7 +188,7 @@ export const apiKeyStorage = {
   /** Stores an API key for the bound account after encrypting it. */
   async setApiKey(provider: AIProvider, apiKey: string): Promise<void> {
     const scope = currentScope();
-    if (!scope) throw new Error('Cannot store an API key without an authenticated user');
+    if (!scope) throw new Error("Cannot store an API key without an authenticated user");
     const encrypted = await encrypt(apiKey, scope.userId);
     if (!isCurrentScope(scope)) return;
     localStorage.setItem(storageKeyFor(scope.userId, provider), encrypted);
@@ -244,9 +242,9 @@ export const apiKeyStorage = {
 
   /** Builds the apiKeys payload expected by the AI service based on the chosen model and stored keys. */
   async buildApiKeysForModel(
-    modelId: string
+    modelId: string,
   ): Promise<Record<string, { apiKey?: string; isEnabled: boolean }>> {
-    if (modelId.startsWith('ollama')) {
+    if (modelId.startsWith("ollama")) {
       return {
         ollama: {
           isEnabled: true,

@@ -31,16 +31,14 @@ function runQmValidator(rawUrl) {
 describe.each(rows.map((row, index) => [index, row]))(
   "parse-validate-canvas-url PICT QM row #%i %s/%s/%s",
   (index, row) => {
-    it('matches the shared oracle', () => {
+    it("matches the shared oracle", () => {
       const sharedExpected = parseValidateCanvasUrlOracle(row);
       // QM still rejects credentials and query strings, while allowing an
       // HTTPS path prefix (including path-traversal segments that the URL
       // parser normalizes). ExtraPath `query-ssrf` remains rejected.
       const expected = {
         accept:
-          sharedExpected.accept &&
-          row.UrlShape === 'https-host' &&
-          row.ExtraPath !== 'query-ssrf',
+          sharedExpected.accept && row.UrlShape === "https-host" && row.ExtraPath !== "query-ssrf",
       };
       const rawUrl = canvasUrlStringForRow(row);
       const actual = runQmValidator(rawUrl);

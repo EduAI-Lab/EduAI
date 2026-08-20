@@ -159,7 +159,12 @@ async function seedPool(instructorId: string, deptCode: string, seedPassword: st
   // --- dedicated perf actor (STUDENT, password-backed → the script can sign in) ---
   const actor = await makeUser("perf.actor@perf.local", "Perf Actor");
   await prisma.account.create({
-    data: { providerId: "credential", accountId: actor.email, userId: actor.id, password: await hashPassword(seedPassword) },
+    data: {
+      providerId: "credential",
+      accountId: actor.email,
+      userId: actor.id,
+      password: await hashPassword(seedPassword),
+    },
   });
 
   // --- courses ---

@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import {
   AI_REVIEW_HISTORY_CLEARED_EVENT,
   getAiReviewHistoryStorageKey,
   loadAiReviewHistory,
   saveAiReviewHistory,
   type AiReviewHistoryItem,
-} from '../services/aiReviewHistoryStorage';
+} from "../services/aiReviewHistoryStorage";
 
-export type { AiReviewHistoryItem } from '../services/aiReviewHistoryStorage';
+export type { AiReviewHistoryItem } from "../services/aiReviewHistoryStorage";
 
 export interface UseAiReviewHistoryReturn {
   items: AiReviewHistoryItem[];
@@ -42,10 +42,10 @@ export function useAiReviewHistory(): UseAiReviewHistoryReturn {
         setHistory({ storageKey, items: [], isReady: true });
       }
     };
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", handleStorageChange);
     window.addEventListener(AI_REVIEW_HISTORY_CLEARED_EVENT, handleHistoryCleared);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener(AI_REVIEW_HISTORY_CLEARED_EVENT, handleHistoryCleared);
     };
   }, [storageKey, user?.id]);
@@ -61,11 +61,11 @@ export function useAiReviewHistory(): UseAiReviewHistoryReturn {
       setHistory((previous) => {
         if (previous.storageKey !== storageKey) return previous;
         const resolvedItems =
-          typeof nextItems === 'function' ? nextItems(previous.items) : nextItems;
+          typeof nextItems === "function" ? nextItems(previous.items) : nextItems;
         return { ...previous, items: resolvedItems };
       });
     },
-    [storageKey]
+    [storageKey],
   );
 
   return { items, isReady, setItems };

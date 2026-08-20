@@ -46,7 +46,7 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
       title: "Using the AI tutor",
       icon: IconRobot,
       points: [
-        'Open any activity inside a lesson to start chatting with your AI study buddy — every conversation stays scoped to that activity.',
+        "Open any activity inside a lesson to start chatting with your AI study buddy — every conversation stays scoped to that activity.",
         <>
           Pick from up to three modes: <strong>Teach me</strong> explains the topic and answers
           questions, <strong>Guide me</strong> gives hints so you work toward the answer yourself,
@@ -72,8 +72,8 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
           </Link>{" "}
           from the sidebar to start browsing.
         </>,
-        'The course name in the breadcrumb doubles as a switcher — click it to jump to a different course without losing your place.',
-        'Breadcrumbs always show your trail (course, module, lesson) so you can jump back up a level in one click.',
+        "The course name in the breadcrumb doubles as a switcher — click it to jump to a different course without losing your place.",
+        "Breadcrumbs always show your trail (course, module, lesson) so you can jump back up a level in one click.",
       ],
     },
     {
@@ -105,8 +105,8 @@ function buildTopics(role: Role | undefined): HelpTopic[] {
           </Link>{" "}
           view.
         </>,
-        'Per activity, toggle which chat modes students see — Teach me, Guide me, and a custom mode with your own prompt and tab title.',
-        'TAs share the same teaching view, with a slightly narrower set of course tabs.',
+        "Per activity, toggle which chat modes students see — Teach me, Guide me, and a custom mode with your own prompt and tab title.",
+        "TAs share the same teaching view, with a slightly narrower set of course tabs.",
       ],
     },
     {

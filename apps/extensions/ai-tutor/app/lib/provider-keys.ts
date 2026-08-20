@@ -5,7 +5,7 @@
  * composer and Settings → Providers share one source of truth.
  */
 
-export type ProviderId = 'google' | 'openai' | 'opencode';
+export type ProviderId = "google" | "openai" | "opencode";
 
 /** Providers a student can configure a key for, in display order. */
 export const PROVIDERS: ReadonlyArray<{
@@ -16,27 +16,27 @@ export const PROVIDERS: ReadonlyArray<{
   /** Provider-specific setup requirement shown beside the key field. */
   note?: string;
 }> = [
-  { id: 'google', label: 'Gemini', keyUrl: 'https://aistudio.google.com/app/apikey' },
-  { id: 'openai', label: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys' },
+  { id: "google", label: "Gemini", keyUrl: "https://aistudio.google.com/app/apikey" },
+  { id: "openai", label: "OpenAI", keyUrl: "https://platform.openai.com/api-keys" },
   {
-    id: 'opencode',
-    label: 'OpenCode Go',
-    keyUrl: 'https://opencode.ai/docs/go/',
-    note: 'Requires an OpenCode Go subscription.',
+    id: "opencode",
+    label: "OpenCode Go",
+    keyUrl: "https://opencode.ai/docs/go/",
+    note: "Requires an OpenCode Go subscription.",
   },
 ];
 
 const PROVIDER_LABELS: Record<string, string> = {
-  google: 'Gemini',
-  openai: 'OpenAI',
-  opencode: 'OpenCode Go',
+  google: "Gemini",
+  openai: "OpenAI",
+  opencode: "OpenCode Go",
 };
 
 /** Legacy unscoped localStorage key. It is deliberately discarded because its
  * owner cannot be established safely on a shared browser. */
-export const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
+export const API_KEYS_STORAGE_KEY = "ai-provider-keys";
 const API_KEYS_STORAGE_PREFIX = `${API_KEYS_STORAGE_KEY}:v2:`;
-export const API_KEYS_CLEARED_EVENT = 'eduai:provider-keys-cleared';
+export const API_KEYS_CLEARED_EVENT = "eduai:provider-keys-cleared";
 
 export function getProviderLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
@@ -60,7 +60,7 @@ export function getApiKeysStorageKey(userId: string): string {
  * no trustworthy owner, so migrating it to whichever user signs in next would
  * recreate the cross-account disclosure this boundary prevents. */
 export function discardLegacyApiKeysFromStorage(): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(API_KEYS_STORAGE_KEY);
   } catch {
@@ -71,16 +71,16 @@ export function discardLegacyApiKeysFromStorage(): void {
 /** Read/write helpers are wrapped to survive SSR-like environments and browser
  * storage failures without ever falling back to another account's namespace. */
 export function loadApiKeysFromStorage(userId: string | null | undefined): Record<string, string> {
-  if (typeof window === 'undefined' || !userId) return {};
+  if (typeof window === "undefined" || !userId) return {};
   try {
     discardLegacyApiKeysFromStorage();
     const stored = localStorage.getItem(getApiKeysStorageKey(userId));
     if (!stored) return {};
     const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     return Object.fromEntries(
       Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0,
+        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
       ),
     );
   } catch {
@@ -92,7 +92,7 @@ export function saveApiKeysToStorage(
   userId: string | null | undefined,
   keys: Record<string, string>,
 ): void {
-  if (typeof window === 'undefined' || !userId) return;
+  if (typeof window === "undefined" || !userId) return;
   try {
     discardLegacyApiKeysFromStorage();
     const storageKey = getApiKeysStorageKey(userId);
@@ -107,7 +107,7 @@ export function saveApiKeysToStorage(
 }
 
 export function clearApiKeysForUser(userId: string | null | undefined): void {
-  if (typeof window === 'undefined' || !userId) return;
+  if (typeof window === "undefined" || !userId) return;
   try {
     localStorage.removeItem(getApiKeysStorageKey(userId));
   } catch {

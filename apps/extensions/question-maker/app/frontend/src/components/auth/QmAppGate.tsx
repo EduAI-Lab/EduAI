@@ -1,11 +1,19 @@
-import { ReactNode, useEffect } from 'react';
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageLoader } from '@eduai/ui';
-import { IconAlertTriangle } from '@tabler/icons-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { canAccessQm } from '@/lib/rbac/roles';
-import { AccessDeniedView } from '@/components/auth/AccessDeniedView';
-import { getCoreLoginUrl } from '@/lib/coreUrl';
-import { QmAccessShell } from '@/components/layout/QmAppLayout';
+import { ReactNode, useEffect } from "react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  PageLoader,
+} from "@eduai/ui";
+import { IconAlertTriangle } from "@tabler/icons-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { canAccessQm } from "@/lib/rbac/roles";
+import { AccessDeniedView } from "@/components/auth/AccessDeniedView";
+import { getCoreLoginUrl } from "@/lib/coreUrl";
+import { QmAccessShell } from "@/components/layout/QmAppLayout";
 
 type QmAppGateProps = {
   children: ReactNode;

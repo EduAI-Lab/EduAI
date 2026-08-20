@@ -10,31 +10,31 @@
  * this exercises the real QM Prisma queries and Express middleware without
  * depending on a running Core instance.
  */
-import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
-import request from 'supertest';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
+import request from "supertest";
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 const TA = {
-  id: 'qm-ta-rbac-user',
-  email: 'qm-ta-rbac@example.test',
-  name: 'QM TA',
-  role: 'STUDENT',
+  id: "qm-ta-rbac-user",
+  email: "qm-ta-rbac@example.test",
+  name: "QM TA",
+  role: "STUDENT",
 };
 const STUDENT = {
-  id: 'qm-student-rbac-user',
-  email: 'qm-student-rbac@example.test',
-  name: 'QM Student',
-  role: 'STUDENT',
+  id: "qm-student-rbac-user",
+  email: "qm-student-rbac@example.test",
+  name: "QM Student",
+  role: "STUDENT",
 };
 const OWNER = {
-  id: 'qm-instructor-rbac-user',
-  email: 'qm-instructor-rbac@example.test',
-  name: 'QM Instructor',
-  role: 'INSTRUCTOR',
+  id: "qm-instructor-rbac-user",
+  email: "qm-instructor-rbac@example.test",
+  name: "QM Instructor",
+  role: "INSTRUCTOR",
 };
-const CORE_COURSE_ID = 'qm-core-ta-rbac-course';
+const CORE_COURSE_ID = "qm-core-ta-rbac-course";
 
 function coreResponse(body, status = 200) {
   return {
@@ -45,7 +45,7 @@ function coreResponse(body, status = 200) {
   };
 }
 
-describeDb('QM course TA authorization (real PostgreSQL)', () => {
+describeDb("QM course TA authorization (real PostgreSQL)", () => {
   let app;
   let prisma;
   let truncateTestDatabase;
@@ -57,8 +57,8 @@ describeDb('QM course TA authorization (real PostgreSQL)', () => {
   let currentEnrollmentRole;
 
   beforeAll(async () => {
-    ({ truncateTestDatabase, prisma } = await import('../helpers/testDb.js'));
-    ({ default: app } = await import('../../src/app.js'));
+    ({ truncateTestDatabase, prisma } = await import("../helpers/testDb.js"));
+    ({ default: app } = await import("../../src/app.js"));
   });
 
   beforeEach(async () => {
@@ -71,18 +71,18 @@ describeDb('QM course TA authorization (real PostgreSQL)', () => {
     });
     courseId = course.id;
     const assessment = await prisma.assessments.create({
-      data: { courseId, type: 'Quiz', name: 'TA-visible quiz' },
+      data: { courseId, type: "Quiz", name: "TA-visible quiz" },
     });
     assessmentId = assessment.id;
     const topic = await prisma.topics.create({
-      data: { id: 'qm-ta-rbac-topic', name: 'TA RBAC topic', courseId },
+      data: { id: "qm-ta-rbac-topic", name: "TA RBAC topic", courseId },
     });
     const ownQuestion = await prisma.questionMetadata.create({
       data: {
         courseId,
         primaryTopicId: topic.id,
-        type: 'MCQ',
-        description: 'TA-owned question',
+        type: "MCQ",
+        description: "TA-owned question",
         createdBy: TA.id,
       },
     });
@@ -91,31 +91,36 @@ describeDb('QM course TA authorization (real PostgreSQL)', () => {
       data: {
         courseId,
         primaryTopicId: topic.id,
-        type: 'MCQ',
-        description: 'Instructor-owned question',
+        type: "MCQ",
+        description: "Instructor-owned question",
         createdBy: OWNER.id,
       },
     });
     otherQuestionId = otherQuestion.id;
     currentUser = TA;
-    currentEnrollmentRole = 'TA';
+    currentEnrollmentRole = "TA";
 
-    vi.stubGlobal('fetch', vi.fn((url) => {
-      const path = String(url);
-      if (path.endsWith('/api/sessions/validate')) {
-        return Promise.resolve(coreResponse({ user: currentUser }));
-      }
-      if (path.endsWith(`/api/courses/${CORE_COURSE_ID}/enrollments`)) {
-        return Promise.resolve(coreResponse({
-          enrollments: currentEnrollmentRole
-            ? [{ studentId: currentUser.id, role: currentEnrollmentRole, isActive: true }]
-            : [],
-        }));
-      }
-      // Read-through enrichment is deliberately allowed to degrade when Core
-      // has no field response in this focused test.
-      return Promise.resolve(coreResponse({}, 404));
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url) => {
+        const path = String(url);
+        if (path.endsWith("/api/sessions/validate")) {
+          return Promise.resolve(coreResponse({ user: currentUser }));
+        }
+        if (path.endsWith(`/api/courses/${CORE_COURSE_ID}/enrollments`)) {
+          return Promise.resolve(
+            coreResponse({
+              enrollments: currentEnrollmentRole
+                ? [{ studentId: currentUser.id, role: currentEnrollmentRole, isActive: true }]
+                : [],
+            }),
+          );
+        }
+        // Read-through enrichment is deliberately allowed to degrade when Core
+        // has no field response in this focused test.
+        return Promise.resolve(coreResponse({}, 404));
+      }),
+    );
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -124,50 +129,51 @@ describeDb('QM course TA authorization (real PostgreSQL)', () => {
     if (prisma) await prisma.$disconnect();
   });
 
-  it('admits platform STUDENT with active TA enrollment to assessment view', async () => {
+  it("admits platform STUDENT with active TA enrollment to assessment view", async () => {
     const res = await request(app)
       .get(`/api/assessments/${assessmentId}`)
-      .set('Cookie', 'session=ta');
+      .set("Cookie", "session=ta");
 
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(assessmentId);
   });
 
-  it('denies an ordinary STUDENT enrollment on the same course', async () => {
+  it("denies an ordinary STUDENT enrollment on the same course", async () => {
     currentUser = STUDENT;
-    currentEnrollmentRole = 'STUDENT';
+    currentEnrollmentRole = "STUDENT";
 
     const res = await request(app)
       .get(`/api/assessments/${assessmentId}`)
-      .set('Cookie', 'session=student');
+      .set("Cookie", "session=student");
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Insufficient course access');
+    expect(res.body.error).toBe("Insufficient course access");
   });
 
-  it('does not let a TA perform instructor-only assessment creation', async () => {
+  it("does not let a TA perform instructor-only assessment creation", async () => {
     const res = await request(app)
-      .post('/api/assessments')
-      .set('Cookie', 'session=ta')
-      .send({ type: 'Quiz', name: 'forbidden', courseId });
+      .post("/api/assessments")
+      .set("Cookie", "session=ta")
+      .send({ type: "Quiz", name: "forbidden", courseId });
 
     expect(res.status).toBe(403);
     expect(await prisma.assessments.count({ where: { courseId } })).toBe(1);
   });
 
-  it('allows a TA to update their own question but not another author\'s', async () => {
+  it("allows a TA to update their own question but not another author's", async () => {
     const own = await request(app)
       .put(`/api/questions/${ownQuestionId}`)
-      .set('Cookie', 'session=ta')
-      .send({ description: 'TA updated question' });
+      .set("Cookie", "session=ta")
+      .send({ description: "TA updated question" });
     expect(own.status).toBe(200);
 
     const other = await request(app)
       .put(`/api/questions/${otherQuestionId}`)
-      .set('Cookie', 'session=ta')
-      .send({ description: 'attempted takeover' });
+      .set("Cookie", "session=ta")
+      .send({ description: "attempted takeover" });
     expect(other.status).toBe(403);
-    expect((await prisma.questionMetadata.findUnique({ where: { id: otherQuestionId } })).description)
-      .toBe('Instructor-owned question');
+    expect(
+      (await prisma.questionMetadata.findUnique({ where: { id: otherQuestionId } })).description,
+    ).toBe("Instructor-owned question");
   });
 });

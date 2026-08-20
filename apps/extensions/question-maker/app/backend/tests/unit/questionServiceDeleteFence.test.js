@@ -3,7 +3,7 @@
  * the unfenced window between approval (`isDraft:false`) and `linkVariantToCore`.
  * Prisma/fence are mocked — no DB required.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockFence,
@@ -27,7 +27,7 @@ const {
   mockTxVariantDelete: vi.fn(),
 }));
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     questionMetadata: {
       findFirst: (...args) => mockQuestionFindFirst(...args),
@@ -40,36 +40,38 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-vi.mock('../../src/services/questionMutationFence.js', () => ({
+vi.mock("../../src/services/questionMutationFence.js", () => ({
   withQuestionMutationFence: (...args) => mockFence(...args),
 }));
 
-vi.mock('../../src/services/courseListService.js', () => ({
+vi.mock("../../src/services/courseListService.js", () => ({
   enrichRowsWithCourse: vi.fn(async (rows) => rows),
   enrichRowWithCourse: vi.fn(async (row) => row),
   formatSemesterDisplay: vi.fn(() => null),
 }));
 
-const { deleteQuestion, deleteVariant } = await import('../../src/services/questionService.js');
+const { deleteQuestion, deleteVariant } = await import("../../src/services/questionService.js");
 
-const USER_ID = 'cuid-user-1';
+const USER_ID = "cuid-user-1";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFence.mockImplementation(async (_questionId, operation) => operation({
-    questionMetadata: {
-      findFirst: mockTxQuestionFindFirst,
-      delete: mockTxQuestionDelete,
-    },
-    variants: {
-      findFirst: mockTxVariantFindFirst,
-      delete: mockTxVariantDelete,
-    },
-  }));
+  mockFence.mockImplementation(async (_questionId, operation) =>
+    operation({
+      questionMetadata: {
+        findFirst: mockTxQuestionFindFirst,
+        delete: mockTxQuestionDelete,
+      },
+      variants: {
+        findFirst: mockTxVariantFindFirst,
+        delete: mockTxVariantDelete,
+      },
+    }),
+  );
 });
 
-describe('deleteQuestion fence', () => {
-  it('takes the question fence and deletes with the transaction client', async () => {
+describe("deleteQuestion fence", () => {
+  it("takes the question fence and deletes with the transaction client", async () => {
     const question = { id: 42 };
     mockQuestionFindFirst.mockResolvedValue(question);
     mockTxQuestionFindFirst.mockResolvedValue(question);
@@ -86,27 +88,27 @@ describe('deleteQuestion fence', () => {
     expect(mockQuestionDelete).not.toHaveBeenCalled();
   });
 
-  it('does not enter the fence when the ownership lookup misses', async () => {
+  it("does not enter the fence when the ownership lookup misses", async () => {
     mockQuestionFindFirst.mockResolvedValue(null);
 
-    await expect(deleteQuestion(42, USER_ID)).rejects.toThrow('Question not found');
+    await expect(deleteQuestion(42, USER_ID)).rejects.toThrow("Question not found");
     expect(mockFence).not.toHaveBeenCalled();
     expect(mockQuestionDelete).not.toHaveBeenCalled();
   });
 
-  it('throws Question not found when the fenced re-read misses', async () => {
+  it("throws Question not found when the fenced re-read misses", async () => {
     mockQuestionFindFirst.mockResolvedValue({ id: 42 });
     mockTxQuestionFindFirst.mockResolvedValue(null);
 
-    await expect(deleteQuestion(42, USER_ID)).rejects.toThrow('Question not found');
+    await expect(deleteQuestion(42, USER_ID)).rejects.toThrow("Question not found");
     expect(mockFence).toHaveBeenCalledWith(42, expect.any(Function));
     expect(mockTxQuestionDelete).not.toHaveBeenCalled();
     expect(mockQuestionDelete).not.toHaveBeenCalled();
   });
 });
 
-describe('deleteVariant fence', () => {
-  it('takes the parent-question fence and deletes with the transaction client', async () => {
+describe("deleteVariant fence", () => {
+  it("takes the parent-question fence and deletes with the transaction client", async () => {
     const variant = { id: 7, questionMetadataId: 42 };
     mockVariantFindFirst.mockResolvedValue(variant);
     mockTxVariantFindFirst.mockResolvedValue(variant);
@@ -123,19 +125,19 @@ describe('deleteVariant fence', () => {
     expect(mockVariantDelete).not.toHaveBeenCalled();
   });
 
-  it('does not enter the fence when the ownership lookup misses', async () => {
+  it("does not enter the fence when the ownership lookup misses", async () => {
     mockVariantFindFirst.mockResolvedValue(null);
 
-    await expect(deleteVariant(7, USER_ID)).rejects.toThrow('Variant not found');
+    await expect(deleteVariant(7, USER_ID)).rejects.toThrow("Variant not found");
     expect(mockFence).not.toHaveBeenCalled();
     expect(mockVariantDelete).not.toHaveBeenCalled();
   });
 
-  it('throws Variant not found when the fenced re-read misses', async () => {
+  it("throws Variant not found when the fenced re-read misses", async () => {
     mockVariantFindFirst.mockResolvedValue({ id: 7, questionMetadataId: 42 });
     mockTxVariantFindFirst.mockResolvedValue(null);
 
-    await expect(deleteVariant(7, USER_ID)).rejects.toThrow('Variant not found');
+    await expect(deleteVariant(7, USER_ID)).rejects.toThrow("Variant not found");
     expect(mockFence).toHaveBeenCalledWith(42, expect.any(Function));
     expect(mockTxVariantDelete).not.toHaveBeenCalled();
     expect(mockVariantDelete).not.toHaveBeenCalled();

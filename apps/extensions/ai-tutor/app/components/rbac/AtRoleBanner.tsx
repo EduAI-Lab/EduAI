@@ -24,8 +24,8 @@ const COPY: Record<AtRoleView, { title: string; description: string; icon: typeo
     icon: IconBuildingCommunity,
   },
   instructor: {
-    title: 'Instructor view',
-    description: 'Author modules, lessons, and activities for your assigned courses.',
+    title: "Instructor view",
+    description: "Author modules, lessons, and activities for your assigned courses.",
     icon: IconSchool,
   },
   ta: {

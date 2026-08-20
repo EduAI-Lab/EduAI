@@ -1,10 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import type {
-  OCRJob,
-  OCRJobStatus,
-  StoredQuestion,
-} from '../types/ocr';
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import type { OCRJob, OCRJobStatus, StoredQuestion } from "../types/ocr";
 import {
   OCR_HISTORY_KEY,
   OCR_HISTORY_CLEARED_EVENT,
@@ -41,7 +37,7 @@ const pruneOldJobs = (jobs: OCRJob[]): OCRJob[] => {
 };
 
 const loadFromStorage = (storageKey: string | null): OCRJob[] => {
-  if (typeof window === 'undefined' || !storageKey) return [];
+  if (typeof window === "undefined" || !storageKey) return [];
   try {
     // Never assign a legacy global history to whichever account happens to sign in next.
     localStorage.removeItem(OCR_HISTORY_KEY);
@@ -51,14 +47,14 @@ const loadFromStorage = (storageKey: string | null): OCRJob[] => {
     if (!Array.isArray(parsed)) return [];
     return pruneOldJobs(parsed);
   } catch (error) {
-    console.warn('[useOCRHistory] Failed to parse localStorage, resetting history:', error);
+    console.warn("[useOCRHistory] Failed to parse localStorage, resetting history:", error);
     localStorage.removeItem(storageKey);
     return [];
   }
 };
 
 const saveToStorage = (storageKey: string | null, jobs: OCRJob[]): boolean => {
-  if (typeof window === 'undefined' || !storageKey) return false;
+  if (typeof window === "undefined" || !storageKey) return false;
   try {
     const limitedJobs = jobs.slice(0, MAX_HISTORY_ITEMS);
     if (limitedJobs.length === 0) {
@@ -109,10 +105,10 @@ export function useOCRHistory(): UseOCRHistoryReturn {
         setHistory({ storageKey, jobs: [], isLoading: false });
       }
     };
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", handleStorageChange);
     window.addEventListener(OCR_HISTORY_CLEARED_EVENT, handleHistoryCleared);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener(OCR_HISTORY_CLEARED_EVENT, handleHistoryCleared);
     };
   }, [storageKey, user?.id]);
@@ -124,7 +120,7 @@ export function useOCRHistory(): UseOCRHistoryReturn {
   }, [history, storageKey]);
 
   const addJob = useCallback(
-    (jobData: Omit<OCRJob, 'id' | 'createdAt'>): string => {
+    (jobData: Omit<OCRJob, "id" | "createdAt">): string => {
       const id = generateId();
       const newJob: OCRJob = {
         ...jobData,
@@ -135,11 +131,11 @@ export function useOCRHistory(): UseOCRHistoryReturn {
       setHistory((previous) =>
         previous.storageKey === storageKey
           ? { ...previous, jobs: [newJob, ...previous.jobs].slice(0, MAX_HISTORY_ITEMS) }
-          : previous
+          : previous,
       );
       return id;
     },
-    [storageKey]
+    [storageKey],
   );
 
   const updateJob = useCallback(
@@ -159,10 +155,10 @@ export function useOCRHistory(): UseOCRHistoryReturn {
                 };
               }),
             }
-          : previous
+          : previous,
       );
     },
-    [storageKey]
+    [storageKey],
   );
 
   const updateJobStatus = useCallback(
@@ -180,7 +176,7 @@ export function useOCRHistory(): UseOCRHistoryReturn {
                 return {
                   ...job,
                   status,
-                  ...(status === 'success' || status === 'error' || status === 'discarded'
+                  ...(status === "success" || status === "error" || status === "discarded"
                     ? { completedAt: new Date().toISOString() }
                     : {}),
                   ...(extras?.error ? { error: extras.error } : {}),
@@ -191,17 +187,17 @@ export function useOCRHistory(): UseOCRHistoryReturn {
                     ? {
                         storedQuestions: extras.storedQuestions.slice(
                           0,
-                          MAX_STORED_QUESTIONS_PER_JOB
+                          MAX_STORED_QUESTIONS_PER_JOB,
                         ),
                       }
                     : {}),
                 };
               }),
             }
-          : previous
+          : previous,
       );
     },
-    [storageKey]
+    [storageKey],
   );
 
   const removeJob = useCallback(
@@ -209,15 +205,15 @@ export function useOCRHistory(): UseOCRHistoryReturn {
       setHistory((previous) =>
         previous.storageKey === storageKey
           ? { ...previous, jobs: previous.jobs.filter((job) => job.id !== id) }
-          : previous
+          : previous,
       );
     },
-    [storageKey]
+    [storageKey],
   );
 
   const clearHistory = useCallback(() => {
     setHistory((previous) =>
-      previous.storageKey === storageKey ? { ...previous, jobs: [] } : previous
+      previous.storageKey === storageKey ? { ...previous, jobs: [] } : previous,
     );
     if (storageKey) localStorage.removeItem(storageKey);
     localStorage.removeItem(OCR_HISTORY_KEY);

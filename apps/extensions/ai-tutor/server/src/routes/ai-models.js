@@ -24,10 +24,10 @@
  * Related: services/aiModelPolicy.js, routes/admin.js (policy editor)
  */
 
-import express from 'express';
-import { AiProviderKeySchema } from '../../../shared/schemas/aiProviderKey.js';
-import { getAiModelPolicyState } from '../services/aiModelPolicy.js';
-import { validateProviderKey } from '../services/aiProviderKeyValidation.js';
+import express from "express";
+import { AiProviderKeySchema } from "../../../shared/schemas/aiProviderKey.js";
+import { getAiModelPolicyState } from "../services/aiModelPolicy.js";
+import { validateProviderKey } from "../services/aiProviderKeyValidation.js";
 
 const router = express.Router();
 const DEFAULT_KEY_VALIDATION_TIMEOUT_MS = 5_000;
@@ -46,7 +46,7 @@ const PRIVILEGED_MODEL_ROLES = new Set(["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"]);
 function getKeyValidationTimeoutMs(provider) {
   const configured = Number(process.env.AI_KEY_VALIDATION_TIMEOUT_MS);
   if (!Number.isFinite(configured) || configured <= 0) {
-    return provider === 'opencode'
+    return provider === "opencode"
       ? DEFAULT_OPENCODE_KEY_VALIDATION_TIMEOUT_MS
       : DEFAULT_KEY_VALIDATION_TIMEOUT_MS;
   }
@@ -88,7 +88,7 @@ function admitKeyValidation(req, res) {
   if (!previousWindow && keyValidationWindows.size >= getMaxTrackedValidationUsers()) {
     pruneExpiredValidationWindows(now);
     if (keyValidationWindows.size >= getMaxTrackedValidationUsers()) {
-      res.status(503).json({ valid: false, error: 'Validation service busy' });
+      res.status(503).json({ valid: false, error: "Validation service busy" });
       return null;
     }
   }
@@ -102,15 +102,15 @@ function admitKeyValidation(req, res) {
       1,
       Math.ceil((KEY_VALIDATION_WINDOW_MS - (now - currentWindow.startedAt)) / 1000),
     );
-    res.set('Retry-After', String(retryAfter));
-    res.status(429).json({ valid: false, error: 'Too many validation attempts' });
+    res.set("Retry-After", String(retryAfter));
+    res.status(429).json({ valid: false, error: "Too many validation attempts" });
     return null;
   }
 
   const active = activeKeyValidations.get(userId) ?? 0;
   if (active >= MAX_CONCURRENT_KEY_VALIDATIONS) {
-    res.set('Retry-After', '1');
-    res.status(429).json({ valid: false, error: 'Too many validation attempts' });
+    res.set("Retry-After", "1");
+    res.status(429).json({ valid: false, error: "Too many validation attempts" });
     return null;
   }
 
@@ -152,8 +152,8 @@ router.get("/ai-models", async (req, res) => {
 
     res.json(models);
   } catch (error) {
-    console.error('Failed to load AI models', { errorName: error?.name ?? 'UnknownError' });
-    res.status(500).json({ error: 'Failed to load AI models' });
+    console.error("Failed to load AI models", { errorName: error?.name ?? "UnknownError" });
+    res.status(500).json({ error: "Failed to load AI models" });
   }
 });
 
@@ -165,23 +165,23 @@ router.get("/ai-models", async (req, res) => {
  * Returns 200 with { valid: true/false, error? } so the client can read
  * provider-specific error messages. Only returns 4xx/5xx for actual request errors.
  */
-router.post('/ai-models/validate-key', async (req, res) => {
+router.post("/ai-models/validate-key", async (req, res) => {
   const parsedBody = AiProviderKeySchema.safeParse(req.body);
   if (!parsedBody.success) {
     const missingRequiredField = parsedBody.error.issues.some(
       (issue) =>
-        (issue.code === 'invalid_type' && issue.received === 'undefined') ||
-        (issue.code === 'too_small' && issue.minimum === 1),
+        (issue.code === "invalid_type" && issue.received === "undefined") ||
+        (issue.code === "too_small" && issue.minimum === 1),
     );
     return res.status(400).json({
       valid: false,
-      error: missingRequiredField ? 'Missing provider or apiKey' : 'Invalid provider or apiKey',
+      error: missingRequiredField ? "Missing provider or apiKey" : "Invalid provider or apiKey",
     });
   }
 
   const { provider, apiKey } = parsedBody.data;
-  if (provider !== 'google' && provider !== 'openai' && provider !== 'opencode') {
-    return res.json({ valid: false, error: 'Unsupported provider' });
+  if (provider !== "google" && provider !== "openai" && provider !== "opencode") {
+    return res.json({ valid: false, error: "Unsupported provider" });
   }
 
   const releaseAdmission = admitKeyValidation(req, res);
@@ -195,13 +195,13 @@ router.post('/ai-models/validate-key', async (req, res) => {
     return res.json(validation);
   } catch (error) {
     if (timeoutSignal.aborted) {
-      return res.status(504).json({ valid: false, error: 'Validation request timed out' });
+      return res.status(504).json({ valid: false, error: "Validation request timed out" });
     }
-    console.error('API key validation failed', {
+    console.error("API key validation failed", {
       provider,
-      errorName: error?.name ?? 'UnknownError',
+      errorName: error?.name ?? "UnknownError",
     });
-    res.status(500).json({ valid: false, error: 'Validation request failed' });
+    res.status(500).json({ valid: false, error: "Validation request failed" });
   } finally {
     releaseAdmission();
   }

@@ -71,11 +71,11 @@ export function DashboardInstructorView({
       icon: <IconBooks size={16} stroke={1.75} />,
     },
     {
-      label: 'Publish content',
+      label: "Publish content",
       description: firstDraft
-        ? `Review ${firstDraft.title ?? 'Untitled course'}.`
-        : 'Everything is already published.',
-      href: firstDraft ? `/instructor/courses/${firstDraft.id}` : '/instructor',
+        ? `Review ${firstDraft.title ?? "Untitled course"}.`
+        : "Everything is already published.",
+      href: firstDraft ? `/instructor/courses/${firstDraft.id}` : "/instructor",
       icon: <IconUpload size={16} stroke={1.75} />,
     },
     {

@@ -4,14 +4,14 @@
  * service tests prove list and aggregate queries apply that predicate instead
  * of silently falling back to local course ownership.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockQuestionFindMany = vi.fn();
 const mockQuestionCount = vi.fn();
 const mockQuestionGroupBy = vi.fn();
 const mockVariantFindMany = vi.fn();
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     questionMetadata: {
       findMany: (...args) => mockQuestionFindMany(...args),
@@ -24,13 +24,14 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-vi.mock('../../src/services/courseListService.js', () => ({
+vi.mock("../../src/services/courseListService.js", () => ({
   enrichRowsWithCourse: vi.fn(async (rows) => rows),
   enrichRowWithCourse: vi.fn(async (row) => row),
-  formatSemesterDisplay: vi.fn(() => 'Unscheduled'),
+  formatSemesterDisplay: vi.fn(() => "Unscheduled"),
 }));
 
-const { getQuestionsByUser, getQuestionStats } = await import('../../src/services/questionService.js');
+const { getQuestionsByUser, getQuestionStats } =
+  await import("../../src/services/questionService.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -40,16 +41,16 @@ beforeEach(() => {
   mockVariantFindMany.mockResolvedValue([]);
 });
 
-describe('global visible-course scope', () => {
+describe("global visible-course scope", () => {
   const visibleCourseWhere = {
     OR: [
-      { userId: 'caller-1', coreCourseId: null },
-      { accessGrants: { some: { userId: 'caller-1', role: 'INSTRUCTOR' } } },
+      { userId: "caller-1", coreCourseId: null },
+      { accessGrants: { some: { userId: "caller-1", role: "INSTRUCTOR" } } },
     ],
   };
 
-  it('applies the shared course visibility predicate to list rows and totals', async () => {
-    await getQuestionsByUser('caller-1', {
+  it("applies the shared course visibility predicate to list rows and totals", async () => {
+    await getQuestionsByUser("caller-1", {
       courseWhere: visibleCourseWhere,
       limit: 25,
       offset: 0,
@@ -62,8 +63,8 @@ describe('global visible-course scope', () => {
     expect(mockQuestionCount).toHaveBeenCalledWith({ where: { course: visibleCourseWhere } });
   });
 
-  it('applies the shared course visibility predicate to every stats query', async () => {
-    await getQuestionStats('caller-1', { courseWhere: visibleCourseWhere });
+  it("applies the shared course visibility predicate to every stats query", async () => {
+    await getQuestionStats("caller-1", { courseWhere: visibleCourseWhere });
 
     const metadataWhere = { course: visibleCourseWhere };
     expect(mockQuestionCount).toHaveBeenCalledWith({ where: metadataWhere });

@@ -214,7 +214,7 @@ export function mapLesson(lesson) {
 export function mapActivity(activity, options = {}) {
   // Answer keys are opt-in. A safe default means a new caller cannot expose
   // `config.answer` simply by forgetting to pass a viewer role.
-  const includeAnswer = typeof options === 'object' && options?.includeAnswer === true;
+  const includeAnswer = typeof options === "object" && options?.includeAnswer === true;
   const config = activity.config ?? {};
   const mapped = {
     id: activity.id,

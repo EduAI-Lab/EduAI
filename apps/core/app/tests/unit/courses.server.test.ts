@@ -386,9 +386,7 @@ describe("getCourses", () => {
         instructorId: "private-instructor",
       },
     ] as any);
-    prismaMock.enrollment.findMany.mockResolvedValue([
-      { courseId: "c1", role: "STUDENT" },
-    ] as any);
+    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", role: "STUDENT" }] as any);
 
     const res = await getCourses(makeGetRequest());
     const body = await res.json();

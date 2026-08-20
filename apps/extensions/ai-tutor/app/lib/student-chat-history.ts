@@ -46,7 +46,7 @@ function extractText(content: unknown): string {
     return obj.parts
       .filter(
         (p): p is { type: string; text: string } =>
-          !!p && typeof p === 'object' && (p as any).type === 'text',
+          !!p && typeof p === "object" && (p as any).type === "text",
       )
       .map((p) => p.text)
       .join(" ");

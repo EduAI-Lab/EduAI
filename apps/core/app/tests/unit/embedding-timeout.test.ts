@@ -1,12 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type Mock,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({ default: {} }));
 vi.mock("ai", () => ({ embed: vi.fn(), embedMany: vi.fn() }));
@@ -29,16 +21,12 @@ const ENV_KEYS = [
   "OLLAMA_EMBEDDING_MODEL",
 ] as const;
 
-const originalEnv = Object.fromEntries(
-  ENV_KEYS.map((key) => [key, process.env[key]]),
-);
+const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 
 type EmbeddingModule = typeof import("~/lib/ai/embedding");
 
-function neverSettlingUnlessAborted(
-  signal: AbortSignal | undefined,
-): Promise<never> {
+function neverSettlingUnlessAborted(signal: AbortSignal | undefined): Promise<never> {
   if (!signal) {
     return Promise.reject(new Error("TEST_MISSING_ABORT_SIGNAL"));
   }
@@ -46,19 +34,13 @@ function neverSettlingUnlessAborted(
   return new Promise<never>((_resolve, reject) => {
     signal.addEventListener(
       "abort",
-      () =>
-        reject(
-          signal.reason ??
-            Object.assign(new Error("aborted"), { name: "AbortError" }),
-        ),
+      () => reject(signal.reason ?? Object.assign(new Error("aborted"), { name: "AbortError" })),
       { once: true },
     );
   });
 }
 
-function neverSettlingEvenAfterAbort(
-  signal: AbortSignal | undefined,
-): Promise<never> {
+function neverSettlingEvenAfterAbort(signal: AbortSignal | undefined): Promise<never> {
   if (!signal) {
     return Promise.reject(new Error("TEST_MISSING_ABORT_SIGNAL"));
   }
@@ -148,9 +130,7 @@ describe("embedding provider request deadlines", () => {
       return neverSettlingUnlessAborted(abortSignal);
     });
 
-    const result = await settleWithFakeTimers(
-      embedding.generateEmbedding("cloud timeout query"),
-    );
+    const result = await settleWithFakeTimers(embedding.generateEmbedding("cloud timeout query"));
 
     expect(result.status).toBe("rejected");
     if (result.status !== "rejected") return;
@@ -159,9 +139,7 @@ describe("embedding provider request deadlines", () => {
       code: "EMBEDDING_REQUEST_TIMEOUT",
       timeoutMs: 100,
     });
-    expect(embedding.classifyRagRetrievalError(result.reason)).toBe(
-      "RAG_RETRIEVAL_TIMEOUT",
-    );
+    expect(embedding.classifyRagRetrievalError(result.reason)).toBe("RAG_RETRIEVAL_TIMEOUT");
     expect(embedMock).toHaveBeenCalledTimes(3);
     expect(providerSignals).toHaveLength(3);
     expect(providerSignals.every((signal) => signal.aborted)).toBe(true);
@@ -198,26 +176,16 @@ describe("embedding provider request deadlines", () => {
     globalThis.fetch = fetchMock as typeof fetch;
     const embedding = await loadLocalEmbeddingModule();
 
-    const result = await settleWithFakeTimers(
-      embedding.generateEmbedding("local timeout query"),
-    );
+    const result = await settleWithFakeTimers(embedding.generateEmbedding("local timeout query"));
 
     expect(result.status).toBe("rejected");
     if (result.status !== "rejected") return;
     expect(result.reason).toMatchObject({ name: "Error" });
-    expect(String((result.reason as Error).message)).toContain(
-      "Local embedding provider failed",
-    );
-    expect(embedding.classifyRagRetrievalError(result.reason)).toBe(
-      "RAG_RETRIEVAL_TIMEOUT",
-    );
+    expect(String((result.reason as Error).message)).toContain("Local embedding provider failed");
+    expect(embedding.classifyRagRetrievalError(result.reason)).toBe("RAG_RETRIEVAL_TIMEOUT");
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const signals = fetchMock.mock.calls.map((call) => call[1]?.signal);
-    expect(
-      signals.every(
-        (signal) => signal instanceof AbortSignal && signal.aborted,
-      ),
-    ).toBe(true);
+    expect(signals.every((signal) => signal instanceof AbortSignal && signal.aborted)).toBe(true);
   });
 
   it("preserves caller cancellation through the native Ollama path", async () => {
@@ -274,9 +242,7 @@ describe("embedding provider request deadlines", () => {
     expect(providerSignals[0]).not.toBe(caller.signal);
     expect(providerSignals[0].aborted).toBe(true);
     expect(providerSignals[0].reason).toBe(cancellation);
-    expect(embedding.classifyRagRetrievalError(cancellation)).toBe(
-      "RAG_RETRIEVAL_FAILED",
-    );
+    expect(embedding.classifyRagRetrievalError(cancellation)).toBe("RAG_RETRIEVAL_FAILED");
     expect(vi.getTimerCount()).toBe(0);
   });
 });

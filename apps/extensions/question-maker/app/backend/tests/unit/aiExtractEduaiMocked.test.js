@@ -28,7 +28,7 @@ vi.mock("../../src/services/courseListService.js", () => ({
   enrichCourseDetail,
 }));
 
-vi.mock('../../src/config/settings.js', () => ({
+vi.mock("../../src/config/settings.js", () => ({
   config: {
     qmMaxExtractTextChars: 120_000,
     qmMaxExtractChunks: 23,
@@ -38,7 +38,7 @@ vi.mock('../../src/config/settings.js', () => ({
   },
 }));
 
-const { extractQuestionsFromText } = await import('../../src/services/aiService.js');
+const { extractQuestionsFromText } = await import("../../src/services/aiService.js");
 
 describe("extractQuestionsFromText (EduAI mocked)", () => {
   beforeEach(() => {
@@ -101,32 +101,32 @@ describe("extractQuestionsFromText (EduAI mocked)", () => {
     expect(out[0].answer).toBe("4");
   });
 
-  it('rejects oversized OCR text before reading course metadata or calling EduAI', async () => {
+  it("rejects oversized OCR text before reading course metadata or calling EduAI", async () => {
     await expect(
-      extractQuestionsFromText('x'.repeat(120_001), 7, 'test:model', {}),
+      extractQuestionsFromText("x".repeat(120_001), 7, "test:model", {}),
     ).rejects.toMatchObject({ statusCode: 413 });
     expect(findByPk).not.toHaveBeenCalled();
     expect(generateQuestions).not.toHaveBeenCalled();
   });
 
-  it('rejects a chunk budget overflow before calling EduAI', async () => {
+  it("rejects a chunk budget overflow before calling EduAI", async () => {
     await expect(
-      extractQuestionsFromText('x'.repeat(120_000), 7, 'test:model', {}),
-    ).rejects.toMatchObject({ code: 'QM_EXTRACT_CHUNK_LIMIT' });
+      extractQuestionsFromText("x".repeat(120_000), 7, "test:model", {}),
+    ).rejects.toMatchObject({ code: "QM_EXTRACT_CHUNK_LIMIT" });
     expect(generateQuestions).not.toHaveBeenCalled();
   });
 
-  it('stops after the aggregate provider-call budget, including retries', async () => {
+  it("stops after the aggregate provider-call budget, including retries", async () => {
     generateQuestions
-      .mockResolvedValueOnce([{ content: 'First question', difficulty: 'easy', type: 'SA' }])
-      .mockResolvedValue([{ description: 'no content' }]);
+      .mockResolvedValueOnce([{ content: "First question", difficulty: "easy", type: "SA" }])
+      .mockResolvedValue([{ description: "no content" }]);
     await expect(
-      extractQuestionsFromText('x'.repeat(11_000), 7, 'test:model', {}),
-    ).rejects.toMatchObject({ code: 'QM_EXTRACT_PROVIDER_CALL_LIMIT' });
+      extractQuestionsFromText("x".repeat(11_000), 7, "test:model", {}),
+    ).rejects.toMatchObject({ code: "QM_EXTRACT_PROVIDER_CALL_LIMIT" });
     expect(generateQuestions).toHaveBeenCalledTimes(2);
   });
 
-  it('passes a synthetic course code when the course row is missing', async () => {
+  it("passes a synthetic course code when the course row is missing", async () => {
     findByPk.mockResolvedValue(null);
     generateQuestions.mockResolvedValue([
       {

@@ -53,22 +53,32 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useEduAIStatus } from "../../hooks/useEduAIStatus";
 import { AIServiceIndicators } from "../eduai/AIServiceIndicators";
 
-import { ExtractedQuestion, MCQChoice, Question, QuestionDifficulty, QuestionType } from '../../types/question';
-import { MCQChoicesField } from '../questions/MCQChoicesField';
-import { Topic } from '../../types/topic';
-import { questionService } from '../../services/questionService';
-import { eduaiService, EduAIModelOption } from '../../services/eduaiService';
-import { apiKeyStorage } from '../../services/apiKeyStorage';
-import { useOCRHistory } from '../../hooks/use-ocr-history';
-import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
-import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
-import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel } from '../../utils/aiModels';
-import type { OCRJob, StoredQuestion } from '../../types/ocr';
-import { toast } from 'sonner';
 import {
-    validateQuestionUploadFile,
-    validateQuestionUploadText,
-} from '../../utils/questionUploadLimits';
+  ExtractedQuestion,
+  MCQChoice,
+  Question,
+  QuestionDifficulty,
+  QuestionType,
+} from "../../types/question";
+import { MCQChoicesField } from "../questions/MCQChoicesField";
+import { Topic } from "../../types/topic";
+import { questionService } from "../../services/questionService";
+import { eduaiService, EduAIModelOption } from "../../services/eduaiService";
+import { apiKeyStorage } from "../../services/apiKeyStorage";
+import { useOCRHistory } from "../../hooks/use-ocr-history";
+import { OCRHistoryPanel } from "../ocr/OCRHistoryPanel";
+import { UnsavedChangesDialog } from "../ocr/UnsavedChangesDialog";
+import {
+  FALLBACK_GENERATION_MODEL,
+  isCampusModel,
+  pickPreferredGenerationModel,
+} from "../../utils/aiModels";
+import type { OCRJob, StoredQuestion } from "../../types/ocr";
+import { toast } from "sonner";
+import {
+  validateQuestionUploadFile,
+  validateQuestionUploadText,
+} from "../../utils/questionUploadLimits";
 
 // pdfjs-dist and tesseract.js are by far the heaviest dependencies in this app,
 // and only the OCR path below touches them. Imported statically they landed in
@@ -80,17 +90,17 @@ import {
 // Vite fingerprints and serves the worker from the same release bundle. Do not
 // load third-party runtime code from a CDN: uploaded exams are sensitive, and
 // the worker must stay exactly version-matched to the installed PDF.js client.
-let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 function loadPdfjs() {
-    // Memoised: the worker config must be applied exactly once, and re-importing
-    // per upload would re-run it on every file.
-    if (!pdfjsPromise) {
-        pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
-            pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
-            return pdfjs;
-        });
-    }
-    return pdfjsPromise;
+  // Memoised: the worker config must be applied exactly once, and re-importing
+  // per upload would re-run it on every file.
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist").then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
 }
 
 type DraftQuestion = Required<Pick<ExtractedQuestion, "question">> &
@@ -490,7 +500,9 @@ export const QuestionUploadDialog = ({
     try {
       await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
       setApiKeySaveState("saved");
-      toast("API key saved", { description: "Stored locally in your browser for this provider." });
+      toast("API key saved", {
+        description: "Stored for this account in this browser until you remove it or sign out.",
+      });
     } catch {
       setApiKeySaveState("error");
       toast.error("Failed to save API key", {
@@ -500,6 +512,8 @@ export const QuestionUploadDialog = ({
   }, [aiModel, providerApiKey, toast]);
 
   const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+    const fileError = validateQuestionUploadFile(file);
+    if (fileError) throw new Error(fileError);
     const { getDocument } = await loadPdfjs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: arrayBuffer }).promise;
@@ -517,6 +531,8 @@ export const QuestionUploadDialog = ({
   }, []);
 
   const performImageOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+    const fileError = validateQuestionUploadFile(file);
+    if (fileError) throw new Error(fileError);
     const { default: Tesseract } = await import("tesseract.js");
     const result = await Tesseract.recognize(file, "eng", {
       logger: (message) => {
@@ -530,6 +546,8 @@ export const QuestionUploadDialog = ({
 
   const performOcr = useCallback(
     async (file: File) => {
+      const fileError = validateQuestionUploadFile(file);
+      if (fileError) throw new Error(fileError);
       setProcessingStage("ocr");
       setProgress(5);
 
@@ -549,6 +567,9 @@ export const QuestionUploadDialog = ({
         throw new Error("No text detected in the uploaded file.");
       }
 
+      const textError = validateQuestionUploadText(text);
+      if (textError) throw new Error(textError);
+
       return text;
     },
     [performImageOcr, performPdfOcr],
@@ -559,6 +580,9 @@ export const QuestionUploadDialog = ({
       if (!courseId) {
         throw new Error("Select a course before extracting questions.");
       }
+
+      const textError = validateQuestionUploadText(text);
+      if (textError) throw new Error(textError);
 
       setProcessingStage("extracting");
       setProgress(85);
@@ -593,150 +617,51 @@ export const QuestionUploadDialog = ({
     async (file: File) => {
       setError(null);
       setDraftQuestions([]);
+
+      // Guard before creating a history entry, reading the file, allocating
+      // an ArrayBuffer, or starting OCR. The backend repeats this limit.
+      const fileError = validateQuestionUploadFile(file);
+      if (fileError) {
+        setError(fileError);
+        setProcessingStage("idle");
+        setProgress(0);
+        setLastFileName("");
+        toast.error("Upload rejected", { description: fileError, duration: Infinity });
+        return;
+      }
+
       setLastFileName(file.name);
 
-    const saveProviderApiKey = useCallback(async () => {
-        const provider = apiKeyStorage.getProviderFromModel(aiModel);
-        if (!provider || !providerApiKey.trim()) return;
-        setApiKeySaveState('saving');
-        try {
-            await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
-            setApiKeySaveState('saved');
-            toast('API key saved', {
-                description: 'Stored for this account in this browser until you remove it or sign out.',
-            });
-        } catch {
-            setApiKeySaveState('error');
-            toast.error('Failed to save API key', {
-                description: 'Could not store the key locally. Try again.',
-            });
-        }
-    }, [aiModel, providerApiKey, toast]);
+      const jobId = addJob({
+        fileName: file.name,
+        fileSize: file.size,
+        courseId: courseId!,
+        courseName: courseName ?? "Unknown Course",
+        model: aiModel,
+        status: "pending",
+        assessmentDetails: {
+          type: assessmentType,
+          name: assessmentName,
+        },
+      });
+      setCurrentJobId(jobId);
 
-    const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
-        const fileError = validateQuestionUploadFile(file);
-        if (fileError) throw new Error(fileError);
-        const { getDocument } = await loadPdfjs();
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await getDocument({ data: arrayBuffer }).promise;
-        const pageTexts: string[] = [];
-
-        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-            const page = await pdf.getPage(pageNumber);
-            const content = await page.getTextContent();
-            const pageText = pdfItemsToTextWithLineBreaks(content.items as PdfTextItem[]);
-            pageTexts.push(pageText);
-            onProgress(Math.round((pageNumber / pdf.numPages) * 70));
-        }
-
-        return pageTexts.join('\n');
-    }, []);
-
-    const performImageOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
-        const fileError = validateQuestionUploadFile(file);
-        if (fileError) throw new Error(fileError);
-        const { default: Tesseract } = await import('tesseract.js');
-        const result = await Tesseract.recognize(file, 'eng', {
-            logger: (message) => {
-                if (message.status === 'recognizing text') {
-                    onProgress(10 + Math.round(message.progress * 60));
-                }
-            }
-        });
-        return result.data.text;
-    }, []);
-
-    const performOcr = useCallback(async (file: File) => {
-        const fileError = validateQuestionUploadFile(file);
-        if (fileError) throw new Error(fileError);
-        setProcessingStage('ocr');
-        setProgress(5);
-
-        let text = '';
-        if (isTextFile(file)) {
-            text = await file.text();
-            setProgress(70);
-        } else if (isPdfFile(file)) {
-            text = await performPdfOcr(file, setProgress);
-        } else if (isImageFile(file)) {
-            text = await performImageOcr(file, setProgress);
-        } else {
-            throw new Error('Unsupported file type. Please upload a PDF, image, or TXT file.');
-        }
-
-        if (!text.trim()) {
-            throw new Error('No text detected in the uploaded file.');
-        }
-
-        const textError = validateQuestionUploadText(text);
-        if (textError) throw new Error(textError);
-
-        return text;
-    }, [performImageOcr, performPdfOcr]);
-
-    const handleExtractQuestions = useCallback(async (text: string) => {
-        if (!courseId) {
-            throw new Error('Select a course before extracting questions.');
-        }
-
-        const textError = validateQuestionUploadText(text);
-        if (textError) throw new Error(textError);
-
-        setProcessingStage('extracting');
-        setProgress(85);
-        console.log('QuestionUploadDialog: Extracting questions with model:', aiModel);
-
-        const apiKeys = await apiKeyStorage.buildApiKeysForModel(aiModel);
-        const response = await questionService.extractQuestionsFromText({
+      try {
+        updateJobStatus(jobId, "processing");
+        const text = await performOcr(file);
+        if (onExtractInBackground && courseId) {
+          const apiKeys = await apiKeyStorage.buildApiKeysForModel(aiModel);
+          onExtractInBackground({
             text,
             courseId,
             model: aiModel,
-            apiKeys
-        });
-        const drafts = mapExtractedToDraftQuestions(response || []);
-
-        if (drafts.length === 0) {
-            throw new Error('No questions could be extracted from the provided text.');
-        }
-
-        setDraftQuestions(drafts);
-        setProcessingStage('review');
-        setProgress(100);
-
-        toast('Questions extracted', {
-            description: `Parsed ${drafts.length} question${drafts.length === 1 ? '' : 's'} from the upload.`,
-            duration: Infinity,
-        });
-    }, [courseId, toast, aiModel]);
-
-    const processFile = useCallback(async (file: File) => {
-        setError(null);
-        setDraftQuestions([]);
-
-        // Guard before creating a history entry, reading the file, allocating
-        // an ArrayBuffer, or starting OCR. The backend repeats this limit.
-        const fileError = validateQuestionUploadFile(file);
-        if (fileError) {
-            setError(fileError);
-            setProcessingStage('idle');
-            setProgress(0);
-            setLastFileName('');
-            toast.error('Upload rejected', { description: fileError, duration: Infinity });
-            return;
-        }
-
-        setLastFileName(file.name);
-
-        const jobId = addJob({
-            fileName: file.name,
-            fileSize: file.size,
-            courseId: courseId!,
-            courseName: courseName ?? 'Unknown Course',
-            model: aiModel,
-            status: 'pending',
-            assessmentDetails: {
-                type: assessmentType,
-                name: assessmentName,
+            apiKeys,
+            jobId,
+            onExtractionComplete: (status, extras) => {
+              updateJobStatus(jobId, status === "error" ? "error" : "success", {
+                error: extras?.error,
+                questionsCount: extras?.questionsCount,
+              });
             },
           });
           onClose();
@@ -1277,386 +1202,26 @@ export const QuestionUploadDialog = ({
                 </Card>
               )}
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-6 pr-7">
-                <div className="flex flex-col gap-6 py-2 min-h-full md:flex-row">
-                    {/* Left: Assessment details — narrow, vertical fields */}
-                    {saveTarget === 'bank' ? (
-                        <Card className="flex-shrink-0 w-full md:w-[280px] border-dashed border-primary/30 bg-primary/10">
-                            <CardHeader className="space-y-1">
-                                <CardTitle className="text-base font-semibold">Question bank only</CardTitle>
-                                <p className="text-xs text-muted-foreground">
-                                    Questions are saved to the course bank. No assessment is created.
-                                </p>
-                            </CardHeader>
-                        </Card>
-                    ) : (
-                        <Card data-tour-id="upload-assessment-meta" className="flex-shrink-0 w-full md:w-[280px]">
-                            <CardHeader className="space-y-1">
-                                <CardTitle className="text-base font-semibold">Assessment details</CardTitle>
-                                <p className="text-xs text-muted-foreground">
-                                    A new assessment will be created for these questions.
-                                </p>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="assessment-type">Type</Label>
-                                    <Select
-                                        value={assessmentType}
-                                        onValueChange={(value) => setAssessmentType(value as typeof assessmentTypes[number])}
-                                    >
-                                        <SelectTrigger id="assessment-type">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {assessmentTypes.map((type) => (
-                                                <SelectItem key={type} value={type}>
-                                                    {type}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="assessment-name">Name</Label>
-                                    <Input
-                                        id="assessment-name"
-                                        placeholder="e.g. Midterm Review Set"
-                                        value={assessmentName}
-                                        onChange={(event) => setAssessmentName(event.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Right: Upload + Review — majority of space; when drafts exist, upload/model is collapsible */}
-                    <div className="flex-1 min-w-0 flex flex-col gap-6 min-h-0">
-                    {draftQuestions.length > 0 ? (
-                        <>
-                            <div className="flex-shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setUploadSectionCollapsed((c) => !c)}
-                                    className="flex items-center justify-between w-full rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium hover:bg-muted/50 transition-colors"
-                                >
-                                    <span>Upload & model</span>
-                                    {uploadSectionCollapsed ? (
-                                        <IconChevronDown className="h-4 w-4 text-muted-foreground" />
-                                    ) : (
-                                        <IconChevronUp className="h-4 w-4 text-muted-foreground" />
-                                    )}
-                                </button>
-                                {!uploadSectionCollapsed && (
-                                    <Card className="mt-2">
-                                        <CardHeader className="space-y-1">
-                                            <div className="flex items-center justify-between">
-                                                <CardTitle className="text-base font-semibold">Upload a file</CardTitle>
-                                                <AIServiceIndicators
-                                                    status={eduaiStatus.status}
-                                                    message={eduaiStatus.message}
-                                                    provider={eduaiStatus.provider}
-                                                    onRefresh={eduaiStatus.refresh}
-                                                    className="z-50"
-                                                />
-                                            </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                Questions will be saved to <span className="font-medium text-foreground">{courseName ?? 'the selected course'}</span>.
-                                                {' '}Topics are assigned automatically after extraction—you can adjust them in the review step.
-                                            </p>
-                                        </CardHeader>
-                                        <CardContent className="space-y-4">
-                                            <div className="space-y-2" data-tour-id="upload-model">
-                                                <Label htmlFor="ai-model-expanded">AI model</Label>
-                                                <Select value={aiModel} onValueChange={setAiModel}>
-                                                    <SelectTrigger id="ai-model-expanded">
-                                                        <SelectValue placeholder="Select a model" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {availableModels.length === 0 ? (
-                                                            <SelectItem value="__no_models" disabled>
-                                                                No models available yet
-                                                            </SelectItem>
-                                                        ) : (
-                                                            <>
-                                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">UBC Hosted</div>
-                                                                {availableModels
-                                                                    .filter((option) => isCampusModel(option))
-                                                                    .map((option) => (
-                                                                        <SelectItem key={option.id} value={option.id}>
-                                                                            {option.label}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">External</div>
-                                                                {availableModels
-                                                                    .filter((option) => !isCampusModel(option))
-                                                                    .map((option) => (
-                                                                        <SelectItem key={option.id} value={option.id}>
-                                                                            {option.label} ({option.provider})
-                                                                        </SelectItem>
-                                                                    ))}
-                                                            </>
-                                                        )}
-                                                    </SelectContent>
-                                                </Select>
-                                                {isExternalModel && (
-                                                    <div className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                                        <span className="font-semibold">Warning:</span> External models send your prompts and course data to that provider. UBC-hosted models keep data within UBC systems.
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {apiKeyStorage.requiresApiKey(aiModel) && (
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="provider-api-key-expanded">
-                                                        {apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API Key
-                                                    </Label>
-                                                    {providerApiKey ? (
-                                                        <div className="flex items-center gap-2">
-                                                            <Input
-                                                                id="provider-api-key-expanded"
-                                                                type="text"
-                                                                value={`${providerApiKey.substring(0, 8)}${'•'.repeat(Math.max(0, providerApiKey.length - 8))}`}
-                                                                disabled
-                                                                className="flex-1"
-                                                            />
-                                                            <Button
-                                                                type="button"
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={() => {
-                                                                    const provider = apiKeyStorage.getProviderFromModel(aiModel);
-                                                                    if (provider) {
-                                                                        apiKeyStorage.removeApiKey(provider);
-                                                                        setProviderApiKey('');
-                                                                    }
-                                                                }}
-                                                            >
-                                                                Change
-                                                            </Button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex gap-2">
-                                                            <Input
-                                                                id="provider-api-key-expanded"
-                                                                type="password"
-                                                                className="flex-1"
-                                                                placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
-                                                                value={providerApiKey}
-                                                                onChange={(e) => {
-                                                                    setProviderApiKey(e.target.value);
-                                                                    setApiKeySaveState('idle');
-                                                                }}
-                                                            />
-                                                            <Button
-                                                                type="button"
-                                                                variant="outline"
-                                                                size="sm"
-                                                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
-                                                                onClick={() => void saveProviderApiKey()}
-                                                            >
-                                                                {apiKeySaveState === 'saving'
-                                                                    ? 'Saving…'
-                                                                    : apiKeySaveState === 'saved'
-                                                                        ? 'Saved'
-                                                                        : 'Save key'}
-                                                            </Button>
-                                                        </div>
-                                                    )}
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Your key is stored for this account in this browser and sent through EduAI services when you use AI. Signing out removes it.
-                                                    </p>
-                                                </div>
-                                            )}
-                                            {lastFileName && (
-                                                <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                                                    <IconFileText className="h-4 w-4 text-muted-foreground" />
-                                                    <span className="truncate">{lastFileName}</span>
-                                                    <Button variant="ghost" size="icon" className="ml-auto" onClick={handleReset}>
-                                                        <IconRefresh className="h-4 w-4" />
-                                                        <span className="sr-only">Reset</span>
-                                                    </Button>
-                                                </div>
-                                            )}
-                                            <QuestionFileUploadZone
-                                                id="question-upload-review"
-                                                disabled={
-                                                    processingStage === 'ocr' ||
-                                                    processingStage === 'extracting' ||
-                                                    processingStage === 'saving'
-                                                }
-                                                onFileSelected={(file) => void processFile(file)}
-                                            />
-                                        </CardContent>
-                                    </Card>
-                                )}
-                            </div>
-                            <Card data-tour-id="upload-review" className="flex-1 min-h-0 flex flex-col">
-                                <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
-                                    <CardTitle className="text-base font-semibold">
-                                        Review extracted questions ({draftQuestions.length})
-                                    </CardTitle>
-                                    <div className="flex items-center gap-2" />
-                                </CardHeader>
-                                <CardContent className="flex-1 min-h-0 flex flex-col p-0 px-6 pb-6">
-                                    <ScrollArea className="flex-1 min-h-0 rounded-md border">
-                                        <div className="divide-y p-4 pt-0">
-                                            {draftQuestions.map((draft, index) => (
-                                                <div key={draft.id} className="space-y-4 p-4">
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div className="space-y-1">
-                                                            <p className="text-sm font-semibold">Question {index + 1}</p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                Toggle include to skip saving a specific question.
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <Button
-                                                                variant={draft.include ? 'secondary' : 'outline'}
-                                                                size="sm"
-                                                                onClick={() => updateDraft(draft.id, { include: !draft.include })}
-                                                            >
-                                                                {draft.include ? 'Included' : 'Excluded'}
-                                                            </Button>
-                                                            <Button variant="ghost" size="icon" onClick={() => removeDraft(draft.id)}>
-                                                                <IconTrash className="h-4 w-4" />
-                                                                <span className="sr-only">Remove question</span>
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <Label>Question summary</Label>
-                                                        <Input
-                                                            value={draft.summary}
-                                                            placeholder="One sentence describing the question"
-                                                            onChange={(event) => updateDraft(draft.id, { summary: event.target.value })}
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <Label>Question text</Label>
-                                                        <Textarea
-                                                            rows={3}
-                                                            value={draft.question}
-                                                            onChange={(event) => updateDraft(draft.id, { question: event.target.value })}
-                                                        />
-                                                    </div>
-                                                    <div className="grid gap-4 sm:grid-cols-2">
-                                                        <div className="space-y-2">
-                                                            <Label>Primary topic</Label>
-                                                            <Select
-                                                                value={draft.primaryTopicId !== null ? String(draft.primaryTopicId) : 'none'}
-                                                                onValueChange={(value) => {
-                                                                    if (value === 'none') {
-                                                                        setPrimaryTopicForDraft(draft.id, null);
-                                                                        return;
-                                                                    }
-                                                                    setPrimaryTopicForDraft(draft.id, value);
-                                                                }}
-                                                                disabled={topics.length === 0}
-                                                            >
-                                                                <SelectTrigger>
-                                                                    <SelectValue placeholder={topics.length === 0 ? 'No topics available' : 'Select topic'} />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="none">Unassigned</SelectItem>
-                                                                    {topics.map((topic) => (
-                                                                        <SelectItem key={topic.id} value={String(topic.id)}>
-                                                                            {topic.name}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label>Secondary topics</Label>
-                                                            {topics.length === 0 ? (
-                                                                <p className="text-xs text-muted-foreground">No topics available. A new topic will be created automatically.</p>
-                                                            ) : (
-                                                                <div className="flex flex-wrap gap-2">
-                                                                    {topics.map((topic) => (
-                                                                        <label key={topic.id} className="flex items-center gap-1 text-xs">
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                className="h-4 w-4"
-                                                                                checked={draft.secondaryTopicIds.includes(topic.id)}
-                                                                                onChange={() => toggleSecondaryTopicForDraft(draft.id, topic.id)}
-                                                                                disabled={draft.primaryTopicId === topic.id}
-                                                                            />
-                                                                            <span>{topic.name}</span>
-                                                                        </label>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="grid gap-4 sm:grid-cols-3">
-                                                        <div className="space-y-2">
-                                                            <Label>Difficulty</Label>
-                                                            <Select
-                                                                value={draft.difficulty}
-                                                                onValueChange={(value) =>
-                                                                    updateDraft(draft.id, { difficulty: value as QuestionDifficulty })
-                                                                }
-                                                            >
-                                                                <SelectTrigger>
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {difficultyOptions.map((difficulty) => (
-                                                                        <SelectItem key={difficulty} value={difficulty}>
-                                                                            {difficulty}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label>Type</Label>
-                                                            <Select
-                                                                value={draft.type}
-                                                                onValueChange={(value) =>
-                                                                    updateDraft(draft.id, { type: value as QuestionType })
-                                                                }
-                                                            >
-                                                                <SelectTrigger>
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {questionTypes.map((type) => (
-                                                                        <SelectItem key={type} value={type}>
-                                                                            {questionTypeLabels[type]}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </div>
-                                                    </div>
-                                                    {draft.type === 'MCQ' && (
-                                                        <div className="space-y-2">
-                                                            <MCQChoicesField
-                                                                choices={draft.choices ?? [{ letter: 'A', text: '' }, { letter: 'B', text: '' }, { letter: 'C', text: '' }, { letter: 'D', text: '' }]}
-                                                                onChoicesChange={(newChoices) => updateDraft(draft.id, { choices: newChoices })}
-                                                                answer={draft.answer ?? ''}
-                                                                onAnswerChange={(letter) => updateDraft(draft.id, { answer: letter || null })}
-                                                                selectAllThatApply={Boolean(draft.selectAllThatApply)}
-                                                                correctAnswers={Array.isArray(draft.correctAnswers) ? draft.correctAnswers : []}
-                                                                onSelectAllThatApplyChange={(value) => updateDraft(draft.id, { selectAllThatApply: value })}
-                                                                onCorrectAnswersChange={(letters) => updateDraft(draft.id, { correctAnswers: letters })}
-                                                                idPrefix={`upload-draft-${draft.id}`}
-                                                            />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </ScrollArea>
-                                    <p className="pt-3 text-xs text-muted-foreground flex-shrink-0">
-                                        The AI extraction is a starting point—adjust the question text, instructions, difficulty, or answers before saving.
-                                    </p>
-                                </CardContent>
-                            </Card>
-                        </>
-                    ) : (
-                    <Card>
-                        <CardHeader className="space-y-1">
+              {/* Right: Upload + Review — majority of space; when drafts exist, upload/model is collapsible */}
+              <div className="flex-1 min-w-0 flex flex-col gap-6 min-h-0">
+                {draftQuestions.length > 0 ? (
+                  <>
+                    <div className="flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setUploadSectionCollapsed((c) => !c)}
+                        className="flex items-center justify-between w-full rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium hover:bg-muted/50 transition-colors"
+                      >
+                        <span>Upload & model</span>
+                        {uploadSectionCollapsed ? (
+                          <IconChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <IconChevronUp className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
+                      {!uploadSectionCollapsed && (
+                        <Card className="mt-2">
+                          <CardHeader className="space-y-1">
                             <div className="flex items-center justify-between">
                               <CardTitle className="text-base font-semibold">
                                 Upload a file
@@ -1680,105 +1245,47 @@ export const QuestionUploadDialog = ({
                           </CardHeader>
                           <CardContent className="space-y-4">
                             <div className="space-y-2" data-tour-id="upload-model">
-                                <Label htmlFor="ai-model">AI model</Label>
-                                <Select value={aiModel} onValueChange={setAiModel}>
-                                    <SelectTrigger id="ai-model">
-                                        <SelectValue placeholder="Select a model" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {availableModels.length === 0 ? (
-                                            <SelectItem value="__no_models" disabled>
-                                                No models available yet
-                                            </SelectItem>
-                                        ) : (
-                                            <>
-                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">UBC Hosted</div>
-                                                {availableModels
-                                                    .filter((option) => isCampusModel(option))
-                                                    .map((option) => (
-                                                        <SelectItem key={option.id} value={option.id}>
-                                                            {option.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">External</div>
-                                                {availableModels
-                                                    .filter((option) => !isCampusModel(option))
-                                                    .map((option) => (
-                                                        <SelectItem key={option.id} value={option.id}>
-                                                            {option.label} ({option.provider})
-                                                        </SelectItem>
-                                                    ))}
-                                            </>
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                {isExternalModel && (
-                                    <div className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                        <span className="font-semibold">Warning:</span> External models send your prompts and course data to that provider. UBC-hosted models keep data within UBC systems.
-                                    </div>
-                                )}
-                            </div>
-
-                            {apiKeyStorage.requiresApiKey(aiModel) && (
-                                <div className="space-y-2">
-                                    <Label htmlFor="provider-api-key">
-                                        {apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API Key
-                                    </Label>
-                                    {providerApiKey ? (
-                                        <div className="flex items-center gap-2">
-                                            <Input
-                                                id="provider-api-key"
-                                                type="text"
-                                                value={`${providerApiKey.substring(0, 8)}${'•'.repeat(Math.max(0, providerApiKey.length - 8))}`}
-                                                disabled
-                                                className="flex-1"
-                                            />
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => {
-                                                    const provider = apiKeyStorage.getProviderFromModel(aiModel);
-                                                    if (provider) {
-                                                        apiKeyStorage.removeApiKey(provider);
-                                                        setProviderApiKey('');
-                                                    }
-                                                }}
-                                            >
-                                                Change
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex gap-2">
-                                            <Input
-                                                id="provider-api-key"
-                                                type="password"
-                                                className="flex-1"
-                                                placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
-                                                value={providerApiKey}
-                                                onChange={(e) => {
-                                                    setProviderApiKey(e.target.value);
-                                                    setApiKeySaveState('idle');
-                                                }}
-                                            />
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
-                                                onClick={() => void saveProviderApiKey()}
-                                            >
-                                                {apiKeySaveState === 'saving'
-                                                    ? 'Saving…'
-                                                    : apiKeySaveState === 'saved'
-                                                        ? 'Saved'
-                                                        : 'Save key'}
-                                            </Button>
-                                        </div>
-                                    )}
-                                    <p className="text-xs text-muted-foreground">
-                                        Your key is stored for this account in this browser and sent through EduAI services when you use AI. Signing out removes it.
-                                    </p>
+                              <Label htmlFor="ai-model-expanded">AI model</Label>
+                              <Select value={aiModel} onValueChange={setAiModel}>
+                                <SelectTrigger id="ai-model-expanded">
+                                  <SelectValue placeholder="Select a model" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableModels.length === 0 ? (
+                                    <SelectItem value="__no_models" disabled>
+                                      No models available yet
+                                    </SelectItem>
+                                  ) : (
+                                    <>
+                                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                        UBC Hosted
+                                      </div>
+                                      {availableModels
+                                        .filter((option) => isCampusModel(option))
+                                        .map((option) => (
+                                          <SelectItem key={option.id} value={option.id}>
+                                            {option.label}
+                                          </SelectItem>
+                                        ))}
+                                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">
+                                        External
+                                      </div>
+                                      {availableModels
+                                        .filter((option) => !isCampusModel(option))
+                                        .map((option) => (
+                                          <SelectItem key={option.id} value={option.id}>
+                                            {option.label} ({option.provider})
+                                          </SelectItem>
+                                        ))}
+                                    </>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              {isExternalModel && (
+                                <div className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                  <span className="font-semibold">Warning:</span> External models
+                                  send your prompts and course data to that provider. UBC-hosted
+                                  models keep data within UBC systems.
                                 </div>
                               )}
                             </div>
@@ -1844,8 +1351,8 @@ export const QuestionUploadDialog = ({
                                   </div>
                                 )}
                                 <p className="text-xs text-muted-foreground">
-                                  Your API key is stored locally in your browser and never sent to
-                                  our servers.
+                                  Your key is stored for this account in this browser and sent
+                                  through EduAI services when you use AI. Signing out removes it.
                                 </p>
                               </div>
                             )}
@@ -1926,13 +1433,170 @@ export const QuestionUploadDialog = ({
                                     }
                                   />
                                 </div>
-                            )}
-                            {error && (
-                                <p className="text-sm text-red-600" role="alert" aria-live="assertive">
-                                    {error}
-                                </p>
-                            )}
-                        </CardContent>
+                                <div className="space-y-2">
+                                  <Label>Question text</Label>
+                                  <Textarea
+                                    rows={3}
+                                    value={draft.question}
+                                    onChange={(event) =>
+                                      updateDraft(draft.id, { question: event.target.value })
+                                    }
+                                  />
+                                </div>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label>Primary topic</Label>
+                                    <Select
+                                      value={
+                                        draft.primaryTopicId !== null
+                                          ? String(draft.primaryTopicId)
+                                          : "none"
+                                      }
+                                      onValueChange={(value) => {
+                                        if (value === "none") {
+                                          setPrimaryTopicForDraft(draft.id, null);
+                                          return;
+                                        }
+                                        setPrimaryTopicForDraft(draft.id, value);
+                                      }}
+                                      disabled={topics.length === 0}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue
+                                          placeholder={
+                                            topics.length === 0
+                                              ? "No topics available"
+                                              : "Select topic"
+                                          }
+                                        />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">Unassigned</SelectItem>
+                                        {topics.map((topic) => (
+                                          <SelectItem key={topic.id} value={String(topic.id)}>
+                                            {topic.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Secondary topics</Label>
+                                    {topics.length === 0 ? (
+                                      <p className="text-xs text-muted-foreground">
+                                        No topics available. A new topic will be created
+                                        automatically.
+                                      </p>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-2">
+                                        {topics.map((topic) => (
+                                          <label
+                                            key={topic.id}
+                                            className="flex items-center gap-1 text-xs"
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              className="h-4 w-4"
+                                              checked={draft.secondaryTopicIds.includes(topic.id)}
+                                              onChange={() =>
+                                                toggleSecondaryTopicForDraft(draft.id, topic.id)
+                                              }
+                                              disabled={draft.primaryTopicId === topic.id}
+                                            />
+                                            <span>{topic.name}</span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="grid gap-4 sm:grid-cols-3">
+                                  <div className="space-y-2">
+                                    <Label>Difficulty</Label>
+                                    <Select
+                                      value={draft.difficulty}
+                                      onValueChange={(value) =>
+                                        updateDraft(draft.id, {
+                                          difficulty: value as QuestionDifficulty,
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {difficultyOptions.map((difficulty) => (
+                                          <SelectItem key={difficulty} value={difficulty}>
+                                            {difficulty}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Type</Label>
+                                    <Select
+                                      value={draft.type}
+                                      onValueChange={(value) =>
+                                        updateDraft(draft.id, { type: value as QuestionType })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {questionTypes.map((type) => (
+                                          <SelectItem key={type} value={type}>
+                                            {questionTypeLabels[type]}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                                {draft.type === "MCQ" && (
+                                  <div className="space-y-2">
+                                    <MCQChoicesField
+                                      choices={
+                                        draft.choices ?? [
+                                          { letter: "A", text: "" },
+                                          { letter: "B", text: "" },
+                                          { letter: "C", text: "" },
+                                          { letter: "D", text: "" },
+                                        ]
+                                      }
+                                      onChoicesChange={(newChoices) =>
+                                        updateDraft(draft.id, { choices: newChoices })
+                                      }
+                                      answer={draft.answer ?? ""}
+                                      onAnswerChange={(letter) =>
+                                        updateDraft(draft.id, { answer: letter || null })
+                                      }
+                                      selectAllThatApply={Boolean(draft.selectAllThatApply)}
+                                      correctAnswers={
+                                        Array.isArray(draft.correctAnswers)
+                                          ? draft.correctAnswers
+                                          : []
+                                      }
+                                      onSelectAllThatApplyChange={(value) =>
+                                        updateDraft(draft.id, { selectAllThatApply: value })
+                                      }
+                                      onCorrectAnswersChange={(letters) =>
+                                        updateDraft(draft.id, { correctAnswers: letters })
+                                      }
+                                      idPrefix={`upload-draft-${draft.id}`}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                        <p className="pt-3 text-xs text-muted-foreground flex-shrink-0">
+                          The AI extraction is a starting point—adjust the question text,
+                          instructions, difficulty, or answers before saving.
+                        </p>
+                      </CardContent>
                     </Card>
                   </>
                 ) : (
@@ -2062,8 +1726,8 @@ export const QuestionUploadDialog = ({
                             </div>
                           )}
                           <p className="text-xs text-muted-foreground">
-                            Your API key is stored locally in your browser and never sent to our
-                            servers.
+                            Your key is stored for this account in this browser and sent through
+                            EduAI services when you use AI. Signing out removes it.
                           </p>
                         </div>
                       )}
@@ -2111,7 +1775,11 @@ export const QuestionUploadDialog = ({
                           <Progress value={progress} />
                         </div>
                       )}
-                      {error && <p className="text-sm text-red-600">{error}</p>}
+                      {error && (
+                        <p className="text-sm text-red-600" role="alert" aria-live="assertive">
+                          {error}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 )}

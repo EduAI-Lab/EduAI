@@ -293,11 +293,7 @@ export const removeVariantFromSection = async (sectionId, userId, variantId, cou
   // any legacy link. The add path already enforces this, but malformed rows
   // created before that guard must not let a same-owner caller mutate a foreign
   // course variant through this section route.
-  const variant = await verifyVariantOwnership(
-    variantId,
-    userId,
-    section.assessment.courseId,
-  );
+  const variant = await verifyVariantOwnership(variantId, userId, section.assessment.courseId);
 
   const { count: deleted } = await prisma.sectionVariants.deleteMany({
     where: { sectionId, variantId },
@@ -418,7 +414,7 @@ export const removeQuestionFromAllSections = async (questionId, userId, courseId
         userId,
         ...(courseId != null ? { id: Number(courseId) } : {}),
       },
-    }
+    },
   });
 
   if (!question) {
@@ -473,7 +469,7 @@ export const removeQuestionFromAllSections = async (questionId, userId, courseId
     where: {
       variantId: { in: variantIds },
       section: { assessment: { courseId: question.courseId } },
-    }
+    },
   });
 
   // Update questionOrder for each affected assessment

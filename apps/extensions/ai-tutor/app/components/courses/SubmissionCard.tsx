@@ -33,7 +33,7 @@ export function SubmissionCard({
 }: SubmissionCardProps) {
   const isList = variant === "list";
   const response = row.response;
-  const hasText = typeof response?.answerText === 'string' && response.answerText.trim() !== '';
+  const hasText = typeof response?.answerText === "string" && response.answerText.trim() !== "";
   const optionIndex =
     !hasText && typeof response?.answerOption === "number" ? response.answerOption : null;
   const feedback = row.aiFeedback?.message ?? null;

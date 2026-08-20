@@ -14,17 +14,8 @@
  */
 import { test, expect } from "@playwright/test";
 import { CORE_URL, QM_BACKEND_URL } from "../../playwright.config";
-import {
-  signUp,
-  signOut,
-  uniqueEmail,
-  checkStatus,
-  createInstructor,
-} from "../helpers/auth";
-import {
-  createQmCourseForInstructor,
-  createQmCourseForStudent,
-} from "../helpers/qm-courses";
+import { signUp, signOut, uniqueEmail, checkStatus, createInstructor } from "../helpers/auth";
+import { createQmCourseForInstructor, createQmCourseForStudent } from "../helpers/qm-courses";
 
 // ---------------------------------------------------------------------------
 // Health / smoke
@@ -45,9 +36,7 @@ test.describe("Question Maker backend health", () => {
     expect(body).toHaveProperty("message");
   });
 
-  test("unknown route returns 404 JSON with success=false", async ({
-    request,
-  }) => {
+  test("unknown route returns 404 JSON with success=false", async ({ request }) => {
     const res = await request.get(`${QM_BACKEND_URL}/api/does-not-exist-xyz`);
     expect(res.status()).toBe(404);
     const body = await res.json();
@@ -101,9 +90,7 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
   }) => {
     await signUp(request, { email: uniqueEmail("qm-courses") });
 
-    const res = await request.get(
-      `${QM_BACKEND_URL}/api/course?page=1&pageSize=100`,
-    );
+    const res = await request.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`);
     expect(res.status()).toBe(200);
     const body = await res.json();
     // Success envelope or direct array
@@ -129,9 +116,7 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
     expect(body.code).toBe("PAGINATION_REQUIRED");
   });
 
-  test("GET /api/questions is blocked for STUDENT (403)", async ({
-    request,
-  }) => {
+  test("GET /api/questions is blocked for STUDENT (403)", async ({ request }) => {
     await signUp(request, { email: uniqueEmail("qm-questions") });
 
     // STUDENT role cannot list all questions — requires INSTRUCTOR or higher
@@ -139,9 +124,7 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
     expect(res.status()).toBe(403);
   });
 
-  test("POST /api/course without coreCourseId returns 400", async ({
-    request,
-  }) => {
+  test("POST /api/course without coreCourseId returns 400", async ({ request }) => {
     // #1114: STUDENT is rejected by requireRole before body validation — use
     // an instructor so we reach the coreCourseId required check.
     await createInstructor(request, { prefix: "qm-create-missing" });
@@ -154,9 +137,7 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
     expect(body.success).toBe(false);
   });
 
-  test("POST /api/course with an unscoped coreCourseId returns 403", async ({
-    request,
-  }) => {
+  test("POST /api/course with an unscoped coreCourseId returns 403", async ({ request }) => {
     await createInstructor(request, { prefix: "qm-create-unscoped" });
 
     // A syntactically plausible Core course id the caller has no access to
@@ -176,28 +157,20 @@ test.describe("Authenticated access to Question Maker via Core session", () => {
   }) => {
     await createInstructor(request, { prefix: "qm-create-course" });
 
-    const { coreCourseId, qmCourseId } = await createQmCourseForInstructor(
-      playwright,
-      request,
-      {
-        name: "E2E Test Course",
-        code: "E2E 101",
-      },
-    );
+    const { coreCourseId, qmCourseId } = await createQmCourseForInstructor(playwright, request, {
+      name: "E2E Test Course",
+      code: "E2E 101",
+    });
 
     expect(typeof qmCourseId).toBe("number");
 
-    const listRes = await request.get(
-      `${QM_BACKEND_URL}/api/course?page=1&pageSize=100`,
-    );
+    const listRes = await request.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`);
     expect(listRes.status()).toBe(200);
     const listBody = await listRes.json();
     const list = Array.isArray(listBody) ? listBody : listBody?.data;
-    expect(
-      list.some(
-        (c: any) => c.id === qmCourseId && c.coreCourseId === coreCourseId,
-      ),
-    ).toBe(true);
+    expect(list.some((c: any) => c.id === qmCourseId && c.coreCourseId === coreCourseId)).toBe(
+      true,
+    );
   });
 });
 
@@ -227,9 +200,7 @@ test.describe("Question Maker sign-out", () => {
     await checkStatus(afterCore, 401, "Core /api/me after QM logout");
   });
 
-  test("logout without an active session returns ok (idempotent)", async ({
-    request,
-  }) => {
+  test("logout without an active session returns ok (idempotent)", async ({ request }) => {
     const res = await request.post(`${QM_BACKEND_URL}/api/auth/logout`);
     expect(res.status()).toBe(200);
     expect((await res.json()).ok).toBe(true);
@@ -241,10 +212,7 @@ test.describe("Question Maker sign-out", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Question Maker RBAC", () => {
-  test("STUDENT cannot create questions (403)", async ({
-    request,
-    playwright,
-  }) => {
+  test("STUDENT cannot create questions (403)", async ({ request, playwright }) => {
     const email = uniqueEmail("qm-no-questions");
     await signUp(request, { email });
 

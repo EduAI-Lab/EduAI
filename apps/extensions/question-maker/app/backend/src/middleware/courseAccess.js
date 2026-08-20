@@ -20,8 +20,8 @@ import {
   getCourseEnrollmentsFromCore,
   getCourseFromCore,
   getMyProfileFromCore,
-} from '../services/coreApiService.js';
-import { assertQmAiDeadline } from './aiAdmission.js';
+} from "../services/coreApiService.js";
+import { assertQmAiDeadline } from "./aiAdmission.js";
 
 /** Resolved access levels and their numeric ranks (shared contract §3). */
 export const LEVELS = {
@@ -85,7 +85,11 @@ export async function resolveAccessForCourse(reqUser, course, { cookie, signal }
       // Unified contract (#1072): `department` is a FIELD read — service-key
       // first, so the result never depends on the caller's own Core
       // enrollment (cookie remains the fallback when no key is configured).
-      coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false, signal });
+      coreCourse = await getCourseFromCore(course.coreCourseId, {
+        cookie,
+        preferCookie: false,
+        signal,
+      });
     } catch {
       if (signal?.aborted) assertQmAiDeadline({ signal });
       // #225 SEAM-02: do not grant the QM owner instructor on a Core course
@@ -218,20 +222,20 @@ export function requireCourseAccess({ min, getCourseId }) {
  * replacing that source context. An omitted target is a same-course update and
  * continues through the existing resource access decision.
  */
-export function requireOptionalCourseAccess({ min, getCourseId, attachAs = 'targetQmCourse' }) {
+export function requireOptionalCourseAccess({ min, getCourseId, attachAs = "targetQmCourse" }) {
   const required = minRank(min);
   return async (req, res, next) => {
     try {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
+        return res.status(401).json({ success: false, error: "Authentication required" });
       }
 
       const courseId = await getCourseId(req);
       if (courseId === undefined) {
         return next();
       }
-      if (courseId === null || courseId === '') {
-        return res.status(404).json({ success: false, error: 'Course not found' });
+      if (courseId === null || courseId === "") {
+        return res.status(404).json({ success: false, error: "Course not found" });
       }
 
       // Validate the target identifier before resolving access. Resource
@@ -239,7 +243,7 @@ export function requireOptionalCourseAccess({ min, getCourseId, attachAs = 'targ
       // relocation input is a client error (400), not a target-course 404.
       const parsedCourseId = Number(courseId);
       if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
-        return res.status(400).json({ success: false, error: 'Valid courseId is required' });
+        return res.status(400).json({ success: false, error: "Valid courseId is required" });
       }
 
       const { course, access } = await resolveCourseAccessWithCourse(req.user, parsedCourseId, {
@@ -248,10 +252,10 @@ export function requireOptionalCourseAccess({ min, getCourseId, attachAs = 'targ
       });
 
       if (!course) {
-        return res.status(404).json({ success: false, error: 'Course not found' });
+        return res.status(404).json({ success: false, error: "Course not found" });
       }
       if (!access || access.rank < required) {
-        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
       }
 
       req[attachAs] = course;

@@ -154,24 +154,26 @@ describe("generateBankVariantsForQuestions — validation guards", () => {
 
 // ---------------------------------------------------------------------------
 
-describe('generateBankVariantsForQuestions — per-question orchestration', () => {
-  it('stops bank fanout immediately after an upstream 429', async () => {
-    const rateLimited = new Error('upstream body must stay private');
+describe("generateBankVariantsForQuestions — per-question orchestration", () => {
+  it("stops bank fanout immediately after an upstream 429", async () => {
+    const rateLimited = new Error("upstream body must stay private");
     rateLimited.statusCode = 429;
     mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [makePrimaryVariant()] }));
     mockGenerateQuestions.mockRejectedValueOnce(rateLimited);
 
-    await expect(generateBankVariantsForQuestions(USER_ID, {
-      courseId: 1,
-      questionIds: [10, 20],
-      variantsToAdd: 1,
-    })).rejects.toMatchObject({ statusCode: 429 });
+    await expect(
+      generateBankVariantsForQuestions(USER_ID, {
+        courseId: 1,
+        questionIds: [10, 20],
+        variantsToAdd: 1,
+      }),
+    ).rejects.toMatchObject({ statusCode: 429 });
 
     expect(mockGenerateQuestions).toHaveBeenCalledTimes(1);
     expect(mockMetaFindOne).toHaveBeenCalledTimes(1);
   });
 
-  it('records an error (does not throw) when a question is not found in the DB', async () => {
+  it("records an error (does not throw) when a question is not found in the DB", async () => {
     mockMetaFindOne.mockResolvedValueOnce(null);
 
     const { errors } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
@@ -278,15 +280,22 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
   });
 
   it.each([
-    ['provider', () => mockGenerateQuestions.mockRejectedValueOnce(
-      new Error('SECRET_PROVIDER_BODY?api_key=canary'),
-    )],
-    ['database', () => {
-      mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
-      mockVariantCreate.mockRejectedValueOnce(new Error('SECRET_DB_URL'));
-    }],
-  ])('redacts unexpected %s failures from results and logs', async (_source, arrangeFailure) => {
-    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    [
+      "provider",
+      () =>
+        mockGenerateQuestions.mockRejectedValueOnce(
+          new Error("SECRET_PROVIDER_BODY?api_key=canary"),
+        ),
+    ],
+    [
+      "database",
+      () => {
+        mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
+        mockVariantCreate.mockRejectedValueOnce(new Error("SECRET_DB_URL"));
+      },
+    ],
+  ])("redacts unexpected %s failures from results and logs", async (_source, arrangeFailure) => {
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [makePrimaryVariant()] }));
     arrangeFailure();
 
@@ -296,13 +305,13 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
       expect.objectContaining({
         questionId: 10,
         iteration: 1,
-        error: 'Variant generation failed',
+        error: "Variant generation failed",
       }),
     ]);
     const logged = JSON.stringify(logSpy.mock.calls);
-    expect(logged).not.toContain('SECRET_PROVIDER_BODY');
-    expect(logged).not.toContain('api_key');
-    expect(logged).not.toContain('SECRET_DB_URL');
+    expect(logged).not.toContain("SECRET_PROVIDER_BODY");
+    expect(logged).not.toContain("api_key");
+    expect(logged).not.toContain("SECRET_DB_URL");
     logSpy.mockRestore();
   });
 });

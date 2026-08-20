@@ -1,13 +1,20 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { User } from '../types/auth';
-import { authService } from '../services/authService';
-import { apiKeyStorage } from '../services/apiKeyStorage';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from "react";
+import { User } from "../types/auth";
+import { authService } from "../services/authService";
+import { apiKeyStorage } from "../services/apiKeyStorage";
 import {
   clearAiReviewHistoryForUser,
   discardLegacyAiReviewHistory,
-} from '../services/aiReviewHistoryStorage';
-import { clearOCRHistoryForUser, OCR_HISTORY_KEY } from '../types/ocr';
-import { isAxiosError } from 'axios';
+} from "../services/aiReviewHistoryStorage";
+import { clearOCRHistoryForUser, OCR_HISTORY_KEY } from "../types/ocr";
+import { isAxiosError } from "axios";
 
 interface AuthContextType {
   user: User | null;
@@ -64,7 +71,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // The API interceptor redirects confirmed unauthenticated sessions to Core login.
           setAuthError(null);
         } else {
-          setAuthError('Authentication service unavailable');
+          setAuthError("Authentication service unavailable");
         }
       })
       .finally(() => {
@@ -87,12 +94,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearOCRHistoryForUser(currentUserId);
     clearAiReviewHistoryForUser(currentUserId);
 
-    const apiUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8000';
+    const apiUrl = import.meta.env?.VITE_API_URL || "http://localhost:8000";
     let response: Response;
     try {
       response = await fetch(`${apiUrl}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
+        method: "POST",
+        credentials: "include",
       });
     } catch (error) {
       apiKeyStorage.setAuthenticatedUser(currentUserId);
@@ -103,7 +110,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       let message = `Logout failed: ${response.status}`;
       try {
         const payload = (await response.json()) as { error?: unknown };
-        if (typeof payload?.error === 'string' && payload.error.trim()) {
+        if (typeof payload?.error === "string" && payload.error.trim()) {
           message = payload.error;
         }
       } catch {
@@ -116,7 +123,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     setAuthError(null);
-    const coreUrl = import.meta.env?.VITE_CORE_URL || 'http://localhost:3000';
+    const coreUrl = import.meta.env?.VITE_CORE_URL || "http://localhost:3000";
     window.location.href = `${coreUrl}/login`;
   }, [user?.id]);
 

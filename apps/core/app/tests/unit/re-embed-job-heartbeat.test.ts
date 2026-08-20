@@ -83,11 +83,9 @@ describe("re-embed lease heartbeat", () => {
         providerSignal = options.signal;
         return new Promise((_resolve, reject) => {
           rejectProvider = reject;
-          options.signal.addEventListener(
-            "abort",
-            () => reject(options.signal.reason),
-            { once: true },
-          );
+          options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+            once: true,
+          });
         });
       },
     );
@@ -101,9 +99,7 @@ describe("re-embed lease heartbeat", () => {
 
     expect(providerSignal.aborted).toBe(true);
     expect(
-      mocks.updateMany.mock.calls.some(
-        (call) => (call[0] as any)?.data?.status === "FAILED",
-      ),
+      mocks.updateMany.mock.calls.some((call) => (call[0] as any)?.data?.status === "FAILED"),
     ).toBe(false);
   });
 
@@ -132,20 +128,16 @@ describe("re-embed lease heartbeat", () => {
 
     expect(providerSignal.aborted).toBe(false);
     expect(
-      mocks.updateMany.mock.calls.some(
-        (call) => {
-          const data = (call[0] as any)?.data ?? {};
-          return data.status === undefined && "leaseHeartbeatAt" in data;
-        },
-      ),
+      mocks.updateMany.mock.calls.some((call) => {
+        const data = (call[0] as any)?.data ?? {};
+        return data.status === undefined && "leaseHeartbeatAt" in data;
+      }),
     ).toBe(true);
 
     resolveWorker({ processed: 1, failed: [], total: 1 });
     await expect(run).resolves.toBe(true);
     expect(
-      mocks.updateMany.mock.calls.some(
-        (call) => (call[0] as any)?.data?.status === "COMPLETED",
-      ),
+      mocks.updateMany.mock.calls.some((call) => (call[0] as any)?.data?.status === "COMPLETED"),
     ).toBe(true);
   });
 

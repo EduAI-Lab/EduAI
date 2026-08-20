@@ -9,16 +9,16 @@ import { scoreMetadataMatch } from "./assessmentVariantMetadataScoring.js";
 import {
   enrichCourseDetail,
   formatSemesterDisplay,
-  deriveSemesterDisplayForCourseId
-} from './courseListService.js';
-import { safeRequestLogFields } from '../utils/safeLogging.js';
+  deriveSemesterDisplayForCourseId,
+} from "./courseListService.js";
+import { safeRequestLogFields } from "../utils/safeLogging.js";
 import {
   assertQmAiDeadline,
   isQmAiDeadlineError,
   validateBankVariantAdmission,
   validateReviewAdmission,
   qmReviewMaxPairs,
-} from '../middleware/aiAdmission.js';
+} from "../middleware/aiAdmission.js";
 
 const VALID_STUDY_ROLES = ["reference_baseline", "generated_variant"];
 
@@ -814,7 +814,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
     apiKeys = {},
     variantsToAdd = 1,
     variantPromptInstructions = null,
-    cookie = '',
+    cookie = "",
     signal,
     deadlineAt,
   } = params;
@@ -829,14 +829,14 @@ export async function generateBankVariantsForQuestions(userId, params) {
   let remainingProviderCalls = admission.providerCalls;
   assertQmAiDeadline({ deadlineAt, signal });
 
-  let extraInstructions = '';
+  let extraInstructions = "";
   if (variantPromptInstructions != null && String(variantPromptInstructions).trim()) {
     const trimmed = String(variantPromptInstructions).trim().slice(0, 4000);
     extraInstructions = `\n\nAdditional instructions from the instructor (apply to this variant):\n"""\n${trimmed}\n"""\n`;
   }
 
   if (!courseId) {
-    throw new Error('courseId and a non-empty questionIds array are required');
+    throw new Error("courseId and a non-empty questionIds array are required");
   }
 
   const course = await prisma.course.findFirst({
@@ -855,8 +855,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
   // `code` is Core-owned (#1072 §4 step 10) — read through Core. Preserve
   // spacing so Core can resolve by code; prefer coreCourseId when linked.
   const courseDetail = await enrichCourseDetail(course, { cookie, signal });
-  const courseCode =
-    (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
+  const courseCode = (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
   const coreCourseId =
     typeof course.coreCourseId === "string" && course.coreCourseId.trim()
       ? course.coreCourseId.trim()
@@ -932,16 +931,16 @@ ${mcqOriginalChoicesBlock}${topicLines ? `Course topics (use numeric IDs in outp
 Return exactly one question in the required JSON format.`;
 
       try {
-      const callGenerate = (promptText) => {
-        if (remainingProviderCalls <= 0) {
-          throw publicAdmissionError({
-            status: 400,
-            code: 'QM_BANK_PROVIDER_CALL_BUDGET',
-            message: 'bank variant provider-call budget exhausted',
-          });
-        }
-        remainingProviderCalls -= 1;
-        return eduaiService.generateQuestions({
+        const callGenerate = (promptText) => {
+          if (remainingProviderCalls <= 0) {
+            throw publicAdmissionError({
+              status: 400,
+              code: "QM_BANK_PROVIDER_CALL_BUDGET",
+              message: "bank variant provider-call budget exhausted",
+            });
+          }
+          remainingProviderCalls -= 1;
+          return eduaiService.generateQuestions({
             prompt: promptText,
             courseCode,
             courseId: coreCourseId,
@@ -951,17 +950,19 @@ Return exactly one question in the required JSON format.`;
             difficultyDistribution,
             reasoningDistribution,
             cookie,
-            ...(expectedMcqChoiceCount != null ? { mcqRequiredChoiceCount: expectedMcqChoiceCount } : {}),
+            ...(expectedMcqChoiceCount != null
+              ? { mcqRequiredChoiceCount: expectedMcqChoiceCount }
+              : {}),
             signal,
             deadlineAt,
           });
-      };
+        };
 
         let generated = await callGenerate(baseVariantPrompt);
 
         let q = Array.isArray(generated) ? generated[0] : null;
         if (!q || !q.content) {
-          throw publicVariantGenerationError('EduAI returned no question content');
+          throw publicVariantGenerationError("EduAI returned no question content");
         }
 
         let answer = q.answer ?? null;
@@ -975,7 +976,7 @@ Return exactly one question in the required JSON format.`;
             q = Array.isArray(generated) ? generated[0] : null;
             if (!q || !q.content) {
               throw publicVariantGenerationError(
-                'EduAI returned no question content on MCQ count retry',
+                "EduAI returned no question content on MCQ count retry",
               );
             }
             answer = q.answer ?? null;
@@ -983,12 +984,16 @@ Return exactly one question in the required JSON format.`;
           }
         }
 
-        if (meta.type === 'MCQ' && (!choices || choices.length < 2)) {
-          throw publicVariantGenerationError('MCQ variant missing choices');
+        if (meta.type === "MCQ" && (!choices || choices.length < 2)) {
+          throw publicVariantGenerationError("MCQ variant missing choices");
         }
-        if (meta.type === 'MCQ' && expectedMcqChoiceCount != null && choices.length !== expectedMcqChoiceCount) {
+        if (
+          meta.type === "MCQ" &&
+          expectedMcqChoiceCount != null &&
+          choices.length !== expectedMcqChoiceCount
+        ) {
           throw publicVariantGenerationError(
-            `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`
+            `MCQ variant must have exactly ${expectedMcqChoiceCount} choices (same as original); model returned ${choices.length}. Try again or use another model.`,
           );
         }
 
@@ -1031,12 +1036,12 @@ Return exactly one question in the required JSON format.`;
           isDraft: true,
         });
       } catch (err) {
-        console.error('Variant generation failed', safeRequestLogFields(err));
+        console.error("Variant generation failed", safeRequestLogFields(err));
         if (shouldStopAiFanout(err)) throw err;
         errors.push({
           questionId: qid,
           iteration: n + 1,
-          error: err?.isPublic === true ? err.message : 'Variant generation failed',
+          error: err?.isPublic === true ? err.message : "Variant generation failed",
         });
         break;
       }
@@ -1191,7 +1196,7 @@ export async function reviewVariantExamWithAi(userId, params) {
     // If true, ask the LLM for a short strengths/weaknesses summary.
     includeOverallSummary = true,
     // Core session cookie — preferred auth for eduaiService.chat (user-scoped).
-    cookie = '',
+    cookie = "",
     signal,
     deadlineAt,
   } = params;
@@ -1207,7 +1212,7 @@ export async function reviewVariantExamWithAi(userId, params) {
   assertQmAiDeadline({ deadlineAt, signal });
 
   if (!courseId) {
-    throw new Error('baselineAssessmentId, variantAssessmentId, and courseId are required');
+    throw new Error("baselineAssessmentId, variantAssessmentId, and courseId are required");
   }
 
   const baselineAssessment = await prisma.assessments.findFirst({
@@ -1233,13 +1238,13 @@ export async function reviewVariantExamWithAi(userId, params) {
   if (baselineVariants.length > maxPairs || variantVariants.length > maxPairs) {
     throw publicAdmissionError({
       status: 400,
-      code: 'QM_REVIEW_PAIR_COUNT_TOO_LARGE',
+      code: "QM_REVIEW_PAIR_COUNT_TOO_LARGE",
       message: `AI review cannot compare more than ${maxPairs} baseline/variant pairs`,
     });
   }
   const pairCount = Math.min(baselineVariants.length, variantVariants.length);
   if (pairCount === 0) {
-    throw new Error('Both assessments must have at least one question');
+    throw new Error("Both assessments must have at least one question");
   }
 
   // Resolve Core course metadata only after the bounded pair check. Oversized
@@ -1282,8 +1287,8 @@ export async function reviewVariantExamWithAi(userId, params) {
     if (remainingProviderCalls <= 0) {
       throw publicAdmissionError({
         status: 400,
-        code: 'QM_REVIEW_PROVIDER_CALL_BUDGET',
-        message: 'AI review provider-call budget exhausted',
+        code: "QM_REVIEW_PROVIDER_CALL_BUDGET",
+        message: "AI review provider-call budget exhausted",
       });
     }
     remainingProviderCalls -= 1;

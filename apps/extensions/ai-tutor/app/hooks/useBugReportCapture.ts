@@ -119,8 +119,8 @@ export function useBugReportCapture() {
       init?: RequestInit,
     ): Promise<Response> => {
       const startedAt = performance.now();
-      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       let status: number | null = null;
 
       try {

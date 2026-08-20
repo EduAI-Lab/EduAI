@@ -17,9 +17,9 @@ vi.mock("~/lib/api", () => ({
   },
 }));
 
-vi.mock('~/hooks/useLocalUser', () => ({
+vi.mock("~/hooks/useLocalUser", () => ({
   useLocalUser: () => ({
-    user: { id: 'u1', name: 'Instructor', role: 'INSTRUCTOR', authorizedUnits: [] },
+    user: { id: "u1", name: "Instructor", role: "INSTRUCTOR", authorizedUnits: [] },
   }),
 }));
 
@@ -57,31 +57,31 @@ vi.mock("@eduai/ui", async (importOriginal) => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('~/components/AddActivityPanel', () => ({ default: () => null }));
-vi.mock('~/components/EditActivityPanel', () => ({ default: () => null }));
-vi.mock('~/components/ActivityDetailsCard', () => ({ default: () => null }));
-vi.mock('~/components/AddCourseTopicsButton', () => ({ default: () => null }));
-vi.mock('~/components/bug-report/useBugReport', () => ({
+vi.mock("~/components/AddActivityPanel", () => ({ default: () => null }));
+vi.mock("~/components/EditActivityPanel", () => ({ default: () => null }));
+vi.mock("~/components/ActivityDetailsCard", () => ({ default: () => null }));
+vi.mock("~/components/AddCourseTopicsButton", () => ({ default: () => null }));
+vi.mock("~/components/bug-report/useBugReport", () => ({
   useBugReport: () => ({ setBugContext: vi.fn() }),
 }));
-vi.mock('~/components/TourButton', () => ({ default: () => null }));
-vi.mock('~/components/TourProvider', () => ({
+vi.mock("~/components/TourButton", () => ({ default: () => null }));
+vi.mock("~/components/TourProvider", () => ({
   TourProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAppTour: () => ({}),
 }));
 
 import InstructorLessonBuilder from "~/routes/instructor.lesson";
 
-const course = { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true };
+const course = { id: 1, title: "Course 1", code: "COSC 101", isPublished: true };
 const module = {
   id: 1,
-  title: 'Module 1',
-  description: '',
+  title: "Module 1",
+  description: "",
   position: 0,
   courseOfferingId: 1,
   lessons: [],
 };
-const lesson = { id: 1, title: 'Lesson 1', moduleId: 1, isPublished: true, contentMd: '' };
+const lesson = { id: 1, title: "Lesson 1", moduleId: 1, isPublished: true, contentMd: "" };
 const activity = {
   id: 99,
   title: "Activity 1",
@@ -108,10 +108,10 @@ function wrap(activities = [activity]) {
       lesson,
       activities,
       activitiesTotal: activities.length,
-      orderText: '1.1',
+      orderText: "1.1",
       page: 1,
       pageSize: 25,
-      search: '',
+      search: "",
     },
   } as unknown as Route.ComponentProps;
   return render(

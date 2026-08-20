@@ -130,10 +130,7 @@ export function serializeCourseForApi(
     // The raw instructor prompt and internal RAG/provider settings remain
     // private. Response-style labels and the teaching-team contact are public
     // course-detail metadata already rendered by the enrolled-student UI.
-    if (
-      options.detail &&
-      (hasOwn(row, "aiInstructions") || hasOwn(row, "responseStyleTags"))
-    ) {
+    if (options.detail && (hasOwn(row, "aiInstructions") || hasOwn(row, "responseStyleTags"))) {
       dto.hasAiConfig = courseHasAiConfig(
         Array.isArray(row.responseStyleTags) ? row.responseStyleTags : [],
         typeof row.aiInstructions === "string" ? row.aiInstructions : null,
@@ -161,8 +158,7 @@ export function serializeCourseForApi(
     // Extensions use these fields to reconcile Core identity.  They are
     // intentionally absent from student responses and no private AI fields
     // are included on this service-key contract.
-    if (hasOwn(row, "externalSource"))
-      dto.externalSource = row.externalSource ?? null;
+    if (hasOwn(row, "externalSource")) dto.externalSource = row.externalSource ?? null;
     if (hasOwn(row, "externalId")) dto.externalId = row.externalId ?? null;
     return dto;
   }
@@ -172,9 +168,7 @@ export function serializeCourseForApi(
   // persistence/synchronization timestamps.
   if (hasOwn(row, "aiInstructions")) dto.aiInstructions = row.aiInstructions;
   if (hasOwn(row, "responseStyleTags")) {
-    dto.responseStyleTags = Array.isArray(row.responseStyleTags)
-      ? row.responseStyleTags
-      : [];
+    dto.responseStyleTags = Array.isArray(row.responseStyleTags) ? row.responseStyleTags : [];
   }
   if (options.detail && hasOwn(row, "courseScopeGuardrailEnabled")) {
     dto.courseScopeGuardrailEnabled = Boolean(row.courseScopeGuardrailEnabled);
@@ -189,10 +183,8 @@ export function serializeCourseForApi(
     // Canvas identity for the staff-only material-sync affordance.  Instructor
     // contact display is public staff metadata, but the internal user id is
     // deliberately not nested in the DTO.
-    if (hasOwn(row, "instructorId"))
-      dto.instructorId = row.instructorId ?? null;
-    if (hasOwn(row, "externalSource"))
-      dto.externalSource = row.externalSource ?? null;
+    if (hasOwn(row, "instructorId")) dto.instructorId = row.instructorId ?? null;
+    if (hasOwn(row, "externalSource")) dto.externalSource = row.externalSource ?? null;
     if (hasOwn(row, "externalId")) dto.externalId = row.externalId ?? null;
     if (row.instructor && typeof row.instructor === "object") {
       dto.instructor = {

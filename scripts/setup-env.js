@@ -61,19 +61,19 @@ for (const [src, dest] of envPairs) {
 // CI generates each workspace client explicitly in the job that consumes it. Skipping
 // this implicit generation there avoids doing the same work during npm ci and again
 // before typechecking/tests, while preserving the convenient local-install behavior.
-if (process.env.SKIP_PRISMA_GENERATE !== '1') {
+if (process.env.SKIP_PRISMA_GENERATE !== "1") {
   const generators = [
-    ['apps/core', 'npm run db:generate'],
+    ["apps/core", "npm run db:generate"],
     [
-      'apps/extensions/ai-tutor/server',
-      'node ../../../../node_modules/prisma/build/index.js generate',
+      "apps/extensions/ai-tutor/server",
+      "node ../../../../node_modules/prisma/build/index.js generate",
     ],
-    ['apps/extensions/question-maker/app/backend', 'npm run db:generate'],
+    ["apps/extensions/question-maker/app/backend", "npm run db:generate"],
   ];
 
   for (const [workspace, command] of generators) {
     try {
-      execSync(command, { cwd: resolve(root, workspace), stdio: 'pipe' });
+      execSync(command, { cwd: resolve(root, workspace), stdio: "pipe" });
       console.log(`  generated prisma client for ${workspace}`);
     } catch (e) {
       console.warn(`  warning: prisma generate failed for ${workspace}:`, e.message);

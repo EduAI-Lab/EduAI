@@ -137,9 +137,9 @@ describe("startReEmbedJob consistency integration (#1112)", () => {
     expect(reclaimed?.id).toBe(stuck.id);
     expect(reclaimed?.attemptCount).toBe(1);
     expect(["RUNNING", "COMPLETED"]).toContain(reclaimed?.status);
-    await expect(
-      prisma.courseReEmbedJob.count({ where: { courseId: courseAId } }),
-    ).resolves.toBe(1);
+    await expect(prisma.courseReEmbedJob.count({ where: { courseId: courseAId } })).resolves.toBe(
+      1,
+    );
   });
 
   it("does not reclaim a RUNNING row with recent progress", async () => {

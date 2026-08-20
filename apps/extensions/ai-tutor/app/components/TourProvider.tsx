@@ -1,4 +1,4 @@
-import type { Driver, PopoverDOM } from 'driver.js';
+import type { Driver, PopoverDOM } from "driver.js";
 import {
   createContext,
   useCallback,
@@ -7,10 +7,10 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import 'driver.js/dist/driver.css';
-import { tourDefinitions } from '~/lib/tours/tour-definitions';
+} from "react";
+import { useLocation, useNavigate } from "react-router";
+import "driver.js/dist/driver.css";
+import { tourDefinitions } from "~/lib/tours/tour-definitions";
 import {
   createTourSession,
   findStepIndex,
@@ -164,9 +164,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         popover: {
           title: step.title,
           description: step.description,
-          side: step.side ?? 'bottom',
-          align: step.align ?? 'center',
-          showButtons: [...(hasPrevious ? (['previous'] as const) : []), 'next', 'close'],
+          side: step.side ?? "bottom",
+          align: step.align ?? "center",
+          showButtons: [...(hasPrevious ? (["previous"] as const) : []), "next", "close"],
           progressText: `${session.stepIndex + 1} of ${session.tour.steps.length}`,
           nextBtnText: projectedHasNext ? "Continue" : "Finish",
           prevBtnText: "Back",

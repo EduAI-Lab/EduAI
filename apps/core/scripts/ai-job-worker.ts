@@ -11,9 +11,7 @@ if (existsSync(envPath)) {
 
 // Fail before constructing Prisma, Redis, or BullMQ resources. This is a
 // compile-time pre-MVP boundary; no deployment environment variable enables it.
-const { assertAiJobQueueEnabled } = await import(
-  "../app/lib/queue/availability.server"
-);
+const { assertAiJobQueueEnabled } = await import("../app/lib/queue/availability.server");
 assertAiJobQueueEnabled();
 
 // These modules construct the Prisma and Redis singletons at import time, so

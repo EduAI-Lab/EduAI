@@ -3,17 +3,17 @@ import { IconStack2 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
-import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
-import { PasswordRequirements } from "~/components/password-requirements"
-import { fireAndForget, logAuditAction } from "~/lib/logging.server"
-import { getActorContext, getRequestContext } from "~/lib/request-context.server"
-import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server"
+import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas";
+import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server";
+import { PasswordRequirements } from "~/components/password-requirements";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
 import {
   MultipartBodyInvalidError,
   MultipartBodyTooLargeError,
   readBoundedFormData,
-} from "~/lib/multipart.server"
+} from "~/lib/multipart.server";
 
 export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 

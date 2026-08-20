@@ -433,7 +433,12 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const paused = await pauseAfterSignup();
     const accepting = acceptInvitation(
-      { token, name: "Race Winner", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD },
+      {
+        token,
+        name: "Race Winner",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      },
       new Request("http://localhost/auth/accept-invitation"),
     );
     await paused.signupSignal;
@@ -444,7 +449,9 @@ describe("accept flow", () => {
     paused.handlerSpy.mockRestore();
 
     expect(result).toMatchObject({ ok: false, status: 409 });
-    expect((await prisma.invitation.findUnique({ where: { id: created.invitation.id } }))?.status).toBe("REVOKED");
+    expect(
+      (await prisma.invitation.findUnique({ where: { id: created.invitation.id } }))?.status,
+    ).toBe("REVOKED");
     expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
     expect(await prisma.account.findMany({ where: { accountId: email } })).toHaveLength(0);
     expect(await prisma.session.findMany({ where: { user: { email } } })).toHaveLength(0);
@@ -457,7 +464,12 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const paused = await pauseAfterSignup();
     const accepting = acceptInvitation(
-      { token, name: "Rotated Race", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD },
+      {
+        token,
+        name: "Rotated Race",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      },
       new Request("http://localhost/auth/accept-invitation"),
     );
     await paused.signupSignal;
@@ -686,26 +698,31 @@ describe("accept flow", () => {
       }
       // Fail only the promote-step invitation conditional consume inside a real transaction so
       // password-history writes during sign-up still succeed and user.update rolls back.
-      return originalTransaction(async (tx) => {
-        const proxiedTx = new Proxy(tx, {
-          get(target, prop) {
-            if (prop === "invitation") {
-              return new Proxy(target.invitation, {
-                get(invTarget, invProp) {
-                  if (invProp === "updateMany") {
-                    return () => Promise.reject(new Error("db hiccup"));
-                  }
-                  const value = (invTarget as unknown as Record<string, unknown>)[invProp as string];
-                  return typeof value === "function" ? value.bind(invTarget) : value;
-                },
-              });
-            }
-            const value = (target as unknown as Record<string, unknown>)[prop as string];
-            return typeof value === "function" ? value.bind(target) : value;
-          },
-        });
-        return fn(proxiedTx);
-      }, ...args);
+      return originalTransaction(
+        async (tx) => {
+          const proxiedTx = new Proxy(tx, {
+            get(target, prop) {
+              if (prop === "invitation") {
+                return new Proxy(target.invitation, {
+                  get(invTarget, invProp) {
+                    if (invProp === "updateMany") {
+                      return () => Promise.reject(new Error("db hiccup"));
+                    }
+                    const value = (invTarget as unknown as Record<string, unknown>)[
+                      invProp as string
+                    ];
+                    return typeof value === "function" ? value.bind(invTarget) : value;
+                  },
+                });
+              }
+              const value = (target as unknown as Record<string, unknown>)[prop as string];
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+          return fn(proxiedTx);
+        },
+        ...args,
+      );
     });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();

@@ -33,13 +33,10 @@ vi.mock("~/lib/ai/providers.server", () => ({
 }));
 
 vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/ai/admission.server")>();
+  const actual = await importOriginal<typeof import("~/lib/ai/admission.server")>();
   return {
     ...actual,
-    acquireAiAdmission: vi
-      .fn()
-      .mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
+    acquireAiAdmission: vi.fn().mockResolvedValue({ release: vi.fn(), waitedMs: 0 }),
     withAdmissionRelease: vi.fn((response: Response) => response),
   };
 });
@@ -65,10 +62,7 @@ import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import {
-  FleetUnavailableError,
-  resolveFleetHost,
-} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { acquireAiAdmission } from "~/lib/ai/admission.server";
 
@@ -338,9 +332,7 @@ describe("POST /api/completion review regressions", () => {
 
   it("rejects a body that exceeds the cap despite a lying Content-Length", async () => {
     vi.stubEnv("COMPLETION_MAX_BODY_BYTES", "96");
-    const bodyText = JSON.stringify(
-      baseBody({ systemPrompt: "x".repeat(128) }),
-    );
+    const bodyText = JSON.stringify(baseBody({ systemPrompt: "x".repeat(128) }));
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(bodyText));
@@ -408,9 +400,7 @@ describe("POST /api/completion review regressions", () => {
   it("rejects an oversized system prompt with deterministic field limits", async () => {
     vi.stubEnv("COMPLETION_MAX_SYSTEM_PROMPT_CHARS", "8");
 
-    const res = await action(
-      makeRequest(baseBody({ systemPrompt: "too long!" })),
-    );
+    const res = await action(makeRequest(baseBody({ systemPrompt: "too long!" })));
 
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({
@@ -425,14 +415,11 @@ describe("POST /api/completion review regressions", () => {
     vi.mocked(resolveActiveChatModel).mockResolvedValue(null);
     mockStream();
 
-    const res = await action(
-      makeRequest(baseBody({ model: "vllm:inactive-model" })),
-    );
+    const res = await action(makeRequest(baseBody({ model: "vllm:inactive-model" })));
 
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({
-      error:
-        'Model "vllm:inactive-model" is not active in the Core model catalog',
+      error: 'Model "vllm:inactive-model" is not active in the Core model catalog',
     });
     expect(streamText).not.toHaveBeenCalled();
     expect(createAIProviderRegistry).not.toHaveBeenCalled();

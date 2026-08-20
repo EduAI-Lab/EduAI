@@ -14,10 +14,10 @@ import {
   getCoursesByIdsFromCore,
   listCoursesFromCore,
   searchCoursesFromCore,
-} from './coreApiService.js';
-import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
-import { ensureCourseAnchor } from './ensureCourseAnchor.js';
-import { assertQmAiDeadline } from '../middleware/aiAdmission.js';
+} from "./coreApiService.js";
+import { dedupeCoursesByCoreId, normalizeCourseCode } from "./courseCodeUtils.js";
+import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
+import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
@@ -497,8 +497,10 @@ export async function resolveVisibleCourseWhereForUser(reqUser, opts = {}) {
 
 /** SQL-paginated course list. Visibility and totals share one DB predicate. */
 export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
-  const { where, authorizedUnits, accessMirrorHealthy } =
-    await resolveCourseVisibilityContext(reqUser, { cookie });
+  const { where, authorizedUnits, accessMirrorHealthy } = await resolveCourseVisibilityContext(
+    reqUser,
+    { cookie },
+  );
 
   const [total, rows] = await Promise.all([
     prisma.course.count({ where }),
@@ -520,13 +522,14 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
 
   const courses = rows.map((course) => {
     const grant = course.accessGrants?.[0];
-    const accessLevel = reqUser.role === 'ADMIN'
-      ? 'admin'
-      : grant?.department && authorizedUnits.includes(grant.department)
-        ? 'unit'
-        : grant?.role === 'INSTRUCTOR' || reqUser.id === course.userId
-          ? 'instructor'
-          : null;
+    const accessLevel =
+      reqUser.role === "ADMIN"
+        ? "admin"
+        : grant?.department && authorizedUnits.includes(grant.department)
+          ? "unit"
+          : grant?.role === "INSTRUCTOR" || reqUser.id === course.userId
+            ? "instructor"
+            : null;
     const plainCourse = { ...course };
     delete plainCourse.accessGrants;
     return { ...plainCourse, accessLevel };

@@ -141,7 +141,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
         />
       );
       break;
-    case 'UNIT_ADMIN':
+    case "UNIT_ADMIN":
       content = (
         <DashboardUnitAdminView
           courses={courses}
@@ -150,7 +150,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
         />
       );
       break;
-    case 'INSTRUCTOR':
+    case "INSTRUCTOR":
       content = (
         <DashboardInstructorView
           courses={courses}

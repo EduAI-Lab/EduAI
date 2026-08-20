@@ -8,22 +8,22 @@
  * the prev/next links, and the rule that a student's ordinals count only the
  * siblings they can actually see.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
+import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from "../helpers.js";
 
 vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
-vi.mock('../../src/services/enrollmentSync.js', async (importOriginal) => {
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
 });
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
-import { authorizeLiveStudentEnrollment } from '../../src/services/enrollmentSync.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Tree context endpoints (#1207)", () => {
   let prof;
@@ -40,11 +40,11 @@ describe("Tree context endpoints (#1207)", () => {
       isPublished: true,
     }));
     vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
-      async (_courseId, userId, { course, allowedRoles = ['STUDENT'] } = {}) => {
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
         const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
-        const effectiveRole = allowedRoles.includes('INSTRUCTOR') ? 'INSTRUCTOR' : role;
+        const effectiveRole = allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : role;
         const allowed = allowedRoles.includes(effectiveRole);
-        return { allowed, state: allowed ? 'allowed' : 'denied', role: effectiveRole };
+        return { allowed, state: allowed ? "allowed" : "denied", role: effectiveRole };
       },
     );
   });
@@ -203,11 +203,11 @@ describe("Tree context endpoints (#1207)", () => {
       expect(res.body).toEqual({ moduleOrdinal: 2, moduleTotal: 2 });
     });
 
-    it('fails closed when Core cannot authorize direct module context', async () => {
+    it("fails closed when Core cannot authorize direct module context", async () => {
       const student = await enrollStudent();
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: false,
-        state: 'unavailable',
+        state: "unavailable",
         role: null,
       });
 
@@ -216,14 +216,14 @@ describe("Tree context endpoints (#1207)", () => {
       );
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('ENROLLMENT_AUTH_UNAVAILABLE');
+      expect(res.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
     });
 
-    it('denies direct module context to a stale instructor demoted to Core TA', async () => {
+    it("denies direct module context to a stale instructor demoted to Core TA", async () => {
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: false,
-        state: 'denied',
-        role: 'TA',
+        state: "denied",
+        role: "TA",
       });
 
       const res = await request(profApp).get(`/api/modules/${seed.module.id}/context`);
@@ -232,20 +232,20 @@ describe("Tree context endpoints (#1207)", () => {
       expect(res.body.moduleOrdinal).toBeUndefined();
     });
 
-    it('fails closed when Core cannot authorize direct instructor module context', async () => {
+    it("fails closed when Core cannot authorize direct instructor module context", async () => {
       vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
         allowed: false,
-        state: 'unavailable',
+        state: "unavailable",
         role: null,
       });
 
       const res = await request(profApp).get(`/api/modules/${seed.module.id}/context`);
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('COURSE_AUTH_UNAVAILABLE');
+      expect(res.body.code).toBe("COURSE_AUTH_UNAVAILABLE");
     });
 
-    it('403s a student asking about an unpublished module', async () => {
+    it("403s a student asking about an unpublished module", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
       const hidden = await addModule(1, { isPublished: false });

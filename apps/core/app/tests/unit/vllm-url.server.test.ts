@@ -93,9 +93,7 @@ describe("resolveAllowedVllmBaseUrl", () => {
     process.env.NODE_ENV = "production";
     process.env.VLLM_BASE_URL = "http://127.0.0.1:8001/v1";
 
-    expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:8001/v1")).toBe(
-      "http://127.0.0.1:8001/v1",
-    );
+    expect(resolveAllowedVllmBaseUrl("http://127.0.0.1:8001/v1")).toBe("http://127.0.0.1:8001/v1");
   });
 
   it.each(["staging", "preview", "qa", "production", undefined])(

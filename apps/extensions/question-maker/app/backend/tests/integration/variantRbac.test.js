@@ -12,7 +12,13 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
-const { mockUpdateVariant, mockDeleteVariant, mockVariantsFindOne, mockQuestionFindOne, mockEnrollments } = vi.hoisted(() => ({
+const {
+  mockUpdateVariant,
+  mockDeleteVariant,
+  mockVariantsFindOne,
+  mockQuestionFindOne,
+  mockEnrollments,
+} = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
   mockDeleteVariant: vi.fn().mockResolvedValue(true),
   mockVariantsFindOne: vi.fn(),
@@ -66,9 +72,9 @@ vi.mock("../../src/config/database.js", () => ({
 
 const { default: app } = await import("../../src/app.js");
 
-const TA = { id: 'ta-1', email: 'ta@test.com', role: 'STUDENT', name: 'Tee Ay' };
-const INSTRUCTOR = { id: 'inst-1', email: 'inst@test.com', role: 'INSTRUCTOR', name: 'Ins' };
-const STUDENT = { id: 'stu-1', email: 'stu@test.com', role: 'STUDENT', name: 'Stu' };
+const TA = { id: "ta-1", email: "ta@test.com", role: "STUDENT", name: "Tee Ay" };
+const INSTRUCTOR = { id: "inst-1", email: "inst@test.com", role: "INSTRUCTOR", name: "Ins" };
+const STUDENT = { id: "stu-1", email: "stu@test.com", role: "STUDENT", name: "Stu" };
 
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
 
@@ -100,51 +106,51 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe('ordinary STUDENT remains denied from variant authoring (§16)', () => {
+describe("ordinary STUDENT remains denied from variant authoring (§16)", () => {
   it.each([
     ["put", "/api/questions/variants/42", { questionText: "x" }],
     ["delete", "/api/questions/variants/42", {}],
     ["post", "/api/questions/5/variants", { questionText: "x" }],
   ])("%s %s → 403", async (method, path, body) => {
     authAs(STUDENT, null);
-    if (path.includes('/42')) loadVariant({ isDraft: true, createdBy: 'someone-else' });
-    const res = await request(app)[method](path).set('Cookie', 'session=v').send(body);
+    if (path.includes("/42")) loadVariant({ isDraft: true, createdBy: "someone-else" });
+    const res = await request(app)[method](path).set("Cookie", "session=v").send(body);
     expect(res.status).toBe(403);
   });
 });
 
-describe('course-level TA access is enrollment-scoped (§16)', () => {
+describe("course-level TA access is enrollment-scoped (§16)", () => {
   it.each([
-    ['put', '/api/questions/variants/42', { questionText: 'edited' }],
-    ['put', '/api/questions/variants/42', { isDraft: true }],
-    ['delete', '/api/questions/variants/42', {}],
-  ])('%s %s → allowed for own draft resource', async (method, path, body) => {
-    authAs(TA, 'TA');
+    ["put", "/api/questions/variants/42", { questionText: "edited" }],
+    ["put", "/api/questions/variants/42", { isDraft: true }],
+    ["delete", "/api/questions/variants/42", {}],
+  ])("%s %s → allowed for own draft resource", async (method, path, body) => {
+    authAs(TA, "TA");
     loadVariant({ isDraft: true, createdBy: TA.id });
-    const res = await request(app)[method](path).set('Cookie', 'session=v').send(body);
+    const res = await request(app)[method](path).set("Cookie", "session=v").send(body);
     expect(res.status).toBe(200);
   });
 
-  it('keeps approval instructor-only for a course TA', async () => {
-    authAs(TA, 'TA');
+  it("keeps approval instructor-only for a course TA", async () => {
+    authAs(TA, "TA");
     loadVariant({ isDraft: true, createdBy: TA.id });
 
     const res = await request(app)
-      .put('/api/questions/variants/42')
-      .set('Cookie', 'session=v')
+      .put("/api/questions/variants/42")
+      .set("Cookie", "session=v")
       .send({ isDraft: false });
 
     expect(res.status).toBe(403);
     expect(mockUpdateVariant).not.toHaveBeenCalled();
   });
 
-  it('keeps testable toggles instructor-only for a course TA', async () => {
-    authAs(TA, 'TA');
+  it("keeps testable toggles instructor-only for a course TA", async () => {
+    authAs(TA, "TA");
     loadVariant({ isDraft: false, createdBy: TA.id });
 
     const res = await request(app)
-      .patch('/api/questions/variants/42/testable')
-      .set('Cookie', 'session=v')
+      .patch("/api/questions/variants/42/testable")
+      .set("Cookie", "session=v")
       .send({ testable: true });
 
     expect(res.status).toBe(403);
@@ -221,7 +227,7 @@ describe("approved-variant lock (§19)", () => {
       COURSE.userId,
       expect.objectContaining({
         isInstructorPlus: true,
-        accessLevel: 'instructor',
+        accessLevel: "instructor",
         requestUserId: INSTRUCTOR.id,
       }),
     );
@@ -259,8 +265,8 @@ describe("approved-variant lock (§19)", () => {
     expect(mockUpdateVariant).toHaveBeenCalled();
   });
 
-  it('TA cannot revert an approved variant → 409 lock', async () => {
-    authAs(TA, 'TA');
+  it("TA cannot revert an approved variant → 409 lock", async () => {
+    authAs(TA, "TA");
     loadVariant({ isDraft: false, createdBy: TA.id });
 
     const res = await request(app)
@@ -336,9 +342,9 @@ describe("PATCH testable is instructor-gated (§16 push domain)", () => {
   });
 });
 
-describe('TA own-only delete (§19)', () => {
-  it('deletes own variant → 200', async () => {
-    authAs(TA, 'TA');
+describe("TA own-only delete (§19)", () => {
+  it("deletes own variant → 200", async () => {
+    authAs(TA, "TA");
     loadVariant({ isDraft: true, createdBy: TA.id });
 
     const res = await request(app).delete("/api/questions/variants/42").set("Cookie", "session=v");

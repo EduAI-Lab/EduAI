@@ -5,14 +5,14 @@
  * mapping normalization, and the transactional main/secondary-topic rewrite.
  */
 
-import { prisma } from '../config/database.js';
-import { isCourseAdmin } from '../middleware/auth.js';
-import { TopicRemapSchema } from '../../../shared/schemas/mutations.js';
+import { prisma } from "../config/database.js";
+import { isCourseAdmin } from "../middleware/auth.js";
+import { TopicRemapSchema } from "../../../shared/schemas/mutations.js";
 
 export class TopicMutationError extends Error {
   constructor(message, status = 400, code) {
     super(message);
-    this.name = 'TopicMutationError';
+    this.name = "TopicMutationError";
     this.status = status;
     if (code) this.code = code;
   }
@@ -41,7 +41,7 @@ export async function ensureCourseTopicAccess(courseId, user) {
 
   const isInstructor = course.instructors.some((assignment) => assignment.userId === userId);
   const isStudent = course.enrollments.some((enrollment) => enrollment.userId === userId);
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === "ADMIN";
   return { course, authorized: isAdmin || isInstructor || isStudent, isInstructor };
 }
 
@@ -87,7 +87,7 @@ async function preloadSecondaryTopics(tx, courseId, normalized) {
 
 function parseMappings(body = {}) {
   const parsed = TopicRemapSchema.safeParse(body);
-  if (!parsed.success) throw new TopicMutationError('No valid mappings provided');
+  if (!parsed.success) throw new TopicMutationError("No valid mappings provided");
   return parsed.data.mappings;
 }
 
@@ -98,9 +98,9 @@ export async function remapCourseTopics({ courseId, user, body }) {
     where: { id: courseId },
     include: { instructors: { select: { userId: true } } },
   });
-  if (!course) throw new TopicMutationError('Course not found', 404);
+  if (!course) throw new TopicMutationError("Course not found", 404);
   if (!(await isCourseAdmin(user, course))) {
-    throw new TopicMutationError('Not authorized for this course', 403);
+    throw new TopicMutationError("Not authorized for this course", 403);
   }
 
   await prisma.$transaction(
@@ -118,10 +118,10 @@ export async function remapCourseTopics({ courseId, user, body }) {
 
       for (const { fromTopicId, toTopicId } of normalized) {
         if (!ownedTopicIds.has(fromTopicId)) {
-          throw new Error('fromTopicId does not belong to this course');
+          throw new Error("fromTopicId does not belong to this course");
         }
         if (!ownedTopicIds.has(toTopicId)) {
-          throw new Error('toTopicId does not belong to this course');
+          throw new Error("toTopicId does not belong to this course");
         }
       }
 
@@ -183,10 +183,10 @@ export async function remapCourseTopics({ courseId, user, body }) {
 
       for (const { fromTopicId, toTopicId } of normalized) {
         if (!isUsable(fromTopicId)) {
-          throw new Error('fromTopicId does not belong to this course');
+          throw new Error("fromTopicId does not belong to this course");
         }
         if (!isUsable(toTopicId)) {
-          throw new Error('toTopicId does not belong to this course');
+          throw new Error("toTopicId does not belong to this course");
         }
         await tx.activity.updateMany({
           where: {
@@ -224,6 +224,6 @@ export async function remapCourseTopics({ courseId, user, body }) {
         await deleteTopicIfUnused([fromTopicId]);
       }
     },
-    { isolationLevel: 'Serializable' },
+    { isolationLevel: "Serializable" },
   );
 }
