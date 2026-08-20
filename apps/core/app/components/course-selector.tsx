@@ -1,6 +1,6 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@eduai/ui';
-import { IconBook, IconMessage } from '@tabler/icons-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { IconBook, IconMessage } from "@tabler/icons-react";
 
 export interface Course {
   id: string;
@@ -23,7 +23,7 @@ export function CourseSelector({
   isLoading = false,
 }: CourseSelectorProps) {
   const handleCourseChange = (courseId: string) => {
-    onCourseSelect(courseId === 'none' ? null : courseId);
+    onCourseSelect(courseId === "none" ? null : courseId);
   };
 
   return (
@@ -34,7 +34,8 @@ export function CourseSelector({
           Course Selection
         </CardTitle>
         <CardDescription>
-          Select a course to chat with its materials. The AI will search through uploaded course materials to answer your questions.
+          Select a course to chat with its materials. The AI will search through uploaded course
+          materials to answer your questions.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -42,12 +43,12 @@ export function CourseSelector({
           <div>
             <label className="text-sm font-medium">Course</label>
             <Select
-              value={selectedCourseId || 'none'}
+              value={selectedCourseId || "none"}
               onValueChange={handleCourseChange}
               disabled={isLoading}
             >
               <SelectTrigger className="mt-2">
-                <SelectValue placeholder={isLoading ? 'Loading courses...' : 'Select a course'} />
+                <SelectValue placeholder={isLoading ? "Loading courses..." : "Select a course"} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No course selected</SelectItem>

@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  getChatToolDisplayName,
-  isWebChatToolName,
-} from "~/lib/ai/web-tool-ui";
+import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 
 describe("web-tool-ui", () => {
   it("identifies web chat tool names", () => {
@@ -19,8 +16,6 @@ describe("web-tool-ui", () => {
   });
 
   it("labels course RAG tools regardless of web toggle", () => {
-    expect(getChatToolDisplayName("getInformation", false)).toBe(
-      "Searching course materials…",
-    );
+    expect(getChatToolDisplayName("getInformation", false)).toBe("Searching course materials…");
   });
 });

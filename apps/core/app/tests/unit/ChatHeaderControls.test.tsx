@@ -44,9 +44,7 @@ describe("ChatHeaderControls", () => {
 
   it("calls onAdhdAssistChange(true) when the switch is toggled on", () => {
     const onAdhdAssistChange = vi.fn();
-    render(
-      <ChatHeaderControls {...defaultProps} onAdhdAssistChange={onAdhdAssistChange} />,
-    );
+    render(<ChatHeaderControls {...defaultProps} onAdhdAssistChange={onAdhdAssistChange} />);
     fireEvent.click(screen.getByRole("switch", { name: "Assistive mode" }));
     expect(onAdhdAssistChange).toHaveBeenCalledWith(true);
   });

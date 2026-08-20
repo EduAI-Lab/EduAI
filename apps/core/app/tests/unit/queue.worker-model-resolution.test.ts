@@ -100,11 +100,9 @@ describe("executeAiJobPayload — model resolution", () => {
 
     await executeAiJobPayload(payload({ requestedModel: "auto-llm" }));
 
-    expect(resolveRoutedModelMock).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(Object),
-      { modeOverride: "llm" },
-    );
+    expect(resolveRoutedModelMock).toHaveBeenCalledWith(expect.any(String), expect.any(Object), {
+      modeOverride: "llm",
+    });
   });
 
   it("falls back to the worker default model when routing fails", async () => {
@@ -156,17 +154,17 @@ describe("executeAiJobPayload — completion outcomes", () => {
   it("throws the completion's error when it is not ok", async () => {
     runCompletionMock.mockResolvedValue({ ok: false, status: 502, error: "fleet unavailable" });
 
-    await expect(
-      executeAiJobPayload(payload({ requestedModel: "vllm:model" })),
-    ).rejects.toThrow("fleet unavailable");
+    await expect(executeAiJobPayload(payload({ requestedModel: "vllm:model" }))).rejects.toThrow(
+      "fleet unavailable",
+    );
   });
 
   it("throws when the completion unexpectedly streams", async () => {
     runCompletionMock.mockResolvedValue({ ok: true, streaming: true });
 
-    await expect(
-      executeAiJobPayload(payload({ requestedModel: "vllm:model" })),
-    ).rejects.toThrow("AI job completion unexpectedly returned a stream");
+    await expect(executeAiJobPayload(payload({ requestedModel: "vllm:model" }))).rejects.toThrow(
+      "AI job completion unexpectedly returned a stream",
+    );
   });
 
   it("returns the mapped AiJobResult on success", async () => {

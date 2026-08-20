@@ -18,10 +18,10 @@
  * request + status assertion) comes from tests/helpers/pictRouteRunner.js
  * (#1188).
  */
-import { vi, beforeEach, expect } from 'vitest';
-import { loadPictModel } from '../helpers/pictModel.js';
-import { stubSessionUser, stubEnrollment } from '../helpers/pictRouteMocks.js';
-import { describePictRoute } from '../helpers/pictRouteRunner.js';
+import { vi, beforeEach, expect } from "vitest";
+import { loadPictModel } from "../helpers/pictModel.js";
+import { stubSessionUser, stubEnrollment } from "../helpers/pictRouteMocks.js";
+import { describePictRoute } from "../helpers/pictRouteRunner.js";
 
 const { mockUpdateVariant, mockVariantsFindOne, mockEnrollments } = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
@@ -32,35 +32,35 @@ const { mockUpdateVariant, mockVariantsFindOne, mockEnrollments } = vi.hoisted((
 // Dynamic imports (rather than a static import used directly in the factory)
 // because vi.mock factories run before the module's own static imports are
 // wired up — see tests/helpers/pictRouteMocks.js.
-vi.mock('../../src/services/authService.js', async () => {
-  const { mockAuthService } = await import('../helpers/pictRouteMocks.js');
+vi.mock("../../src/services/authService.js", async () => {
+  const { mockAuthService } = await import("../helpers/pictRouteMocks.js");
   return mockAuthService();
 });
 
-vi.mock('../../src/config/settings.js', async () => {
-  const { mockSettings } = await import('../helpers/pictRouteMocks.js');
+vi.mock("../../src/config/settings.js", async () => {
+  const { mockSettings } = await import("../helpers/pictRouteMocks.js");
   return mockSettings();
 });
 
-vi.mock('../../src/services/questionService.js', () => ({
+vi.mock("../../src/services/questionService.js", () => ({
   createVariant: vi.fn(),
   updateVariant: mockUpdateVariant,
   deleteVariant: vi.fn(),
   getVariantsByQuestion: vi.fn(),
 }));
 
-vi.mock('../../src/services/coreWiringService.js', () => ({
+vi.mock("../../src/services/coreWiringService.js", () => ({
   pushVariantToCore: vi.fn(),
-  VALID_DIFFICULTIES: ['EASY', 'MEDIUM', 'HARD'],
-  VALID_REASONING_LEVELS: ['LOW', 'MEDIUM', 'HIGH'],
+  VALID_DIFFICULTIES: ["EASY", "MEDIUM", "HARD"],
+  VALID_REASONING_LEVELS: ["LOW", "MEDIUM", "HIGH"],
 }));
 
-vi.mock('../../src/services/coreApiService.js', async () => {
-  const { mockCoreApiService } = await import('../helpers/pictRouteMocks.js');
+vi.mock("../../src/services/coreApiService.js", async () => {
+  const { mockCoreApiService } = await import("../helpers/pictRouteMocks.js");
   return mockCoreApiService(mockEnrollments, { patchQuestionTestableOnCore: vi.fn() });
 });
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     variants: { findUnique: mockVariantsFindOne, update: vi.fn() },
     questionMetadata: {},
@@ -71,18 +71,23 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-const { default: app } = await import('../../src/app.js');
+const { default: app } = await import("../../src/app.js");
 
-const { rows, oracle } = await loadPictModel('variant-lifecycle-put');
+const { rows, oracle } = await loadPictModel("variant-lifecycle-put");
 const { variantLifecyclePutOracle } = oracle;
 
 // A genuine course-level TA is platform-role INSTRUCTOR (QM_AUTHORIZED
 // excludes STUDENT/TA at the flat gate) who does NOT own the course and
 // holds a Core enrollment with role 'TA' — resolveCourseAccess reads the
 // enrollment role, not the platform role, once past the flat gate.
-const COURSE = { id: 1, userId: 'owner-1', coreCourseId: 'cuid-core-course' };
-const TA_USER = { id: 'ta-1', email: 'ta@test.com', role: 'INSTRUCTOR', name: 'Tee Ay' };
-const INSTRUCTOR_PLUS_USER = { id: COURSE.userId, email: 'owner@test.com', role: 'INSTRUCTOR', name: 'Owner' };
+const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
+const TA_USER = { id: "ta-1", email: "ta@test.com", role: "INSTRUCTOR", name: "Tee Ay" };
+const INSTRUCTOR_PLUS_USER = {
+  id: COURSE.userId,
+  email: "owner@test.com",
+  role: "INSTRUCTOR",
+  name: "Owner",
+};
 
 function authAs(user, enrollRole) {
   stubSessionUser(user);
@@ -94,7 +99,7 @@ function loadVariant({ isDraft, createdBy }) {
     id: 42,
     isDraft,
     createdBy,
-    questionMetadata: { type: 'SA', course: COURSE },
+    questionMetadata: { type: "SA", course: COURSE },
   });
 }
 
@@ -104,21 +109,22 @@ beforeEach(() => {
 
 /** approved (isDraft:false) → draft (isDraft:true): the un-review transition. */
 function isUnreviewing(row) {
-  return row.CurrentIsDraft === 'approved' && row.RequestedIsDraft === 'true';
+  return row.CurrentIsDraft === "approved" && row.RequestedIsDraft === "true";
 }
 
 /** Body per FieldChangeKind + RequestedIsDraft — mirrors the nine-field aiTagOnly allowlist. */
 function buildBody(row) {
   const body = {};
-  if (row.RequestedIsDraft !== 'absent') body.isDraft = row.RequestedIsDraft === 'true';
-  if (row.FieldChangeKind === 'content') body.questionText = 'Edited content';
-  if (row.FieldChangeKind === 'onlyAiTag') body.isAiGenerated = true;
+  if (row.RequestedIsDraft !== "absent") body.isDraft = row.RequestedIsDraft === "true";
+  if (row.FieldChangeKind === "content") body.questionText = "Edited content";
+  if (row.FieldChangeKind === "onlyAiTag") body.isAiGenerated = true;
   return body;
 }
 
 function setupRow(row) {
-  const isDraft = row.CurrentIsDraft === 'draft';
-  const createdBy = row.AccessLevel === 'ta' ? (row.Ownership === 'own' ? TA_USER.id : 'someone-else') : 'anyone';
+  const isDraft = row.CurrentIsDraft === "draft";
+  const createdBy =
+    row.AccessLevel === "ta" ? (row.Ownership === "own" ? TA_USER.id : "someone-else") : "anyone";
   loadVariant({ isDraft, createdBy });
 
   // #1080: un-reviewing (approved -> draft) clears coreQuestionId in the real
@@ -129,14 +135,14 @@ function setupRow(row) {
   mockUpdateVariant.mockResolvedValue({
     id: 42,
     isDraft: unreviewing ? true : false,
-    coreQuestionId: unreviewing ? null : 'already-linked',
+    coreQuestionId: unreviewing ? null : "already-linked",
     questionMetadata: { course: COURSE },
   });
 
-  if (row.AccessLevel === 'ta') {
-    authAs(TA_USER, 'TA');
+  if (row.AccessLevel === "ta") {
+    authAs(TA_USER, "TA");
   } else {
-    authAs(INSTRUCTOR_PLUS_USER, 'INSTRUCTOR');
+    authAs(INSTRUCTOR_PLUS_USER, "INSTRUCTOR");
   }
 
   return buildBody(row);
@@ -148,13 +154,14 @@ async function verify({ row, res, expected }) {
   expect(res.body.data.coreQuestionId).toBeNull();
 }
 
-describePictRoute('variant-lifecycle-put', {
+describePictRoute("variant-lifecycle-put", {
   app,
   rows,
-  method: 'put',
-  path: '/api/questions/variants/42',
+  method: "put",
+  path: "/api/questions/variants/42",
   setupRow,
   oracle: variantLifecyclePutOracle,
   verify,
-  label: (row) => `${row.AccessLevel}/${row.CurrentIsDraft}/${row.Ownership}/${row.RequestedIsDraft}/${row.FieldChangeKind}`,
+  label: (row) =>
+    `${row.AccessLevel}/${row.CurrentIsDraft}/${row.Ownership}/${row.RequestedIsDraft}/${row.FieldChangeKind}`,
 });

@@ -3,12 +3,12 @@
  * (Combobox), secondary topics (MultiSelect), and an optional description/label.
  * Built for the full-page layout; uses @eduai/ui primitives + CSS vars only.
  */
-import { Label, Input, Combobox, MultiSelect } from '@eduai/ui';
+import { Label, Input, Combobox, MultiSelect } from "@eduai/ui";
 
-import type { QuestionDifficulty, ReasoningLevel } from '../../types/question';
-import type { Topic } from '../../types/topic';
-import { DifficultySlider } from './DifficultySlider';
-import { ReasoningSelector } from './ReasoningSelector';
+import type { QuestionDifficulty, ReasoningLevel } from "../../types/question";
+import type { Topic } from "../../types/topic";
+import { DifficultySlider } from "./DifficultySlider";
+import { ReasoningSelector } from "./ReasoningSelector";
 
 export interface ComposerMetadataValue {
   difficulty: QuestionDifficulty;
@@ -57,7 +57,12 @@ export function ComposerMetadataFields({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_3fr]">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="composer-difficulty" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Difficulty</Label>
+          <Label
+            htmlFor="composer-difficulty"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Difficulty
+          </Label>
           <DifficultySlider
             id="composer-difficulty"
             value={value.difficulty}
@@ -67,7 +72,12 @@ export function ComposerMetadataFields({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="composer-reasoning" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Reasoning level</Label>
+          <Label
+            htmlFor="composer-reasoning"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Reasoning level
+          </Label>
           <ReasoningSelector
             id="composer-reasoning"
             value={value.reasoningLevel}
@@ -82,29 +92,42 @@ export function ComposerMetadataFields({
           Primary topic <span className="text-destructive">*</span>
         </Label>
         {primaryTopicReadOnly ? (
-          <p className="py-2.5 text-sm text-muted-foreground">{primaryTopicName ?? `Topic ${value.primaryTopicId}`}</p>
+          <p className="py-2.5 text-sm text-muted-foreground">
+            {primaryTopicName ?? `Topic ${value.primaryTopicId}`}
+          </p>
         ) : (
           <>
             <Combobox
               options={topicOptions}
               value={value.primaryTopicId || null}
-              onValueChange={(v) => onPrimaryTopicChange(v ?? '')}
-              placeholder={topicsLoading ? 'Loading topics…' : topics.length === 0 ? 'No topics available' : 'Select primary topic'}
+              onValueChange={(v) => onPrimaryTopicChange(v ?? "")}
+              placeholder={
+                topicsLoading
+                  ? "Loading topics…"
+                  : topics.length === 0
+                    ? "No topics available"
+                    : "Select primary topic"
+              }
               searchPlaceholder="Search topics…"
               emptyText="No topics found"
               disabled={disabled || topics.length === 0}
             />
             {topics.length === 0 && !topicsLoading && (
-              <p className="text-xs text-muted-foreground">No topics yet. Add them in Core, then re-sync.</p>
+              <p className="text-xs text-muted-foreground">
+                No topics yet. Add them in Core, then re-sync.
+              </p>
             )}
-            {errors?.primaryTopic && <p className="text-xs text-destructive">{errors.primaryTopic}</p>}
+            {errors?.primaryTopic && (
+              <p className="text-xs text-destructive">{errors.primaryTopic}</p>
+            )}
           </>
         )}
       </div>
 
       <div className="flex flex-col gap-1.5">
         <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Secondary topics <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+          Secondary topics{" "}
+          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
         </Label>
         <MultiSelect
           options={secondaryOptions}
@@ -118,8 +141,12 @@ export function ComposerMetadataFields({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="composer-description" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Description / label <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+        <Label
+          htmlFor="composer-description"
+          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+        >
+          Description / label{" "}
+          <span className="font-normal normal-case text-muted-foreground">(optional)</span>
         </Label>
         <Input
           id="composer-description"

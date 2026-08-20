@@ -45,8 +45,7 @@ export function normalizeTokenUsage(
     asTokenCount(usage.completionTokens) ??
     asTokenCount(usage.outputTokens) ??
     asTokenCount(usage.completion_tokens);
-  const reportedTotal =
-    asTokenCount(usage.totalTokens) ?? asTokenCount(usage.total_tokens);
+  const reportedTotal = asTokenCount(usage.totalTokens) ?? asTokenCount(usage.total_tokens);
   // Treat total_tokens: 0 as missing when split fields are present (provider quirk).
   const totalTokens =
     reportedTotal != null && reportedTotal > 0

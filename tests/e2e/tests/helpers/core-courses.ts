@@ -7,8 +7,8 @@
  * visibility assertions: "can this caller see course X" is a lookup, not a
  * scan of whatever landed on page 1.
  */
-import type { APIRequestContext } from '@playwright/test';
-import { CORE_URL } from '../../playwright.config';
+import type { APIRequestContext } from "@playwright/test";
+import { CORE_URL } from "../../playwright.config";
 
 export const CORE_PAGE_SIZE = 100;
 
@@ -33,10 +33,7 @@ export async function listCoreCoursePage(
  * applied before the id selector, so a course the caller may not see comes
  * back as an empty set rather than a row.
  */
-export async function canSeeCoreCourse(
-  ctx: APIRequestContext,
-  courseId: string,
-): Promise<boolean> {
+export async function canSeeCoreCourse(ctx: APIRequestContext, courseId: string): Promise<boolean> {
   const res = await ctx.get(`${CORE_URL}/api/courses?ids=${encodeURIComponent(courseId)}`);
   if (res.status() !== 200) return false;
   const body = await res.json();

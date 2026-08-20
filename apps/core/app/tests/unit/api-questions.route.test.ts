@@ -30,10 +30,7 @@ vi.mock("~/lib/questions/server", () => ({
 import { loader, action } from "~/routes/api/questions";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import {
-  resolveCourseAccessGate,
-  wantsIncludeDeleted,
-} from "~/lib/auth/course-access.server";
+import { resolveCourseAccessGate, wantsIncludeDeleted } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { listQuestions, createQuestion } from "~/lib/questions/server";
 
@@ -50,7 +47,7 @@ function makeActionArgs(body: unknown, method = "POST") {
     request: new Request("http://localhost/api/questions", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: {},
     context: {} as never,
@@ -121,7 +118,9 @@ describe("GET /api/questions", () => {
 
   it("goes through requireServiceKey and skips course-access resolution for Bearer auth", async () => {
     vi.mocked(prisma.course.findUnique).mockResolvedValue({ id: "course-1" } as never);
-    const res = await loader(makeLoaderArgs("?courseId=course-1", { Authorization: "Bearer svc-key" }));
+    const res = await loader(
+      makeLoaderArgs("?courseId=course-1", { Authorization: "Bearer svc-key" }),
+    );
     expect(res.status).toBe(200);
     expect(requireServiceKey).toHaveBeenCalled();
     expect(resolveCourseAccessGate).not.toHaveBeenCalled();

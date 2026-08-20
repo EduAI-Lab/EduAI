@@ -5,9 +5,9 @@ import {
   type CourseAccentColor,
   type CourseTermGroup,
   type TermInfo,
-} from '@eduai/ui';
-import type { Course } from './types';
-import { titleName } from './course-title';
+} from "@eduai/ui";
+import type { Course } from "./types";
+import { titleName } from "./course-title";
 
 /**
  * Course presentation helpers shared by the dashboard `CourseCard`s and the
@@ -21,7 +21,7 @@ import { titleName } from './course-title';
  * same color on every platform. Local id only as a fallback for rows with no
  * Core link (unreachable post-#1072, kept for safety).
  */
-export function accentForCourse(course: Pick<Course, 'id' | 'coreOfferingId'>): CourseAccentColor {
+export function accentForCourse(course: Pick<Course, "id" | "coreOfferingId">): CourseAccentColor {
   return paletteColorAtIndex(
     defaultColorIndexForCourse(course.coreOfferingId ?? String(course.id)),
   );
@@ -32,11 +32,11 @@ export function accentForCourse(course: Pick<Course, 'id' | 'coreOfferingId'>): 
  * Core-owned, read-through `code` (#1072 step 2); when a course has none,
  * derives a short token from the title so the eyebrow never renders empty.
  */
-export function courseCode(course: Pick<Course, 'title' | 'code'>): string {
+export function courseCode(course: Pick<Course, "title" | "code">): string {
   const code = course.code?.trim();
   if (code) return code;
-  const firstWord = course.title?.trim().split(/\s+/)[0] ?? '';
-  return firstWord ? firstWord.slice(0, 10).toUpperCase() : 'COURSE';
+  const firstWord = course.title?.trim().split(/\s+/)[0] ?? "";
+  return firstWord ? firstWord.slice(0, 10).toUpperCase() : "COURSE";
 }
 
 /**
@@ -48,22 +48,22 @@ export function courseCode(course: Pick<Course, 'title' | 'code'>): string {
  * unresolved, no local fallback exists) so callers can render an empty/
  * placeholder state instead of crashing.
  */
-export function courseName(course: Pick<Course, 'title'>): string {
-  return course.title ? titleName(course.title) : '';
+export function courseName(course: Pick<Course, "title">): string {
+  return course.title ? titleName(course.title) : "";
 }
 
 /** Raw term value, read-through from Core (#1072 step 2; empty string when unknown). */
-export function courseTerm(course: Pick<Course, 'term'>): string {
-  return course.term?.trim() ?? '';
+export function courseTerm(course: Pick<Course, "term">): string {
+  return course.term?.trim() ?? "";
 }
 
 /** Year, read-through from Core (#1072 step 2; null when unknown). */
-export function courseYear(course: Pick<Course, 'year'>): number | null {
+export function courseYear(course: Pick<Course, "year">): number | null {
   return course.year ?? null;
 }
 
 /** Adapt a Course to the shared `TermInfo` shape; startDate is authoritative for ordering. */
-function courseTermInfo(course: Pick<Course, 'term' | 'year' | 'startDate'>): TermInfo {
+function courseTermInfo(course: Pick<Course, "term" | "year" | "startDate">): TermInfo {
   return {
     term: courseTerm(course),
     year: courseYear(course),
@@ -80,7 +80,7 @@ export type { CourseTermGroup };
  * single group, or a `<section>` per term (heading = `group.labelLong`) when
  * there's more than one — see `student.tsx` / `instructor.tsx`.
  */
-export function groupCoursesByTerm<T extends Pick<Course, 'term' | 'year' | 'startDate'>>(
+export function groupCoursesByTerm<T extends Pick<Course, "term" | "year" | "startDate">>(
   courses: T[],
 ): CourseTermGroup<T>[] {
   return groupByTerm(courses, courseTermInfo);

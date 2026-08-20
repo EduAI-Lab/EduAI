@@ -17,31 +17,34 @@
  * Un-reviewing (isDraft:true) clears `coreQuestionId` in `updateVariant` so the next
  * approval re-pushes instead of the state-based push guard below treating it as linked.
  */
-import express from 'express';
+import express from "express";
 import {
   createVariant,
   updateVariant,
   deleteVariant,
-  getVariantsByQuestion
-} from '../services/questionService.js';
-import { prisma } from '../config/database.js';
-import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
-import { pushVariantToCore, VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from '../services/coreWiringService.js';
-import { shouldPushApprovedVariantToCore } from '../services/variant-push-gate.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { QM_AUTHORIZED } from '../middleware/roles.js';
-import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
-import { LEVELS } from '../middleware/courseAccess.js';
-import { logger } from '../utils/logger.js';
-import { parsePaginationParams, pageOf } from '../utils/pagination.js';
+  getVariantsByQuestion,
+} from "../services/questionService.js";
+import { prisma } from "../config/database.js";
+import { patchQuestionTestableOnCore } from "../services/coreApiService.js";
+import {
+  pushVariantToCore,
+  VALID_DIFFICULTIES,
+  VALID_REASONING_LEVELS,
+} from "../services/coreWiringService.js";
+import { shouldPushApprovedVariantToCore } from "../services/variant-push-gate.js";
+import { authenticateToken, requireRole } from "../middleware/auth.js";
+import { QM_AUTHORIZED } from "../middleware/roles.js";
+import { requireQuestionAccess, requireVariantAccess } from "../middleware/resourceAccess.js";
+import { LEVELS } from "../middleware/courseAccess.js";
+import { logger } from "../utils/logger.js";
+import { parsePaginationParams, pageOf } from "../utils/pagination.js";
 
 const router = express.Router();
 
-
 /** Coerce a raw isDraft value to a strict boolean, or undefined when absent. */
 function parseIsDraft(raw) {
-  if (raw === true || raw === 'true') return true;
-  if (raw === false || raw === 'false') return false;
+  if (raw === true || raw === "true") return true;
+  if (raw === false || raw === "false") return false;
   return undefined;
 }
 
@@ -52,20 +55,24 @@ function parseIsDraft(raw) {
  */
 function validateVariantEnums({ difficulty, reasoningLevel }) {
   if (difficulty !== undefined && difficulty !== null && !VALID_DIFFICULTIES.includes(difficulty)) {
-    return `Invalid difficulty. Allowed values: ${VALID_DIFFICULTIES.join(', ')}`;
+    return `Invalid difficulty. Allowed values: ${VALID_DIFFICULTIES.join(", ")}`;
   }
-  if (reasoningLevel !== undefined && reasoningLevel !== null && !VALID_REASONING_LEVELS.includes(reasoningLevel)) {
-    return `Invalid reasoningLevel. Allowed values: ${VALID_REASONING_LEVELS.join(', ')}`;
+  if (
+    reasoningLevel !== undefined &&
+    reasoningLevel !== null &&
+    !VALID_REASONING_LEVELS.includes(reasoningLevel)
+  ) {
+    return `Invalid reasoningLevel. Allowed values: ${VALID_REASONING_LEVELS.join(", ")}`;
   }
   return null;
 }
 
 /** POST /api/questions/:id/variants – creates a variant under the given question after validation. */
 router.post(
-  '/:id/variants',
+  "/:id/variants",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const {
@@ -86,7 +93,7 @@ router.post(
       if (!questionText || !questionText.trim()) {
         return res.status(400).json({
           success: false,
-          error: 'Question text is required'
+          error: "Question text is required",
         });
       }
 
@@ -110,28 +117,28 @@ router.post(
           referenceId,
           isAiGenerated,
           isDraft,
-          createdBy: req.user.id
+          createdBy: req.user.id,
         },
-        req.qmCourse.userId
+        req.qmCourse.userId,
       );
 
       res.status(201).json({
         success: true,
-        message: 'Variant created successfully',
-        data: variant
+        message: "Variant created successfully",
+        data: variant,
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** GET /api/questions/:id/variants – returns all variants for a question the caller can access. */
 router.get(
-  '/:id/variants',
+  "/:id/variants",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       // Structure-bounded (#1044): always a bounded page — params are optional,
@@ -146,15 +153,15 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** PUT /api/questions/variants/:variantId – updates variant content. Enforces #312 semantics; triggers Core push on approval. */
 router.put(
-  '/variants/:variantId',
+  "/variants/:variantId",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireVariantAccess({ min: 'ta' }),
+  requireVariantAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       const {
@@ -200,20 +207,26 @@ router.put(
           correctAnswers === undefined &&
           referenceId === undefined;
         if (!reverting && !aiTagOnly) {
-          return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
+          return res.status(409).json({ success: false, error: "VARIANT_LOCKED" });
         }
         // §19 TA own-only edit applies here too: the aiTagOnly path is still an edit.
-        if (aiTagOnly && access.level === 'ta' && current.createdBy !== req.user.id) {
-          return res.status(403).json({ success: false, error: 'TAs can only edit their own variants' });
+        if (aiTagOnly && access.level === "ta" && current.createdBy !== req.user.id) {
+          return res
+            .status(403)
+            .json({ success: false, error: "TAs can only edit their own variants" });
         }
       } else {
         // Draft branch — instructor-only approval (§16).
         if (isDraft === false && !isInstructorPlus) {
-          return res.status(403).json({ success: false, error: 'Only instructors can approve variants' });
+          return res
+            .status(403)
+            .json({ success: false, error: "Only instructors can approve variants" });
         }
         // §19 TA own-only edit: a TA may edit only a draft they created.
-        if (access.level === 'ta' && current.createdBy !== req.user.id) {
-          return res.status(403).json({ success: false, error: 'TAs can only edit their own variants' });
+        if (access.level === "ta" && current.createdBy !== req.user.id) {
+          return res
+            .status(403)
+            .json({ success: false, error: "TAs can only edit their own variants" });
         }
       }
 
@@ -233,7 +246,7 @@ router.put(
           isAiGenerated,
           isDraft,
         },
-        req.qmCourse.userId
+        req.qmCourse.userId,
       );
 
       // State-based push: fires whenever the caller sets isDraft=false and the variant is not yet
@@ -243,7 +256,10 @@ router.put(
         if (course?.coreCourseId) {
           try {
             const pushResult = await pushVariantToCore(variant, course, req.headers.cookie);
-            await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: pushResult.coreQuestionId } });
+            await prisma.variants.update({
+              where: { id: variant.id },
+              data: { coreQuestionId: pushResult.coreQuestionId },
+            });
             // Prisma's update() returns a new object rather than mutating `variant`
             // in place (unlike Sequelize's `.update()`) — patch it locally so the
             // response below reflects the freshly-linked Core id.
@@ -256,31 +272,43 @@ router.put(
 
             if (coreErr.status === 422) {
               const errBody = coreErr.body ?? {};
-              if (errBody.error === 'INVALID_TOPIC_IDS' && Array.isArray(errBody.deletedTopicIds) && errBody.deletedTopicIds.length > 0) {
-                await prisma.topics.updateMany({ where: { coreTopicId: { in: errBody.deletedTopicIds } }, data: { coreTopicId: null } });
+              if (
+                errBody.error === "INVALID_TOPIC_IDS" &&
+                Array.isArray(errBody.deletedTopicIds) &&
+                errBody.deletedTopicIds.length > 0
+              ) {
+                await prisma.topics.updateMany({
+                  where: { coreTopicId: { in: errBody.deletedTopicIds } },
+                  data: { coreTopicId: null },
+                });
                 return res.status(422).json({
                   success: false,
-                  error: 'INVALID_TOPIC_IDS',
-                  message: 'Some topics have been deleted in Core. Please update topic assignments and re-approve.',
-                  deletedTopicIds: errBody.deletedTopicIds
+                  error: "INVALID_TOPIC_IDS",
+                  message:
+                    "Some topics have been deleted in Core. Please update topic assignments and re-approve.",
+                  deletedTopicIds: errBody.deletedTopicIds,
                 });
               }
-              if (errBody.error === 'DUPLICATE_TOPIC') {
+              if (errBody.error === "DUPLICATE_TOPIC") {
                 return res.status(422).json({
                   success: false,
-                  error: 'DUPLICATE_TOPIC',
-                  message: 'The primary topic also appears in secondary topics. Fix the topic list and re-approve.'
+                  error: "DUPLICATE_TOPIC",
+                  message:
+                    "The primary topic also appears in secondary topics. Fix the topic list and re-approve.",
                 });
               }
             }
             // #225 SEAM-03 / #1197: any other push failure (Core down, 5xx,
             // network error) must not report success — returning 200 would let
             // the UI show a question as published when it isn't.
-            logger.warn({ err: coreErr }, 'Core question push failed; rolled variant back to draft');
+            logger.warn(
+              { err: coreErr },
+              "Core question push failed; rolled variant back to draft",
+            );
             return res.status(502).json({
               success: false,
-              error: 'CORE_PUSH_FAILED',
-              message: 'Could not publish to Core. Variant left as draft — please retry.'
+              error: "CORE_PUSH_FAILED",
+              message: "Could not publish to Core. Variant left as draft — please retry.",
             });
           }
         }
@@ -288,72 +316,76 @@ router.put(
 
       res.json({
         success: true,
-        message: 'Variant updated successfully',
-        data: variant
+        message: "Variant updated successfully",
+        data: variant,
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** PATCH /api/questions/variants/:variantId/testable – proxies testable toggle to Core; nulls coreQuestionId on 404. */
 router.patch(
-  '/variants/:variantId/testable',
+  "/variants/:variantId/testable",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireVariantAccess({ min: 'instructor' }),
+  requireVariantAccess({ min: "instructor" }),
   async (req, res, next) => {
     try {
       const { testable } = req.body;
 
-      if (typeof testable !== 'boolean') {
-        return res.status(400).json({ success: false, error: 'testable must be a boolean' });
+      if (typeof testable !== "boolean") {
+        return res.status(400).json({ success: false, error: "testable must be a boolean" });
       }
 
       const variant = req.variant;
 
       if (!variant.coreQuestionId) {
-        return res.status(400).json({ success: false, error: 'Variant has not been pushed to Core yet' });
+        return res
+          .status(400)
+          .json({ success: false, error: "Variant has not been pushed to Core yet" });
       }
 
       const result = await patchQuestionTestableOnCore(variant.coreQuestionId, testable);
 
       if (result === null) {
         await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: null } });
-        return res.status(404).json({ success: false, error: 'QUESTION_NOT_FOUND' });
+        return res.status(404).json({ success: false, error: "QUESTION_NOT_FOUND" });
       }
 
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /** DELETE /api/questions/variants/:variantId – removes a variant; TAs may delete only their own. */
 router.delete(
-  '/variants/:variantId',
+  "/variants/:variantId",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
-  requireVariantAccess({ min: 'ta' }),
+  requireVariantAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
       // §19 TA own-only delete (null createdBy = no owner → TA denied).
-      if (req.courseAccess.level === 'ta' && req.variant.createdBy !== req.user.id) {
-        return res.status(403).json({ success: false, error: 'TAs can only delete their own variants' });
+      if (req.courseAccess.level === "ta" && req.variant.createdBy !== req.user.id) {
+        return res
+          .status(403)
+          .json({ success: false, error: "TAs can only delete their own variants" });
       }
 
       await deleteVariant(req.params.variantId, req.qmCourse.userId);
 
       res.json({
         success: true,
-        message: 'Variant deleted successfully'
+        message: "Variant deleted successfully",
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 export default router;

@@ -73,12 +73,12 @@ vi.mock("~/lib/ai/embedding", async (importOriginal) => {
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
-	    course: { findFirst: vi.fn() },
-	    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
-	  },
-	}));
+    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+    course: { findFirst: vi.fn() },
+    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+  },
+}));
 
 vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
@@ -87,12 +87,12 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
-	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
-	import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-	import { invalidatePolicyCache } from "~/lib/policy.server";
-	import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
-	import prisma from "~/lib/prisma.server";
+import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
+import { invalidatePolicyCache } from "~/lib/policy.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const USER_ID = "user-1";
@@ -177,10 +177,10 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-	  resetRateLimitsForTests();
-	  process.env.VLLM_BASE_URL = "http://localhost:8001";
-	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
-	  invalidatePolicyCache();
+  resetRateLimitsForTests();
+  process.env.VLLM_BASE_URL = "http://localhost:8001";
+  process.env.ADHD_ASSIST_OVERSIGHT = "true";
+  invalidatePolicyCache();
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: USER_ID, role: "STUDENT" },
@@ -194,10 +194,10 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-	  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
-	  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
-	  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
-	});
+  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
+  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+});
 
 afterEach(() => {
   if (originalVllm === undefined) delete process.env.VLLM_BASE_URL;
@@ -228,9 +228,7 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const res = await action(makeArgs(baseBody({ streaming: false })));
     expect(res.status).toBe(200);
 
-    const assistantRows = allPersistedRows().filter(
-      (row) => row.role === "assistant",
-    );
+    const assistantRows = allPersistedRows().filter((row) => row.role === "assistant");
     expect(assistantRows).toHaveLength(1);
     expect(assistantRows[0]).toMatchObject({
       messageId: "assistant-final",
@@ -347,9 +345,7 @@ describe("POST /api/chat — compliance telemetry on the non-streaming path", ()
       systemPrompt: null,
     } as never);
 
-    const res = await action(
-      makeArgs(baseBody({ streaming: false, adhdAssist: false })),
-    );
+    const res = await action(makeArgs(baseBody({ streaming: false, adhdAssist: false })));
     expect(res.status).toBe(200);
 
     expect(auditAndMaybeRewrite).not.toHaveBeenCalled();

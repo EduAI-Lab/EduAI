@@ -3,7 +3,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
-  course: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
+  course: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
   courseTopic: {
     findMany: vi.fn(),
     findFirst: vi.fn(),
@@ -16,7 +22,9 @@ const prismaMock = vi.hoisted(() => ({
   // createCourse → ensureDefaultBank (#845)
   questionBank: {
     findFirst: vi.fn().mockResolvedValue(null),
-    create: vi.fn().mockResolvedValue({ id: "bank-default", name: "Default", courseId: "course-1" }),
+    create: vi
+      .fn()
+      .mockResolvedValue({ id: "bank-default", name: "Default", courseId: "course-1" }),
   },
   $transaction: vi.fn(),
 }));
@@ -55,7 +63,9 @@ vi.mock("~/lib/disciplines/server", () => {
   const KNOWN = ["COSC", "MATH", "STAT", "DATA", "PHYS", "BIOL", "HIST", "ENGL", "PHIL", "PSYO"];
   return {
     isValidDisciplineCode: vi.fn(async (code: string) => KNOWN.includes(code)),
-    areValidDisciplineCodes: vi.fn(async (codes: string[]) => codes.every((c) => KNOWN.includes(c))),
+    areValidDisciplineCodes: vi.fn(async (codes: string[]) =>
+      codes.every((c) => KNOWN.includes(c)),
+    ),
   };
 });
 
@@ -356,32 +366,36 @@ describe("getCourses", () => {
   });
 
   it("scopes non-admin callers to their enrollments with per-role publish gating (#298)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as any);
     prismaMock.course.findMany.mockResolvedValue([]);
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
     expect(prismaMock.course.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-      where: {
-        deletedAt: null,
-        OR: [
-          {
-            enrollments: {
-              some: { userId: "u1", isActive: true, role: { in: ["INSTRUCTOR", "TA"] } },
+        where: {
+          deletedAt: null,
+          OR: [
+            {
+              enrollments: {
+                some: { userId: "u1", isActive: true, role: { in: ["INSTRUCTOR", "TA"] } },
+              },
             },
-          },
-          {
-            isPublished: true,
-            enrollments: { some: { userId: "u1", isActive: true, role: "STUDENT" } },
-          },
-        ],
-      },
+            {
+              isPublished: true,
+              enrollments: { some: { userId: "u1", isActive: true, role: "STUDENT" } },
+            },
+          ],
+        },
       }),
     );
   });
 
   it("scopes UNIT_ADMIN to authorized units plus own enrollments (#298)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
     prismaMock.course.findMany.mockResolvedValue([]);
     await getCourses(makeGetRequest());
@@ -389,7 +403,6 @@ describe("getCourses", () => {
     expect(where.deletedAt).toBeNull();
     expect(where.OR[0]).toEqual({ department: { in: ["COSC"] } });
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -428,7 +441,9 @@ describe("createCourse", () => {
     vi.clearAllMocks();
     // Default the instructor-create policy OFF; tests that exercise it opt in.
     vi.mocked(getPolicy).mockResolvedValue(false);
-    prismaMock.$transaction.mockImplementation(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock));
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock),
+    );
   });
 
   it("returns 403 when no session", async () => {
@@ -438,13 +453,17 @@ describe("createCourse", () => {
   });
 
   it("returns 403 when caller is STUDENT/TA", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
     const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
     expect(res.status).toBe(403);
   });
 
   it("returns 403 when caller is INSTRUCTOR and the create-course policy is disabled", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as any);
     vi.mocked(getPolicy).mockResolvedValue(false);
     const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
     expect(res.status).toBe(403);
@@ -452,7 +471,9 @@ describe("createCourse", () => {
   });
 
   it("returns 201 and auto-enrolls a self-creating INSTRUCTOR when the policy is enabled", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "instr-1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instr-1", role: "INSTRUCTOR" },
+    } as any);
     vi.mocked(getPolicy).mockResolvedValue(true);
     prismaMock.user.findMany.mockResolvedValue([{ id: "instr-1" }]);
     prismaMock.course.create.mockResolvedValue({ id: "course-1" });
@@ -469,7 +490,9 @@ describe("createCourse", () => {
   });
 
   it("discards client-supplied instructorUserIds for a self-creating INSTRUCTOR (cannot assign another instructor)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "instr-1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instr-1", role: "INSTRUCTOR" },
+    } as any);
     vi.mocked(getPolicy).mockResolvedValue(true);
     prismaMock.user.findMany.mockResolvedValue([{ id: "instr-1" }]);
     prismaMock.course.create.mockResolvedValue({ id: "course-1" });
@@ -499,18 +522,20 @@ describe("createCourse", () => {
   });
 
   it("returns 403 when UNIT_ADMIN creates outside their authorized units (#298)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["MATH"] });
-    const res = await createCourse(
-      makePostRequest({ ...VALID_COURSE_FIELDS, department: "COSC" }),
-    );
+    const res = await createCourse(makePostRequest({ ...VALID_COURSE_FIELDS, department: "COSC" }));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "DEPARTMENT_NOT_AUTHORIZED" });
     expect(prismaMock.course.create).not.toHaveBeenCalled();
   });
 
   it("returns 422 when no department is provided (required field since §19 overhaul)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["MATH"] });
     const { department: _omit, ...fieldsWithoutDept } = VALID_COURSE_FIELDS;
     const res = await createCourse(makePostRequest(fieldsWithoutDept));
@@ -518,14 +543,14 @@ describe("createCourse", () => {
   });
 
   it("returns 201 when UNIT_ADMIN creates inside their authorized units (#298)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
     prismaMock.user.findMany.mockResolvedValue([{ id: "user-1" }]);
     prismaMock.course.create.mockResolvedValue({ id: "course-1" });
     prismaMock.enrollment.createMany.mockResolvedValue({ count: 1 });
-    const res = await createCourse(
-      makePostRequest({ ...VALID_COURSE_FIELDS, department: "COSC" }),
-    );
+    const res = await createCourse(makePostRequest({ ...VALID_COURSE_FIELDS, department: "COSC" }));
     expect(res.status).toBe(201);
   });
 
@@ -649,7 +674,9 @@ describe("updateCourse", () => {
   });
 
   it("returns 403 when non-admin caller is not an instructor of the course", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue(null);
     const res = await updateCourse(makePatchRequest({ name: "New Name" }), "c1");
@@ -657,7 +684,9 @@ describe("updateCourse", () => {
   });
 
   it("returns 403 for an enrolled TA (rank < 2)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     const res = await updateCourse(makePatchRequest({ name: "New Name" }), "c1");
@@ -675,7 +704,9 @@ describe("updateCourse", () => {
   });
 
   it("returns 200 when INSTRUCTOR of the course updates it", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u2", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
     prismaMock.course.update.mockResolvedValue({ id: "c1", name: "Updated" });
@@ -684,7 +715,9 @@ describe("updateCourse", () => {
   });
 
   it("returns 403 when UNIT_ADMIN moves the course outside their units (#298)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: "COSC" });
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
     const res = await updateCourse(makePatchRequest({ department: "MATH" }), "c1");
@@ -694,7 +727,9 @@ describe("updateCourse", () => {
   });
 
   it("returns 200 when UNIT_ADMIN moves the course between their own units", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: "COSC" });
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC", "MATH"] });
     prismaMock.course.update.mockResolvedValue({ id: "c1", department: "MATH" });
@@ -705,7 +740,9 @@ describe("updateCourse", () => {
   // tas.canSetAiInstructions (field-scoped grant) -------------------------------
 
   it("TA aiInstructions-only PATCH succeeds when tas.canSetAiInstructions is on (200)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "ta-1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "ta-1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     prismaMock.course.update.mockResolvedValue({ id: "c1", aiInstructions: "Be concise." });
@@ -721,20 +758,21 @@ describe("updateCourse", () => {
   });
 
   it("TA responseStyleTags PATCH via general course update is 403 (use response-style route)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "ta-1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "ta-1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await updateCourse(
-      makePatchRequest({ responseStyleTags: ["concise"] }),
-      "c1",
-    );
+    const res = await updateCourse(makePatchRequest({ responseStyleTags: ["concise"] }), "c1");
     expect(res.status).toBe(403);
     expect(prismaMock.course.update).not.toHaveBeenCalled();
   });
 
   it("TA PATCH of a non-aiInstructions field is still 403 even when the grant is on", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "ta-1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "ta-1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     vi.mocked(getPolicy).mockResolvedValue(true);
@@ -747,7 +785,9 @@ describe("updateCourse", () => {
   });
 
   it("TA aiInstructions PATCH is 403 when tas.canSetAiInstructions is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "ta-1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "ta-1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     vi.mocked(getPolicy).mockResolvedValue(false);
@@ -784,7 +824,9 @@ describe("deleteCourse", () => {
   });
 
   it("returns 403 for an enrolled student", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "STUDENT", isActive: true });
     const res = await deleteCourse(makeDeleteRequest(), "c1");
@@ -794,7 +836,9 @@ describe("deleteCourse", () => {
   });
 
   it("soft-deletes (sets deletedAt) for an enrolled INSTRUCTOR and returns 204", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u2", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
     prismaMock.course.update.mockResolvedValue({ id: "c1" });
@@ -826,7 +870,9 @@ describe("deleteCourse", () => {
   });
 
   it("returns 403 for an INSTRUCTOR when instructors.canDeleteCourses is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u2", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
     vi.mocked(getPolicy).mockResolvedValue(false);
@@ -837,7 +883,9 @@ describe("deleteCourse", () => {
   });
 
   it("returns 403 for a UNIT_ADMIN when unitAdmins.canDeleteCourses is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: "COSC" });
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
     vi.mocked(getPolicy).mockResolvedValue(false);
@@ -848,7 +896,9 @@ describe("deleteCourse", () => {
   });
 
   it("soft-deletes for a UNIT_ADMIN when unitAdmins.canDeleteCourses is on (204)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "UNIT_ADMIN" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: "COSC" });
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["COSC"] });
     prismaMock.course.update.mockResolvedValue({ id: "c1" });
@@ -947,7 +997,9 @@ describe("setPublishState", () => {
   });
 
   it("session — returns 403 for a TA (rank < 2)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     const res = await setPublishState(makePublishRequest(), "c1", true);
@@ -956,7 +1008,9 @@ describe("setPublishState", () => {
   });
 
   it("session — returns 403 for a user with no course relationship", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue(null);
     const res = await setPublishState(makePublishRequest(), "c1", true);
@@ -965,7 +1019,9 @@ describe("setPublishState", () => {
   });
 
   it("session — INSTRUCTOR publishes their course when the flag is on (returns 200)", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u2", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
     prismaMock.course.update.mockResolvedValue({ id: "c1", isPublished: true });
@@ -979,7 +1035,9 @@ describe("setPublishState", () => {
   });
 
   it("session — returns 403 for an INSTRUCTOR when instructors.canPublishCourses is off", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u2", role: "INSTRUCTOR" } } as any);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u2", role: "INSTRUCTOR" },
+    } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
     vi.mocked(getPolicy).mockResolvedValue(false);

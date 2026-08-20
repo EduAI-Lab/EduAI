@@ -14,12 +14,8 @@ describe("StudentNumberSettings", () => {
     const input = screen.getByLabelText("Student number") as HTMLInputElement;
     expect(input.value).toBe("20143947");
     expect(input).toHaveAttribute("readonly");
-    expect(
-      screen.getByText(/only be changed by an administrator/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /save student number/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText(/only be changed by an administrator/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save student number/i })).not.toBeInTheDocument();
   });
 
   it("allows entering a number when none is linked yet", () => {
@@ -28,8 +24,6 @@ describe("StudentNumberSettings", () => {
     const input = screen.getByLabelText("Student number") as HTMLInputElement;
     expect(input).not.toHaveAttribute("readonly");
     expect(input).not.toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /save student number/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save student number/i })).toBeInTheDocument();
   });
 });

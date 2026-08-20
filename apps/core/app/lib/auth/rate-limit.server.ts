@@ -92,7 +92,7 @@ function checkMemoryRateLimit(
   key: string,
   limit: number,
   windowMs: number,
-  now = Date.now()
+  now = Date.now(),
 ): RateLimitResult {
   const hits = (store.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
   if (hits.length >= limit) {
@@ -118,7 +118,7 @@ async function withOperationTimeout<T>(operation: Promise<T>): Promise<T> {
       new Promise<T>((_, reject) => {
         timeout = setTimeout(
           () => reject(new Error("Redis rate-limit operation timed out")),
-          REDIS_OPERATION_TIMEOUT_MS
+          REDIS_OPERATION_TIMEOUT_MS,
         );
       }),
     ]);
@@ -149,7 +149,7 @@ function parseRedisResult(value: unknown): RateLimitResult {
 export async function checkRateLimit(
   key: string,
   limit: number,
-  windowMs: number
+  windowMs: number,
 ): Promise<RateLimitResult> {
   const normalizedWindowMs = Math.max(1, Math.floor(windowMs));
   if (limit <= 0) {
@@ -167,8 +167,8 @@ export async function checkRateLimit(
         now,
         normalizedWindowMs,
         normalizedLimit,
-        `${now}:${randomUUID()}`
-      )
+        `${now}:${randomUUID()}`,
+      ),
     );
     return parseRedisResult(result);
   } catch {
@@ -183,7 +183,7 @@ export async function checkRateLimit(
 export function isRateLimited(
   key: string,
   limit = parseEnvInt(process.env.SESSION_VALIDATE_RATE_LIMIT, 300),
-  windowMs = 60_000
+  windowMs = 60_000,
 ): boolean {
   return checkMemoryRateLimit(key, limit, windowMs).limited;
 }

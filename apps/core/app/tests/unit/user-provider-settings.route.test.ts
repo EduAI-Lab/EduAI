@@ -91,7 +91,12 @@ describe("GET /api/user-provider-settings", () => {
   it("never exposes the raw or encrypted API key in the response", async () => {
     withSession();
     prismaMock.userProviderSettings.findMany.mockResolvedValue([
-      { isEnabled: true, apiKey: "enc:sk-very-secret", baseUrl: null, provider: { name: "openai" } },
+      {
+        isEnabled: true,
+        apiKey: "enc:sk-very-secret",
+        baseUrl: null,
+        provider: { name: "openai" },
+      },
     ]);
     const res = await loader(getReq());
     const text = await res.text();
@@ -166,7 +171,9 @@ describe("POST /api/user-provider-settings", () => {
   it("passes baseUrl through to upsert", async () => {
     withSession();
     vi.mocked(upsertUserProviderSetting).mockResolvedValue(undefined);
-    await action(postReq({ providerName: "ollama", isEnabled: true, baseUrl: "http://localhost:11434" }));
+    await action(
+      postReq({ providerName: "ollama", isEnabled: true, baseUrl: "http://localhost:11434" }),
+    );
     expect(upsertUserProviderSetting).toHaveBeenCalledWith(
       expect.any(String),
       "ollama",

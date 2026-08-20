@@ -18,7 +18,11 @@ import {
   CanvasStoredCredentialsError,
 } from "~/lib/canvas/integration.server";
 import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
-import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import {
+  ConnectCanvasSchema,
+  LinkRosterSchema,
+  SyncCanvasCoursesSchema,
+} from "~/lib/canvas/schemas";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
@@ -178,7 +182,10 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               }),
             );
             return json(
-              { success: false, error: "Sync was requested too recently. Please wait and try again." },
+              {
+                success: false,
+                error: "Sync was requested too recently. Please wait and try again.",
+              },
               429,
             );
           }
@@ -290,10 +297,7 @@ async function handleLinkRosterRequest(
   }
 
   if (isCanvasLinkRosterRateLimited(userId)) {
-    return json(
-      { success: false, error: "Too many link attempts. Please try again later." },
-      429,
-    );
+    return json({ success: false, error: "Too many link attempts. Please try again later." }, 429);
   }
 
   let body: unknown;

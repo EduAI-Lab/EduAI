@@ -22,7 +22,9 @@ vi.mock("~/lib/ai/embedding", () => ({
   clearCourseEmbeddingSettingsCache: vi.fn(),
   isEmbeddingIndexStale: vi.fn().mockReturnValue(false),
   parseEmbeddingSettingsUpdate: vi.fn(),
-  resolveEffectiveEmbeddingSettings: vi.fn().mockReturnValue({ provider: "openai", model: "text-embedding-3" }),
+  resolveEffectiveEmbeddingSettings: vi
+    .fn()
+    .mockReturnValue({ provider: "openai", model: "text-embedding-3" }),
   validateEmbeddingSettingsUpdate: vi.fn(),
 }));
 
@@ -40,10 +42,7 @@ import { loader, action } from "~/routes/api/courses.embedding-settings.$";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
-import {
-  parseEmbeddingSettingsUpdate,
-  validateEmbeddingSettingsUpdate,
-} from "~/lib/ai/embedding";
+import { parseEmbeddingSettingsUpdate, validateEmbeddingSettingsUpdate } from "~/lib/ai/embedding";
 import { startReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
 
@@ -69,7 +68,7 @@ function makeActionArgs(body: unknown, method = "PATCH") {
     request: new Request("http://localhost/api/courses/course-1/embedding-settings", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
     params: { courseId: "course-1" },
     context: {} as never,
@@ -131,7 +130,10 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
   });
 
   it("returns 400 when parseEmbeddingSettingsUpdate rejects the body", async () => {
-    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({ ok: false, error: "BAD_SHAPE" } as never);
+    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({
+      ok: false,
+      error: "BAD_SHAPE",
+    } as never);
     const res = await action(makeActionArgs({ embeddingProvider: 123 }));
     expect(res.status).toBe(400);
   });
@@ -141,8 +143,13 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
       ok: true,
       value: { embeddingProvider: "openai", embeddingModel: "text-embedding-3" },
     } as never);
-    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({ ok: false, error: "UNSUPPORTED_MODEL" } as never);
-    const res = await action(makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }));
+    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({
+      ok: false,
+      error: "UNSUPPORTED_MODEL",
+    } as never);
+    const res = await action(
+      makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }),
+    );
     expect(res.status).toBe(400);
   });
 
@@ -157,7 +164,9 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     } as never);
     vi.mocked(prisma.course.update).mockResolvedValue(BASE_COURSE as never);
 
-    const res = await action(makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }));
+    const res = await action(
+      makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }),
+    );
     expect(res.status).toBe(200);
     expect(logAuditAction).not.toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "EMBEDDING_SETTINGS_CHANGED" }),
@@ -182,7 +191,11 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     vi.mocked(startReEmbedJob).mockResolvedValue({ job: { id: "job-1" }, created: true } as never);
 
     const res = await action(
-      makeActionArgs({ embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large", reEmbed: true }),
+      makeActionArgs({
+        embeddingProvider: "ollama",
+        embeddingModel: "mxbai-embed-large",
+        reEmbed: true,
+      }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();

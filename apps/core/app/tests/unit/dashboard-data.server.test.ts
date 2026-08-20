@@ -83,9 +83,7 @@ describe("loadDashboardData query gating", () => {
 
   it("STUDENT fetches one small course page and exposes courseTotal, no admin aggregates", async () => {
     mockListCourses.mockResolvedValue({
-      courses: [
-        { id: "c1", code: "MATH 200", name: "Calc III", term: "W1", year: 2026 },
-      ],
+      courses: [{ id: "c1", code: "MATH 200", name: "Calc III", term: "W1", year: 2026 }],
       total: 3,
     } as never);
 

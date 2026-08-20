@@ -112,8 +112,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         .json()
         .then((body) => UpdateCourseSchema.safeParse(body))
         .catch(() => null);
-      const requestedFields =
-        validated && validated.success ? Object.keys(validated.data) : [];
+      const requestedFields = validated && validated.success ? Object.keys(validated.data) : [];
 
       const response = await updateCourse(request, courseId);
 
@@ -130,8 +129,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
             ? requestedFields.filter((field) => {
                 if (field === "instructorId")
                   return updated.instructorId === validated.data.instructorId;
-                if (field === "department")
-                  return updated.department === validated.data.department;
+                if (field === "department") return updated.department === validated.data.department;
                 return true;
               })
             : requestedFields;

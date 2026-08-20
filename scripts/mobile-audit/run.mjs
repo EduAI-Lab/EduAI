@@ -28,18 +28,19 @@
  * Usage:
  *   cd scripts/mobile-audit && npm install && node run.mjs
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { chromium } from 'playwright';
-import { VIEWPORTS, loginToCore, auditPage } from './lib.mjs';
-import { APPS } from './pages.mjs';
+import fs from "node:fs";
+import path from "node:path";
+import { chromium } from "playwright";
+import { VIEWPORTS, loginToCore, auditPage } from "./lib.mjs";
+import { APPS } from "./pages.mjs";
 
 const OUT_ROOT =
-  process.env.MOBILE_AUDIT_OUT_DIR || path.resolve('../../docs/implementations/screenshots/mobile-audit');
+  process.env.MOBILE_AUDIT_OUT_DIR ||
+  path.resolve("../../docs/implementations/screenshots/mobile-audit");
 const CORE_URL = APPS.core.baseUrl;
 const CREDENTIALS = {
-  email: process.env.AUDIT_EMAIL || 'instructor.cs@eduai.local',
-  password: process.env.AUDIT_PASSWORD || 'EduAI2026!',
+  email: process.env.AUDIT_EMAIL || "instructor.cs@eduai.local",
+  password: process.env.AUDIT_PASSWORD || "EduAI2026!",
 };
 
 function collectAudits() {
@@ -86,9 +87,9 @@ async function auditEntries(browser, entries, { requiresAuth, login }) {
         results.push(result);
 
         const failLabel = requiresAuth
-          ? ' AUTH-FAILED (bounced to a login page — see finalUrl)'
-          : ' PUBLIC-PAGE-FAILED (did not stay on the requested page — see finalUrl)';
-        const navFlag = result.authOk ? '' : failLabel;
+          ? " AUTH-FAILED (bounced to a login page — see finalUrl)"
+          : " PUBLIC-PAGE-FAILED (did not stay on the requested page — see finalUrl)";
+        const navFlag = result.authOk ? "" : failLabel;
         console.log(
           `[${appKey}] ${pageConfig.name} @ ${viewport.label}: overflow=${result.overflow} ariaOk=${result.sidebarAriaOk}${navFlag}`,
         );
@@ -108,15 +109,19 @@ async function main() {
 
   try {
     if (publicAudits.length > 0) {
-      results.push(...(await auditEntries(browser, publicAudits, { requiresAuth: false, login: false })));
+      results.push(
+        ...(await auditEntries(browser, publicAudits, { requiresAuth: false, login: false })),
+      );
     }
     if (authAudits.length > 0) {
-      results.push(...(await auditEntries(browser, authAudits, { requiresAuth: true, login: true })));
+      results.push(
+        ...(await auditEntries(browser, authAudits, { requiresAuth: true, login: true })),
+      );
     }
   } finally {
     try {
       fs.mkdirSync(OUT_ROOT, { recursive: true });
-      fs.writeFileSync(path.join(OUT_ROOT, 'results.json'), JSON.stringify(results, null, 2));
+      fs.writeFileSync(path.join(OUT_ROOT, "results.json"), JSON.stringify(results, null, 2));
     } finally {
       await browser.close();
     }

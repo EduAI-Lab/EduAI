@@ -17,12 +17,12 @@ describe("RoutingModelsTable", () => {
     expect(screen.getByText("Auto")).toBeInTheDocument();
     expect(screen.getByText("Auto (rules)")).toBeInTheDocument();
 
-    expect(
-      screen.getByRole("button", { name: "About Auto" }),
-    ).toHaveAccessibleDescription(/lightweight LLM classifier/i);
-    expect(
-      screen.getByRole("button", { name: "About Auto (rules)" }),
-    ).toHaveAccessibleDescription(/fixed prompt, image, tool/i);
+    expect(screen.getByRole("button", { name: "About Auto" })).toHaveAccessibleDescription(
+      /lightweight LLM classifier/i,
+    );
+    expect(screen.getByRole("button", { name: "About Auto (rules)" })).toHaveAccessibleDescription(
+      /fixed prompt, image, tool/i,
+    );
   });
 
   it("lets admins enable the rule-based routing mode", () => {
@@ -35,9 +35,7 @@ describe("RoutingModelsTable", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole("switch", { name: "Enable Auto (rules)" }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Auto (rules)" }));
     expect(onToggle).toHaveBeenCalledWith("autoRulesEnabled", true);
   });
 });

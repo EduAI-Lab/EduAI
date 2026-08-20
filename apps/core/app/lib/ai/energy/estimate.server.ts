@@ -21,13 +21,11 @@ export type EnergyEstimateResult = {
   energySource: EnergyMeasurementSource | null;
 };
 
-export function estimateTurnEnergy(
-  input: EnergyEstimateInput,
-): EnergyEstimateResult {
+export function estimateTurnEnergy(input: EnergyEstimateInput): EnergyEstimateResult {
   const totalTokens =
     input.promptTokens != null && input.completionTokens != null
       ? input.promptTokens + input.completionTokens
-      : input.totalTokens ?? null;
+      : (input.totalTokens ?? null);
 
   const energyJoules =
     input.estEnergyJoulesPerToken != null && totalTokens != null
@@ -36,9 +34,7 @@ export function estimateTurnEnergy(
 
   // Carbon without energy is not trustworthy for downstream research queries.
   const carbonGramsCO2 =
-    energyJoules != null &&
-    input.averageCarbonGramsPerToken != null &&
-    totalTokens != null
+    energyJoules != null && input.averageCarbonGramsPerToken != null && totalTokens != null
       ? input.averageCarbonGramsPerToken * totalTokens
       : null;
 

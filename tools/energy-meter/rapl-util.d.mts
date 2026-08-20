@@ -22,7 +22,4 @@ export function raplDeltaJoules(
  * Trapezoidal integral using sample timestamps (ms). Falls back to fixedDtSec when
  * timestamps are missing or non-monotonic.
  */
-export function integratePowerSamplesMw(
-  samples: PowerSample[],
-  fixedDtSec: number,
-): number | null;
+export function integratePowerSamplesMw(samples: PowerSample[], fixedDtSec: number): number | null;

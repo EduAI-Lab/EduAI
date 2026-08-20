@@ -49,7 +49,9 @@ describe("Sortable", () => {
       <SortableProvider ids={ids} onReorder={vi.fn()} strategy="list" disabled={false}>
         {ids.map((id) => (
           <SortableItem key={id} id={id}>
-            {({ handleProps }) => <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />}
+            {({ handleProps }) => (
+              <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />
+            )}
           </SortableItem>
         ))}
       </SortableProvider>,
@@ -58,7 +60,9 @@ describe("Sortable", () => {
       <SortableProvider ids={ids} onReorder={vi.fn()} strategy="list" disabled={true}>
         {ids.map((id) => (
           <SortableItem key={id} id={id}>
-            {({ handleProps }) => <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />}
+            {({ handleProps }) => (
+              <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />
+            )}
           </SortableItem>
         ))}
       </SortableProvider>,

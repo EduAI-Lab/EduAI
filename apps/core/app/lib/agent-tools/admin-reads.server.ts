@@ -137,7 +137,12 @@ export async function readAdminCourseTAs(
 
 export async function readAdminCourseChats(
   user: RbacUser,
-  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; limit?: number },
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    limit?: number;
+  },
 ) {
   return listAdminCourseChats(user, opts);
 }

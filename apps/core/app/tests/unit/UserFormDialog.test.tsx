@@ -52,15 +52,13 @@ const otherUser: User = {
 
 describe("UserFormDialog — title", () => {
   it("shows 'Create New User' when no user is given", () => {
-    render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />
-    );
+    render(<UserFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Create New User" })).toBeInTheDocument();
   });
 
   it("shows 'Edit User' when a user is given", () => {
     render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />,
     );
     expect(screen.getByRole("heading", { name: "Edit User" })).toBeInTheDocument();
   });
@@ -73,14 +71,14 @@ describe("UserFormDialog — title", () => {
 describe("UserFormDialog — pre-population", () => {
   it("pre-fills the Name field from the user prop", () => {
     render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />,
     );
     expect(screen.getByPlaceholderText("Enter full name")).toHaveValue("Alice Smith");
   });
 
   it("pre-fills the Email field from the user prop", () => {
     render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />,
     );
     expect(screen.getByPlaceholderText("Enter email address")).toHaveValue("alice@example.com");
   });
@@ -92,15 +90,13 @@ describe("UserFormDialog — pre-population", () => {
 
 describe("UserFormDialog — conditional fields", () => {
   it("does not render the Email Verified field when creating a new user", () => {
-    render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />
-    );
+    render(<UserFormDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
     expect(screen.queryByText("Email Verified")).not.toBeInTheDocument();
   });
 
   it("renders the Email Verified field when editing an existing user", () => {
     render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />,
     );
     expect(screen.getByText("Email Verified")).toBeInTheDocument();
   });
@@ -113,15 +109,13 @@ describe("UserFormDialog — conditional fields", () => {
         user={{ ...baseUser, taCourseIds: ["course-1"] }}
         courses={courses}
         onSubmit={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText("TA Courses")).toBeInTheDocument();
     expect(screen.getByText("COSC 111")).toBeInTheDocument();
     fireEvent.click(screen.getByText("COSC 111").closest("button")!);
-    expect(
-      await screen.findByText("Computer Programming I · Fall 2026"),
-    ).toBeVisible();
+    expect(await screen.findByText("Computer Programming I · Fall 2026")).toBeVisible();
 
     unmount();
     const { unmount: unmountInstructor } = render(
@@ -131,18 +125,13 @@ describe("UserFormDialog — conditional fields", () => {
         user={{ ...baseUser, role: "INSTRUCTOR" }}
         courses={courses}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.queryByText("TA Courses")).not.toBeInTheDocument();
 
     unmountInstructor();
     render(
-      <UserFormDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        courses={courses}
-        onSubmit={vi.fn()}
-      />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} courses={courses} onSubmit={vi.fn()} />,
     );
     expect(screen.queryByText("TA Courses")).not.toBeInTheDocument();
   });
@@ -155,9 +144,7 @@ describe("UserFormDialog — conditional fields", () => {
 describe("UserFormDialog — form actions", () => {
   it("calls onOpenChange(false) when Cancel is clicked", () => {
     const onOpenChange = vi.fn();
-    render(
-      <UserFormDialog open={true} onOpenChange={onOpenChange} onSubmit={vi.fn()} />
-    );
+    render(<UserFormDialog open={true} onOpenChange={onOpenChange} onSubmit={vi.fn()} />);
     fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
       target: { value: "Unsaved Name" },
     });
@@ -169,7 +156,7 @@ describe("UserFormDialog — form actions", () => {
   it("calls onSubmit when the form is submitted with a valid pre-filled user", async () => {
     const onSubmit = vi.fn();
     render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={onSubmit} />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={onSubmit} />,
     );
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /update user/i }));
@@ -180,9 +167,7 @@ describe("UserFormDialog — form actions", () => {
 
   it("calls onSubmit with correct data when creating a new user", async () => {
     const onSubmit = vi.fn();
-    render(
-      <UserFormDialog open={true} onOpenChange={vi.fn()} onSubmit={onSubmit} />
-    );
+    render(<UserFormDialog open={true} onOpenChange={vi.fn()} onSubmit={onSubmit} />);
     await act(async () => {
       fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
         target: { value: "Bob Jones" },
@@ -196,8 +181,8 @@ describe("UserFormDialog — form actions", () => {
     });
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Bob Jones", email: "bob@example.com" })
-      )
+        expect.objectContaining({ name: "Bob Jones", email: "bob@example.com" }),
+      ),
     );
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("authorizedUnits");
   });
@@ -210,7 +195,7 @@ describe("UserFormDialog — form actions", () => {
         onOpenChange={vi.fn()}
         user={{ ...baseUser, role: "UNIT_ADMIN", authorizedUnits: ["COSC"] }}
         onSubmit={onSubmit}
-      />
+      />,
     );
 
     await act(async () => {
@@ -233,7 +218,7 @@ describe("UserFormDialog — form actions", () => {
         user={{ ...baseUser, taCourseIds: ["course-1"] }}
         courses={courses}
         onSubmit={onSubmit}
-      />
+      />,
     );
 
     const comboboxes = screen.getAllByRole("combobox");
@@ -264,7 +249,7 @@ describe("UserFormDialog — form actions", () => {
         onOpenChange={onOpenChange}
         user={baseUser}
         onSubmit={onSubmit}
-      />
+      />,
     );
 
     fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
@@ -294,7 +279,7 @@ describe("UserFormDialog — form actions", () => {
         onOpenChange={onOpenChange}
         user={baseUser}
         onSubmit={onSubmit}
-      />
+      />,
     );
 
     const updateButton = screen.getByRole("button", { name: /update user/i });
@@ -302,7 +287,9 @@ describe("UserFormDialog — form actions", () => {
     expect(form).not.toBeNull();
 
     fireEvent.click(updateButton);
-    await waitFor(() => expect(screen.getByRole("button", { name: /updating user/i })).toBeDisabled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /updating user/i })).toBeDisabled(),
+    );
     fireEvent.submit(form!);
     expect(onSubmit).toHaveBeenCalledTimes(1);
 
@@ -316,12 +303,7 @@ describe("UserFormDialog — form actions", () => {
 
   it("resets entered values when a different user is opened", () => {
     const { rerender } = render(
-      <UserFormDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        user={baseUser}
-        onSubmit={vi.fn()}
-      />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />,
     );
 
     fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
@@ -329,12 +311,7 @@ describe("UserFormDialog — form actions", () => {
     });
 
     rerender(
-      <UserFormDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        user={otherUser}
-        onSubmit={vi.fn()}
-      />
+      <UserFormDialog open={true} onOpenChange={vi.fn()} user={otherUser} onSubmit={vi.fn()} />,
     );
 
     expect(screen.getByPlaceholderText("Enter full name")).toHaveValue("Bob Jones");

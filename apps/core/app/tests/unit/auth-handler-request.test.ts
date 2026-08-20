@@ -14,15 +14,11 @@ describe("buildAuthSubRequest", () => {
   });
 
   it("does not forward cookies for sign-in (avoids stale session after logout)", () => {
-    const sub = buildAuthSubRequest(
-      "/api/auth/sign-in/email",
-      incoming,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      },
-    );
+    const sub = buildAuthSubRequest("/api/auth/sign-in/email", incoming, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
 
     expect(sub.url).toBe("https://dev.eduai.ok.ubc.ca/api/auth/sign-in/email");
     expect(sub.headers.get("cookie")).toBeNull();

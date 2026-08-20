@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Card,
@@ -17,9 +17,9 @@ import {
   TableHeader,
   TableRow,
   type DonutSegment,
-} from '@eduai/ui';
-import api from '~/lib/api';
-import type { ActivityAnalyticsRow, StudentMetricRow } from '~/lib/types';
+} from "@eduai/ui";
+import api from "~/lib/api";
+import type { ActivityAnalyticsRow, StudentMetricRow } from "~/lib/types";
 
 type CourseAnalyticsPanelProps = {
   courseId: number;
@@ -29,11 +29,11 @@ type CourseAnalyticsPanelProps = {
 // Generic on purpose — the field is a free-text string, not a fixed enum, so
 // this can't assume an Easy/Medium/Hard domain.
 const DIFFICULTY_PALETTE = [
-  'var(--color-success-500)',
-  'var(--color-warning-500)',
-  'var(--color-error-500)',
-  'var(--primary)',
-  'var(--secondary)',
+  "var(--color-success-500)",
+  "var(--color-warning-500)",
+  "var(--color-error-500)",
+  "var(--primary)",
+  "var(--secondary)",
 ];
 
 export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
@@ -53,7 +53,7 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
         setMetrics(studentMetrics);
       })
       .catch(() => {
-        if (!cancelled) setError('Could not load analytics.');
+        if (!cancelled) setError("Could not load analytics.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,7 +64,7 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
   }, [courseId]);
 
   const stats = useMemo(() => {
-    const rated = rows.filter((row) => typeof row.averageRating === 'number');
+    const rated = rows.filter((row) => typeof row.averageRating === "number");
     const avgRating =
       rated.length > 0
         ? rated.reduce((sum, row) => sum + (row.averageRating ?? 0), 0) / rated.length
@@ -126,8 +126,11 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
         <StatCard label="Students" value={metrics.length} />
         <StatCard label="Submissions" value={totals.submissions} />
-        <StatCard label="Accuracy" value={accuracy != null ? `${accuracy}%` : '—'} />
-        <StatCard label="Avg rating" value={stats.avgRating != null ? stats.avgRating.toFixed(1) : '—'} />
+        <StatCard label="Accuracy" value={accuracy != null ? `${accuracy}%` : "—"} />
+        <StatCard
+          label="Avg rating"
+          value={stats.avgRating != null ? stats.avgRating.toFixed(1) : "—"}
+        />
         <StatCard label="Total feedback" value={stats.totalFeedback} />
         <StatCard label="Help requests" value={totals.helpRequests} />
       </div>
@@ -200,7 +203,7 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>{row.averageRating?.toFixed(1) ?? '—'}</TableCell>
+                    <TableCell>{row.averageRating?.toFixed(1) ?? "—"}</TableCell>
                     <TableCell>{row.feedbackCount ?? 0}</TableCell>
                   </TableRow>
                 ))}

@@ -58,8 +58,7 @@ export function CourseCardCustomizePopover({
     setOpen(false);
   };
 
-  const previewColor =
-    normalizeCourseCardColor(hexInput) ?? draftColor ?? "oklch(0.56 0.20 255)";
+  const previewColor = normalizeCourseCardColor(hexInput) ?? draftColor ?? "oklch(0.56 0.20 255)";
   const previewTitle = draftNickname.trim() || courseName;
 
   return (
@@ -97,10 +96,7 @@ export function CourseCardCustomizePopover({
 
         <div className="space-y-4 p-4">
           {/* Live preview */}
-          <div
-            className="overflow-hidden rounded-lg border border-border shadow-sm"
-            aria-hidden
-          >
+          <div className="overflow-hidden rounded-lg border border-border shadow-sm" aria-hidden>
             <div
               className="px-3 py-2 text-xs font-bold text-white"
               style={{
@@ -143,7 +139,9 @@ export function CourseCardCustomizePopover({
                     aria-pressed={selected}
                     className={cn(
                       "h-8 w-8 rounded-full border-2 transition-transform hover:scale-105",
-                      selected ? "border-foreground ring-2 ring-ring ring-offset-2" : "border-transparent",
+                      selected
+                        ? "border-foreground ring-2 ring-ring ring-offset-2"
+                        : "border-transparent",
                     )}
                     style={{ backgroundColor: color }}
                     onClick={() => {

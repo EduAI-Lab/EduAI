@@ -103,7 +103,14 @@ export function parseIdsParam(
     };
   }
 
-  const ids = [...new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))];
+  const ids = [
+    ...new Set(
+      raw
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
   if (ids.length === 0) {
     return { response: apiError(400, "IDS_EMPTY", { ids: "Must contain at least one id" }) };
   }

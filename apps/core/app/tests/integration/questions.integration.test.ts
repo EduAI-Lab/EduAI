@@ -73,7 +73,7 @@ const QUESTION_ID = "question-cuid-xyz";
 function makeListArgs(
   query: Record<string, string> = {},
   authorization?: string,
-  sessionCookie?: string
+  sessionCookie?: string,
 ) {
   const url = new URL("http://localhost/api/questions");
   Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -112,12 +112,7 @@ function makeGetByIdArgs(id: string, authorization?: string, sessionCookie?: str
   } as any;
 }
 
-function makePatchArgs(
-  id: string,
-  body: object,
-  authorization?: string,
-  sessionCookie?: string
-) {
+function makePatchArgs(id: string, body: object, authorization?: string, sessionCookie?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization) headers.set("Authorization", authorization);
   if (sessionCookie) headers.set("Cookie", sessionCookie);
@@ -251,7 +246,9 @@ describe("GET /api/questions", () => {
     db.question.findMany.mockResolvedValue([]);
     db.question.count.mockResolvedValue(0);
 
-    await listLoader(makeListArgs({ courseId: COURSE_ID, testable: "true" }, `Bearer ${VALID_KEY}`));
+    await listLoader(
+      makeListArgs({ courseId: COURSE_ID, testable: "true" }, `Bearer ${VALID_KEY}`),
+    );
 
     expect(db.question.findMany.mock.calls[0][0].where.testable).toBe(true);
   });
@@ -330,7 +327,7 @@ describe("POST /api/questions", () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     const res = await postAction(
-      makePostArgs({ ...validPostBody, secondaryTopicIds: [TOPIC_ID] }, "session=abc")
+      makePostArgs({ ...validPostBody, secondaryTopicIds: [TOPIC_ID] }, "session=abc"),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("DUPLICATE_TOPIC");
@@ -343,7 +340,7 @@ describe("POST /api/questions", () => {
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.courseTopic.findMany.mockResolvedValue([{ id: "sec-topic", deletedAt: new Date() }]);
     const res = await postAction(
-      makePostArgs({ ...validPostBody, secondaryTopicIds: ["sec-topic"] }, "session=abc")
+      makePostArgs({ ...validPostBody, secondaryTopicIds: ["sec-topic"] }, "session=abc"),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("INVALID_TOPIC_IDS");
@@ -409,10 +406,7 @@ describe("POST /api/questions", () => {
     });
 
     const res = await postAction(
-      makePostArgs(
-        { ...validPostBody, idempotencyKey: "idem-replay-test" },
-        "session=student",
-      ),
+      makePostArgs({ ...validPostBody, idempotencyKey: "idem-replay-test" }, "session=student"),
     );
 
     expect(res.status).toBe(403);
@@ -477,7 +471,7 @@ describe("GET /api/questions/:id", () => {
 describe("PATCH /api/questions/:id", () => {
   it("returns 422 VALIDATION_ERROR when testable is a string", async () => {
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: "yes" }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: "yes" }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -487,16 +481,14 @@ describe("PATCH /api/questions/:id", () => {
 
   it("returns 422 VALIDATION_ERROR when testable is null", async () => {
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: null }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: null }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("VALIDATION_ERROR");
   });
 
   it("returns 422 VALIDATION_ERROR when testable field is absent", async () => {
-    const res = await patchAction(
-      makePatchArgs(QUESTION_ID, {}, `Bearer ${VALID_KEY}`)
-    );
+    const res = await patchAction(makePatchArgs(QUESTION_ID, {}, `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe("VALIDATION_ERROR");
   });
@@ -509,7 +501,7 @@ describe("PATCH /api/questions/:id", () => {
     });
     db.question.update.mockRejectedValue(err);
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "QUESTION_NOT_FOUND" });
@@ -518,7 +510,7 @@ describe("PATCH /api/questions/:id", () => {
   it("returns 200 with updated testable via service key", async () => {
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`)
+      makePatchArgs(QUESTION_ID, { testable: true }, `Bearer ${VALID_KEY}`),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: QUESTION_ID, testable: true });
@@ -530,7 +522,7 @@ describe("PATCH /api/questions/:id", () => {
     db.question.findFirst.mockResolvedValue(fakeQuestion);
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(200);
   });
@@ -540,7 +532,7 @@ describe("PATCH /api/questions/:id", () => {
     mockCourseAccess("STUDENT");
     db.question.findFirst.mockResolvedValue(fakeQuestion);
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(403);
   });
@@ -551,7 +543,7 @@ describe("PATCH /api/questions/:id", () => {
     db.question.findFirst.mockResolvedValue({ ...fakeQuestion, createdBy: "u-ta" });
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(200);
   });
@@ -561,7 +553,7 @@ describe("PATCH /api/questions/:id", () => {
     mockCourseAccess("TA");
     db.question.findFirst.mockResolvedValue({ ...fakeQuestion, createdBy: "someone-else" });
     const res = await patchAction(
-      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc"),
     );
     expect(res.status).toBe(403);
   });
@@ -586,9 +578,16 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
 
     const postRes = await postAction(
       makePostArgs(
-        { courseId: COURSE_ID, topicId: TOPIC_ID, content: "Q?", type: "SA", testable: false, secondaryTopicIds: [] },
-        "session=abc"
-      )
+        {
+          courseId: COURSE_ID,
+          topicId: TOPIC_ID,
+          content: "Q?",
+          type: "SA",
+          testable: false,
+          secondaryTopicIds: [],
+        },
+        "session=abc",
+      ),
     );
     expect(postRes.status).toBe(201);
     const { id } = await postRes.json();
@@ -604,7 +603,9 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
 
     // PATCH
     db.question.update.mockResolvedValue({ id, testable: true });
-    const patchRes = await patchAction(makePatchArgs(id, { testable: true }, `Bearer ${VALID_KEY}`));
+    const patchRes = await patchAction(
+      makePatchArgs(id, { testable: true }, `Bearer ${VALID_KEY}`),
+    );
     expect(patchRes.status).toBe(200);
     expect((await patchRes.json()).testable).toBe(true);
 

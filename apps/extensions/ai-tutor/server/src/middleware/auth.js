@@ -5,13 +5,13 @@
  * `POST /api/sessions/validate` endpoint and populates `req.user`.
  */
 
-import { getPolicy } from '../services/policyService.js';
-import { resolveCoreCourseById } from '../services/courseResolver.js';
+import { getPolicy } from "../services/policyService.js";
+import { resolveCoreCourseById } from "../services/courseResolver.js";
 
-const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
+const VALID_ROLES = new Set(["STUDENT", "INSTRUCTOR", "TA", "ADMIN", "UNIT_ADMIN"]);
 
 function normalizeRole(role) {
-  return VALID_ROLES.has(role) ? role : 'STUDENT';
+  return VALID_ROLES.has(role) ? role : "STUDENT";
 }
 
 /**
@@ -25,26 +25,29 @@ function normalizeRole(role) {
  */
 export async function requireAuth(req, res, next) {
   try {
-    const response = await fetch(`${process.env.CORE_URL || 'http://localhost:3000'}/api/sessions/validate`, {
-      method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
-    });
+    const response = await fetch(
+      `${process.env.CORE_URL || "http://localhost:3000"}/api/sessions/validate`,
+      {
+        method: "POST",
+        headers: { cookie: req.headers.cookie ?? "" },
+      },
+    );
 
     if (response.status === 429) {
-      const retryAfter = response.headers?.get?.('retry-after') ?? null;
-      if (retryAfter != null) res.set('Retry-After', retryAfter);
-      return res.status(429).json({ error: 'Rate limited', retryAfter });
+      const retryAfter = response.headers?.get?.("retry-after") ?? null;
+      if (retryAfter != null) res.set("Retry-After", retryAfter);
+      return res.status(429).json({ error: "Rate limited", retryAfter });
     }
 
     if (!response.ok) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: "Authentication required" });
     }
 
     const { user } = await response.json();
     req.user = { ...user, role: normalizeRole(user.role) };
     next();
   } catch {
-    res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: "Authentication required" });
   }
 }
 
@@ -59,12 +62,12 @@ export function requireRole(allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: "Authentication required" });
     }
     if (!roles.includes(req.user.role)) {
       return res
         .status(403)
-        .json({ error: `One of the following roles required: ${roles.join(', ')}` });
+        .json({ error: `One of the following roles required: ${roles.join(", ")}` });
     }
     next();
   };
@@ -82,14 +85,14 @@ export const requireRoles = requireRole;
  */
 export function requireInstructorPolicy(flagKey) {
   return async (req, res, next) => {
-    if (req.user?.role !== 'INSTRUCTOR') {
+    if (req.user?.role !== "INSTRUCTOR") {
       return next();
     }
     const allowed = await getPolicy(flagKey).catch(() => false);
     if (!allowed) {
       return res
         .status(403)
-        .json({ error: 'Instructors are not permitted to perform this action' });
+        .json({ error: "Instructors are not permitted to perform this action" });
     }
     next();
   };
@@ -109,7 +112,7 @@ export function requireInstructorPolicy(flagKey) {
  * `courseResolver.js`.
  */
 export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
-  if (user?.role !== 'UNIT_ADMIN') return false;
+  if (user?.role !== "UNIT_ADMIN") return false;
   if (!Array.isArray(user.authorizedUnits) || user.authorizedUnits.length === 0) return false;
 
   let coreCourse = resolvedCoreCourse;
@@ -129,10 +132,10 @@ export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
  * the `resolvedCoreCourse` fast path.
  */
 export async function isCourseAdmin(user, course, resolvedCoreCourse) {
-  if (user?.role === 'ADMIN') return true;
+  if (user?.role === "ADMIN") return true;
   if (await isUnitAdminForCourse(user, course, resolvedCoreCourse)) return true;
   if (
-    (user?.role === 'INSTRUCTOR' || user?.role === 'UNIT_ADMIN') &&
+    (user?.role === "INSTRUCTOR" || user?.role === "UNIT_ADMIN") &&
     course?.instructors?.some((i) => i.userId === user.id)
   )
     return true;

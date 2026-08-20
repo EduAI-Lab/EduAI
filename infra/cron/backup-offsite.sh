@@ -38,4 +38,6 @@ fi
 
 log "=== Off-site sync complete for $DATE ==="
 
-[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_finish
+if [[ -z "${CORE_CRON_RUN_ID:-}" ]]; then
+  cron_finish
+fi

@@ -245,9 +245,7 @@ describe("POST /api/chat — regenerateOnly content preview (#1246)", () => {
     mockStreamResult(BASELINE_DRAFT);
 
     const res = await action(
-      makeArgs(
-        baseBody({ regenerateOnly: true, adhdAssist: false, streaming: true }),
-      ),
+      makeArgs(baseBody({ regenerateOnly: true, adhdAssist: false, streaming: true })),
     );
     expect(res.status).toBe(200);
 

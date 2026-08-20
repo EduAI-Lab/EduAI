@@ -1,69 +1,69 @@
-import { describe, it, expect } from 'vitest';
-import { normalizeMcqCorrectness } from '@/lib/mcqCorrectness';
+import { describe, it, expect } from "vitest";
+import { normalizeMcqCorrectness } from "@/lib/mcqCorrectness";
 
-describe('normalizeMcqCorrectness', () => {
-  const letters = ['A', 'B', 'C'];
+describe("normalizeMcqCorrectness", () => {
+  const letters = ["A", "B", "C"];
 
-  it('single mode: one answer letter, clears correctAnswers', () => {
+  it("single mode: one answer letter, clears correctAnswers", () => {
     expect(
       normalizeMcqCorrectness({
         selectAllThatApply: false,
-        answer: 'B',
-        correctAnswers: ['A', 'B'],
+        answer: "B",
+        correctAnswers: ["A", "B"],
         choiceLetters: letters,
-      })
+      }),
     ).toEqual({
       selectAllThatApply: false,
-      answer: 'B',
+      answer: "B",
       correctAnswers: null,
     });
   });
 
-  it('multi mode: sorts unique letters, sets answer to first sorted', () => {
+  it("multi mode: sorts unique letters, sets answer to first sorted", () => {
     expect(
       normalizeMcqCorrectness({
         selectAllThatApply: true,
         answer: null,
-        correctAnswers: ['C', 'A', 'A'],
+        correctAnswers: ["C", "A", "A"],
         choiceLetters: letters,
-      })
+      }),
     ).toEqual({
       selectAllThatApply: true,
-      answer: 'A',
-      correctAnswers: ['A', 'C'],
+      answer: "A",
+      correctAnswers: ["A", "C"],
     });
   });
 
-  it('throws when no correct letter', () => {
+  it("throws when no correct letter", () => {
     expect(() =>
       normalizeMcqCorrectness({
         selectAllThatApply: true,
         answer: null,
         correctAnswers: [],
         choiceLetters: letters,
-      })
+      }),
     ).toThrow(/at least one/i);
   });
 
-  it('throws when letter not in choices', () => {
+  it("throws when letter not in choices", () => {
     expect(() =>
       normalizeMcqCorrectness({
         selectAllThatApply: false,
-        answer: 'Z',
+        answer: "Z",
         correctAnswers: null,
         choiceLetters: letters,
-      })
+      }),
     ).toThrow(/not in choices/i);
   });
 
-  it('multi mode: rejects multi-character correctAnswers entries', () => {
+  it("multi mode: rejects multi-character correctAnswers entries", () => {
     expect(() =>
       normalizeMcqCorrectness({
         selectAllThatApply: true,
         answer: null,
-        correctAnswers: ['AB'],
+        correctAnswers: ["AB"],
         choiceLetters: letters,
-      })
+      }),
     ).toThrow(/single letters/i);
   });
 });

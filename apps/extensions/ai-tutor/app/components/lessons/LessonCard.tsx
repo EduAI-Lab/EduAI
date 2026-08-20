@@ -14,7 +14,7 @@
  * Progress is student-only: the block renders only when a `progress` object is
  * passed, so instructor cards don't show a learner "Not started yet".
  */
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import {
   Badge,
   Card,
@@ -23,11 +23,11 @@ import {
   StatusBadge,
   courseThemeVars,
   type CourseAccentColor,
-} from '@eduai/ui';
-import { ProgressBarFromData } from '../ProgressBar';
-import type { Progress } from '../../lib/types';
-import { cn } from '~/lib/utils';
-import { titleName } from '~/lib/course-title';
+} from "@eduai/ui";
+import { ProgressBarFromData } from "../ProgressBar";
+import type { Progress } from "../../lib/types";
+import { cn } from "~/lib/utils";
+import { titleName } from "~/lib/course-title";
 
 /**
  * Flatten Markdown source to a compact one-paragraph preview: drop heading
@@ -36,14 +36,14 @@ import { titleName } from '~/lib/course-title';
  */
 export function contentExcerpt(md: string): string {
   return md
-    .replace(/```[\s\S]*?```/g, ' ') // fenced code blocks
-    .replace(/`([^`]+)`/g, '$1') // inline code
-    .replace(/^#{1,6}\s+.*$/gm, '') // drop heading lines entirely
-    .replace(/^\s*[-*+]\s+/gm, '') // list bullets
-    .replace(/^\s*>\s?/gm, '') // blockquotes
-    .replace(/[*_~]/g, '') // emphasis markers
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → text
-    .replace(/\s+/g, ' ')
+    .replace(/```[\s\S]*?```/g, " ") // fenced code blocks
+    .replace(/`([^`]+)`/g, "$1") // inline code
+    .replace(/^#{1,6}\s+.*$/gm, "") // drop heading lines entirely
+    .replace(/^\s*[-*+]\s+/gm, "") // list bullets
+    .replace(/^\s*>\s?/gm, "") // blockquotes
+    .replace(/[*_~]/g, "") // emphasis markers
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → text
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -100,12 +100,12 @@ export function LessonCard({
 }: LessonCardProps) {
   const clickable = Boolean(onClick);
   // Authored label (e.g. "1.1") wins; else pad the positional index.
-  const orderLabel = orderText ?? String(index).padStart(2, '0');
-  const accent = accentColor ?? 'var(--primary)';
+  const orderLabel = orderText ?? String(index).padStart(2, "0");
+  const accent = accentColor ?? "var(--primary)";
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!onClick) return;
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onClick();
     }
@@ -116,21 +116,21 @@ export function LessonCard({
   };
 
   const showProgress = progress !== undefined;
-  const preview = content?.trim() ? contentExcerpt(content) : '';
+  const preview = content?.trim() ? contentExcerpt(content) : "";
   const hasMeta = activityCount != null || showProgress || preview.length > 0;
   const hasStatus = isPublished != null || Boolean(menuSlot);
 
   return (
     <Card
       hoverable={clickable}
-      role={clickable ? 'button' : undefined}
+      role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={onClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'group relative flex flex-col',
+        "group relative flex flex-col",
         clickable &&
-          'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className,
       )}
       style={courseThemeVars(accent)}
@@ -142,7 +142,7 @@ export function LessonCard({
         className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
         style={{
           background:
-            'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+            "linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))",
         }}
         aria-hidden="true"
       />
@@ -152,7 +152,7 @@ export function LessonCard({
       <span
         aria-hidden="true"
         className="pointer-events-none absolute -right-2 top-1/2 -translate-y-1/2 select-none text-[4.75rem] font-black leading-none tabular-nums"
-        style={{ color: 'color-mix(in oklch, var(--course-accent) 10%, transparent)' }}
+        style={{ color: "color-mix(in oklch, var(--course-accent) 10%, transparent)" }}
       >
         {orderLabel}
       </span>
@@ -164,16 +164,19 @@ export function LessonCard({
             <span
               className="flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
               style={{
-                background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
-                color: 'var(--course-accent)',
-                boxShadow: 'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                background: "color-mix(in oklch, var(--course-accent) 14%, transparent)",
+                color: "var(--course-accent)",
+                boxShadow:
+                  "inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)",
               }}
             >
               {orderLabel}
             </span>
             <span
               className="text-[11px] font-bold uppercase tracking-[0.16em]"
-              style={{ color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))' }}
+              style={{
+                color: "color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))",
+              }}
             >
               Lesson
             </span>
@@ -209,7 +212,7 @@ export function LessonCard({
           {activityCount != null && (
             <div>
               <Badge variant="muted" size="sm">
-                {activityCount} {activityCount === 1 ? 'activity' : 'activities'}
+                {activityCount} {activityCount === 1 ? "activity" : "activities"}
               </Badge>
             </div>
           )}

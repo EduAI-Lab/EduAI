@@ -4,28 +4,28 @@
  * Extensions may rely on deletedAt being set to detect EduAI-side removals.
  */
 
-import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
-import { createHash } from 'crypto';
-import { processMaterialEmbeddings } from '~/lib/ai/embedding';
-import { processUploadedFile } from '~/lib/ai/file-processing';
-import prisma from '~/lib/prisma.server';
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { createHash } from "crypto";
+import { processMaterialEmbeddings } from "~/lib/ai/embedding";
+import { processUploadedFile } from "~/lib/ai/file-processing";
+import prisma from "~/lib/prisma.server";
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
   type AccessLevel,
-} from '~/lib/auth/course-access.server';
-import { getPolicy, denyByPolicy } from '~/lib/policy.server';
-import type { Session } from '~/lib/auth/server';
-import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
-import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
-import { getActorContext, getRequestContext } from '~/lib/request-context.server';
-import { parseCursorParams, splitPage } from '~/lib/cursor-list.server';
+} from "~/lib/auth/course-access.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import type { Session } from "~/lib/auth/server";
+import { fireAndForget, logAuditAction, logSystemError } from "~/lib/logging.server";
+import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -38,10 +38,10 @@ function json(status: number, body: unknown) {
  */
 function isChecksumConflict(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
+    typeof error === "object" &&
     error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'P2002'
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
   );
 }
 
@@ -51,7 +51,7 @@ function isChecksumConflict(error: unknown): boolean {
  * visibility gate. `access.level === 'student'` is the single student marker.
  */
 function isStaffAccess(access: AccessLevel): boolean {
-  return access.level !== 'student';
+  return access.level !== "student";
 }
 
 /**
@@ -71,19 +71,14 @@ function studentVisibilityWhere(now: Date, excludedCanvasFileIds: string[] = [])
   const exclusionGate =
     excludedCanvasFileIds.length > 0
       ? {
-          OR: [
-            { externalId: null },
-            { externalId: { notIn: excludedCanvasFileIds } },
-          ],
+          OR: [{ externalId: null }, { externalId: { notIn: excludedCanvasFileIds } }],
         }
       : null;
 
   return {
     unpublishedAt: null,
     visibleToStudents: true,
-    ...(exclusionGate
-      ? { AND: [availableAtGate, exclusionGate] }
-      : availableAtGate),
+    ...(exclusionGate ? { AND: [availableAtGate, exclusionGate] } : availableAtGate),
   };
 }
 
@@ -96,19 +91,19 @@ async function resolveMaterialsAccess(
   courseId: string,
 ): Promise<
   | { response: Response; user?: never; access?: never; isPublished?: never }
-  | { response?: never; user: Session['user']; access: AccessLevel; isPublished: boolean }
+  | { response?: never; user: Session["user"]; access: AccessLevel; isPublished: boolean }
 > {
   const session = await getRequestSession(request);
   if (!session?.user) {
-    return { response: json(401, { error: 'Unauthorized' }) };
+    return { response: json(401, { error: "Unauthorized" }) };
   }
 
   const { course, access } = await resolveCourseAccessGate(session.user, courseId);
   if (!course) {
-    return { response: json(404, { error: 'COURSE_NOT_FOUND' }) };
+    return { response: json(404, { error: "COURSE_NOT_FOUND" }) };
   }
   if (!access) {
-    return { response: json(403, { error: 'Forbidden' }) };
+    return { response: json(403, { error: "Forbidden" }) };
   }
 
   return { user: session.user, access, isPublished: course.isPublished };
@@ -117,7 +112,7 @@ async function resolveMaterialsAccess(
 export async function action({ request, params }: ActionFunctionArgs) {
   const courseId = params.courseId;
   if (!courseId) {
-    return json(400, { error: 'Course ID is required' });
+    return json(400, { error: "Course ID is required" });
   }
 
   const resolved = await resolveMaterialsAccess(request, courseId);
@@ -127,18 +122,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
 
   switch (request.method) {
-    case 'POST': {
+    case "POST": {
       // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
       // Students cannot upload materials UNLESS the students.canUploadMaterials
       // grant is explicitly enabled (off by default).
       const studentUploadAllowed =
-        access.level === 'student' && (await getPolicy('students.canUploadMaterials'));
+        access.level === "student" && (await getPolicy("students.canUploadMaterials"));
       if (access.rank < 1 && !studentUploadAllowed) {
         return denyByPolicy({
           request,
-          policyKey: 'students.canUploadMaterials',
+          policyKey: "students.canUploadMaterials",
           user,
-          action: 'material.upload',
+          action: "material.upload",
           courseId,
         });
       }
@@ -148,34 +143,34 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // legitimately work in unpublished courses. This is a publish-state gate,
       // NOT a policy-flag denial: the `students.canUploadMaterials` grant may be
       // on, so don't mislabel the audit trail with it — return a distinct 403.
-      if (access.level === 'student' && !isPublished) {
-        return json(403, { error: 'COURSE_NOT_PUBLISHED' });
+      if (access.level === "student" && !isPublished) {
+        return json(403, { error: "COURSE_NOT_PUBLISHED" });
       }
       // Gate: a TA is allowed by default; deny only when the gate is off.
-      if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
+      if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
         return denyByPolicy({
           request,
-          policyKey: 'tas.canManageMaterials',
+          policyKey: "tas.canManageMaterials",
           user,
-          action: 'material.upload',
+          action: "material.upload",
           courseId,
         });
       }
       return uploadMaterial(request, courseId, user, requestContext);
     }
 
-    case 'PATCH':
-    case 'PUT': {
+    case "PATCH":
+    case "PUT": {
       const materialId = params.materialId;
       if (!materialId) {
-        return json(400, { error: 'MATERIAL_ID_REQUIRED' });
+        return json(400, { error: "MATERIAL_ID_REQUIRED" });
       }
 
       let body: { title?: unknown; visibleToStudents?: unknown; availableAt?: unknown };
       try {
         body = await request.json();
       } catch {
-        return json(400, { error: 'INVALID_BODY' });
+        return json(400, { error: "INVALID_BODY" });
       }
 
       const hasTitle = body.title !== undefined;
@@ -189,19 +184,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
       } = {};
 
       if (hasTitle) {
-        const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+        const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
         if (!rawTitle) {
-          return json(400, { error: 'TITLE_REQUIRED' });
+          return json(400, { error: "TITLE_REQUIRED" });
         }
         if (rawTitle.length > 255) {
-          return json(400, { error: 'TITLE_TOO_LONG' });
+          return json(400, { error: "TITLE_TOO_LONG" });
         }
         data.title = rawTitle;
       }
 
       if (hasVisibility) {
-        if (typeof body.visibleToStudents !== 'boolean') {
-          return json(400, { error: 'INVALID_VISIBILITY' });
+        if (typeof body.visibleToStudents !== "boolean") {
+          return json(400, { error: "INVALID_VISIBILITY" });
         }
         data.visibleToStudents = body.visibleToStudents;
       }
@@ -210,19 +205,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
         // null clears the schedule; a valid ISO string sets a future/past reveal.
         if (body.availableAt === null) {
           data.availableAt = null;
-        } else if (typeof body.availableAt === 'string') {
+        } else if (typeof body.availableAt === "string") {
           const parsed = new Date(body.availableAt);
           if (Number.isNaN(parsed.getTime())) {
-            return json(400, { error: 'INVALID_AVAILABLE_AT' });
+            return json(400, { error: "INVALID_AVAILABLE_AT" });
           }
           data.availableAt = parsed;
         } else {
-          return json(400, { error: 'INVALID_AVAILABLE_AT' });
+          return json(400, { error: "INVALID_AVAILABLE_AT" });
         }
       }
 
       if (Object.keys(data).length === 0) {
-        return json(400, { error: 'NO_FIELDS' });
+        return json(400, { error: "NO_FIELDS" });
       }
 
       const material = await prisma.courseMaterial.findFirst({
@@ -236,7 +231,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         },
       });
       if (!material) {
-        return json(404, { error: 'MATERIAL_NOT_FOUND' });
+        return json(404, { error: "MATERIAL_NOT_FOUND" });
       }
 
       // §7: edit mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
@@ -246,9 +241,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // matching the UI that hides the visibility eye from TAs.
       const changesVisibility = hasVisibility || hasAvailableAt;
       const isOwnTaEdit =
-        access.level === 'ta' && material.uploadedBy === user.id && !changesVisibility;
+        access.level === "ta" && material.uploadedBy === user.id && !changesVisibility;
       if (access.rank < 2 && !isOwnTaEdit) {
-        return json(403, { error: 'Forbidden' });
+        return json(403, { error: "Forbidden" });
       }
 
       const updated = await prisma.courseMaterial.update({
@@ -266,18 +261,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // stays legible; a combined edit records under MATERIAL_UPDATED.
       const visibilityChanged = hasVisibility || hasAvailableAt;
       const actionCode = !visibilityChanged
-        ? 'MATERIAL_RENAMED'
+        ? "MATERIAL_RENAMED"
         : hasTitle
-          ? 'MATERIAL_UPDATED'
-          : 'MATERIAL_VISIBILITY_CHANGED';
+          ? "MATERIAL_UPDATED"
+          : "MATERIAL_VISIBILITY_CHANGED";
 
       fireAndForget(
         logAuditAction({
           ...getActorContext(user ?? null),
           ...requestContext,
           actionCode,
-          category: 'MATERIAL',
-          entityType: 'CourseMaterial',
+          category: "MATERIAL",
+          entityType: "CourseMaterial",
           entityId: materialId,
           entityLabel: updated.title,
           details: {
@@ -298,10 +293,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json(200, { success: true, material: updated });
     }
 
-    case 'DELETE': {
+    case "DELETE": {
       const materialId = params.materialId;
       if (!materialId) {
-        return json(400, { error: 'MATERIAL_ID_REQUIRED' });
+        return json(400, { error: "MATERIAL_ID_REQUIRED" });
       }
 
       const material = await prisma.courseMaterial.findFirst({
@@ -309,17 +304,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
         select: { id: true, uploadedBy: true, title: true },
       });
       if (!material) {
-        return json(404, { error: 'MATERIAL_NOT_FOUND' });
+        return json(404, { error: "MATERIAL_NOT_FOUND" });
       }
 
       // tas.canManageMaterials is a single gate covering upload AND delete, so
       // an off flag must also block TA deletes (including own uploads).
-      if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
+      if (access.level === "ta" && !(await getPolicy("tas.canManageMaterials"))) {
         return denyByPolicy({
           request,
-          policyKey: 'tas.canManageMaterials',
+          policyKey: "tas.canManageMaterials",
           user,
-          action: 'material.delete',
+          action: "material.delete",
           courseId,
         });
       }
@@ -327,9 +322,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
       // own-only carve-out via uploadedBy (#294). Null uploadedBy = no owner,
       // TA denied.
-      const isOwnTa = access.level === 'ta' && material.uploadedBy === user.id;
+      const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
       if (access.rank < 2 && !isOwnTa) {
-        return json(403, { error: 'Forbidden' });
+        return json(403, { error: "Forbidden" });
       }
 
       // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
@@ -342,9 +337,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         logAuditAction({
           ...getActorContext(user ?? null),
           ...requestContext,
-          actionCode: 'MATERIAL_DELETED',
-          category: 'MATERIAL',
-          entityType: 'CourseMaterial',
+          actionCode: "MATERIAL_DELETED",
+          category: "MATERIAL",
+          entityType: "CourseMaterial",
           entityId: materialId,
           entityLabel: material.title,
           details: { courseId },
@@ -355,7 +350,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     default:
-      return json(405, { error: 'Method not allowed' });
+      return json(405, { error: "Method not allowed" });
   }
 }
 
@@ -365,8 +360,8 @@ async function persistFailedUploadMaterial(
   userId: string,
 ): Promise<string> {
   const bytes = Buffer.from(await file.arrayBuffer());
-  const checksum = `failed:${createHash('sha256').update(bytes).digest('hex')}`;
-  const title = (file.name || 'upload').replace(/\.[^/.]+$/, '') || 'upload';
+  const checksum = `failed:${createHash("sha256").update(bytes).digest("hex")}`;
+  const title = (file.name || "upload").replace(/\.[^/.]+$/, "") || "upload";
 
   const existing = await prisma.courseMaterial.findFirst({
     where: { courseId, checksum },
@@ -377,7 +372,7 @@ async function persistFailedUploadMaterial(
     await prisma.courseMaterial.update({
       where: { id: existing.id },
       data: {
-        status: 'FAILED',
+        status: "FAILED",
         uploadedBy: userId,
         deletedAt: null,
         deletedBy: null,
@@ -391,11 +386,11 @@ async function persistFailedUploadMaterial(
     data: {
       courseId,
       title,
-      mimeType: file.type || 'application/octet-stream',
+      mimeType: file.type || "application/octet-stream",
       fileSize: file.size || bytes.length,
       checksum,
       rawText: null,
-      status: 'FAILED',
+      status: "FAILED",
       uploadedBy: userId,
     },
   });
@@ -405,14 +400,14 @@ async function persistFailedUploadMaterial(
 async function uploadMaterial(
   request: Request,
   courseId: string,
-  user: Session['user'],
+  user: Session["user"],
   requestContext: ReturnType<typeof getRequestContext>,
 ) {
   const formData = await request.formData();
-  const file = formData.get('file') as File;
+  const file = formData.get("file") as File;
 
   if (!file) {
-    return json(400, { error: 'No file provided' });
+    return json(400, { error: "No file provided" });
   }
 
   let fileInfo;
@@ -421,21 +416,21 @@ async function uploadMaterial(
   } catch (extractError) {
     // Extraction (e.g. PDF worker kill) happens before a material row exists — persist
     // FAILED so a killed worker still leaves an auditable record (#1018 / #1161).
-    console.error('Error extracting material upload:', extractError);
+    console.error("Error extracting material upload:", extractError);
     let materialId: string | undefined;
     try {
       materialId = await persistFailedUploadMaterial(courseId, file, user.id);
       fireAndForget(
         logSystemError({
           ...requestContext,
-          source: 'AI',
-          code: 'MATERIAL_EXTRACT_FAILED',
-          message: 'Material extraction failed during upload processing',
+          source: "AI",
+          code: "MATERIAL_EXTRACT_FAILED",
+          message: "Material extraction failed during upload processing",
           error: extractError,
         }),
       );
     } catch (persistError) {
-      console.error('Additionally failed to persist FAILED material:', persistError);
+      console.error("Additionally failed to persist FAILED material:", persistError);
     }
     return json(500, {
       error: toMaterialUploadUserMessage(extractError),
@@ -457,7 +452,7 @@ async function uploadMaterial(
           data: {
             deletedAt: null,
             deletedBy: null,
-            status: 'PROCESSING',
+            status: "PROCESSING",
             uploadedBy: user.id,
             processedAt: null,
           },
@@ -470,24 +465,24 @@ async function uploadMaterial(
           });
           await prisma.courseMaterial.update({
             where: { id: existingMaterial.id },
-            data: { status: 'READY', processedAt: new Date() },
+            data: { status: "READY", processedAt: new Date() },
           });
           return json(200, {
             success: true,
             materialId: existingMaterial.id,
-            message: 'Material restored and processed successfully',
+            message: "Material restored and processed successfully",
           });
         } catch (embeddingError) {
           await prisma.courseMaterial.update({
             where: { id: existingMaterial.id },
-            data: { status: 'FAILED' },
+            data: { status: "FAILED" },
           });
           throw embeddingError;
         }
       }
       // Not soft-deleted: it's a real duplicate.
       return json(409, {
-        error: 'A file with identical content already exists in this course',
+        error: "A file with identical content already exists in this course",
         materialId: existingMaterial.id,
       });
     }
@@ -502,7 +497,7 @@ async function uploadMaterial(
           fileSize: fileInfo.fileSize,
           checksum: fileInfo.checksum,
           rawText: fileInfo.content,
-          status: 'PROCESSING',
+          status: "PROCESSING",
           uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
         },
       });
@@ -518,7 +513,7 @@ async function uploadMaterial(
         });
         if (winner) {
           return json(409, {
-            error: 'A file with identical content already exists in this course',
+            error: "A file with identical content already exists in this course",
             materialId: winner.id,
           });
         }
@@ -535,9 +530,9 @@ async function uploadMaterial(
       logAuditAction({
         ...getActorContext(user ?? null),
         ...requestContext,
-        actionCode: 'MATERIAL_UPLOADED',
-        category: 'MATERIAL',
-        entityType: 'CourseMaterial',
+        actionCode: "MATERIAL_UPLOADED",
+        category: "MATERIAL",
+        entityType: "CourseMaterial",
         entityId: material.id,
         entityLabel: material.title,
         details: {
@@ -555,34 +550,32 @@ async function uploadMaterial(
 
       await prisma.courseMaterial.update({
         where: { id: material.id },
-        data: { status: 'READY', processedAt: new Date() },
+        data: { status: "READY", processedAt: new Date() },
       });
 
       return json(200, {
         success: true,
         materialId: material.id,
-        message: 'Material uploaded and processed successfully',
+        message: "Material uploaded and processed successfully",
       });
-
     } catch (embeddingError) {
       await prisma.courseMaterial.update({
         where: { id: material.id },
-        data: { status: 'FAILED' },
+        data: { status: "FAILED" },
       });
       fireAndForget(
         logSystemError({
           ...requestContext,
-          source: 'AI',
-          code: 'MATERIAL_EMBED_FAILED',
-          message: 'Material embedding failed during upload processing',
+          source: "AI",
+          code: "MATERIAL_EMBED_FAILED",
+          message: "Material embedding failed during upload processing",
           error: embeddingError,
         }),
       );
       throw embeddingError;
     }
-
   } catch (error) {
-    console.error('Error processing material upload:', error);
+    console.error("Error processing material upload:", error);
     return json(500, {
       error: toMaterialUploadUserMessage(error),
     });
@@ -602,7 +595,7 @@ async function materialsListResponse(
     include: {
       _count: { select: { chunks: true } },
     },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
@@ -621,7 +614,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
   const materialId = params.materialId;
   if (!courseId) {
-    return json(400, { error: 'Course ID is required' });
+    return json(400, { error: "Course ID is required" });
   }
 
   const cursorParams = parseCursorParams(new URL(request.url).searchParams);
@@ -640,7 +633,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       select: { id: true },
     });
     if (!course) {
-      return json(404, { error: 'COURSE_NOT_FOUND' });
+      return json(404, { error: "COURSE_NOT_FOUND" });
     }
     return materialsListResponse(courseId, true, cursorParams);
   }
@@ -650,24 +643,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { user, access, isPublished } = resolved;
 
   // §7/§19: students can view materials only in published courses.
-  if (access.level === 'student' && !isPublished) {
-    return json(403, { error: 'Forbidden' });
+  if (access.level === "student" && !isPublished) {
+    return json(403, { error: "Forbidden" });
   }
 
   // Policy gate (students.canViewMaterials, default true): layers on top of the
   // publish gate — off means students cannot list materials at all.
-  if (access.level === 'student' && !(await getPolicy('students.canViewMaterials'))) {
+  if (access.level === "student" && !(await getPolicy("students.canViewMaterials"))) {
     return denyByPolicy({
       request,
-      policyKey: 'students.canViewMaterials',
+      policyKey: "students.canViewMaterials",
       user,
-      action: 'material.list',
+      action: "material.list",
       courseId,
     });
   }
 
   const excludedCanvasFileIds =
-    access.level === 'student'
+    access.level === "student"
       ? (
           await prisma.canvasMaterialExclusion.findMany({
             where: { courseId },
@@ -677,9 +670,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : [];
 
   const studentGate =
-    access.level === 'student'
-      ? studentVisibilityWhere(new Date(), excludedCanvasFileIds)
-      : {};
+    access.level === "student" ? studentVisibilityWhere(new Date(), excludedCanvasFileIds) : {};
 
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({
@@ -703,23 +694,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       // Distinguish them with one extra query so hidden-but-real material
       // reports 403, matching #1180's spec, instead of the indistinguishable
       // 404 a folded WHERE clause would otherwise produce.
-      if (access.level === 'student') {
+      if (access.level === "student") {
         const exists = await prisma.courseMaterial.findFirst({
           where: { id: materialId, courseId, deletedAt: null },
           select: { id: true },
         });
         if (exists) {
-          return json(403, { error: 'Forbidden' });
+          return json(403, { error: "Forbidden" });
         }
       }
-      return json(404, { error: 'Material not found' });
+      return json(404, { error: "Material not found" });
     }
 
-    if (material.status !== 'READY') {
-      return json(409, { error: 'Material is not ready for preview' });
+    if (material.status !== "READY") {
+      return json(409, { error: "Material is not ready for preview" });
     }
 
-    const rawText = material.rawText ?? '';
+    const rawText = material.rawText ?? "";
     const truncated = rawText.length > PREVIEW_EXCERPT_MAX;
     const { rawText: _rawText, ...meta } = material;
 
@@ -736,7 +727,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     include: {
       _count: { select: { chunks: true } },
     },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });

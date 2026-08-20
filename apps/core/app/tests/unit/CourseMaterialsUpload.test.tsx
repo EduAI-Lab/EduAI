@@ -28,18 +28,13 @@ describe("CourseMaterialsUpload — rendering", () => {
   });
 
   it("renders an error message when error is set", () => {
-    render(
-      <CourseMaterialsUpload onFileSelect={vi.fn()} error="Upload failed" />
-    );
+    render(<CourseMaterialsUpload onFileSelect={vi.fn()} error="Upload failed" />);
     expect(screen.getByText("Upload failed")).toBeInTheDocument();
   });
 
   it("renders a success message when success is set", () => {
     render(
-      <CourseMaterialsUpload
-        onFileSelect={vi.fn()}
-        success="Material uploaded successfully"
-      />
+      <CourseMaterialsUpload onFileSelect={vi.fn()} success="Material uploaded successfully" />,
     );
     expect(screen.getByText("Material uploaded successfully")).toBeInTheDocument();
   });

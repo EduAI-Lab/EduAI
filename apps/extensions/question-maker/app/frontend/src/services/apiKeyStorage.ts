@@ -3,16 +3,16 @@
  * Uses Web Crypto AES-GCM with a derived key so keys stay encrypted at rest in the browser.
  */
 
-const STORAGE_KEY_PREFIX = 'eduai_api_key_';
-const ENCRYPTION_KEY_NAME = 'eduai_encryption_key';
+const STORAGE_KEY_PREFIX = "eduai_api_key_";
+const ENCRYPTION_KEY_NAME = "eduai_encryption_key";
 
-export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic';
+export type AIProvider = "google" | "openai" | "deepseek" | "anthropic";
 
 /** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
-export type CampusProvider = 'vllm' | 'ollama';
+export type CampusProvider = "vllm" | "ollama";
 
 /** Cloud (key-bearing) providers, as opposed to the UBC-hosted campus path. */
-export const CLOUD_PROVIDERS: AIProvider[] = ['google', 'openai', 'deepseek', 'anthropic'];
+export const CLOUD_PROVIDERS: AIProvider[] = ["google", "openai", "deepseek", "anthropic"];
 
 /** True when a provider id names a cloud provider (any supported one — not just Google). */
 export function isCloudProvider(provider: string | null | undefined): provider is AIProvider {
@@ -21,7 +21,7 @@ export function isCloudProvider(provider: string | null | undefined): provider i
 
 /** True when a provider id names the UBC-hosted campus path (`vllm` or legacy `ollama`). */
 export function isCampusProvider(provider: string | null | undefined): provider is CampusProvider {
-  return provider === 'vllm' || provider === 'ollama';
+  return provider === "vllm" || provider === "ollama";
 }
 
 /** Generates or retrieves a derived AES-GCM key for encrypting provider secrets in this browser. */
@@ -32,31 +32,28 @@ async function getEncryptionKey(): Promise<CryptoKey> {
   if (!salt) {
     // Generate new salt and store it
     const saltArray = crypto.getRandomValues(new Uint8Array(16));
-    salt = Array.from(saltArray, byte => byte.toString(16).padStart(2, '0')).join('');
+    salt = Array.from(saltArray, (byte) => byte.toString(16).padStart(2, "0")).join("");
     localStorage.setItem(ENCRYPTION_KEY_NAME, salt);
   }
 
   // Create a key from the salt using PBKDF2
   const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(salt),
-    'PBKDF2',
-    false,
-    ['deriveBits', 'deriveKey']
-  );
+  const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(salt), "PBKDF2", false, [
+    "deriveBits",
+    "deriveKey",
+  ]);
 
   return crypto.subtle.deriveKey(
     {
-      name: 'PBKDF2',
-      salt: encoder.encode('eduai-storage-salt'),
+      name: "PBKDF2",
+      salt: encoder.encode("eduai-storage-salt"),
       iterations: 100000,
-      hash: 'SHA-256'
+      hash: "SHA-256",
     },
     keyMaterial,
-    { name: 'AES-GCM', length: 256 },
+    { name: "AES-GCM", length: 256 },
     false,
-    ['encrypt', 'decrypt']
+    ["encrypt", "decrypt"],
   );
 }
 
@@ -67,9 +64,9 @@ async function encrypt(value: string): Promise<string> {
   const encoder = new TextEncoder();
 
   const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: "AES-GCM", iv },
     key,
-    encoder.encode(value)
+    encoder.encode(value),
   );
 
   // Combine IV and encrypted data
@@ -88,22 +85,18 @@ async function decrypt(encryptedValue: string): Promise<string> {
     const decoder = new TextDecoder();
 
     // Decode from base64
-    const combined = Uint8Array.from(atob(encryptedValue), c => c.charCodeAt(0));
+    const combined = Uint8Array.from(atob(encryptedValue), (c) => c.charCodeAt(0));
 
     // Extract IV and encrypted data
     const iv = combined.slice(0, 12);
     const encrypted = combined.slice(12);
 
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encrypted
-    );
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
 
     return decoder.decode(decrypted);
   } catch (error) {
-    console.error('Decryption failed:', error);
-    return '';
+    console.error("Decryption failed:", error);
+    return "";
   }
 }
 
@@ -142,7 +135,7 @@ export const apiKeyStorage = {
 
   /** Derives provider name from a model ID prefix (e.g., google:gemini → google). */
   getProviderFromModel(modelId: string): AIProvider | null {
-    const provider = modelId.split(':')[0].toLowerCase();
+    const provider = modelId.split(":")[0].toLowerCase();
     if (isCloudProvider(provider)) {
       return provider;
     }
@@ -151,23 +144,23 @@ export const apiKeyStorage = {
 
   /** Returns true when the selected model requires a provider API key (cloud only). */
   requiresApiKey(modelId: string): boolean {
-    return !modelId.startsWith('ollama') && !modelId.startsWith('vllm');
+    return !modelId.startsWith("ollama") && !modelId.startsWith("vllm");
   },
 
   /** Builds the apiKeys payload expected by the AI service based on the chosen model and stored keys. */
   async buildApiKeysForModel(modelId: string): Promise<Record<string, any>> {
-    if (modelId.startsWith('ollama')) {
+    if (modelId.startsWith("ollama")) {
       return {
         ollama: {
-          isEnabled: true
-        }
+          isEnabled: true,
+        },
       };
     }
-    if (modelId.startsWith('vllm')) {
+    if (modelId.startsWith("vllm")) {
       return {
         vllm: {
-          isEnabled: true
-        }
+          isEnabled: true,
+        },
       };
     }
 
@@ -184,10 +177,10 @@ export const apiKeyStorage = {
     return {
       [provider]: {
         apiKey,
-        isEnabled: true
-      }
+        isEnabled: true,
+      },
     };
-  }
+  },
 };
 
 export default apiKeyStorage;

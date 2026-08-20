@@ -1,9 +1,6 @@
 import { Prisma, BugReportType } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import {
-  redactDiagnosticLogString,
-  sanitizeSensitiveData,
-} from "~/lib/redact.server";
+import { redactDiagnosticLogString, sanitizeSensitiveData } from "~/lib/redact.server";
 
 const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 type BugReportSource = (typeof VALID_SOURCES)[number];
@@ -125,14 +122,8 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
     bugType = p.bugType as BugReportType;
   }
 
-  const consoleLogs = prepareDiagnosticLogs(
-    p.consoleLogs,
-    BUG_REPORT_FIELD_LIMITS.consoleLogs,
-  );
-  const networkLogs = prepareDiagnosticLogs(
-    p.networkLogs,
-    BUG_REPORT_FIELD_LIMITS.networkLogs,
-  );
+  const consoleLogs = prepareDiagnosticLogs(p.consoleLogs, BUG_REPORT_FIELD_LIMITS.consoleLogs);
+  const networkLogs = prepareDiagnosticLogs(p.networkLogs, BUG_REPORT_FIELD_LIMITS.networkLogs);
 
   // Oversized screenshot is dropped, not rejected: truncating a data URL yields
   // a broken image, and failing the submit would lose the description + logs
@@ -268,9 +259,7 @@ export async function listBugReports(params: {
     conditions.push(Prisma.sql`br.status = ${status}::"BugReportStatus"`);
   }
   const whereSql =
-    conditions.length > 0
-      ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
-      : Prisma.sql``;
+    conditions.length > 0 ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.sql``;
 
   const [reports, total] = await Promise.all([
     prisma.$queryRaw<ListBugReportRow[]>`

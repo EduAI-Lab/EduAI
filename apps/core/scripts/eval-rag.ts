@@ -231,9 +231,7 @@ async function runHyDE(
 
   const hydeEmbedding = await generateEmbedding(hypothetical.trim(), courseId);
 
-  const results = await prisma.$queryRaw<
-    Array<{ content: string; material_title: string }>
-  >`
+  const results = await prisma.$queryRaw<Array<{ content: string; material_title: string }>>`
     SELECT mc.content, cm.title AS material_title
     FROM material_embeddings me
     JOIN material_chunks mc ON me."chunkId" = mc.id
@@ -328,7 +326,9 @@ async function main() {
 
   for (let qi = 0; qi < EVAL_QUERIES.length; qi++) {
     const { query, mustContain, category, note } = EVAL_QUERIES[qi];
-    process.stdout.write(`[${qi + 1}/${EVAL_QUERIES.length}] ${category}: "${query.slice(0, 55)}…" `);
+    process.stdout.write(
+      `[${qi + 1}/${EVAL_QUERIES.length}] ${category}: "${query.slice(0, 55)}…" `,
+    );
 
     const [baselineChunks, hybridChunks] = await Promise.all([
       runBaseline(query, courseId),
@@ -434,12 +434,9 @@ async function main() {
   console.log("─────────────────────────────────────────────────────────");
 
   for (const cat of categories) {
-    const idx = detailRows
-      .map((r, i) => (r.category === cat ? i : -1))
-      .filter((i) => i >= 0);
+    const idx = detailRows.map((r, i) => (r.category === cat ? i : -1)).filter((i) => i >= 0);
     if (idx.length === 0) continue;
-    const catRecall = (s: string) =>
-      fmt(idx.filter((i) => results[s].hits[i]).length / idx.length);
+    const catRecall = (s: string) => fmt(idx.filter((i) => results[s].hits[i]).length / idx.length);
     console.log(
       `${cat.padEnd(9)}  ${idx.length}   ${catRecall("baseline")}      ${catRecall("hybrid")}   ${catRecall("rewrite")}   ${catRecall("hyde")}`,
     );
@@ -450,7 +447,9 @@ async function main() {
   for (const r of detailRows) {
     const t = (b: boolean) => (b ? "✓" : "✗");
     const q = r.query.length > 52 ? r.query.slice(0, 52) + "…" : r.query.padEnd(55);
-    console.log(`[${r.category.slice(0, 3)}] ${q}  B:${t(r.baseline)} H:${t(r.hybrid)} R:${t(r.rewrite)} Y:${t(r.hyde)}`);
+    console.log(
+      `[${r.category.slice(0, 3)}] ${q}  B:${t(r.baseline)} H:${t(r.hybrid)} R:${t(r.rewrite)} Y:${t(r.hyde)}`,
+    );
   }
 
   console.log("\n═══════════════════════════════════════════════════════════");

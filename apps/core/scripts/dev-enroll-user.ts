@@ -38,7 +38,10 @@ async function main() {
   if (!user) {
     const all = await prisma.user.findMany({ select: { email: true }, take: 20 });
     console.log("No user matching", needle);
-    console.log("Sample emails:", all.map((u) => u.email));
+    console.log(
+      "Sample emails:",
+      all.map((u) => u.email),
+    );
     return;
   }
 

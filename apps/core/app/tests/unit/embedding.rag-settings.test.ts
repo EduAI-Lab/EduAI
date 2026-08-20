@@ -69,10 +69,7 @@ vi.mock("@ai-sdk/openai", () => ({
 process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-google-key";
 process.env.EMBEDDING_DIMENSION = "3";
 
-import {
-  findRelevantContent,
-  __resetPgvectorIterativeScanCacheForTests,
-} from "~/lib/ai/embedding";
+import { findRelevantContent, __resetPgvectorIterativeScanCacheForTests } from "~/lib/ai/embedding";
 
 // ---------------------------------------------------------------------------
 // Helpers

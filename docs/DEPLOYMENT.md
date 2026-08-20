@@ -93,7 +93,8 @@ Canvas credentials are stored encrypted in the database rather than in these env
 
 ## Shared development server (s378)
 
-The shared host runs three node processes plus the local data services, and serves both extension
+The shared host runs four node processes (Core, the dedicated cron worker, and
+the two extension servers) plus the local data services, and serves both extension
 frontends as static files from Apache. It is also the normal
 place to test campus inference because cmps01 is reachable from s378, while it may not be reachable
 from a developer laptop.
@@ -150,14 +151,15 @@ branches survive, and Core's `isProd` gates (HSTS, strict nonce CSP) stay off.
 
 ### Process management
 
-Three system units under `infra/s378/systemd/`, owned by the `eduai-dev` group:
+Four system units under `infra/s378/systemd/`, owned by the `eduai-dev` group:
 
 | Unit | Process |
 |---|---|
 | `eduai-core.service` | Core on `3000` (SSR, `react-router-serve`) |
+| `eduai-cron-worker.service` | Dedicated Core cron scheduler and shell-job worker |
 | `eduai-aitutor-server.service` | AI Tutor API on `4000` |
 | `eduai-qm-backend.service` | Question Maker API on `8000` |
-| `eduai-dev.target` | All three services |
+| `eduai-dev.target` | All four services |
 
 Both extension frontends build to static files (`ssr: false`) and are served directly by Apache, so
 they have no unit and no port of their own.
@@ -177,7 +179,15 @@ systemctl status eduai-dev.target
 systemctl restart eduai-dev.target
 systemctl restart eduai-core
 journalctl -u eduai-core -f
+systemctl status eduai-cron-worker.service --no-pager
+journalctl -u eduai-cron-worker.service -n 50 --no-pager
 ```
+
+After deploying a change to `infra/cron/*.sh`, `go-live-build.sh` synchronizes
+those scripts into `/opt/eduai/cron` before restarting the worker. For a one-time
+upgrade from the old three-unit layout, run
+`bash infra/s378/go-live-systemd-install.sh` first; it creates the dedicated
+`eduai-cron` account, directories, env permissions, and worker unit.
 
 Restarting picks up a changed server-side `.env`, but a changed `VITE_`-prefixed value needs a full
 rebuild. Never start an app with `npm run dev` on s378 — it binds the same port the unit holds.
@@ -281,7 +291,7 @@ For fleet variables and firewall caveats, see
 ### Smoke checks
 
 ```bash
-systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+systemctl is-active eduai-core eduai-cron-worker eduai-aitutor-server eduai-qm-backend
 
 curl -fsS http://127.0.0.1:3000/ >/dev/null
 curl -fsS http://127.0.0.1:4000/api/health >/dev/null

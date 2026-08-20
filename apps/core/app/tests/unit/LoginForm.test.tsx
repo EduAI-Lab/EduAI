@@ -7,17 +7,17 @@ import { LoginForm } from "~/components/login-form";
 // ---------------------------------------------------------------------------
 
 describe("LoginForm — rendering", () => {
-  it("renders an email input with type=\"email\"", () => {
+  it('renders an email input with type="email"', () => {
     render(<LoginForm />);
     expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
   });
 
-  it("renders a password input with type=\"password\"", () => {
+  it('renders a password input with type="password"', () => {
     render(<LoginForm />);
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
   });
 
-  it("renders the submit button with the text \"Sign in\"", () => {
+  it('renders the submit button with the text "Sign in"', () => {
     render(<LoginForm />);
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
@@ -70,7 +70,7 @@ describe("LoginForm — loading state", () => {
     expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
   });
 
-  it("changes the submit button text to \"Signing in...\" when isLoading is true", () => {
+  it('changes the submit button text to "Signing in..." when isLoading is true', () => {
     render(<LoginForm isLoading />);
     expect(screen.getByRole("button", { name: "Signing in..." })).toBeInTheDocument();
   });
