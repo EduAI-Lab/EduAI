@@ -61,12 +61,17 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   };
 });
 
-import { loader, action, MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/routes/api/courses.materials.$";
+import { loader, action } from "~/routes/api/courses.materials.$";
+import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { extractUploadedFileContent, validateUploadedFile } from "~/lib/ai/file-processing";
+import {
+  extractUploadedFileContent,
+  processUploadedFile,
+  validateUploadedFile,
+} from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE_ID = "course-1";

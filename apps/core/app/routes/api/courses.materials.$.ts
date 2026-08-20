@@ -33,10 +33,7 @@ import {
   readBoundedFormData,
 } from "~/lib/multipart.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
-
-// File extraction itself caps a file at 50 MiB. Leave room for multipart
-// boundaries and metadata while still bounding the transport before parsing.
-export const MATERIAL_UPLOAD_BODY_MAX_BYTES = 52 * 1024 * 1024;
+import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
