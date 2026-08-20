@@ -7,6 +7,7 @@ import { isbot } from "isbot";
 import type { RenderToPipeableStreamOptions } from "react-dom/server";
 import { renderToPipeableStream } from "react-dom/server";
 
+import { ensureMaterialSweeperRunning } from "~/lib/materials/extraction-job.server";
 import { NonceProvider } from "~/lib/nonce";
 import { redactErrorForConsole } from "~/lib/redact.server";
 import { startCoreServerRuntime } from "~/lib/server-runtime.server";
@@ -17,6 +18,13 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 export const streamTimeout = 5_000;
+
+// #949: recover material uploads stranded by whatever ended the previous
+// process. This has to run at startup rather than only from the upload path —
+// a stranded row is precisely what stops the next upload of those bytes from
+// happening (it collides and answers 409), so waiting for one to arrive can
+// wait forever. Guarded to one timer per process, and unref'd.
+ensureMaterialSweeperRunning();
 
 export default function handleRequest(
   request: Request,
