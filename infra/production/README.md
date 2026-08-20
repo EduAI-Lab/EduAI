@@ -37,7 +37,7 @@ The application service runs from `current`. The old checkout remains available 
 - Redis: private production Redis instance for the optional BullMQ worker
 - Inference: configure only reachable hosts in `VLLM_FLEET_CHAT_URLS`; begin with cmps01 and add cmps02/cmps03 after firewall validation
 - AI Tutor: `https://aitutor.ok.ubc.ca`, static frontend plus API on `127.0.0.1:4000`
-- Shared auth: `COOKIE_DOMAIN=.eduai.ok.ubc.ca` is required across Core and AI Tutor
+- Shared auth: `COOKIE_DOMAIN=.ok.ubc.ca` is required across the sibling Core and extension hosts; confirm no unrelated `*.ok.ubc.ca` service should receive this cookie before enabling it
 - Question Maker: `https://questionmaker.ok.ubc.ca`, Docker frontend on `127.0.0.1:3005` plus API on `127.0.0.1:8000`
 
 ## One-time server preparation
@@ -93,7 +93,9 @@ infra/production/apache/questionmaker.ok.ubc.ca.conf   -> /etc/apache2/sites-ava
 The frontend uses the public-only values in
 `infra/production/ai-tutor-frontend.env` during the build. The API environment
 must contain the same `EDUAI_API_KEY` as Core, but that secret must never be
-committed or copied into the frontend bundle.
+committed or copied into the frontend bundle. Before enabling either new
+Apache vhost, replace its certificate placeholders with the institution-managed
+certificate paths (or an approved wildcard certificate path).
 
 ### Question Maker production prerequisites
 
@@ -104,8 +106,9 @@ and copy `question-maker-frontend.env` to
 frontend values are compiled into the static bundle; changing the container's
 runtime environment after the build will not change browser navigation URLs.
 
-Install `apache/questionmaker.ok.ubc.ca.conf` after confirming the managed TLS
-certificate path. The vhost proxies `/api/` to the Question Maker backend on
+Install `apache/questionmaker.ok.ubc.ca.conf` after replacing its certificate
+placeholders with the institution-managed TLS paths (or an approved wildcard
+certificate path). The vhost proxies `/api/` to the Question Maker backend on
 `127.0.0.1:8000` and the frontend to `127.0.0.1:3005`.
 
 ## First release procedure

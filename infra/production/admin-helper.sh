@@ -94,7 +94,9 @@ case "${1:-}" in
   install-aitutor-db-env)
     no_extra_args "$@"
     [ -f "$AI_TUTOR_DB_ENV_SOURCE" ] || die "AI Tutor database environment source does not exist: $AI_TUTOR_DB_ENV_SOURCE"
-    grep -Eq '^POSTGRES_(USER|PASSWORD|DB)=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is incomplete"
+    grep -Eq '^POSTGRES_USER=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is missing POSTGRES_USER"
+    grep -Eq '^POSTGRES_PASSWORD=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is missing POSTGRES_PASSWORD"
+    grep -Eq '^POSTGRES_DB=.+$' "$AI_TUTOR_DB_ENV_SOURCE" || die "AI Tutor database environment is missing POSTGRES_DB"
     grep -Eq '<[^>]+>|CHANGE_ME|REPLACE_ME' "$AI_TUTOR_DB_ENV_SOURCE" && die "AI Tutor database environment still contains placeholders"
     install -o root -g root -m 0600 "$AI_TUTOR_DB_ENV_SOURCE" "$AI_TUTOR_DB_ENV"
     echo "Installed $AI_TUTOR_DB_ENV"
@@ -159,7 +161,7 @@ case "${1:-}" in
       service_key=$(openssl rand -hex 32)
       set_env_value "$CORE_ENV" EDUAI_API_KEY "$service_key"
     fi
-    set_env_value "$CORE_ENV" COOKIE_DOMAIN ".eduai.ok.ubc.ca"
+    set_env_value "$CORE_ENV" COOKIE_DOMAIN ".ok.ubc.ca"
     set_env_value "$CORE_ENV" AI_TUTOR_SERVER_URL "http://127.0.0.1:4000"
     set_env_value "$CORE_ENV" VITE_EDUAI_URL "https://my.eduai.ok.ubc.ca"
     set_env_value "$CORE_ENV" VITE_AI_TUTOR_URL "https://aitutor.ok.ubc.ca"
