@@ -209,4 +209,21 @@ describe("persistAiInteractionTelemetry", () => {
       }),
     );
   });
+
+  it("persists aws-bedrock when overflow served the turn (#1441)", async () => {
+    await persistAiInteractionTelemetry({
+      ...baseParams,
+      resolvedModelId: "bedrock:meta.llama3-70b-instruct-v1:0",
+      serverId: "aws-bedrock",
+    });
+
+    expect(prisma.aIInteraction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          serverId: "aws-bedrock",
+          modelUsed: "bedrock:meta.llama3-70b-instruct-v1:0",
+        }),
+      }),
+    );
+  });
 });

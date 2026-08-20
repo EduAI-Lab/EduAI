@@ -1,8 +1,13 @@
 /** Shared provider types and static config — safe for client hooks and unit tests. */
 
-export type SupportedProvider = "openai" | "google" | "ollama" | "vllm" | "opencode";
+export type SupportedProvider = "openai" | "google" | "ollama" | "vllm" | "opencode" | "bedrock";
 
-/** Local inference providers that do not require a user API key. */
+/**
+ * Local inference providers that do not require a user API key.
+ * Bedrock is intentionally excluded: mergeLocalInferenceFromEnv uses this
+ * list to auto-enable a provider from env vars. Bedrock may only be enabled
+ * by the overflow decision (#1441), never as a normal pool member.
+ */
 export const LOCAL_INFERENCE_PROVIDERS: SupportedProvider[] = ["ollama", "vllm"];
 
 export interface UserProviderSettings {
@@ -69,6 +74,13 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     description: "OpenCode Go subscription models, including DeepSeek V4 Flash",
     requiresApiKey: true,
     defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+  },
+  bedrock: {
+    id: "bedrock",
+    name: "Amazon Bedrock",
+    description: "Overflow-only Amazon Bedrock (Llama 3 Instruct 70B)",
+    requiresApiKey: false,
+    envVarName: "AWS_BEARER_TOKEN_BEDROCK",
   },
 };
 

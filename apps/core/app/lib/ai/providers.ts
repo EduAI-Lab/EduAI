@@ -14,6 +14,8 @@ import { resolveAllowedOllamaBaseUrl } from "~/lib/ai/ollama-url.server";
 import { resolveVllmApiKey } from "~/lib/ai/vllm-api-key.server";
 import { resolveAllowedVllmBaseUrl } from "~/lib/ai/vllm-url.server";
 import { vllmThinkingDisabledFetch } from "~/lib/ai/vllm-thinking.server";
+import { createBedrockProvider } from "~/lib/ai/routing/bedrock/bedrock-provider.server";
+import { getBedrockRegion } from "~/lib/ai/routing/bedrock/overflow.server";
 import {
   LOCAL_INFERENCE_PROVIDERS,
   isDeploymentManagedProviderSettings,
@@ -169,6 +171,16 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     });
   }
 
+  // Bedrock is overflow-only (#1441). Never honor client apiKey/baseUrl —
+  // the bearer token and region always come from server env.
+  const bedrockToken = process.env.AWS_BEARER_TOKEN_BEDROCK?.trim();
+  if (userSettings.bedrock?.isEnabled && bedrockToken) {
+    providers.bedrock = createBedrockProvider({
+      apiKey: bedrockToken,
+      region: getBedrockRegion(),
+    });
+  }
+
   // Create and return the registry
   return createProviderRegistry(providers, { separator: ":" });
 }
@@ -197,7 +209,8 @@ export function validateProviderConfig(
  * Get available provider configurations
  */
 export function getAvailableProviders(): ProviderConfig[] {
-  return Object.values(PROVIDER_CONFIGS);
+  // Bedrock is overflow-only and must not appear in user-facing provider lists.
+  return Object.values(PROVIDER_CONFIGS).filter((config) => config.id !== "bedrock");
 }
 
 /**
@@ -250,5 +263,8 @@ export function listEnabledRegistryProviders(userSettings: UserProviderSettings)
     ids.push("vllm");
   }
   if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) ids.push("opencode");
+  if (userSettings.bedrock?.isEnabled && process.env.AWS_BEARER_TOKEN_BEDROCK?.trim()) {
+    ids.push("bedrock");
+  }
   return ids;
 }
