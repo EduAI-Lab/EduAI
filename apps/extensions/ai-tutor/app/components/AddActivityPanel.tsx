@@ -59,6 +59,7 @@ import {
 import { cn } from "~/lib/utils";
 import api from "../lib/api";
 import { useCourseTopicsContext } from "../hooks/useCourseTopics";
+import { AI_MODE_REQUIRED } from "~/lib/activityForm";
 
 const TYPE_OPTIONS = [
   { value: "MCQ" as const, label: "MCQ" },
@@ -99,6 +100,9 @@ export default function AddActivityPanel({
   const [selectedMainTopicId, setSelectedMainTopicId] = useState<string>("");
   const [selectedSecondaryTopicIds, setSelectedSecondaryTopicIds] = useState<string[]>([]);
   const [topicSelectionError, setTopicSelectionError] = useState<string | null>(null);
+  // Shown under the AI study buddy box. Was a native `alert()`, which is modal,
+  // unstyled, and detached from the control that caused it.
+  const [aiModeError, setAiModeError] = useState<string | null>(null);
 
   const [enableTeachMode, setEnableTeachMode] = useState(true);
   const [enableGuideMode, setEnableGuideMode] = useState(true);
@@ -155,12 +159,13 @@ export default function AddActivityPanel({
     }
 
     if (!enableTeachMode && !enableGuideMode) {
-      alert("At least one AI mode must be enabled");
+      setAiModeError(AI_MODE_REQUIRED);
       return;
     }
 
     setBusy(true);
     setTopicSelectionError(null);
+    setAiModeError(null);
 
     const mainTopicId = selectedMainTopicId;
     const secondaryIds = selectedSecondaryTopicIds.filter((id) => id !== mainTopicId);
@@ -400,9 +405,7 @@ export default function AddActivityPanel({
               )}
               {!loadingTopics && !topicsError && topics.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No topics on this course yet. Open the course page and use{" "}
-                  <span className="font-medium text-foreground">Sync topics from EduAI Core</span>,
-                  then try again.
+                  No topics on this course yet. Add some on EduAI Core, then try again.
                 </p>
               )}
             </div>
@@ -467,9 +470,10 @@ export default function AddActivityPanel({
                       aria-pressed={mode.enabled}
                       onClick={() => {
                         if (mode.enabled && !mode.other) {
-                          alert("At least one AI mode must be enabled");
+                          setAiModeError(AI_MODE_REQUIRED);
                           return;
                         }
+                        setAiModeError(null);
                         mode.set(!mode.enabled);
                       }}
                       className={cn(
@@ -485,6 +489,11 @@ export default function AddActivityPanel({
                   );
                 })}
               </div>
+              {aiModeError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {aiModeError}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

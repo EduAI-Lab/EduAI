@@ -38,11 +38,12 @@ function renderPanel(topicsState: CourseTopicsState) {
 }
 
 describe("AddActivityPanel empty-topics hint (#1021)", () => {
-  it("shows the sync-from-Core hint when the course has no topics", () => {
+  it("points at EduAI Core when the course has no topics", () => {
     renderPanel(emptyTopicsState());
 
-    expect(screen.getByText(/No topics on this course yet/i)).toBeTruthy();
-    expect(screen.getByText(/Sync topics from EduAI Core/i)).toBeTruthy();
+    expect(
+      screen.getByText(/No topics on this course yet\. Add some on EduAI Core, then try again\./i),
+    ).toBeTruthy();
   });
 
   it("hides the empty-topics hint while topics are loading", () => {

@@ -19,7 +19,9 @@
  *     being edited so reports can pinpoint it.
  * Gotchas:
  *   - Validation: at least one of teach/guide/custom must remain enabled.
- *     handleActivityModeChange refuses to disable the last one and alerts.
+ *     handleActivityModeChange refuses to disable the last one and records the
+ *     refusal in `modeErrors[activityId]`, rendered under that activity's AI
+ *     study buddy box (it used to be a native `alert()`).
  *   - Saving indicators are debounced ~300ms (NOT 500ms) via
  *     topicSavingTimeoutRef and modeSavingTimeoutRef to avoid flicker on
  *     fast saves; both timers must be cleared on unmount.
@@ -66,7 +68,7 @@ import { CourseTopicsProvider, useCourseTopics } from "../hooks/useCourseTopics"
 import type { Route } from "./+types/instructor.lesson";
 import { requireClientUser } from "~/lib/client-auth";
 
-import type { ActivityUpdatePayload } from "../lib/activityForm";
+import { AI_MODE_REQUIRED, type ActivityUpdatePayload } from "../lib/activityForm";
 import {
   Badge,
   Button,
@@ -115,6 +117,7 @@ import {
   redirectPastEnd,
 } from "~/lib/list-params";
 import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from "~/components/common/ListSearchInput";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Loads the lesson and its activities in parallel with the role gate (#1334).
@@ -237,6 +240,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [titleDrafts, setTitleDrafts] = useState<Record<number, string>>({});
   const [savingPromptId, setSavingPromptId] = useState<number | null>(null);
   const [promptErrors, setPromptErrors] = useState<Record<number, string>>({});
+  // Keyed by activity id, like promptErrors: the refusal belongs under the AI
+  // study buddy box of the activity whose last mode was being turned off.
+  const [modeErrors, setModeErrors] = useState<Record<number, string>>({});
   const [promptSaved, setPromptSaved] = useState<Record<number, boolean>>({});
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
 
@@ -611,9 +617,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     const newCustom = mode === "custom" ? enabled : activity.enableCustomMode;
 
     if (!newTeach && !newGuide && !newCustom) {
-      alert("At least one AI mode must be enabled");
+      setModeErrors((prev) => ({ ...prev, [activityId]: AI_MODE_REQUIRED }));
       return;
     }
+
+    setModeErrors((prev) => {
+      if (!prev[activityId]) return prev;
+      const { [activityId]: _cleared, ...rest } = prev;
+      return rest;
+    });
 
     // Optimistic UI via useOptimistic
     addActivityOpt((items) =>
@@ -988,6 +1000,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
+                  const modeError = modeErrors[activity.id];
                   const canReorderActivity =
                     perms.canManageContent && activitiesTotal > 1 && !searching;
                   return (
@@ -1295,6 +1308,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     );
                                   })}
                                 </div>
+                                {modeError && (
+                                  <p role="alert" className="text-[0.75rem] text-destructive">
+                                    {modeError}
+                                  </p>
+                                )}
                                 {showModeSaving && isUpdatingModes && (
                                   <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
                                     <Spinner size="xs" />
@@ -1582,3 +1600,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     </CourseTopicsProvider>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };
