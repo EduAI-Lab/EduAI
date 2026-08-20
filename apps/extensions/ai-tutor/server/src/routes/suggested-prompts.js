@@ -1,5 +1,6 @@
 import express from "express";
 import { prisma } from "../config/database.js";
+import { logSafeError } from "../utils/safeErrors.js";
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ router.get("/suggested-prompts", async (req, res) => {
 
     res.json(prompts);
   } catch (error) {
-    console.error("Failed to load suggested prompts:", error);
+    logSafeError("Failed to load suggested prompts", error);
     res.status(500).json({ error: "Failed to load suggested prompts" });
   }
 });

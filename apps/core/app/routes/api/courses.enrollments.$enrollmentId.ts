@@ -21,6 +21,8 @@ import {
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
@@ -56,6 +58,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Manage tier: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C).
   if (!access || access.rank < 2) {
     return json(403, { error: "Forbidden" });
+  }
+
+  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+  if (
+    enrollmentGate !== "always" &&
+    enrollmentGate !== "never" &&
+    !(await getPolicy(enrollmentGate))
+  ) {
+    return denyByPolicy({
+      request,
+      policyKey: enrollmentGate,
+      user: session.user,
+      action: request.method === "PATCH" ? "enrollment.update" : "enrollment.remove",
+      courseId,
+    });
   }
 
   const target = await getEnrollment(courseId, enrollmentId);

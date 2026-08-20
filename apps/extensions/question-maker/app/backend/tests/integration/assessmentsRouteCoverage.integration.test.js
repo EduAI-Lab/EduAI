@@ -1,7 +1,7 @@
 /**
  * Coverage-focused route tests for assessments.js (issue #1217: assessments.js
- * had 40 uncovered statements). assessmentRbac.test.js already covers the
- * STUDENT/TA role gates and the section/variant course-id forwarding; this
+ * had 40 uncovered statements). assessmentRbac.test.js already covers ordinary
+ * STUDENT denial, enrollment-scoped TA views, and the section/variant course-id forwarding; this
  * file exercises the remaining branches: request-body validation guards, the
  * GET list/detail course-access branches, DELETE, and the question-in-
  * assessment lookup routes.
@@ -204,6 +204,41 @@ describe("POST /api/assessments/:id/questions", () => {
     expect(res.status).toBe(200);
     expect(svc.addQuestionToAssessment).toHaveBeenCalledWith("5", 3, 1, COURSE.userId);
   });
+
+  it("does not expose cross-course question details when the service returns a typed 404", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    svc.addQuestionToAssessment.mockRejectedValue(
+      Object.assign(new Error("Question not found"), { status: 404 }),
+    );
+
+    const res = await request(app)
+      .post("/api/assessments/5/questions")
+      .set("Cookie", "session=v")
+      .send({ questionId: 3, orderNumber: 1 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, error: "Not Found" });
+    expect(JSON.stringify(res.body)).not.toContain("Question not found");
+  });
+
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["infinite", "Infinity"],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ])("rejects %s orderNumber before calling the service", async (_label, orderNumber) => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+
+    const res = await request(app)
+      .post("/api/assessments/5/questions")
+      .set("Cookie", "session=v")
+      .send({ questionId: 3, orderNumber });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/positive safe integer/i);
+    expect(svc.addQuestionToAssessment).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE /api/assessments/:id/questions/:questionId", () => {
@@ -217,6 +252,21 @@ describe("DELETE /api/assessments/:id/questions/:questionId", () => {
 
     expect(res.status).toBe(200);
     expect(svc.removeQuestionFromAssessment).toHaveBeenCalledWith("5", "3", COURSE.userId);
+  });
+
+  it("does not expose cross-course question details when the service returns a typed 404", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    svc.removeQuestionFromAssessment.mockRejectedValue(
+      Object.assign(new Error("Question not found"), { status: 404 }),
+    );
+
+    const res = await request(app)
+      .delete("/api/assessments/5/questions/3")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, error: "Not Found" });
+    expect(JSON.stringify(res.body)).not.toContain("Question not found");
   });
 });
 
@@ -362,6 +412,10 @@ describe("DELETE /api/assessments/questions/:questionId/remove-from-all-sections
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ removed: 2 });
-    expect(sectionSvc.removeQuestionFromAllSections).toHaveBeenCalledWith(3, COURSE.userId);
+    expect(sectionSvc.removeQuestionFromAllSections).toHaveBeenCalledWith(
+      3,
+      COURSE.userId,
+      COURSE.id,
+    );
   });
 });

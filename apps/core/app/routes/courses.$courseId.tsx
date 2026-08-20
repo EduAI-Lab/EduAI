@@ -4,7 +4,10 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import prisma from "~/lib/prisma.server";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
-import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
+import {
+  CourseDetailManagerView,
+  type CourseDetailManagerCourse,
+} from "~/components/courses/course-detail-manager-view";
 import { CourseDetailTaView } from "~/components/courses/course-detail-ta-view";
 import { CourseDetailStudentView } from "~/components/courses/course-detail-student-view";
 import { useCourseTopics } from "~/hooks/api/use-course-topics";
@@ -23,7 +26,7 @@ import type { CourseMaterial as UploadMaterial } from "~/components/course-mater
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import type { RbacUser } from "~/lib/rbac";
-import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
+import { COURSE_STAFF_SELECT, serializeCourseForApi } from "~/lib/courses/dto.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -35,9 +38,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
-    include: {
-      instructor: { select: { id: true, name: true, email: true } },
-    },
+    select: COURSE_STAFF_SELECT,
   });
 
   if (!course) return redirect("/courses");
@@ -87,36 +88,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const isStudent = access === "student";
 
+  const audience = isStudent ? "student" : "staff";
+
   return {
-    course: {
-      id: course.id,
-      code: course.code,
-      name: course.name,
-      description: course.description,
-      term: course.term,
-      year: course.year,
-      isActive: course.isActive,
-      isPublished: course.isPublished,
-      ...(isStudent
-        ? {
-            hasAiConfig: courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions),
-          }
-        : { aiInstructions: course.aiInstructions }),
-      responseStyleTags: course.responseStyleTags,
-      ragTopK: course.ragTopK,
-      ragSimilarityThreshold: course.ragSimilarityThreshold,
-      instructorId: course.instructorId,
-      department: course.department,
-      startDate: course.startDate.toISOString(),
-      endDate: course.endDate?.toISOString() ?? null,
-      externalSource: course.externalSource,
-      externalId: course.externalId,
-      createdAt: course.createdAt.toISOString(),
-      updatedAt: course.updatedAt.toISOString(),
-      instructor: course.instructor ?? undefined,
-      // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
-      // role=TA); the course query no longer includes a CourseTA relation.
-    } satisfies CourseDetail,
+    course: serializeCourseForApi(course, {
+      audience,
+      detail: true,
+    }) as unknown as CourseDetail & Record<string, unknown>,
+    // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
+    // role=TA); the course query no longer includes a CourseTA relation.
     user,
     access,
     instructors,
@@ -202,8 +182,31 @@ export default function CourseDetailPage() {
     setMaterialsError(null);
     setMaterialsSuccess(null);
     try {
-      await uploadMaterial(file);
-      setMaterialsSuccess("Material uploaded successfully");
+      // The upload endpoint returns 202 and processes in the background (#949),
+      // so the outcome arrives from polling rather than from the POST status.
+      const outcome = await uploadMaterial(file);
+      switch (outcome.status) {
+        case "ready":
+          setMaterialsSuccess("Material uploaded and processed successfully");
+          break;
+        case "duplicate": {
+          const existing = materials.find((m) => m.id === outcome.duplicateOfId);
+          setMaterialsError(
+            existing
+              ? `"${existing.title}" already contains identical content — nothing was added`
+              : "A file with identical content already exists in this course",
+          );
+          break;
+        }
+        case "failed":
+          setMaterialsError("Processing failed for this file. Please try again.");
+          break;
+        case "processing":
+          setMaterialsSuccess(
+            "Upload accepted. Processing is taking a while — the list will update when it finishes.",
+          );
+          break;
+      }
     } catch (e) {
       setMaterialsError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -245,7 +248,8 @@ export default function CourseDetailPage() {
         <div className="px-4 lg:px-6 py-6">
           {access === "admin" || access === "unit" || access === "instructor" ? (
             <CourseDetailManagerView
-              course={course}
+              // The staff branch above always includes this non-null DB field.
+              course={course as CourseDetailManagerCourse}
               access={access}
               topics={topics}
               enrollments={enrollments}

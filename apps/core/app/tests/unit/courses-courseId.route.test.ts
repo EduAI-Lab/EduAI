@@ -34,6 +34,7 @@ const BASE_COURSE = {
   isPublished: true,
   responseStyleTags: [],
   aiInstructions: null,
+  courseScopeGuardrailEnabled: false,
   ragTopK: 5,
   ragSimilarityThreshold: 0.5,
   instructorId: "instructor-1",
@@ -130,6 +131,7 @@ describe("courses.$courseId loader", () => {
     expect(result.access).toBe("student");
     expect(result.course).not.toHaveProperty("aiInstructions");
     expect(result.course).toHaveProperty("hasAiConfig");
+    expect(result.course).not.toHaveProperty("courseScopeGuardrailEnabled");
     expect(result.instructors).toEqual([]);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
@@ -150,6 +152,7 @@ describe("courses.$courseId loader", () => {
     };
     expect(result.course).toHaveProperty("aiInstructions", null);
     expect(result.course).not.toHaveProperty("hasAiConfig");
+    expect(result.course).toHaveProperty("courseScopeGuardrailEnabled", false);
     expect(result.instructors).toHaveLength(1);
   });
 

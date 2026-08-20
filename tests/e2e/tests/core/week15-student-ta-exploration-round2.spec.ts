@@ -15,7 +15,7 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 import { CORE_URL } from "../../playwright.config";
 import { registerUser } from "../helpers/auth";
 
-const PASSWORD = "EduAI2026!";
+const PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim() || "EduAI2026!";
 
 const USERS = {
   student1: "student1@eduai.local", // Alex Patel — cosc101, cosc121, math200, data310, phys121, engl110 (all published)

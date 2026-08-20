@@ -76,8 +76,10 @@ Planned integration test cases for `apps/core`. All tests live under `app/tests/
 
 `**POST /api/courses/:courseId/materials**`
 
-- Returns `200` with `{ success: true, materialId }` when a professor uploads a valid plain-text file
-- Returns `409` when the same file content (matching checksum) is uploaded a second time to the same course
+- Returns `202` with `{ success: true, materialId, status: "PROCESSING" }` when a professor uploads a valid plain-text file; the row reaches `READY` only after the background pass finishes (#949)
+- Leaves a terminal `FAILED` row with `duplicateOfId` set — *not* a `409` — when a file whose extracted content already exists on the course is uploaded again. Duplicate detection needs the content checksum, which is only known after extraction, so it now happens after the `202` has been sent and is observed by polling the materials list
+- Returns `409` when the *byte-identical* file is uploaded again while the first upload is still `PROCESSING` (the provisional `pending:<bytehash>` checksum collides). A stranded `FAILED`/soft-deleted provisional row is instead reclaimed and retried, and a second concurrent retry that loses the atomic claim gets the same `409`
+- Returns `400` when the file fails type/size validation or the magic-byte sniff (validation stayed on the request path, so this is still synchronous)
 - Returns `400` when no `file` field is present in the form data
 - Returns `401` when no session is present
 - Returns `404` when the user does not have access to the course

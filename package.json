@@ -97,6 +97,10 @@
       "drizzle-orm": "^0.45.2",
       "@mrleebo/prisma-ast": "^0.16.0"
     },
+    "@ai-sdk/provider-utils": {
+      "undici": "6.28.0"
+    },
+    "jsondiffpatch": "0.7.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "clsx": "^2.1.1",

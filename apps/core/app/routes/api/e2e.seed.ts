@@ -57,8 +57,14 @@ export async function action({ request }: ActionFunctionArgs) {
   // route is already unreachable outside NODE_ENV=test + E2E_SEED_SECRET.
   process.env.ENCRYPTION_KEY ??= "e2e-test-encryption-key-not-for-production";
 
+  // Development's seed refuses fixtures unless NODE_ENV=development and
+  // EDUAI_LOCAL_SEED_PASSWORD is set. This route is already unreachable
+  // outside NODE_ENV=test + E2E_SEED_SECRET, so pass the password explicitly
+  // instead of mutating NODE_ENV. Keep the same fallback the week15 specs use.
+  const seedPassword = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim() || "EduAI2026!";
+
   try {
-    await enqueueSeed(() => runSeed());
+    await enqueueSeed(() => runSeed({ seedPassword }));
   } catch (e) {
     return new Response(
       JSON.stringify({ error: "SEED_FAILED", message: e instanceof Error ? e.message : String(e) }),

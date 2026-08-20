@@ -62,23 +62,28 @@ Covers **100% of the in-scope DB API surface** (~157 endpoints — every read + 
 create/update/delete that touches only our own databases). External/AI/Canvas endpoints are out of
 scope (see the per-app `*-measurement-spec.md` SKIP lists).
 
-1. Bring up the stack (local): `npm run docker:dev:db && npm run dev` (Core :3000, AI-Tutor :4000, QM :8000).
-2. **Seed all three DBs + the mutation pools (one command):**
+1. Generate/export the same local-only password used by Core's seed (or load it from your local `.env`):
+   ```bash
+   export EDUAI_LOCAL_SEED_PASSWORD="$(openssl rand -base64 24)"
+   ```
+   Keep this value local; the seed and benchmark refuse to run without it.
+2. Bring up the stack (local): `npm run docker:dev:db && npm run dev` (Core :3000, AI-Tutor :4000, QM :8000).
+3. **Seed all three DBs + the mutation pools (one command):**
    ```bash
    npm run db:seed:perf     # = dbseed + core volume + per-app perf pools + writes .perf-pool/*.json
    ```
    This is idempotent — run it once before a perf run, and **again between runs** to refill the
    delete pools that a run consumes (the script preflights the manifests and warns if a pool is low).
    For semantically-real RAG volume also run `cd apps/core && npx tsx scripts/seed-rag-ingestion-fixtures.ts`.
-3. Configure targets (env): `CORE_URL`, `AITUTOR_URL`, `QM_URL` — point at local or UBC dev.
-4. Run:
+4. Configure targets (env): `CORE_URL`, `AITUTOR_URL`, `QM_URL` — point at local or UBC dev.
+5. Run:
    ```bash
    npm run perf:endpoints -- --out=docs/perf/backend/baseline   # or --out=docs/perf/backend/after-<date>
    ```
    (Output dir is the `--out` flag; note the npm `--` that forwards it. Errors land in
    `<out>/errors.log` + `<out>/errors.json`.)
    The script mints real better-auth sessions per role + a pooled "perf actor" (`POST {CORE_URL}/api/auth/sign-in/email`,
-   seed password `EduAI2026!`), reuses each cookie across all three apps (all validate against Core),
+   using the explicit `EDUAI_LOCAL_SEED_PASSWORD`), reuses each cookie across all three apps (all validate against Core),
    reads the `.perf-pool/*.json` manifests for pooled ids, warms up, then measures reads (hammered)
    and mutations (create/update/delete). A client-side governor paces cookie-validate traffic under
    Core's IP rate limit. Tune with `PERF_SAMPLES`, `PERF_MUT_SAMPLES`, `PERF_VALIDATE_LIMIT`.

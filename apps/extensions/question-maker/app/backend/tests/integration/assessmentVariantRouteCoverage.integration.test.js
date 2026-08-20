@@ -1,8 +1,8 @@
 /**
  * Coverage-focused route tests for assessmentVariant.js (issue #1217:
  * assessmentVariant.js was one of the worst-covered files at 61.9%).
- * assessmentRbac.test.js already covers the TA role-gate and one INSTRUCTOR
- * happy path (assemble-variants); this file exercises the remaining
+ * assessmentRbac.test.js already covers enrollment-scoped TA assessment views
+ * and one INSTRUCTOR happy path (assemble-variants); this file exercises the remaining
  * validation branches and the other four endpoints' happy paths.
  *
  * Same mocked-DB pattern as assessmentRbac.test.js — no live Core or test DB required.
@@ -30,6 +30,10 @@ const { variantSvc, mockCourseFindOne, mockAssessmentFindOne, mockEnrollments } 
 vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
+
+vi.mock("../../src/services/authService.js", () => ({
+  findOrCreateUser: vi.fn().mockResolvedValue({}),
+}));
 vi.mock("../../src/config/settings.js", () => {
   const cfg = {
     coreUrl: "http://core.test",
@@ -37,6 +41,7 @@ vi.mock("../../src/config/settings.js", () => {
     corsOrigins: ["*"],
     nodeEnv: "test",
     logLevel: "silent",
+    qmAiOperationDeadlineMs: 25,
   };
   return { config: cfg, default: cfg };
 });
@@ -60,6 +65,7 @@ vi.mock("../../src/config/database.js", () => ({
 const { default: app } = await import("../../src/app.js");
 
 const INSTRUCTOR = { id: "inst-1", role: "INSTRUCTOR", email: "i@t.co", name: "I" };
+const TA = { id: "ta-1", role: "STUDENT", email: "ta@t.co", name: "TA" };
 const COURSE = { id: 1, userId: "owner-1", coreCourseId: "cuid-core-course" };
 
 function authAs(user, enrollRole) {
@@ -136,6 +142,18 @@ describe("PATCH /api/assessment-variant/assessments/:id/role", () => {
 });
 
 describe("GET /api/assessment-variant/assessments/:id/blueprint-snapshot", () => {
+  it("admits a platform STUDENT with an active TA enrollment", async () => {
+    authAs(TA, "TA");
+    variantSvc.getBlueprintSnapshot.mockResolvedValue({ slots: [] });
+
+    const res = await request(app)
+      .get("/api/assessment-variant/assessments/5/blueprint-snapshot")
+      .set("Cookie", "session=v");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ slots: [] });
+  });
+
   it("returns the snapshot", async () => {
     authAs(INSTRUCTOR, "INSTRUCTOR");
     variantSvc.getBlueprintSnapshot.mockResolvedValue({ slots: [] });
@@ -223,6 +241,79 @@ describe("POST /api/assessment-variant/generate-bank-variants", () => {
       expect.objectContaining({ questionIds: [1, 2], variantsToAdd: 2 }),
     );
   });
+
+  it("rejects duplicate and over-budget ids before course admission or service calls", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/assessment-variant/generate-bank-variants")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questionIds: [1, 1] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("QM_BANK_QUESTION_IDS_DUPLICATE");
+    expect(variantSvc.generateBankVariantsForQuestions).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fanout whose worst-case repair calls exceed 24", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/assessment-variant/generate-bank-variants")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questionIds: [1, 2, 3, 4, 5, 6, 7] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("QM_BANK_PROVIDER_CALL_BUDGET");
+    expect(mockCourseFindOne).not.toHaveBeenCalled();
+    expect(variantSvc.generateBankVariantsForQuestions).not.toHaveBeenCalled();
+  });
+
+  it("returns a stable 429 for a rate-limited bank generation call", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const rateLimited = new Error("provider body api_key=must-not-leak");
+    rateLimited.statusCode = 429;
+    variantSvc.generateBankVariantsForQuestions.mockRejectedValue(rateLimited);
+
+    const res = await request(app)
+      .post("/api/assessment-variant/generate-bank-variants")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questionIds: [1] });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("EDUAI_UPSTREAM_RATE_LIMITED");
+    expect(JSON.stringify(res.body)).not.toContain("api_key");
+  });
+
+  it("cancels a hung Core roster fetch before bank generation starts", async () => {
+    const user = { ...INSTRUCTOR, id: "inst-core-hang-bank" };
+    authAs(user, "INSTRUCTOR");
+    const coreFetch = vi.fn((url, options = {}) => {
+      if (String(url).endsWith("/api/sessions/validate")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ user }) });
+      }
+      const signal = options.signal;
+      if (!signal)
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ enrollments: [] }) });
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", coreFetch);
+    mockEnrollments.mockImplementation((_courseId, { signal } = {}) =>
+      fetch("http://core.test/api/courses/cuid-core-course/enrollments", { signal }).then(
+        (response) => response.json(),
+      ),
+    );
+
+    const res = await request(app)
+      .post("/api/assessment-variant/generate-bank-variants")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, questionIds: [1] });
+
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe("QM_AI_OPERATION_DEADLINE");
+    expect(coreFetch.mock.calls.some(([, options]) => options?.signal?.aborted)).toBe(true);
+    expect(variantSvc.generateBankVariantsForQuestions).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/assessment-variant/review-variant-ai", () => {
@@ -259,5 +350,33 @@ describe("POST /api/assessment-variant/review-variant-ai", () => {
         applyUsabilityPenalty: true,
       }),
     );
+  });
+
+  it("rejects non-finite assessment ids before the service call", async () => {
+    authAs(INSTRUCTOR, "INSTRUCTOR");
+    const res = await request(app)
+      .post("/api/assessment-variant/review-variant-ai")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, baselineAssessmentId: "not-a-number", variantAssessmentId: 2 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("QM_REVIEW_ASSESSMENT_ID_INVALID");
+    expect(variantSvc.reviewVariantExamWithAi).not.toHaveBeenCalled();
+  });
+
+  it("returns a stable 429 for a rate-limited review call", async () => {
+    authAs({ ...INSTRUCTOR, id: "inst-review-rate-limit" }, "INSTRUCTOR");
+    const rateLimited = new Error("provider body api_key=must-not-leak");
+    rateLimited.statusCode = 429;
+    variantSvc.reviewVariantExamWithAi.mockRejectedValue(rateLimited);
+
+    const res = await request(app)
+      .post("/api/assessment-variant/review-variant-ai")
+      .set("Cookie", "session=v")
+      .send({ courseId: 1, baselineAssessmentId: 1, variantAssessmentId: 2 });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("EDUAI_UPSTREAM_RATE_LIMITED");
+    expect(JSON.stringify(res.body)).not.toContain("api_key");
   });
 });

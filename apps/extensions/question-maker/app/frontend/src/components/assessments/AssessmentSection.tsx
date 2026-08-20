@@ -227,7 +227,7 @@ export const AssessmentSection = ({
         : "Build quizzes, labs, midterms and finals from your question bank.";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-testid="assessments-panel">
       {selectedCourseId && !accessLoading && !hasCourseAccess && (
         <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
       )}

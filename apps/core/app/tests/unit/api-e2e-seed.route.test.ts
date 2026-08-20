@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.NODE_ENV = "test";
   process.env.E2E_SEED_SECRET = "shhh";
+  delete process.env.EDUAI_LOCAL_SEED_PASSWORD;
 });
 
 afterEach(() => {
@@ -76,6 +77,7 @@ describe("POST /api/e2e/seed", () => {
     const body = await res.json();
     expect(body).toEqual({ ok: true });
     expect(runSeed).toHaveBeenCalledTimes(1);
+    expect(runSeed).toHaveBeenCalledWith({ seedPassword: "EduAI2026!" });
   });
 
   it("serializes concurrent seed calls so runSeed does not overlap", async () => {

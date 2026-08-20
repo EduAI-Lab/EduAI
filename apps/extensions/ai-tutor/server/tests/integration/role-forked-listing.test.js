@@ -53,7 +53,7 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   };
 });
 
-import { listEduAiCoursesServiceKey } from "../../src/services/eduaiClient.js";
+import { listEduAiCourses, listEduAiCoursesServiceKey } from "../../src/services/eduaiClient.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../");
 const allCases = JSON.parse(
@@ -70,6 +70,7 @@ const OTHER_DEPARTMENT = "MATH";
 beforeEach(async () => {
   await truncateAll();
   vi.mocked(listEduAiCoursesServiceKey).mockReset();
+  vi.mocked(listEduAiCourses).mockReset();
 });
 
 afterEach(async () => {
@@ -95,6 +96,16 @@ describe.each(rows.map((row, index) => [index, row]))(
           isPublished: row.Published === "yes",
         },
       ]);
+      vi.mocked(listEduAiCourses).mockResolvedValue(
+        row.Enrollment === "none"
+          ? []
+          : [
+              {
+                id: course.coreOfferingId,
+                callerEnrollmentRole: row.Enrollment.toUpperCase(),
+              },
+            ],
+      );
 
       let user;
       if (row.PlatformRole === "ADMIN") user = makeAdmin();
