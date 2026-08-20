@@ -407,12 +407,10 @@ describe("enrollment management lifecycle (#305)", () => {
   });
 
   it("DELETE soft-deactivates a student and hides them from the session roster (#813)", async () => {
-    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } = await import(
-      "../helpers/rbac"
-    );
-    const { action: enrollmentIdAction } = await import(
-      "~/routes/api/courses.enrollments.$enrollmentId"
-    );
+    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } =
+      await import("../helpers/rbac");
+    const { action: enrollmentIdAction } =
+      await import("~/routes/api/courses.enrollments.$enrollmentId");
 
     const instructor = await seedUser({ role: "INSTRUCTOR" });
     const student = await seedUser({ role: "STUDENT" });
@@ -460,13 +458,11 @@ describe("enrollment management lifecycle (#305)", () => {
 
   it("INSTRUCTOR add/update denied when instructors.canManageEnrollments is off; ADMIN still ok (#813)", async () => {
     const { setPolicy, invalidatePolicyCache } = await import("~/lib/policy.server");
-    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } = await import(
-      "../helpers/rbac"
-    );
+    const { seedUser, seedCourse, enroll, cleanupRbac, mockSession } =
+      await import("../helpers/rbac");
     const { action: enrollmentsAction } = await import("~/routes/api/courses.enrollments");
-    const { action: enrollmentIdAction } = await import(
-      "~/routes/api/courses.enrollments.$enrollmentId"
-    );
+    const { action: enrollmentIdAction } =
+      await import("~/routes/api/courses.enrollments.$enrollmentId");
 
     const admin = await seedUser({ role: "ADMIN" });
     const instructor = await seedUser({ role: "INSTRUCTOR" });

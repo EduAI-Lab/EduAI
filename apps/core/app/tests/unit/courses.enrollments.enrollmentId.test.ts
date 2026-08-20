@@ -18,12 +18,15 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/policy.server")>();
   return {
     ...actual,
-    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
-    denyByPolicy: vi.fn(({ policyKey }: { policyKey: string }) =>
-      new Response(JSON.stringify({ error: "Forbidden", policyKey }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }),
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
+    denyByPolicy: vi.fn(
+      ({ policyKey }: { policyKey: string }) =>
+        new Response(JSON.stringify({ error: "Forbidden", policyKey }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
     ),
   };
 });
