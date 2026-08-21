@@ -1571,7 +1571,7 @@ export async function insertMaterialEmbeddingsBatched(
   }
 
   const rowLimit = resolveMaterialEmbeddingInsertBatchSize();
-  for (let start = 0; start < chunksByIndex.length; ) {
+  for (let start = 0; start < chunksByIndex.length;) {
     const batch = [] as Array<{ chunk: { id: string }; embedding: number[] }>;
     let estimatedBytes = 0;
     while (start + batch.length < chunksByIndex.length && batch.length < rowLimit) {
