@@ -243,6 +243,12 @@ async function getUserCourses(req, { page = 1, pageSize = 25 } = {}) {
 > instead — it is unpaged, returns the same envelope, and cannot be combined
 > with `page`/`pageSize`. `?search=` is also available on both. Do not page-loop
 > a whole table to build an id→record map; that is what `?ids=` is for.
+>
+> `/api/courses` additionally accepts repeatable `?status=` (`published`|`draft`),
+> `?term=<code>::<year>`, and `?department=` filters that narrow the complete
+> role-scoped dataset before pagination, and a role-scoped
+> `GET /api/courses/facets` returns those filter option values for the caller's
+> whole accessible set (never just the current page).
 
 ### Service-level calls
 

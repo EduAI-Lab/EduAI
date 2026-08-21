@@ -230,6 +230,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     errorEnvelope: "standard",
     routeFile: "routes/api/courses.$.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/courses/facets",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.facets.ts",
+    note: "Role-scoped status/term/department filter values for the course list (#1263)",
+  }),
 
   // ── Course by id ────────────────────────────────────────────────────────────
   entry({
