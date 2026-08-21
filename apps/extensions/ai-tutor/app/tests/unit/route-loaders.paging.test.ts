@@ -154,7 +154,7 @@ describe("instructor.lesson clientLoader", () => {
     // Ancestry loads after paint via GET /lessons/:id/breadcrumb so the lesson
     // body is not blocked on Core course resolution or sibling ordinals.
     const result = await load("http://x/instructor/lesson/3");
-    expect(result.orderText).toBeUndefined();
+    expect(result).not.toHaveProperty("orderText");
     expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.modulesForCourse).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
@@ -228,7 +228,7 @@ describe("student.lesson clientLoader", () => {
 
   it("leaves breadcrumb/order text off the loader (#1334)", async () => {
     const result = await load();
-    expect(result.orderText).toBeUndefined();
+    expect(result).not.toHaveProperty("orderText");
     expect(api.lessonContext).not.toHaveBeenCalled();
     expect(api.lessonsForModule).not.toHaveBeenCalled();
   });

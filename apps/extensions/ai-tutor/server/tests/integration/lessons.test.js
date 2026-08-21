@@ -19,8 +19,13 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
 
 import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Lessons routes", () => {
   let prof;
@@ -36,6 +41,18 @@ describe("Lessons routes", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    // Live principal auth hits Core enrollment sync; mirror modules.test so
+    // local CourseInstructor / CourseEnrollment rows drive allow/deny.
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+        const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
+        const instructor = course.instructors?.some((row) => row.userId === userId);
+        const effectiveRole =
+          instructor && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : role;
+        const allowed = allowedRoles.includes(effectiveRole);
+        return { allowed, state: allowed ? "allowed" : "denied", role: effectiveRole };
+      },
+    );
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
