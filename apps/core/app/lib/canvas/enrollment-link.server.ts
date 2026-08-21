@@ -53,6 +53,19 @@ function enrollmentKey(courseId: string, userId: string): string {
  * the per-row upsert loop used to do implicitly — `createMany({ skipDuplicates })`
  * keeps the first, so the dedupe has to be explicit.
  *
+ * Atomicity: unlike the per-row upsert, the read and the writes are separate
+ * statements, and the two call sites are not equally protected —
+ * `linkEnrollmentsFromStagingForCourse` runs under the per-course advisory lock in
+ * `syncSingleCanvasCourse`, while `resolveCanvasEnrollmentsForUser` runs unlocked
+ * off the student's own link-roster flow. A row created concurrently between our
+ * read and our `createMany` would be silently skipped, so the short-create replay
+ * below re-applies those values as upserts.
+ *
+ * A target whose row already matches issues no write at all, so `Enrollment.updatedAt`
+ * is no longer refreshed on every sync the way the old unconditional upsert `update`
+ * block refreshed it. Nothing reads that field today, but it is no longer usable as a
+ * "last verified against Canvas" heartbeat.
+ *
  * Returns the number of distinct enrollments the targets resolved to.
  */
 async function writeCanvasEnrollments(
@@ -138,7 +151,7 @@ async function writeCanvasEnrollments(
   }
 
   if (toCreate.length > 0) {
-    await db.enrollment.createMany({
+    const created = await db.enrollment.createMany({
       data: toCreate.map((target) => ({
         courseId: target.courseId,
         userId: target.userId,
@@ -149,6 +162,35 @@ async function writeCanvasEnrollments(
       })),
       skipDuplicates: true,
     });
+
+    // A short create means a concurrent writer inserted one of these rows between
+    // our read and our write, and `skipDuplicates` dropped our values on the floor.
+    // The per-row upsert this replaced could not lose a write that way, so replay
+    // the batch as upserts to keep the old guarantee. Only reachable on an actual
+    // race, so the steady-state query count is unchanged.
+    if (created.count < toCreate.length) {
+      for (const target of toCreate) {
+        await db.enrollment.upsert({
+          where: {
+            courseId_userId: { courseId: target.courseId, userId: target.userId },
+          },
+          create: {
+            courseId: target.courseId,
+            userId: target.userId,
+            role: target.role,
+            isActive: true,
+            externalSource: CANVAS_EXTERNAL_SOURCE,
+            externalId: target.externalId,
+          },
+          update: {
+            role: target.role,
+            isActive: true,
+            externalSource: CANVAS_EXTERNAL_SOURCE,
+            externalId: target.externalId,
+          },
+        });
+      }
+    }
   }
 
   for (const group of updateGroups.values()) {

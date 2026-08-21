@@ -378,10 +378,12 @@ async function batchMirrorEnrollments(student, roleGroups) {
 }
 
 /**
- * Per-course fallback for `batchMirrorEnrollments`. A batched write is
- * all-or-nothing, so a single poisoned row would abort every course in the group —
- * this replays the original upsert loop (idempotent) so partial failure is still
- * reported per course instead of sinking the whole import.
+ * Per-course fallback for `batchMirrorEnrollments`. The batch is not a transaction —
+ * it is several separate awaits, so a throw partway through leaves earlier writes
+ * committed — but a single poisoned row still aborts the rest of the group, and the
+ * batch reports nothing per course. This replays the original upsert loop, which is
+ * idempotent and therefore safe to run over the rows the batch already wrote, so
+ * partial failure is reported per course instead of sinking the whole import.
  */
 async function perCourseMirrorEnrollments(student, roleGroups) {
   let enrolled = 0;

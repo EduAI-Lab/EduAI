@@ -388,6 +388,53 @@ describe("resolveCanvasEnrollmentsForUser", () => {
     expect(linked).toBe(0);
     expect(prisma.canvasRosterMember.findMany).not.toHaveBeenCalled();
   });
+
+  it("does not replay as upserts when createMany inserted every row", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      studentId: "10000002",
+      studentIdLookup: null,
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      { courseId: "course-a", role: "STUDENT", canvasUserId: "202" },
+      { courseId: "course-b", role: "TA", canvasUserId: "202" },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 2 } as never);
+
+    await resolveCanvasEnrollmentsForUser("user-2");
+
+    expect(prisma.enrollment.upsert).not.toHaveBeenCalled();
+  });
+
+  it("replays the batch as upserts when a concurrent writer wins the create race", async () => {
+    // `createMany({ skipDuplicates })` silently drops our values for a row another
+    // writer inserted after our read, which the per-row upsert this replaced could
+    // not do. A short count is the only signal, so it has to trigger the replay.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      studentId: "10000002",
+      studentIdLookup: null,
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      { courseId: "course-a", role: "STUDENT", canvasUserId: "202" },
+      { courseId: "course-b", role: "TA", canvasUserId: "202" },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.enrollment.createMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.enrollment.upsert).mockResolvedValue({} as never);
+
+    const linked = await resolveCanvasEnrollmentsForUser("user-2");
+
+    expect(linked).toBe(2);
+    expect(prisma.enrollment.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.enrollment.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { courseId_userId: { courseId: "course-b", userId: "user-2" } },
+        update: expect.objectContaining({ role: "TA", externalId: "202", isActive: true }),
+      }),
+    );
+  });
 });
 
 // Edge-case audit #225 (CANVAS-02): dropped-member reconciliation had no coverage.
