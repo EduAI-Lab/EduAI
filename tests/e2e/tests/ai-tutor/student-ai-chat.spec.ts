@@ -149,4 +149,86 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
       await seeded.dispose();
     }
   });
+
+  test("New chat and Chat history controls appear once a provider is connected", async ({
+    page,
+    playwright,
+  }) => {
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Chat Controls Course",
+      codePrefix: "CTL",
+    });
+    try {
+      await seedByokKey(page, studentId);
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      const chat = page.locator('[data-tour="student-ai-chat"]');
+      await expect(chat.getByText("AI study buddy")).toBeVisible({ timeout: 20_000 });
+
+      // Both header controls gate on `activity && hasApiKey` — present here.
+      await expect(chat.getByRole("button", { name: "New chat" })).toBeVisible();
+      await chat.getByRole("button", { name: "Chat history" }).click();
+      // The history sheet opens; with no prior sessions it shows its empty state.
+      const sheet = page.getByRole("dialog");
+      await expect(sheet.getByText(/No conversations yet/i)).toBeVisible({ timeout: 20_000 });
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  test("the composer's Model select is present but disabled with an empty catalogue", async ({
+    page,
+    playwright,
+  }) => {
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Chat Model Select Course",
+      codePrefix: "CMS",
+    });
+    try {
+      await seedByokKey(page, studentId);
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      const chat = page.locator('[data-tour="student-ai-chat"]');
+      // Pick a level so the composer (which carries the Model select) renders.
+      await chat.getByRole("button", { name: "New to this" }).click();
+
+      const model = chat.getByRole("combobox", { name: "Model" });
+      await expect(model).toBeVisible({ timeout: 20_000 });
+      // The e2e Core catalogue is empty, so the select is disabled rather than
+      // offering a model the tutor cannot actually reach.
+      await expect(model).toBeDisabled();
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  test("'Change knowledge level' opens the 'Before we start' modal", async ({
+    page,
+    playwright,
+  }) => {
+    // The pre-chat knowledge modal is reachable in this stack: a seeded BYOK key
+    // connects the provider, choosing a level surfaces the "Change knowledge
+    // level" affordance, and clicking it opens the modal — no live model needed.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Chat Knowledge Modal Course",
+      codePrefix: "CKM",
+    });
+    try {
+      await seedByokKey(page, studentId);
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      const chat = page.locator('[data-tour="student-ai-chat"]');
+      await chat.getByRole("button", { name: "New to this" }).click();
+      await chat.getByRole("button", { name: /Change knowledge level/i }).click();
+
+      const modal = page.getByRole("dialog");
+      await expect(modal.getByText(/Before we start/i)).toBeVisible({ timeout: 20_000 });
+      await expect(modal.getByText(/knowledge level on this topic/i)).toBeVisible();
+      // "Start guidance" gates on a chosen level; a fresh open re-selects one.
+      const start = modal.getByRole("button", { name: /Start guidance/i });
+      await expect(start).toBeVisible();
+    } finally {
+      await seeded.dispose();
+    }
+  });
 });

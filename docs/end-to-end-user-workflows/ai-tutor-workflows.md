@@ -2,7 +2,7 @@
 
 > **How to edit this file:** pick a role section below and work it in stages — Claude finds the paths, Claude simulates them via Playwright *and turns that into a committed e2e test* (`tests/e2e/tests/ai-tutor/`), Claude reviews (its own and another Claude's) work, Claude sweeps once more for gaps, then a human walks the same paths (see the [README](./README.md) for the full methodology). Add/update a row per workflow, including a link to its e2e test — every workflow needs one, it's not optional. Prioritize AI-involving workflows (tutor chat sessions) and happy paths first. File bugs as GitHub issues and link them in the Bugs column — don't just describe them in prose. Prefix security findings with `SECURITY:`. Bump **Last updated** every time you edit.
 
-**Last updated:** 2026-08-21 — Claude (Student section: every student path enumerated and walked through a real Chromium session, 58 committed e2e tests across eight `student-*.spec.ts` files, whole `ai-tutor` suite green), Student section
+**Last updated:** 2026-08-21 — Claude (Student section: every student path enumerated and walked through a real Chromium session, then an adversarial review pass added the course-list filters/pagination, the chat's New chat / Chat history / Model select / "Before we start" modal, and TA-enrolment access, and overturned the "modal is human-pass-only" claim — 65 committed e2e tests across nine `student-*.spec.ts` files, whole `ai-tutor` suite green), Student section
 
 ## Table of contents
 
@@ -370,7 +370,7 @@ docker compose -f docker-compose.e2e.yml up -d
 
 ## Student
 
-Walked in a real Chromium session against the `docker-compose.e2e.yml` stack (Core 3000 + AI Tutor 3001/4000), signed in as a freshly registered platform `STUDENT` (the default role of a self-registration, so no promotion is needed). Every row has a committed Playwright spec under `tests/e2e/tests/ai-tutor/` — **eight** `student-*.spec.ts` files, **58 tests**, all green run serially with `--workers=1` as CI does.
+Walked in a real Chromium session against the `docker-compose.e2e.yml` stack (Core 3000 + AI Tutor 3001/4000), signed in as a freshly registered platform `STUDENT` (the default role of a self-registration, so no promotion is needed). Every row has a committed Playwright spec under `tests/e2e/tests/ai-tutor/` — **nine** `student-*.spec.ts` files, **65 tests**, all green run serially with `--workers=1` as CI does.
 
 The enumeration is the whole student surface, not the AI-only slice: the shared app shell as a student sees it, the role-aware dashboard, the enrolled-course list and its filters, the course → module → lesson drill-down, the lesson player (MCQ/short-text answering, feedback, prev/next), the "AI study buddy" chat in every state it can reach here, Settings, and the API-level authorization boundaries a student is held to.
 
@@ -416,6 +416,9 @@ The enumeration is the whole student surface, not the AI-only slice: the shared 
 | Search the course list by title | Claude | Claude-tested | Yes — server-side across every enrolled course (#1208), so the result stays honest | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
 | A search that matches nothing shows the "No courses match" state | Claude | Claude-tested | Yes — distinct from the Core-unavailable "Search is unavailable" state | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
 | A published course the student is **not** enrolled in never appears | Claude | Claude-tested | Yes — the empty state stands even though the course exists platform-wide | **Enrolment gate** verified at the list surface: a published-but-unenrolled course is withheld | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| Filter by term, then Clear to reset | Claude | Claude-tested | Yes — the Term dropdown appears only when the enrolments span more than one term (`hideWhenSingle`); picking one writes `?term=` and narrows, Clear resets | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| Filter by progress (not-started / in-progress / completed) | Claude | Claude-tested | Yes — `?progress=` is applied **server-side across every enrolment** (#1208), not just the loaded page, so `completed` correctly excludes a not-started course | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| A past-the-end `?page=` is clamped to the last real page | Claude | Claude-tested | Yes — the loader redirects rather than rendering an empty grid, carrying the search/filter params through the redirect | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
 
 ### Course → module → lesson navigation
 
@@ -428,6 +431,7 @@ The enumeration is the whole student surface, not the AI-only slice: the shared 
 | A bad course/module/lesson id (non-numeric or nonexistent) lands on the in-shell 404 | Claude | Claude-tested | Yes — the same generic 404 as the admin case, inside the shell | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
 | A course the student is **not** enrolled in is a 404, not a peek | Claude | Claude-tested | Yes — a non-member gets the same 404 as a missing course, never the course heading | **Enrolment gate at the detail route**: the app never confirms the course exists to a non-member | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
 | Switch between two enrolled courses from the breadcrumb without returning to the list | Claude | Claude-tested | Yes — server-side search in the switcher, scoped to the student's own enrolments | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| A **TA** (a STUDENT-platform user enrolled with `EnrollmentRole.TA`) reaches the same `/student` shell and opens the lesson player | Claude | Claude-tested | Yes — a course TA is not a platform role (`/api/e2e/promote` rejects "TA"); enrol a student as TA and AI Tutor's mirror (`MIRRORED_ROLES`) grants them the student content surface | **Enrolment gate mirrors TA**: a TA reads published content exactly as a student does | — | [`student-ta-access.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ta-access.spec.ts) |
 
 ### Lesson player (`/student/lesson/:id`)
 
@@ -452,11 +456,14 @@ The flagship student surface: one activity at a time, an answer card, the immedi
 | **AI:** with a browser-local BYOK key present, the composer, mode switch (Teach me / Guide me), and knowledge-level chips become available | Claude | Claude-tested | Yes — the mode switch reflects exactly what the activity's author enabled; the level chips are the first prompt | The mode set is author-controlled, never widened by the student | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
 | **AI:** choosing a knowledge level unlocks the ask-anything prompt and a level toggle | Claude | Claude-tested | Yes — the chosen level becomes a "Change knowledge level" pill in the control row | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
 | **AI:** Send stays disabled until the composer has text | Claude | Claude-tested | Yes | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** the New chat and Chat history controls appear once connected; the history sheet opens to its empty state | Claude | Claude-tested | Yes — both header controls gate on `activity && hasApiKey`; the history sheet reads "No conversations yet" until a session exists | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** the composer's Model select renders but is disabled with an empty catalogue | Claude | Claude-tested | Yes — the select fails closed (`disabled` when no models) rather than offering a model the tutor cannot reach | The catalogue is empty in this stack, so no model is selectable | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** "Change knowledge level" opens the "Before we start" modal | Claude | Claude-tested | Yes — reachable in this stack: a seeded BYOK key connects the provider, choosing a level surfaces the affordance, and clicking it opens the modal (no live model needed) | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
 
 **Human-pass-only in this stack (called out honestly, not mocked):**
 
 - **A real tutoring answer.** `hasApiKey` is a browser-local BYOK key, and the e2e stack has no live model provider and an empty Core model catalogue, so sending a message cannot return a streamed reply here. The specs unlock and walk the whole client-side chat surface with a seeded BYOK key (the same `ai-provider-keys:v2:<userId>` localStorage entry the Settings tab and the in-chat dialog write), but the send → stream → render path needs a live provider and a human pass. This mirrors the Admin section's treatment of AI oversight traces.
-- **The pre-chat knowledge-level modal ("Before we start") and the misconfigured-MCQ warning.** The modal is only reachable through the chat's "Change knowledge level" affordance, which itself needs a connected provider; the misconfigured-options card needs an activity with a null `options` payload, which `CreateActivitySchema` will not let the seed create. Both are left for the human pass rather than forced.
+- **The misconfigured-MCQ warning card** needs an activity with a null `options` payload, which `CreateActivitySchema` will not let the seed create, so it is left for the human pass. (The review pass **overturned** the earlier claim that the "Before we start" knowledge-level modal was human-pass-only: it *is* reachable here — a seeded BYOK key connects the provider, choosing a level surfaces the "Change knowledge level" affordance, and clicking it opens the modal with no live model. It is now covered in `student-ai-chat.spec.ts`.)
 
 ### Settings
 

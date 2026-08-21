@@ -74,7 +74,14 @@ export async function registerStudent(
 export async function seedPublishedCourseAndEnroll(
   playwright: RequestFixture,
   studentId: string,
-  opts: { name?: string; codePrefix?: string; topics?: string[]; question?: string } = {},
+  opts: {
+    name?: string;
+    codePrefix?: string;
+    topics?: string[];
+    question?: string;
+    term?: string;
+    role?: "STUDENT" | "TA";
+  } = {},
 ): Promise<
   SeededCourse & {
     moduleId: number;
@@ -84,12 +91,14 @@ export async function seedPublishedCourseAndEnroll(
     topicIds: string[];
   }
 > {
+  const enrollRole = opts.role ?? "STUDENT";
   const seeded = await seedCourseWithActivity(playwright, {
     name: opts.name ?? "Student Walkthrough Course",
     codePrefix: opts.codePrefix ?? "STU",
     topics: opts.topics ?? ["Recursion", "Complexity"],
     publish: true,
     question: opts.question,
+    term: opts.term,
   });
 
   // Publish the module and lesson (publish cascades down, so both are needed
@@ -107,14 +116,14 @@ export async function seedPublishedCourseAndEnroll(
   expect(
     (
       await seeded.admin.post(`${CORE_URL}/api/courses/${seeded.coreCourseId}/enrollments`, {
-        data: { userId: studentId, role: "STUDENT" },
+        data: { userId: studentId, role: enrollRole },
       })
     ).status(),
   ).toBe(201);
   expect(
     (
       await seeded.admin.post(`${AT}/api/admin/courses/${seeded.atCourseId}/enrollments`, {
-        data: { userId: studentId, role: "STUDENT" },
+        data: { userId: studentId, role: enrollRole },
       })
     ).status(),
   ).toBe(201);

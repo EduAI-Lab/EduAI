@@ -98,6 +98,93 @@ test.describe("AI Tutor STUDENT — enrolled course list", () => {
   });
 });
 
+test.describe("AI Tutor STUDENT — course list filters and pagination", () => {
+  test("the term filter narrows the list and Clear resets it", async ({ page, playwright }) => {
+    const { studentId } = await registerStudent(page);
+    // Two enrolled courses in different terms so the term filter has >1 value
+    // and therefore renders (it hides when a single term is present).
+    const w1 = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Term Winter One Course",
+      codePrefix: "TW1",
+      term: "W1",
+    });
+    const w2 = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Term Winter Two Course",
+      codePrefix: "TW2",
+      term: "W2",
+    });
+    try {
+      await gotoAiTutor(page, "/student");
+      await expect(page.getByText(w1.name).first()).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(w2.name).first()).toBeVisible();
+
+      await page.getByRole("combobox").filter({ hasText: "Term" }).click();
+      await page.getByRole("option", { name: "2026W2", exact: true }).click();
+      await expect(page).toHaveURL(/term=W2/, { timeout: 20_000 });
+      await expect(page.getByText(w2.name).first()).toBeVisible();
+      await expect(page.getByText(w1.name)).toHaveCount(0);
+
+      await page
+        .getByRole("button", { name: /^clear/i })
+        .first()
+        .click();
+      await expect(page).not.toHaveURL(/term=W2/, { timeout: 20_000 });
+      await expect(page.getByText(w1.name).first()).toBeVisible();
+    } finally {
+      await w1.dispose();
+      await w2.dispose();
+    }
+  });
+
+  test("the progress filter is applied server-side across every enrolled course", async ({
+    page,
+    playwright,
+  }) => {
+    // #1208: the progress filter runs in the loader (`?progress=`), spanning all
+    // enrolments rather than the loaded page. A freshly seeded course is
+    // not-started, so `progress=completed` must exclude it while
+    // `progress=not-started` keeps it.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Progress Filter Course",
+      codePrefix: "PGF",
+    });
+    try {
+      await gotoAiTutor(page, "/student?progress=not-started");
+      await expect(page.getByText(seeded.name).first()).toBeVisible({ timeout: 20_000 });
+
+      // `progress=completed` excludes the not-started course server-side, so it
+      // is gone and the list falls back to its empty heading.
+      await gotoAiTutor(page, "/student?progress=completed");
+      await expect(page.getByRole("heading", { name: /No courses/i })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByText(seeded.name)).toHaveCount(0);
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  test("a past-the-end ?page= is corrected to the last real page", async ({ page, playwright }) => {
+    // The loader clamps an out-of-range page and redirects, carrying the search
+    // params, rather than rendering an empty grid.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Pagination Clamp Course",
+      codePrefix: "PGC",
+    });
+    try {
+      await gotoAiTutor(page, "/student?page=99");
+      // Redirected onto a valid page (page=1 for a single-page list) with the
+      // course still visible.
+      await expect(page).toHaveURL(/page=1/, { timeout: 20_000 });
+      await expect(page.getByText(seeded.name).first()).toBeVisible();
+    } finally {
+      await seeded.dispose();
+    }
+  });
+});
+
 test.describe("AI Tutor STUDENT — course list enrolment/publish gate", () => {
   test("a published course the student is NOT enrolled in does not appear", async ({
     page,
