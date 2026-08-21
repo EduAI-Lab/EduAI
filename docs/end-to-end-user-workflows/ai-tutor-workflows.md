@@ -2,7 +2,7 @@
 
 > **How to edit this file:** pick a role section below and work it in stages — Claude finds the paths, Claude simulates them via Playwright *and turns that into a committed e2e test* (`tests/e2e/tests/ai-tutor/`), Claude reviews (its own and another Claude's) work, Claude sweeps once more for gaps, then a human walks the same paths (see the [README](./README.md) for the full methodology). Add/update a row per workflow, including a link to its e2e test — every workflow needs one, it's not optional. Prioritize AI-involving workflows (tutor chat sessions) and happy paths first. File bugs as GitHub issues and link them in the Bugs column — don't just describe them in prose. Prefix security findings with `SECURITY:`. Bump **Last updated** every time you edit.
 
-**Last updated:** 2026-08-20 — Claude (fix pass: all ten Admin findings resolved, every pinning spec flipped to assert the fixed behaviour), Admin section
+**Last updated:** 2026-08-21 — Claude (Student section: every student path enumerated and walked through a real Chromium session, 58 committed e2e tests across eight `student-*.spec.ts` files, whole `ai-tutor` suite green), Student section
 
 ## Table of contents
 
@@ -370,7 +370,115 @@ docker compose -f docker-compose.e2e.yml up -d
 
 ## Student
 
+Walked in a real Chromium session against the `docker-compose.e2e.yml` stack (Core 3000 + AI Tutor 3001/4000), signed in as a freshly registered platform `STUDENT` (the default role of a self-registration, so no promotion is needed). Every row has a committed Playwright spec under `tests/e2e/tests/ai-tutor/` — **eight** `student-*.spec.ts` files, **58 tests**, all green run serially with `--workers=1` as CI does.
 
-| Workflow                                                           | Tester(s) | Status      | Makes sense? / UI clear? | Security | Bugs | E2E test                                                          |
-| ------------------------------------------------------------------ | --------- | ----------- | ------------------------ | -------- | ---- | ----------------------------------------------------------------- |
-| _e.g. Start an AI chat session on a lesson and submit an activity_ |           | Not started |                          |          |      | _e.g. `tests/e2e/tests/ai-tutor/student-chat-and-submit.spec.ts`_ |
+The enumeration is the whole student surface, not the AI-only slice: the shared app shell as a student sees it, the role-aware dashboard, the enrolled-course list and its filters, the course → module → lesson drill-down, the lesson player (MCQ/short-text answering, feedback, prev/next), the "AI study buddy" chat in every state it can reach here, Settings, and the API-level authorization boundaries a student is held to.
+
+**Status legend:** `Claude-tested` = paths found and walked through the browser, e2e test committed and green. A human pass is still required (README step 5) before any row counts as done.
+
+**No product bugs were found in the student surfaces.** Two things are genuinely *not walkable* in this stack and are called out as human-pass-only rather than dressed up as coverage — see the note under the AI chat table.
+
+### Shell, navigation, and session
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sign in through Core's login form with `?redirect` to AI Tutor and land on the shared dashboard | Claude | Claude-tested | Yes — a self-registration is already a STUDENT, so the Core form hands back a session and bounces to the requested page; AI Tutor has no login of its own | Correct: no AI Tutor session exists independently of Core | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Open `/` and get routed to the shared role-aware dashboard | Claude | Claude-tested | Yes — every role lands on `/dashboard` (`role-routing.ts`) | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Sidebar shows exactly Dashboard / Courses / Help for STUDENT | Claude | Claude-tested | Yes — "Courses" is the student's own enrolled list (`/student`), and no staff entry (Admin / instructor Courses) is offered | Correct: `getNavForUser` withholds every staff surface | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Navigate to the enrolled-course list from the sidebar | Claude | Claude-tested | Yes — its own heading ("Continue where you left off…"), distinct from the instructor list | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Open the sidebar user menu (Settings + Log out) | Claude | Claude-tested | Yes | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Open the command palette with Ctrl+K and see the RBAC-filtered targets | Claude | Claude-tested | Yes — lists Dashboard / Courses / Settings / Help only | Correct: palette reuses `getNavForUser`; the spec asserts the **negative** too (no "Admin" target) | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Search the palette and jump to the course list with Enter | Claude | Claude-tested | Yes | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Switch apps from the launcher (Core / AI Tutor current / Question Maker) | Claude | Claude-tested | Yes — current app is marked and carries no link | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Toggle light/dark theme from the header | Claude | Claude-tested | Yes | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Open the "Report a bug" dialog and submit a report from any shell page | Claude | Claude-tested | Yes — type + description, with console/network/screenshot captured automatically; a student's report carries the lesson/activity context when filed from the player | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Read the Help guide, including "Using the AI tutor" | Claude | Claude-tested | Yes — the student-facing chat guidance is present (unlike the admin view, where it advertises a screen the admin cannot open) | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| The guided tour **is** offered to a student | Claude | Claude-tested | Yes — `canAccessStudentTour` is STUDENT/TA only, so the "Take tour" button renders (the exact inverse of the admin case) | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Try to enter a staff route (`/admin`, `/instructor`, `/instructor/courses/:id`) | Claude | Claude-tested | Yes — answered with the in-shell 404, URL left alone, a way onwards still visible | **Correctly blocked** — `requireClientUser` throws a 404 on a role mismatch rather than confirming the page exists | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| A URL that matches no route is a 404 inside the shell | Claude | Claude-tested | Yes — the catch-all `*` route, not a bare error boundary | — | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+| Sign out from Settings and confirm protected routes bounce to Core login | Claude | Claude-tested | Yes — logout returns to Core's form with `force=1` and a `redirect` back | Correct: after sign-out `/dashboard` cannot be re-entered; the spec asserts `force=1` and a 401 from `/api/me` | — | [`student-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/student-access-and-shell.spec.ts) |
+
+### Dashboard
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| Read the four-stat row (Courses enrolled / In progress / Completed / Correct answers) | Claude | Claude-tested | Yes — counts come from Core's cross-course rollup, falling back to client-derived counts | — | — | [`student-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/student-dashboard.spec.ts) |
+| Read the course-status donut and lessons-completed meter, incl. the no-enrolment empty state | Claude | Claude-tested | Yes — with no enrolments the donut collapses to "No enrolled courses yet." rather than a zero-slice chart | — | — | [`student-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/student-dashboard.spec.ts) |
+| An enrolled course appears in "Your courses" and the "Continue learning" resume panel | Claude | Claude-tested | Yes | Only the student's own enrolments are shown | — | [`student-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/student-dashboard.spec.ts) |
+| Use each quick action: View courses / Open settings | Claude | Claude-tested | Yes — "Continue learning" points at the resume course or the list when there is nothing to resume | — | — | [`student-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/student-dashboard.spec.ts) |
+
+### Course list (`/student`)
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| A student with no enrolments sees the "No courses yet" empty state | Claude | Claude-tested | Yes — the copy explains enrolments sync from Core on sign-in | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| An enrolled published course appears and its card opens the course | Claude | Claude-tested | Yes — the whole card is a link (a full-bleed anchor over the content) | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| Search the course list by title | Claude | Claude-tested | Yes — server-side across every enrolled course (#1208), so the result stays honest | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| A search that matches nothing shows the "No courses match" state | Claude | Claude-tested | Yes — distinct from the Core-unavailable "Search is unavailable" state | — | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+| A published course the student is **not** enrolled in never appears | Claude | Claude-tested | Yes — the empty state stands even though the course exists platform-wide | **Enrolment gate** verified at the list surface: a published-but-unenrolled course is withheld | — | [`student-course-list.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-list.spec.ts) |
+
+### Course → module → lesson navigation
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| Open a course, its module, and its lesson in sequence, landing in the player | Claude | Claude-tested | Yes — each level's card navigates down one step; the lesson opens the "Your answer" player | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| The course hero shows the module count and topics | Claude | Claude-tested | Yes — topics arrive by sync-on-read from Core | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| A course with no modules shows "No modules available" | Claude | Claude-tested | Yes | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| A module with no lessons shows "No lessons available" | Claude | Claude-tested | Yes | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| A bad course/module/lesson id (non-numeric or nonexistent) lands on the in-shell 404 | Claude | Claude-tested | Yes — the same generic 404 as the admin case, inside the shell | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| A course the student is **not** enrolled in is a 404, not a peek | Claude | Claude-tested | Yes — a non-member gets the same 404 as a missing course, never the course heading | **Enrolment gate at the detail route**: the app never confirms the course exists to a non-member | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+| Switch between two enrolled courses from the breadcrumb without returning to the list | Claude | Claude-tested | Yes — server-side search in the switcher, scoped to the student's own enrolments | — | — | [`student-course-navigation.spec.ts`](../../tests/e2e/tests/ai-tutor/student-course-navigation.spec.ts) |
+
+### Lesson player (`/student/lesson/:id`)
+
+The flagship student surface: one activity at a time, an answer card, the immediate result, an optional feedback prompt, and the "AI study buddy" beside it (chat covered separately below).
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| The player renders the question card, answer card, and study-buddy panel | Claude | Claude-tested | Yes — a resizable split gives the chat equal billing with the question | — | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+| Submit is disabled until an MCQ choice is selected | Claude | Claude-tested | Yes — the button gates on a selection (or non-empty text for short-text) | — | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+| **AI-adjacent:** a correct MCQ answer shows "Correct!" and locks the options + Guide me | Claude | Claude-tested | Yes — the options and the Guide-me button disable once the activity is passed | Answer is graded server-side; the choices are `role="radio"` with an "Option A/B" accessible name | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+| A wrong MCQ answer shows "Not quite. Keep going!" and keeps Guide me available | Claude | Claude-tested | Yes — a wrong answer leaves the student able to ask for a hint | — | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+| The post-submission feedback prompt rates the activity and thanks the student | Claude | Claude-tested | Yes — a 1–5 difficulty rating + optional note, then a confirmation card; "Maybe later" dismisses it | — | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+| Type and submit a short-text answer | Claude | Claude-tested | Yes — a free-text input replaces the choice list for `SHORT_TEXT` activities | — | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+| Previous/Next walk the activities and update "Question N of M" | Claude | Claude-tested | Yes — Previous is disabled on the first activity, Next on the last; the counter uses the lesson total, not the loaded slice (#1207) | — | — | [`student-lesson-player.spec.ts`](../../tests/e2e/tests/ai-tutor/student-lesson-player.spec.ts) |
+
+### AI study buddy (chat)
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| **AI:** with no provider key, chat shows the "Connect an AI provider" state with an Add-key CTA and a Settings link | Claude | Claude-tested | Yes — the composer is disabled ("Connect a provider to start chatting") and the catalogue reads "No AI models configured." | The BYOK key stays on the device; the empty EduAI catalogue fails closed rather than half-enabling chat | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** the Add-API-key dialog opens with a masked (password) key field | Claude | Claude-tested | Yes — the field is `type=password`; the dialog explains the key is stored on this device and removed on sign-out | Key is write-only in the UI | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** with a browser-local BYOK key present, the composer, mode switch (Teach me / Guide me), and knowledge-level chips become available | Claude | Claude-tested | Yes — the mode switch reflects exactly what the activity's author enabled; the level chips are the first prompt | The mode set is author-controlled, never widened by the student | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** choosing a knowledge level unlocks the ask-anything prompt and a level toggle | Claude | Claude-tested | Yes — the chosen level becomes a "Change knowledge level" pill in the control row | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+| **AI:** Send stays disabled until the composer has text | Claude | Claude-tested | Yes | — | — | [`student-ai-chat.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ai-chat.spec.ts) |
+
+**Human-pass-only in this stack (called out honestly, not mocked):**
+
+- **A real tutoring answer.** `hasApiKey` is a browser-local BYOK key, and the e2e stack has no live model provider and an empty Core model catalogue, so sending a message cannot return a streamed reply here. The specs unlock and walk the whole client-side chat surface with a seeded BYOK key (the same `ai-provider-keys:v2:<userId>` localStorage entry the Settings tab and the in-chat dialog write), but the send → stream → render path needs a live provider and a human pass. This mirrors the Admin section's treatment of AI oversight traces.
+- **The pre-chat knowledge-level modal ("Before we start") and the misconfigured-MCQ warning.** The modal is only reachable through the chat's "Change knowledge level" affordance, which itself needs a connected provider; the misconfigured-options card needs an activity with a null `options` payload, which `CreateActivitySchema` will not let the seed create. Both are left for the human pass rather than forced.
+
+### Settings
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| Read the Account tab (name, email, STUDENT role badge) and use its sign-out card | Claude | Claude-tested | Yes | — | — | [`student-settings.spec.ts`](../../tests/e2e/tests/ai-tutor/student-settings.spec.ts) |
+| Accessibility tab: assistive mode, reduce motion, density, theme | Claude | Claude-tested | Yes — all optional and clearly labelled | — | — | [`student-settings.spec.ts`](../../tests/e2e/tests/ai-tutor/student-settings.spec.ts) |
+| Providers tab: browser-local BYOK Gemini / OpenAI keys | Claude | Claude-tested | Yes — states plainly the keys stay in the browser and are removed on sign-out; this is the same key store the in-chat dialog writes | Per-user BYOK keys are browser-local, never persisted server-side | — | [`student-settings.spec.ts`](../../tests/e2e/tests/ai-tutor/student-settings.spec.ts) |
+
+### Security (API-level authorization boundaries)
+
+These back the Security column with checks no screen can walk. Companion API specs already cover the mutation/admin/unauth gates (`rbac.spec.ts`) and publish visibility (`content-lifecycle.spec.ts`).
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| An enrolled student's answer ignores a spoofed `body.userId` | Claude | Claude-tested | n/a (API) | **Verified**: `POST /questions/:id/answer` records the attempt against the authenticated caller and never trusts `body.userId` | — | [`student-security.spec.ts`](../../tests/e2e/tests/ai-tutor/student-security.spec.ts) |
+| A student not enrolled in the course cannot answer its activity (403) | Claude | Claude-tested | n/a (API) | **Verified**: the enrolment gate returns 403 "Not enrolled in this course" | — | [`student-security.spec.ts`](../../tests/e2e/tests/ai-tutor/student-security.spec.ts) |
+| An enrolled student cannot answer an activity in an unpublished lesson (403) | Claude | Claude-tested | n/a (API) | **Verified**: the full publish chain (course live + module + lesson) is enforced, not just enrolment | — | [`student-security.spec.ts`](../../tests/e2e/tests/ai-tutor/student-security.spec.ts) |
+| An instructor cannot submit an answer — students only (403) | Claude | Claude-tested | n/a (API) | **Verified**: the answer route is STUDENT-only | — | [`student-security.spec.ts`](../../tests/e2e/tests/ai-tutor/student-security.spec.ts) |
+| A non-member student sees no modules for a course they are not enrolled in (BOLA) | Claude | Claude-tested | n/a (API) | **Verified**: the module read is enrolment-scoped — a non-member gets a scoped-empty page or a 403/404, never the other course's modules | — | [`student-security.spec.ts`](../../tests/e2e/tests/ai-tutor/student-security.spec.ts) |
+
+### Test-suite notes
+
+- The whole student slice runs serially (`--workers=1`) like CI. Each spec registers its own fresh student and seeds its own course spine (published course → published module → published lesson → MCQ activity, owned by a *different* instructor/admin and then enrolled), so no test depends on another's state. The shared fixtures live in [`tests/e2e/tests/helpers/at-student-fixtures.ts`](../../tests/e2e/tests/helpers/at-student-fixtures.ts).
+- `seedByokKey` unlocks the chat surface by writing the same localStorage key a real student's saved key would produce — it does **not** stub any server endpoint. The one place the suite cannot avoid a gap (a real streamed answer) is documented above rather than mocked.
