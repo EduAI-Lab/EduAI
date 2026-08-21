@@ -1,5 +1,5 @@
 /**
- * @file Shared lesson membership / visibility for GET /lessons/:id family.
+ * Shared lesson membership / visibility for GET /lessons/:id family.
  *
  * The lesson body, breadcrumb, and tree-context routes all need the same
  * live-principal membership checks. Keep that in one place so student-vs-
@@ -13,7 +13,6 @@ import { authorizeLiveCoursePrincipal } from "./liveCoursePrincipal.js";
 
 /**
  * Exact live-course membership for a caller against one course offering.
- * Mirrors the development `getExactCourseMembership` helper used on list routes.
  *
  * @param {object} course CourseOffering (or compatible) passed to authorizeLiveCoursePrincipal
  * @param {{ id: string, role: string }} authUser
@@ -37,14 +36,6 @@ export async function getExactCourseMembership(course, authUser) {
  *
  * @param {{ id: string, role: string }} authUser
  * @param {{ isPublished: boolean, module: { courseOffering: object } }} lesson
- * @returns {Promise<{
- *   principal: object,
- *   isMember: boolean,
- *   hasElevatedAccess: boolean,
- *   publishedOnly: boolean,
- *   isStudent: boolean,
- *   authUnavailable: boolean,
- * }>}
  */
 export async function resolveLessonAccess(authUser, lesson) {
   const membership = await getExactCourseMembership(lesson.module.courseOffering, authUser);
