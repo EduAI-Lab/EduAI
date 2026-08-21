@@ -76,6 +76,41 @@ function resolveLocalInferenceBaseUrlOrLog(opts: {
 }
 
 /**
+ * The exact vLLM registration the registry would build from these settings, or
+ * null when vLLM is not eligible. Provider *availability*
+ * (`listEnabledRegistryProviders`) and the registry itself MUST agree on this
+ * (#1568 review): otherwise the chat preflight can report vLLM available and
+ * then fail at `registry.languageModel("vllm:…")`. Ineligible when the base URL
+ * cannot be resolved — a client-supplied host rejected by the SSRF guard, or a
+ * misconfigured `VLLM_BASE_URL` — or when no key is available to authenticate.
+ */
+function resolveVllmRegistration(
+  userSettings: UserProviderSettings,
+): { baseURL: string; apiKey: string } | null {
+  if (!userSettings.vllm?.isEnabled) return null;
+  const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
+  const clientVllmUrlSupplied =
+    Boolean(clientVllmBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.vllm);
+  // SSRF guard: only an exact deployment-owned base (or explicit development/test loopback)
+  // is trusted. See the Ollama block for the fallback/logging shape.
+  let baseURL = resolveLocalInferenceBaseUrlOrLog({
+    resolve: resolveAllowedVllmBaseUrl,
+    clientBaseUrl: clientVllmBaseUrl,
+    providerLabel: "vLLM",
+    envVarName: "VLLM_BASE_URL",
+  });
+  if (!baseURL) return null;
+  baseURL = baseURL.replace(/\/$/, "");
+  if (!baseURL.endsWith("/v1")) {
+    baseURL = `${baseURL}/v1`;
+  }
+  const apiKey =
+    userSettings.vllm?.apiKey || (clientVllmUrlSupplied ? "vllm-local" : resolveVllmApiKey());
+  if (!apiKey) return null;
+  return { baseURL, apiKey };
+}
+
+/**
  * Creates a dynamic provider registry with user-provided settings
  */
 export function createAIProviderRegistry(userSettings: UserProviderSettings) {
@@ -126,38 +161,18 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     }
   }
 
-  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
-  if (userSettings.vllm?.isEnabled) {
-    const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
-    const clientVllmUrlSupplied =
-      Boolean(clientVllmBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.vllm);
-    // SSRF guard: only an exact deployment-owned base (or explicit development/test loopback)
-    // is trusted. See the Ollama block above for the fallback/logging shape.
-    let baseURL = resolveLocalInferenceBaseUrlOrLog({
-      resolve: resolveAllowedVllmBaseUrl,
-      clientBaseUrl: clientVllmBaseUrl,
-      providerLabel: "vLLM",
-      envVarName: "VLLM_BASE_URL",
+  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md). Eligibility is shared
+  // with listEnabledRegistryProviders via resolveVllmRegistration so preflight
+  // and the registry never disagree (#1568 review).
+  const vllmRegistration = resolveVllmRegistration(userSettings);
+  if (vllmRegistration) {
+    providers.vllm = createOpenAI({
+      apiKey: vllmRegistration.apiKey,
+      baseURL: vllmRegistration.baseURL,
+      // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
+      compatibility: "strict",
+      fetch: vllmThinkingDisabledFetch(),
     });
-
-    if (baseURL) {
-      baseURL = baseURL.replace(/\/$/, "");
-      if (!baseURL.endsWith("/v1")) {
-        baseURL = `${baseURL}/v1`;
-      }
-
-      const apiKey =
-        userSettings.vllm?.apiKey || (clientVllmUrlSupplied ? "vllm-local" : resolveVllmApiKey());
-      if (apiKey) {
-        providers.vllm = createOpenAI({
-          apiKey,
-          baseURL,
-          // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
-          compatibility: "strict",
-          fetch: vllmThinkingDisabledFetch(),
-        });
-      }
-    }
   }
 
   // OpenCode Zen (OpenAI-compatible). Keep the endpoint fixed: unlike local
@@ -253,15 +268,9 @@ export function listEnabledRegistryProviders(userSettings: UserProviderSettings)
   if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push("openai");
   if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push("google");
   if (userSettings.ollama?.isEnabled) ids.push("ollama");
-  const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
-  const clientVllmUrlSupplied =
-    Boolean(clientVllmBaseUrl) && !isDeploymentManagedProviderSettings(userSettings.vllm ?? {});
-  if (
-    userSettings.vllm?.isEnabled &&
-    (userSettings.vllm.apiKey || clientVllmUrlSupplied || resolveVllmApiKey())
-  ) {
-    ids.push("vllm");
-  }
+  // Same eligibility rule as the registry — a resolvable base URL AND a key —
+  // so preflight never advertises vLLM that languageModel() would reject (#1568).
+  if (resolveVllmRegistration(userSettings)) ids.push("vllm");
   if (userSettings.opencode?.isEnabled && userSettings.opencode?.apiKey) ids.push("opencode");
   if (userSettings.bedrock?.isEnabled && process.env.AWS_BEARER_TOKEN_BEDROCK?.trim()) {
     ids.push("bedrock");

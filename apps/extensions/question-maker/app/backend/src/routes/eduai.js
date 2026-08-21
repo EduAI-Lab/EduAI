@@ -365,7 +365,12 @@ router.get("/courses", async (req, res) => {
     logEduaiRouteError("EduAI list courses error", error);
     // Honor an auth failure (missing cookie → 401) or an upstream Core status
     // instead of flattening everything to 500. Message/body stay redacted.
-    const status = error.statusCode ?? error.response?.status ?? 500;
+    // Core failures propagate as `coreError` with `.status` (see
+    // coreApiService.coreError); the Axios/legacy shapes carry `.statusCode` /
+    // `.response.status`. Only 401/403 are surfaced as client-facing auth
+    // failures — everything else degrades to 500 so upstream 5xx never leaks.
+    const rawStatus = error.status ?? error.statusCode ?? error.response?.status;
+    const status = rawStatus === 401 || rawStatus === 403 ? rawStatus : 500;
     res.status(status).json({
       success: false,
       error:
