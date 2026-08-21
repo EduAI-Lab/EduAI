@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveReEmbedJobStatus } from "~/lib/ai/re-embed-job-status";
 import { formatReEmbedJobMessage, isReEmbedJobTerminal } from "~/lib/api/re-embed-job.client";
+import { serializeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 
 describe("resolveReEmbedJobStatus", () => {
   it("returns COMPLETED when there are no eligible materials", () => {
@@ -35,5 +36,28 @@ describe("re-embed job client helpers", () => {
         errorMessage: null,
       }),
     ).toContain("2 of 3");
+  });
+
+  it("serializes only stable failure messages", () => {
+    const serialized = serializeReEmbedJob({
+      id: "j1",
+      courseId: "c1",
+      idempotencyKey: null,
+      status: "FAILED",
+      embeddingProviderSnapshot: "cloud",
+      embeddingModelSnapshot: "openai/text-embedding-3-small",
+      totalMaterials: 1,
+      processedCount: 0,
+      failedMaterialIds: [],
+      currentMaterialTitle: null,
+      errorMessage: "https://provider.test/v1?api_key=provider-secret-canary",
+      startedAt: null,
+      completedAt: new Date("2026-01-01T00:00:00Z"),
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+
+    expect(serialized.errorMessage).toBe("Embedding provider failed. Please try again.");
+    expect(JSON.stringify(serialized)).not.toContain("provider-secret-canary");
   });
 });

@@ -46,16 +46,19 @@ export class CanvasMaterialSyncError extends Error {
 }
 
 function normalizeMimeType(file: CanvasFileApi): string | null {
-  const raw = file["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (ALLOWED_MIME_TYPES.has(raw)) {
-    return raw;
-  }
-
+  // The filename selects the parser, while the bounded download path verifies
+  // that the response MIME and file signature agree with this choice. Canvas
+  // and CDN metadata commonly fall back to application/octet-stream.
   const lowerName = (file.filename || file.display_name || "").toLowerCase();
   for (const [ext, mime] of Object.entries(EXTENSION_MIME)) {
     if (lowerName.endsWith(ext)) {
       return mime;
     }
+  }
+
+  const raw = file["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (ALLOWED_MIME_TYPES.has(raw)) {
+    return raw;
   }
 
   return null;
@@ -315,7 +318,7 @@ export async function importSingleCanvasFile(
         courseId,
         title: provisionalTitle,
         mimeType,
-        fileSize: typeof file.size === "number" ? file.size : bytes.length,
+        fileSize: bytes.length,
         // Stable provisional checksum until extraction supplies the content hash.
         checksum: `canvas-pending:${canvasFileId}`,
         rawText: null,

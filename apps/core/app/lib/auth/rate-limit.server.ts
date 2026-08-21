@@ -180,6 +180,37 @@ export async function checkRateLimit(
 }
 
 /**
+ * Undo the most recent `checkRateLimit` charge for a key (#1547 Bedrock
+ * overflow interaction). Used when a reservation was taken against one
+ * quota (e.g. the local daily cap) but the turn actually executed
+ * elsewhere, so it should not count. Best-effort: it removes the
+ * highest-scored member, which is almost always the charge just made by
+ * this same request. A concurrent charge from another request landing in
+ * between would be refunded instead — rare, and fails open (one extra
+ * message), not closed.
+ */
+export async function refundMostRecentRateLimitCharge(key: string): Promise<void> {
+  try {
+    await withOperationTimeout(
+      rateLimitRedis.eval(
+        `local key = KEYS[1]
+         local top = redis.call("ZRANGE", key, -1, -1)
+         if top[1] then redis.call("ZREM", key, top[1]) end
+         return 0`,
+        1,
+        key,
+      ),
+    );
+  } catch {
+    const hits = store.get(key);
+    if (hits && hits.length > 0) {
+      hits.pop();
+      store.set(key, hits);
+    }
+  }
+}
+
+/**
  * Existing synchronous session-validation limiter. Its API and half-open
  * window behavior remain unchanged for current callers.
  */

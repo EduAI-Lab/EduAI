@@ -1,4 +1,8 @@
-import { checkRateLimit, type RateLimitResult } from "~/lib/auth/rate-limit.server";
+import {
+  checkRateLimit,
+  refundMostRecentRateLimitCharge,
+  type RateLimitResult,
+} from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import {
   CHAT_DAILY_LIMIT_DEFINITIONS,
@@ -117,4 +121,28 @@ export async function consumeLocalChatDailyCap(options: {
   if (limit <= 0) return null;
 
   return checkRateLimit(chatDailyLimitKey(options.userId), limit, CHAT_DAILY_WINDOW_MS);
+}
+
+/**
+ * Undo a `consumeLocalChatDailyCap` charge. The cap is reserved right after
+ * Auto routing picks a local model, before admission/fleet resolution runs —
+ * if the turn later overflows to Bedrock (admission timeout or fleet
+ * exhaustion), it executed on cloud, not local, and must not count against
+ * the local daily quota (the PR's contract: cloud turns are never counted).
+ * No-op for callers that never charged (regenerateOnly, non-local models,
+ * uncapped roles).
+ */
+export async function refundLocalChatDailyCap(options: {
+  userId: string;
+  role: string | undefined;
+  model: string | undefined;
+  settings?: ChatDailyLimitSettings;
+}): Promise<void> {
+  if (!isLocalChatbotModel(options.model)) return;
+
+  const settings = options.settings ?? (await getChatDailyLimitSettings());
+  const limit = dailyLimitForRole(options.role, settings);
+  if (limit <= 0) return;
+
+  await refundMostRecentRateLimitCharge(chatDailyLimitKey(options.userId));
 }

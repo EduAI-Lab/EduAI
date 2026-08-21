@@ -71,6 +71,7 @@ COPY --from=deps /app/package-lock.json ./
 COPY --from=deps /app/node_modules      ./node_modules
 COPY --from=deps /app/packages/types    ./packages/types
 COPY packages/ui                        ./packages/ui/
+COPY scripts/prisma-generate.mjs        ./scripts/prisma-generate.mjs
 COPY apps/core                          ./apps/core
 COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
 

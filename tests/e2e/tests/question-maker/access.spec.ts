@@ -15,7 +15,7 @@
 import { test, expect } from "@playwright/test";
 import { CORE_URL, QM_BACKEND_URL } from "../../playwright.config";
 import { signUp, signOut, uniqueEmail, checkStatus, createInstructor } from "../helpers/auth";
-import { createQmCourseForInstructor } from "../helpers/qm-courses";
+import { createQmCourseForInstructor, createQmCourseForStudent } from "../helpers/qm-courses";
 
 // ---------------------------------------------------------------------------
 // Health / smoke
@@ -212,18 +212,21 @@ test.describe("Question Maker sign-out", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Question Maker RBAC", () => {
-  test("STUDENT cannot create questions (403)", async ({ request }) => {
+  test("STUDENT cannot create questions (403)", async ({ request, playwright }) => {
     const email = uniqueEmail("qm-no-questions");
     await signUp(request, { email });
 
-    // No course setup needed: the AUTHORS role guard fires before any DB
-    // access, so a literal courseId is enough (#1072 dropped local-only
-    // course creation, so POSTing {name} here would 400 before we even
-    // reach the assertion under test).
+    const { qmCourseId } = await createQmCourseForStudent(playwright, request, {
+      name: "Student-denied question course",
+      code: "DENY 101",
+    });
+
+    // Use a real linked course so the enrollment-aware TA gate can distinguish
+    // an ordinary STUDENT from a course TA before any question write occurs.
     const res = await request.post(`${QM_BACKEND_URL}/api/questions`, {
       data: {
         description: "Test question",
-        courseId: 1,
+        courseId: qmCourseId,
         primaryTopicId: 1,
         type: "MCQ",
       },

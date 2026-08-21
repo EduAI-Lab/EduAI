@@ -6,11 +6,12 @@ After=network.target
 Type=oneshot
 User=ssaada08
 Group=questionmaker
-WorkingDirectory=/srv/www/questionmaker.ok.ubc.ca
-ExecStart=/srv/www/questionmaker.ok.ubc.ca/pull-and-deploy.sh
+WorkingDirectory=/srv/www/EduAI
+Environment=PROJECT_DIR=/srv/www/EduAI
+Environment=BRANCH=development
+ExecStart=/srv/www/EduAI/apps/extensions/question-maker/scripts/daily-deploy.sh
 StandardOutput=journal
 StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-

@@ -11,6 +11,7 @@ import {
   consumeLocalChatDailyCap,
   getChatDailyLimitSettings,
   invalidateChatDailyLimitSettingsCache,
+  refundLocalChatDailyCap,
   setChatDailyLimitSettings,
 } from "~/lib/chat-daily-limits.server";
 
@@ -213,5 +214,48 @@ describe("consumeLocalChatDailyCap", () => {
 
   it("uses a 24-hour window", () => {
     expect(CHAT_DAILY_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+describe("refundLocalChatDailyCap", () => {
+  beforeEach(() => {
+    resetRateLimitsForTests();
+  });
+
+  it("undoes a charge so the same slot can be spent again (Bedrock overflow, #1547/#1441)", async () => {
+    const settings = { studentLimit: 1, instructorLimit: 200 };
+    const userId = `student-${randomUUID()}`;
+    const request = { userId, role: "STUDENT", model: "vllm:test-model", settings };
+
+    // Spends the student's only slot for the day.
+    await expect(consumeLocalChatDailyCap(request)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+    });
+    // This turn actually ran on Bedrock overflow, not the local model — refund it.
+    await refundLocalChatDailyCap(request);
+    // The refunded slot is available again, not double-charged.
+    await expect(consumeLocalChatDailyCap(request)).resolves.toEqual({
+      limited: false,
+      retryAfter: 0,
+    });
+  });
+
+  it("is a no-op for cloud providers, Auto, and uncapped roles", async () => {
+    const userId = `student-${randomUUID()}`;
+    await expect(
+      refundLocalChatDailyCap({ userId, role: "STUDENT", model: "openai:gpt-4o" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      refundLocalChatDailyCap({ userId, role: "STUDENT", model: "auto" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      refundLocalChatDailyCap({
+        userId,
+        role: "STUDENT",
+        model: "vllm:test-model",
+        settings: { studentLimit: 0, instructorLimit: 200 },
+      }),
+    ).resolves.toBeUndefined();
   });
 });

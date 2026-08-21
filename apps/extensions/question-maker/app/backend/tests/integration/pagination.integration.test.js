@@ -30,6 +30,7 @@ vi.mock("../../src/services/importTaughtCoursesService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -48,7 +49,10 @@ function sessionFetch() {
   return vi.fn().mockImplementation((url) => {
     const path = String(url).split("?")[0];
     if (path.endsWith("/api/sessions/validate")) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ user: TEST_USER }),
+      });
     }
     if (path.endsWith("/enrollments")) {
       return Promise.resolve({
@@ -66,14 +70,19 @@ function sessionFetch() {
 /**
  * Swap the session stub for one where Core rejects the session.
  *
- * The suite-wide `sessionFetch` stub validates *any* request, cookie or not, so
- * simply omitting the cookie would still authenticate and prove nothing. Making
- * Core say no is the honest way to assert these routes reject before paging.
+ * The suite-wide `sessionFetch` stub validates the session and returns an
+ * authoritative active instructor enrollment for linked fixture courses. For
+ * auth-only cases, making Core say no is the honest way to assert these routes
+ * reject before paging.
  */
 function stubRejectedSession() {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue({ ok: false, status: 401, json: () => Promise.resolve({}) }),
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({}),
+    }),
   );
 }
 
@@ -93,13 +102,16 @@ describeDb("Pagination contract (integration)", () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
+    resetCourseAccessSyncForTests();
 
     await prisma.user.create({
       data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name },
     });
     await seedCoursesForNewUser(TEST_USER.id);
 
-    const course = await prisma.course.findFirst({ where: { userId: TEST_USER.id } });
+    const course = await prisma.course.findFirst({
+      where: { userId: TEST_USER.id },
+    });
     courseId = course.id;
     const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
@@ -407,9 +419,13 @@ describeDb("Pagination contract (integration)", () => {
       // both an off-by-one in the stop condition and a premature break.
       // Top up to 501 over whatever the course fixture already seeded, so the
       // expected count is the DB's real count rather than a hardcoded guess.
-      const seeded = await prisma.questionMetadata.count({ where: { courseId } });
+      const seeded = await prisma.questionMetadata.count({
+        where: { courseId },
+      });
       await seedQuestions(501 - seeded);
-      const expected = await prisma.questionMetadata.count({ where: { courseId } });
+      const expected = await prisma.questionMetadata.count({
+        where: { courseId },
+      });
       expect(expected).toBe(501);
 
       const res = await request(app)

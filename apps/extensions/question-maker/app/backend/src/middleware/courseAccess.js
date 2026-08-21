@@ -21,6 +21,7 @@ import {
   getCourseFromCore,
   getMyProfileFromCore,
 } from "../services/coreApiService.js";
+import { assertQmAiDeadline } from "./aiAdmission.js";
 
 /** Resolved access levels and their numeric ranks (shared contract §3). */
 export const LEVELS = {
@@ -46,9 +47,12 @@ export function minRank(min) {
  * UNIT_ADMIN unit-lock check in the batched list path (#1072 unified contract)
  * without duplicating the "already on req.user vs fetch /api/me" logic.
  */
-export async function getAuthorizedUnits(reqUser, cookie) {
+export async function getAuthorizedUnits(reqUser, cookie, signal) {
   if (Array.isArray(reqUser.authorizedUnits)) return reqUser.authorizedUnits;
-  const profile = await getMyProfileFromCore(cookie).catch(() => null);
+  const profile = await getMyProfileFromCore(cookie, { signal }).catch(() => {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
+    return null;
+  });
   return Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
 }
 
@@ -64,7 +68,7 @@ export async function getAuthorizedUnits(reqUser, cookie) {
  * @param {object} course  a loaded QM Course instance (must include userId + coreCourseId)
  * @param {{cookie?: string}} [opts]  caller cookie, forwarded to /api/me
  */
-export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
+export async function resolveAccessForCourse(reqUser, course, { cookie, signal } = {}) {
   if (!course) return null;
 
   if (reqUser.role === "ADMIN") return LEVELS.admin;
@@ -81,15 +85,20 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
       // Unified contract (#1072): `department` is a FIELD read — service-key
       // first, so the result never depends on the caller's own Core
       // enrollment (cookie remains the fallback when no key is configured).
-      coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
+      coreCourse = await getCourseFromCore(course.coreCourseId, {
+        cookie,
+        preferCookie: false,
+        signal,
+      });
     } catch {
+      if (signal?.aborted) assertQmAiDeadline({ signal });
       // #225 SEAM-02: do not grant the QM owner instructor on a Core course
       // lookup failure — linked courses use Core as source of truth. Fall
       // through to the enrollment check (which itself fails closed on throw).
     }
     const department = coreCourse?.department ?? null;
     if (department !== null) {
-      const units = await getAuthorizedUnits(reqUser, cookie);
+      const units = await getAuthorizedUnits(reqUser, cookie, signal);
       if (units.includes(department)) return LEVELS.unit;
     }
     // Outside their units a UNIT_ADMIN may still hold an enrollment — fall through.
@@ -98,9 +107,12 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   // Enrollment-based access (C column): only an active enrollment counts.
   let enrollments = [];
   try {
-    const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie });
-    enrollments = data?.enrollments ?? [];
+    const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie, signal });
+    // Treat an absent/malformed roster as an authoritative empty response;
+    // never let a provider shape error turn into an accidental owner grant.
+    enrollments = Array.isArray(data?.enrollments) ? data.enrollments : [];
   } catch {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
     // #225 SEAM-02 / #1197 product decision: fail-CLOSED here, including for
     // the QM course owner. Once a course is linked (`coreCourseId` set),
     // Core enrollments are the sole source of truth for who has access — a
@@ -109,15 +121,14 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
     // relinked/deleted in Core). If Core is unreachable we cannot verify
     // anyone's access, so nobody gets it. This is intentionally asymmetric
     // with the unlinked-course branch above, where QM ownership IS the
-    // source of truth and instructor access stays fail-open by design; it's
-    // also asymmetric with the "fetched but not yet on the roster" fallback
-    // below, which is a real, distinguishable state (Core answered; the
-    // linker just isn't synced yet) rather than an unreachable Core.
+    // source of truth and instructor access stays fail-open by design.
     return null;
   }
 
   const mine = enrollments.find((e) => e.studentId === reqUser.id && e.isActive);
   if (!mine) {
+    // A successful Core response with no active enrollment is authoritative.
+    // Do not let local QM ownership become a stale authorization grant.
     return null;
   }
 
@@ -184,6 +195,7 @@ export function requireCourseAccess({ min, getCourseId }) {
 
       const { course, access } = await resolveCourseAccessWithCourse(req.user, courseId, {
         cookie: req.headers.cookie,
+        signal: req.aiOperation?.signal,
       });
 
       if (!course) {
@@ -195,6 +207,59 @@ export function requireCourseAccess({ min, getCourseId }) {
 
       req.courseAccess = access;
       req.qmCourse = course;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/**
+ * Gate an optional course supplied alongside a resource addressed by another
+ * course (for example, a PUT that attempts to change `courseId`). The resource
+ * middleware has already attached `req.qmCourse` for the source row; this
+ * guard re-resolves the caller's access for the client-supplied target without
+ * replacing that source context. An omitted target is a same-course update and
+ * continues through the existing resource access decision.
+ */
+export function requireOptionalCourseAccess({ min, getCourseId, attachAs = "targetQmCourse" }) {
+  const required = minRank(min);
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Authentication required" });
+      }
+
+      const courseId = await getCourseId(req);
+      if (courseId === undefined) {
+        return next();
+      }
+      if (courseId === null || courseId === "") {
+        return res.status(404).json({ success: false, error: "Course not found" });
+      }
+
+      // Validate the target identifier before resolving access. Resource
+      // routes keep their source-resource authorization first, but malformed
+      // relocation input is a client error (400), not a target-course 404.
+      const parsedCourseId = Number(courseId);
+      if (!Number.isInteger(parsedCourseId) || parsedCourseId <= 0) {
+        return res.status(400).json({ success: false, error: "Valid courseId is required" });
+      }
+
+      const { course, access } = await resolveCourseAccessWithCourse(req.user, parsedCourseId, {
+        cookie: req.headers.cookie,
+        signal: req.aiOperation?.signal,
+      });
+
+      if (!course) {
+        return res.status(404).json({ success: false, error: "Course not found" });
+      }
+      if (!access || access.rank < required) {
+        return res.status(403).json({ success: false, error: "Insufficient course access" });
+      }
+
+      req[attachAs] = course;
+      req[`${attachAs}Access`] = access;
       next();
     } catch (error) {
       next(error);

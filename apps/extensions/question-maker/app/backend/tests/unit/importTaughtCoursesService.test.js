@@ -65,6 +65,7 @@ const { listCoursesFromCore, getCourseEnrollmentsFromCore } =
 const { syncTopicsFromCoreForCourse } = await import("../../src/services/topicSyncService.js");
 const { importTaughtCoursesFromCore } =
   await import("../../src/services/importTaughtCoursesService.js");
+const { logger } = await import("../../src/utils/logger.js");
 
 describe("importTaughtCoursesFromCore (QM)", () => {
   beforeEach(() => {
@@ -88,6 +89,27 @@ describe("importTaughtCoursesFromCore (QM)", () => {
 
     expect(result).toEqual({ imported: 0, skipped: 0 });
     expect(listCoursesFromCore).not.toHaveBeenCalled();
+  });
+
+  it("returns a stable Core error and allowlisted log metadata when catalog loading fails", async () => {
+    const canary = "core-secret-canary";
+    listCoursesFromCore.mockRejectedValueOnce(
+      Object.assign(new Error(`Core upstream https://core.example/api?token=${canary}`), {
+        status: 502,
+        code: "ECONNRESET",
+      }),
+    );
+
+    const result = await importTaughtCoursesFromCore("u1", "INSTRUCTOR", "session=abc");
+
+    expect(result).toMatchObject({ imported: 0, skipped: 0, error: "Core API error (502)" });
+    expect(JSON.stringify(result)).not.toContain(canary);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", status: 502, code: "ECONNRESET" }),
+      "Auto-import skipped: could not list Core courses",
+    );
+    expect(logger.warn.mock.calls[0][0]).not.toHaveProperty("err");
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(canary);
   });
 
   it("creates local courses for unlinked Core courses", async () => {

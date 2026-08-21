@@ -18,6 +18,20 @@ vi.mock("~/lib/chat-daily-limits.server", () => ({
   }),
 }));
 
+vi.mock("~/lib/ai/routing/bedrock/overflow.server", () => ({
+  isBedrockTokenConfigured: vi.fn(() => false),
+}));
+
+vi.mock("~/lib/ai/routing/bedrock/bedrock-settings.server", () => ({
+  getBedrockOverflowSettings: vi.fn().mockResolvedValue({
+    enabled: false,
+    dailyUserLimit: 0,
+    monthlyUserLimit: 0,
+    globalLimit: 0,
+    resourceLimit: 0,
+  }),
+}));
+
 import { loader } from "~/routes/admin.settings";
 import { auth } from "~/lib/auth/server";
 import { getEnvironmentHealth } from "~/lib/environment-health.server";
@@ -65,6 +79,14 @@ describe("admin.settings loader", () => {
         studentLimit: 50,
         instructorLimit: 200,
       },
+      bedrockSettings: {
+        enabled: false,
+        dailyUserLimit: 0,
+        monthlyUserLimit: 0,
+        globalLimit: 0,
+        resourceLimit: 0,
+      },
+      bedrockTokenConfigured: false,
     });
   });
 });

@@ -20,8 +20,6 @@
  *     no rows. This is deliberate fail-closed behaviour, not a bug to "fix".
  * Related: routes/courses.js, services/courseResolver.js, utils/courseSearch.js
  */
-import { prisma } from "../config/database.js";
-
 /** Roles AI Tutor understands on a course surface. */
 export function isSupportedCourseRole(role) {
   return (
@@ -33,26 +31,6 @@ export function isSupportedCourseRole(role) {
   );
 }
 
-/** True when the user holds a TA enrollment on any course. */
-export async function userHasTaEnrollment(userId) {
-  const count = await prisma.courseEnrollment.count({
-    where: { userId, role: "TA" },
-  });
-  return count > 0;
-}
-
-/**
- * True when the user is instructor-of-record (a `CourseInstructor` row) on
- * any course. #1386: a platform STUDENT who is also instructor-of-record on
- * a course must see it the same way Core does (enrollment-role keyed, not
- * platform-role keyed) — this lets the STUDENT branch fold those courses in
- * the same way it already does for a held TA enrollment.
- */
-export async function userHasInstructorOfRecordStatus(userId) {
-  const count = await prisma.courseInstructor.count({ where: { userId } });
-  return count > 0;
-}
-
 /**
  * Resolve the caller's course visibility.
  *
@@ -62,36 +40,43 @@ export async function userHasInstructorOfRecordStatus(userId) {
  *   kind: 'admin'|'instructor'|'unitAdmin'|'taUnion'|'student',
  *   where: object|undefined,   // undefined = unrestricted (ADMIN)
  *   isEmpty: boolean,          // true = caller can see nothing; skip the query
- *   taOfferingIdSet: Set<number>, // courses held under TA role (no progress)
+ *   taCoreIdSet: Set<string>, // courses held under TA role (no progress)
  *   hasProgress: boolean,      // whether any returned row carries `progress`
  * }>}
  */
-export async function resolveCourseAccess(authUser, { catalogCourses, publishedCoreIds }) {
+export async function resolveCourseAccess(
+  authUser,
+  { catalogCourses, publishedCoreIds, callerCourses = [] },
+) {
   if (authUser.role === "ADMIN") {
     // Platform admins see Core's full course catalog (#1074) — no local scoping.
     return {
       kind: "admin",
       where: undefined,
       isEmpty: false,
-      taOfferingIdSet: new Set(),
+      taCoreIdSet: new Set(),
       hasProgress: false,
     };
   }
 
   if (authUser.role === "INSTRUCTOR") {
+    const taughtCoreIds = callerCourses
+      .filter((course) => course?.callerEnrollmentRole === "INSTRUCTOR")
+      .map((course) => course.id);
     return {
       kind: "instructor",
-      where: { instructors: { some: { userId: authUser.id } } },
-      isEmpty: false,
-      taOfferingIdSet: new Set(),
+      where: { coreOfferingId: { in: taughtCoreIds } },
+      isEmpty: taughtCoreIds.length === 0,
+      taCoreIdSet: new Set(),
       hasProgress: false,
     };
   }
 
   if (authUser.role === "UNIT_ADMIN") {
     // UNIT_ADMINs see every course in their authorized units (regardless of
-    // publish state), plus any course they personally lead — so the courses
-    // they create or import are always visible even before a department is set.
+    // publish state), plus courses where Core's live caller snapshot says they
+    // are an instructor. Never union stale local instructor assignments into
+    // this live scope.
     // `department` is Core-owned (#1072 step 4): join the already-fetched
     // service-key catalog batch (never a per-course Core call) to find which
     // `coreOfferingId`s fall in the caller's units, then scope the local query
@@ -105,64 +90,47 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
             .filter((c) => c?.department && units.includes(c.department))
             .map((c) => c.id)
         : [];
+    const taughtCoreIds = callerCourses
+      .filter((course) => course?.callerEnrollmentRole === "INSTRUCTOR")
+      .map((course) => course.id);
+    const visibleCoreIds = [...new Set([...deptCoreIds, ...taughtCoreIds])];
     return {
       kind: "unitAdmin",
-      where: {
-        OR: [
-          ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
-          { instructors: { some: { userId: authUser.id } } },
-        ],
-      },
-      isEmpty: false,
-      taOfferingIdSet: new Set(),
+      where: { coreOfferingId: { in: visibleCoreIds } },
+      isEmpty: visibleCoreIds.length === 0,
+      taCoreIdSet: new Set(),
       hasProgress: false,
     };
   }
 
-  const isStudentWithElevatedStanding =
-    authUser.role === "STUDENT" &&
-    ((await userHasTaEnrollment(authUser.id)) ||
-      (await userHasInstructorOfRecordStatus(authUser.id)));
+  const taCoreIds = callerCourses
+    .filter((course) => course?.callerEnrollmentRole === "TA")
+    .map((course) => course.id);
+  const instructorCoreIds = callerCourses
+    .filter((course) => course?.callerEnrollmentRole === "INSTRUCTOR")
+    .map((course) => course.id);
+  const studentCoreIds = callerCourses
+    .filter((course) => course?.callerEnrollmentRole === "STUDENT")
+    .map((course) => course.id);
 
-  if (authUser.role === "TA" || isStudentWithElevatedStanding) {
+  if (
+    authUser.role === "TA" ||
+    (authUser.role === "STUDENT" && (taCoreIds.length > 0 || instructorCoreIds.length > 0))
+  ) {
     // TAs see all TA-enrolled courses regardless of publish state (no progress),
     // plus published student-enrolled courses (with progress). The publish gate
     // reads through Core (#819) rather than the possibly-stale local column,
-    // same as the STUDENT branch below. #1386: a STUDENT who is also
-    // instructor-of-record (a CourseInstructor row) on a course gets the same
-    // any-publish-state, no-progress treatment as a TA enrollment — Core's
-    // enrollment-role fallback (rbac-matrix.md §3) makes no platform-role
-    // distinction here, so ai-tutor's STUDENT fork shouldn't either.
-    const [allEnrollments, instructorRows] = await Promise.all([
-      prisma.courseEnrollment.findMany({
-        where: { userId: authUser.id },
-        select: { courseOfferingId: true, role: true },
-      }),
-      prisma.courseInstructor.findMany({
-        where: { userId: authUser.id },
-        select: { courseOfferingId: true },
-      }),
-    ]);
-    const taOfferingIds = allEnrollments
-      .filter((e) => e.role === "TA")
-      .map((e) => e.courseOfferingId);
-    const instructorOfferingIds = instructorRows.map((r) => r.courseOfferingId);
-    const studentOfferingIds = allEnrollments
-      .filter((e) => e.role === "STUDENT")
-      .map((e) => e.courseOfferingId);
-
-    // #1043/#1386: TA-enrolled + instructor-of-record courses (any publish
-    // state, no progress) UNION student-enrolled *published* courses (with
-    // progress) — collapsed into one query so the page and `total` are honest
-    // across the join. The published gate rides in the SQL `where`
-    // (publishedCoreIds), and progress is attached only to the student-role
-    // rows on the returned page. TA/instructor-of-record standing wins when a
-    // course is held under both that and a student enrollment.
-    const noProgressOfferingIds = [...new Set([...taOfferingIds, ...instructorOfferingIds])];
+    // same as the STUDENT branch below.
+    // #1043/#1386: live TA/instructor courses (any publish state, no progress)
+    // UNION live student-enrolled *published* courses (with progress). Core's
+    // caller snapshot, rather than local mirror rows, is authoritative for all
+    // three roles. Elevated standing wins when a course is held under both it
+    // and a student enrollment.
+    const noProgressCoreIds = [...new Set([...taCoreIds, ...instructorCoreIds])];
     const OR = [
-      ...(noProgressOfferingIds.length > 0 ? [{ id: { in: noProgressOfferingIds } }] : []),
-      ...(studentOfferingIds.length > 0
-        ? [{ id: { in: studentOfferingIds }, coreOfferingId: { in: publishedCoreIds } }]
+      ...(noProgressCoreIds.length > 0 ? [{ coreOfferingId: { in: noProgressCoreIds } }] : []),
+      ...(studentCoreIds.length > 0
+        ? [{ coreOfferingId: { in: studentCoreIds.filter((id) => publishedCoreIds.includes(id)) } }]
         : []),
     ];
 
@@ -170,8 +138,8 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
       kind: "taUnion",
       where: { OR },
       isEmpty: OR.length === 0,
-      taOfferingIdSet: new Set(noProgressOfferingIds),
-      hasProgress: studentOfferingIds.length > 0,
+      taCoreIdSet: new Set(noProgressCoreIds),
+      hasProgress: studentCoreIds.length > 0,
     };
   }
 
@@ -187,11 +155,12 @@ export async function resolveCourseAccess(authUser, { catalogCourses, publishedC
   return {
     kind: "student",
     where: {
-      enrollments: { some: { userId: authUser.id } },
-      coreOfferingId: { in: publishedCoreIds },
+      coreOfferingId: {
+        in: studentCoreIds.filter((id) => publishedCoreIds.includes(id)),
+      },
     },
-    isEmpty: false,
-    taOfferingIdSet: new Set(),
+    isEmpty: studentCoreIds.length === 0,
+    taCoreIdSet: new Set(),
     hasProgress: true,
   };
 }

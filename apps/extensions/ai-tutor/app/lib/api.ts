@@ -972,10 +972,28 @@ export const api = {
    * session is already stale by the time logout is called.
    */
   logout: async () => {
-    await fetch(`${API_BASE}/api/logout`, {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => {});
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/api/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      throw new ApiNetworkError("Logout service unreachable");
+    }
+    if (!response.ok) {
+      let message = `Logout failed: ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: unknown };
+        if (typeof payload?.error === "string" && payload.error.trim()) {
+          message = payload.error;
+        }
+      } catch {
+        // A status-bearing error is still actionable when the body is empty or malformed.
+      }
+      if (response.status === 504) throw new ApiTimeoutError(message);
+      throw new Error(message);
+    }
     return { ok: true } as const;
   },
 };

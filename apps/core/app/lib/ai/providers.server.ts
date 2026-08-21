@@ -26,7 +26,11 @@ export async function resolveActiveChatModel(
   const model = await prisma.aIModel.findFirst({
     where: {
       modelId: parsed.modelId,
-      provider: { name: parsed.providerId },
+      // Completion and chat must only resolve models exposed by the active
+      // chat catalog; inactive providers/models and non-chat rows are not
+      // valid provider policy for this endpoint.
+      provider: { name: parsed.providerId, isActive: true },
+      type: "CHAT",
       isActive: true,
     },
     select: {
