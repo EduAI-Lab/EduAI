@@ -14,6 +14,7 @@
 import { normalizeError } from "@eduai/types";
 
 import { apiError } from "./api-error.server";
+import { fireAndForget, logSystemError } from "./logging.server";
 
 export {
   AppError,
@@ -40,18 +41,53 @@ export function errorResponse(error: unknown): Response {
   return apiError(status, code, fields);
 }
 
+/** Route/request context recorded alongside a logged boundary failure. */
+export interface RouteErrorContext {
+  /** The incoming request — its method and path are recorded for triage. */
+  request?: Request;
+}
+
 /**
  * Run a loader/action body, converting anything it throws into the envelope.
  *
  * React Router treats a thrown `Response` as the response to send, so a route
  * that throws `redirect(...)` or a 404 `Response` must keep that behaviour —
  * those are rethrown untouched rather than being mapped.
+ *
+ * Server-side failures — a Prisma/transport outage (503), a bug (500) — are
+ * logged before they are mapped. Once the boundary swallows a throw into the
+ * envelope, React Router's server `onError` hook never sees it, so without this
+ * the failure would disappear from operational logs. The discriminator is the
+ * mapped status: `>= 500` is an operational failure worth an ERROR log, while a
+ * 4xx is a client error the route deliberately produced and is left unlogged.
+ * (A 503 connectivity error exposes only a generic message, so the `exposed`
+ * flag can't stand in here — the outage behind it still needs logging.) Logging
+ * is fire-and-forget and the payload is redacted downstream in `logSystemError`,
+ * so it never adds latency or leaks.
  */
-export async function withErrorResponse<T>(fn: () => Promise<T>): Promise<T | Response> {
+export async function withErrorResponse<T>(
+  fn: () => Promise<T>,
+  context: RouteErrorContext = {},
+): Promise<T | Response> {
   try {
     return await fn();
   } catch (error) {
     if (error instanceof Response) throw error;
-    return errorResponse(error);
+    const { status, code, fields } = normalizeError(error);
+    if (status >= 500) {
+      const url = context.request ? new URL(context.request.url) : undefined;
+      fireAndForget(
+        logSystemError({
+          source: "API",
+          code,
+          message: `Unhandled route error mapped to ${status}`,
+          error,
+          statusCode: status,
+          routePath: url?.pathname ?? null,
+          httpMethod: context.request?.method ?? null,
+        }),
+      );
+    }
+    return apiError(status, code, fields);
   }
 }

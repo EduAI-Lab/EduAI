@@ -174,6 +174,19 @@ function isPrismaKnownRequestError(error) {
         error.name === "PrismaClientKnownRequestError" &&
         typeof error.code === "string");
 }
+/**
+ * Prisma initialization failures — the client could not connect at all (bad
+ * `DATABASE_URL`, database down at startup, auth rejected).
+ *
+ * This is a *different class* from a known-request error: the connectivity code
+ * is carried on `errorCode` (e.g. `"P1001"`), and there is no `code` property,
+ * so `isPrismaKnownRequestError` never matches it. Without this guard a real
+ * `PrismaClientInitializationError` fell through to the generic 500 path even
+ * though the database being unreachable is unambiguously a 503.
+ */
+function isPrismaInitializationError(error) {
+    return error instanceof Error && error.name === "PrismaClientInitializationError";
+}
 /** Zod errors expose `issues`; matched structurally to avoid a zod dependency. */
 function isZodError(error) {
     return (error instanceof Error &&
@@ -215,6 +228,17 @@ export function normalizeError(error) {
             code: "VALIDATION_ERROR",
             message: "Validation failed",
             fields: fieldsFromZod(error),
+            exposed: true,
+        };
+    }
+    if (isPrismaInitializationError(error)) {
+        // A client that failed to initialize never reached the database, so this is
+        // always a 503 regardless of the specific `errorCode` it carries. The code
+        // and message are fixed — the raw Prisma text embeds the connection string.
+        return {
+            status: 503,
+            code: "SERVICE_UNAVAILABLE",
+            message: "Service unavailable",
             exposed: true,
         };
     }

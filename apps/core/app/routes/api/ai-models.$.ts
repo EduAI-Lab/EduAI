@@ -11,15 +11,21 @@ import { withErrorResponse } from "~/lib/errors.server";
  * response on this route uses.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  return withErrorResponse(async () => {
-    const { handleAiModelsApiRequest } = await import("~/lib/api/ai-models-api.server");
-    return handleAiModelsApiRequest(request);
-  });
+  return withErrorResponse(
+    async () => {
+      const { handleAiModelsApiRequest } = await import("~/lib/api/ai-models-api.server");
+      return handleAiModelsApiRequest(request);
+    },
+    { request },
+  );
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  return withErrorResponse(async () => {
-    const { handleAiModelsApiRequest } = await import("~/lib/api/ai-models-api.server");
-    return handleAiModelsApiRequest(request);
-  });
+  return withErrorResponse(
+    async () => {
+      const { handleAiModelsApiRequest } = await import("~/lib/api/ai-models-api.server");
+      return handleAiModelsApiRequest(request);
+    },
+    { request },
+  );
 }

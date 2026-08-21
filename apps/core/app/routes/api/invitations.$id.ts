@@ -22,66 +22,69 @@ function json(data: unknown, status = 200): Response {
  * A UNIT_ADMIN may only act on invitations they themselves sent.
  */
 export async function action({ request, params }: ActionFunctionArgs) {
-  return withErrorResponse(async () => {
-    const gate = await requireInviter(request, "invitation.manage");
-    if (gate.response) return gate.response;
+  return withErrorResponse(
+    async () => {
+      const gate = await requireInviter(request, "invitation.manage");
+      if (gate.response) return gate.response;
 
-    const user = gate.session.user;
-    const isAdmin = user.role === "ADMIN";
-    // A UNIT_ADMIN is scoped to invitations they sent; ADMIN is unrestricted.
-    const scope = isAdmin ? undefined : { restrictToInviterId: user.id };
+      const user = gate.session.user;
+      const isAdmin = user.role === "ADMIN";
+      // A UNIT_ADMIN is scoped to invitations they sent; ADMIN is unrestricted.
+      const scope = isAdmin ? undefined : { restrictToInviterId: user.id };
 
-    const requestContext = getRequestContext(request);
+      const requestContext = getRequestContext(request);
 
-    const id = params.id;
-    if (!id) return apiError(400, "INVITATION_ID_REQUIRED");
+      const id = params.id;
+      if (!id) return apiError(400, "INVITATION_ID_REQUIRED");
 
-    if (request.method === "DELETE") {
-      const result = await revokeInvitation(id, scope);
-      if (!result.ok) return json({ error: result.error }, result.status);
+      if (request.method === "DELETE") {
+        const result = await revokeInvitation(id, scope);
+        if (!result.ok) return json({ error: result.error }, result.status);
 
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(user),
-          ...requestContext,
-          actionCode: "INVITATION_REVOKED",
-          category: "INVITATION",
-          entityType: "Invitation",
-          entityId: result.invitation.id,
-          // The invited email is the subject of the event and is stored for accountability.
-          entityLabel: result.invitation.email,
-          details: { role: result.invitation.role, email: result.invitation.email },
-        }),
-      );
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(user),
+            ...requestContext,
+            actionCode: "INVITATION_REVOKED",
+            category: "INVITATION",
+            entityType: "Invitation",
+            entityId: result.invitation.id,
+            // The invited email is the subject of the event and is stored for accountability.
+            entityLabel: result.invitation.email,
+            details: { role: result.invitation.role, email: result.invitation.email },
+          }),
+        );
 
-      return json({ invitation: result.invitation });
-    }
+        return json({ invitation: result.invitation });
+      }
 
-    if (request.method === "POST") {
-      const result = await resendInvitation(id, { id: user.id, name: user.name }, scope);
-      if (!result.ok) return json({ error: result.error }, result.status);
+      if (request.method === "POST") {
+        const result = await resendInvitation(id, { id: user.id, name: user.name }, scope);
+        if (!result.ok) return json({ error: result.error }, result.status);
 
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(user),
-          ...requestContext,
-          actionCode: "INVITATION_RESENT",
-          category: "INVITATION",
-          entityType: "Invitation",
-          entityId: result.invitation.id,
-          // The invited email is the subject of the event and is stored for accountability.
-          entityLabel: result.invitation.email,
-          details: { role: result.invitation.role, email: result.invitation.email },
-        }),
-      );
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(user),
+            ...requestContext,
+            actionCode: "INVITATION_RESENT",
+            category: "INVITATION",
+            entityType: "Invitation",
+            entityId: result.invitation.id,
+            // The invited email is the subject of the event and is stored for accountability.
+            entityLabel: result.invitation.email,
+            details: { role: result.invitation.role, email: result.invitation.email },
+          }),
+        );
 
-      return json({
-        invitation: result.invitation,
-        acceptUrl: result.acceptUrl,
-        emailDelivered: result.emailDelivered,
-      });
-    }
+        return json({
+          invitation: result.invitation,
+          acceptUrl: result.acceptUrl,
+          emailDelivered: result.emailDelivered,
+        });
+      }
 
-    return apiError(405, "METHOD_NOT_ALLOWED");
-  });
+      return apiError(405, "METHOD_NOT_ALLOWED");
+    },
+    { request },
+  );
 }

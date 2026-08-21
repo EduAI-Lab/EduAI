@@ -120,6 +120,39 @@ describe("normalizeError", () => {
     });
   });
 
+  it("maps a Prisma initialization failure to 503", () => {
+    // A real `PrismaClientInitializationError` — the client could not connect at
+    // startup. Unlike a known-request error it carries the connectivity code on
+    // `errorCode` and has NO `code`, so the known-request guard misses it. Left
+    // unhandled this returned 500/INTERNAL_ERROR even though the database being
+    // unreachable is a 503.
+    const initError = Object.assign(
+      new Error("Can't reach database server at `db.internal:5432`"),
+      { name: "PrismaClientInitializationError", errorCode: "P1001" },
+    );
+
+    expect(normalizeError(initError)).toMatchObject({
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+    });
+    // The raw message embeds the host:port — it must not reach the client.
+    const normalized = normalizeError(initError);
+    expect(JSON.stringify(normalized)).not.toContain("db.internal");
+  });
+
+  it("maps a Prisma initialization failure with no errorCode to 503", () => {
+    // Some initialization failures (bad DATABASE_URL, auth rejected) arrive with
+    // no `errorCode` at all — still a dependency that could not be reached.
+    const initError = Object.assign(new Error("Authentication failed against database"), {
+      name: "PrismaClientInitializationError",
+    });
+
+    expect(normalizeError(initError)).toMatchObject({
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+    });
+  });
+
   it("withholds the message for an unmapped Prisma code", () => {
     const other = Object.assign(new Error("internal prisma detail"), {
       name: "PrismaClientKnownRequestError",
