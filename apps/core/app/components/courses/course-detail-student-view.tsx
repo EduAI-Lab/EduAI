@@ -302,19 +302,17 @@ export function CourseDetailStudentView({
             )}
             <MaterialList
               showChip={false}
-              items={materials.map(
-                (m): MaterialListItem => ({
-                  id: m.id,
-                  name: m.title,
-                  status: m.status,
-                  mimeType: m.mimeType,
-                  meta: (
-                    <>
-                      {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
-                    </>
-                  ),
-                }),
-              )}
+              items={materials.map((m): MaterialListItem => ({
+                id: m.id,
+                name: m.title,
+                status: m.status,
+                mimeType: m.mimeType,
+                meta: (
+                  <>
+                    {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  </>
+                ),
+              }))}
               fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
               onItemClick={(item) => {
                 const m = materials.find((mat) => mat.id === item.id);

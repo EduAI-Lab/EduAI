@@ -906,19 +906,17 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <MaterialList
-            items={materials.map(
-              (m): MaterialListItem => ({
-                id: m.id,
-                name: m.title,
-                status: m.status,
-                mimeType: m.mimeType,
-                meta: (
-                  <>
-                    {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
-                  </>
-                ),
-              }),
-            )}
+            items={materials.map((m): MaterialListItem => ({
+              id: m.id,
+              name: m.title,
+              status: m.status,
+              mimeType: m.mimeType,
+              meta: (
+                <>
+                  {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                </>
+              ),
+            }))}
             fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
             headerActions={
               <>
