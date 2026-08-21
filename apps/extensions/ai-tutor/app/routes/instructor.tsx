@@ -32,7 +32,7 @@ import {
   courseTerm,
   courseYear,
 } from "../lib/course-display";
-import api from "../lib/api";
+import api, { COURSE_LIST_PAGE_SIZE } from "../lib/api";
 import { getEduAiAppUrl } from "../lib/extension-urls";
 import type { Course } from "../lib/types";
 import type { Route } from "./+types/instructor";
@@ -62,6 +62,14 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // total. `total` is now the filtered total, so the pager stays honest.
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
+  // Optional `?pageSize=` override (clamped to the same ceiling the API uses).
+  // The default stays COURSE_LIST_PAGE_SIZE; e2e and bookmarkable narrow pages
+  // can request a smaller window without seeding 200+ courses.
+  const requestedPageSize = Number(url.searchParams.get("pageSize"));
+  const pageSize =
+    Number.isFinite(requestedPageSize) && requestedPageSize >= 1
+      ? Math.min(Math.floor(requestedPageSize), COURSE_LIST_PAGE_SIZE)
+      : undefined;
 
   // Facets span the caller's whole accessible set, so the dropdowns offer values
   // that only appear further down the list. `loadCourseFacets` caches them (the
@@ -71,6 +79,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const [page, facets] = await Promise.all([
     api.listCourses({
       page: selection.page,
+      ...(pageSize != null ? { pageSize } : {}),
       search: selection.search || undefined,
       term: selection.filters.term,
       status: selection.filters.status,

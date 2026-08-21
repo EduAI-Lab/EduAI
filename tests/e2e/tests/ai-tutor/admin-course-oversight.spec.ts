@@ -119,7 +119,10 @@ test.describe("AI Tutor ADMIN — platform-wide course list", () => {
     );
     try {
       await loginAsAdmin(page, "at-admin-list-paging");
-      await gotoAiTutor(page, "/instructor");
+      // The course list defaults to 200 rows per page, so 13 courses never
+      // produce a pager. `?pageSize=` is a loader-supported override so this
+      // workflow can turn a page without seeding 200+ rows.
+      await gotoAiTutor(page, "/instructor?pageSize=10");
 
       const next = page.getByRole("button", { name: /next/i }).first();
       await expect(next).toBeEnabled({ timeout: 20_000 });

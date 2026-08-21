@@ -233,8 +233,10 @@ test.describe("AI Tutor ADMIN — Settings", () => {
 
     await expect(page.getByText("Model providers", { exact: true })).toBeVisible();
     // The distinction from the admin-managed EduAI key matters: these are
-    // browser-local BYOK keys, never stored server-side.
-    await expect(page.getByText(/Keys are stored only in this browser/i)).toBeVisible();
+    // browser-local BYOK keys, never persisted server-side. The copy also
+    // says they leave the browser only to be validated or used.
+    await expect(page.getByText(/Keys are stored for this account in this browser/)).toBeVisible();
+    await expect(page.getByText(/Signing out removes them from this browser/)).toBeVisible();
     await expect(page.getByText("Gemini")).toBeVisible();
     await expect(page.getByText("OpenAI")).toBeVisible();
   });

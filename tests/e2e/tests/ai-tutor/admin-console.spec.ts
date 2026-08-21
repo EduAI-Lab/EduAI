@@ -85,11 +85,18 @@ test.describe("AI Tutor ADMIN — bug-report triage", () => {
     const row = page.getByRole("row").filter({ hasText: description });
     await expect(row).toBeVisible({ timeout: 30_000 });
 
-    await row.locator('[aria-label^="Update status for report"]').click();
-    // "Unhandled" also contains "handled", so match the option exactly.
-    await page.getByRole("option", { name: "Resolved", exact: true }).click();
-
-    await expect(row).toContainText("Resolved", { timeout: 20_000 });
+    // The toolbar filter also has a "Resolved" option, so the choice has to
+    // come from the row's own listbox. Radix Select can drop the first click
+    // while the table is still settling, so retry the open-and-choose.
+    const trigger = row.locator('[aria-label^="Update status for report"]');
+    await expect(async () => {
+      await trigger.click();
+      await page
+        .getByRole("listbox")
+        .getByRole("option", { name: "Resolved", exact: true })
+        .click({ timeout: 3_000 });
+      await expect(trigger).toContainText("Resolved", { timeout: 5_000 });
+    }).toPass({ timeout: 20_000 });
     // The change is server-side, not just local state.
     await page.reload();
     await expect(page.getByRole("row").filter({ hasText: description })).toContainText("Resolved", {
