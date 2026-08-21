@@ -12,8 +12,8 @@
  * reacquires the same advisory lock before reading, so the recovery path
  * can't race a concurrent delete of the conflicting row either (#1270 review).
  */
-import { Prisma } from '@eduai/question-maker-prisma-client';
-import { prisma } from '../config/database.js';
+import { Prisma } from "@eduai/question-maker-prisma-client";
+import { prisma } from "../config/database.js";
 
 /** Advisory-lock namespace for QM course-anchor creation (#1114). */
 export const COURSE_ANCHOR_LOCK_NS = 1114;
@@ -59,7 +59,7 @@ export async function ensureCourseAnchor(userId, coreCourseId) {
     });
   } catch (error) {
     const isUniqueViolation =
-      error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+      error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
     if (!isUniqueViolation) throw error;
 
     // Transaction already aborted/rolled back by the P2002 — an unlocked

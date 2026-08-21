@@ -6,67 +6,57 @@
  * tail was simply unreachable. These pin the pager and the append-as-you-go
  * walk.
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router';
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
 
 const mockActivitiesForLesson = vi.fn();
 const mockSetSearchParams = vi.fn();
 
-vi.mock('~/lib/api', () => ({
+vi.mock("~/lib/api", () => ({
   default: {
     courseById: vi.fn(),
     modulesForCourse: vi.fn(),
-    lessonBreadcrumb: vi.fn().mockResolvedValue({
-      module: { id: 2, title: 'Module', courseOfferingId: 1, position: 0, isPublished: true },
-      course: { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true },
-      moduleOrdinal: 3,
-      lessonOrdinal: 2,
-      moduleTotal: 9,
-      lessonTotal: 4,
-      prevLessonId: null,
-      nextLessonId: null,
-    }),
     activitiesForLesson: (...args: unknown[]) => mockActivitiesForLesson(...args),
     submitAnswer: vi.fn(),
     mySubmissions: vi.fn().mockResolvedValue([]),
   },
 }));
 
-vi.mock('react-router', async (importActual) => {
-  const actual = await importActual<typeof import('react-router')>();
+vi.mock("react-router", async (importActual) => {
+  const actual = await importActual<typeof import("react-router")>();
   return {
     ...actual,
     useNavigate: () => vi.fn(),
-    useParams: () => ({ courseId: '1', lessonId: '3' }),
-    useNavigation: () => ({ state: 'idle' }),
+    useParams: () => ({ courseId: "1", lessonId: "3" }),
+    useNavigation: () => ({ state: "idle" }),
     useSearchParams: () => [new URLSearchParams(), mockSetSearchParams],
   };
 });
 
-vi.mock('~/hooks/useLocalUser', () => ({
-  useLocalUser: () => ({ user: { id: 'u1', name: 'Student', role: 'STUDENT' } }),
+vi.mock("~/hooks/useLocalUser", () => ({
+  useLocalUser: () => ({ user: { id: "u1", name: "Student", role: "STUDENT" } }),
 }));
-vi.mock('~/hooks/useCourseTopics', () => ({
+vi.mock("~/hooks/useCourseTopics", () => ({
   useCourseTopics: () => ({ topics: [], total: 0, loading: false }),
   CourseTopicsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock('~/components/layout/ShellBreadcrumbContext', () => ({
+vi.mock("~/components/layout/ShellBreadcrumbContext", () => ({
   useShellBreadcrumbs: () => {},
   ShellBreadcrumbContext: {},
 }));
-vi.mock('~/components/layout/CourseSwitcher', () => ({ CourseSwitcher: () => null }));
-vi.mock('~/components/bug-report/useBugReport', () => ({
+vi.mock("~/components/layout/CourseSwitcher", () => ({ CourseSwitcher: () => null }));
+vi.mock("~/components/bug-report/useBugReport", () => ({
   useBugReport: () => ({ setContext: vi.fn(), clearContext: vi.fn() }),
 }));
-vi.mock('~/components/StudentAiChat', () => ({ default: () => null }));
+vi.mock("~/components/StudentAiChat", () => ({ default: () => null }));
 
-import StudentCourseModules from '~/routes/student.course';
-import StudentLessonPlayer from '~/routes/student.lesson';
+import StudentCourseModules from "~/routes/student.course";
+import StudentLessonPlayer from "~/routes/student.lesson";
 
-const course = { id: 1, title: 'Course 1', code: 'COSC 101', isPublished: true };
+const course = { id: 1, title: "Course 1", code: "COSC 101", isPublished: true };
 
-describe('student.course — paged module grid (#1207)', () => {
+describe("student.course — paged module grid (#1207)", () => {
   const wrap = (overrides: Record<string, unknown> = {}) =>
     render(
       <MemoryRouter>
@@ -74,7 +64,7 @@ describe('student.course — paged module grid (#1207)', () => {
           {...({
             loaderData: {
               course,
-              modules: [{ id: 10, title: 'Module A', description: '', position: 0 }],
+              modules: [{ id: 10, title: "Module A", description: "", position: 0 }],
               modulesTotal: 60,
               page: 1,
               pageSize: 25,
@@ -89,39 +79,39 @@ describe('student.course — paged module grid (#1207)', () => {
     mockSetSearchParams.mockClear();
   });
 
-  it('counts the whole course in the badge, not the loaded page', () => {
+  it("counts the whole course in the badge, not the loaded page", () => {
     wrap();
-    expect(screen.getByText('60 modules')).toBeInTheDocument();
+    expect(screen.getByText("60 modules")).toBeInTheDocument();
   });
 
-  it('renders a pager driven by the total', () => {
+  it("renders a pager driven by the total", () => {
     wrap();
     expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument();
   });
 
-  it('pushes the chosen page into the URL', () => {
+  it("pushes the chosen page into the URL", () => {
     wrap();
-    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
 
     expect(mockSetSearchParams).toHaveBeenCalled();
     const updater = mockSetSearchParams.mock.calls[0][0] as (p: URLSearchParams) => URLSearchParams;
-    expect(updater(new URLSearchParams()).get('page')).toBe('2');
+    expect(updater(new URLSearchParams()).get("page")).toBe("2");
   });
 
-  it('hides the pager when the course fits on one page', () => {
+  it("hides the pager when the course fits on one page", () => {
     wrap({ modulesTotal: 1 });
-    expect(screen.queryByLabelText('Pagination')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Pagination")).not.toBeInTheDocument();
   });
 });
 
-describe('student.lesson — paged activity walk (#1207)', () => {
+describe("student.lesson — paged activity walk (#1207)", () => {
   const activity = (id: number) => ({
     id,
     title: `Activity ${id}`,
-    instructionsMd: '',
+    instructionsMd: "",
     position: id,
     question: `Question ${id}`,
-    type: 'SHORT_TEXT' as const,
+    type: "SHORT_TEXT" as const,
     options: null,
     hints: [],
     mainTopic: null,
@@ -139,9 +129,12 @@ describe('student.lesson — paged activity walk (#1207)', () => {
         <StudentLessonPlayer
           {...({
             loaderData: {
-              lesson: { id: 3, title: 'Lesson', moduleId: 2, isPublished: true, contentMd: '' },
+              course,
+              module: { id: 2, title: "Module", courseOfferingId: 1 },
+              lesson: { id: 3, title: "Lesson", moduleId: 2, isPublished: true, contentMd: "" },
               activities: [activity(1), activity(2)],
               activitiesTotal: 2,
+              orderText: "3.2",
               ...overrides,
             },
           } as unknown as React.ComponentProps<typeof StudentLessonPlayer>)}
@@ -159,7 +152,7 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     });
   });
 
-  it('counts the whole lesson, not the loaded slice', () => {
+  it("counts the whole lesson, not the loaded slice", () => {
     // `activitiesTotal` drives the "1 of N" readout; using the loaded length
     // would understate a lesson whose tail has not been fetched yet.
     wrap({ activitiesTotal: 120 });
@@ -167,12 +160,12 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     expect(screen.getAllByText(/question 1 of 120/i).length).toBeGreaterThan(0);
   });
 
-  it('does not fetch more while the whole lesson is already loaded', async () => {
+  it("does not fetch more while the whole lesson is already loaded", async () => {
     wrap({ activitiesTotal: 2 });
     await waitFor(() => expect(mockActivitiesForLesson).not.toHaveBeenCalled());
   });
 
-  it('appends the next page when the walk nears the end of what is loaded', async () => {
+  it("appends the next page when the walk nears the end of what is loaded", async () => {
     // 2 loaded of 3 total, and the prefetch margin is 5 — so index 0 is
     // already close enough to trigger the top-up.
     await act(async () => {
@@ -183,12 +176,12 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     expect(mockActivitiesForLesson).toHaveBeenCalledWith(3, { page: 2, pageSize: 50 });
   });
 
-  it('shows the server-derived order text', async () => {
+  it("shows the server-derived order text", () => {
     wrap();
-    await waitFor(() => expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/3\.2/).length).toBeGreaterThan(0);
   });
 
-  it('drops an activity page that resolves after the student changed lessons', async () => {
+  it("drops an activity page that resolves after the student changed lessons", async () => {
     // Prev/next lesson links navigate without unmounting the player, so a page
     // fetch can still be in flight when the loader swaps in another lesson.
     // Appending that response mixes the old lesson's activities into the new
@@ -204,7 +197,7 @@ describe('student.lesson — paged activity walk (#1207)', () => {
         });
       }
       return Promise.resolve({
-        data: [named(11, 'FRESH ROW')],
+        data: [named(11, "FRESH ROW")],
         total: 2,
         page: 2,
         pageSize: 50,
@@ -212,18 +205,22 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     });
 
     const props = (loaderData: Record<string, unknown>) =>
-      ({ loaderData } as unknown as React.ComponentProps<typeof StudentLessonPlayer>);
+      ({ loaderData }) as unknown as React.ComponentProps<typeof StudentLessonPlayer>;
 
     const oldLesson = {
-      lesson: { id: 3, title: 'Lesson', moduleId: 2, isPublished: true, contentMd: '' },
-      activities: [named(1, 'OLD ONE'), named(2, 'OLD TWO')],
+      course,
+      module: { id: 2, title: "Module", courseOfferingId: 1 },
+      lesson: { id: 3, title: "Lesson", moduleId: 2, isPublished: true, contentMd: "" },
+      activities: [named(1, "OLD ONE"), named(2, "OLD TWO")],
       activitiesTotal: 3,
+      orderText: "3.2",
     };
     const newLesson = {
       ...oldLesson,
-      lesson: { id: 4, title: 'Next lesson', moduleId: 2, isPublished: true, contentMd: '' },
-      activities: [named(10, 'NEW ONE')],
+      lesson: { id: 4, title: "Next lesson", moduleId: 2, isPublished: true, contentMd: "" },
+      activities: [named(10, "NEW ONE")],
       activitiesTotal: 2,
+      orderText: "3.3",
     };
 
     let rerender: (ui: React.ReactElement) => void;
@@ -250,12 +247,12 @@ describe('student.lesson — paged activity walk (#1207)', () => {
     await waitFor(() => expect(mockActivitiesForLesson).toHaveBeenCalledWith(4, expect.anything()));
 
     await act(async () => {
-      releaseStale?.({ data: [named(3, 'STALE ROW')], total: 3, page: 2, pageSize: 50 });
+      releaseStale?.({ data: [named(3, "STALE ROW")], total: 3, page: 2, pageSize: 50 });
     });
 
     // Walking forward reaches lesson 4's own page 2, never lesson 3's tail.
-    fireEvent.click(screen.getByRole('button', { name: /next/i }));
-    expect(screen.getByText('FRESH ROW')).toBeInTheDocument();
-    expect(screen.queryByText('STALE ROW')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    expect(screen.getByText("FRESH ROW")).toBeInTheDocument();
+    expect(screen.queryByText("STALE ROW")).not.toBeInTheDocument();
   });
 });

@@ -46,16 +46,19 @@ export class CanvasMaterialSyncError extends Error {
 }
 
 function normalizeMimeType(file: CanvasFileApi): string | null {
-  const raw = file["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (ALLOWED_MIME_TYPES.has(raw)) {
-    return raw;
-  }
-
+  // The filename selects the parser, while the bounded download path verifies
+  // that the response MIME and file signature agree with this choice. Canvas
+  // and CDN metadata commonly fall back to application/octet-stream.
   const lowerName = (file.filename || file.display_name || "").toLowerCase();
   for (const [ext, mime] of Object.entries(EXTENSION_MIME)) {
     if (lowerName.endsWith(ext)) {
       return mime;
     }
+  }
+
+  const raw = file["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (ALLOWED_MIME_TYPES.has(raw)) {
+    return raw;
   }
 
   return null;
@@ -120,11 +123,7 @@ export async function discoverCanvasMaterialsForCourse(
   const course = await assertCanvasLinkedCourse(courseId, userId);
   const credentials = await requireCanvasCredentials(userId);
 
-  const canvasFiles = await listImportableCanvasFiles(
-    credentials,
-    course.externalId!,
-    fetchImpl,
-  );
+  const canvasFiles = await listImportableCanvasFiles(credentials, course.externalId!, fetchImpl);
 
   const [imported, exclusions] = await Promise.all([
     prisma.courseMaterial.findMany({
@@ -243,7 +242,9 @@ export async function importSingleCanvasFile(
   credentials: CanvasIntegrationCredentials,
   fetchImpl: typeof fetch,
   excludedIds: Set<string>,
-): Promise<"imported" | "updated" | "skipped-not-modified" | "skipped-unpublished" | "skipped-excluded"> {
+): Promise<
+  "imported" | "updated" | "skipped-not-modified" | "skipped-unpublished" | "skipped-excluded"
+> {
   const mimeType = normalizeMimeType(file);
   if (!mimeType) {
     throw new Error("Unsupported file type");
@@ -291,11 +292,9 @@ export async function importSingleCanvasFile(
   }
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
-  const uploadFile = new File(
-    [new Uint8Array(bytes)],
-    file.filename || file.display_name,
-    { type: mimeType },
-  );
+  const uploadFile = new File([new Uint8Array(bytes)], file.filename || file.display_name, {
+    type: mimeType,
+  });
 
   // Persist PROCESSING *before* extraction so a killed PDF worker cannot leave an
   // existing Canvas material stuck at READY, and new imports still get a FAILED row (#1018).
@@ -319,7 +318,7 @@ export async function importSingleCanvasFile(
         courseId,
         title: provisionalTitle,
         mimeType,
-        fileSize: typeof file.size === "number" ? file.size : bytes.length,
+        fileSize: bytes.length,
         // Stable provisional checksum until extraction supplies the content hash.
         checksum: `canvas-pending:${canvasFileId}`,
         rawText: null,
@@ -448,9 +447,12 @@ export async function syncSelectedCanvasMaterials(
         result.updated += 1;
       } else {
         result.skipped += 1;
-        const reason = outcome === "skipped-unpublished" ? "unpublished"
-          : outcome === "skipped-excluded" ? "excluded"
-          : "not-modified";
+        const reason =
+          outcome === "skipped-unpublished"
+            ? "unpublished"
+            : outcome === "skipped-excluded"
+              ? "excluded"
+              : "not-modified";
         result.skippedItems.push({ canvasFileId, reason });
       }
     } catch (error) {

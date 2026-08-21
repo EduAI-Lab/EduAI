@@ -9,7 +9,11 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(({ execute }) => {
       const chunks: string[] = [];
-      const dataStream = { write: (part: string) => { chunks.push(part); } };
+      const dataStream = {
+        write: (part: string) => {
+          chunks.push(part);
+        },
+      };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
@@ -89,6 +93,7 @@ import { APICallError, streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { REDACTED_VALUE } from "~/lib/redact.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
@@ -182,12 +187,26 @@ describe("Learning-chat stream error logging (#989)", () => {
 
     const onError = lastOnError();
     expect(onError).toBeDefined();
-    onError?.({ error: new Error("provider blew up mid-stream") });
-
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "[chat-api] stream error",
-      expect.objectContaining({ error: "provider blew up mid-stream" }),
+    const providerError = new Error(
+      "provider blew up mid-stream https://provider.test/v1?api_key=chat-provider-secret",
     );
+    providerError.name = "AI_APICallError";
+    onError?.({ error: providerError });
+
+    const streamErrorCall = consoleErrorSpy.mock.calls.find(
+      ([message]) => message === "[chat-api] stream error",
+    );
+    expect(streamErrorCall).toEqual([
+      "[chat-api] stream error",
+      expect.objectContaining({
+        error: "LLM stream failed",
+        diagnostic: expect.objectContaining({
+          name: "AI_APICallError",
+          message: expect.stringContaining(REDACTED_VALUE),
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("chat-provider-secret");
 
     consoleErrorSpy.mockRestore();
   });

@@ -9,14 +9,7 @@
  * is the mobile fallback.
  */
 import { IconPlus } from "@tabler/icons-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  Button,
-} from "@eduai/ui";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, Button } from "@eduai/ui";
 import { ChatHistoryList, type ChatHistoryListProps } from "~/components/chat/chat-history-list";
 
 type ChatHistoryPanelProps = Omit<ChatHistoryListProps, "className"> & {

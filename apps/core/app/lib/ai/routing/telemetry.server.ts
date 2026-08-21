@@ -86,9 +86,7 @@ export async function persistAiInteractionTelemetry(params: {
           ? (JSON.parse(JSON.stringify(params.routerFeatures)) as Prisma.InputJsonValue)
           : undefined,
         routerChosenTier:
-          params.wasAuto && params.routingTier != null
-            ? numToRouterTier(params.routingTier)
-            : null,
+          params.wasAuto && params.routingTier != null ? numToRouterTier(params.routingTier) : null,
         estInputCostUsd,
         estOutputCostUsd,
         energyJoules: energy.energyJoules,

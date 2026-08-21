@@ -12,27 +12,21 @@
  * under `position asc, id asc`, with students counting only published
  * siblings so the label matches the tree they can navigate.
  */
-import { prisma } from '../config/database.js';
-import { mapCourseOffering, mapModule } from '../utils/mappers.js';
-import { resolveCoreCourseById } from './courseResolver.js';
-import { AUTO_SYNC_TIMEOUT_MS } from './enrollmentSync.js';
+import { prisma } from "../config/database.js";
+import { mapCourseOffering, mapModule } from "../utils/mappers.js";
+import { resolveCoreCourseById } from "./courseResolver.js";
+import { AUTO_SYNC_TIMEOUT_MS } from "./enrollmentSync.js";
 
 /** Rows that sort before `row` under canonical `position asc, id asc`. */
 function sortsBefore(row) {
   return {
-    OR: [
-      { position: { lt: row.position } },
-      { position: row.position, id: { lt: row.id } },
-    ],
+    OR: [{ position: { lt: row.position } }, { position: row.position, id: { lt: row.id } }],
   };
 }
 
 function sortsAfter(row) {
   return {
-    OR: [
-      { position: { gt: row.position } },
-      { position: row.position, id: { gt: row.id } },
-    ],
+    OR: [{ position: { gt: row.position } }, { position: row.position, id: { gt: row.id } }],
   };
 }
 
@@ -53,23 +47,22 @@ export async function computeLessonTreeContext(lesson, module, { publishedOnly }
     ...(publishedOnly ? { isPublished: true } : {}),
   };
 
-  const [modulesBefore, moduleTotal, lessonsBefore, lessonTotal, prev, next] =
-    await Promise.all([
-      prisma.module.count({ where: { AND: [moduleScope, sortsBefore(module)] } }),
-      prisma.module.count({ where: moduleScope }),
-      prisma.lesson.count({ where: { AND: [lessonScope, sortsBefore(lesson)] } }),
-      prisma.lesson.count({ where: lessonScope }),
-      prisma.lesson.findFirst({
-        where: { AND: [lessonScope, sortsBefore(lesson)] },
-        orderBy: [{ position: 'desc' }, { id: 'desc' }],
-        select: { id: true },
-      }),
-      prisma.lesson.findFirst({
-        where: { AND: [lessonScope, sortsAfter(lesson)] },
-        orderBy: [{ position: 'asc' }, { id: 'asc' }],
-        select: { id: true },
-      }),
-    ]);
+  const [modulesBefore, moduleTotal, lessonsBefore, lessonTotal, prev, next] = await Promise.all([
+    prisma.module.count({ where: { AND: [moduleScope, sortsBefore(module)] } }),
+    prisma.module.count({ where: moduleScope }),
+    prisma.lesson.count({ where: { AND: [lessonScope, sortsBefore(lesson)] } }),
+    prisma.lesson.count({ where: lessonScope }),
+    prisma.lesson.findFirst({
+      where: { AND: [lessonScope, sortsBefore(lesson)] },
+      orderBy: [{ position: "desc" }, { id: "desc" }],
+      select: { id: true },
+    }),
+    prisma.lesson.findFirst({
+      where: { AND: [lessonScope, sortsAfter(lesson)] },
+      orderBy: [{ position: "asc" }, { id: "asc" }],
+      select: { id: true },
+    }),
+  ]);
 
   return {
     moduleOrdinal: modulesBefore + 1,

@@ -13,7 +13,7 @@
  * Related: `services/api.ts` (`Paginated<T>`),
  * `components/common/PaginationControls.tsx`.
  */
-import api, { type Paginated } from './api';
+import api, { type Paginated } from "./api";
 
 /**
  * Server page size for whole-set reads. Matches `MAX_PAGE_SIZE` in the
@@ -39,23 +39,23 @@ export const MAX_PAGE_SIZE = 200;
  * @param pageSize Rows per request; clamped server-side to `MAX_PAGE_SIZE`.
  */
 export async function fetchAllPages<T>(
-    path: string,
-    params: Record<string, unknown> = {},
-    pageSize: number = MAX_PAGE_SIZE,
+  path: string,
+  params: Record<string, unknown> = {},
+  pageSize: number = MAX_PAGE_SIZE,
 ): Promise<T[]> {
-    const MAX_PAGES = 1000;
-    const rows: T[] = [];
+  const MAX_PAGES = 1000;
+  const rows: T[] = [];
 
-    for (let page = 1; page <= MAX_PAGES; page++) {
-        const response = await api.get(path, { params: { ...params, page, pageSize } });
-        const envelope = response.data as Paginated<T>;
-        const data = Array.isArray(envelope?.data) ? envelope.data : [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const response = await api.get(path, { params: { ...params, page, pageSize } });
+    const envelope = response.data as Paginated<T>;
+    const data = Array.isArray(envelope?.data) ? envelope.data : [];
 
-        rows.push(...data);
+    rows.push(...data);
 
-        const total = typeof envelope?.total === 'number' ? envelope.total : rows.length;
-        if (data.length === 0 || data.length < pageSize || rows.length >= total) break;
-    }
+    const total = typeof envelope?.total === "number" ? envelope.total : rows.length;
+    if (data.length === 0 || data.length < pageSize || rows.length >= total) break;
+  }
 
-    return rows;
+  return rows;
 }

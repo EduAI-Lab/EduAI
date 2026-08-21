@@ -105,9 +105,7 @@ describe("root loader — #1369 parallel awaits", () => {
     vi.mocked(getExpiredPasswordRedirect).mockReturnValue(expiryGate.promise);
 
     const pending = run();
-    await vi.waitFor(() =>
-      expect(prismaMock.userPreference.findUnique).toHaveBeenCalledTimes(1),
-    );
+    await vi.waitFor(() => expect(prismaMock.userPreference.findUnique).toHaveBeenCalledTimes(1));
 
     expiryGate.resolve(null);
     await pending;

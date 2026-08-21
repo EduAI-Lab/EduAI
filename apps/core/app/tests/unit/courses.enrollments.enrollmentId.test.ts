@@ -14,6 +14,23 @@ vi.mock("~/lib/courses/enrollments.server", () => ({
   deactivateEnrollment: vi.fn(),
 }));
 
+vi.mock("~/lib/policy.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/policy.server")>();
+  return {
+    ...actual,
+    getPolicy: vi.fn(
+      async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default,
+    ),
+    denyByPolicy: vi.fn(
+      ({ policyKey }: { policyKey: string }) =>
+        new Response(JSON.stringify({ error: "Forbidden", policyKey }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ),
+  };
+});
+
 import { action } from "~/routes/api/courses.enrollments.$enrollmentId";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
@@ -22,6 +39,7 @@ import {
   updateEnrollmentRole,
   deactivateEnrollment,
 } from "~/lib/courses/enrollments.server";
+import { getPolicy, denyByPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE = { id: "c1", isPublished: true };
 
@@ -51,12 +69,19 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "actor", role: "INSTRUCTOR" },
   } as never);
+  vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
   mockAccess({ level: "instructor", rank: 2 });
   vi.mocked(getEnrollment).mockResolvedValue({
-    id: "e1", courseId: "c1", userId: "target", role: "STUDENT", isActive: true,
+    id: "e1",
+    courseId: "c1",
+    userId: "target",
+    role: "STUDENT",
+    isActive: true,
   } as never);
   vi.mocked(updateEnrollmentRole).mockResolvedValue({
-    status: "200", enrollment: { id: "e1", role: "TA" }, previousRole: "STUDENT",
+    status: "200",
+    enrollment: { id: "e1", role: "TA" },
+    previousRole: "STUDENT",
   } as never);
   vi.mocked(deactivateEnrollment).mockResolvedValue({ status: "204", role: "STUDENT" } as never);
 });
@@ -102,7 +127,11 @@ describe("PATCH /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
 
   it("blocks an INSTRUCTOR from role-changing a fellow INSTRUCTOR (§6)", async () => {
     vi.mocked(getEnrollment).mockResolvedValue({
-      id: "e1", courseId: "c1", userId: "peer", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      userId: "peer",
+      role: "INSTRUCTOR",
+      isActive: true,
     } as never);
     const res = await action(makeArgs("PATCH", { role: "STUDENT" }));
     expect(res.status).toBe(403);
@@ -111,7 +140,9 @@ describe("PATCH /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
   it("lets UNIT_ADMIN promote to INSTRUCTOR", async () => {
     mockAccess({ level: "unit", rank: 3 });
     vi.mocked(updateEnrollmentRole).mockResolvedValue({
-      status: "200", enrollment: { id: "e1", role: "INSTRUCTOR" }, previousRole: "TA",
+      status: "200",
+      enrollment: { id: "e1", role: "INSTRUCTOR" },
+      previousRole: "TA",
     } as never);
     const res = await action(makeArgs("PATCH", { role: "INSTRUCTOR" }));
     expect(res.status).toBe(200);
@@ -120,10 +151,16 @@ describe("PATCH /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
   it("surfaces 409 INSTRUCTOR_FLOOR_VIOLATION with the count (ADMIN included)", async () => {
     mockAccess({ level: "admin", rank: 4 });
     vi.mocked(getEnrollment).mockResolvedValue({
-      id: "e1", courseId: "c1", userId: "target", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      userId: "target",
+      role: "INSTRUCTOR",
+      isActive: true,
     } as never);
     vi.mocked(updateEnrollmentRole).mockResolvedValue({
-      status: "409", error: "INSTRUCTOR_FLOOR_VIOLATION", currentInstructorCount: 1,
+      status: "409",
+      error: "INSTRUCTOR_FLOOR_VIOLATION",
+      currentInstructorCount: 1,
     } as never);
     const res = await action(makeArgs("PATCH", { role: "STUDENT" }));
     expect(res.status).toBe(409);
@@ -150,7 +187,11 @@ describe("DELETE /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
 
   it("blocks an INSTRUCTOR from removing a fellow INSTRUCTOR (§6)", async () => {
     vi.mocked(getEnrollment).mockResolvedValue({
-      id: "e1", courseId: "c1", userId: "peer", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      userId: "peer",
+      role: "INSTRUCTOR",
+      isActive: true,
     } as never);
     const res = await action(makeArgs("DELETE"));
     expect(res.status).toBe(403);
@@ -160,9 +201,16 @@ describe("DELETE /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
   it("lets ADMIN remove an INSTRUCTOR when the floor holds", async () => {
     mockAccess({ level: "admin", rank: 4 });
     vi.mocked(getEnrollment).mockResolvedValue({
-      id: "e1", courseId: "c1", userId: "peer", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      userId: "peer",
+      role: "INSTRUCTOR",
+      isActive: true,
     } as never);
-    vi.mocked(deactivateEnrollment).mockResolvedValue({ status: "204", role: "INSTRUCTOR" } as never);
+    vi.mocked(deactivateEnrollment).mockResolvedValue({
+      status: "204",
+      role: "INSTRUCTOR",
+    } as never);
     const res = await action(makeArgs("DELETE"));
     expect(res.status).toBe(204);
   });
@@ -170,10 +218,16 @@ describe("DELETE /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
   it("surfaces 409 INSTRUCTOR_FLOOR_VIOLATION when removing the last instructor", async () => {
     mockAccess({ level: "admin", rank: 4 });
     vi.mocked(getEnrollment).mockResolvedValue({
-      id: "e1", courseId: "c1", userId: "peer", role: "INSTRUCTOR", isActive: true,
+      id: "e1",
+      courseId: "c1",
+      userId: "peer",
+      role: "INSTRUCTOR",
+      isActive: true,
     } as never);
     vi.mocked(deactivateEnrollment).mockResolvedValue({
-      status: "409", error: "INSTRUCTOR_FLOOR_VIOLATION", currentInstructorCount: 1,
+      status: "409",
+      error: "INSTRUCTOR_FLOOR_VIOLATION",
+      currentInstructorCount: 1,
     } as never);
     const res = await action(makeArgs("DELETE"));
     expect(res.status).toBe(409);
@@ -186,5 +240,31 @@ describe("DELETE /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
       context: {} as never,
     } as any);
     expect(res.status).toBe(405);
+  });
+});
+
+describe("instructors.canManageEnrollments gate", () => {
+  it("returns 403 for INSTRUCTOR PATCH when policy is off", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("PATCH", { role: "TA" }));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("instructors.canManageEnrollments");
+    expect(updateEnrollmentRole).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for INSTRUCTOR DELETE when policy is off", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("DELETE"));
+    expect(res.status).toBe(403);
+    expect(deactivateEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN PATCH succeeds even when policy is off", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("PATCH", { role: "TA" }));
+    expect(res.status).toBe(200);
   });
 });

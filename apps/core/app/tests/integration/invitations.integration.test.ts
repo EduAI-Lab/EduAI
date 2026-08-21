@@ -17,6 +17,11 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { hashToken } from "~/lib/invitations/token.server";
+import {
+  acceptInvitation,
+  resendInvitation,
+  revokeInvitation,
+} from "~/lib/invitations/service.server";
 import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { seedUser, cleanupRbac } from "../helpers/rbac";
@@ -25,10 +30,7 @@ import { loader as listLoader, action as createAction } from "~/routes/api/invit
 import { action as invitationIdAction } from "~/routes/api/invitations.$id";
 // The accept flow has a single live path: the user-facing page route. There is no
 // API equivalent, so the page's loader/action are what we drive here.
-import {
-  loader as acceptLoader,
-  action as acceptAction,
-} from "~/routes/auth/accept-invitation";
+import { loader as acceptLoader, action as acceptAction } from "~/routes/auth/accept-invitation";
 
 const getSessionSpy = vi.spyOn(auth.api, "getSession");
 const sendEmailMock = vi.mocked(sendEmail);
@@ -119,9 +121,13 @@ afterAll(async () => {
 describe("POST /api/invitations (create)", () => {
   it("forbids anonymous and non-admin callers", async () => {
     asAnon();
-    expect((await createAction(createReq({ email: uniqueEmail(), role: "INSTRUCTOR" }))).status).toBe(403);
+    expect(
+      (await createAction(createReq({ email: uniqueEmail(), role: "INSTRUCTOR" }))).status,
+    ).toBe(403);
     asRole("INSTRUCTOR");
-    expect((await createAction(createReq({ email: uniqueEmail(), role: "INSTRUCTOR" }))).status).toBe(403);
+    expect(
+      (await createAction(createReq({ email: uniqueEmail(), role: "INSTRUCTOR" }))).status,
+    ).toBe(403);
   });
 
   it("creates an invite, stores only the token hash, and emails the accept link", async () => {
@@ -174,7 +180,9 @@ describe("POST /api/invitations (create)", () => {
     const second = await (await createAction(createReq({ email, role: "ADMIN" }))).json();
 
     const oldToken = tokenFromAcceptUrl(first.acceptUrl);
-    const oldRow = await prisma.invitation.findUnique({ where: { tokenHash: hashToken(oldToken) } });
+    const oldRow = await prisma.invitation.findUnique({
+      where: { tokenHash: hashToken(oldToken) },
+    });
     expect(oldRow?.status).toBe("REVOKED");
 
     const pending = await prisma.invitation.count({ where: { email, status: "PENDING" } });
@@ -270,8 +278,12 @@ describe("POST /api/invitations/:id (resend)", () => {
     expect(newToken).not.toBe(oldToken);
 
     // Old token no longer resolves; new one does.
-    expect(await prisma.invitation.findUnique({ where: { tokenHash: hashToken(oldToken) } })).toBeNull();
-    expect((await prisma.invitation.findUnique({ where: { tokenHash: hashToken(newToken) } }))?.id).toBe(id);
+    expect(
+      await prisma.invitation.findUnique({ where: { tokenHash: hashToken(oldToken) } }),
+    ).toBeNull();
+    expect(
+      (await prisma.invitation.findUnique({ where: { tokenHash: hashToken(newToken) } }))?.id,
+    ).toBe(id);
   });
 
   it("409s when resending a non-pending invite", async () => {
@@ -319,7 +331,12 @@ describe("unit-admin invitations (unitAdmins.canInvite)", () => {
 
     const token = tokenFromAcceptUrl(body.acceptUrl);
     const res = (await acceptAction(
-      acceptReq({ token, name: "Sam Student", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token,
+        name: "Sam Student",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as Response;
     expect(res.status).toBe(302);
     const user = await prisma.user.findUnique({ where: { email } });
@@ -390,6 +407,87 @@ describe("unit-admin invitations (unitAdmins.canInvite)", () => {
 });
 
 describe("accept flow", () => {
+  async function pauseAfterSignup() {
+    const originalHandler = auth.handler.bind(auth);
+    let signupFinished!: () => void;
+    const signupSignal = new Promise<void>((resolve) => {
+      signupFinished = resolve;
+    });
+    let release!: () => void;
+    const releaseSignup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handlerSpy = vi.spyOn(auth, "handler").mockImplementation(async (request) => {
+      const response = await originalHandler(request);
+      signupFinished();
+      await releaseSignup;
+      return response;
+    });
+    return { signupSignal, release, handlerSpy };
+  }
+
+  it("loses atomically to revoke and rolls back the newly-created account", async () => {
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+    const paused = await pauseAfterSignup();
+    const accepting = acceptInvitation(
+      {
+        token,
+        name: "Race Winner",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+    await paused.signupSignal;
+    const revoked = await revokeInvitation(created.invitation.id);
+    expect(revoked.ok).toBe(true);
+    paused.release();
+    const result = await accepting;
+    paused.handlerSpy.mockRestore();
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(
+      (await prisma.invitation.findUnique({ where: { id: created.invitation.id } }))?.status,
+    ).toBe("REVOKED");
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+    expect(await prisma.account.findMany({ where: { accountId: email } })).toHaveLength(0);
+    expect(await prisma.session.findMany({ where: { user: { email } } })).toHaveLength(0);
+  });
+
+  it("loses atomically to token rotation and rolls back the stale accept account", async () => {
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+    const paused = await pauseAfterSignup();
+    const accepting = acceptInvitation(
+      {
+        token,
+        name: "Rotated Race",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      },
+      new Request("http://localhost/auth/accept-invitation"),
+    );
+    await paused.signupSignal;
+    const resent = await resendInvitation(created.invitation.id, { id: adminId, name: "Admin" });
+    expect(resent.ok).toBe(true);
+    paused.release();
+    const result = await accepting;
+    paused.handlerSpy.mockRestore();
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+    expect(await prisma.account.findMany({ where: { accountId: email } })).toHaveLength(0);
+    expect(await prisma.session.findMany({ where: { user: { email } } })).toHaveLength(0);
+    const current = await prisma.invitation.findUnique({ where: { id: created.invitation.id } });
+    expect(current?.status).toBe("PENDING");
+    expect(current?.tokenHash).not.toBe(hashToken(token));
+  });
+
   it("loader validates a token and returns email + role", async () => {
     asAdmin();
     const email = uniqueEmail();
@@ -411,7 +509,12 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
 
     const res = (await acceptAction(
-      acceptReq({ token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token,
+        name: "Pat Prof",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as Response;
     expect(res.status).toBe(302); // redirected to /dashboard on success
     expect(res.headers.get("Location")).toBe("/dashboard");
@@ -438,7 +541,12 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
 
     const res = (await acceptAction(
-      acceptReq({ token, name: "Uma Unit", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token,
+        name: "Uma Unit",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as Response;
     expect(res.status).toBe(302);
     const user = await prisma.user.findUnique({ where: { email } });
@@ -460,7 +568,12 @@ describe("accept flow", () => {
     let res: Response;
     try {
       res = (await acceptAction(
-        acceptReq({ token, name: "Sam Student", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+        acceptReq({
+          token,
+          name: "Sam Student",
+          password: INVITE_TEST_PASSWORD,
+          confirmPassword: INVITE_TEST_PASSWORD,
+        }),
       )) as Response;
     } finally {
       nowSpy.mockRestore();
@@ -491,7 +604,12 @@ describe("accept flow", () => {
       let res: Response;
       try {
         res = (await acceptAction(
-          acceptReq({ token, name: "Reg Off", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+          acceptReq({
+            token,
+            name: "Reg Off",
+            password: INVITE_TEST_PASSWORD,
+            confirmPassword: INVITE_TEST_PASSWORD,
+          }),
         )) as Response;
       } finally {
         nowSpy.mockRestore();
@@ -508,7 +626,12 @@ describe("accept flow", () => {
     // The page action returns { formError } (a friendly message), not a status code.
     // Invalid token
     const invalid = (await acceptAction(
-      acceptReq({ token: "nope", name: "X X", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token: "nope",
+        name: "X X",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as any;
     expect(invalid.formError).toMatch(/invalid/i);
 
@@ -524,7 +647,12 @@ describe("accept flow", () => {
       },
     });
     const expired = (await acceptAction(
-      acceptReq({ token: "expired-token", name: "X X", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token: "expired-token",
+        name: "X X",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as any;
     expect(expired.formError).toMatch(/expired/i);
 
@@ -541,7 +669,12 @@ describe("accept flow", () => {
       },
     });
     const revoked = (await acceptAction(
-      acceptReq({ token: "revoked-token", name: "X X", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token: "revoked-token",
+        name: "X X",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as any;
     expect(revoked.formError).toMatch(/cancelled/i);
   });
@@ -551,35 +684,45 @@ describe("accept flow", () => {
     const email = uniqueEmail();
     const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
     const token = tokenFromAcceptUrl(created.acceptUrl);
-    const body = { token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD };
+    const body = {
+      token,
+      name: "Pat Prof",
+      password: INVITE_TEST_PASSWORD,
+      confirmPassword: INVITE_TEST_PASSWORD,
+    };
 
     const originalTransaction = prisma.$transaction.bind(prisma);
     const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (fn, ...args) => {
       if (typeof fn !== "function") {
         return originalTransaction(fn as never, ...args);
       }
-      // Fail only the promote-step invitation update inside a real transaction so
+      // Fail only the promote-step invitation conditional consume inside a real transaction so
       // password-history writes during sign-up still succeed and user.update rolls back.
-      return originalTransaction(async (tx) => {
-        const proxiedTx = new Proxy(tx, {
-          get(target, prop) {
-            if (prop === "invitation") {
-              return new Proxy(target.invitation, {
-                get(invTarget, invProp) {
-                  if (invProp === "update") {
-                    return () => Promise.reject(new Error("db hiccup"));
-                  }
-                  const value = (invTarget as unknown as Record<string, unknown>)[invProp as string];
-                  return typeof value === "function" ? value.bind(invTarget) : value;
-                },
-              });
-            }
-            const value = (target as unknown as Record<string, unknown>)[prop as string];
-            return typeof value === "function" ? value.bind(target) : value;
-          },
-        });
-        return fn(proxiedTx);
-      }, ...args);
+      return originalTransaction(
+        async (tx) => {
+          const proxiedTx = new Proxy(tx, {
+            get(target, prop) {
+              if (prop === "invitation") {
+                return new Proxy(target.invitation, {
+                  get(invTarget, invProp) {
+                    if (invProp === "updateMany") {
+                      return () => Promise.reject(new Error("db hiccup"));
+                    }
+                    const value = (invTarget as unknown as Record<string, unknown>)[
+                      invProp as string
+                    ];
+                    return typeof value === "function" ? value.bind(invTarget) : value;
+                  },
+                });
+              }
+              const value = (target as unknown as Record<string, unknown>)[prop as string];
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+          return fn(proxiedTx);
+        },
+        ...args,
+      );
     });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();
@@ -611,7 +754,12 @@ describe("accept flow", () => {
     await prisma.user.create({ data: { email, name: "Squatter", role: "STUDENT" } });
 
     const res = (await acceptAction(
-      acceptReq({ token, name: "Late Comer", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
+      acceptReq({
+        token,
+        name: "Late Comer",
+        password: INVITE_TEST_PASSWORD,
+        confirmPassword: INVITE_TEST_PASSWORD,
+      }),
     )) as any;
     expect(res.formError).toMatch(/already exists/i);
 
@@ -632,7 +780,12 @@ describe("public registration — UBC backend gate (§567)", () => {
     const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Public User", email, password: INVITE_TEST_PASSWORD, ...extra }),
+      body: JSON.stringify({
+        name: "Public User",
+        email,
+        password: INVITE_TEST_PASSWORD,
+        ...extra,
+      }),
     });
     return auth.handler(req);
   }

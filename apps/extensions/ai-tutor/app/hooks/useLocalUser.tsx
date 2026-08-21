@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import api, { ApiNetworkError } from '~/lib/api';
-import { clearClientUserSeed, seedClientUser } from '~/lib/client-auth';
-import type { User } from '~/lib/types';
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import api, { ApiNetworkError } from "~/lib/api";
+import { clearApiKeysForUser, discardLegacyApiKeysFromStorage } from "~/lib/provider-keys";
+import type { User } from "~/lib/types";
 
 // A fresh dev-stack start can briefly have the AI Tutor frontend reachable
 // before its Express API has finished migrate/generate/seed and started
@@ -9,13 +9,14 @@ import type { User } from '~/lib/types';
 const ME_MAX_ATTEMPTS = 5;
 const ME_RETRY_DELAY_MS = 800;
 
-export type AuthUser = Pick<User, 'id' | 'name' | 'role' | 'authorizedUnits'> & {
+export type AuthUser = Pick<User, "id" | "name" | "role" | "authorizedUnits"> & {
   email?: string;
 };
 
 type AuthContextValue = {
   user: AuthUser | null;
   isInitializing: boolean;
+  authError: string | null;
   saveAuth: (userData: AuthUser) => void;
   logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
@@ -31,14 +32,10 @@ type AuthProviderProps = {
 export function AuthProvider({ initialUser, children }: AuthProviderProps) {
   const [user, setUser] = useState<AuthUser | null>(initialUser);
   const [isInitializing, setIsInitializing] = useState(!initialUser);
-
-  // Keep the clientLoader auth gate in sync with the known session (#1334)
-  // so navigations don't re-hit `/api/me` after AuthProvider already resolved.
-  useEffect(() => {
-    seedClientUser(user);
-  }, [user]);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    discardLegacyApiKeysFromStorage();
     if (initialUser) {
       setIsInitializing(false);
       return;
@@ -54,6 +51,7 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
           const data = await api.me();
           if (cancelled) return;
           const nextUser = data?.user ?? null;
+          setAuthError(null);
           if (nextUser) {
             setUser({
               id: nextUser.id,
@@ -75,7 +73,12 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
             await new Promise((resolve) => setTimeout(resolve, ME_RETRY_DELAY_MS));
             continue;
           }
-          setUser(null);
+          if (err instanceof Error && err.message === "Authentication required") {
+            setAuthError(null);
+            setUser(null);
+          } else {
+            setAuthError("Authentication service unavailable");
+          }
           return;
         }
       }
@@ -91,17 +94,26 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
     };
   }, [initialUser]);
 
+  const setAuthUser = (nextUser: AuthUser | null) => {
+    if (user && user.id !== nextUser?.id) {
+      clearApiKeysForUser(user.id);
+    }
+    discardLegacyApiKeysFromStorage();
+    setAuthError(null);
+    setUser(nextUser);
+  };
+
   const saveAuth = (userData: AuthUser) => {
-    setUser(userData);
+    setAuthUser(userData);
   };
 
   const logout = async () => {
-    try {
-      await api.logout();
-    } catch (error) {
-      console.error('Failed to log out', error);
-    }
-    clearClientUserSeed();
+    // Remove browser-held credentials and revoke the hook's in-memory account
+    // scope before waiting for the network logout to finish.
+    clearApiKeysForUser(user?.id);
+    discardLegacyApiKeysFromStorage();
+    await api.logout();
+    setAuthError(null);
     setUser(null);
   };
 
@@ -109,11 +121,12 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
     () => ({
       user,
       isInitializing,
+      authError,
       saveAuth,
       logout,
-      setUser,
+      setUser: setAuthUser,
     }),
-    [isInitializing, user],
+    [authError, isInitializing, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -122,7 +135,7 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
 export function useLocalUser() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useLocalUser must be used within an AuthProvider');
+    throw new Error("useLocalUser must be used within an AuthProvider");
   }
   return context;
 }

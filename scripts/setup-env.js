@@ -1,16 +1,19 @@
-const { existsSync, copyFileSync, readFileSync, appendFileSync } = require('fs');
-const { execSync } = require('child_process');
-const { resolve } = require('path');
+const { existsSync, copyFileSync, readFileSync, appendFileSync } = require("fs");
+const { execSync } = require("child_process");
+const { resolve } = require("path");
 
-const root = resolve(__dirname, '..');
+const root = resolve(__dirname, "..");
 
 const envPairs = [
-  ['apps/core/.env.example', 'apps/core/.env'],
-  ['apps/extensions/question-maker/.env.example', 'apps/extensions/question-maker/.env'],
-  ['apps/extensions/ai-tutor/server/.env.example', 'apps/extensions/ai-tutor/server/.env'],
-  ['apps/extensions/example-extension/.env.example', 'apps/extensions/example-extension/.env'],
-  ['apps/core/.env.test.example', 'apps/core/.env.test'],
-  ['apps/extensions/ai-tutor/server/.env.test.example', 'apps/extensions/ai-tutor/server/.env.test'],
+  ["apps/core/.env.example", "apps/core/.env"],
+  ["apps/extensions/question-maker/.env.example", "apps/extensions/question-maker/.env"],
+  ["apps/extensions/ai-tutor/server/.env.example", "apps/extensions/ai-tutor/server/.env"],
+  ["apps/extensions/example-extension/.env.example", "apps/extensions/example-extension/.env"],
+  ["apps/core/.env.test.example", "apps/core/.env.test"],
+  [
+    "apps/extensions/ai-tutor/server/.env.test.example",
+    "apps/extensions/ai-tutor/server/.env.test",
+  ],
 ];
 
 /**
@@ -19,7 +22,7 @@ const envPairs = [
  */
 function parsedKeys(filePath) {
   const keys = new Set();
-  for (const line of readFileSync(filePath, 'utf8').split('\n')) {
+  for (const line of readFileSync(filePath, "utf8").split("\n")) {
     const m = line.match(/^([A-Z0-9_]+)\s*=/);
     if (m) keys.add(m[1]);
   }
@@ -37,15 +40,20 @@ for (const [src, dest] of envPairs) {
     // Merge any keys present in .env.example but missing from the existing .env
     const existing = parsedKeys(destPath);
     const missing = [];
-    for (const line of readFileSync(srcPath, 'utf8').split('\n')) {
+    for (const line of readFileSync(srcPath, "utf8").split("\n")) {
       const m = line.match(/^([A-Z0-9_]+)\s*=/);
       if (m && !existing.has(m[1])) {
         missing.push(line);
       }
     }
     if (missing.length > 0) {
-      appendFileSync(destPath, '\n# Added by setup-env.js (new keys from .env.example)\n' + missing.join('\n') + '\n');
-      console.log(`  merged ${missing.length} new key(s) into ${dest}: ${missing.map(l => l.split('=')[0]).join(', ')}`);
+      appendFileSync(
+        destPath,
+        "\n# Added by setup-env.js (new keys from .env.example)\n" + missing.join("\n") + "\n",
+      );
+      console.log(
+        `  merged ${missing.length} new key(s) into ${dest}: ${missing.map((l) => l.split("=")[0]).join(", ")}`,
+      );
     }
   }
 }
@@ -53,13 +61,24 @@ for (const [src, dest] of envPairs) {
 // CI generates each workspace client explicitly in the job that consumes it. Skipping
 // this implicit generation there avoids doing the same work during npm ci and again
 // before typechecking/tests, while preserving the convenient local-install behavior.
-if (process.env.SKIP_PRISMA_GENERATE !== '1') {
-  try {
-    execSync('npm run db:generate', { cwd: resolve(root, 'apps/core'), stdio: 'pipe' });
-    console.log('  generated prisma client for apps/core');
-  } catch (e) {
-    console.warn('  warning: prisma generate failed for apps/core:', e.message);
+if (process.env.SKIP_PRISMA_GENERATE !== "1") {
+  const generators = [
+    ["apps/core", "npm run db:generate"],
+    [
+      "apps/extensions/ai-tutor/server",
+      "node ../../../../node_modules/prisma/build/index.js generate",
+    ],
+    ["apps/extensions/question-maker/app/backend", "npm run db:generate"],
+  ];
+
+  for (const [workspace, command] of generators) {
+    try {
+      execSync(command, { cwd: resolve(root, workspace), stdio: "pipe" });
+      console.log(`  generated prisma client for ${workspace}`);
+    } catch (e) {
+      console.warn(`  warning: prisma generate failed for ${workspace}:`, e.message);
+    }
   }
 } else {
-  console.log('  skipped prisma client generation (SKIP_PRISMA_GENERATE=1)');
+  console.log("  skipped prisma client generation (SKIP_PRISMA_GENERATE=1)");
 }

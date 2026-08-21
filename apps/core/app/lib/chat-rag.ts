@@ -94,12 +94,7 @@ const MAX_CONTEXT_MESSAGES_CEILING = 50;
 const SESSION_CHAR_BUDGET_CEILING = 100_000;
 const SESSION_DIGEST_MAX_CEILING = 50_000;
 
-function readBoundedEnvInt(
-  name: string,
-  fallback: number,
-  floor: number,
-  ceiling: number,
-): number {
+function readBoundedEnvInt(name: string, fallback: number, floor: number, ceiling: number): number {
   const parsed = Number(process.env[name]);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
@@ -169,9 +164,7 @@ function safeStringify(value: unknown): string {
  * budget and the `messageTextChars` debug metric so tool-heavy turns (#260) are
  * not under-counted and the digest (#259) triggers when it should.
  */
-export function estimateMessageCharsForModel(
-  message?: Record<string, unknown>,
-): number {
+export function estimateMessageCharsForModel(message?: Record<string, unknown>): number {
   if (!message) {
     return 0;
   }
@@ -270,8 +263,7 @@ function buildSessionDigest<T extends Record<string, unknown>>(
     if (!normalized) {
       continue;
     }
-    const preview =
-      normalized.length > 200 ? `${normalized.slice(0, 200)}…` : normalized;
+    const preview = normalized.length > 200 ? `${normalized.slice(0, 200)}…` : normalized;
     lines.push(`- **${role}**: ${preview}`);
   }
 
@@ -312,10 +304,7 @@ function hardTruncate(text: string, maxChars: number): string {
  * preview — collapsing a tool turn into free text would make the AI SDK treat it
  * as a plain assistant message and orphan any paired tool messages.
  */
-function enforceMessageBudget<T extends Record<string, unknown>>(
-  message: T,
-  maxChars: number,
-): T {
+function enforceMessageBudget<T extends Record<string, unknown>>(message: T, maxChars: number): T {
   if (estimateMessageCharsForModel(message) <= maxChars) {
     return message;
   }
@@ -376,10 +365,7 @@ function enforceSessionCharBudget<T extends Record<string, unknown>>(
   const minKeep = hasDigestHead ? 2 : 1;
   const verbatimStart = hasDigestHead ? 1 : 0;
 
-  while (
-    result.length > minKeep &&
-    totalMessageChars(result, estimate) > charBudget
-  ) {
+  while (result.length > minKeep && totalMessageChars(result, estimate) > charBudget) {
     result.splice(verbatimStart, 1);
   }
 
@@ -449,16 +435,10 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
     id: DIGEST_MESSAGE_ID,
     role: "user",
     content:
-      digest ||
-      "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
+      digest || "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
   } as unknown as T;
 
-  return enforceSessionCharBudget(
-    [digestMessage, ...recent],
-    estimate,
-    charBudget,
-    true,
-  );
+  return enforceSessionCharBudget([digestMessage, ...recent], estimate, charBudget, true);
 }
 
 /**
@@ -555,8 +535,6 @@ export function capRagHitsForTool(hits: HybridRagHit[]): HybridRagHit[] {
   const maxChars = resolveToolResultMaxChars();
   return hits.slice(0, HYBRID_RAG_MAX_CHUNKS).map((h) => ({
     ...h,
-    content: wrapUntrustedReferenceContent(
-      truncateToMaxChars(h.content, maxChars),
-    ),
+    content: wrapUntrustedReferenceContent(truncateToMaxChars(h.content, maxChars)),
   }));
 }

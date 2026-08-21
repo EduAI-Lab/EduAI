@@ -1,5 +1,5 @@
-import type * as React from "react"
-import { courseHeroBackgroundStyle, courseThemeVars, type CourseAccentColor } from "./course-theme"
+import type * as React from "react";
+import { courseHeroBackgroundStyle, courseThemeVars, type CourseAccentColor } from "./course-theme";
 
 /**
  * Shared "hero" surface used by every course/module/lesson-tier banner
@@ -10,10 +10,10 @@ import { courseHeroBackgroundStyle, courseThemeVars, type CourseAccentColor } fr
  */
 export interface HeroShellProps {
   /** Resolved accent — must match the course card on the dashboard. */
-  accentColor: CourseAccentColor
+  accentColor: CourseAccentColor;
   /** Extra classes appended after the shell's own (e.g. spacing overrides). */
-  className?: string
-  children?: React.ReactNode
+  className?: string;
+  children?: React.ReactNode;
 }
 
 export function HeroShell({ accentColor, className, children }: HeroShellProps) {
@@ -27,11 +27,11 @@ export function HeroShell({ accentColor, className, children }: HeroShellProps) 
     >
       {children}
     </div>
-  )
+  );
 }
 
 /** Translucent-white glass, used for badges/chips laid over the hero shell. */
 export const HERO_GLASS_STYLE: React.CSSProperties = {
   background: "rgba(255,255,255,0.16)",
   border: "1px solid rgba(255,255,255,0.28)",
-}
+};

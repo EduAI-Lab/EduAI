@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import {
+  ConnectCanvasSchema,
+  LinkRosterSchema,
+  SyncCanvasCoursesSchema,
+} from "~/lib/canvas/schemas";
 
 describe("ConnectCanvasSchema", () => {
   it("accepts canvasUrl and apiKey", () => {

@@ -181,7 +181,8 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "excluded",
     reason: "Chat UI persistence — not ops",
     routeFile: "routes/api/chats.ts",
-  }),  entry({
+  }),
+  entry({
     method: "GET",
     path: "/api/chats/:chatId",
     readiness: "excluded",
@@ -228,6 +229,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "createCourse",
     errorEnvelope: "standard",
     routeFile: "routes/api/courses.$.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/courses/facets",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.facets.ts",
+    note: "Role-scoped status/term/department filter values for the course list (#1263)",
   }),
 
   // ── Course by id ────────────────────────────────────────────────────────────
@@ -576,7 +585,10 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/users",
     readiness: "ready",
-    pagination: { required: true, lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"] },
+    pagination: {
+      required: true,
+      lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"],
+    },
     errorEnvelope: "standard",
     adminChatTool: "listUsers",
     routeFile: "routes/api/users.$.ts",
@@ -791,6 +803,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     errorEnvelope: "standard",
     routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
   }),
   entry({
     method: "GET",

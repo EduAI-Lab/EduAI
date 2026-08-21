@@ -25,9 +25,7 @@ export type PasswordRequirementStatus = {
 };
 
 /** Return each policy check so forms can explain unmet requirements live. */
-export function getPasswordRequirementStatus(
-  password: string,
-): PasswordRequirementStatus {
+export function getPasswordRequirementStatus(password: string): PasswordRequirementStatus {
   const minimumLength = password.length >= MIN_COMPLEX_PASSWORD_LENGTH;
   const lowercase = /[a-z]/.test(password);
   const uppercase = /[A-Z]/.test(password);

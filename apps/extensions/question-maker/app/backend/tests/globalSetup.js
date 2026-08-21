@@ -14,13 +14,13 @@
  * — CI's `qm-db` service container and `docker-compose.test.yml` already
  * provision `question_maker_test` before tests run.
  */
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { runPrismaMigrateDeploy } from './helpers/prismaCli.js';
-import { loadTestEnv, TEST_ENV_PATH } from './helpers/testEnv.js';
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { runPrismaMigrateDeploy } from "./helpers/prismaCli.js";
+import { loadTestEnv, TEST_ENV_PATH } from "./helpers/testEnv.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const backendRoot = resolve(__dirname, '..');
+const backendRoot = resolve(__dirname, "..");
 
 /** `postgresql://user:pw@host:5432/db` -> `host:5432/db`, so nothing secret reaches the log. */
 function describeTarget(databaseUrl) {
@@ -28,7 +28,7 @@ function describeTarget(databaseUrl) {
     const { host, pathname } = new URL(databaseUrl);
     return `${host}${pathname}`;
   } catch {
-    return 'TEST_DATABASE_URL';
+    return "TEST_DATABASE_URL";
   }
 }
 

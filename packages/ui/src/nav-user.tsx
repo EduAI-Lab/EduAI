@@ -1,7 +1,7 @@
-import * as React from "react"
-import { IconDotsVertical, IconLogout, IconSettings, IconUser } from "@tabler/icons-react"
-import { Avatar as EduAvatar } from "./avatar"
-import { RoleBadge } from "./role-badge"
+import * as React from "react";
+import { IconDotsVertical, IconLogout, IconSettings, IconUser } from "@tabler/icons-react";
+import { Avatar as EduAvatar } from "./avatar";
+import { RoleBadge } from "./role-badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,33 +9,28 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu"
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "./ui/sidebar"
+} from "./ui/dropdown-menu";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "./ui/sidebar";
 
 export interface NavUserItem {
-  label: string
-  icon?: React.ReactNode
-  href?: string
-  onSelect?: () => void
-  destructive?: boolean
+  label: string;
+  icon?: React.ReactNode;
+  href?: string;
+  onSelect?: () => void;
+  destructive?: boolean;
 }
 
 export interface NavUserProps {
-  user: { name: string; email: string; image?: string | null; role?: string | null }
+  user: { name: string; email: string; image?: string | null; role?: string | null };
   /** Link component for href items (default "a"). */
-  LinkComponent?: React.ElementType
+  LinkComponent?: React.ElementType;
   /** Menu items rendered between the header and the logout row. */
-  items?: NavUserItem[]
+  items?: NavUserItem[];
   /** Default logout row: renders a destructive button calling onLogout. */
-  onLogout?: () => void
+  onLogout?: () => void;
   /** Overrides the default logout row entirely (e.g. Core passes a react-router <Form>). */
-  logoutElement?: React.ReactNode
-  logoutLabel?: string
+  logoutElement?: React.ReactNode;
+  logoutLabel?: string;
 }
 
 export function NavUser({
@@ -46,7 +41,7 @@ export function NavUser({
   logoutElement,
   logoutLabel = "Log out",
 }: NavUserProps) {
-  const { isMobile } = useSidebar()
+  const { isMobile } = useSidebar();
 
   return (
     <SidebarMenu>
@@ -68,7 +63,11 @@ export function NavUser({
                   {user.email}
                 </span>
               </div>
-              <IconDotsVertical size={14} strokeWidth={1.75} className="ml-auto shrink-0 text-sidebar-foreground/50" />
+              <IconDotsVertical
+                size={14}
+                strokeWidth={1.75}
+                className="ml-auto shrink-0 text-sidebar-foreground/50"
+              />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -133,5 +132,5 @@ export function NavUser({
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }

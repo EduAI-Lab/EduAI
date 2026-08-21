@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
-import { BugReportDialog } from '@eduai/ui';
-import type { BugReportSubmitData } from '@eduai/ui';
-import { useAuth } from './AuthContext';
-import { useBugReportCapture } from '../hooks/useBugReportCapture';
-import { bugReportApi } from '../services/bugReportApi';
+import React, { createContext, useContext, useState, useMemo, ReactNode } from "react";
+import { BugReportDialog } from "@eduai/ui";
+import type { BugReportSubmitData } from "@eduai/ui";
+import { useAuth } from "./AuthContext";
+import { useBugReportCapture } from "../hooks/useBugReportCapture";
+import { bugReportApi } from "../services/bugReportApi";
 
 type BugReportContextValue = {
   openBugReport: () => void;
@@ -48,9 +48,9 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
         // its portal/backdrop in the report image.
         void captureScreenshot();
         setOpen(true);
-      }
+      },
     }),
-    [captureScreenshot]
+    [captureScreenshot],
   );
 
   return (
@@ -61,6 +61,7 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
           open={open}
           onOpenChange={setOpen}
           onSubmit={handleSubmit}
+          captureScreenshot={captureScreenshot}
           getCapturedData={getCapturedData}
         />
       )}

@@ -1,16 +1,16 @@
-import { Combobox, type ComboboxOption } from '@eduai/ui'
+import { Combobox, type ComboboxOption } from "@eduai/ui";
 
 interface Department {
-  code: string
-  label: string
+  code: string;
+  label: string;
 }
 
 interface DepartmentComboboxProps {
-  departments: Department[]
-  value: string
-  onValueChange: (value: string) => void
-  disabled?: boolean
-  placeholder?: string
+  departments: Department[];
+  value: string;
+  onValueChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
 }
 
 export function DepartmentCombobox({
@@ -18,13 +18,13 @@ export function DepartmentCombobox({
   value,
   onValueChange,
   disabled,
-  placeholder = 'Select course code',
+  placeholder = "Select course code",
 }: DepartmentComboboxProps) {
   const options: ComboboxOption[] = departments.map((d) => ({
     value: d.code,
     label: d.label,
     description: `(${d.code})`,
-  }))
+  }));
 
   return (
     <Combobox
@@ -32,7 +32,7 @@ export function DepartmentCombobox({
       value={value || null}
       onValueChange={(selectedValue) => {
         if (selectedValue !== null) {
-          onValueChange(selectedValue)
+          onValueChange(selectedValue);
         }
       }}
       placeholder={placeholder}
@@ -40,5 +40,5 @@ export function DepartmentCombobox({
       emptyText="No course code found."
       disabled={disabled}
     />
-  )
+  );
 }

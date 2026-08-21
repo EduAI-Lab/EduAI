@@ -74,7 +74,10 @@ function buildSystemLogWhere(params: SystemLogListParams) {
   return where;
 }
 
-function normalizeErrorMetadata(error: unknown): { errorName: string | null; stack: string | null } {
+function normalizeErrorMetadata(error: unknown): {
+  errorName: string | null;
+  stack: string | null;
+} {
   // Normalizing unknown errors keeps diagnostics useful even when throwables are non-Error values.
   if (error instanceof Error) {
     return {
@@ -154,7 +157,7 @@ export async function createSystemError(input: CreateSystemErrorInput): Promise<
 }
 
 export async function listSystemLogs(
-  params: SystemLogListParams
+  params: SystemLogListParams,
 ): Promise<{ rows: SystemLogRow[]; total: number }> {
   const { safePageSize, skip } = normalizePagination(params.page, params.pageSize);
   const where = buildSystemLogWhere(params);

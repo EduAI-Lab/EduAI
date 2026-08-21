@@ -1,8 +1,8 @@
-import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui';
-import { getEduAiAppUrl, getAiTutorAppUrl, getQuestionMakerUrl } from './extension-urls';
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from "@eduai/ui";
+import { getEduAiAppUrl, getAiTutorAppUrl, getQuestionMakerUrl } from "./extension-urls";
 
 /** Stable id for the app rendering this sidebar — passed to AppLauncher. */
-export const CURRENT_APP_ID = 'ai-tutor';
+export const CURRENT_APP_ID = "ai-tutor";
 
 /**
  * Every EduAI app/extension, for the bottom-left launcher. Names/icons/colors/

@@ -1,0 +1,12 @@
+# Commits that only reformat code. `git blame` skips these, so the author who
+# last touched a line stays visible through a formatting sweep.
+#
+# Enable locally, once:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub applies this file automatically.
+#
+# Only add commits that change formatting and nothing else.
+
+# style: format the repo with oxfmt (#1512)
+# First repo-wide `oxfmt --write`, 1482 files, oxfmt pinned at 0.63.0.
+d66380e2dff1cc03dd97291c8cbc959c00ec982c

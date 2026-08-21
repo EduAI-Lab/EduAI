@@ -69,13 +69,7 @@ function trapTab(e: KeyboardEvent, container: HTMLElement | null): void {
   }
 }
 
-export function ProductTour({
-  steps,
-  storageKey,
-}: {
-  steps: TourStep[];
-  storageKey: string;
-}) {
+export function ProductTour({ steps, storageKey }: { steps: TourStep[]; storageKey: string }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [active, setActive] = React.useState(false);

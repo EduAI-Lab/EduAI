@@ -1,42 +1,38 @@
-import { memo, useEffect, useId, useMemo, Suspense } from "react"
-import type { Components } from "react-markdown"
-import {
-  LazyStreamdown,
-  getMathStreamdown,
-  type MarkdownStyleLoader,
-} from "./lazy-streamdown"
-import { useMarkdownStyles } from "./markdown-styles"
+import { memo, useEffect, useId, useMemo, Suspense } from "react";
+import type { Components } from "react-markdown";
+import { LazyStreamdown, getMathStreamdown, type MarkdownStyleLoader } from "./lazy-streamdown";
+import { useMarkdownStyles } from "./markdown-styles";
 
 export type MarkdownProps = {
-  children: string
-  id?: string
-  className?: string
-  components?: Partial<Components>
+  children: string;
+  id?: string;
+  className?: string;
+  components?: Partial<Components>;
   /** When true, defers code-block copy/download until streaming finishes. */
-  isAnimating?: boolean
-}
+  isAnimating?: boolean;
+};
 
 // `marked` is only used to split markdown into blocks — load it on demand so it
 // stays out of the always-loaded shared chunk (Streamdown next door is already lazy).
-let cachedLexer: ((markdown: string) => string[]) | null = null
-let lexerLoad: Promise<void> | null = null
+let cachedLexer: ((markdown: string) => string[]) | null = null;
+let lexerLoad: Promise<void> | null = null;
 
 function loadLexer(): Promise<void> {
   lexerLoad ??= import("marked")
     .then(({ marked }) => {
-      cachedLexer = (markdown) => marked.lexer(markdown).map((token) => token.raw)
+      cachedLexer = (markdown) => marked.lexer(markdown).map((token) => token.raw);
     })
     .catch(() => {
       // Transient failure (e.g. stale chunk 404 across a redeploy) — clear the
       // cached promise so a later mount can retry instead of failing forever.
-      lexerLoad = null
-    })
-  return lexerLoad
+      lexerLoad = null;
+    });
+  return lexerLoad;
 }
 
 // Keep math in one Streamdown pass — marked.lexer splits on headings/lists and can break equations.
 // Deliberately loose: its false positives only force single-block rendering, which is safe.
-const MATH_PATTERN = /(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$|\\frac|\\sqrt|[a-zA-Z]\^/
+const MATH_PATTERN = /(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$|\\frac|\\sqrt|[a-zA-Z]\^/;
 
 // Whether this content will actually produce KaTeX output, and so needs the
 // KaTeX stylesheet (#1342). `$$…$$` is the only delimiter that does today:
@@ -49,7 +45,7 @@ const MATH_PATTERN = /(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$|\\frac|\\sqrt|[a-zA-Z]\^/
 // Kept separate from MATH_PATTERN on purpose — MATH_PATTERN is load-bearing for
 // block splitting and must stay loose; this one must be exact, since a false
 // positive fetches 18KB of CSS plus KaTeX's fonts for nothing.
-const MATH_STYLE_PATTERN = /(?<!\\)\$\$/
+const MATH_STYLE_PATTERN = /(?<!\\)\$\$/;
 
 function parseMarkdownIntoBlocks(markdown: string): string[] {
   if (MATH_PATTERN.test(markdown)) {
@@ -61,10 +57,10 @@ function parseMarkdownIntoBlocks(markdown: string): string[] {
   // content re-splits on the next token once the lazy import resolves. Never
   // re-splitting retroactively avoids tearing down already-rendered blocks.
   if (!cachedLexer) {
-    return [markdown]
+    return [markdown];
   }
 
-  return cachedLexer(markdown)
+  return cachedLexer(markdown);
 }
 
 const MemoizedMarkdownBlock = memo(
@@ -74,16 +70,14 @@ const MemoizedMarkdownBlock = memo(
     hasMath,
     loadKatexStyles,
   }: {
-    content: string
-    isAnimating?: boolean
-    hasMath: boolean
-    loadKatexStyles?: MarkdownStyleLoader
+    content: string;
+    isAnimating?: boolean;
+    hasMath: boolean;
+    loadKatexStyles?: MarkdownStyleLoader;
   }) {
     // Math blocks fold the stylesheet into the same suspended promise as
     // Streamdown, so the sheet is in place before the block's first paint.
-    const Streamdown = hasMath
-      ? getMathStreamdown(loadKatexStyles)
-      : LazyStreamdown
+    const Streamdown = hasMath ? getMathStreamdown(loadKatexStyles) : LazyStreamdown;
 
     return (
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
@@ -96,7 +90,7 @@ const MemoizedMarkdownBlock = memo(
           {content}
         </Streamdown>
       </Suspense>
-    )
+    );
   },
   function propsAreEqual(prevProps, nextProps) {
     return (
@@ -104,31 +98,26 @@ const MemoizedMarkdownBlock = memo(
       prevProps.isAnimating === nextProps.isAnimating &&
       prevProps.hasMath === nextProps.hasMath &&
       prevProps.loadKatexStyles === nextProps.loadKatexStyles
-    )
-  }
-)
+    );
+  },
+);
 
-MemoizedMarkdownBlock.displayName = "MemoizedMarkdownBlock"
+MemoizedMarkdownBlock.displayName = "MemoizedMarkdownBlock";
 
-function MarkdownComponent({
-  children,
-  id,
-  className,
-  isAnimating,
-}: MarkdownProps) {
-  const generatedId = useId()
-  const blockId = id ?? generatedId
-  const { loadKatexStyles } = useMarkdownStyles()
+function MarkdownComponent({ children, id, className, isAnimating }: MarkdownProps) {
+  const generatedId = useId();
+  const blockId = id ?? generatedId;
+  const { loadKatexStyles } = useMarkdownStyles();
 
   // Warm the lexer only when this content would actually use it — math-heavy
   // content short-circuits in parseMarkdownIntoBlocks and never consults it.
   useEffect(() => {
     if (!cachedLexer && !MATH_PATTERN.test(children)) {
-      void loadLexer()
+      void loadLexer();
     }
-  }, [children])
+  }, [children]);
 
-  const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children])
+  const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children]);
 
   return (
     <div className={className}>
@@ -142,10 +131,10 @@ function MarkdownComponent({
         />
       ))}
     </div>
-  )
+  );
 }
 
-const Markdown = memo(MarkdownComponent)
-Markdown.displayName = "Markdown"
+const Markdown = memo(MarkdownComponent);
+Markdown.displayName = "Markdown";
 
-export { Markdown, MATH_STYLE_PATTERN }
+export { Markdown, MATH_STYLE_PATTERN };

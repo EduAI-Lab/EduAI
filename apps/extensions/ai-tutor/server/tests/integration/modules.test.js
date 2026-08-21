@@ -1,19 +1,33 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { createApp } from '../../src/app.js';
-import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import request from "supertest";
+import { createApp } from "../../src/app.js";
+import {
+  makeProfessor,
+  makeAdmin,
+  makeStudent,
+  makeTA,
+  makeUnitAdmin,
+  truncateAll,
+  seedMinimalCourse,
+  prisma,
+} from "../helpers.js";
 
 // `department` is Core-owned (#1072 step 4) — UNIT_ADMIN scoping resolves it
 // live via `fetchCoreCourseSafe`, so the UNIT_ADMIN describe block below
 // stubs it per-course keyed on `coreOfferingId`.
-vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
 
-import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
-describe('Modules routes', () => {
+describe("Modules routes", () => {
   let prof;
   let seed; // { user, course, module, lesson, topic }
   let profApp;
@@ -30,6 +44,16 @@ describe('Modules routes', () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+        const role = course.enrollments?.find((row) => row.userId === userId)?.role ?? null;
+        const instructor = course.instructors?.some((row) => row.userId === userId);
+        const effectiveRole =
+          instructor && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : role;
+        const allowed = allowedRoles.includes(effectiveRole);
+        return { allowed, state: allowed ? "allowed" : "denied", role: effectiveRole };
+      },
+    );
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -40,7 +64,7 @@ describe('Modules routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: student.id,
-        role: 'STUDENT',
+        role: "STUDENT",
       },
     });
     return student;
@@ -52,36 +76,68 @@ describe('Modules routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: ta.id,
-        role: 'TA',
+        role: "TA",
       },
     });
     return ta;
   }
 
+  it("fails closed when Core cannot authorize a direct student module list", async () => {
+    const student = await enrollStudent();
+    vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+      allowed: false,
+      state: "unavailable",
+      role: null,
+    });
+
+    const res = await request(await createApp({ mockUser: student })).get(
+      `/api/courses/${seed.course.id}/modules`,
+    );
+
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
+  });
+
   // ── POST /api/courses/:courseId/modules ─────────
 
-  describe('POST /api/courses/:courseId/modules append order', () => {
-    it('appends a new module to the end when no position is supplied', async () => {
+  describe("POST /api/courses/:courseId/modules append order", () => {
+    it("authorizes a live instructor on the first request when the local mirror is absent", async () => {
+      await prisma.courseInstructor.deleteMany({ where: { courseOfferingId: seed.course.id } });
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
+        allowed: true,
+        state: "allowed",
+        role: "INSTRUCTOR",
+      });
+
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: "First Live Module" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("First Live Module");
+    });
+
+    it("appends a new module to the end when no position is supplied", async () => {
       // seedMinimalCourse creates one module at position 0.
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/modules`)
-        .send({ title: 'Second Module' });
+        .send({ title: "Second Module" });
       expect(res.status).toBe(201);
       expect(res.body.position).toBe(1);
 
       const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
       expect(list.body.total).toBe(2);
-      expect(list.body.data.map((m) => m.title)).toEqual([seed.module.title, 'Second Module']);
+      expect(list.body.data.map((m) => m.title)).toEqual([seed.module.title, "Second Module"]);
     });
 
-    it('does not shift existing modules to a lower position', async () => {
+    it("does not shift existing modules to a lower position", async () => {
       const before = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
       expect(before.body.total).toBe(1);
       expect(before.body.data[0].position).toBe(0);
 
       await request(profApp)
         .post(`/api/courses/${seed.course.id}/modules`)
-        .send({ title: 'Appended' });
+        .send({ title: "Appended" });
 
       const after = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
       expect(after.body.total).toBe(2);
@@ -89,10 +145,10 @@ describe('Modules routes', () => {
       expect(original.position).toBe(0);
     });
 
-    it('honors an explicit position when supplied', async () => {
+    it("honors an explicit position when supplied", async () => {
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/modules`)
-        .send({ title: 'Pinned', position: 5 });
+        .send({ title: "Pinned", position: 5 });
       expect(res.status).toBe(201);
       expect(res.body.position).toBe(5);
     });
@@ -100,19 +156,19 @@ describe('Modules routes', () => {
 
   // ── PUT /api/courses/:courseId/modules/order (reorder, #1047) ──────
 
-  describe('PUT /api/courses/:courseId/modules/order', () => {
+  describe("PUT /api/courses/:courseId/modules/order", () => {
     async function seedThreeModules() {
       // seed.module is already at position 0; add two more.
       const b = await prisma.module.create({
-        data: { title: 'B', position: 1, courseOfferingId: seed.course.id },
+        data: { title: "B", position: 1, courseOfferingId: seed.course.id },
       });
       const c = await prisma.module.create({
-        data: { title: 'C', position: 2, courseOfferingId: seed.course.id },
+        data: { title: "C", position: 2, courseOfferingId: seed.course.id },
       });
       return { a: seed.module, b, c };
     }
 
-    it('reassigns positions 0..n-1 from the ordered id list', async () => {
+    it("reassigns positions 0..n-1 from the ordered id list", async () => {
       const { a, b, c } = await seedThreeModules();
       const res = await request(profApp)
         .put(`/api/courses/${seed.course.id}/modules/order`)
@@ -128,7 +184,7 @@ describe('Modules routes', () => {
       expect(list.body.data.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
     });
 
-    it('rejects an id set that does not match the course modules', async () => {
+    it("rejects an id set that does not match the course modules", async () => {
       const { a, b } = await seedThreeModules();
       const res = await request(profApp)
         .put(`/api/courses/${seed.course.id}/modules/order`)
@@ -136,7 +192,7 @@ describe('Modules routes', () => {
       expect(res.status).toBe(400);
     });
 
-    it('rejects duplicate ids', async () => {
+    it("rejects duplicate ids", async () => {
       const { a } = await seedThreeModules();
       const res = await request(profApp)
         .put(`/api/courses/${seed.course.id}/modules/order`)
@@ -144,15 +200,15 @@ describe('Modules routes', () => {
       expect(res.status).toBe(400);
     });
 
-    it('rejects a non-array orderedIds', async () => {
+    it("rejects a non-array orderedIds", async () => {
       await seedThreeModules();
       const res = await request(profApp)
         .put(`/api/courses/${seed.course.id}/modules/order`)
-        .send({ orderedIds: 'nope' });
+        .send({ orderedIds: "nope" });
       expect(res.status).toBe(400);
     });
 
-    it('returns 403 for a TA', async () => {
+    it("returns 403 for a TA", async () => {
       const { a, b, c } = await seedThreeModules();
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -165,13 +221,13 @@ describe('Modules routes', () => {
 
   // ── GET /api/courses/:courseId/modules ─────────────────────────────
 
-  describe('GET /api/courses/:courseId/modules', () => {
-    it('professor sees all modules (including unpublished)', async () => {
+  describe("GET /api/courses/:courseId/modules", () => {
+    it("professor sees all modules (including unpublished)", async () => {
       // Add an unpublished module
       const unpublishedModule = await prisma.module.create({
         data: {
-          title: 'Unpublished Module',
-          description: 'Draft',
+          title: "Unpublished Module",
+          description: "Draft",
           position: 1,
           isPublished: false,
           courseOfferingId: seed.course.id,
@@ -192,12 +248,12 @@ describe('Modules routes', () => {
       expect(res.body.data[0].progress).toBeUndefined();
     });
 
-    it('student sees only published modules with progress', async () => {
+    it("student sees only published modules with progress", async () => {
       // Add an unpublished module
       await prisma.module.create({
         data: {
-          title: 'Unpublished Module',
-          description: 'Draft',
+          title: "Unpublished Module",
+          description: "Draft",
           position: 1,
           isPublished: false,
           courseOfferingId: seed.course.id,
@@ -223,11 +279,11 @@ describe('Modules routes', () => {
       );
     });
 
-    it('TA sees all modules including unpublished (no progress object)', async () => {
+    it("TA sees all modules including unpublished (no progress object)", async () => {
       const unpublishedModule = await prisma.module.create({
         data: {
-          title: 'Unpublished Module',
-          description: 'Draft',
+          title: "Unpublished Module",
+          description: "Draft",
           position: 1,
           isPublished: false,
           courseOfferingId: seed.course.id,
@@ -249,18 +305,18 @@ describe('Modules routes', () => {
       expect(res.body.data[0].progress).toBeUndefined();
     });
 
-    it('TA cannot POST (create) a module', async () => {
+    it("TA cannot POST (create) a module", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
       const res = await request(taApp)
         .post(`/api/courses/${seed.course.id}/modules`)
-        .send({ title: 'TA Module', position: 5 });
+        .send({ title: "TA Module", position: 5 });
 
       expect(res.status).toBe(403);
     });
 
-    it('returns 403 for non-member', async () => {
+    it("returns 403 for non-member", async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
 
@@ -269,11 +325,11 @@ describe('Modules routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 403 for TA not enrolled in this course', async () => {
+    it("returns 403 for TA not enrolled in this course", async () => {
       const otherSeed = await seedMinimalCourse(null);
       const ta = makeTA();
       await prisma.courseEnrollment.create({
-        data: { courseOfferingId: otherSeed.course.id, userId: ta.id, role: 'TA' },
+        data: { courseOfferingId: otherSeed.course.id, userId: ta.id, role: "TA" },
       });
       const taApp = await createApp({ mockUser: ta });
 
@@ -283,11 +339,11 @@ describe('Modules routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('ADMIN (not enrolled/assigned) sees all modules including unpublished (#781)', async () => {
+    it("ADMIN (not enrolled/assigned) sees all modules including unpublished (#781)", async () => {
       const unpublishedModule = await prisma.module.create({
         data: {
-          title: 'Unpublished Module',
-          description: 'Draft',
+          title: "Unpublished Module",
+          description: "Draft",
           position: 1,
           isPublished: false,
           courseOfferingId: seed.course.id,
@@ -312,17 +368,17 @@ describe('Modules routes', () => {
 
   // ── GET /api/modules/:id ──────────────────────────────────────────
 
-  describe('GET /api/modules/:id', () => {
-    it('returns a single module with courseOfferingId', async () => {
+  describe("GET /api/modules/:id", () => {
+    it("returns a single module with courseOfferingId", async () => {
       const res = await request(profApp).get(`/api/modules/${seed.module.id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(seed.module.id);
-      expect(res.body.title).toBe('Test Module');
+      expect(res.body.title).toBe("Test Module");
       expect(res.body.courseOfferingId).toBe(seed.course.id);
     });
 
-    it('TA sees unpublished module', async () => {
+    it("TA sees unpublished module", async () => {
       await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -333,7 +389,7 @@ describe('Modules routes', () => {
       expect(res.body.isPublished).toBe(false);
     });
 
-    it('student gets 403 on unpublished module', async () => {
+    it("student gets 403 on unpublished module", async () => {
       await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
@@ -343,7 +399,7 @@ describe('Modules routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('ADMIN (not enrolled/assigned) sees unpublished module (#781)', async () => {
+    it("ADMIN (not enrolled/assigned) sees unpublished module (#781)", async () => {
       await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
@@ -357,8 +413,8 @@ describe('Modules routes', () => {
 
   // ── PATCH /api/modules/:id/publish ────────────────────────────────
 
-  describe('PATCH /api/modules/:id/publish', () => {
-    it('publishes a module when parent course is published', async () => {
+  describe("PATCH /api/modules/:id/publish", () => {
+    it("publishes a module when parent course is published", async () => {
       // Unpublish the module first
       await prisma.module.update({
         where: { id: seed.module.id },
@@ -371,7 +427,7 @@ describe('Modules routes', () => {
       expect(res.body.isPublished).toBe(true);
     });
 
-    it('TA cannot publish a module', async () => {
+    it("TA cannot publish a module", async () => {
       await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -381,7 +437,7 @@ describe('Modules routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 400 when parent course is not published', async () => {
+    it("returns 400 when parent course is not published", async () => {
       // Unpublish the parent course (Core-owned, #1072 step 4) and the module
       vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
         id: seed.course.coreOfferingId,
@@ -401,8 +457,8 @@ describe('Modules routes', () => {
 
   // ── PATCH /api/modules/:id/unpublish ──────────────────────────────
 
-  describe('PATCH /api/modules/:id/unpublish', () => {
-    it('unpublishes a module and cascades to lessons', async () => {
+  describe("PATCH /api/modules/:id/unpublish", () => {
+    it("unpublishes a module and cascades to lessons", async () => {
       const res = await request(profApp).patch(`/api/modules/${seed.module.id}/unpublish`);
 
       expect(res.status).toBe(200);
@@ -415,7 +471,7 @@ describe('Modules routes', () => {
       expect(updatedLesson.isPublished).toBe(false);
     });
 
-    it('TA cannot unpublish a module', async () => {
+    it("TA cannot unpublish a module", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
@@ -427,101 +483,118 @@ describe('Modules routes', () => {
 
   // ── DELETE /api/modules/:id ───────────────────────────────────────
 
-  describe('DELETE /api/modules/:id', () => {
-    it('professor can delete their own module', async () => {
+  describe("DELETE /api/modules/:id", () => {
+    it("professor can delete their own module", async () => {
       const res = await request(profApp).delete(`/api/modules/${seed.module.id}`);
       expect(res.status).toBe(204);
       const found = await prisma.module.findUnique({ where: { id: seed.module.id } });
       expect(found).toBeNull();
     });
 
-    it('deleting a module cascades to its lessons', async () => {
+    it("deleting a module cascades to its lessons", async () => {
       const res = await request(profApp).delete(`/api/modules/${seed.module.id}`);
       expect(res.status).toBe(204);
       const lesson = await prisma.lesson.findUnique({ where: { id: seed.lesson.id } });
       expect(lesson).toBeNull();
     });
 
-    it('TA cannot delete a module', async () => {
+    it("TA cannot delete a module", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).delete(`/api/modules/${seed.module.id}`);
       expect(res.status).toBe(403);
     });
 
-    it('non-instructor cannot delete', async () => {
+    it("non-instructor cannot delete", async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
       const res = await request(otherApp).delete(`/api/modules/${seed.module.id}`);
       expect(res.status).toBe(403);
     });
 
-    it('ADMIN can delete any module', async () => {
+    it("ADMIN can delete any module", async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
       const res = await request(adminApp).delete(`/api/modules/${seed.module.id}`);
       expect(res.status).toBe(204);
     });
 
-    it('returns 404 for non-existent module', async () => {
-      const res = await request(profApp).delete('/api/modules/9999999');
+    it("returns 404 for non-existent module", async () => {
+      const res = await request(profApp).delete("/api/modules/9999999");
       expect(res.status).toBe(404);
     });
   });
 
   // ── PATCH /api/modules/:id (update) ───────────────────────────────
 
-  describe('PATCH /api/modules/:id', () => {
-    it('professor can update title and description', async () => {
+  describe("PATCH /api/modules/:id", () => {
+    it("denies authoring when a stale local instructor is demoted in Core", async () => {
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "denied",
+        role: "TA",
+      });
+
       const res = await request(profApp)
         .patch(`/api/modules/${seed.module.id}`)
-        .send({ title: 'Renamed module', description: 'New description' });
-      expect(res.status).toBe(200);
-      expect(res.body.title).toBe('Renamed module');
-      const found = await prisma.module.findUnique({ where: { id: seed.module.id } });
-      expect(found.title).toBe('Renamed module');
-      expect(found.description).toBe('New description');
+        .send({ title: "Must not persist" });
+
+      expect(res.status).toBe(403);
+      expect(await prisma.module.findUnique({ where: { id: seed.module.id } })).toMatchObject({
+        title: "Test Module",
+      });
     });
 
-    it('returns 400 when nothing to update', async () => {
+    it("professor can update title and description", async () => {
+      const res = await request(profApp)
+        .patch(`/api/modules/${seed.module.id}`)
+        .send({ title: "Renamed module", description: "New description" });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe("Renamed module");
+      const found = await prisma.module.findUnique({ where: { id: seed.module.id } });
+      expect(found.title).toBe("Renamed module");
+      expect(found.description).toBe("New description");
+    });
+
+    it("returns 400 when nothing to update", async () => {
       const res = await request(profApp).patch(`/api/modules/${seed.module.id}`).send({});
       expect(res.status).toBe(400);
     });
 
-    it('returns 400 for an empty title', async () => {
+    it("returns 400 for an empty title", async () => {
       const res = await request(profApp)
         .patch(`/api/modules/${seed.module.id}`)
-        .send({ title: '' });
+        .send({ title: "" });
       expect(res.status).toBe(400);
     });
 
-    it('TA cannot update a module', async () => {
+    it("TA cannot update a module", async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp)
         .patch(`/api/modules/${seed.module.id}`)
-        .send({ title: 'Nope' });
+        .send({ title: "Nope" });
       expect(res.status).toBe(403);
     });
 
-    it('non-instructor cannot update', async () => {
+    it("non-instructor cannot update", async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
       const res = await request(otherApp)
         .patch(`/api/modules/${seed.module.id}`)
-        .send({ title: 'Nope' });
+        .send({ title: "Nope" });
       expect(res.status).toBe(403);
     });
 
-    it('returns 404 for non-existent module', async () => {
-      const res = await request(profApp).patch('/api/modules/9999999').send({ title: 'x' });
+    it("returns 404 for non-existent module", async () => {
+      const res = await request(profApp).patch("/api/modules/9999999").send({ title: "x" });
       expect(res.status).toBe(404);
     });
   });
 
   // ── UNIT_ADMIN access ─────────────────────────────────────────────
 
-  describe('UNIT_ADMIN access', () => {
+  describe("UNIT_ADMIN access", () => {
     let coscCourse;
     let mathCourse;
     let unitAdmin;
@@ -529,30 +602,40 @@ describe('Modules routes', () => {
 
     // `department` is Core-owned (#1072 step 4) — stub `fetchCoreCourseSafe`
     // to resolve it per `coreOfferingId`, keyed on a fixed lookup table.
-    const departmentByCoreOfferingId = { 'core-cosc': 'COSC', 'core-math': 'MATH' };
+    const departmentByCoreOfferingId = { "core-cosc": "COSC", "core-math": "MATH" };
 
     beforeEach(async () => {
       coscCourse = await prisma.courseOffering.create({
-        data: { coreOfferingId: 'core-cosc' },
+        data: { coreOfferingId: "core-cosc" },
       });
       mathCourse = await prisma.courseOffering.create({
-        data: { coreOfferingId: 'core-math' },
+        data: { coreOfferingId: "core-math" },
       });
       await prisma.module.create({
-        data: { title: 'COSC Module', position: 0, isPublished: true, courseOfferingId: coscCourse.id },
+        data: {
+          title: "COSC Module",
+          position: 0,
+          isPublished: true,
+          courseOfferingId: coscCourse.id,
+        },
       });
       await prisma.module.create({
-        data: { title: 'MATH Module', position: 0, isPublished: true, courseOfferingId: mathCourse.id },
+        data: {
+          title: "MATH Module",
+          position: 0,
+          isPublished: true,
+          courseOfferingId: mathCourse.id,
+        },
       });
       vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
         id: coreOfferingId,
         department: departmentByCoreOfferingId[coreOfferingId] ?? null,
       }));
-      unitAdmin = makeUnitAdmin(['COSC']);
+      unitAdmin = makeUnitAdmin(["COSC"]);
       unitAdminApp = await createApp({ mockUser: unitAdmin });
     });
 
-    it('sees modules for a course in their authorizedUnits', async () => {
+    it("sees modules for a course in their authorizedUnits", async () => {
       const res = await request(unitAdminApp).get(`/api/courses/${coscCourse.id}/modules`);
       expect(res.status).toBe(200);
       expect(res.body.total).toBe(1);
@@ -560,42 +643,57 @@ describe('Modules routes', () => {
       expect(res.body.data[0].progress).toBeUndefined();
     });
 
-    it('gets 403 for a course outside their authorizedUnits', async () => {
+    it("gets 403 for a course outside their authorizedUnits", async () => {
       const res = await request(unitAdminApp).get(`/api/courses/${mathCourse.id}/modules`);
       expect(res.status).toBe(403);
     });
 
-    it('creates a module on a COSC course (issue #307 integration spec)', async () => {
+    it("creates a module on a COSC course (issue #307 integration spec)", async () => {
       const res = await request(unitAdminApp)
         .post(`/api/courses/${coscCourse.id}/modules`)
-        .send({ title: 'New COSC Module', position: 1 });
+        .send({ title: "New COSC Module", position: 1 });
       expect(res.status).toBe(201);
-      expect(res.body.title).toBe('New COSC Module');
+      expect(res.body.title).toBe("New COSC Module");
     });
 
-    it('gets 403 when creating a module on a MATH course', async () => {
+    it("returns 503 and does not write when live Core authorization is unavailable", async () => {
+      const before = await prisma.module.count({ where: { courseOfferingId: coscCourse.id } });
+      vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error("Core unavailable"));
+
+      const res = await request(unitAdminApp)
+        .post(`/api/courses/${coscCourse.id}/modules`)
+        .send({ title: "Must Not Write", position: 1 });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("COURSE_AUTH_UNAVAILABLE");
+      expect(await prisma.module.count({ where: { courseOfferingId: coscCourse.id } })).toBe(
+        before,
+      );
+    });
+
+    it("gets 403 when creating a module on a MATH course", async () => {
       const res = await request(unitAdminApp)
         .post(`/api/courses/${mathCourse.id}/modules`)
-        .send({ title: 'New MATH Module', position: 1 });
+        .send({ title: "New MATH Module", position: 1 });
       expect(res.status).toBe(403);
     });
 
-    it('UNIT_ADMIN with no authorizedUnits gets 403 on any course', async () => {
+    it("UNIT_ADMIN with no authorizedUnits gets 403 on any course", async () => {
       const emptyAdmin = makeUnitAdmin([]);
       const emptyAdminApp = await createApp({ mockUser: emptyAdmin });
       const res = await request(emptyAdminApp).get(`/api/courses/${coscCourse.id}/modules`);
       expect(res.status).toBe(403);
     });
 
-    it('UNIT_ADMIN cannot POST to a course with no department set', async () => {
+    it("UNIT_ADMIN cannot POST to a course with no department set", async () => {
       // 'core-no-dept' isn't in departmentByCoreOfferingId, so the mock
       // resolves it with `department: null` — never a match.
       const noDeptCourse = await prisma.courseOffering.create({
-        data: { coreOfferingId: 'core-no-dept' },
+        data: { coreOfferingId: "core-no-dept" },
       });
       const res = await request(unitAdminApp)
         .post(`/api/courses/${noDeptCourse.id}/modules`)
-        .send({ title: 'Module', position: 0 });
+        .send({ title: "Module", position: 0 });
       expect(res.status).toBe(403);
     });
   });

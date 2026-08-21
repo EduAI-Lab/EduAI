@@ -14,8 +14,8 @@
  *
  * Related: `app/lib/api.ts` (`Paginated<T>`), `app/routes/instructor.tsx`.
  */
-import { Button } from '@eduai/ui';
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { Button } from "@eduai/ui";
+import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 
 export type PaginationControlsProps = {
   /** 1-based current page. */
@@ -50,10 +50,7 @@ export function PaginationControls({
   const rangeEnd = Math.min(clampedPage * pageSize, total);
 
   return (
-    <nav
-      className="flex items-center justify-between gap-4 pt-2"
-      aria-label="Pagination"
-    >
+    <nav className="flex items-center justify-between gap-4 pt-2" aria-label="Pagination">
       <p className="text-sm text-muted-foreground">
         Showing {rangeStart}–{rangeEnd} of {total}
       </p>

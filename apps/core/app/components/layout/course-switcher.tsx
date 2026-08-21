@@ -15,7 +15,6 @@ const COURSE_PICKER_QUERY = "page=1&pageSize=200";
 /** Matches the debounce the admin table hooks use, so search feels consistent. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-
 type CoreCourse = { id: string; code: string; name: string };
 
 export function CourseSwitcher({

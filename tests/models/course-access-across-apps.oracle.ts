@@ -24,12 +24,7 @@ export type CourseAccessApp = "core" | "ai-tutor" | "question-maker";
 
 export type CourseAccessRow = {
   Role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
-  Enrollment:
-    | "none"
-    | "inactive"
-    | "active-INSTRUCTOR"
-    | "active-TA"
-    | "active-STUDENT";
+  Enrollment: "none" | "inactive" | "active-INSTRUCTOR" | "active-TA" | "active-STUDENT";
   CourseState: "deleted" | "published" | "unpublished";
   UnitMatch: "in-unit" | "out-of-unit" | "null-dept";
   TaWidening: "plain-STUDENT" | "STUDENT-with-TA-enrollment";
@@ -67,20 +62,17 @@ export function platformRoleForRow(
  * App role floor — the only intentional per-app difference in the oracle.
  * Mirrors QM_AUTHORIZED = ADMIN | UNIT_ADMIN | INSTRUCTOR.
  */
-export function passesAppRoleFloor(
-  app: CourseAccessApp,
-  platformRole: string,
-): boolean {
+export function passesAppRoleFloor(app: CourseAccessApp, platformRole: string): boolean {
   if (app === "question-maker") {
-    return platformRole === "ADMIN" || platformRole === "UNIT_ADMIN" || platformRole === "INSTRUCTOR";
+    return (
+      platformRole === "ADMIN" || platformRole === "UNIT_ADMIN" || platformRole === "INSTRUCTOR"
+    );
   }
   return true;
 }
 
 /** Effective enrollment after TaWidening (TA-parity widening). */
-export function effectiveEnrollment(
-  row: CourseAccessRow,
-): CourseAccessRow["Enrollment"] {
+export function effectiveEnrollment(row: CourseAccessRow): CourseAccessRow["Enrollment"] {
   if (row.TaWidening === "STUDENT-with-TA-enrollment") return "active-TA";
   return row.Enrollment;
 }
@@ -139,10 +131,7 @@ export function courseAccessOracle(
 }
 
 /** Compact row label for failure messages. */
-export function formatCourseAccessRow(
-  row: CourseAccessRow,
-  app?: CourseAccessApp,
-): string {
+export function formatCourseAccessRow(row: CourseAccessRow, app?: CourseAccessApp): string {
   return [
     ...(app ? [`App=${app}`] : []),
     `Role=${row.Role}`,

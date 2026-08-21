@@ -46,7 +46,11 @@ export type AiChatGateRow = {
 };
 
 export function isPublishChainOpen(row: AiChatGateRow): boolean {
-  return row.CoursePublishedLive === "yes" && row.ModulePublished === "yes" && row.LessonPublished === "yes";
+  return (
+    row.CoursePublishedLive === "yes" &&
+    row.ModulePublished === "yes" &&
+    row.LessonPublished === "yes"
+  );
 }
 
 /** True once role/enrollment/publish admit the request — i.e. the point where `ModeEnabled`/`SessionOwnership` become reachable at all. */

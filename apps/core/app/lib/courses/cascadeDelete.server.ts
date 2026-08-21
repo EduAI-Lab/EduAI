@@ -58,7 +58,10 @@ async function pushDeleteToExtension(target: ExtensionTarget, courseId: string):
 /** Fires cascade-delete calls to QM and AI Tutor in parallel; never throws. */
 export async function cascadeDeleteToExtensions(courseId: string): Promise<void> {
   await Promise.allSettled([
-    pushDeleteToExtension({ name: "question-maker", baseUrl: process.env.QM_BACKEND_URL }, courseId),
+    pushDeleteToExtension(
+      { name: "question-maker", baseUrl: process.env.QM_BACKEND_URL },
+      courseId,
+    ),
     pushDeleteToExtension({ name: "ai-tutor", baseUrl: process.env.AI_TUTOR_SERVER_URL }, courseId),
   ]);
 }

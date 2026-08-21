@@ -21,10 +21,7 @@ const DISPLAY_BLOCK_RE = /(\$\$[\s\S]*?\$\$)/g;
 const INLINE_MATH_RE = /(?<!\\)\$([^$\n]+?)(?<!\\)\$/g;
 
 function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
+  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
 function isInsideExistingMath(text: string, index: number): boolean {

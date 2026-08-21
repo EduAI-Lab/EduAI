@@ -9,6 +9,12 @@ import {
 } from "~/lib/redact.server";
 
 describe("redactSecretValuesInString", () => {
+  it("redacts provider keys embedded in unstructured error prose", () => {
+    expect(redactSecretValuesInString("provider rejected key sk-do-not-leak")).toBe(
+      `provider rejected key ${REDACTED_VALUE}`,
+    );
+  });
+
   it("redacts Bearer tokens", () => {
     expect(redactSecretValuesInString("Authorization: Bearer abc.def.ghi")).toBe(
       `Authorization: Bearer ${REDACTED_VALUE}`,
@@ -66,9 +72,9 @@ describe("redactSecretValuesInString", () => {
   });
 
   it("redacts token query params", () => {
-    expect(
-      redactSecretValuesInString("https://api.example.com/x?access_token=sekret&ok=1"),
-    ).toBe(`https://api.example.com/x?access_token=${REDACTED_VALUE}&ok=1`);
+    expect(redactSecretValuesInString("https://api.example.com/x?access_token=sekret&ok=1")).toBe(
+      `https://api.example.com/x?access_token=${REDACTED_VALUE}&ok=1`,
+    );
   });
 
   it("redacts an OAuth client_secret query param", () => {
@@ -142,9 +148,9 @@ describe("redactSecretValuesInString", () => {
         `{"credentials":"${REDACTED_VALUE}"}`,
       );
       // Deeply nested, and the pair that follows the literal is still scanned.
-      expect(
-        redactSecretValuesInString('{"secret":{"a":{"b":["x"]}},"courseId":"CPSC110"}'),
-      ).toBe(`{"secret":"${REDACTED_VALUE}","courseId":"CPSC110"}`);
+      expect(redactSecretValuesInString('{"secret":{"a":{"b":["x"]}},"courseId":"CPSC110"}')).toBe(
+        `{"secret":"${REDACTED_VALUE}","courseId":"CPSC110"}`,
+      );
       expect(redactSecretValuesInString('{"token":{"a":1},"apiKey":"zz"}')).toBe(
         `{"token":"${REDACTED_VALUE}","apiKey":"${REDACTED_VALUE}"}`,
       );

@@ -2,19 +2,19 @@
  * Unit tests for the internal (Core → QM) cascade-delete endpoint (§802).
  * Mounts internalRoutes in an isolated Express app — no full app.js, no DB.
  */
-import express from 'express';
-import request from 'supertest';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import express from "express";
+import request from "supertest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 
-vi.mock('../../src/config/settings.js', () => {
-  const cfg = { eduaiApiKey: 'test-service-key' };
+vi.mock("../../src/config/settings.js", () => {
+  const cfg = { eduaiApiKey: "test-service-key" };
   return { config: cfg, default: cfg };
 });
 
 const mockCourseFindOne = vi.fn();
 const mockCourseDelete = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('../../src/config/database.js', () => ({
+vi.mock("../../src/config/database.js", () => ({
   prisma: {
     course: {
       findUnique: (...args) => mockCourseFindOne(...args),
@@ -23,12 +23,12 @@ vi.mock('../../src/config/database.js', () => ({
   },
 }));
 
-const { default: internalRoutes } = await import('../../src/routes/internal.js');
+const { default: internalRoutes } = await import("../../src/routes/internal.js");
 
 function buildApp() {
   const app = express();
   app.use(express.json());
-  app.use('/api/internal', internalRoutes);
+  app.use("/api/internal", internalRoutes);
   app.use((err, req, res, _next) => res.status(500).json({ success: false, error: err.message }));
   return app;
 }
@@ -40,53 +40,53 @@ beforeEach(() => {
   mockCourseDelete.mockReset().mockResolvedValue(undefined);
 });
 
-describe('DELETE /api/internal/courses/:coreCourseId', () => {
-  it('rejects a request with no Authorization header', async () => {
-    const res = await request(app).delete('/api/internal/courses/core-cuid-1');
+describe("DELETE /api/internal/courses/:coreCourseId", () => {
+  it("rejects a request with no Authorization header", async () => {
+    const res = await request(app).delete("/api/internal/courses/core-cuid-1");
     expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ success: false, error: 'MISSING_SERVICE_KEY' });
+    expect(res.body).toMatchObject({ success: false, error: "MISSING_SERVICE_KEY" });
     expect(mockCourseFindOne).not.toHaveBeenCalled();
   });
 
-  it('rejects a request with the wrong service key', async () => {
+  it("rejects a request with the wrong service key", async () => {
     const res = await request(app)
-      .delete('/api/internal/courses/core-cuid-1')
-      .set('Authorization', 'Bearer wrong-key');
+      .delete("/api/internal/courses/core-cuid-1")
+      .set("Authorization", "Bearer wrong-key");
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ success: false, error: 'INVALID_SERVICE_KEY' });
+    expect(res.body).toMatchObject({ success: false, error: "INVALID_SERVICE_KEY" });
     expect(mockCourseFindOne).not.toHaveBeenCalled();
   });
 
-  it('destroys the linked QM course and reports deleted: true', async () => {
-    mockCourseFindOne.mockResolvedValue({ id: 7, coreCourseId: 'core-cuid-1' });
+  it("destroys the linked QM course and reports deleted: true", async () => {
+    mockCourseFindOne.mockResolvedValue({ id: 7, coreCourseId: "core-cuid-1" });
 
     const res = await request(app)
-      .delete('/api/internal/courses/core-cuid-1')
-      .set('Authorization', 'Bearer test-service-key');
+      .delete("/api/internal/courses/core-cuid-1")
+      .set("Authorization", "Bearer test-service-key");
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, deleted: true });
-    expect(mockCourseFindOne).toHaveBeenCalledWith({ where: { coreCourseId: 'core-cuid-1' } });
+    expect(mockCourseFindOne).toHaveBeenCalledWith({ where: { coreCourseId: "core-cuid-1" } });
     expect(mockCourseDelete).toHaveBeenCalledWith({ where: { id: 7 } });
   });
 
-  it('is idempotent: reports deleted: false when no QM course is linked', async () => {
+  it("is idempotent: reports deleted: false when no QM course is linked", async () => {
     mockCourseFindOne.mockResolvedValue(null);
 
     const res = await request(app)
-      .delete('/api/internal/courses/core-cuid-unknown')
-      .set('Authorization', 'Bearer test-service-key');
+      .delete("/api/internal/courses/core-cuid-unknown")
+      .set("Authorization", "Bearer test-service-key");
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, deleted: false });
   });
 
-  it('passes DB errors to the error handler', async () => {
-    mockCourseFindOne.mockRejectedValue(new Error('connection lost'));
+  it("passes DB errors to the error handler", async () => {
+    mockCourseFindOne.mockRejectedValue(new Error("connection lost"));
 
     const res = await request(app)
-      .delete('/api/internal/courses/core-cuid-1')
-      .set('Authorization', 'Bearer test-service-key');
+      .delete("/api/internal/courses/core-cuid-1")
+      .set("Authorization", "Bearer test-service-key");
 
     expect(res.status).toBe(500);
   });

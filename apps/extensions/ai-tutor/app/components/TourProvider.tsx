@@ -1,8 +1,16 @@
-import type { Driver, PopoverDOM } from 'driver.js';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import 'driver.js/dist/driver.css';
-import { tourDefinitions } from '~/lib/tours/tour-definitions';
+import type { Driver, PopoverDOM } from "driver.js";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useLocation, useNavigate } from "react-router";
+import "driver.js/dist/driver.css";
+import { tourDefinitions } from "~/lib/tours/tour-definitions";
 import {
   createTourSession,
   findStepIndex,
@@ -11,11 +19,11 @@ import {
   moveSessionAfterMissingTarget,
   storeStepSelection,
   type ActiveTourSession,
-} from '~/lib/tours/tour-engine';
-import { markTourCompleted, resolveSuggestedTourId } from '~/lib/tours/tour-storage';
-import { useLocalUser } from '~/hooks/useLocalUser';
-import type { AppTourDefinition, AppTourId } from '~/lib/tours/tour-types';
-import { waitForElement } from '~/lib/tours/tour-utils';
+} from "~/lib/tours/tour-engine";
+import { markTourCompleted, resolveSuggestedTourId } from "~/lib/tours/tour-storage";
+import { useLocalUser } from "~/hooks/useLocalUser";
+import type { AppTourDefinition, AppTourId } from "~/lib/tours/tour-types";
+import { waitForEitherElement, waitForElement } from "~/lib/tours/tour-utils";
 
 type TourContextValue = {
   activeTourId: AppTourId | null;
@@ -29,9 +37,9 @@ type TourContextValue = {
 const AppTourContext = createContext<TourContextValue | null>(null);
 
 function applyPopoverTheme(popover: PopoverDOM) {
-  popover.previousButton.classList.add('driver-tour-button', 'driver-tour-button-secondary');
-  popover.nextButton.classList.add('driver-tour-button', 'driver-tour-button-primary');
-  popover.closeButton.setAttribute('aria-label', 'Close tour');
+  popover.previousButton.classList.add("driver-tour-button", "driver-tour-button-secondary");
+  popover.nextButton.classList.add("driver-tour-button", "driver-tour-button-primary");
+  popover.closeButton.setAttribute("aria-label", "Close tour");
 }
 
 export function TourProvider({ children }: { children: React.ReactNode }) {
@@ -61,7 +69,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const ensureDriver = useCallback(async () => {
     if (driverRef.current) return driverRef.current;
 
-    const { driver } = await import('driver.js');
+    const { driver } = await import("driver.js");
     driverRef.current = driver({
       animate: true,
       allowClose: true,
@@ -69,14 +77,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         stopTour();
       },
       overlayOpacity: 0.62,
-      overlayColor: 'rgb(20 14 10)',
+      overlayColor: "rgb(20 14 10)",
       smoothScroll: true,
       stagePadding: 12,
       stageRadius: 20,
       popoverOffset: 18,
       showProgress: true,
       allowKeyboardControl: true,
-      popoverClass: 'driver-popover-aitutor',
+      popoverClass: "driver-popover-aitutor",
       onDestroyStarted: () => {
         if (suppressDestroyedRef.current) return;
         clearTourState();
@@ -99,10 +107,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     destroyDriver(true);
   }, [clearTourState, destroyDriver]);
 
-  const completeTour = useCallback((tour: AppTourDefinition) => {
-    markTourCompleted(tour);
-    stopTour();
-  }, [stopTour]);
+  const completeTour = useCallback(
+    (tour: AppTourDefinition) => {
+      markTourCompleted(tour);
+      stopTour();
+    },
+    [stopTour],
+  );
 
   const showStep = useCallback(async () => {
     const session = sessionRef.current;
@@ -131,7 +142,26 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     const token = ++renderTokenRef.current;
 
     try {
-      const element = await waitForElement(step.target);
+      let element: Element;
+      if (step.emptyTarget) {
+        // Race the target against its empty-state sentinel so an empty course
+        // (no modules/lessons) skips this gate at once instead of stalling on
+        // the full timeout, then dropping its dependent steps (#1572).
+        const result = await waitForEitherElement(step.target, step.emptyTarget);
+        if (renderTokenRef.current !== token || sessionRef.current !== session) return;
+        if (result.matched === "empty") {
+          const nextIndex = moveSessionAfterMissingTarget(session);
+          if (nextIndex == null) {
+            completeTour(session.tour);
+            return;
+          }
+          void showStep();
+          return;
+        }
+        element = result.element;
+      } else {
+        element = await waitForElement(step.target);
+      }
       if (renderTokenRef.current !== token || sessionRef.current !== session) return;
 
       const projectedSession: ActiveTourSession = {
@@ -139,11 +169,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         context: { ...session.context },
       };
       storeStepSelection(projectedSession, element);
-      const projectedHasNext = findStepIndex(
-        projectedSession,
-        projectedSession.stepIndex + 1,
-        1,
-      ) != null;
+      const projectedHasNext =
+        findStepIndex(projectedSession, projectedSession.stepIndex + 1, 1) != null;
 
       const driver = await ensureDriver();
       if (renderTokenRef.current !== token || sessionRef.current !== session) return;
@@ -156,17 +183,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         popover: {
           title: step.title,
           description: step.description,
-          side: step.side ?? 'bottom',
-          align: step.align ?? 'center',
-          showButtons: [
-            ...(hasPrevious ? (['previous'] as const) : []),
-            'next',
-            'close',
-          ],
+          side: step.side ?? "bottom",
+          align: step.align ?? "center",
+          showButtons: [...(hasPrevious ? (["previous"] as const) : []), "next", "close"],
           progressText: `${session.stepIndex + 1} of ${session.tour.steps.length}`,
-          nextBtnText: projectedHasNext ? 'Continue' : 'Finish',
-          prevBtnText: 'Back',
-          doneBtnText: 'Finish',
+          nextBtnText: projectedHasNext ? "Continue" : "Finish",
+          prevBtnText: "Back",
+          doneBtnText: "Finish",
           onPopoverRender: applyPopoverTheme,
           onCloseClick: () => stopTour(),
           onPrevClick: () => {
@@ -206,13 +229,16 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     }
   }, [completeTour, ensureDriver, location.pathname, navigate, stopTour]);
 
-  const startTour = useCallback((tourId: AppTourId) => {
-    const tour = tourDefinitions[tourId];
-    sessionRef.current = createTourSession(tour, location.pathname);
-    setActiveTourId(tourId);
-    destroyDriver(true);
-    void showStep();
-  }, [destroyDriver, location.pathname, showStep]);
+  const startTour = useCallback(
+    (tourId: AppTourId) => {
+      const tour = tourDefinitions[tourId];
+      sessionRef.current = createTourSession(tour, location.pathname);
+      setActiveTourId(tourId);
+      destroyDriver(true);
+      void showStep();
+    },
+    [destroyDriver, location.pathname, showStep],
+  );
 
   const suggestedTourId = useMemo<AppTourId | null>(
     () => resolveSuggestedTourId(user?.role, location.pathname),
@@ -236,30 +262,32 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     }
   }, [location.pathname, showStep]);
 
-  useEffect(() => () => {
-    destroyDriver(true);
-  }, [destroyDriver]);
-
-  const value = useMemo<TourContextValue>(() => ({
-    activeTourId,
-    isRunning: activeTourId != null,
-    suggestedTourId,
-    startTour,
-    startSuggestedTour,
-    stopTour,
-  }), [activeTourId, startSuggestedTour, startTour, stopTour, suggestedTourId]);
-
-  return (
-    <AppTourContext.Provider value={value}>
-      {children}
-    </AppTourContext.Provider>
+  useEffect(
+    () => () => {
+      destroyDriver(true);
+    },
+    [destroyDriver],
   );
+
+  const value = useMemo<TourContextValue>(
+    () => ({
+      activeTourId,
+      isRunning: activeTourId != null,
+      suggestedTourId,
+      startTour,
+      startSuggestedTour,
+      stopTour,
+    }),
+    [activeTourId, startSuggestedTour, startTour, stopTour, suggestedTourId],
+  );
+
+  return <AppTourContext.Provider value={value}>{children}</AppTourContext.Provider>;
 }
 
 export function useAppTour() {
   const context = useContext(AppTourContext);
   if (!context) {
-    throw new Error('useAppTour must be used within a TourProvider');
+    throw new Error("useAppTour must be used within a TourProvider");
   }
   return context;
 }

@@ -15,7 +15,7 @@
  * flip `disabled` mid-request while reordering) but dragging is switched off
  * via `useSortable({ disabled })` and a guarded drag-end handler.
  */
-import * as React from "react"
+import * as React from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -24,8 +24,8 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-} from "@dnd-kit/core"
-import { restrictToParentElement } from "@dnd-kit/modifiers"
+} from "@dnd-kit/core";
+import { restrictToParentElement } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   arrayMove,
@@ -33,21 +33,21 @@ import {
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import { IconGripVertical } from "@tabler/icons-react"
-import { cn } from "./utils"
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { IconGripVertical } from "@tabler/icons-react";
+import { cn } from "./utils";
 
 export interface SortableProviderProps {
   /** Item ids in their current display order. */
-  ids: number[]
+  ids: number[];
   /** Called with the full new order after a successful drop. */
-  onReorder: (orderedIds: number[]) => void
+  onReorder: (orderedIds: number[]) => void;
   /** Grids use rect strategy; vertical lists use list strategy. */
-  strategy?: "grid" | "list"
+  strategy?: "grid" | "list";
   /** When true, dragging is disabled (the context stays mounted). */
-  disabled?: boolean
-  children: React.ReactNode
+  disabled?: boolean;
+  children: React.ReactNode;
 }
 
 /**
@@ -55,7 +55,7 @@ export interface SortableProviderProps {
  * context can stay mounted while dragging is off (e.g. during a persist
  * request) without every caller having to thread `disabled` down twice.
  */
-const SortableDisabledContext = React.createContext(false)
+const SortableDisabledContext = React.createContext(false);
 
 export function SortableProvider({
   ids,
@@ -69,16 +69,16 @@ export function SortableProvider({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
+  );
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (disabled || !over || active.id === over.id) return
-    const oldIndex = ids.indexOf(Number(active.id))
-    const newIndex = ids.indexOf(Number(over.id))
-    if (oldIndex < 0 || newIndex < 0) return
-    onReorder(arrayMove(ids, oldIndex, newIndex))
-  }
+    const { active, over } = event;
+    if (disabled || !over || active.id === over.id) return;
+    const oldIndex = ids.indexOf(Number(active.id));
+    const newIndex = ids.indexOf(Number(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    onReorder(arrayMove(ids, oldIndex, newIndex));
+  };
 
   return (
     <DndContext
@@ -96,51 +96,51 @@ export function SortableProvider({
         </SortableDisabledContext.Provider>
       </SortableContext>
     </DndContext>
-  )
+  );
 }
 
 export interface SortableItemProps {
-  id: number
-  disabled?: boolean
-  className?: string
+  id: number;
+  disabled?: boolean;
+  className?: string;
   /**
    * Render prop for the item body. Spread `handleProps` onto the `DragHandle`
    * so only the handle initiates a drag; `isDragging` lets the body reflect the
    * active state.
    */
   children: (args: {
-    handleProps: Record<string, unknown>
-    isDragging: boolean
-  }) => React.ReactNode
+    handleProps: Record<string, unknown>;
+    isDragging: boolean;
+  }) => React.ReactNode;
 }
 
 export function SortableItem({ id, disabled = false, className, children }: SortableItemProps) {
-  const providerDisabled = React.useContext(SortableDisabledContext)
+  const providerDisabled = React.useContext(SortableDisabledContext);
   const { setNodeRef, transform, transition, attributes, listeners, isDragging } = useSortable({
     id,
     disabled: disabled || providerDisabled,
-  })
+  });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 30 : undefined,
     opacity: isDragging ? 0.85 : undefined,
-  }
+  };
 
   return (
     <div ref={setNodeRef} style={style} className={className}>
       {children({ handleProps: { ...attributes, ...listeners }, isDragging })}
     </div>
-  )
+  );
 }
 
 export interface DragHandleProps {
   /** The dnd-kit attributes + listeners from `SortableItem`'s render prop. */
-  handleProps: Record<string, unknown>
+  handleProps: Record<string, unknown>;
   /** Screen-reader label, e.g. "Drag to reorder module". */
-  label?: string
-  className?: string
+  label?: string;
+  className?: string;
 }
 
 /**
@@ -149,21 +149,19 @@ export interface DragHandleProps {
  * clickable *and* keyboard-activatable, so Enter/Space on the grip must start a
  * drag without also firing the card's navigation handler.
  */
-function isolate<E extends React.SyntheticEvent>(
-  handler: unknown,
-): (event: E) => void {
+function isolate<E extends React.SyntheticEvent>(handler: unknown): (event: E) => void {
   return (event: E) => {
-    if (typeof handler === "function") (handler as (e: E) => void)(event)
-    event.stopPropagation()
-  }
+    if (typeof handler === "function") (handler as (e: E) => void)(event);
+    event.stopPropagation();
+  };
 }
 
 export function DragHandle({ handleProps, label = "Drag to reorder", className }: DragHandleProps) {
   const { onClick, onKeyDown, onKeyUp, ...rest } = handleProps as {
-    onClick?: unknown
-    onKeyDown?: unknown
-    onKeyUp?: unknown
-  } & Record<string, unknown>
+    onClick?: unknown;
+    onKeyDown?: unknown;
+    onKeyUp?: unknown;
+  } & Record<string, unknown>;
 
   return (
     <button
@@ -184,5 +182,5 @@ export function DragHandle({ handleProps, label = "Drag to reorder", className }
     >
       <IconGripVertical size={16} aria-hidden="true" />
     </button>
-  )
+  );
 }

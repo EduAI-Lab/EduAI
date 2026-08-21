@@ -231,9 +231,7 @@ describe("DashboardView", () => {
     fireEvent.click(screen.getByText("Hello there"));
 
     expect(mockFetchChatTranscript).toHaveBeenCalledWith("chat-1");
-    await waitFor(() =>
-      expect(screen.getByText(/Jane Doe's conversation/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/Jane Doe's conversation/)).toBeInTheDocument());
 
     await waitFor(() => expect(screen.getByTestId("transcript-viewer")).toBeInTheDocument());
 

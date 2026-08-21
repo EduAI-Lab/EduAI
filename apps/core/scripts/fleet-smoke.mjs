@@ -81,9 +81,7 @@ async function checkHost({ url, pool }) {
       return { ok: false, id, pool, modelIds: [] };
     }
     const body = await res.json();
-    const modelIds = Array.isArray(body.data)
-      ? body.data.map((m) => m?.id).filter(Boolean)
-      : [];
+    const modelIds = Array.isArray(body.data) ? body.data.map((m) => m?.id).filter(Boolean) : [];
     const missing = expectedModels.filter(
       (m) => !modelIds.some((id) => id.toLowerCase() === m.toLowerCase()),
     );
@@ -121,7 +119,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Fleet smoke — ${targets.length} host(s), expected models: ${expectedModels.join(", ")}\n`);
+  console.log(
+    `Fleet smoke — ${targets.length} host(s), expected models: ${expectedModels.join(", ")}\n`,
+  );
 
   const results = [];
   for (const target of targets) {

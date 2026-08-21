@@ -28,7 +28,9 @@ function job(status: "RUNNING" | "SUCCESS" | "ERROR" | null): CronJobEntry {
     schedule: "",
     scheduleLabel: "",
     triggerEnabled: true,
-    lastRun: status ? { id: "r1", status, startedAt: new Date().toISOString(), finishedAt: null, message: null } : null,
+    lastRun: status
+      ? { id: "r1", status, startedAt: new Date().toISOString(), finishedAt: null, message: null }
+      : null,
   } as unknown as CronJobEntry;
 }
 

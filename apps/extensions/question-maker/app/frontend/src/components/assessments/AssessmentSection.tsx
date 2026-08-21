@@ -4,8 +4,8 @@
  * live in a single kebab menu so the surface stays calm. Header carries the primary
  * "New assessment" action plus an optional Canvas import.
  */
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   Dialog,
   DialogContent,
@@ -22,11 +22,11 @@ import {
   DropdownMenuSeparator,
   cn,
   EmptyState,
-} from '@eduai/ui';
-import { PermissionGate } from '@eduai/ui';
-import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
-import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { difficultySolidClass } from '@/lib/difficulty';
+} from "@eduai/ui";
+import { PermissionGate } from "@eduai/ui";
+import { CourseNoAccessAlert } from "@/components/rbac/CourseNoAccessAlert";
+import { useQmPermissionsForCourse } from "@/hooks/useQmPermissions";
+import { difficultySolidClass } from "@/lib/difficulty";
 import {
   IconPlus,
   IconDots,
@@ -43,10 +43,10 @@ import {
   IconFlask,
   IconPencil,
   IconCertificate,
-} from '@tabler/icons-react';
-import { Assessment, AssessmentGenerationParams } from '../../types/question';
-import { ListSkeleton } from '@/components/shared/Skeletons';
-import GenerateAssessmentModal from './GenerateAssessmentModal';
+} from "@tabler/icons-react";
+import { Assessment, AssessmentGenerationParams } from "../../types/question";
+import { ListSkeleton } from "@/components/shared/Skeletons";
+import GenerateAssessmentModal from "./GenerateAssessmentModal";
 
 interface AssessmentSectionProps {
   assessments: Assessment[];
@@ -68,30 +68,56 @@ const TYPE_ACCENT: Record<
   string,
   { dot: string; badge: string; bar: string; tile: string; Icon: typeof IconClipboardList }
 > = {
-  Quiz: { dot: 'bg-success-500', badge: 'bg-success-100 text-success-700', bar: 'border-l-[var(--color-success-500)]', tile: 'bg-success-100 text-success-700', Icon: IconClipboardList },
-  Lab: { dot: 'bg-secondary', badge: 'bg-secondary/15 text-secondary', bar: 'border-l-secondary', tile: 'bg-secondary/15 text-secondary', Icon: IconFlask },
-  Midterm: { dot: 'bg-warning-500', badge: 'bg-warning-100 text-warning-700', bar: 'border-l-[var(--color-warning-500)]', tile: 'bg-warning-100 text-warning-700', Icon: IconPencil },
-  Final: { dot: 'bg-error-500', badge: 'bg-error-100 text-error-700', bar: 'border-l-[var(--color-error-500)]', tile: 'bg-error-100 text-error-700', Icon: IconCertificate },
+  Quiz: {
+    dot: "bg-success-500",
+    badge: "bg-success-100 text-success-700",
+    bar: "border-l-[var(--color-success-500)]",
+    tile: "bg-success-100 text-success-700",
+    Icon: IconClipboardList,
+  },
+  Lab: {
+    dot: "bg-secondary",
+    badge: "bg-secondary/15 text-secondary",
+    bar: "border-l-secondary",
+    tile: "bg-secondary/15 text-secondary",
+    Icon: IconFlask,
+  },
+  Midterm: {
+    dot: "bg-warning-500",
+    badge: "bg-warning-100 text-warning-700",
+    bar: "border-l-[var(--color-warning-500)]",
+    tile: "bg-warning-100 text-warning-700",
+    Icon: IconPencil,
+  },
+  Final: {
+    dot: "bg-error-500",
+    badge: "bg-error-100 text-error-700",
+    bar: "border-l-[var(--color-error-500)]",
+    tile: "bg-error-100 text-error-700",
+    Icon: IconCertificate,
+  },
 };
 const typeAccent = (type: string) =>
   TYPE_ACCENT[type] ?? {
-    dot: 'bg-primary',
-    badge: 'bg-muted text-foreground',
-    bar: 'border-l-border',
-    tile: 'bg-muted text-foreground',
+    dot: "bg-primary",
+    badge: "bg-muted text-foreground",
+    bar: "border-l-border",
+    tile: "bg-muted text-foreground",
     Icon: IconClipboardList,
   };
 
 const countTotalQuestions = (assessment: Assessment): number =>
   (assessment.sections ?? []).reduce((acc, s) => acc + (s.sectionVariants ?? []).length, 0);
 
-const difficultyDistribution = (assessment: Assessment): { easy: number; medium: number; hard: number } => {
+const difficultyDistribution = (
+  assessment: Assessment,
+): { easy: number; medium: number; hard: number } => {
   const counts = { easy: 0, medium: 0, hard: 0 };
   (assessment.sections ?? []).forEach((section) => {
     (section.sectionVariants ?? []).forEach((link) => {
-      const diff = (link.variant?.difficulty ?? 'medium').toLowerCase();
-      if (diff === 'easy') counts.easy++;
-      else if (diff === 'hard') counts.hard++;
+      const diff = (link.variant?.difficulty ?? "medium").toLowerCase();
+      if (diff === "easy") counts.easy++;
+      else if (diff === "hard") counts.hard++;
       else counts.medium++;
     });
   });
@@ -110,12 +136,14 @@ function DifficultyBar({ easy, medium, hard }: { easy: number; medium: number; h
     return <div className="h-1.5 w-full rounded-full bg-muted" />;
   }
   const seg = (n: number, color: string, label: string) =>
-    n > 0 ? <span className={color} style={{ width: `${(n / total) * 100}%` }} title={`${label}: ${n}`} /> : null;
+    n > 0 ? (
+      <span className={color} style={{ width: `${(n / total) * 100}%` }} title={`${label}: ${n}`} />
+    ) : null;
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      {seg(easy, difficultySolidClass.easy, 'Easy')}
-      {seg(medium, difficultySolidClass.medium, 'Medium')}
-      {seg(hard, difficultySolidClass.hard, 'Hard')}
+      {seg(easy, difficultySolidClass.easy, "Easy")}
+      {seg(medium, difficultySolidClass.medium, "Medium")}
+      {seg(hard, difficultySolidClass.hard, "Hard")}
     </div>
   );
 }
@@ -134,8 +162,13 @@ export const AssessmentSection = ({
   onImportFromCanvas,
 }: AssessmentSectionProps) => {
   const navigate = useNavigate();
-  const { canManageAssessment, canExportAssessment, canUseVariantWorkflow, accessLoading, hasCourseAccess } =
-    useQmPermissionsForCourse(selectedCourseId ?? null);
+  const {
+    canManageAssessment,
+    canExportAssessment,
+    canUseVariantWorkflow,
+    accessLoading,
+    hasCourseAccess,
+  } = useQmPermissionsForCourse(selectedCourseId ?? null);
   const canWriteInCourse = hasCourseAccess && !accessLoading;
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isSavingBlueprint, setIsSavingBlueprint] = useState(false);
@@ -149,9 +182,10 @@ export const AssessmentSection = ({
 
   const exportDialogBlockReason = useMemo(() => {
     if (!exportDialogAssessment) return null;
-    if (countTotalQuestions(exportDialogAssessment) === 0) return 'No questions in this assessment.';
+    if (countTotalQuestions(exportDialogAssessment) === 0)
+      return "No questions in this assessment.";
     if (hasDraftQuestions(exportDialogAssessment))
-      return 'Cannot export until all draft questions are reviewed and published.';
+      return "Cannot export until all draft questions are reviewed and published.";
     return null;
   }, [exportDialogAssessment]);
 
@@ -178,24 +212,24 @@ export const AssessmentSection = ({
       await onAddAssessment(params);
       setIsGenerateModalOpen(false);
     } catch (error: any) {
-      setSaveError(error?.response?.data?.error || 'Failed to save assessment blueprint');
+      setSaveError(error?.response?.data?.error || "Failed to save assessment blueprint");
     } finally {
       setIsSavingBlueprint(false);
     }
   };
 
   const subtitle = isLoading
-    ? 'Loading assessments…'
+    ? "Loading assessments…"
     : !selectedCourseId
-      ? 'Select a course to manage assessments.'
+      ? "Select a course to manage assessments."
       : listedTotal > 0
-        ? `${listedTotal} assessment${listedTotal === 1 ? '' : 's'} · quizzes, labs, midterms & finals`
-        : 'Build quizzes, labs, midterms and finals from your question bank.';
+        ? `${listedTotal} assessment${listedTotal === 1 ? "" : "s"} · quizzes, labs, midterms & finals`
+        : "Build quizzes, labs, midterms and finals from your question bank.";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-testid="assessments-panel">
       {selectedCourseId && !accessLoading && !hasCourseAccess && (
-        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+        <CourseNoAccessAlert onGoToCourses={() => navigate("/courses")} />
       )}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -219,7 +253,7 @@ export const AssessmentSection = ({
               data-tour-id="add-assessment-btn"
             >
               <IconPlus className="size-4" />
-              {isSavingBlueprint ? 'Saving…' : 'New assessment'}
+              {isSavingBlueprint ? "Saving…" : "New assessment"}
             </Button>
           </div>
         </PermissionGate>
@@ -246,28 +280,37 @@ export const AssessmentSection = ({
                 tabIndex={0}
                 onClick={() => openBuilder(assessment)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     openBuilder(assessment);
                   }
                 }}
-                data-tour-id={index === 0 ? 'assessment-view-btn' : undefined}
+                data-tour-id={index === 0 ? "assessment-view-btn" : undefined}
                 className={cn(
-                  'group flex cursor-pointer flex-col gap-3 rounded-[var(--radius-xl)] border border-l-4 border-border bg-card p-5 shadow-[var(--shadow-2xs)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  "group flex cursor-pointer flex-col gap-3 rounded-[var(--radius-xl)] border border-l-4 border-border bg-card p-5 shadow-[var(--shadow-2xs)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   accent.bar,
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 space-y-1.5">
                     <div className="flex items-center gap-2.5">
-                      <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', accent.tile)}>
+                      <span
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                          accent.tile,
+                        )}
+                      >
                         <AccentIcon className="size-[18px]" aria-hidden />
                       </span>
                       <h3 className="truncate font-semibold text-foreground">{assessment.name}</h3>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge className={cn('border-transparent', accent.badge)}>{assessment.type}</Badge>
-                      {assessment.semester && <Badge variant="outline">{assessment.semester}</Badge>}
+                      <Badge className={cn("border-transparent", accent.badge)}>
+                        {assessment.type}
+                      </Badge>
+                      {assessment.semester && (
+                        <Badge variant="outline">{assessment.semester}</Badge>
+                      )}
                       {drafts && (
                         <Badge className="gap-1 border-transparent bg-warning-100 text-warning-700">
                           <IconAlertTriangle className="size-3" />
@@ -296,7 +339,9 @@ export const AssessmentSection = ({
                         )}
                         {showExport && (
                           <DropdownMenuItem
-                            onSelect={() => setTimeout(() => setExportDialogAssessment(assessment), 0)}
+                            onSelect={() =>
+                              setTimeout(() => setExportDialogAssessment(assessment), 0)
+                            }
                           >
                             <IconShare2 className="size-4" /> Export…
                           </DropdownMenuItem>
@@ -306,7 +351,12 @@ export const AssessmentSection = ({
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onSelect={() => setTimeout(() => onDeleteAssessment(assessment.id, assessment.name), 0)}
+                              onSelect={() =>
+                                setTimeout(
+                                  () => onDeleteAssessment(assessment.id, assessment.name),
+                                  0,
+                                )
+                              }
                             >
                               <IconTrash className="size-4" /> Delete
                             </DropdownMenuItem>
@@ -318,16 +368,20 @@ export const AssessmentSection = ({
                 </div>
 
                 {assessment.description && (
-                  <p className="line-clamp-2 text-sm text-muted-foreground">{assessment.description}</p>
+                  <p className="line-clamp-2 text-sm text-muted-foreground">
+                    {assessment.description}
+                  </p>
                 )}
 
                 <div className="mt-auto space-y-1.5 pt-1">
                   {total === 0 ? (
-                    <p className="text-xs text-muted-foreground">No questions yet — open to start building.</p>
+                    <p className="text-xs text-muted-foreground">
+                      No questions yet — open to start building.
+                    </p>
                   ) : (
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">
-                        {total} question{total === 1 ? '' : 's'}
+                        {total} question{total === 1 ? "" : "s"}
                       </span>
                       <span>
                         {dist.easy} easy · {dist.medium} medium · {dist.hard} hard
@@ -347,7 +401,8 @@ export const AssessmentSection = ({
           description="Assemble quizzes, labs, midterms and finals from your question bank, then export to Canvas, Word or plain text."
           bare={false}
           action={
-            (canManage && (selectedCourseId || onImportFromCanvas)) && (
+            canManage &&
+            (selectedCourseId || onImportFromCanvas) && (
               <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
                 {selectedCourseId && (
                   <Button onClick={handleOpenCreateModal}>
@@ -378,7 +433,7 @@ export const AssessmentSection = ({
             <DialogDescription>
               {exportDialogAssessment
                 ? `"${exportDialogAssessment.name}" — pick Canvas, Word, or plain text.`
-                : 'Pick an export format.'}
+                : "Pick an export format."}
             </DialogDescription>
           </DialogHeader>
           {exportDialogBlockReason && (
@@ -412,7 +467,9 @@ export const AssessmentSection = ({
                 data-tour-id="export-word-btn"
                 onClick={() => {
                   if (!exportDialogAssessment || exportDialogBlockReason) return;
-                  void Promise.resolve(onExportToWord(exportDialogAssessment.id, exportDialogAssessment.name));
+                  void Promise.resolve(
+                    onExportToWord(exportDialogAssessment.id, exportDialogAssessment.name),
+                  );
                   setExportDialogAssessment(null);
                 }}
               >
@@ -439,7 +496,11 @@ export const AssessmentSection = ({
             )}
           </div>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setExportDialogAssessment(null)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setExportDialogAssessment(null)}
+            >
               Cancel
             </Button>
           </DialogFooter>

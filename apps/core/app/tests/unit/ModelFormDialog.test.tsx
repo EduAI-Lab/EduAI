@@ -116,7 +116,7 @@ describe("ModelFormDialog — title", () => {
         onOpenChange={vi.fn()}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     // Use heading role to avoid matching the submit button which also says "Create Model"
     expect(screen.getByRole("heading", { name: "Create Model" })).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe("ModelFormDialog — title", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("Edit Model")).toBeInTheDocument();
   });
@@ -149,7 +149,7 @@ describe("ModelFormDialog — Ollama section", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.queryByText("Ollama models")).not.toBeInTheDocument();
   });
@@ -162,7 +162,7 @@ describe("ModelFormDialog — Ollama section", () => {
         model={ollamaModel}
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("Ollama models")).toBeInTheDocument();
   });
@@ -176,7 +176,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         onFetchOllamaModels={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByRole("button", { name: "Sync models" })).toBeInTheDocument();
   });
@@ -191,7 +191,7 @@ describe("ModelFormDialog — Ollama section", () => {
         onSubmit={vi.fn()}
         fetchingOllamaModels={true}
         onFetchOllamaModels={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByRole("button", { name: /syncing/i })).toBeDisabled();
   });
@@ -206,7 +206,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         onFetchOllamaModels={onFetchOllamaModels}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Sync models" }));
     expect(onFetchOllamaModels).toHaveBeenCalled();
@@ -222,7 +222,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         onFetchOllamaModels={onFetchOllamaModels}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -239,7 +239,7 @@ describe("ModelFormDialog — Ollama section", () => {
         providers={[ollamaProvider]}
         onSubmit={vi.fn()}
         ollamaError="Connection refused"
-      />
+      />,
     );
     expect(screen.getByText("Connection refused")).toBeInTheDocument();
   });
@@ -258,7 +258,7 @@ describe("ModelFormDialog — vLLM section", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.queryByText("vLLM models")).not.toBeInTheDocument();
   });
@@ -271,7 +271,7 @@ describe("ModelFormDialog — vLLM section", () => {
         model={vllmModel}
         providers={[vllmProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("vLLM models")).toBeInTheDocument();
   });
@@ -286,7 +286,7 @@ describe("ModelFormDialog — vLLM section", () => {
         providers={[vllmProvider]}
         onSubmit={vi.fn()}
         onFetchVllmModels={onFetchVllmModels}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /sync models/i }));
     expect(onFetchVllmModels).toHaveBeenCalled();
@@ -301,7 +301,7 @@ describe("ModelFormDialog — vLLM section", () => {
         providers={[vllmProvider]}
         onSubmit={vi.fn()}
         vllmError="Connection refused"
-      />
+      />,
     );
     expect(screen.getByText("Connection refused")).toBeInTheDocument();
   });
@@ -321,7 +321,7 @@ describe("ModelFormDialog — form actions", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={onSubmit}
-      />
+      />,
     );
     await waitFor(() => {
       expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
@@ -332,7 +332,7 @@ describe("ModelFormDialog — form actions", () => {
     fireEvent.submit(form!);
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" })
+        expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" }),
       );
     });
   });
@@ -345,7 +345,7 @@ describe("ModelFormDialog — form actions", () => {
         onOpenChange={onOpenChange}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -359,7 +359,7 @@ describe("ModelFormDialog — form actions", () => {
         model={baseModel}
         providers={[baseProvider]}
         onSubmit={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByLabelText("Model ID")).toHaveValue("gpt-4o");
   });

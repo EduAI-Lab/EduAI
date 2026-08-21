@@ -1,7 +1,7 @@
 /**
  * Bank selector for the Questions tab: switch banks, create a new named bank.
  */
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Select,
   SelectContent,
@@ -10,11 +10,11 @@ import {
   SelectValue,
   Button,
   Input,
-} from '@eduai/ui';
-import { IconPlus } from '@tabler/icons-react';
-import { QuestionBank } from '../../services/questionBankService';
+} from "@eduai/ui";
+import { IconPlus } from "@tabler/icons-react";
+import { QuestionBank } from "../../services/questionBankService";
 
-const ALL_QUESTIONS_VALUE = '__all__';
+const ALL_QUESTIONS_VALUE = "__all__";
 
 interface BankSelectorProps {
   banks: QuestionBank[];
@@ -33,11 +33,10 @@ export const BankSelector = ({
   disabled = false,
 }: BankSelectorProps) => {
   const [isCreating, setIsCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newName, setNewName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const selectValue =
-    selectedBankId == null ? ALL_QUESTIONS_VALUE : selectedBankId;
+  const selectValue = selectedBankId == null ? ALL_QUESTIONS_VALUE : selectedBankId;
 
   const handleCreate = async () => {
     const trimmed = newName.trim();
@@ -45,7 +44,7 @@ export const BankSelector = ({
     setIsSaving(true);
     try {
       await onCreateBank(trimmed);
-      setNewName('');
+      setNewName("");
       setIsCreating(false);
     } finally {
       setIsSaving(false);
@@ -74,7 +73,7 @@ export const BankSelector = ({
             {banks.map((bank) => (
               <SelectItem key={bank.id} value={String(bank.id)}>
                 {bank.name}
-                {bank.isDefault ? ' (default)' : ''}
+                {bank.isDefault ? " (default)" : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -102,7 +101,12 @@ export const BankSelector = ({
             className="w-48"
             disabled={isSaving}
           />
-          <Button type="button" size="sm" onClick={handleCreate} disabled={isSaving || !newName.trim()}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleCreate}
+            disabled={isSaving || !newName.trim()}
+          >
             Create
           </Button>
           <Button
@@ -111,7 +115,7 @@ export const BankSelector = ({
             variant="ghost"
             onClick={() => {
               setIsCreating(false);
-              setNewName('');
+              setNewName("");
             }}
             disabled={isSaving}
           >

@@ -1,18 +1,57 @@
-import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { expect } from '@playwright/test';
-import { CORE_URL } from '../../playwright.config';
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { CORE_URL } from "../../playwright.config";
 
 /**
  * Generate a collision-safe unique email address for each test invocation.
  * Uses a UBC subdomain because Core now enforces UBC-only addresses on sign-up
  * (see apps/core/app/lib/auth/ubc-email.ts); a non-UBC domain would be rejected with 400.
  */
-export function uniqueEmail(prefix = 'user'): string {
+export function uniqueEmail(prefix = "user"): string {
   const rand = Math.floor(Math.random() * 1e9);
   return `e2e-${prefix}-${rand}-${Date.now()}@student.ubc.ca`;
 }
 
-export const DEFAULT_PASSWORD = 'E2eTestPass1!';
+export const DEFAULT_PASSWORD = "E2eTestPass1!";
+
+/** Headers for direct calls to Core's extension-only session validation seam. */
+export function coreServiceHeaders(): Record<string, string> {
+  const key = process.env.EDUAI_API_KEY ?? "test-service-key-not-for-production";
+  return { Authorization: `Bearer ${key}` };
+}
+
+/**
+ * Sign in through Core's real UI before exercising an extension UI.
+ *
+ * Extension flows cross from the QM origin to Core, so copying an API request
+ * context's storage state can leave the browser without a usable session.
+ */
+export async function signInThroughPage(
+  page: Page,
+  user: { email: string; password: string },
+  returnUrl: string,
+): Promise<void> {
+  const loginUrl = `${CORE_URL}/auth/login?force=1&redirect=${encodeURIComponent(returnUrl)}`;
+  await page.goto(loginUrl);
+  await page.getByLabel("Email").fill(user.email);
+  await page.getByLabel("Password").fill(user.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  const expectedUrl = new URL(returnUrl);
+  try {
+    await page.waitForURL(
+      (url) =>
+        url.origin === expectedUrl.origin &&
+        url.pathname === expectedUrl.pathname &&
+        url.search === expectedUrl.search,
+      { waitUntil: "domcontentloaded" },
+    );
+  } catch {
+    throw new Error(
+      `Core did not redirect to ${returnUrl} (landed on ${page.url()}). ` +
+        "Check the credentials and use a localhost/127.0.0.1 or approved production redirect host.",
+    );
+  }
+}
 
 export interface SignUpResult {
   email: string;
@@ -30,9 +69,9 @@ export async function signUp(
   request: APIRequestContext,
   opts: { name?: string; email?: string; password?: string } = {},
 ): Promise<SignUpResult> {
-  const email = opts.email ?? uniqueEmail('signup');
+  const email = opts.email ?? uniqueEmail("signup");
   const password = opts.password ?? DEFAULT_PASSWORD;
-  const name = opts.name ?? 'E2E Test User';
+  const name = opts.name ?? "E2E Test User";
 
   const response = await request.post(`${CORE_URL}/api/auth/sign-up/email`, {
     data: { name, email, password },
@@ -71,9 +110,9 @@ export async function signOut(request: APIRequestContext): Promise<APIResponse> 
 export function extractSetCookies(response: APIResponse): string {
   return response
     .headersArray()
-    .filter((h) => h.name.toLowerCase() === 'set-cookie')
-    .map((h) => h.value.split(';')[0])
-    .join('; ');
+    .filter((h) => h.name.toLowerCase() === "set-cookie")
+    .map((h) => h.value.split(";")[0])
+    .join("; ");
 }
 
 /**
@@ -87,11 +126,9 @@ export async function checkStatus(
   label?: string,
 ): Promise<void> {
   if (res.status() !== expected) {
-    const body = await res.text().catch(() => '(unreadable)');
+    const body = await res.text().catch(() => "(unreadable)");
     const tag = label ?? res.url();
-    throw new Error(
-      `${tag}: expected HTTP ${expected}, got ${res.status()}\nBody: ${body}`,
-    );
+    throw new Error(`${tag}: expected HTTP ${expected}, got ${res.status()}\nBody: ${body}`);
   }
 }
 
@@ -103,9 +140,9 @@ export async function registerUser(
   request: APIRequestContext,
   opts: { name?: string; prefix?: string } = {},
 ): Promise<{ email: string; password: string; name: string }> {
-  const email = uniqueEmail(opts.prefix ?? 'user');
+  const email = uniqueEmail(opts.prefix ?? "user");
   const password = DEFAULT_PASSWORD;
-  const name = opts.name ?? 'E2E User';
+  const name = opts.name ?? "E2E User";
 
   const res = await signUp(request, { email, password, name });
   if (!res.response.ok()) {
@@ -128,7 +165,7 @@ export async function promoteUser(
   email: string,
   role: string,
 ): Promise<void> {
-  const secret = process.env.E2E_SEED_SECRET ?? 'e2e-seed-secret';
+  const secret = process.env.E2E_SEED_SECRET ?? "e2e-seed-secret";
   const res = await request.post(`${CORE_URL}/api/e2e/promote`, {
     data: { secret, email, role },
   });
@@ -147,10 +184,10 @@ export async function createInstructor(
   opts: { name?: string; prefix?: string } = {},
 ): Promise<{ email: string; password: string; name: string }> {
   const user = await registerUser(request, {
-    name: opts.name ?? 'E2E Instructor',
-    prefix: opts.prefix ?? 'instructor',
+    name: opts.name ?? "E2E Instructor",
+    prefix: opts.prefix ?? "instructor",
   });
-  await promoteUser(request, user.email, 'INSTRUCTOR');
+  await promoteUser(request, user.email, "INSTRUCTOR");
   await signOut(request);
   await signIn(request, { email: user.email, password: user.password });
   return user;
@@ -165,10 +202,10 @@ export async function createAdmin(
   opts: { name?: string; prefix?: string } = {},
 ): Promise<{ email: string; password: string; name: string }> {
   const user = await registerUser(request, {
-    name: opts.name ?? 'E2E Admin',
-    prefix: opts.prefix ?? 'admin',
+    name: opts.name ?? "E2E Admin",
+    prefix: opts.prefix ?? "admin",
   });
-  await promoteUser(request, user.email, 'ADMIN');
+  await promoteUser(request, user.email, "ADMIN");
   await signOut(request);
   await signIn(request, { email: user.email, password: user.password });
   return user;

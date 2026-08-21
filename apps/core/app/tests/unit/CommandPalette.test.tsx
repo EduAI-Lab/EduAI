@@ -107,7 +107,9 @@ describe("CommandPalette", () => {
     });
 
     // One search request for three keystrokes, on top of the lazy load.
-    await vi.waitFor(() => expect(courseUrls().filter((u) => u.includes("search="))).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(courseUrls().filter((u) => u.includes("search="))).toHaveLength(1),
+    );
   });
 
   it("keeps the loaded courses when a search request fails", async () => {

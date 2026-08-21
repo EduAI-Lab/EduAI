@@ -6,9 +6,9 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { Link } from 'react-router';
-import { Spinner } from '@eduai/ui';
+} from "react";
+import { Link } from "react-router";
+import { Spinner } from "@eduai/ui";
 import {
   Badge,
   Button,
@@ -40,7 +40,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@eduai/ui';
+} from "@eduai/ui";
 import {
   IconAlertCircle,
   IconHistory,
@@ -50,21 +50,21 @@ import {
   IconPlayerStop,
   IconSend,
   IconSparkles,
-} from '@tabler/icons-react';
-import { normalizeMathMarkdown } from '@eduai/ui/math-markdown';
-import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
-import { KnowledgeLevelChips } from '~/components/chat/knowledge-level-chips';
-import { loadSessionMessages, type ApiChatSession } from '~/lib/student-chat-history';
-import { useApiKeys } from '~/hooks/use-api-keys';
-import { getProviderFromModelId, getProviderLabel, maskApiKey } from '~/lib/provider-keys';
-import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-levels';
-import { cn } from '~/lib/utils';
-import api, { ApiTimeoutError } from '../lib/api';
-import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
+} from "@tabler/icons-react";
+import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
+import { StudentChatHistoryPanel } from "~/components/StudentChatHistoryPanel";
+import { KnowledgeLevelChips } from "~/components/chat/knowledge-level-chips";
+import { loadSessionMessages, type ApiChatSession } from "~/lib/student-chat-history";
+import { useApiKeys } from "~/hooks/use-api-keys";
+import { getProviderFromModelId, getProviderLabel, maskApiKey } from "~/lib/provider-keys";
+import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from "~/lib/knowledge-levels";
+import { cn } from "~/lib/utils";
+import api, { ApiTimeoutError } from "../lib/api";
+import type { Activity, AiModel, SuggestedPrompt } from "../lib/types";
 // Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
 // (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
 // see MARKDOWN_STYLES below.
-import '~/styles/chat-markdown.css';
+import "~/styles/chat-markdown.css";
 
 /**
  * KaTeX's stylesheet is loaded on demand, only for messages that actually
@@ -72,14 +72,14 @@ import '~/styles/chat-markdown.css';
  * markdown renderer caches a Streamdown variant per loader.
  */
 const MARKDOWN_STYLES: MarkdownStyles = {
-  loadKatexStyles: () => import('katex/dist/katex.min.css'),
+  loadKatexStyles: () => import("katex/dist/katex.min.css"),
 };
 
-type ChatTab = 'teach' | 'guide' | 'custom';
+type ChatTab = "teach" | "guide" | "custom";
 
 type ChatMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 };
 
@@ -99,7 +99,7 @@ type StudentSelectableModel = AiModel & {
   isStudentSelectable?: boolean;
   allowedForStudents?: boolean;
   isAllowed?: boolean;
-  availability?: 'allowed' | 'blocked' | 'admin-only';
+  availability?: "allowed" | "blocked" | "admin-only";
   isDefaultTutor?: boolean;
 };
 
@@ -135,34 +135,34 @@ type StudentAiChatProps = {
 // catalog is available at all. The real default lives server-side (see
 // `aiModelPolicy.js` DEFAULT_TUTOR_MODEL) and is surfaced per-model via the
 // `isDefaultTutor` flag on each /ai-models entry — prefer that over this.
-const DEFAULT_MODEL_ID = 'google:gemini-2.5-flash';
+const DEFAULT_MODEL_ID = "google:gemini-2.5-flash";
 
 // Detects whether the API has decorated this model with any student-policy field.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
   return (
-    typeof model.studentSelectable === 'boolean' ||
-    typeof model.isStudentSelectable === 'boolean' ||
-    typeof model.allowedForStudents === 'boolean' ||
-    typeof model.isAllowed === 'boolean' ||
-    typeof model.availability === 'string'
+    typeof model.studentSelectable === "boolean" ||
+    typeof model.isStudentSelectable === "boolean" ||
+    typeof model.allowedForStudents === "boolean" ||
+    typeof model.isAllowed === "boolean" ||
+    typeof model.availability === "string"
   );
 }
 
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
-  if (typeof model.studentSelectable === 'boolean') return model.studentSelectable;
-  if (typeof model.isStudentSelectable === 'boolean') return model.isStudentSelectable;
-  if (typeof model.allowedForStudents === 'boolean') return model.allowedForStudents;
-  if (typeof model.isAllowed === 'boolean') return model.isAllowed;
-  if (typeof model.availability === 'string') return model.availability === 'allowed';
+  if (typeof model.studentSelectable === "boolean") return model.studentSelectable;
+  if (typeof model.isStudentSelectable === "boolean") return model.isStudentSelectable;
+  if (typeof model.allowedForStudents === "boolean") return model.allowedForStudents;
+  if (typeof model.isAllowed === "boolean") return model.isAllowed;
+  if (typeof model.availability === "string") return model.availability === "allowed";
   return true;
 }
 
 function getInitialChatState(): ChatState {
   return {
-    teach: { messages: [], input: '', loading: false, chatId: null },
-    guide: { messages: [], input: '', loading: false, chatId: null },
-    custom: { messages: [], input: '', loading: false, chatId: null },
+    teach: { messages: [], input: "", loading: false, chatId: null },
+    guide: { messages: [], input: "", loading: false, chatId: null },
+    custom: { messages: [], input: "", loading: false, chatId: null },
   };
 }
 
@@ -181,7 +181,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   },
   ref,
 ) {
-  const [activeTab, setActiveTab] = useState<ChatTab>('guide');
+  const [activeTab, setActiveTab] = useState<ChatTab>("guide");
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
@@ -192,7 +192,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   // BYOK provider keys are owned by the shared hook (also drives Settings → Providers).
   const { loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  const [tempApiKey, setTempApiKey] = useState('');
+  const [tempApiKey, setTempApiKey] = useState("");
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
@@ -224,7 +224,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (isMounted) setSuggestedPrompts(prompts);
       })
       .catch((err) => {
-        console.error('Failed to load suggested prompts:', err);
+        console.error("Failed to load suggested prompts:", err);
       });
     return () => {
       isMounted = false;
@@ -240,7 +240,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     setActiveChatId(null);
     setChatState((prev) => ({
       ...prev,
-      [activeTab]: { messages: [], input: '', loading: false, chatId: null },
+      [activeTab]: { messages: [], input: "", loading: false, chatId: null },
     }));
     setPromptsDismissed((prev) => ({ ...prev, [activeTab]: false }));
   }, [activeTab]);
@@ -259,24 +259,24 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     const tabs = [];
     if (activity.enableTeachMode) {
       tabs.push({
-        value: 'teach' as ChatTab,
-        label: 'Teach me',
-        tooltip: 'Learn concepts and get explanations about the topic',
+        value: "teach" as ChatTab,
+        label: "Teach me",
+        tooltip: "Learn concepts and get explanations about the topic",
       });
     }
     if (activity.enableGuideMode) {
       tabs.push({
-        value: 'guide' as ChatTab,
-        label: 'Guide me',
-        tooltip: 'Get hints and guidance to solve the problem yourself',
+        value: "guide" as ChatTab,
+        label: "Guide me",
+        tooltip: "Get hints and guidance to solve the problem yourself",
       });
     }
     if (activity.enableCustomMode && activity.customPrompt) {
       tabs.push({
-        value: 'custom' as ChatTab,
-        label: activity.customPromptTitle || 'Custom',
+        value: "custom" as ChatTab,
+        label: activity.customPromptTitle || "Custom",
         tooltip:
-          activity.customPrompt.slice(0, 100) + (activity.customPrompt.length > 100 ? '...' : ''),
+          activity.customPrompt.slice(0, 100) + (activity.customPrompt.length > 100 ? "..." : ""),
       });
     }
     return tabs;
@@ -287,17 +287,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const isGuideEnabled = activity?.enableGuideMode ?? false;
   const isCustomEnabled = (activity?.enableCustomMode && activity?.customPrompt) ?? false;
   const currentTabEnabled =
-    (activeTab === 'teach' && isTeachEnabled) ||
-    (activeTab === 'guide' && isGuideEnabled) ||
-    (activeTab === 'custom' && isCustomEnabled);
+    (activeTab === "teach" && isTeachEnabled) ||
+    (activeTab === "guide" && isGuideEnabled) ||
+    (activeTab === "custom" && isCustomEnabled);
 
   // Auto-correct the active tab during render when enabled modes change. Prefer
   // Guide (hints) as the pedagogical default, then Teach, then Custom.
   if (!currentTabEnabled) {
-    if (isGuideEnabled) setActiveTab('guide');
-    else if (isTeachEnabled) setActiveTab('teach');
-    else if (isCustomEnabled) setActiveTab('custom');
-    else if (activeTab !== 'guide') setActiveTab('guide');
+    if (isGuideEnabled) setActiveTab("guide");
+    else if (isTeachEnabled) setActiveTab("teach");
+    else if (isCustomEnabled) setActiveTab("custom");
+    else if (activeTab !== "guide") setActiveTab("guide");
   }
 
   useEffect(() => {
@@ -318,7 +318,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         setModelLoadError(false);
       } catch (error) {
         if (!isMounted) return;
-        console.error('Failed to load AI models:', error);
+        console.error("Failed to load AI models:", error);
         setModelLoadError(true);
         setStudentModelPolicyActive(false);
       } finally {
@@ -331,7 +331,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   }, []);
 
   const appendMessage = useCallback(
-    (tab: ChatTab, role: ChatMessage['role'], content: string, id?: string) => {
+    (tab: ChatTab, role: ChatMessage["role"], content: string, id?: string) => {
       setChatState((prev) => ({
         ...prev,
         [tab]: {
@@ -351,7 +351,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       setActiveChatId(session.chatId);
       setChatState((prev) => ({
         ...prev,
-        [tab]: { messages: [], input: '', loading: true, chatId: session.chatId },
+        [tab]: { messages: [], input: "", loading: true, chatId: session.chatId },
       }));
       try {
         const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
@@ -362,7 +362,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         }));
       } catch (error) {
         if (seq !== restoreSeqRef.current) return;
-        console.error('Failed to restore chat session:', error);
+        console.error("Failed to restore chat session:", error);
         // Drop the failed session's chatId too — otherwise the user could keep
         // chatting into a history that never loaded.
         setActiveChatId(null);
@@ -372,7 +372,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         }));
         appendMessage(
           tab,
-          'assistant',
+          "assistant",
           "Couldn't load this conversation. Please open chat history and try again.",
         );
       }
@@ -389,12 +389,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       // `loading`), but the imperative `sendGuidePrompt` handle exposed to
       // the parent route bypasses that — this guard is the single choke
       // point both paths funnel through.
-      if (chatState[tab].loading) return;
+      if (chatState[tab].loading || abortControllersRef.current[tab]) return;
 
       const modeEnabled =
-        (tab === 'teach' && activity.enableTeachMode) ||
-        (tab === 'guide' && activity.enableGuideMode) ||
-        (tab === 'custom' && activity.enableCustomMode && activity.customPrompt);
+        (tab === "teach" && activity.enableTeachMode) ||
+        (tab === "guide" && activity.enableGuideMode) ||
+        (tab === "custom" && activity.enableCustomMode && activity.customPrompt);
       if (!modeEnabled) {
         console.warn(`Cannot use disabled ${tab} mode for activity ${activity.id}`);
         return;
@@ -415,11 +415,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
-      const topicId = typeof currentTopicId === 'number' ? currentTopicId : undefined;
+      const topicId = typeof currentTopicId === "number" ? currentTopicId : undefined;
       const normalizedStudentAnswer =
-        typeof studentAnswer === 'number'
+        typeof studentAnswer === "number"
           ? studentAnswer
-          : typeof studentAnswer === 'string' && studentAnswer.trim()
+          : typeof studentAnswer === "string" && studentAnswer.trim()
             ? studentAnswer.trim()
             : undefined;
 
@@ -430,15 +430,15 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       setChatState((prev) => ({
         ...prev,
-        [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : '', loading: true },
+        [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : "", loading: true },
       }));
       setPromptsDismissed((prev) => ({ ...prev, [tab]: true }));
-      appendMessage(tab, 'user', message, messageId);
+      appendMessage(tab, "user", message, messageId);
 
       try {
         const modelId = selectedModelId || DEFAULT_MODEL_ID;
         let response;
-        if (tab === 'teach') {
+        if (tab === "teach") {
           response = await api.sendTeachMessage(
             activity.id,
             {
@@ -452,7 +452,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             },
             controller.signal,
           );
-        } else if (tab === 'guide') {
+        } else if (tab === "guide") {
           response = await api.sendGuideMessage(
             activity.id,
             {
@@ -486,27 +486,27 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         if (nextChatId) {
           setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], chatId: nextChatId } }));
         }
-        appendMessage(tab, 'assistant', response.message);
+        appendMessage(tab, "assistant", response.message);
       } catch (error) {
         if (controller.signal.aborted && !(error instanceof ApiTimeoutError)) {
           // User clicked Stop — the in-progress turn is simply dropped, no
           // error bubble (matches Core's stop-generating behavior).
         } else if (error instanceof ApiTimeoutError) {
-          console.error('AI chat timed out:', error);
-          appendMessage(tab, 'assistant', 'That took too long to respond. Please try again.');
+          console.error("AI chat timed out:", error);
+          appendMessage(tab, "assistant", "That took too long to respond. Please try again.");
         } else {
-          console.error('AI chat failed:', error);
+          console.error("AI chat failed:", error);
           appendMessage(
             tab,
-            'assistant',
-            'AI study buddy not available right now. Please try again later.',
+            "assistant",
+            "AI study buddy not available right now. Please try again later.",
           );
         }
       } finally {
         if (abortControllersRef.current[tab] === controller) {
           delete abortControllersRef.current[tab];
+          setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
         }
-        setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
       }
     },
     [
@@ -530,11 +530,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     () => ({
       sendGuidePrompt: () => {
         if (!activity || !activity.enableGuideMode) return;
-        setActiveTab('guide');
+        setActiveTab("guide");
         const provider = getProviderFromModelId(selectedModelId);
         if (!getKey(provider)) return; // notice is already visible in the Guide view
-        const fallback = guideInput.trim() || 'I would like guidance on this question.';
-        void sendChat('guide', fallback);
+        const fallback = guideInput.trim() || "I would like guidance on this question.";
+        void sendChat("guide", fallback);
       },
     }),
     [activity, getKey, guideInput, selectedModelId, sendChat],
@@ -545,7 +545,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const canSend = !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
 
   const currentSuggestedPrompts = useMemo(() => {
-    if (activeTab === 'custom') return [];
+    if (activeTab === "custom") return [];
     return suggestedPrompts.filter((p) => p.mode === activeTab);
   }, [activeTab, suggestedPrompts]);
 
@@ -599,27 +599,27 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     try {
       const result = await validateKey(currentProvider, tempApiKey.trim());
       if (!result.valid) {
-        setApiKeyError(result.error || 'Invalid API key');
+        setApiKeyError(result.error || "Invalid API key");
         return;
       }
       setKey(currentProvider, tempApiKey.trim());
       setShowApiKeyDialog(false);
-      setTempApiKey('');
+      setTempApiKey("");
     } catch {
-      setApiKeyError('Could not validate API key');
+      setApiKeyError("Could not validate API key");
     } finally {
       setApiKeyValidating(false);
     }
   }, [currentProvider, setKey, tempApiKey, validateKey]);
 
   const showTopicSelect =
-    (activeTab === 'teach' ||
-      (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
+    (activeTab === "teach" ||
+      (activeTab === "custom" && activity?.customPrompt?.includes("[INSERT TOPIC HERE]"))) &&
     topicOptions.length > 1;
 
   const renderMessages = (tab: ChatTab) =>
     chatState[tab].messages.map((msg) =>
-      msg.role === 'user' ? (
+      msg.role === "user" ? (
         <Message key={msg.id} className="justify-end">
           <MessageContent className="max-w-[80%] bg-primary text-primary-foreground">
             {msg.content}
@@ -648,7 +648,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   return (
     <aside
       className={cn(
-        'flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]',
+        "flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]",
         className,
       )}
       data-tour="student-ai-chat"
@@ -745,7 +745,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               Focus topic
             </label>
             <Select
-              value={currentTopicId === null ? '' : String(currentTopicId)}
+              value={currentTopicId === null ? "" : String(currentTopicId)}
               onValueChange={(value) => {
                 const numericValue = Number(value);
                 if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
@@ -885,12 +885,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <PromptInputTextarea
               placeholder={
                 chatDisabled
-                  ? 'Connect a provider to start chatting'
-                  : activeTab === 'teach'
-                    ? 'Ask about the topic…'
-                    : activeTab === 'guide'
-                      ? 'Describe where you need guidance…'
-                      : 'Ask a question…'
+                  ? "Connect a provider to start chatting"
+                  : activeTab === "teach"
+                    ? "Ask about the topic…"
+                    : activeTab === "guide"
+                      ? "Describe where you need guidance…"
+                      : "Ask a question…"
               }
               disabled={chatDisabled || activeChat.loading}
               className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
@@ -969,8 +969,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Stored only on this device and sent directly to {getProviderLabel(currentProvider)}.
-              You can also manage keys in Settings → Providers.
+              Stored for your account on this device and sent through EduAI services to{" "}
+              {getProviderLabel(currentProvider)} when you use AI. Signing out removes it from this
+              device. You can also manage keys in Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1015,7 +1016,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   Validating…
                 </>
               ) : (
-                'Save'
+                "Save"
               )}
             </Button>
           </DialogFooter>
@@ -1028,7 +1029,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 export default StudentAiChat;
 
 function generateMessageId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;

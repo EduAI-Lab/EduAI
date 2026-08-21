@@ -23,7 +23,7 @@
  *   module/lesson level), `prisma/schema.prisma` (Activity model).
  */
 
-import { prisma } from '../config/database.js';
+import { prisma } from "../config/database.js";
 
 async function resolveTargetTopicId(tx, sourceTopic, targetCourseOfferingId) {
   if (!sourceTopic) return null;
@@ -68,7 +68,7 @@ export async function cloneActivityIntoLesson({
       targetCourseOfferingId,
     );
     if (!targetMainTopicId) {
-      throw new Error('Failed to resolve main topic while cloning activity.');
+      throw new Error("Failed to resolve main topic while cloning activity.");
     }
 
     const secondaryTopicIds = [];

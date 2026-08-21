@@ -63,7 +63,11 @@ describe("getRequestSession — per-request memoization", () => {
     );
     const request = makeRequest();
 
-    const pending = [getRequestSession(request), getRequestSession(request), getRequestSession(request)];
+    const pending = [
+      getRequestSession(request),
+      getRequestSession(request),
+      getRequestSession(request),
+    ];
     // All three callers started before the first lookup settled.
     expect(getSessionMock).toHaveBeenCalledTimes(1);
 
@@ -78,7 +82,9 @@ describe("getRequestSession — per-request memoization", () => {
       .mockResolvedValueOnce(sessionFor("alice") as never)
       .mockResolvedValueOnce(sessionFor("bob") as never);
 
-    const alice = await getRequestSession(makeRequest("http://localhost/dashboard", "session=alice"));
+    const alice = await getRequestSession(
+      makeRequest("http://localhost/dashboard", "session=alice"),
+    );
     const bob = await getRequestSession(makeRequest("http://localhost/dashboard", "session=bob"));
 
     expect(alice?.user.id).toBe("alice");
@@ -125,11 +131,15 @@ describe("#971 — deactivation still takes effect on the next request", () => {
       .mockResolvedValueOnce(sessionFor("victim") as never)
       .mockResolvedValue(null as never);
 
-    const beforeDeactivation = await getRequestSession(makeRequest("http://localhost/dashboard", "session=v"));
+    const beforeDeactivation = await getRequestSession(
+      makeRequest("http://localhost/dashboard", "session=v"),
+    );
     expect(beforeDeactivation?.user.id).toBe("victim");
 
     // Same cookie, same URL, new inbound request.
-    const afterDeactivation = await getRequestSession(makeRequest("http://localhost/dashboard", "session=v"));
+    const afterDeactivation = await getRequestSession(
+      makeRequest("http://localhost/dashboard", "session=v"),
+    );
 
     expect(afterDeactivation).toBeNull();
     // The second request performed a live lookup — the hook could run.
@@ -141,10 +151,7 @@ describe("#971 — deactivation still takes effect on the next request", () => {
     // snapshot, so the /get-session after-hook would stop seeing a live
     // `user.isActive` and a deactivated user would keep access for the whole
     // TTL. The memo replaces that optimization; it must not be reintroduced.
-    const serverSource = readFileSync(
-      path.join(process.cwd(), "app/lib/auth/server.ts"),
-      "utf8",
-    );
+    const serverSource = readFileSync(path.join(process.cwd(), "app/lib/auth/server.ts"), "utf8");
     expect(serverSource).not.toMatch(/cookieCache\s*:\s*\{/);
     expect(serverSource).toMatch(/Intentionally NO `cookieCache`/);
   });

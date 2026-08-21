@@ -24,12 +24,17 @@ vi.mock("~/components/admin/user-form-dialog", () => ({
   }) =>
     props.open ? (
       <div data-testid="user-form-dialog">
-        <span data-testid="form-mode">
-          {props.user ? `editing:${props.user.id}` : "creating"}
-        </span>
+        <span data-testid="form-mode">{props.user ? `editing:${props.user.id}` : "creating"}</span>
         <button
           onClick={() => {
-            props.onSubmit({ name: "New Person", email: "new@example.com", role: "STUDENT", isActive: true }).catch(() => {});
+            props
+              .onSubmit({
+                name: "New Person",
+                email: "new@example.com",
+                role: "STUDENT",
+                isActive: true,
+              })
+              .catch(() => {});
           }}
         >
           submit-form
@@ -99,8 +104,9 @@ describe("UsersAdminView", () => {
     renderView();
 
     // The picker needs a browsable set, not the whole table — and `/api/courses`
-    // caps pageSize at 200, so anything larger would be clamped anyway.
-    expect(useCourses).toHaveBeenCalledWith({ pageSize: 200 });
+    // caps pageSize at 200, so anything larger would be clamped anyway. It opts
+    // out of facets, which only the filter toolbar consumes.
+    expect(useCourses).toHaveBeenCalledWith({ pageSize: 200, includeFacets: false });
   });
 
   it("renders the server-reported platform counts rather than counting the loaded page", () => {
@@ -201,7 +207,10 @@ describe("UsersAdminView — edit user", () => {
     fireEvent.click(screen.getByText("submit-form"));
 
     await waitFor(() =>
-      expect(onUpdateUser).toHaveBeenCalledWith(user.id, expect.objectContaining({ name: "New Person" })),
+      expect(onUpdateUser).toHaveBeenCalledWith(
+        user.id,
+        expect.objectContaining({ name: "New Person" }),
+      ),
     );
   });
 });
@@ -268,7 +277,9 @@ describe("UsersAdminView — chat history", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /view chat history/i }));
 
     await waitFor(() =>
-      expect(screen.getByTestId("chat-history-dialog")).toHaveTextContent(`${user.name} (${user.id})`),
+      expect(screen.getByTestId("chat-history-dialog")).toHaveTextContent(
+        `${user.name} (${user.id})`,
+      ),
     );
   });
 });

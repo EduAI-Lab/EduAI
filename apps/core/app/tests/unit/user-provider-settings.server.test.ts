@@ -55,7 +55,12 @@ describe("getUserProviderSettings", () => {
 
   it("omits apiKey when no key is stored and does not call decrypt", async () => {
     prismaMock.userProviderSettings.findMany.mockResolvedValue([
-      { isEnabled: false, apiKey: null, baseUrl: "http://localhost:11434", provider: { name: "ollama" } },
+      {
+        isEnabled: false,
+        apiKey: null,
+        baseUrl: "http://localhost:11434",
+        provider: { name: "ollama" },
+      },
     ]);
     const result = await getUserProviderSettings("u1");
     expect(result.ollama?.apiKey).toBeUndefined();
@@ -73,9 +78,26 @@ describe("getUserProviderSettings", () => {
     expect(result.openai?.isEnabled).toBe(true);
     expect(result.anthropic?.isEnabled).toBe(false);
   });
+
+  it("omits a leftover bedrock row so users cannot enable AWS overflow", async () => {
+    prismaMock.userProviderSettings.findMany.mockResolvedValue([
+      { isEnabled: true, apiKey: null, baseUrl: null, provider: { name: "bedrock" } },
+      { isEnabled: true, apiKey: "enc:sk-abc", baseUrl: null, provider: { name: "openai" } },
+    ]);
+    const result = await getUserProviderSettings("u1");
+    expect(result.bedrock).toBeUndefined();
+    expect(result.openai?.isEnabled).toBe(true);
+  });
 });
 
 describe("upsertUserProviderSetting", () => {
+  it("rejects bedrock so only admins can enable AWS overflow", async () => {
+    await expect(upsertUserProviderSetting("u1", "bedrock", { isEnabled: true })).rejects.toThrow(
+      "admin-only overflow",
+    );
+    expect(prismaMock.aIProvider.findUnique).not.toHaveBeenCalled();
+  });
+
   it("throws when the provider name is not found", async () => {
     prismaMock.aIProvider.findUnique.mockResolvedValue(null);
     await expect(
@@ -124,7 +146,10 @@ describe("upsertUserProviderSetting", () => {
   it("stores baseUrl when provided", async () => {
     prismaMock.aIProvider.findUnique.mockResolvedValue({ id: "p1" });
     prismaMock.userProviderSettings.upsert.mockResolvedValue({});
-    await upsertUserProviderSetting("u1", "ollama", { isEnabled: true, baseUrl: "http://localhost:11434" });
+    await upsertUserProviderSetting("u1", "ollama", {
+      isEnabled: true,
+      baseUrl: "http://localhost:11434",
+    });
     const call = prismaMock.userProviderSettings.upsert.mock.calls[0][0];
     expect(call.create.baseUrl).toBe("http://localhost:11434");
     expect(call.update.baseUrl).toBe("http://localhost:11434");

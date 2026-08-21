@@ -21,11 +21,7 @@ import prisma from "~/lib/prisma.server";
 // failing schema validation.
 const VALID_CUID = "cjld2cjxh0000qzrmn831i7rn";
 
-function makeArgs(
-  method = "POST",
-  body?: unknown,
-  opts?: { raw?: string },
-) {
+function makeArgs(method = "POST", body?: unknown, opts?: { raw?: string }) {
   const init: RequestInit = {
     method,
     headers: { "Content-Type": "application/json" },

@@ -12,11 +12,7 @@ export type ChatHistoryRailProps = Omit<ChatHistoryListProps, "className"> & {
   onNewChat: () => void;
 };
 
-export function ChatHistoryRail({
-  className,
-  onNewChat,
-  ...listProps
-}: ChatHistoryRailProps) {
+export function ChatHistoryRail({ className, onNewChat, ...listProps }: ChatHistoryRailProps) {
   return (
     <aside
       className={cn(

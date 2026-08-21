@@ -1,7 +1,7 @@
-import api from '~/lib/api';
-import type { EduAiApiKeyStatus } from '~/lib/types';
+import api from "~/lib/api";
+import type { EduAiApiKeyStatus } from "~/lib/types";
 
-export type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
+export type CostTier = "LOW" | "MEDIUM" | "HIGH";
 
 export type AdminAiModelPolicy = {
   allowedTutorModelIds: string[];
@@ -49,8 +49,8 @@ export function getAdminSettingsApi(): AdminSettingsApi {
 export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> {
   const settingsApi = getAdminSettingsApi();
   const aiPolicyAvailable =
-    typeof settingsApi.getAdminAiModelPolicy === 'function' &&
-    typeof settingsApi.setAdminAiModelPolicy === 'function';
+    typeof settingsApi.getAdminAiModelPolicy === "function" &&
+    typeof settingsApi.setAdminAiModelPolicy === "function";
 
   const [status, aiModelsResult, aiPolicyResult] = await Promise.all([
     api.getEduAiApiKeyStatus(),
@@ -67,23 +67,20 @@ export async function loadAdminSettingsData(): Promise<AdminSettingsLoaderData> 
   };
 }
 
-export function normalizePolicy(
-  raw: unknown,
-  models: AdminAiModelOption[],
-): AdminAiModelPolicy {
+export function normalizePolicy(raw: unknown, models: AdminAiModelOption[]): AdminAiModelPolicy {
   const fallbackTutor = models[0]?.modelId ?? null;
   const allowedTutorModelIds = Array.isArray(
     (raw as { allowedTutorModelIds?: unknown })?.allowedTutorModelIds,
   )
     ? (raw as { allowedTutorModelIds: unknown[] }).allowedTutorModelIds.filter(
-        (value): value is string => typeof value === 'string',
+        (value): value is string => typeof value === "string",
       )
     : fallbackTutor
       ? [fallbackTutor]
       : [];
 
   const defaultTutorModelId =
-    typeof (raw as { defaultTutorModelId?: unknown })?.defaultTutorModelId === 'string'
+    typeof (raw as { defaultTutorModelId?: unknown })?.defaultTutorModelId === "string"
       ? (raw as { defaultTutorModelId: string }).defaultTutorModelId
       : (allowedTutorModelIds[0] ?? null);
 
@@ -94,15 +91,15 @@ export function normalizePolicy(
         ? defaultTutorModelId
         : (allowedTutorModelIds[0] ?? null),
     defaultSupervisorModelId:
-      typeof (raw as { defaultSupervisorModelId?: unknown })?.defaultSupervisorModelId === 'string'
+      typeof (raw as { defaultSupervisorModelId?: unknown })?.defaultSupervisorModelId === "string"
         ? (raw as { defaultSupervisorModelId: string }).defaultSupervisorModelId
         : (models[0]?.modelId ?? null),
     dualLoopEnabled:
-      typeof (raw as { dualLoopEnabled?: unknown })?.dualLoopEnabled === 'boolean'
+      typeof (raw as { dualLoopEnabled?: unknown })?.dualLoopEnabled === "boolean"
         ? (raw as { dualLoopEnabled: boolean }).dualLoopEnabled
         : true,
     maxSupervisorIterations:
-      typeof (raw as { maxSupervisorIterations?: unknown })?.maxSupervisorIterations === 'number'
+      typeof (raw as { maxSupervisorIterations?: unknown })?.maxSupervisorIterations === "number"
         ? Math.max(
             1,
             Math.min(5, (raw as { maxSupervisorIterations: number }).maxSupervisorIterations),
@@ -112,7 +109,7 @@ export function normalizePolicy(
 }
 
 async function loadAdminAiPolicy(settingsApi: AdminSettingsApi) {
-  if (typeof settingsApi.getAdminAiModelPolicy !== 'function') {
+  if (typeof settingsApi.getAdminAiModelPolicy !== "function") {
     return { policy: null, error: null };
   }
 
@@ -123,13 +120,13 @@ async function loadAdminAiPolicy(settingsApi: AdminSettingsApi) {
     return {
       policy: null,
       error:
-        'AI model settings could not be loaded. The rest of the admin tools are still available.',
+        "AI model settings could not be loaded. The rest of the admin tools are still available.",
     };
   }
 }
 
 async function loadAdminAiModels(settingsApi: AdminSettingsApi) {
-  if (typeof settingsApi.listAiModels !== 'function') {
+  if (typeof settingsApi.listAiModels !== "function") {
     return { models: [] as AdminAiModelOption[] };
   }
 
@@ -148,13 +145,13 @@ async function loadAdminAiModels(settingsApi: AdminSettingsApi) {
 }
 
 function normalizeModelOption(raw: unknown, index: number): AdminAiModelOption | null {
-  if (!raw || typeof raw !== 'object') return null;
+  if (!raw || typeof raw !== "object") return null;
 
   const record = raw as Record<string, unknown>;
   const modelId =
-    typeof record.modelId === 'string'
+    typeof record.modelId === "string"
       ? record.modelId
-      : typeof record.id === 'string'
+      : typeof record.id === "string"
         ? record.id
         : null;
 
@@ -162,23 +159,23 @@ function normalizeModelOption(raw: unknown, index: number): AdminAiModelOption |
     return null;
   }
 
-  const provider = typeof record.provider === 'string' ? record.provider : inferProvider(modelId);
+  const provider = typeof record.provider === "string" ? record.provider : inferProvider(modelId);
   const costTier =
-    record.costTier === 'LOW' || record.costTier === 'MEDIUM' || record.costTier === 'HIGH'
+    record.costTier === "LOW" || record.costTier === "MEDIUM" || record.costTier === "HIGH"
       ? record.costTier
       : inferCostTier(modelId, String(record.modelName ?? modelId));
 
   return {
-    id: typeof record.id === 'string' ? record.id : `${modelId}-${index}`,
+    id: typeof record.id === "string" ? record.id : `${modelId}-${index}`,
     modelId,
     modelName:
-      typeof record.modelName === 'string'
+      typeof record.modelName === "string"
         ? record.modelName
-        : typeof record.name === 'string'
+        : typeof record.name === "string"
           ? record.name
           : modelId,
     provider,
-    summary: typeof record.summary === 'string' ? record.summary : null,
+    summary: typeof record.summary === "string" ? record.summary : null,
     costTier,
   };
 }
@@ -190,23 +187,23 @@ export function buildFallbackSummary(model: AdminAiModelOption) {
 }
 
 export function inferProvider(modelId: string) {
-  const [provider] = modelId.split(':');
-  return provider || 'provider';
+  const [provider] = modelId.split(":");
+  return provider || "provider";
 }
 
 export function inferCostTier(modelId: string, modelName: string): CostTier {
   const haystack = `${modelId} ${modelName}`.toLowerCase();
-  if (haystack.includes('flash') || haystack.includes('mini') || haystack.includes('nano'))
-    return 'LOW';
-  if (haystack.includes('pro') || haystack.includes('4.1') || haystack.includes('ultra'))
-    return 'HIGH';
-  return 'MEDIUM';
+  if (haystack.includes("flash") || haystack.includes("mini") || haystack.includes("nano"))
+    return "LOW";
+  if (haystack.includes("pro") || haystack.includes("4.1") || haystack.includes("ultra"))
+    return "HIGH";
+  return "MEDIUM";
 }
 
 export function formatCostTier(costTier: CostTier | null | undefined) {
-  if (costTier === 'LOW') return 'Low cost';
-  if (costTier === 'HIGH') return 'Higher cost';
-  return 'Balanced cost';
+  if (costTier === "LOW") return "Low cost";
+  if (costTier === "HIGH") return "Higher cost";
+  return "Balanced cost";
 }
 
 export function clampIterations(value: string) {
@@ -223,8 +220,8 @@ export function formatApiKeyUpdatedTime(value: string | null) {
 }
 
 export function getApiKeySourceTag(status: EduAiApiKeyStatus): { label: string } {
-  if (!status.configured) return { label: 'Not configured' };
-  if (status.source === 'ADMIN') return { label: 'Admin override' };
-  if (status.source === 'ENV') return { label: 'From .env' };
-  return { label: 'Configured' };
+  if (!status.configured) return { label: "Not configured" };
+  if (status.source === "ADMIN") return { label: "Admin override" };
+  if (status.source === "ENV") return { label: "From .env" };
+  return { label: "Configured" };
 }

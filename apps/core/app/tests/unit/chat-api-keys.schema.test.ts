@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  clientApiKeysBodySchema,
-  toUserProviderSettings,
-} from "~/lib/chat-api-keys.schema";
+import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 
 describe("clientApiKeysBodySchema", () => {
   it("accepts a record of provider settings", () => {

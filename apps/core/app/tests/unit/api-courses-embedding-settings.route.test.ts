@@ -22,12 +22,14 @@ vi.mock("~/lib/ai/embedding", () => ({
   clearCourseEmbeddingSettingsCache: vi.fn(),
   isEmbeddingIndexStale: vi.fn().mockReturnValue(false),
   parseEmbeddingSettingsUpdate: vi.fn(),
-  resolveEffectiveEmbeddingSettings: vi.fn().mockReturnValue({ provider: "openai", model: "text-embedding-3" }),
+  resolveEffectiveEmbeddingSettings: vi
+    .fn()
+    .mockReturnValue({ provider: "openai", model: "text-embedding-3" }),
   validateEmbeddingSettingsUpdate: vi.fn(),
 }));
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
-  startReEmbedJob: vi.fn(),
+  startOrResumeReEmbedJob: vi.fn(),
   serializeReEmbedJob: vi.fn((job: unknown) => job),
 }));
 
@@ -40,12 +42,10 @@ import { loader, action } from "~/routes/api/courses.embedding-settings.$";
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
-import {
-  parseEmbeddingSettingsUpdate,
-  validateEmbeddingSettingsUpdate,
-} from "~/lib/ai/embedding";
-import { startReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import { parseEmbeddingSettingsUpdate, validateEmbeddingSettingsUpdate } from "~/lib/ai/embedding";
+import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { logAuditAction } from "~/lib/logging.server";
+import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
 const BASE_COURSE = {
   id: "course-1",
@@ -131,7 +131,10 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
   });
 
   it("returns 400 when parseEmbeddingSettingsUpdate rejects the body", async () => {
-    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({ ok: false, error: "BAD_SHAPE" } as never);
+    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({
+      ok: false,
+      error: "BAD_SHAPE",
+    } as never);
     const res = await action(makeActionArgs({ embeddingProvider: 123 }));
     expect(res.status).toBe(400);
   });
@@ -141,8 +144,13 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
       ok: true,
       value: { embeddingProvider: "openai", embeddingModel: "text-embedding-3" },
     } as never);
-    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({ ok: false, error: "UNSUPPORTED_MODEL" } as never);
-    const res = await action(makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }));
+    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({
+      ok: false,
+      error: "UNSUPPORTED_MODEL",
+    } as never);
+    const res = await action(
+      makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }),
+    );
     expect(res.status).toBe(400);
   });
 
@@ -157,12 +165,14 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     } as never);
     vi.mocked(prisma.course.update).mockResolvedValue(BASE_COURSE as never);
 
-    const res = await action(makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }));
+    const res = await action(
+      makeActionArgs({ embeddingProvider: "openai", embeddingModel: "text-embedding-3" }),
+    );
     expect(res.status).toBe(200);
     expect(logAuditAction).not.toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "EMBEDDING_SETTINGS_CHANGED" }),
     );
-    expect(startReEmbedJob).not.toHaveBeenCalled();
+    expect(startOrResumeReEmbedJob).not.toHaveBeenCalled();
   });
 
   it("logs EMBEDDING_SETTINGS_CHANGED and starts a re-embed job when reEmbed:true", async () => {
@@ -179,10 +189,17 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
       embeddingProvider: "ollama",
       embeddingModel: "mxbai-embed-large",
     } as never);
-    vi.mocked(startReEmbedJob).mockResolvedValue({ job: { id: "job-1" }, created: true } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job-1" },
+      created: true,
+    } as never);
 
     const res = await action(
-      makeActionArgs({ embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large", reEmbed: true }),
+      makeActionArgs({
+        embeddingProvider: "ollama",
+        embeddingModel: "mxbai-embed-large",
+        reEmbed: true,
+      }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -193,5 +210,66 @@ describe("PATCH /api/courses/:courseId/embedding-settings", () => {
     expect(logAuditAction).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: "RE_EMBED_JOB_CREATED" }),
     );
+  });
+
+  it("does not log a second creation when reEmbed:true reuses the active job", async () => {
+    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(prisma.course.update).mockResolvedValue({
+      ...BASE_COURSE,
+      embeddingProvider: "ollama",
+      embeddingModel: "mxbai-embed-large",
+    } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({
+      job: { id: "job-existing" },
+      created: false,
+    } as never);
+
+    const res = await action(
+      makeActionArgs({
+        embeddingProvider: "ollama",
+        embeddingModel: "mxbai-embed-large",
+        reEmbed: true,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).not.toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: "RE_EMBED_JOB_CREATED" }),
+    );
+  });
+
+  it("maps a re-embed database outage to 503", async () => {
+    vi.mocked(parseEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(validateEmbeddingSettingsUpdate).mockReturnValue({
+      ok: true,
+      value: { embeddingProvider: "ollama", embeddingModel: "mxbai-embed-large" },
+    } as never);
+    vi.mocked(prisma.course.update).mockResolvedValue({
+      ...BASE_COURSE,
+      embeddingProvider: "ollama",
+      embeddingModel: "mxbai-embed-large",
+    } as never);
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(
+      new QueueUnavailableError("Database unavailable"),
+    );
+
+    const res = await action(
+      makeActionArgs({
+        embeddingProvider: "ollama",
+        embeddingModel: "mxbai-embed-large",
+        reEmbed: true,
+      }),
+    );
+    expect(res.status).toBe(503);
   });
 });

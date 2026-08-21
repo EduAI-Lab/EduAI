@@ -13,7 +13,7 @@ export interface ReviewStatusConfirmCopy {
   description: string;
   confirmLabel: string;
   /** reviewed → draft can invalidate downstream export state, so it reads as destructive. */
-  variant: 'default' | 'destructive';
+  variant: "default" | "destructive";
 }
 
 /**
@@ -22,17 +22,15 @@ export interface ReviewStatusConfirmCopy {
 export function reviewStatusConfirm(nextReviewed: boolean): ReviewStatusConfirmCopy {
   return nextReviewed
     ? {
-        title: 'Mark this question as reviewed?',
-        description:
-          'Reviewed questions can be exported and used in assessments.',
-        confirmLabel: 'Mark as reviewed',
-        variant: 'default',
+        title: "Mark this question as reviewed?",
+        description: "Reviewed questions can be exported and used in assessments.",
+        confirmLabel: "Mark as reviewed",
+        variant: "default",
       }
     : {
-        title: 'Move this question back to draft?',
-        description:
-          'It will be excluded from export until it is reviewed again.',
-        confirmLabel: 'Move to draft',
-        variant: 'destructive',
+        title: "Move this question back to draft?",
+        description: "It will be excluded from export until it is reviewed again.",
+        confirmLabel: "Move to draft",
+        variant: "destructive",
       };
 }

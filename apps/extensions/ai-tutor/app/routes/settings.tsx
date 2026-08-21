@@ -1,7 +1,7 @@
-import { SettingsView } from '~/components/settings/settings-view';
-import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { requireClientUser } from '~/lib/client-auth';
-import type { Route } from './+types/settings';
+import { SettingsView } from "~/components/settings/settings-view";
+import { useShellBreadcrumbs } from "~/components/layout/ShellBreadcrumbContext";
+import { requireClientUser } from "~/lib/client-auth";
+import type { Route } from "./+types/settings";
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   // Any authenticated user may reach Settings — every tab is per-user
@@ -12,7 +12,7 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
 }
 
 export default function SettingsPage() {
-  useShellBreadcrumbs([{ label: 'Settings' }]);
+  useShellBreadcrumbs([{ label: "Settings" }]);
 
   return <SettingsView />;
 }
