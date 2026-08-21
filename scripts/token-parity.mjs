@@ -41,7 +41,7 @@ const APPS = {
  */
 function stripComments(css) {
   let out = "";
-  for (let i = 0; i < css.length; ) {
+  for (let i = 0; i < css.length;) {
     const ch = css[i];
     if (ch === '"' || ch === "'") {
       const quote = ch;
