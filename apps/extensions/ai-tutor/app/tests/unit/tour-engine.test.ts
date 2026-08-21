@@ -65,11 +65,8 @@ describe("tour engine", () => {
     const session = createTourSession(tourDefinitions["student-journey"], "/student");
     session.stepIndex = 2;
 
-    const element = {
-      dataset: {
-        tourRoute: "/student/courses/123",
-      },
-    } as unknown as Element;
+    const element = document.createElement("div");
+    element.dataset.tourRoute = "/student/courses/123";
 
     storeStepSelection(session, element);
 

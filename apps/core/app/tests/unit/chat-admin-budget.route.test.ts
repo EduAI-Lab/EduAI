@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Route-level coverage for admin chat 16k context budgeting (#1008 review).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -130,7 +131,7 @@ import {
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const CONTEXT_WINDOW = 16_384;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

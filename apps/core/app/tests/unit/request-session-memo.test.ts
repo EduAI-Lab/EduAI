@@ -164,7 +164,7 @@ describe("measured: getSession calls per navigation", () => {
    * real router to count resolutions with and without the memo.
    */
   async function countResolutionsForNavigation(
-    resolve: (request: Request) => Promise<unknown>,
+    resolve: (request: Request) => ReturnType<typeof getRequestSession>,
   ): Promise<number> {
     getSessionMock.mockReset();
     getSessionMock.mockResolvedValue(sessionFor("u1") as never);

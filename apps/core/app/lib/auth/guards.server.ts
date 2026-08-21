@@ -209,7 +209,7 @@ export async function requireInviter(request: Request, action: string): Promise<
         // — not an implicit, policy-bypassing platform ADMIN.
         inviter = {
           user: { id: "service", name: "Service", role: "UNIT_ADMIN" },
-        } as unknown as Session;
+        } as Session;
         inviterRole = "UNIT_ADMIN";
         admittedViaServiceKey = true;
       }

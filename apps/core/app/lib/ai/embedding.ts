@@ -222,9 +222,24 @@ export function resolveEmbeddingRequestTimeoutMs(): number {
   return Math.min(configured, MAX_EMBEDDING_REQUEST_TIMEOUT_MS);
 }
 
-function abortSignalReason(signal: AbortSignal): unknown {
-  if (signal.reason !== undefined) return signal.reason;
-  const error = new Error("The embedding request was aborted");
+/**
+ * The value to throw / reject / re-abort with when `signal` has fired.
+ *
+ * `AbortSignal.reason` carries no contract, so this normalizes it to something
+ * throwable. Every platform abort (and every abort this module raises) already
+ * supplies an `Error` — a `DOMException` on the server runtime — and is handed
+ * back untouched, so `isEmbeddingTimeoutError`'s name/cause walk is unaffected.
+ * Only a caller aborting with a bare value gets wrapped, and that value was
+ * already invisible to that walk (it bails on non-objects).
+ */
+function abortSignalReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+
+  const error =
+    reason === undefined
+      ? new Error("The embedding request was aborted")
+      : new Error(String(reason), { cause: reason });
   error.name = "AbortError";
   return error;
 }

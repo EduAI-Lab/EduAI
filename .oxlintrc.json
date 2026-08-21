@@ -7,13 +7,48 @@
     "style": "off",
     "nursery": "off"
   },
+  "jsPlugins": [{ "name": "anti-slop", "specifier": "./anti-slop/index.ts" }],
   "rules": {
     "eqeqeq": "warn",
     "no-console": "off",
     "no-underscore-dangle": "off",
-    "no-unused-vars": "warn"
+    "no-unused-vars": "warn",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-widen-then-assert": "error",
+
+    "anti-slop/no-chained-type-assertions": "warn",
+    "anti-slop/no-conditional-empty-object-spread": "warn",
+    "anti-slop/no-known-value-widening": "warn",
+    "anti-slop/no-runtime-typeof": "warn",
+    "anti-slop/no-unknown-parameters": "warn",
+    "anti-slop/no-unsafe-dictionary-type": "warn",
+    "anti-slop/require-safety-comment-for-type-assertion": "warn",
+    "no-warning-comments": ["warn", { "terms": ["todo", "fixme", "xxx", "hack"], "location": "anywhere" }]
   },
+  "overrides": [
+    {
+      "files": ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"],
+      "rules": {
+        "anti-slop/no-runtime-typeof": "off"
+      }
+    },
+    {
+      "files": ["**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*"],
+      "rules": {
+        "anti-slop/no-module-mocking": "off",
+        "anti-slop/require-safety-comment-for-type-assertion": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
+    ".claude/**",
+    "anti-slop/**",
     "**/node_modules/**",
     "**/build/**",
     "**/dist/**",

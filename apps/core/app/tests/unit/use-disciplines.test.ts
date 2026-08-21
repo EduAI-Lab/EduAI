@@ -23,7 +23,7 @@ function okJson(body: unknown) {
     headers: new Headers({ "Content-Type": "application/json" }),
     text: () => Promise.resolve(""),
     json: () => Promise.resolve(body),
-  } as unknown as Response;
+  } as Response;
 }
 
 let mockFetch: ReturnType<typeof vi.fn>;

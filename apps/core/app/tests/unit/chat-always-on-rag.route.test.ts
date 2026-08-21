@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Route tests for smart course RAG gate (#484 + research grounding).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -98,7 +99,7 @@ import prisma from "~/lib/prisma.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

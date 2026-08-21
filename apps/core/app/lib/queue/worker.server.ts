@@ -296,7 +296,7 @@ export async function processAiJob(
       where: { id: row.id, status: "RUNNING" },
       data: {
         status: "COMPLETED",
-        result: result as unknown as Prisma.InputJsonValue,
+        result: result as Prisma.InputJsonValue,
         errorMessage: null,
         completedAt: new Date(),
       },
@@ -352,7 +352,7 @@ export function createAiJobWorker(
     queueName,
     (job) => processAiJob(job, queueName, execute),
     {
-      connection: redis as unknown as ConnectionOptions,
+      connection: redis as ConnectionOptions,
       concurrency: workerConcurrency(queueName),
       ...options,
     },

@@ -10,7 +10,7 @@ import type { User } from "~/lib/auth/types";
 
 // The palette only needs `role` off the user; cast a minimal stub so we don't
 // have to build a whole better-auth session object.
-const asUser = (role: string) => ({ role }) as unknown as User;
+const asUser = (role: string) => ({ role }) as User;
 
 describe("paletteNavItems", () => {
   it("gives a student the core links but no admin links", () => {
@@ -52,7 +52,7 @@ describe("loadPaletteCourses", () => {
     ({
       ok: true,
       json: async () => ({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
-    }) as unknown as Response;
+    }) as Response;
 
   it("loads courses once and sets them", async () => {
     const ref = { current: false };
@@ -111,7 +111,7 @@ describe("fetchPaletteCourses (#1143)", () => {
     ({
       ok: true,
       json: async () => ({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
-    }) as unknown as Response;
+    }) as Response;
 
   it("sends the query to Core as ?search= so results aren't capped at the first page", async () => {
     const fetchMock = vi

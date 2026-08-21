@@ -5,6 +5,7 @@
 // its own module boundary, and is skipped for admin-preview/service-key
 // callers regardless of the enabled flag.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -143,7 +144,7 @@ import { invalidateCourseTopicNamesCache } from "~/lib/courses/server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

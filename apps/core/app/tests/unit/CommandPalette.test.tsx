@@ -15,7 +15,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { CommandPalette } from "~/components/command/command-palette";
 import type { User } from "~/lib/auth/types";
 
-const asUser = (role: string) => ({ role, name: "Admin" }) as unknown as User;
+const asUser = (role: string) => ({ role, name: "Admin" }) as User;
 
 function renderPalette(role = "ADMIN") {
   const router = createMemoryRouter(

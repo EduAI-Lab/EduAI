@@ -98,7 +98,7 @@ function wrap(modules = [module_]) {
       pageSize: 25,
       search: "",
     },
-  } as unknown as Route.ComponentProps;
+  } as Route.ComponentProps;
   return render(
     <MemoryRouter>
       <InstructorCourseModules {...props} />

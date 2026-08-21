@@ -59,7 +59,9 @@ export function extractIdempotencyKey(
 }
 
 /** Body copy without `idempotencyKey` for request-hash comparison. */
-export function bodyForIdempotencyHash(body: Record<string, unknown> | null | undefined): unknown {
+export function bodyForIdempotencyHash(
+  body: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
   if (!body || typeof body !== "object") return body ?? null;
   const { idempotencyKey: _ignored, ...rest } = body;
   return rest;

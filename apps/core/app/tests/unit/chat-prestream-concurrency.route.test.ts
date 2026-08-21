@@ -8,6 +8,7 @@
 // A serial implementation can never satisfy that assertion, regardless of CI
 // machine speed.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -131,7 +132,7 @@ const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 const originalVllm = process.env.VLLM_BASE_URL;
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

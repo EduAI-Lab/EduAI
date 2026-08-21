@@ -95,7 +95,14 @@ const module = {
   courseOfferingId: 1,
   lessons: [],
 };
-const lesson = { id: 1, title: "Lesson 1", moduleId: 1, isPublished: true, contentMd: "" };
+const lesson = {
+  id: 1,
+  title: "Lesson 1",
+  moduleId: 1,
+  position: 0,
+  isPublished: true,
+  contentMd: "",
+};
 const activity = (id: number) => ({
   id,
   title: `Activity ${id}`,

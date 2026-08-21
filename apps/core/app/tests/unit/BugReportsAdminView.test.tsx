@@ -8,7 +8,7 @@ import { toUiStatus } from "@eduai/ui";
 // The fixture carries Core's Prisma enum casing; the view renders the UI form.
 const rows = stubBugReports.map((r) => ({
   ...r,
-  status: toUiStatus(r.status as unknown as string),
+  status: toUiStatus(r.status as string),
   userId: r.id,
 })) as never[];
 

@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Fleet Slice 2: fleetRetry: true success marker only after alternate host succeeds.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -144,7 +145,7 @@ const pick2 = {
   reason: "interactive-round-robin-retry",
 };
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

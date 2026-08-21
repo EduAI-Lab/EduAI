@@ -24,7 +24,7 @@ const model = {
   name: "Test Model",
   isActive: true,
   providerId: "prov-1",
-} as unknown as AIModel;
+} as AIModel;
 
 function mockPage(data: AIModel[] = [model], total = data.length) {
   vi.mocked(apiFetch).mockResolvedValue({ data, total, page: 1, pageSize: 25 } as never);

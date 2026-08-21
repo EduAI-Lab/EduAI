@@ -20,18 +20,39 @@ export type AdminAiModelOption = {
   costTier?: CostTier | null;
 };
 
+/**
+ * The AI-policy payload as Core sends it, before `normalizePolicy` validates
+ * each field and applies fallbacks.
+ *
+ * Every field is optional and `unknown` on purpose: this is an unvalidated wire
+ * payload, and `normalizePolicy` is the only thing that turns it into an
+ * `AdminAiModelPolicy`. Naming it separately keeps that step from being skipped
+ * by a value that merely claims to be a policy already.
+ */
+export type RawAdminAiModelPolicy = {
+  allowedTutorModelIds?: unknown;
+  defaultTutorModelId?: unknown;
+  defaultSupervisorModelId?: unknown;
+  dualLoopEnabled?: unknown;
+  maxSupervisorIterations?: unknown;
+};
+
+/** One model entry as Core sends it, before `normalizeModelOption`. */
+export type RawAdminAiModelOption = Record<string, unknown>;
+
 export type AdminSettingsLoaderData = {
   status: EduAiApiKeyStatus;
-  aiPolicy: AdminAiModelPolicy | null;
+  /** Unvalidated: consumers call `normalizePolicy` before reading fields. */
+  aiPolicy: RawAdminAiModelPolicy | null;
   aiModels: AdminAiModelOption[];
   aiPolicyAvailable: boolean;
   aiPolicyError: string | null;
 };
 
 type AdminSettingsApi = {
-  getAdminAiModelPolicy?: () => Promise<unknown>;
-  setAdminAiModelPolicy?: (payload: AdminAiModelPolicy) => Promise<unknown>;
-  listAiModels?: () => Promise<unknown>;
+  getAdminAiModelPolicy?: () => Promise<RawAdminAiModelPolicy>;
+  setAdminAiModelPolicy?: (payload: AdminAiModelPolicy) => Promise<RawAdminAiModelPolicy>;
+  listAiModels?: () => Promise<RawAdminAiModelOption[]>;
 };
 
 export const DEFAULT_POLICY: AdminAiModelPolicy = {
@@ -115,7 +136,7 @@ async function loadAdminAiPolicy(settingsApi: AdminSettingsApi) {
 
   try {
     const policy = await settingsApi.getAdminAiModelPolicy();
-    return { policy: policy as AdminAiModelPolicy, error: null };
+    return { policy, error: null };
   } catch {
     return {
       policy: null,
