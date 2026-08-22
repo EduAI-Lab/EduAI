@@ -2,7 +2,7 @@
 import { APICallError, NoSuchModelError, NoSuchProviderError } from "ai";
 import { describe, expect, it } from "vitest";
 import {
-  classifyProviderError,
+  classifyProviderFailure,
   createProviderFailure,
   normalizeRetryAfter,
 } from "~/lib/ai/provider-errors.server";
@@ -28,7 +28,7 @@ describe("provider error normalization", () => {
       message: "api key sk-super-secret is missing",
     });
 
-    const result = classifyProviderError("openai", error);
+    const result = classifyProviderFailure("openai", error);
 
     expect(result).toMatchObject({
       status: 400,
@@ -46,7 +46,7 @@ describe("provider error normalization", () => {
       message: "raw upstream model detail",
     });
 
-    expect(classifyProviderError("vllm", error)).toEqual({
+    expect(classifyProviderFailure("vllm", error)).toEqual({
       ok: false,
       status: 503,
       error: "Requested model is unavailable",
@@ -58,7 +58,7 @@ describe("provider error normalization", () => {
 
   it("maps provider authentication failures to invalid configuration", () => {
     const error = apiCallError({ statusCode: 401, isRetryable: false });
-    expect(classifyProviderError("google", error)).toMatchObject({
+    expect(classifyProviderFailure("google", error)).toMatchObject({
       status: 400,
       code: "INVALID_PROVIDER_CONFIG",
       retryable: false,
@@ -71,7 +71,7 @@ describe("provider error normalization", () => {
       isRetryable: true,
       responseHeaders: { "Retry-After": "17" },
     });
-    expect(classifyProviderError("openai", error)).toMatchObject({
+    expect(classifyProviderFailure("openai", error)).toMatchObject({
       status: 503,
       code: "PROVIDER_UNAVAILABLE",
       retryable: true,
@@ -89,7 +89,7 @@ describe("provider error normalization", () => {
     const secret = "https://provider.test?api_key=secret";
     const timeout = new Error(secret);
     timeout.name = "TimeoutError";
-    const result = classifyProviderError("vllm", new Error("wrapper", { cause: timeout }));
+    const result = classifyProviderFailure("vllm", new Error("wrapper", { cause: timeout }));
     expect(result).toMatchObject({
       status: 502,
       code: "PROVIDER_TIMEOUT",
@@ -99,7 +99,7 @@ describe("provider error normalization", () => {
   });
 
   it("uses a non-retryable request failure for unknown provider exceptions", () => {
-    expect(classifyProviderError("ollama", { token: "do-not-leak" })).toEqual({
+    expect(classifyProviderFailure("ollama", { token: "do-not-leak" })).toEqual({
       ok: false,
       status: 502,
       error: "Provider request failed",

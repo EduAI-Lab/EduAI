@@ -6,7 +6,7 @@ import {
   validateCompletionRequest,
 } from "~/lib/ai/completion.server";
 import {
-  classifyProviderError,
+  classifyProviderFailure,
   providerFailureBody,
   providerFailureHeaders,
 } from "~/lib/ai/provider-errors.server";
@@ -199,7 +199,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // late provider errors through the same sanitized contract as the
         // pre-stream path via the AI SDK stream error channel.
         getErrorMessage: (error) =>
-          JSON.stringify(providerFailureBody(classifyProviderError(outcome.provider, error))),
+          JSON.stringify(providerFailureBody(classifyProviderFailure(outcome.provider, error))),
       });
       const release = admissionRelease;
       admissionRelease = null;

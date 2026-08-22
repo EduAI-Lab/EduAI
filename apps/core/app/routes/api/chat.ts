@@ -10,7 +10,8 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
-  classifyProviderError,
+  classifyProviderFailure,
+  classifyPublicProviderError,
   createProviderFailure,
   isProviderAbortError,
   providerFailureBody,
@@ -487,7 +488,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 }
 
 function formatStreamError(error: unknown): string {
-  return classifyProviderError(error, "stream").message;
+  return classifyPublicProviderError(error, "stream").message;
 }
 
 function logStreamError(error: unknown, trace: Record<string, unknown>): void {
@@ -513,7 +514,7 @@ function providerStreamErrorMessage(
   trace: Record<string, unknown>,
 ): string {
   logStreamError(error, trace);
-  return JSON.stringify(providerFailureBody(classifyProviderError(provider, error)));
+  return JSON.stringify(providerFailureBody(classifyProviderFailure(provider, error)));
 }
 
 function isClientAbort(error: unknown, signal: AbortSignal): boolean {
@@ -1637,7 +1638,7 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       aiModel = registry.languageModel(resolvedModelId as RegistryModelId);
     } catch (err: unknown) {
-      return rejectProviderFailure(classifyProviderError(parsedModel.providerId, err), {
+      return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, err), {
         chatMode,
         userId: actingUser.id,
         model: resolvedModelId,
@@ -2505,7 +2506,7 @@ ${buildEmptyCourseRagBlock()}`;
             return clientAbortResponse();
           }
           logStreamError(retryError, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, retryError), {
+          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, retryError), {
             ...streamTrace,
             stage: "stream-startup",
             fleetRetry,
@@ -2514,7 +2515,7 @@ ${buildEmptyCourseRagBlock()}`;
       } else {
         releaseAdmission();
         logStreamError(error, streamTrace);
-        return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+        return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
           ...streamTrace,
           stage: "stream-startup",
         });
@@ -2691,7 +2692,7 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (oversightStage === "provider") {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
             ...streamTrace,
             stage: "oversight-provider",
           });
@@ -2847,7 +2848,7 @@ ${buildEmptyCourseRagBlock()}`;
         }
         if (!providerResultResolved) {
           logStreamError(error, streamTrace);
-          return rejectProviderFailure(classifyProviderError(parsedModel.providerId, error), {
+          return rejectProviderFailure(classifyProviderFailure(parsedModel.providerId, error), {
             ...streamTrace,
             stage: "non-streaming-provider",
           });
