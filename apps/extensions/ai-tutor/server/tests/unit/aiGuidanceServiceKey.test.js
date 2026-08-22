@@ -80,11 +80,25 @@ describe("callEduAI service-key authentication (#1606)", () => {
     expect(body.systemPrompt.length).toBeGreaterThan(0);
   });
 
-  it("fails fast with a named error when the key is not configured", async () => {
-    // A clear configuration error beats an opaque 403 from Core, and beats
-    // burning the retry budget on a request that can never succeed.
+  it("omits the header rather than failing when the key is not configured", async () => {
+    // A missing key is an operator misconfiguration. Throwing here would turn it
+    // into an opaque tutoring outage before the request is even attempted, so the
+    // call proceeds and Core's 403 SYSTEM_PROMPT_FORBIDDEN carries the diagnosis.
+    // CI provisions a minimal .env.test with no EDUAI_API_KEY, so this is also
+    // the configuration every other callEduAI test runs under.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     delete process.env.EDUAI_API_KEY;
-    await expect(generateResponse()).rejects.toThrow("EDUAI_API_KEY not configured");
-    expect(global.fetch).not.toHaveBeenCalled();
+
+    await generateResponse();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(sentHeaders().Authorization).toBeUndefined();
+    expect(sentHeaders().cookie).toBe("session=service-key-test");
+    // Named event, not the "unknown_event" fallback — the log allowlist has to
+    // carry `missing_service_key` or the diagnostic is silently thrown away.
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("missing_service_key"),
+      expect.anything(),
+    );
   });
 });

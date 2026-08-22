@@ -106,6 +106,7 @@ const TIMEOUT_MESSAGE = "The AI study buddy took too long to respond. Please try
 const SAFE_AI_ERROR_CODES = new Set(["TIMEOUT"]);
 const SAFE_AI_LOG_EVENTS = new Set([
   "missing_session_cookie",
+  "missing_service_key",
   "missing_user_api_key",
   "invalid_model_id",
   "upstream_retry",
@@ -383,10 +384,19 @@ async function callEduAI({
     const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
+    // Core restricts custom system prompts to course staff (#1606). The prompt
+    // below is composed by THIS server, not by the learner whose cookie we
+    // forward, so the shared service key is what proves first-party origin.
+    // Without it Core returns 403 SYSTEM_PROMPT_FORBIDDEN — the same answer the
+    // learner's own browser would get.
+    //
+    // Deliberately not fatal: a missing key is an operator misconfiguration, and
+    // throwing here would convert it into an opaque tutoring outage before the
+    // request is even attempted. Log it loudly and let Core's 403 carry the
+    // diagnosis.
     const serviceKey = process.env.EDUAI_API_KEY;
     if (!serviceKey) {
       logAiGuidanceEvent("error", "missing_service_key");
-      throw new Error("EDUAI_API_KEY not configured");
     }
 
     const requestSignal = signal
@@ -399,13 +409,7 @@ async function callEduAI({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Core restricts custom system prompts to course staff (#1606). The
-          // prompt below is composed by THIS server, not by the learner whose
-          // cookie we forward, so the shared service key is what proves
-          // first-party origin. Without it Core returns 403
-          // SYSTEM_PROMPT_FORBIDDEN — the same answer the learner's own browser
-          // would get, which is the point.
-          Authorization: `Bearer ${serviceKey}`,
+          ...(serviceKey ? { Authorization: `Bearer ${serviceKey}` } : {}),
           cookie,
         },
         body: JSON.stringify(requestBody),
