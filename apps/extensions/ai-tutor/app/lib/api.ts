@@ -23,6 +23,46 @@
  */
 
 import { toast } from "sonner";
+import { z } from "zod";
+import {
+  activityAnalyticsRowSchema,
+  activityAnswerResultSchema,
+  activityFeedbackResultSchema,
+  activityFeedbackRowSchema,
+  activityMoveSchema,
+  activitySchema,
+  adminAiModelPolicyResponseSchema,
+  adminBugReportRowSchema,
+  adminEnrollmentDataSchema,
+  adminUserPageSchema,
+  aiModelSchema,
+  aiStatusSchema,
+  aiTraceRowSchema,
+  apiKeyValidationSchema,
+  bugReportCreatedSchema,
+  chatMessagesSchema,
+  chatSessionRowSchema,
+  courseFacetsSchema,
+  courseSchema,
+  dashboardStatsSchema,
+  eduAiApiKeyStatusSchema,
+  gradedSubmissionSchema,
+  importableActivitySchema,
+  lessonContextSchema,
+  lessonMoveSchema,
+  lessonSchema,
+  meSchema,
+  moduleContextSchema,
+  moduleMoveSchema,
+  moduleSchema,
+  okSchema,
+  okWithRoleSchema,
+  paginatedSchema,
+  studentMetricRowSchema,
+  submissionRowSchema,
+  suggestedPromptSchema,
+  topicSchema,
+} from "./api-schemas";
 import type {
   AdminBugReportRow,
   AdminEnrollmentData,
@@ -316,7 +356,6 @@ export interface DashboardStats {
   openBugReports?: number;
   totalBugReports?: number;
   pendingSubmissions?: number;
-  [key: string]: unknown;
 }
 
 export interface AiTraceRow {
@@ -396,9 +435,8 @@ export const CHAT_TIMEOUT_MS = 60_000;
  * no default timeout.
  */
 async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
+  headers["Content-Type"] = "application/json";
 
   const { signal: callerSignal, timeoutMs, ...rest } = init ?? {};
   const controller = new AbortController();
@@ -482,6 +520,25 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
  * additional callers share it; the slot clears as soon as it settles, so the
  * result is never cached across navigations (auth state stays fresh).
  */
+/**
+ * Validate a response against the contract its endpoint publishes.
+ *
+ * `http` hands back whatever the server sent, so this is where a response
+ * becomes a typed value: the schema is the endpoint's declared shape, and a
+ * payload that no longer matches fails here rather than several components
+ * later as an undefined field.
+ */
+/** A JSON request body: what `JSON.stringify` is handed on the way out. */
+type WireValue = string | number | boolean | null | undefined | WireValue[] | WireBody;
+type WireBody = { [key: string]: WireValue };
+
+function decode<Schema extends z.ZodTypeAny>(
+  response: Promise<unknown>,
+  schema: Schema,
+): Promise<z.infer<Schema>> {
+  return response.then((body) => schema.parse(body));
+}
+
 let meInFlight: Promise<{ user: User | null }> | null = null;
 
 export const api = {
@@ -489,32 +546,22 @@ export const api = {
     if (meInFlight) return meInFlight;
     // #446: bound the session probe so a hung upstream can't strand the
     // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
-    meInFlight = (
-      http("/api/me", { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>
-    ).finally(() => {
-      meInFlight = null;
-    });
+    meInFlight = decode(http("/api/me", { timeoutMs: REQUEST_TIMEOUT_MS }), meSchema).finally(
+      () => {
+        meInFlight = null;
+      },
+    );
     return meInFlight;
   },
-  aiStatus: (signal?: AbortSignal) =>
-    http("/api/ai-status", { signal }) as Promise<{
-      cloud: {
-        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
-        detail?: string;
-      };
-      ubc: {
-        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
-        detail?: string;
-      };
-    }>,
+  aiStatus: (signal?: AbortSignal) => decode(http("/api/ai-status", { signal }), aiStatusSchema),
   listCourses: (params?: CourseListParams) =>
-    http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,
+    decode(http(`/api/courses${courseListQuery(params)}`), paginatedSchema(courseSchema)),
   /**
    * Filter options for the course list, spanning the caller's whole accessible
    * set rather than the loaded page (#1208). Fetch once per mount — these change
    * rarely, and re-fetching per keystroke would be pure waste.
    */
-  listCourseFacets: () => http("/api/courses/facets") as Promise<CourseFacets>,
+  listCourseFacets: () => decode(http("/api/courses/facets"), courseFacetsSchema),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   /**
    * Flip a course published. Course publish state is owned by EduAI Core, so
@@ -543,9 +590,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   modulesForCourse: (courseId: number, params?: ListParams) =>
-    http(
-      `/api/courses/${courseId}/modules${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Module>>,
+    decode(
+      http(
+        `/api/courses/${courseId}/modules${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+      ),
+      paginatedSchema(moduleSchema),
+    ),
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
   createModule: (
     courseId: number,
@@ -583,9 +633,12 @@ export const api = {
       body: JSON.stringify({ orderedIds }),
     }),
   lessonsForModule: (moduleId: number, params?: ListParams) =>
-    http(
-      `/api/modules/${moduleId}/lessons${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Lesson>>,
+    decode(
+      http(
+        `/api/modules/${moduleId}/lessons${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+      ),
+      paginatedSchema(lessonSchema),
+    ),
   createLesson: (
     moduleId: number,
     payload: { title: string; contentMd?: string; position?: number },
@@ -628,9 +681,12 @@ export const api = {
   lessonBreadcrumb: (lessonId: number) =>
     http(`/api/lessons/${lessonId}/breadcrumb`) as Promise<LessonBreadcrumb>,
   activitiesForLesson: (lessonId: number, params?: ListParams) =>
-    http(
-      `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Activity>>,
+    decode(
+      http(
+        `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+      ),
+      paginatedSchema(activitySchema),
+    ),
   createActivity: (
     lessonId: number,
     payload: {
@@ -675,7 +731,8 @@ export const api = {
       enableCustomMode?: boolean;
     },
   ) => {
-    const body: Record<string, unknown> = { ...payload };
+    const body: WireBody = {};
+    Object.assign(body, payload);
     if (Object.prototype.hasOwnProperty.call(payload, "options")) {
       const value = payload.options;
       if (value === null) {
@@ -702,24 +759,33 @@ export const api = {
       body: JSON.stringify({ orderedIds }),
     }),
   topicsForCourse: (courseId: number, params?: ListParams) =>
-    http(
-      `/api/courses/${courseId}/topics${pageQuery({ page: 1, pageSize: TOPIC_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Topic>>,
+    decode(
+      http(
+        `/api/courses/${courseId}/topics${pageQuery({ page: 1, pageSize: TOPIC_PAGE_SIZE, ...params })}`,
+      ),
+      paginatedSchema(topicSchema),
+    ),
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   submitAnswer: (activityId: number, payload: any) =>
-    http(`/api/questions/${activityId}/answer`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }) as Promise<ActivityAnswerResult>,
+    decode(
+      http(`/api/questions/${activityId}/answer`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+      activityAnswerResultSchema,
+    ),
   submitActivityFeedback: (activityId: number, payload: { rating: number; note?: string }) =>
-    http(`/api/activities/${activityId}/feedback`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }) as Promise<ActivityFeedbackResult>,
+    decode(
+      http(`/api/activities/${activityId}/feedback`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+      activityFeedbackResultSchema,
+    ),
   sendTeachMessage: (
     activityId: number,
     params: {
@@ -779,52 +845,49 @@ export const api = {
       timeoutMs: CHAT_TIMEOUT_MS,
     }),
   listChatSessions: (activityId: number) =>
-    http(`/api/activities/${activityId}/chat-sessions`) as Promise<
-      Array<{
-        id: number;
-        chatId: string;
-        mode: string;
-        modelId: string | null;
-        createdAt: string;
-        updatedAt: string;
-      }>
-    >,
+    decode(http(`/api/activities/${activityId}/chat-sessions`), z.array(chatSessionRowSchema)),
   getChatMessages: (activityId: number, chatId: string) =>
-    http(`/api/activities/${activityId}/chat-sessions/${chatId}/messages`) as Promise<{
-      chat: { id: string; title: string | null };
-      messages: Array<{ messageId: string; role: string; content: unknown }>;
-    }>,
-  listAiModels: () => http("/api/ai-models") as Promise<AiModel[]>,
+    decode(
+      http(`/api/activities/${activityId}/chat-sessions/${chatId}/messages`),
+      chatMessagesSchema,
+    ),
+  listAiModels: () => decode(http("/api/ai-models"), z.array(aiModelSchema)),
   validateApiKey: (provider: string, apiKey: string) =>
-    http("/api/ai-models/validate-key", {
-      method: "POST",
-      body: JSON.stringify({ provider, apiKey }),
-    }) as Promise<{ valid: boolean; error?: string }>,
+    decode(
+      http("/api/ai-models/validate-key", {
+        method: "POST",
+        body: JSON.stringify({ provider, apiKey }),
+      }),
+      apiKeyValidationSchema,
+    ),
   getEduAiApiKeyStatus: () =>
-    http("/api/admin/settings/eduai-api-key") as Promise<EduAiApiKeyStatus>,
-  getAdminAiModelPolicy: async () => {
-    const result = await http("/api/admin/settings/ai-model-policy");
-    return (result?.policy ?? result) as AdminAiModelPolicy;
-  },
-  setAdminAiModelPolicy: async (payload: AdminAiModelPolicy) => {
-    const result = await http("/api/admin/settings/ai-model-policy", {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-    return (result?.policy ?? result) as AdminAiModelPolicy;
-  },
+    decode(http("/api/admin/settings/eduai-api-key"), eduAiApiKeyStatusSchema),
+  getAdminAiModelPolicy: () =>
+    decode(http("/api/admin/settings/ai-model-policy"), adminAiModelPolicyResponseSchema),
+  setAdminAiModelPolicy: (payload: AdminAiModelPolicy) =>
+    decode(
+      http("/api/admin/settings/ai-model-policy", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      }),
+      adminAiModelPolicyResponseSchema,
+    ),
   /**
    * Paged platform users from Core (#1041). Returns the envelope, not an array —
    * `stats` carries the platform-wide totals the dashboard needs.
    */
   listAdminUsers: (params: { page?: number; pageSize?: number } = {}) =>
-    http(
-      `/api/admin/users?page=${params.page ?? 1}&pageSize=${params.pageSize ?? 25}`,
-    ) as Promise<AdminUserPage>,
+    decode(
+      http(`/api/admin/users?page=${params.page ?? 1}&pageSize=${params.pageSize ?? 25}`),
+      adminUserPageSchema,
+    ),
   listAdminCourses: (params?: { page?: number; pageSize?: number }) =>
-    http(
-      `/api/admin/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Course>>,
+    decode(
+      http(
+        `/api/admin/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+      ),
+      paginatedSchema(courseSchema),
+    ),
   /**
    * `availableStudents` is one page of Core's STUDENT list (#1041) — pass
    * `search`/`page` to reach students past the first page.
@@ -838,19 +901,26 @@ export const api = {
     if (params.page) query.set("page", String(params.page));
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
     const suffix = query.size > 0 ? `?${query}` : "";
-    return http(
-      `/api/admin/courses/${courseId}/enrollments${suffix}`,
-    ) as Promise<AdminEnrollmentData>;
+    return decode(
+      http(`/api/admin/courses/${courseId}/enrollments${suffix}`),
+      adminEnrollmentDataSchema,
+    );
   },
   removeStudentFromCourse: (courseId: number, userId: string) =>
-    http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
-      method: "DELETE",
-    }) as Promise<{ ok: true }>,
+    decode(
+      http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
+        method: "DELETE",
+      }),
+      okSchema,
+    ),
   updateEnrollmentRole: (courseId: number, userId: string, role: EnrollmentRole) =>
-    http(`/api/admin/courses/${courseId}/enrollments/${userId}/role`, {
-      method: "PATCH",
-      body: JSON.stringify({ role }),
-    }) as Promise<{ ok: true; role: EnrollmentRole }>,
+    decode(
+      http(`/api/admin/courses/${courseId}/enrollments/${userId}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+      }),
+      okWithRoleSchema,
+    ),
   courseSubmissions: (
     courseId: number,
     params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
@@ -861,9 +931,10 @@ export const api = {
     if (params?.take != null) search.set("take", String(params.take));
     if (params?.skip != null) search.set("skip", String(params.skip));
     const qs = search.toString();
-    return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ""}`) as Promise<
-      SubmissionRow[]
-    >;
+    return decode(
+      http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ""}`),
+      z.array(submissionRowSchema),
+    );
   },
   listCourseFeedback: (
     courseId: number,
@@ -875,44 +946,59 @@ export const api = {
     if (params?.take != null) search.set("take", String(params.take));
     if (params?.skip != null) search.set("skip", String(params.skip));
     const qs = search.toString();
-    return http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ""}`) as Promise<
-      ActivityFeedbackRow[]
-    >;
+    return decode(
+      http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ""}`),
+      z.array(activityFeedbackRowSchema),
+    );
   },
   courseStudentMetrics: (courseId: number) =>
-    http(`/api/courses/${courseId}/student-metrics`) as Promise<StudentMetricRow[]>,
+    decode(http(`/api/courses/${courseId}/student-metrics`), z.array(studentMetricRowSchema)),
   courseAnalytics: (courseId: number) =>
-    http(`/api/courses/${courseId}/analytics`) as Promise<ActivityAnalyticsRow[]>,
+    decode(http(`/api/courses/${courseId}/analytics`), z.array(activityAnalyticsRowSchema)),
   activitySubmissions: (activityId: number) =>
-    http(`/api/activities/${activityId}/submissions`) as Promise<SubmissionRow[]>,
+    decode(http(`/api/activities/${activityId}/submissions`), z.array(submissionRowSchema)),
   listActivityFeedback: (activityId: number) =>
-    http(`/api/activities/${activityId}/feedback`) as Promise<ActivityFeedbackRow[]>,
-  mySubmissions: () => http("/api/me/submissions") as Promise<SubmissionRow[]>,
-  myFeedback: () => http("/api/me/feedback") as Promise<ActivityFeedbackRow[]>,
+    decode(http(`/api/activities/${activityId}/feedback`), z.array(activityFeedbackRowSchema)),
+  mySubmissions: () => decode(http("/api/me/submissions"), z.array(submissionRowSchema)),
+  myFeedback: () => decode(http("/api/me/feedback"), z.array(activityFeedbackRowSchema)),
   submitBugReport: (payload: BugReportCreatePayload) =>
-    http("/api/bug-reports", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }) as Promise<{ id: string; status: BugReportStatus; createdAt: string }>,
-  listAdminBugReports: () => http("/api/admin/bug-reports") as Promise<AdminBugReportRow[]>,
+    decode(
+      http("/api/bug-reports", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+      bugReportCreatedSchema,
+    ),
+  listAdminBugReports: () =>
+    decode(http("/api/admin/bug-reports"), z.array(adminBugReportRowSchema)),
   getAdminBugReport: (reportId: string) =>
-    http(`/api/admin/bug-reports/${reportId}`) as Promise<AdminBugReportRow>,
+    decode(http(`/api/admin/bug-reports/${reportId}`), adminBugReportRowSchema),
   updateAdminBugReportStatus: (reportId: string, payload: { status: BugReportStatus }) =>
-    http(`/api/admin/bug-reports/${reportId}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }) as Promise<AdminBugReportRow>,
+    decode(
+      http(`/api/admin/bug-reports/${reportId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+      adminBugReportRowSchema,
+    ),
   setEduAiApiKey: (apiKey: string) =>
-    http("/api/admin/settings/eduai-api-key", {
-      method: "PUT",
-      body: JSON.stringify({ apiKey }),
-    }) as Promise<EduAiApiKeyStatus>,
+    decode(
+      http("/api/admin/settings/eduai-api-key", {
+        method: "PUT",
+        body: JSON.stringify({ apiKey }),
+      }),
+      eduAiApiKeyStatusSchema,
+    ),
   clearEduAiApiKey: () =>
-    http("/api/admin/settings/eduai-api-key", {
-      method: "DELETE",
-    }) as Promise<EduAiApiKeyStatus>,
+    decode(
+      http("/api/admin/settings/eduai-api-key", {
+        method: "DELETE",
+      }),
+      eduAiApiKeyStatusSchema,
+    ),
   listPrompts: () => http("/api/prompts"),
-  listSuggestedPrompts: () => http("/api/suggested-prompts") as Promise<SuggestedPrompt[]>,
+  listSuggestedPrompts: () =>
+    decode(http("/api/suggested-prompts"), z.array(suggestedPromptSchema)),
   createPrompt: (payload: {
     name: string;
     systemPrompt: string;
@@ -929,19 +1015,28 @@ export const api = {
     // null clears the field — the route accepts an explicit null for both.
     body: { score?: number | null; isCorrect?: boolean | null },
   ) =>
-    http(`/api/activities/${activityId}/submissions/${submissionId}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }) as Promise<GradedSubmission>,
+    decode(
+      http(`/api/activities/${activityId}/submissions/${submissionId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+      gradedSubmissionSchema,
+    ),
   duplicateActivity: (activityId: number) =>
-    http(`/api/activities/${activityId}/duplicate`, {
-      method: "POST",
-    }) as Promise<Activity>,
+    decode(
+      http(`/api/activities/${activityId}/duplicate`, {
+        method: "POST",
+      }),
+      activitySchema,
+    ),
   importActivity: (lessonId: number, sourceActivityId: number) =>
-    http(`/api/lessons/${lessonId}/activities/import`, {
-      method: "POST",
-      body: JSON.stringify({ sourceActivityId }),
-    }) as Promise<Activity>,
+    decode(
+      http(`/api/lessons/${lessonId}/activities/import`, {
+        method: "POST",
+        body: JSON.stringify({ sourceActivityId }),
+      }),
+      activitySchema,
+    ),
   listImportableActivities: (
     courseId?: number,
     params?: ListParams & { excludeLessonId?: number },
@@ -961,9 +1056,10 @@ export const api = {
     if (params?.search != null && params.search.trim() !== "") {
       qs.set("search", params.search.trim());
     }
-    return http(`/api/activities/importable?${qs.toString()}`) as Promise<
-      Paginated<ImportableActivity>
-    >;
+    return decode(
+      http(`/api/activities/importable?${qs.toString()}`),
+      paginatedSchema(importableActivitySchema),
+    );
   },
   /**
    * Move one module/lesson/activity to an absolute 0-based ordinal within its
@@ -973,42 +1069,51 @@ export const api = {
    * sends the typed ordinal directly.
    */
   moveModuleToPosition: (moduleId: number, position: number) =>
-    http(`/api/modules/${moduleId}/position`, {
-      method: "PATCH",
-      body: JSON.stringify({ position }),
-    }) as Promise<{ module: Module } & MoveResult>,
+    decode(
+      http(`/api/modules/${moduleId}/position`, {
+        method: "PATCH",
+        body: JSON.stringify({ position }),
+      }),
+      moduleMoveSchema,
+    ),
   moveLessonToPosition: (lessonId: number, position: number) =>
-    http(`/api/lessons/${lessonId}/position`, {
-      method: "PATCH",
-      body: JSON.stringify({ position }),
-    }) as Promise<{ lesson: Lesson } & MoveResult>,
+    decode(
+      http(`/api/lessons/${lessonId}/position`, {
+        method: "PATCH",
+        body: JSON.stringify({ position }),
+      }),
+      lessonMoveSchema,
+    ),
   moveActivityToPosition: (activityId: number, position: number) =>
-    http(`/api/activities/${activityId}/position`, {
-      method: "PATCH",
-      body: JSON.stringify({ position }),
-    }) as Promise<{ activity: Activity } & MoveResult>,
+    decode(
+      http(`/api/activities/${activityId}/position`, {
+        method: "PATCH",
+        body: JSON.stringify({ position }),
+      }),
+      activityMoveSchema,
+    ),
   /**
    * Structural position of a lesson in its tree (#1207). Replaces deriving the
    * "3.2" breadcrumb by `findIndex` over full sibling lists — that read was
    * wrong the moment a tree exceeded one page.
    */
   lessonContext: (lessonId: number) =>
-    http(`/api/lessons/${lessonId}/context`) as Promise<LessonContext>,
+    decode(http(`/api/lessons/${lessonId}/context`), lessonContextSchema),
   /**
    * Structural position of a module in its course (#1207) — the ordinal chip on
    * the instructor module view. Replaces a `findIndex` over the full sibling
    * module list, which scored -1 for any module past the first page.
    */
   moduleContext: (moduleId: number) =>
-    http(`/api/modules/${moduleId}/context`) as Promise<ModuleContext>,
-  dashboardStats: () => http("/api/me/dashboard-stats") as Promise<DashboardStats>,
+    decode(http(`/api/modules/${moduleId}/context`), moduleContextSchema),
+  dashboardStats: () => decode(http("/api/me/dashboard-stats"), dashboardStatsSchema),
   adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
     const search = new URLSearchParams();
     if (params?.unit) search.set("unit", params.unit);
     if (params?.courseId != null) search.set("courseId", String(params.courseId));
     if (params?.limit != null) search.set("limit", String(params.limit));
     const qs = search.toString();
-    return http(`/api/admin/ai-traces${qs ? `?${qs}` : ""}`) as Promise<AiTraceRow[]>;
+    return decode(http(`/api/admin/ai-traces${qs ? `?${qs}` : ""}`), z.array(aiTraceRowSchema));
   },
   /**
    * Proxies sign-out through the AT backend (server-to-server to Core) so the
@@ -1029,9 +1134,9 @@ export const api = {
     if (!response.ok) {
       let message = `Logout failed: ${response.status}`;
       try {
-        const payload = (await response.json()) as { error?: unknown };
-        if (typeof payload?.error === "string" && payload.error.trim()) {
-          message = payload.error;
+        const payload = z.object({ error: z.string() }).safeParse(await response.json());
+        if (payload.success && payload.data.error.trim()) {
+          message = payload.data.error;
         }
       } catch {
         // A status-bearing error is still actionable when the body is empty or malformed.
