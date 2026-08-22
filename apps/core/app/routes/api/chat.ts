@@ -207,6 +207,8 @@ const chatRequestSchema = z
     courseId: z.string().optional().catch(undefined),
     courseCode: z.string().optional().catch(undefined),
     chatId: z.string().optional().catch(undefined),
+    // Any non-string, like any string other than "admin", is a learning chat.
+    chatMode: z.string().optional().catch(undefined),
     systemPrompt: z.string().optional().catch(undefined),
     proxyUser: z
       .object({
@@ -775,7 +777,7 @@ export async function action({ request }: ActionFunctionArgs) {
         : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = request_.chatId;
-    const chatMode = parseChatMode(body.chatMode);
+    const chatMode = parseChatMode(request_.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
 

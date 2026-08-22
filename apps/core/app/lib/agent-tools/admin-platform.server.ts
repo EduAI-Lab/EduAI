@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import cron from "node-cron";
+import { z } from "zod";
 
 import type { RbacUser } from "~/lib/auth/course-access.server";
 import {
@@ -48,6 +49,7 @@ import {
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
 import prisma from "~/lib/prisma.server";
 import { resolveAdminCourseId } from "./admin-context.server";
+import type { ToolInput } from "./tool-input";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
@@ -58,7 +60,7 @@ function requirePlatformAdmin(user: RbacUser): ToolError | null {
   return null;
 }
 
-function adminPayload<T extends Record<string, unknown>>(data: T) {
+function adminPayload<T extends object>(data: T) {
   return {
     dataSource: "database" as const,
     queriedAt: new Date().toISOString(),
@@ -83,10 +85,7 @@ async function resolveCourseId(
 
 // ── Courses ───────────────────────────────────────────────────────────────────
 
-export async function createAdminCourse(
-  actor: RbacUser,
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+export async function createAdminCourse(actor: RbacUser, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -144,8 +143,8 @@ export async function createAdminCourse(
 export async function updateAdminCourse(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+  input: ToolInput,
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -172,7 +171,7 @@ export async function updateAdminCourse(
 export async function deleteAdminCourse(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -190,7 +189,7 @@ export async function setAdminCoursePublished(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
   publish: boolean,
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -223,8 +222,8 @@ export async function getAdminCourseRagSettings(
 export async function updateAdminCourseRagSettings(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+  input: ToolInput,
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -286,7 +285,7 @@ export async function renameAdminCourseMaterial(
     materialId: string;
     name: string;
   },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -309,7 +308,7 @@ export async function deleteAdminCourseMaterial(
     fallbackCourseId?: string | null;
     materialId: string;
   },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -354,8 +353,8 @@ export async function getAdminCourseEmbeddingSettings(
 export async function updateAdminCourseEmbeddingSettings(
   actor: RbacUser,
   opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown> | ToolError> {
+  input: ToolInput,
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -445,7 +444,7 @@ export async function syncAdminCanvasMaterials(
     fallbackCourseId?: string | null;
     canvasFileIds: string[];
   },
-): Promise<Record<string, unknown> | ToolError> {
+) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -585,11 +584,7 @@ export async function getAdminPolicies(actor: RbacUser) {
   });
 }
 
-export async function updateAdminPolicy(
-  actor: RbacUser,
-  key: string,
-  value: boolean,
-): Promise<Record<string, unknown> | ToolError> {
+export async function updateAdminPolicy(actor: RbacUser, key: string, value: boolean) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -612,7 +607,7 @@ export async function listAdminAiProviders(actor: RbacUser) {
   return adminPayload({ providers, count: providers.length });
 }
 
-export async function createAdminAiProvider(actor: RbacUser, input: Record<string, unknown>) {
+export async function createAdminAiProvider(actor: RbacUser, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -638,11 +633,7 @@ export async function createAdminAiProvider(actor: RbacUser, input: Record<strin
   }
 }
 
-export async function updateAdminAiProvider(
-  actor: RbacUser,
-  providerId: string,
-  input: Record<string, unknown>,
-) {
+export async function updateAdminAiProvider(actor: RbacUser, providerId: string, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -673,7 +664,7 @@ export async function deleteAdminAiProvider(actor: RbacUser, providerId: string)
   return { ok: true, providerId };
 }
 
-export async function createAdminAiModel(actor: RbacUser, input: Record<string, unknown>) {
+export async function createAdminAiModel(actor: RbacUser, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -692,11 +683,7 @@ export async function createAdminAiModel(actor: RbacUser, input: Record<string, 
   return { ok: true, model };
 }
 
-export async function updateAdminAiModel(
-  actor: RbacUser,
-  modelId: string,
-  input: Record<string, unknown>,
-) {
+export async function updateAdminAiModel(actor: RbacUser, modelId: string, input: ToolInput) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
@@ -832,6 +819,24 @@ function resolveVllmBaseUrl(raw: string): string {
 }
 
 /** ADMIN — list models from local Ollama (GET /api/ollama-models). */
+/**
+ * The `/api/tags` fields this tool surfaces. Ollama sends more per entry and is
+ * free to omit any of these, so every field is optional; a payload whose
+ * `models` is not an array of objects is a genuine protocol mismatch and fails.
+ */
+const OllamaTagsSchema = z.object({
+  models: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        model: z.string().optional(),
+        size: z.number().optional(),
+        modified_at: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
 export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
@@ -855,11 +860,12 @@ export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
     if (!response.ok) {
       return { error: `OLLAMA_FETCH_FAILED: ${response.status} ${response.statusText}` };
     }
-    const data = (await response.json()) as {
-      models?: Array<Record<string, unknown>>;
-    };
+    const tags = OllamaTagsSchema.safeParse(await response.json());
+    if (!tags.success) {
+      return { error: "OLLAMA_FETCH_FAILED: unexpected /api/tags payload" };
+    }
     const models =
-      data.models?.map((model) => ({
+      tags.data.models?.map((model) => ({
         name: model.name,
         model: model.model ?? model.name,
         size: model.size,

@@ -192,16 +192,17 @@ export async function linkCanvasRosterForUser(
   }
 }
 
-function mapCanvasError(error: unknown): ToolError {
-  if (error instanceof CanvasNotConnectedError) {
+/** `cause` is the caught throwable, which has no contract until an `instanceof` establishes one. */
+function mapCanvasError(cause: unknown): ToolError {
+  if (cause instanceof CanvasNotConnectedError) {
     return { error: "CANVAS_NOT_CONNECTED" };
   }
-  if (error instanceof InvalidCanvasCourseAccessError) {
+  if (cause instanceof InvalidCanvasCourseAccessError) {
     return {
       error: "INVALID_CANVAS_COURSE_ACCESS",
-      fields: { invalidCourseIds: error.invalidCourseIds.join(", ") },
+      fields: { invalidCourseIds: cause.invalidCourseIds.join(", ") },
     };
   }
-  const message = error instanceof Error ? error.message : "CANVAS_REQUEST_FAILED";
+  const message = cause instanceof Error ? cause.message : "CANVAS_REQUEST_FAILED";
   return { error: message };
 }
