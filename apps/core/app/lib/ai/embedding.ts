@@ -817,14 +817,15 @@ function createOpenRouterEmbeddingClient() {
   const referer =
     process.env.OPENROUTER_HTTP_REFERER?.trim() || process.env.BETTER_AUTH_URL?.trim() || undefined;
 
-  // OpenRouter attributes traffic by these headers; the referer is only sent
-  // when this deployment actually has a public URL to claim.
-  const headers: Record<string, string> = {
-    "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
-  };
-  if (referer) headers["HTTP-Referer"] = referer;
+  const title = process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI";
 
-  return createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, headers });
+  return createOpenAI({
+    apiKey,
+    baseURL: OPENROUTER_BASE_URL,
+    // OpenRouter attributes traffic by these headers; the referer is sent only
+    // when this deployment actually has a public URL to claim.
+    headers: referer ? { "X-Title": title, "HTTP-Referer": referer } : { "X-Title": title },
+  });
 }
 
 function getLocalEmbeddingModel(settings: EffectiveEmbeddingSettings): {
