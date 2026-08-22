@@ -54,15 +54,15 @@ When a student interacts with the AI tutor, the request travels from the fronten
 
 For readers with a technical background, the core technology stack includes:
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, React Router v7, TypeScript, Tailwind CSS v4 |
-| Backend | Express 5, Node.js |
-| Database | PostgreSQL with Prisma ORM |
-| Authentication | Better Auth (session cookies), EDU AI OAuth |
+| Layer          | Technology                                                   |
+| -------------- | ------------------------------------------------------------ |
+| Frontend       | React 19, React Router v7, TypeScript, Tailwind CSS v4       |
+| Backend        | Express 5, Node.js                                           |
+| Database       | PostgreSQL with Prisma ORM                                   |
+| Authentication | Better Auth (session cookies), EDU AI OAuth                  |
 | AI Integration | EDU AI Chat API (supports Google Gemini, OpenAI, and others) |
-| UI Components | Radix UI, Lucide Icons, driver.js (product tours) |
-| Deployment | UBC servers (Apache httpd + PM2 + Docker PostgreSQL) |
+| UI Components  | Radix UI, Lucide Icons, driver.js (product tours)            |
+| Deployment     | UBC servers (Apache httpd + PM2 + Docker PostgreSQL)         |
 
 ---
 
@@ -145,18 +145,18 @@ The TA role exists in the system's database schema but is **not currently suppor
 
 ### Role Summary Table
 
-| Capability | Student | Instructor | Admin |
-|-----------|---------|-----------|-------|
-| View enrolled courses | Yes | Yes (own courses) | Yes (all courses) |
-| Complete activities | Yes | No | No |
-| Use AI tutoring chat | Yes | No | No |
-| Create/edit course content | No | Yes | No |
-| Publish/unpublish content | No | Yes | No |
-| Import courses from EDU AI | No | Yes | No |
-| Manage enrollments | No | No | Yes |
-| Configure AI model policies | No | No | Yes |
-| Review bug reports | No | No | Yes |
-| Submit bug reports | Yes | Yes | No |
+| Capability                  | Student | Instructor        | Admin             |
+| --------------------------- | ------- | ----------------- | ----------------- |
+| View enrolled courses       | Yes     | Yes (own courses) | Yes (all courses) |
+| Complete activities         | Yes     | No                | No                |
+| Use AI tutoring chat        | Yes     | No                | No                |
+| Create/edit course content  | No      | Yes               | No                |
+| Publish/unpublish content   | No      | Yes               | No                |
+| Import courses from EDU AI  | No      | Yes               | No                |
+| Manage enrollments          | No      | No                | Yes               |
+| Configure AI model policies | No      | No                | Yes               |
+| Review bug reports          | No      | No                | Yes               |
+| Submit bug reports          | Yes     | Yes               | No                |
 
 ---
 
@@ -203,11 +203,11 @@ Clicking a course card navigates to that course's module listing.
 
 **Course View (`/student/courses/:courseId`)**
 
-Shows all modules within a selected course. Each module appears as a numbered card with its title, description, and a progress bar. A breadcrumb trail at the top reads: *My Courses > [Course Title]*.
+Shows all modules within a selected course. Each module appears as a numbered card with its title, description, and a progress bar. A breadcrumb trail at the top reads: _My Courses > [Course Title]_.
 
 **Module View (`/student/module/:moduleId`)**
 
-Lists all lessons within a module as numbered cards, each with a progress indicator. Breadcrumb: *My Courses > [Course] > [Module]*.
+Lists all lessons within a module as numbered cards, each with a progress indicator. Breadcrumb: _My Courses > [Course] > [Module]_.
 
 **Lesson Player (`/student/lesson/:lessonId`)**
 
@@ -228,7 +228,7 @@ This is the core learning interface and the most feature-rich page in the applic
   - A **text input area** with suggested prompts for quick access.
   - A **knowledge level selector** (Beginner / Intermediate / Advanced).
 
-The breadcrumb trail provides full context: *My Courses > [Course] > [Module] > [Lesson]*.
+The breadcrumb trail provides full context: _My Courses > [Course] > [Module] > [Lesson]_.
 
 ---
 
@@ -340,7 +340,7 @@ Behind every AI response is a safety mechanism called the **dual-loop supervisor
 
 **Why It Matters:**
 
-The dual-loop system addresses one of the core risks of using AI in education: **answer leakage**. Without it, a student could simply ask the AI "What is the answer?" and receive it. The supervisor ensures that every response upholds the pedagogical intent — the AI helps students *learn*, not just *pass*.
+The dual-loop system addresses one of the core risks of using AI in education: **answer leakage**. Without it, a student could simply ask the AI "What is the answer?" and receive it. The supervisor ensures that every response upholds the pedagogical intent — the AI helps students _learn_, not just _pass_.
 
 Administrators can configure the supervisor settings, including which model acts as the supervisor, whether the dual-loop is enabled or disabled, and how many review iterations are allowed.
 
@@ -380,7 +380,7 @@ Course
 AI Tutor uses a **cascading publish/unpublish model** to give instructors precise control over what students can see:
 
 - A **module** can only be published if its parent **course** is published.
-- A **lesson** can only be published if its parent **module** *and* grandparent **course** are both published.
+- A **lesson** can only be published if its parent **module** _and_ grandparent **course** are both published.
 - **Unpublishing a course** automatically unpublishes all of its modules and lessons in a single cascade.
 - Students only see published content. Unpublished content is invisible to them.
 
@@ -674,14 +674,14 @@ However, **there is no dedicated analytics interface** for instructors. This dat
 
 ### Summary of Future Priorities
 
-| Priority | Item | Status |
-|----------|------|--------|
-| High | Centralize question banks and topics into EDU AI | Planned |
-| High | Automate course enrollment through EDU AI | Partially implemented (sync exists) |
-| Medium | TA role support | Schema ready, UI not implemented |
-| Medium | Instructor analytics dashboard | Data collection in place, UI not built |
-| Lower | Expanded activity types | Not started |
-| Lower | Broader deployment beyond UBC VPN | Infrastructure ready |
+| Priority | Item                                             | Status                                 |
+| -------- | ------------------------------------------------ | -------------------------------------- |
+| High     | Centralize question banks and topics into EDU AI | Planned                                |
+| High     | Automate course enrollment through EDU AI        | Partially implemented (sync exists)    |
+| Medium   | TA role support                                  | Schema ready, UI not implemented       |
+| Medium   | Instructor analytics dashboard                   | Data collection in place, UI not built |
+| Lower    | Expanded activity types                          | Not started                            |
+| Lower    | Broader deployment beyond UBC VPN                | Infrastructure ready                   |
 
 ---
 
@@ -716,32 +716,32 @@ authorization, persistence, and EduAI API calls.
 
 Important files and directories:
 
-| Path | Purpose |
-|------|---------|
-| `app/root.tsx` | HTML shell and provider stack: auth, bug reports, guided tours |
-| `app/routes.ts` | Flat React Router route map |
-| `app/routes/` | Page-level route modules for home, student, instructor, and admin flows |
-| `app/components/` | Shared UI, activity cards, AI chat, guided tours, bug reports |
-| `app/hooks/useLocalUser.tsx` | Better Auth session state exposed through React context |
-| `app/lib/api.ts` | Central API client; all requests use `credentials: 'include'` |
-| `app/lib/client-auth.ts` | `requireClientUser(role)` route guard helper |
-| `app/lib/tours/` | Guided tour definitions, engine, storage, and tests |
-| `app/app.css` | Tailwind v4 theme and custom utility classes |
+| Path                         | Purpose                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `app/root.tsx`               | HTML shell and provider stack: auth, bug reports, guided tours          |
+| `app/routes.ts`              | Flat React Router route map                                             |
+| `app/routes/`                | Page-level route modules for home, student, instructor, and admin flows |
+| `app/components/`            | Shared UI, activity cards, AI chat, guided tours, bug reports           |
+| `app/hooks/useLocalUser.tsx` | Better Auth session state exposed through React context                 |
+| `app/lib/api.ts`             | Central API client; all requests use `credentials: 'include'`           |
+| `app/lib/client-auth.ts`     | `requireClientUser(role)` route guard helper                            |
+| `app/lib/tours/`             | Guided tour definitions, engine, storage, and tests                     |
+| `app/app.css`                | Tailwind v4 theme and custom utility classes                            |
 
 Routes are flat rather than nested. The main paths are:
 
-| Path | Module | Role |
-|------|--------|------|
-| `/` | `home.tsx` | Public login |
-| `/student` | `student.tsx` | Student dashboard |
-| `/student/courses/:courseId` | `student.course.tsx` | Course view |
-| `/student/module/:moduleId` | `student.module.tsx` | Module view |
-| `/student/lesson/:lessonId` | `student.lesson.tsx` | Lesson player |
-| `/instructor` | `instructor.tsx` | Instructor dashboard |
-| `/instructor/courses/:courseId` | `instructor.course.tsx` | Course editor |
-| `/instructor/module/:moduleId` | `instructor.module.tsx` | Module editor |
-| `/instructor/lesson/:lessonId` | `instructor.lesson.tsx` | Lesson builder |
-| `/admin` | `admin.tsx` | Admin panel |
+| Path                            | Module                  | Role                 |
+| ------------------------------- | ----------------------- | -------------------- |
+| `/`                             | `home.tsx`              | Public login         |
+| `/student`                      | `student.tsx`           | Student dashboard    |
+| `/student/courses/:courseId`    | `student.course.tsx`    | Course view          |
+| `/student/module/:moduleId`     | `student.module.tsx`    | Module view          |
+| `/student/lesson/:lessonId`     | `student.lesson.tsx`    | Lesson player        |
+| `/instructor`                   | `instructor.tsx`        | Instructor dashboard |
+| `/instructor/courses/:courseId` | `instructor.course.tsx` | Course editor        |
+| `/instructor/module/:moduleId`  | `instructor.module.tsx` | Module editor        |
+| `/instructor/lesson/:lessonId`  | `instructor.lesson.tsx` | Lesson builder       |
+| `/admin`                        | `admin.tsx`             | Admin panel          |
 
 Frontend state is intentionally simple: React context plus hooks. There is no Redux or Zustand.
 The most important contexts are auth/session, course topics, bug report capture, and guided tours.
@@ -750,18 +750,18 @@ The most important contexts are auth/session, course topics, bug report capture,
 
 Important files and directories:
 
-| Path | Purpose |
-|------|---------|
-| `server/src/index.js` | Loads env, creates the app, and listens on `PORT` |
-| `server/src/app.js` | Express app factory, middleware order, route mounting |
-| `server/src/auth.js` | Better Auth configuration with EduAI OAuth |
-| `server/src/middleware/auth.js` | Session hydration and role guards |
-| `server/src/routes/` | HTTP route handlers |
-| `server/src/services/` | Business logic for AI, analytics, cloning, sync, settings, bugs |
-| `server/src/utils/mappers.js` | Response shape mappers mirrored by frontend types |
-| `server/prisma/schema.prisma` | Database schema |
-| `server/prisma/seed.ts` | Destructive demo-data seed script |
-| `server/test/` | Vitest unit and integration tests |
+| Path                            | Purpose                                                         |
+| ------------------------------- | --------------------------------------------------------------- |
+| `server/src/index.js`           | Loads env, creates the app, and listens on `PORT`               |
+| `server/src/app.js`             | Express app factory, middleware order, route mounting           |
+| `server/src/auth.js`            | Better Auth configuration with EduAI OAuth                      |
+| `server/src/middleware/auth.js` | Session hydration and role guards                               |
+| `server/src/routes/`            | HTTP route handlers                                             |
+| `server/src/services/`          | Business logic for AI, analytics, cloning, sync, settings, bugs |
+| `server/src/utils/mappers.js`   | Response shape mappers mirrored by frontend types               |
+| `server/prisma/schema.prisma`   | Database schema                                                 |
+| `server/prisma/seed.ts`         | Destructive demo-data seed script                               |
+| `server/test/`                  | Vitest unit and integration tests                               |
 
 Backend request handling follows this shape:
 
@@ -883,4 +883,4 @@ cd server && npm run test
 
 ---
 
-*This document describes the AI Tutor system as of April 2026. The platform is under active development, and features described in the Future Work section are subject to change as the EDU AI ecosystem evolves.*
+_This document describes the AI Tutor system as of April 2026. The platform is under active development, and features described in the Future Work section are subject to change as the EDU AI ecosystem evolves._

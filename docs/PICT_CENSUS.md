@@ -451,7 +451,7 @@ Notes for implementers reading this later:
 | Model | Dims | Location | Tier |
 |---|---|---|---|
 | `ai-judge-scoring` | 8 | `services/assessmentVariantService.js:994,1195-1283` | **BUILD** |
-| `generate-questions` | 8 | QM `routes/eduai.js:97` | **BUILD** |
+| `generate-questions` | 9 | QM `routes/eduai.js` | **BUILD** |
 | `metadata-similarity-assembly` | 6 | `assessmentVariantService.js:446,488` + `assessmentVariantMetadataScoring.js:5` | **BUILD** |
 | `variant-lifecycle-put` | 5 | `routes/variants.js:138` (gate :148-179) | **BUILD** |
 | `validateContextAndAccess` | 5 | ai-tutor `routes/bugReports.js:144` | **BUILD** |

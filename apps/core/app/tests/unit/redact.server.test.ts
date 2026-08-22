@@ -9,6 +9,12 @@ import {
 } from "~/lib/redact.server";
 
 describe("redactSecretValuesInString", () => {
+  it("redacts provider keys embedded in unstructured error prose", () => {
+    expect(redactSecretValuesInString("provider rejected key sk-do-not-leak")).toBe(
+      `provider rejected key ${REDACTED_VALUE}`,
+    );
+  });
+
   it("redacts Bearer tokens", () => {
     expect(redactSecretValuesInString("Authorization: Bearer abc.def.ghi")).toBe(
       `Authorization: Bearer ${REDACTED_VALUE}`,

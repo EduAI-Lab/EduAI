@@ -10,6 +10,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { createQuestion, listQuestions } from "~/lib/questions/server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import { MAX_CREATE_QUESTION_BODY_BYTES, validateCreateQuestion } from "~/lib/questions/schema";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
 function json(status: number, body: unknown) {
@@ -17,6 +18,52 @@ function json(status: number, body: unknown) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+async function readBoundedJsonBody(
+  request: Request,
+): Promise<{ ok: true; body: Record<string, unknown> | null } | { ok: false; response: Response }> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const bytes = Number(declaredLength);
+    if (Number.isFinite(bytes) && bytes > MAX_CREATE_QUESTION_BODY_BYTES) {
+      return { ok: false, response: json(413, { error: "PAYLOAD_TOO_LARGE" }) };
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return { ok: true, body: null };
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_CREATE_QUESTION_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      return { ok: false, response: json(413, { error: "PAYLOAD_TOO_LARGE" }) };
+    }
+    chunks.push(value);
+  }
+
+  const raw = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    raw.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    const value: unknown = JSON.parse(new TextDecoder().decode(raw));
+    const body =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+    return { ok: true, body };
+  } catch {
+    return { ok: true, body: null };
+  }
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -82,8 +129,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const topicId = url.searchParams.get("topicId") ?? undefined;
   const testableParam = url.searchParams.get("testable");
   const testable = testableParam === "true" ? true : testableParam === "false" ? false : undefined;
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 500);
-  const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
+  const rawLimit = url.searchParams.get("limit");
+  const rawOffset = url.searchParams.get("offset");
+  const limit = rawLimit === null || rawLimit.trim() === "" ? undefined : Number(rawLimit);
+  const offset = rawOffset === null || rawOffset.trim() === "" ? undefined : Number(rawOffset);
 
   const result = await listQuestions({
     courseId,
@@ -107,6 +156,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(405, { error: "Method not allowed" });
   }
 
+  // Enforce transport bounds before authentication, parsing, hashing, access
+  // checks, or persistence. The streaming limit also covers missing or false
+  // Content-Length headers.
+  const boundedBody = await readBoundedJsonBody(request);
+  if (!boundedBody.ok) return boundedBody.response;
+
   // POST /api/questions accepts session-cookie auth only (no service-key path).
   // The GET loader above accepts service keys; add a Bearer branch here if a
   // backend service ever needs to create questions without a user session.
@@ -115,15 +170,11 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(401, { error: "Unauthorized" });
   }
 
+  const validation = validateCreateQuestion(boundedBody.body);
+  if (!validation.success) return json(422, validation.error);
+
   // Peek courseId before idempotency so course access cannot be skipped on replay.
-  const peekedBody = await request
-    .clone()
-    .json()
-    .catch(() => null);
-  const bodyPreview =
-    peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
-      ? (peekedBody as Record<string, unknown>)
-      : null;
+  const bodyPreview = boundedBody.body;
 
   if (typeof bodyPreview?.courseId === "string" && bodyPreview.courseId) {
     const { course, access } = await resolveCourseAccessGate(session.user, bodyPreview.courseId);

@@ -101,6 +101,29 @@ describe("auth/accept-invitation action", () => {
     expect(acceptInvitation).not.toHaveBeenCalled();
   });
 
+  it("returns HTTP 413 for an oversized declared form before invitation work", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("token=x"));
+      },
+    });
+    const result = (await action({
+      request: new Request("http://localhost/auth/accept-invitation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": String(64 * 1024 + 1),
+        },
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
+    expect(acceptInvitation).not.toHaveBeenCalled();
+  });
+
   it("returns a friendly formError when acceptInvitation fails", async () => {
     vi.mocked(acceptInvitation).mockResolvedValue({
       ok: false,

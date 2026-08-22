@@ -175,13 +175,13 @@ jobs:
           --health-timeout 5s --health-retries 12
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Start timing
         run: echo "CI_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: npm
@@ -238,7 +238,7 @@ jobs:
         id: turbo-cache
         # Restore before testing, then save in a separate post-test step so a
         # failed run never publishes incomplete task artifacts.
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .turbo/cache
           key: turbo-test-${{ runner.os }}-${{ matrix.scope }}-${{ github.sha }}
@@ -279,7 +279,7 @@ jobs:
 
       - name: Save Turborepo cache
         if: success() && steps.turbo-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .turbo/cache
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
@@ -305,8 +305,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.shared == 'true' || needs.changes.outputs.ai_tutor == 'true' || needs.changes.outputs.question_maker == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: npm
@@ -418,7 +418,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Start timing
         run: echo "CI_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -471,10 +471,10 @@ jobs:
           df -h /
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Expose GitHub Actions runtime for BuildKit cache
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
@@ -524,7 +524,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
           path: playwright-report/
@@ -571,14 +571,42 @@ jobs:
             exit 1
           fi
 
+  visual:
+    name: Diagram Visual Regression (Core)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        env:
+          SKIP_PRISMA_GENERATE: "1"
+        run: npm ci
+      # #1422 review: nothing previously installed a browser for
+      # `npm run test:visual` (apps/core/playwright.visual.config.ts), so a
+      # clean checkout 404s/ENOENTs before any assertion runs. `npx playwright
+      # install` reads the locked `@playwright/test` version from
+      # package-lock.json, so this always matches the version the suite was
+      # authored against.
+      - name: Install locked Playwright Chromium
+        working-directory: apps/core
+        run: npx playwright install --with-deps chromium
+      - name: Run diagram visual regression suite
+        working-directory: apps/core
+        run: npm run test:visual
+
   pict-drift:
     name: PICT Case Drift Check
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
       - name: Regenerate PICT case tables
@@ -603,10 +631,10 @@ jobs:
     continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'npm'

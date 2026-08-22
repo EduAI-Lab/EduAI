@@ -21,7 +21,13 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
   return { ...actual, fetchCoreCourseSafe: vi.fn() };
 });
 
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, authorizeLiveStudentEnrollment: vi.fn() };
+});
+
 import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 describe("Activities routes", () => {
   let prof;
@@ -37,6 +43,20 @@ describe("Activities routes", () => {
       id: coreOfferingId,
       isPublished: true,
     }));
+    vi.mocked(authorizeLiveStudentEnrollment).mockImplementation(
+      async (_courseOfferingId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+        const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+        const instructor = course?.instructors?.some((entry) => entry.userId === userId);
+        const role =
+          instructor && allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : enrollment?.role;
+        const allowed = allowedRoles.includes(role);
+        return {
+          allowed,
+          state: allowed ? "allowed" : "denied",
+          role: role ?? null,
+        };
+      },
+    );
   });
 
   // ── Helper to create an activity directly in DB ───────────────────
@@ -477,6 +497,10 @@ describe("Activities routes", () => {
         where: { id: activity.id },
         data: { promptTemplateId: template.id },
       });
+      await prisma.activity.update({
+        where: { id: activity.id },
+        data: { promptTemplateId: template.id },
+      });
 
       const res = await request(profApp)
         .patch(`/api/activities/${activity.id}`)
@@ -784,6 +808,30 @@ describe("Activities routes", () => {
       expect(res.body[0].activityId).toBe(activity.id);
     });
 
+    it("does not expose internal submission lookup errors to the client or logs", async () => {
+      const canary = "ACTIVITY_DB_SECRET_CANARY /srv/private/query-engine stack";
+      const internalError = Object.assign(new Error(canary), {
+        status: 500,
+        stack: `${canary}\n at privateQuery (db.js:1:1)`,
+      });
+      const findUnique = vi
+        .spyOn(prisma.activity, "findUnique")
+        .mockRejectedValueOnce(internalError);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const res = await request(profApp).get(`/api/activities/${activity.id}/submissions`);
+
+        expect(res.status).toBe(500);
+        expect(res.body).toEqual({ error: "Internal server error" });
+        expect(JSON.stringify(res.body)).not.toContain(canary);
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(canary);
+      } finally {
+        findUnique.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+
     it("TA enrolled in the course gets all submissions", async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
@@ -1085,6 +1133,25 @@ describe("Activities routes", () => {
       expect(res.body.isCorrect).toBe(true);
     });
 
+    it("fails closed before a TA grade write when Core authorization is unavailable", async () => {
+      const ta = await enrollTa();
+      vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValueOnce({
+        allowed: false,
+        state: "unavailable",
+        role: null,
+      });
+
+      const res = await request(await createApp({ mockUser: ta }))
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("ENROLLMENT_AUTH_UNAVAILABLE");
+      expect(await prisma.submission.findUnique({ where: { id: submissionId } })).toMatchObject({
+        isCorrect: false,
+      });
+    });
+
     it("ADMIN can override", async () => {
       const adminApp = await createApp({ mockUser: makeAdmin() });
 
@@ -1241,6 +1308,95 @@ describe("Activities routes", () => {
 
       const imported = await prisma.activity.findMany({ where: { lessonId: targetLesson.id } });
       expect(imported.length).toBe(1);
+    });
+
+    it("denies a stale source-course instructor before reading authored import fields", async () => {
+      const sourceCourse = await seedMinimalCourse(prof.id);
+      const sourceActivity = await prisma.activity.create({
+        data: {
+          lessonId: sourceCourse.lesson.id,
+          mainTopicId: sourceCourse.topic.id,
+          instructionsMd: "Secret source instructions.",
+          config: {
+            question: "Secret source question?",
+            questionType: "MCQ",
+            options: ["No", "Yes"],
+            answer: 1,
+          },
+          customPrompt: "Secret source custom prompt.",
+          customPromptTitle: "Secret source title",
+        },
+      });
+      const targetCountBefore = await prisma.activity.count({
+        where: { lessonId: targetLesson.id },
+      });
+      const findUnique = vi.spyOn(prisma.activity, "findUnique");
+
+      // gateCourseThrough and the handler each authorize the destination;
+      // only after both succeed does the third lookup authorize the source.
+      vi.mocked(authorizeLiveStudentEnrollment)
+        .mockResolvedValueOnce({ allowed: true, state: "allowed", role: "INSTRUCTOR" })
+        .mockResolvedValueOnce({ allowed: true, state: "allowed", role: "INSTRUCTOR" })
+        .mockResolvedValueOnce({ allowed: false, state: "denied", role: "STUDENT" });
+
+      const res = await request(profApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: sourceActivity.id });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/source activity/i);
+      expect(JSON.stringify(res.body)).not.toContain("Secret source");
+      expect(
+        findUnique.mock.calls.some(
+          ([args]) => args?.where?.id === sourceActivity.id && args?.include,
+        ),
+      ).toBe(false);
+      expect(await prisma.activity.count({ where: { lessonId: targetLesson.id } })).toBe(
+        targetCountBefore,
+      );
+    });
+
+    it("returns 503 and performs no source read or clone when source authorization is unavailable", async () => {
+      const sourceCourse = await seedMinimalCourse(prof.id);
+      const sourceActivity = await prisma.activity.create({
+        data: {
+          lessonId: sourceCourse.lesson.id,
+          mainTopicId: sourceCourse.topic.id,
+          instructionsMd: "Unavailable source instructions.",
+          config: {
+            question: "Unavailable source question?",
+            questionType: "MCQ",
+            options: ["No", "Yes"],
+            answer: 1,
+          },
+          customPrompt: "Unavailable source custom prompt.",
+        },
+      });
+      const targetCountBefore = await prisma.activity.count({
+        where: { lessonId: targetLesson.id },
+      });
+      const findUnique = vi.spyOn(prisma.activity, "findUnique");
+
+      vi.mocked(authorizeLiveStudentEnrollment)
+        .mockResolvedValueOnce({ allowed: true, state: "allowed", role: "INSTRUCTOR" })
+        .mockResolvedValueOnce({ allowed: true, state: "allowed", role: "INSTRUCTOR" })
+        .mockResolvedValueOnce({ allowed: false, state: "unavailable", role: null });
+
+      const res = await request(profApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: sourceActivity.id });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("COURSE_AUTH_UNAVAILABLE");
+      expect(JSON.stringify(res.body)).not.toContain("Unavailable source");
+      expect(
+        findUnique.mock.calls.some(
+          ([args]) => args?.where?.id === sourceActivity.id && args?.include,
+        ),
+      ).toBe(false);
+      expect(await prisma.activity.count({ where: { lessonId: targetLesson.id } })).toBe(
+        targetCountBefore,
+      );
     });
 
     it("400 when sourceActivityId is missing", async () => {
@@ -1433,6 +1589,25 @@ describe("Tutoring-flow: question consumption via Core", () => {
   let studentApp;
   let activity;
 
+  function stubLiveStudentFetch(handler = () => undefined) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url, options) => {
+        if (typeof url === "string" && url.includes("/courses/cuid-core-offering/enrollments")) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                enrollments: [{ studentId: student.id, role: "STUDENT", isActive: true }],
+              }),
+            text: () => Promise.resolve(""),
+          });
+        }
+        return handler(url, options);
+      }),
+    );
+  }
+
   beforeEach(async () => {
     await truncateAll();
     prof = makeProfessor();
@@ -1524,6 +1699,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
 
     expect(res.status).toBe(200);
@@ -1579,6 +1755,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const teachRes = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
     expect(teachRes.status).toBe(200);
 
@@ -1612,6 +1789,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const guideRes = await request(studentApp)
       .post(`/api/activities/${activity.id}/guide`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ message: "Need a hint", knowledgeLevel: "beginner", apiKey: "test-key" });
     expect(guideRes.status).toBe(200);
 
@@ -1648,6 +1826,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
 
     expect(res.status).toBe(200);
@@ -1691,6 +1870,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const pendingRequest = request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
     // Swallow the client-side rejection from aborting below — this test only
     // cares about server-side behavior after the abort.
@@ -1714,7 +1894,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
   // by this user/activity/mode must be rejected rather than silently reused
   // (previously the ownership lookup's result was discarded).
   it("/teach rejects a chatId belonging to a different user", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+    stubLiveStudentFetch();
 
     const otherStudent = makeStudent();
     await prisma.courseEnrollment.create({
@@ -1733,6 +1913,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1750,11 +1931,12 @@ describe("Tutoring-flow: question consumption via Core", () => {
   });
 
   it("/teach rejects an unknown/stale chatId", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+    stubLiveStudentFetch();
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1785,27 +1967,25 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url) => {
-        if (typeof url === "string" && url.includes("/questions")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ questions: [], total: 0 }),
-            text: () => Promise.resolve(""),
-          });
-        }
+    stubLiveStudentFetch((url) => {
+      if (typeof url === "string" && url.includes("/questions")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ content: "AI response", chatId: "my-existing-chat" }),
+          json: () => Promise.resolve({ questions: [], total: 0 }),
           text: () => Promise.resolve(""),
         });
-      }),
-    );
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ content: "AI response", chatId: "my-existing-chat" }),
+        text: () => Promise.resolve(""),
+      });
+    });
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1844,11 +2024,12 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal("fetch", vi.fn());
+    stubLiveStudentFetch();
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1870,11 +2051,12 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal("fetch", vi.fn());
+    stubLiveStudentFetch();
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({
         message: "Explain sorting",
         knowledgeLevel: "beginner",
@@ -1903,27 +2085,25 @@ describe("Tutoring-flow: question consumption via Core", () => {
       },
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url) => {
-        if (typeof url === "string" && url.includes("/questions")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ questions: [], total: 0 }),
-            text: () => Promise.resolve(""),
-          });
-        }
+    stubLiveStudentFetch((url) => {
+      if (typeof url === "string" && url.includes("/questions")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ content: "AI response", chatId: "colliding-chat-id" }),
+          json: () => Promise.resolve({ questions: [], total: 0 }),
           text: () => Promise.resolve(""),
         });
-      }),
-    );
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ content: "AI response", chatId: "colliding-chat-id" }),
+        text: () => Promise.resolve(""),
+      });
+    });
 
     const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set("Cookie", "session=test-cookie")
+      .set("Sec-Fetch-Site", "same-origin")
       .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
 
     expect(res.status).toBe(200);
@@ -1975,6 +2155,85 @@ describe("Tutoring-flow: question consumption via Core", () => {
   // ── POST /api/activities/:activityId/custom ────────────────────────
 
   describe("POST /api/activities/:activityId/custom", () => {
+    it("returns a generic correlated error without leaking thrown internals", async () => {
+      const canary = "AUDIT_INTERNAL_PATH_CANARY_4DE8";
+      const internalError = new Error(
+        `${canary} cookie=session-secret /srv/private/database.js SELECT users`,
+      );
+      internalError.status = 503;
+      internalError.requestId = "request-custom-123";
+      internalError.correlationId = "correlation-custom-456";
+      vi.spyOn(prisma.activity, "findUnique").mockRejectedValueOnce(internalError);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .send({ message: "Hi", knowledgeLevel: "beginner", apiKey: "test-key" });
+
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({
+        error: "Unable to generate a custom tutoring response",
+        code: "AI_TUTOR_CUSTOM_ERROR",
+        requestId: "request-custom-123",
+        correlationId: "correlation-custom-456",
+      });
+      expect(JSON.stringify(res.body)).not.toContain(canary);
+      const consoleOutput = errorSpy.mock.calls
+        .flat()
+        .map((value) =>
+          value instanceof Error ? `${value.message}\n${value.stack || ""}` : JSON.stringify(value),
+        )
+        .join("\n");
+      expect(consoleOutput).not.toContain(canary);
+    });
+
+    it("redacts an in-flight custom guidance failure from logs and the client response", async () => {
+      const canary = "AUDIT_CUSTOM_GUIDANCE_CANARY_A6C1";
+      const upstreamError = new Error(
+        `${canary} cookie=session-secret /provider/private?apiKey=secret`,
+      );
+      upstreamError.status = 502;
+      upstreamError.requestId = "request-custom-upstream-789";
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ isPublished: true });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url) => {
+          if (typeof url === "string" && url.includes("/api/completion")) {
+            return Promise.reject(upstreamError);
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: () => Promise.resolve({ questions: [], total: 0 }),
+            text: () => Promise.resolve(""),
+          });
+        }),
+      );
+
+      const res = await request(studentApp)
+        .post(`/api/activities/${activity.id}/custom`)
+        .set("Cookie", "session=test-cookie")
+        .set("Sec-Fetch-Site", "same-origin")
+        .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
+
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({
+        error: "Unable to generate an AI tutoring response",
+        code: "AI_TUTOR_GUIDANCE_ERROR",
+        requestId: "request-custom-upstream-789",
+      });
+      expect(JSON.stringify(res.body)).not.toContain(canary);
+      const consoleOutput = errorSpy.mock.calls
+        .flat()
+        .map((value) =>
+          value instanceof Error ? `${value.message}\n${value.stack || ""}` : JSON.stringify(value),
+        )
+        .join("\n");
+      expect(consoleOutput).not.toContain(canary);
+    });
+
     it("returns 400 for a non-numeric activity id", async () => {
       const res = await request(studentApp)
         .post("/api/activities/not-a-number/custom")
@@ -2113,6 +2372,7 @@ describe("Tutoring-flow: question consumption via Core", () => {
       const res = await request(studentApp)
         .post(`/api/activities/${activity.id}/custom`)
         .set("Cookie", "session=test-cookie")
+        .set("Sec-Fetch-Site", "same-origin")
         .send({ message: "Explain sorting", knowledgeLevel: "beginner", apiKey: "test-key" });
 
       expect(res.status).toBe(200);

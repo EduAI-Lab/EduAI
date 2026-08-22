@@ -240,6 +240,19 @@ describe("StudentAiChat — in-flight guard (#998)", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sendGuideMessage).toHaveBeenCalledTimes(1);
   });
+
+  it("drops a second imperative request fired in the same tick", () => {
+    deferredGuideCall();
+    const ref = createRef<StudentAiChatHandle>();
+    renderChat(ref);
+
+    act(() => {
+      ref.current?.sendGuidePrompt();
+      ref.current?.sendGuidePrompt();
+    });
+
+    expect(sendGuideMessage).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ── #999 ──────────────────────────────────────────────────────────────────

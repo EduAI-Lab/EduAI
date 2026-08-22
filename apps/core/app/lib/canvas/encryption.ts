@@ -72,7 +72,7 @@ export function encrypt(plaintext: string): string {
   const salt = randomBytes(SALT_LENGTH);
   const iv = randomBytes(IV_LENGTH);
   const key = deriveKey(getEncryptionKey(), salt);
-  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
 
   let encrypted = cipher.update(plaintext, "utf8", "base64");
   encrypted += cipher.final("base64");
@@ -109,7 +109,7 @@ export function decrypt(encryptedData: string): string {
   try {
     const key = deriveKey(getEncryptionKey(), salt);
 
-    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
     decipher.setAuthTag(tag);
 
     let decrypted = decipher.update(encrypted, "base64", "utf8");

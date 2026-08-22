@@ -28,6 +28,7 @@
 import express from "express";
 import { prisma } from "../config/database.js";
 import { requireRole, isCourseAdmin } from "../middleware/auth.js";
+import { gateCourseById } from "../middleware/liveCoursePrincipal.js";
 import {
   SYSTEM_SETTING_KEYS,
   clearSystemSetting,
@@ -38,6 +39,7 @@ import { getAiModelPolicyState, setAiModelPolicy } from "../services/aiModelPoli
 import { mapCoreAdminUser, mapCourseOffering } from "../utils/mappers.js";
 import { parsePaginationParams, paginated, PaginationError } from "../utils/pagination.js";
 import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
 import { indexCoreCoursesById, resolveCoreCourseCatalog } from "../services/courseResolver.js";
 import {
   AUTO_SYNC_TIMEOUT_MS,
@@ -47,6 +49,7 @@ import {
 import { ensureOfferingAnchors } from "../services/importTaughtCoursesService.js";
 import {
   CORE_PAGE_SIZE,
+  createCoreEnrollment,
   deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
@@ -54,6 +57,10 @@ import {
 } from "../services/eduaiClient.js";
 
 const router = express.Router();
+
+// Enrollment management is course-scoped even though it lives in the admin
+// router. Reuse the shared live principal result across every nested endpoint.
+router.use("/admin/courses/:courseId", gateCourseById());
 
 router.get("/admin/users", requireRole("ADMIN"), async (req, res) => {
   try {
@@ -80,7 +87,8 @@ router.get("/admin/users", requireRole("ADMIN"), async (req, res) => {
     });
   } catch (e) {
     const status = typeof e?.status === "number" ? e.status : 500;
-    res.status(status).json({ error: String(e.message ?? e) });
+    logSafeError("[admin] Core user list failed", e);
+    sendSafeError(res, e, "Unable to load users", { status });
   }
 });
 
@@ -136,7 +144,7 @@ router.get("/admin/courses", requireRole("ADMIN"), async (req, res) => {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -206,9 +214,7 @@ router.get(
           });
         } catch (e) {
           const phase = e?.phase === "write" ? "local write" : "Core fetch";
-          console.warn(
-            `[admin] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`,
-          );
+          logSafeError(`[admin] Enrollment auto-sync (${phase}) failed; serving local mirror`, e);
         }
       }
 
@@ -230,11 +236,7 @@ router.get(
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
         } catch (err) {
-          console.warn(
-            "[admin] Could not fetch Core enrollment names for course",
-            courseId,
-            err.message,
-          );
+          logSafeError("[admin] Could not fetch Core enrollment names for course", err);
         }
       }
 
@@ -278,11 +280,7 @@ router.get(
           pageSize: studentEnvelope?.pageSize ?? studentPageSize,
         };
       } catch (err) {
-        console.warn(
-          "[admin] Could not fetch Core users for enrollment display",
-          courseId,
-          err.message,
-        );
+        logSafeError("[admin] Could not fetch Core users for enrollment display", err);
       }
 
       res.json({
@@ -304,7 +302,7 @@ router.get(
         availableStudentsPage,
       });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -352,6 +350,15 @@ router.post(
         return res.status(403).json({ error: "Not authorized for this course" });
       }
 
+      if (course.coreOfferingId) {
+        await createCoreEnrollment(
+          course.coreOfferingId,
+          userId,
+          enrollmentRole,
+          getEduAiCookieForRequest(req),
+        );
+      }
+
       await prisma.courseEnrollment.upsert({
         where: {
           courseOfferingId_userId: {
@@ -369,7 +376,7 @@ router.post(
 
       res.status(201).json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -425,7 +432,7 @@ router.delete(
       res.json({ ok: true });
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 500;
-      res.status(status).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );
@@ -513,7 +520,7 @@ router.patch(
       }
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 500;
-      res.status(status).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );
@@ -523,7 +530,7 @@ router.get("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, re
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -552,7 +559,7 @@ router.put("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, re
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -562,7 +569,7 @@ router.delete("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req,
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -571,7 +578,7 @@ router.get("/admin/settings/ai-model-policy", requireRole("ADMIN"), async (_req,
     const state = await getAiModelPolicyState();
     res.json(state);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -597,7 +604,10 @@ router.put("/admin/settings/ai-model-policy", requireRole("ADMIN"), async (req, 
       : e?.message?.includes("must") || e?.message?.includes("At least one")
         ? 400
         : 500;
-    res.status(status).json({ error: String(e.message || e) });
+    logSafeError("[admin] AI model policy update failed", e);
+    sendSafeError(res, e, status === 400 ? "Invalid AI model policy" : "Internal server error", {
+      status,
+    });
   }
 });
 
@@ -713,7 +723,7 @@ router.get("/admin/ai-traces", requireRole(["UNIT_ADMIN", "ADMIN"]), async (req,
         userNameMap.set(u.id, u.name ?? "");
       }
     } catch (err) {
-      console.warn("[admin] Could not fetch Core users for ai-traces", err.message);
+      logSafeError("[admin] Could not fetch Core users for ai-traces", err);
     }
 
     const result = traces.map((t) => ({
@@ -734,7 +744,7 @@ router.get("/admin/ai-traces", requireRole(["UNIT_ADMIN", "ADMIN"]), async (req,
 
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -765,9 +775,9 @@ router.post("/admin/courses/:courseId/sync-enrollments", requireRole("ADMIN"), a
     const result = await syncCourseEnrollments(courseId, { course });
     res.json(result);
   } catch (error) {
-    console.error("[eduai] Manual enrollment sync failed:", error);
+    logSafeError("[eduai] Manual enrollment sync failed", error);
     const status = Number.isInteger(error?.status) ? error.status : 500;
-    res.status(status).json({ error: error.message || "Enrollment sync failed" });
+    sendSafeError(res, error, "Enrollment sync failed", { status });
   }
 });
 

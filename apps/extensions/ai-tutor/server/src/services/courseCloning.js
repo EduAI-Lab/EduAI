@@ -29,7 +29,21 @@ import { prisma } from "../config/database.js";
 
 // A clone writes a handful of large inserts rather than many small ones, but a
 // deep tree can still outrun Prisma's 5s interactive-transaction default.
-const CLONE_TRANSACTION_TIMEOUT_MS = 15_000;
+export const CLONE_TRANSACTION_TIMEOUT_MS = 15_000;
+
+/**
+ * Run the clone writes in a transaction, or inline when the caller already owns one.
+ *
+ * Why: Course imports wrap several clones in a single outer transaction so a
+ * failed import leaves nothing behind. A transaction client has no
+ * `$transaction` of its own, so nesting has to reuse the caller's instead.
+ */
+async function runInCloneTransaction(db, operation) {
+  if (typeof db.$transaction === "function") {
+    return db.$transaction(operation, { timeout: CLONE_TRANSACTION_TIMEOUT_MS });
+  }
+  return operation(db);
+}
 
 /**
  * Collect every source topic id referenced anywhere under the given lessons.
@@ -137,10 +151,15 @@ async function createActivitiesForLessons(tx, lessonBuckets, topicIdMap) {
         position: activity.position,
         lessonId,
         promptTemplateId: activity.promptTemplateId,
+        customPrompt: activity.customPrompt,
+        customPromptTitle: activity.customPromptTitle,
         // A bare JS null is ambiguous for a Json column, so an absent source
         // config has to be spelled out as a database NULL.
         config: activity.config === null ? Prisma.DbNull : activity.config,
         mainTopicId: targetMainTopicId,
+        enableTeachMode: activity.enableTeachMode,
+        enableGuideMode: activity.enableGuideMode,
+        enableCustomMode: activity.enableCustomMode,
       });
       sourceActivities.push(activity);
     }
@@ -197,10 +216,15 @@ function assertRowCount(created, requested, label) {
  * keys. This helper recreates the tree so later edits in either course remain
  * isolated while preserving topic semantics through name-based remapping.
  */
-export async function cloneCourseContent(sourceCourseId, targetCourseId, options = {}) {
+export async function cloneCourseContent(
+  sourceCourseId,
+  targetCourseId,
+  options = {},
+  db = prisma,
+) {
   const { moduleIds = null } = options;
 
-  const sourceModules = await prisma.module.findMany({
+  const sourceModules = await db.module.findMany({
     where: {
       courseOfferingId: sourceCourseId,
       ...(Array.isArray(moduleIds) && moduleIds.length > 0 ? { id: { in: moduleIds } } : {}),
@@ -221,12 +245,12 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
 
   if (sourceModules.length === 0) return;
 
-  const sourceTopics = await prisma.topic.findMany({
+  const sourceTopics = await db.topic.findMany({
     where: { courseOfferingId: sourceCourseId },
   });
   const sourceTopicById = new Map(sourceTopics.map((topic) => [topic.id, topic]));
 
-  const maxPosition = await prisma.module.aggregate({
+  const maxPosition = await db.module.aggregate({
     where: { courseOfferingId: targetCourseId },
     _max: { position: true },
   });
@@ -245,54 +269,51 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
   const sourceLessons = sourceModules.flatMap((module) => module.lessons);
   const sourceTopicIds = collectSourceTopicIds(sourceLessons);
 
-  await prisma.$transaction(
-    async (tx) => {
-      const topicIdMap = await buildTopicIdMap(tx, {
-        sourceTopicIds,
-        sourceTopicById,
-        targetCourseId,
-      });
+  await runInCloneTransaction(db, async (tx) => {
+    const topicIdMap = await buildTopicIdMap(tx, {
+      sourceTopicIds,
+      sourceTopicById,
+      targetCourseId,
+    });
 
-      const createdModules = await tx.module.createManyAndReturn({
-        data: moduleRows,
-        select: { id: true },
-      });
-      assertRowCount(createdModules, moduleRows, "modules");
+    const createdModules = await tx.module.createManyAndReturn({
+      data: moduleRows,
+      select: { id: true },
+    });
+    assertRowCount(createdModules, moduleRows, "modules");
 
-      const lessonRows = [];
-      const lessonSources = [];
-      for (const [index, module] of sourceModules.entries()) {
-        const moduleId = createdModules[index].id;
-        for (const lesson of module.lessons) {
-          lessonRows.push({
-            title: lesson.title,
-            contentMd: lesson.contentMd,
-            position: lesson.position,
-            moduleId,
-          });
-          lessonSources.push(lesson);
-        }
+    const lessonRows = [];
+    const lessonSources = [];
+    for (const [index, module] of sourceModules.entries()) {
+      const moduleId = createdModules[index].id;
+      for (const lesson of module.lessons) {
+        lessonRows.push({
+          title: lesson.title,
+          contentMd: lesson.contentMd,
+          position: lesson.position,
+          moduleId,
+        });
+        lessonSources.push(lesson);
       }
+    }
 
-      if (lessonRows.length === 0) return;
+    if (lessonRows.length === 0) return;
 
-      const createdLessons = await tx.lesson.createManyAndReturn({
-        data: lessonRows,
-        select: { id: true },
-      });
-      assertRowCount(createdLessons, lessonRows, "lessons");
+    const createdLessons = await tx.lesson.createManyAndReturn({
+      data: lessonRows,
+      select: { id: true },
+    });
+    assertRowCount(createdLessons, lessonRows, "lessons");
 
-      await createActivitiesForLessons(
-        tx,
-        lessonSources.map((lesson, index) => ({
-          lessonId: createdLessons[index].id,
-          activities: lesson.activities,
-        })),
-        topicIdMap,
-      );
-    },
-    { timeout: CLONE_TRANSACTION_TIMEOUT_MS },
-  );
+    await createActivitiesForLessons(
+      tx,
+      lessonSources.map((lesson, index) => ({
+        lessonId: createdLessons[index].id,
+        activities: lesson.activities,
+      })),
+      topicIdMap,
+    );
+  });
 }
 
 /**
@@ -302,14 +323,14 @@ export async function cloneCourseContent(sourceCourseId, targetCourseId, options
  * course-level cloning so imported activities can safely reference the target
  * module's course topics without leaking source-course ids.
  */
-export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) {
-  const targetModule = await prisma.module.findUnique({
+export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId, db = prisma) {
+  const targetModule = await db.module.findUnique({
     where: { id: targetModuleId },
     select: { courseOfferingId: true },
   });
   if (!targetModule) return;
 
-  const lessons = await prisma.lesson.findMany({
+  const lessons = await db.lesson.findMany({
     where: { id: { in: sourceLessonIds } },
     orderBy: { position: "asc" },
     include: {
@@ -335,11 +356,11 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
 
   const sourceTopics =
     sourceCourseIds.length > 0
-      ? await prisma.topic.findMany({ where: { courseOfferingId: { in: sourceCourseIds } } })
+      ? await db.topic.findMany({ where: { courseOfferingId: { in: sourceCourseIds } } })
       : [];
   const sourceTopicById = new Map(sourceTopics.map((topic) => [topic.id, topic]));
 
-  const maxPosition = await prisma.lesson.aggregate({
+  const maxPosition = await db.lesson.aggregate({
     where: { moduleId: targetModuleId },
     _max: { position: true },
   });
@@ -357,29 +378,26 @@ export async function cloneLessonsFromOffering(sourceLessonIds, targetModuleId) 
 
   const sourceTopicIds = collectSourceTopicIds(lessons);
 
-  await prisma.$transaction(
-    async (tx) => {
-      const topicIdMap = await buildTopicIdMap(tx, {
-        sourceTopicIds,
-        sourceTopicById,
-        targetCourseId: targetModule.courseOfferingId,
-      });
+  await runInCloneTransaction(db, async (tx) => {
+    const topicIdMap = await buildTopicIdMap(tx, {
+      sourceTopicIds,
+      sourceTopicById,
+      targetCourseId: targetModule.courseOfferingId,
+    });
 
-      const createdLessons = await tx.lesson.createManyAndReturn({
-        data: lessonRows,
-        select: { id: true },
-      });
-      assertRowCount(createdLessons, lessonRows, "lessons");
+    const createdLessons = await tx.lesson.createManyAndReturn({
+      data: lessonRows,
+      select: { id: true },
+    });
+    assertRowCount(createdLessons, lessonRows, "lessons");
 
-      await createActivitiesForLessons(
-        tx,
-        lessons.map((lesson, index) => ({
-          lessonId: createdLessons[index].id,
-          activities: lesson.activities,
-        })),
-        topicIdMap,
-      );
-    },
-    { timeout: CLONE_TRANSACTION_TIMEOUT_MS },
-  );
+    await createActivitiesForLessons(
+      tx,
+      lessons.map((lesson, index) => ({
+        lessonId: createdLessons[index].id,
+        activities: lesson.activities,
+      })),
+      topicIdMap,
+    );
+  });
 }

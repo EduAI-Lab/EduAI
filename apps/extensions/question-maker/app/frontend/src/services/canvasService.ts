@@ -3,6 +3,7 @@
  * Mirrors backend routes and shapes data for frontend consumption.
  */
 import api from "./api";
+import { getCanvasDefaultUrl } from "./canvasDefaults";
 
 export interface CanvasIntegration {
   canvasUrl: string;
@@ -88,9 +89,10 @@ export const canvasService = {
     options: { preferTestMode?: boolean } = {},
   ): Promise<{ integration: CanvasIntegration; usedTestMode: boolean }> {
     const preferTestMode = options.preferTestMode ?? this.prefersTestMode();
+    const defaultUrl = getCanvasDefaultUrl(import.meta.env.DEV);
     if (preferTestMode) {
       const integration = await this.connectCanvas(
-        canvasUrl || "https://canvas.test",
+        canvasUrl || defaultUrl,
         apiKey || "test-key",
         true,
       );
@@ -107,7 +109,7 @@ export const canvasService = {
       }
       console.warn("Canvas live connect failed; retrying in test mode", error);
       const integration = await this.connectCanvas(
-        canvasUrl || "https://canvas.test",
+        canvasUrl || defaultUrl,
         apiKey || "test-key",
         true,
       );
