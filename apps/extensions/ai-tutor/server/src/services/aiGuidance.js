@@ -383,6 +383,12 @@ async function callEduAI({
     const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
+    const serviceKey = process.env.EDUAI_API_KEY;
+    if (!serviceKey) {
+      logAiGuidanceEvent("error", "missing_service_key");
+      throw new Error("EDUAI_API_KEY not configured");
+    }
+
     const requestSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
       : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
@@ -393,6 +399,13 @@ async function callEduAI({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // Core restricts custom system prompts to course staff (#1606). The
+          // prompt below is composed by THIS server, not by the learner whose
+          // cookie we forward, so the shared service key is what proves
+          // first-party origin. Without it Core returns 403
+          // SYSTEM_PROMPT_FORBIDDEN — the same answer the learner's own browser
+          // would get, which is the point.
+          Authorization: `Bearer ${serviceKey}`,
           cookie,
         },
         body: JSON.stringify(requestBody),
