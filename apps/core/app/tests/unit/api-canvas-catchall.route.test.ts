@@ -86,13 +86,14 @@ import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import { getPolicy } from "~/lib/policy.server";
 
 function makeArgs(path: string, method: string, body?: unknown) {
+  // A bodyless request carries neither a body nor its content type.
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   return {
-    request: new Request(`http://localhost/api/canvas${path}`, {
-      method,
-      ...(body !== undefined
-        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-        : {}),
-    }),
+    request: new Request(`http://localhost/api/canvas${path}`, init),
     params: {},
     context: {} as never,
   } as never;
