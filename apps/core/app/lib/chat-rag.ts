@@ -466,16 +466,6 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
 }
 
 /**
- * Recursively caps every string in a value, intentionally including metadata
- * (`toolCallId`, URLs, etc.). The breadth is deliberate: it is a simple, robust
- * floodgate for assistant/tool payloads, and at the 6k default cap real metadata
- * is never affected — only oversized result bodies (`markdown`, `content`, …).
- *
- * `truncate` defaults to {@link truncateToMaxChars} (the `maxChars + 1` tool-cap
- * convention); pass {@link hardTruncate} when the result must stay `<= maxChars`
- * for strict budget enforcement.
- */
-/**
  * A tool-result value with every oversized string leaf capped.
  *
  * Tool results arrive as parsed JSON, but `capStringsInValue` walks whatever it
@@ -494,6 +484,16 @@ type CappedValue =
   | CappedValue[]
   | { [key: string]: CappedValue };
 
+/**
+ * Recursively caps every string in a value, intentionally including metadata
+ * (`toolCallId`, URLs, etc.). The breadth is deliberate: it is a simple, robust
+ * floodgate for assistant/tool payloads, and at the 6k default cap real metadata
+ * is never affected — only oversized result bodies (`markdown`, `content`, …).
+ *
+ * `truncate` defaults to {@link truncateToMaxChars} (the `maxChars + 1` tool-cap
+ * convention); pass {@link hardTruncate} when the result must stay `<= maxChars`
+ * for strict budget enforcement.
+ */
 function capStringsInValue(
   value: unknown,
   maxChars: number,

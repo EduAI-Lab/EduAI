@@ -528,6 +528,16 @@ export function redactErrorForMessage(error: unknown): string {
     return message ? `${error.name}: ${message}` : error.name;
   }
   if (typeof error === "string") return redactSecretValuesInString(error);
+  // `String(value)` on a plain object is "[object Object]" — the same loss this
+  // function exists to prevent — so serialize the sanitized value instead.
+  if (typeof error === "object" && error !== null) {
+    try {
+      const serialized = JSON.stringify(sanitizeSensitiveData(error));
+      if (serialized) return redactSecretValuesInString(serialized);
+    } catch {
+      // Circular or non-serializable: fall through to the string coercion.
+    }
+  }
   return redactSecretValuesInString(String(error));
 }
 

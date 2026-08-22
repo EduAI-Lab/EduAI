@@ -449,7 +449,10 @@ export function triggerCronJobAsync(
           runId,
           leaseOwner,
           "ERROR",
-          `Core handler failed: ${redactErrorForMessage(err)}`,
+          utf8Tail(
+            `Core handler failed: ${redactErrorForMessage(err)}`,
+            CRON_PERSISTED_MESSAGE_MAX_BYTES,
+          ),
           1,
         ).catch((finishErr: unknown) =>
           console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
@@ -469,7 +472,10 @@ export function triggerCronJobAsync(
       timeout: 10 * 60 * 1000,
     });
   } catch (err) {
-    const message = `Failed to start script: ${err instanceof Error ? err.message : String(err)}`;
+    const message = utf8Tail(
+      `Failed to start script: ${redactErrorForMessage(err)}`,
+      CRON_PERSISTED_MESSAGE_MAX_BYTES,
+    );
     void finishCronRun(runId, leaseOwner, "ERROR", message, 1).catch((finishErr: unknown) =>
       console.error("[cron] finishCronRun failed:", redactErrorForConsole(finishErr)),
     );
