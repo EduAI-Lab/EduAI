@@ -510,14 +510,19 @@ export const api = {
    */
   listCourseFacets: () => http("/api/courses/facets") as Promise<CourseFacets>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
+  /**
+   * Flip a course published. Course publish state is owned by EduAI Core, so
+   * this proxies through to Core and re-reads it; `corePublishStale` on the
+   * result means the write landed but the read-back didn't (#225 SEAM-04).
+   */
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
       method: "PATCH",
-    }),
+    }) as Promise<Course>,
   unpublishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/unpublish`, {
       method: "PATCH",
-    }),
+    }) as Promise<Course>,
   importIntoCourse: (
     courseId: number,
     payload: {
