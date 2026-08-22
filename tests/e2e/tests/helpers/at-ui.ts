@@ -70,6 +70,79 @@ export async function gotoAiTutor(page: Page, path: string): Promise<void> {
   });
 }
 
+/**
+ * A sidebar nav link addressed by its `href` rather than its label.
+ *
+ * Two entries can share a label — ADMIN gets "Courses" from both the teaching
+ * and admin-courses nav keys — so the href is the only stable identity. Returns
+ * a locator, so `toHaveCount(0)` is a valid assertion that the entry is absent.
+ */
+export function sidebarLink(page: Page, href: string) {
+  return sidebar(page).locator(`a[href="${href}"]`);
+}
+
+/**
+ * Every `href` in the sidebar, in render order.
+ *
+ * For "this destination has no navigation affordance at all" assertions, where
+ * asking for one link by name would pass simply because the name changed.
+ */
+export async function sidebarHrefs(page: Page): Promise<string[]> {
+  const links = sidebar(page).getByRole("link");
+  await expect(links.first()).toBeVisible();
+  return links.evaluateAll((nodes) =>
+    nodes.map((n) => n.getAttribute("href") ?? "").filter(Boolean),
+  );
+}
+
+/**
+ * The sidebar footer's user-menu trigger — name, role badge, and the menu
+ * holding Settings and Log out.
+ *
+ * The footer holds up to three controls (Take Tour, the app launcher, this),
+ * and the launcher is a menu trigger too. NavUser renders last, so the final
+ * menu trigger in the footer is this one.
+ */
+export function userMenuButton(page: Page) {
+  return sidebar(page).locator('[data-slot="sidebar-footer"] button[aria-haspopup="menu"]').last();
+}
+
+/**
+ * The command palette (Ctrl/⌘-K), as a cmdk root rather than a dialog.
+ *
+ * The shell mounts the bug-report dialog alongside it, so `getByRole("dialog")`
+ * is ambiguous the moment either is open. `[cmdk-root]` is unique to the
+ * palette and still scopes `getByRole("combobox")` (its input) and
+ * `getByRole("option")` (its items).
+ */
+export function commandPalette(page: Page) {
+  return page.locator("[cmdk-root]").first();
+}
+
+/**
+ * The card-level link for a course in a course list.
+ *
+ * `CourseCard`'s clickable element is a transparent overlay `<a>` carrying only
+ * an `aria-label`, so it has no visible text to match on — the href is what
+ * identifies it.
+ */
+export function courseLink(page: Page, courseId: number) {
+  return page.locator(`a[href$="/courses/${courseId}"]`).first();
+}
+
+/**
+ * The in-shell error state a route boundary renders (`RouteErrorState`).
+ *
+ * On this branch a 403/404/400 from a loader resolves to `NotFoundState`, which
+ * renders *inside* `_app.tsx` — the sidebar and header stay mounted. Match its
+ * heading rather than the surrounding chrome, and note that the generic copy is
+ * the point: a record the caller may not see must look identical to one that
+ * does not exist.
+ */
+export function errorBoundary(page: Page) {
+  return page.getByText("404 — Page not found");
+}
+
 /** The sidebar's nav link labels, in render order. */
 export async function sidebarLinkNames(page: Page): Promise<string[]> {
   const links = sidebar(page).getByRole("link");
