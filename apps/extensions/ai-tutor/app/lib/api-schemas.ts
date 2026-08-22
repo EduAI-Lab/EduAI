@@ -163,8 +163,9 @@ export const lessonSchema = z
   })
   .passthrough() satisfies z.ZodType<Lesson>;
 
+/** Topic ids are cuid strings on the wire; the number arm covers legacy fixtures. */
 export const topicSchema = z
-  .object({ id: z.number(), name: z.string() })
+  .object({ id: z.union([z.string(), z.number()]), name: z.string() })
   .passthrough() satisfies z.ZodType<Topic>;
 
 export const activitySchema = z

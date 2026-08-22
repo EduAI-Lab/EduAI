@@ -293,8 +293,13 @@ export type PromptTemplate = {
   topP?: number | null;
 };
 
+/**
+ * `Topic.id` is a cuid string in the AI-Tutor database (`Topic.id String @id
+ * @default(cuid())`), and `mapTopic` sends it through unchanged. `number` is
+ * kept in the union only because older call sites compare and stringify it.
+ */
 export type Topic = {
-  id: number;
+  id: string | number;
   name: string;
 };
 

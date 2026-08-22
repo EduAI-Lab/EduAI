@@ -92,7 +92,7 @@ type SingleChatState = {
 
 type ChatState = Record<ChatTab, SingleChatState>;
 
-type TopicOption = { label: string; value: number };
+type TopicOption = { label: string; value: string | number };
 
 type StudentSelectableModel = AiModel & {
   studentSelectable?: boolean;
@@ -123,8 +123,8 @@ type StudentAiChatProps = {
   /** Open the parent's fuller level picker to change it. */
   onAdjustKnowledgeLevel: () => void;
   topicOptions: TopicOption[];
-  currentTopicId: number | null;
-  onSelectTopic: (topicId: number) => void;
+  currentTopicId: string | number | null;
+  onSelectTopic: (topicId: string | number) => void;
   studentAnswer: number | string | null;
   /** Extra classes on the root panel — e.g. `h-full` when docked in a
    * resizable split rather than the standalone fixed-height default. */

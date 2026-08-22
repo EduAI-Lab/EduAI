@@ -616,6 +616,23 @@ describe("search + move endpoints (#1207)", () => {
     expect(calledUrl()).toContain("search=recursion");
   });
 
+  // Topic ids are cuid strings in the DB (`Topic.id String @id @default(cuid())`),
+  // so a numeric-only schema would reject every real topic row and, through
+  // `mainTopic`/`secondaryTopics`, every real activity row with it.
+  it("accepts the cuid topic ids the server actually sends", async () => {
+    okJson({
+      data: [{ id: "cm4t0p1cabcdef0123456789", name: "Recursion" }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
+    const { api } = await import("~/lib/api");
+
+    const topics = await api.topicsForCourse(4);
+
+    expect(topics.data[0]).toEqual({ id: "cm4t0p1cabcdef0123456789", name: "Recursion" });
+  });
+
   it("sends page alongside search so the pager pages the filtered set", async () => {
     okEmptyPage();
     const { api } = await import("~/lib/api");
