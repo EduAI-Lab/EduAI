@@ -9,6 +9,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
+const { mockExtract } = vi.hoisted(() => ({ mockExtract: vi.fn() }));
+
 const { mockCourseFindOne, mockEnrollments } = vi.hoisted(() => ({
   mockCourseFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
@@ -18,6 +20,12 @@ vi.mock("../../src/services/authService.js", () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock("../../src/services/aiService.js", () => ({
+  generateQuestions: vi.fn(),
+  extractQuestionsFromText: mockExtract,
+  AI_PROVIDERS: { GROQ: "groq" },
+}));
+
 vi.mock("../../src/config/settings.js", () => {
   const cfg = {
     coreUrl: "http://core.test",
@@ -25,6 +33,8 @@ vi.mock("../../src/config/settings.js", () => {
     corsOrigins: ["*"],
     nodeEnv: "test",
     logLevel: "silent",
+    qmMaxExtractTextChars: 100,
+    qmAiRateLimitMax: 100,
   };
   return { config: cfg, default: cfg };
 });
@@ -56,6 +66,7 @@ const TEST_USER = {
 };
 
 beforeEach(() => {
+  mockExtract.mockReset();
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -104,6 +115,16 @@ describe("Questions extract HTTP validation (integration)", () => {
         .set("Cookie", "session=valid")
         .send({ text: "Q?", courseId: "nope" });
       expect(res.status).toBe(404);
+    });
+
+    it("rejects oversized OCR text before invoking extraction", async () => {
+      const res = await request(app)
+        .post("/api/questions/extract")
+        .set("Cookie", "session=valid")
+        .send({ courseId: 1, text: "x".repeat(101) });
+      expect(res.status).toBe(413);
+      expect(String(res.body.error || "")).toMatch(/text|characters|large/i);
+      expect(mockExtract).not.toHaveBeenCalled();
     });
   });
 

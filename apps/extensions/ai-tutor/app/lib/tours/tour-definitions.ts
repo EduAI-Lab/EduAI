@@ -52,6 +52,7 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
         description:
           "Modules break the material into manageable chunks. We will open the first one to keep moving.",
         target: '[data-tour="student-module-card-first"]',
+        emptyTarget: '[data-tour="student-modules-empty"]',
         route: selectedCourseRoute,
         side: "right",
         storeRouteFromTarget: "selectedModuleRoute",
@@ -62,6 +63,7 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
         description:
           "A lesson contains the questions, progress, and AI support tools you will use most often.",
         target: '[data-tour="student-lesson-card-first"]',
+        emptyTarget: '[data-tour="student-lessons-empty"]',
         route: selectedModuleRoute,
         side: "right",
         storeRouteFromTarget: "selectedLessonRoute",

@@ -230,6 +230,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     errorEnvelope: "standard",
     routeFile: "routes/api/courses.$.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/courses/facets",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/courses.facets.ts",
+    note: "Role-scoped status/term/department filter values for the course list (#1263)",
+  }),
 
   // ── Course by id ────────────────────────────────────────────────────────────
   entry({
@@ -795,6 +803,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     errorEnvelope: "standard",
     routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/admin/bedrock-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/admin.bedrock-settings.ts",
   }),
   entry({
     method: "GET",

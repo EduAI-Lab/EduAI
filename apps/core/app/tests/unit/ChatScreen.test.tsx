@@ -11,6 +11,7 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
+const captureApiKeysOwner = vi.hoisted(() => vi.fn());
 const {
   handleSubmitMock,
   handleInputChangeMock,
@@ -79,9 +80,12 @@ vi.mock("~/hooks/api/use-chat-history", () => ({
 }));
 
 vi.mock("~/hooks/use-api-keys", () => ({
-  useApiKeys: () => ({
-    getValidApiKeys: vi.fn(() => ({})),
-  }),
+  useApiKeys: (ownerId?: string | null) => {
+    captureApiKeysOwner(ownerId);
+    return {
+      getValidApiKeys: vi.fn(() => ({})),
+    };
+  },
 }));
 
 vi.mock("~/hooks/use-assistive-reorientation", () => ({
@@ -296,6 +300,11 @@ function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
 }
 
 describe("ChatScreen — header", () => {
+  it("binds its provider-key store to the authenticated loader user", () => {
+    renderChatScreen();
+    expect(captureApiKeysOwner).toHaveBeenCalledWith(baseData.user.id);
+  });
+
   it('renders the live page header as "Course Chat"', () => {
     renderChatScreen();
     expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();

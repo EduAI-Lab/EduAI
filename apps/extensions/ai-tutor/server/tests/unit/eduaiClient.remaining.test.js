@@ -19,6 +19,8 @@ import {
   listEduAiCourses,
   listEduAiCourseTopics,
   listEduAiCourseEnrollmentsServiceKey,
+  getEduAiCourseEnrollmentServiceKey,
+  createCoreEnrollment,
   patchCoreEnrollmentRole,
   deleteCoreEnrollment,
   fetchCoreCourseSafe,
@@ -317,6 +319,39 @@ describe("listEduAiCourseEnrollmentsServiceKey", () => {
   });
 });
 
+describe("getEduAiCourseEnrollmentServiceKey", () => {
+  it("requests and validates one user's enrollment", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const enrollment = {
+      studentId: "student/1",
+      studentEmail: "student@example.com",
+      studentName: "Student",
+      enrolledAt: null,
+      isActive: true,
+      role: "STUDENT",
+    };
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ enrollment }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(getEduAiCourseEnrollmentServiceKey("course-1", "student/1")).resolves.toEqual(
+      enrollment,
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://eduai.test/api/courses/course-1/enrollments?userId=student%2F1",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer svc-key" }),
+      }),
+    );
+  });
+
+  it("returns null for an authoritative non-enrollment", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson({ enrollment: null })));
+
+    await expect(getEduAiCourseEnrollmentServiceKey("core-1", "missing")).resolves.toBeNull();
+  });
+});
+
 describe("patchCoreEnrollmentRole", () => {
   it("throws 401 without a cookie", async () => {
     await expect(patchCoreEnrollmentRole("core-1", "e1", "TA", "")).rejects.toMatchObject({
@@ -325,6 +360,7 @@ describe("patchCoreEnrollmentRole", () => {
   });
 
   it("PATCHes the enrollment role and returns the response body", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "e1", role: "TA" }));
     vi.stubGlobal("fetch", mockFetch);
 
@@ -335,10 +371,12 @@ describe("patchCoreEnrollmentRole", () => {
     expect(url).toBe("http://eduai.test/api/courses/core-1/enrollments/e1");
     expect(opts.method).toBe("PATCH");
     expect(opts.headers.cookie).toBe("session=abc");
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
     expect(JSON.parse(opts.body)).toEqual({ role: "TA" });
   });
 
   it("throws with status on a non-ok Core response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(403, "Forbidden")));
     await expect(
       patchCoreEnrollmentRole("core-1", "e1", "TA", "session=abc"),
@@ -352,6 +390,7 @@ describe("deleteCoreEnrollment", () => {
   });
 
   it("DELETEs the enrollment", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const mockFetch = vi
       .fn()
       .mockResolvedValue({ ok: true, status: 204, text: () => Promise.resolve("") });
@@ -363,13 +402,63 @@ describe("deleteCoreEnrollment", () => {
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("http://eduai.test/api/courses/core-1/enrollments/e1");
     expect(opts.method).toBe("DELETE");
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
   });
 
   it("throws with status on a non-ok Core response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(404, "not found")));
     await expect(deleteCoreEnrollment("core-1", "e1", "session=abc")).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe("createCoreEnrollment", () => {
+  it("POSTs the enrollment with user session and verified service provenance", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "e1", role: "STUDENT" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await createCoreEnrollment("core-1", "student-1", "STUDENT", "session=abc");
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://eduai.test/api/courses/core-1/enrollments");
+    expect(opts.method).toBe("POST");
+    expect(opts.headers.cookie).toBe("session=abc");
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
+    expect(JSON.parse(opts.body)).toEqual({ userId: "student-1", role: "STUDENT" });
+  });
+
+  it("reconciles an existing Core enrollment instead of diverging the local mirror", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(notOk(409, "already enrolled"))
+      .mockResolvedValueOnce(
+        okJson({
+          enrollments: [
+            {
+              id: "e1",
+              studentId: "student-1",
+              studentEmail: "student@example.test",
+              studentName: "Student",
+              enrolledAt: new Date().toISOString(),
+              isActive: true,
+              role: "STUDENT",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(okJson({ id: "e1", role: "TA" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(createCoreEnrollment("core-1", "student-1", "TA", "session=abc")).resolves.toEqual(
+      { id: "e1", role: "TA" },
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockFetch.mock.calls[2][1].method).toBe("PATCH");
   });
 });
 

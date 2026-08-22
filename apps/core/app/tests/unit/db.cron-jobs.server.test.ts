@@ -7,6 +7,7 @@ vi.mock("node:child_process", () => ({ spawn: mockSpawn }));
 
 const mockQueryRaw = vi.hoisted(() => vi.fn());
 const mockExecuteRaw = vi.hoisted(() => vi.fn());
+const mockTransaction = vi.hoisted(() => vi.fn());
 const mockOverrideFindMany = vi.hoisted(() => vi.fn());
 const mockOverrideUpsert = vi.hoisted(() => vi.fn());
 const mockOverrideDeleteMany = vi.hoisted(() => vi.fn());
@@ -16,6 +17,7 @@ vi.mock("~/lib/prisma.server", () => ({
   default: {
     $queryRaw: mockQueryRaw,
     $executeRaw: mockExecuteRaw,
+    $transaction: mockTransaction,
     cronJobScheduleOverride: {
       findMany: mockOverrideFindMany,
       upsert: mockOverrideUpsert,
@@ -35,6 +37,9 @@ const {
   getRecentCronJobRuns,
   startCronRun,
   finishCronRun,
+  renewCronRunLease,
+  reapExpiredCronRuns,
+  resolveCronOutputMaxBytes,
   triggerCronJobAsync,
   dispatchManualCronRuns,
   KNOWN_CRON_JOBS,
@@ -42,8 +47,17 @@ const {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockQueryRaw.mockReset();
+  mockExecuteRaw.mockReset();
+  mockTransaction.mockReset();
+  mockOverrideFindMany.mockReset();
+  mockOverrideUpsert.mockReset();
+  mockOverrideDeleteMany.mockReset();
   mockQueryRaw.mockResolvedValue([]);
-  mockExecuteRaw.mockResolvedValue(undefined);
+  mockExecuteRaw.mockResolvedValue(1);
+  mockTransaction.mockImplementation(async (run) =>
+    run({ $queryRaw: mockQueryRaw, $executeRaw: mockExecuteRaw }),
+  );
   mockOverrideFindMany.mockResolvedValue([]);
   mockOverrideUpsert.mockResolvedValue({});
   mockOverrideDeleteMany.mockResolvedValue({ count: 0 });
@@ -141,29 +155,53 @@ describe("listCronJobStatuses", () => {
 });
 
 describe("startCronRun", () => {
-  it("returns created:true with the generated run id from INSERT", async () => {
-    mockQueryRaw.mockResolvedValue([{ id: "run-abc" }]);
+  it("returns an owner token with a newly leased run", async () => {
+    mockQueryRaw
+      .mockResolvedValueOnce([]) // advisory lock
+      .mockResolvedValueOnce([]) // no active lease
+      .mockResolvedValueOnce([{ id: "run-abc" }]);
     const result = await startCronRun("backup-nightly");
-    expect(result).toEqual({ runId: "run-abc", created: true });
-    expect(mockQueryRaw).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      runId: "run-abc",
+      created: true,
+      leaseOwner: expect.any(String),
+    });
+    expect(result.created && result.leaseOwner.length).toBeGreaterThan(10);
   });
 
-  it("returns created:false when INSERT conflicts (empty RETURNING)", async () => {
-    mockQueryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "run-existing" }]);
+  it("returns created:false when a live lease already exists", async () => {
+    mockQueryRaw
+      .mockResolvedValueOnce([]) // advisory lock
+      .mockResolvedValueOnce([{ id: "run-existing" }]);
     const result = await startCronRun("backup-nightly");
     expect(result).toEqual({ runId: "run-existing", created: false });
     expect(mockQueryRaw).toHaveBeenCalledTimes(2);
   });
 });
 
+describe("cron run leases", () => {
+  it("renews only the matching live owner", async () => {
+    mockExecuteRaw.mockResolvedValueOnce(1);
+    await expect(renewCronRunLease("run-abc", "owner-a")).resolves.toBe(true);
+
+    mockExecuteRaw.mockResolvedValueOnce(0);
+    await expect(renewCronRunLease("run-abc", "stale-owner")).resolves.toBe(false);
+  });
+
+  it("reaps expired attempts as terminal audit rows", async () => {
+    mockExecuteRaw.mockResolvedValueOnce(2);
+    await expect(reapExpiredCronRuns()).resolves.toBe(2);
+  });
+});
+
 describe("finishCronRun", () => {
   it("executes an UPDATE with the given status, message, and exitCode", async () => {
-    await finishCronRun("run-abc", "SUCCESS", "done", 0);
+    await finishCronRun("run-abc", "owner-1", "SUCCESS", "done", 0);
     expect(mockExecuteRaw).toHaveBeenCalledOnce();
   });
 
   it("executes an UPDATE for ERROR status", async () => {
-    await finishCronRun("run-abc", "ERROR", "failed", 1);
+    await finishCronRun("run-abc", "owner-1", "ERROR", "failed", 1);
     expect(mockExecuteRaw).toHaveBeenCalledOnce();
   });
 
@@ -172,6 +210,7 @@ describe("finishCronRun", () => {
   it("redacts secret values out of the persisted message", async () => {
     await finishCronRun(
       "run-abc",
+      "owner-1",
       "ERROR",
       "connect failed for postgresql://admin:hunter2@db:5432/eduai and https://lms/api?access_token=abc123",
       1,
@@ -190,6 +229,7 @@ describe("finishCronRun", () => {
   it("redacts structured key/value secrets in the persisted message", async () => {
     await finishCronRun(
       "run-abc",
+      "owner-1",
       "ERROR",
       'env dump: API_KEY=sk-live-abcdef PGPASSWORD=hunter2 payload={"clientSecret":"s3kr3t"} rows=42',
       1,
@@ -207,7 +247,7 @@ describe("finishCronRun", () => {
   });
 
   it("leaves a message with no secrets untouched", async () => {
-    await finishCronRun("run-abc", "SUCCESS", "Processed 42 rows in 3.1s", 0);
+    await finishCronRun("run-abc", "owner-1", "SUCCESS", "Processed 42 rows in 3.1s", 0);
 
     const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
     expect(persistedMessage).toBe("Processed 42 rows in 3.1s");
@@ -286,12 +326,13 @@ describe("triggerCronJobAsync", () => {
     const child = new EventEmitter() as any;
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
+    child.kill = vi.fn().mockReturnValue(true);
     return child;
   }
 
   it("runs a Core handler without spawning a shell process", async () => {
     mockNotifyExpiringApiKeys.mockResolvedValue({ notified: 2 });
-    triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "CORE");
+    triggerCronJobAsync("notify-api-key-expiry", "Core handler", "run-1", "owner-1", "CORE");
     // The CORE path resolves via a dynamic `import()` before calling the
     // handler — under Vite's SSR transform that hop can take more than a
     // couple of microtask ticks, so poll instead of a fixed tick count.
@@ -307,7 +348,7 @@ describe("triggerCronJobAsync", () => {
   it("spawns bash with the resolved script path", () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     expect(mockSpawn).toHaveBeenCalledWith(
       "bash",
       [expect.stringContaining("backup-nightly.sh")],
@@ -318,7 +359,7 @@ describe("triggerCronJobAsync", () => {
   it("calls finishCronRun with SUCCESS when the script exits 0", async () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.emit("close", 0);
     await Promise.resolve();
     await Promise.resolve();
@@ -328,7 +369,7 @@ describe("triggerCronJobAsync", () => {
   it("calls finishCronRun with ERROR when the script exits non-zero", async () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.emit("close", 1);
     await Promise.resolve();
     await Promise.resolve();
@@ -338,7 +379,7 @@ describe("triggerCronJobAsync", () => {
   it("calls finishCronRun with ERROR when spawn emits an error", async () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.emit("error", new Error("ENOENT: no such file"));
     await Promise.resolve();
     await Promise.resolve();
@@ -348,7 +389,7 @@ describe("triggerCronJobAsync", () => {
   it("includes stdout output in the finish message", async () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     child.stdout.emit("data", Buffer.from("Backup complete"));
     child.emit("close", 0);
     await Promise.resolve();
@@ -362,7 +403,7 @@ describe("triggerCronJobAsync", () => {
   it("redacts before truncating so a long secret cannot outlive its key", async () => {
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
     // The `API_KEY=` prefix sits well outside the trailing 1000-char window.
     child.stdout.emit("data", Buffer.from(`API_KEY=${"s3kr3t".repeat(400)}\ndone`));
     child.emit("close", 0);
@@ -375,17 +416,59 @@ describe("triggerCronJobAsync", () => {
     expect(persistedMessage).toContain("done");
   });
 
-  it("dispatches admin-triggered shell runs from the worker process", async () => {
+  it("caps captured bytes and terminates a child that exceeds the output budget", async () => {
+    const originalMax = process.env.CRON_OUTPUT_MAX_BYTES;
+    process.env.CRON_OUTPUT_MAX_BYTES = "1024";
     const child = makeChild();
     mockSpawn.mockReturnValue(child);
-    mockQueryRaw.mockResolvedValueOnce([{ id: "run-manual", jobName: "backup-nightly" }]);
 
-    await dispatchManualCronRuns();
+    try {
+      expect(resolveCronOutputMaxBytes()).toBe(1024);
+      triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
+      child.stdout.emit("data", Buffer.alloc(900, "x"));
+      child.stderr.emit(
+        "data",
+        Buffer.concat([Buffer.from("backup failed at phase 2\n"), Buffer.alloc(2048, "y")]),
+      );
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "bash",
-      [expect.stringContaining("backup-nightly.sh")],
-      expect.any(Object),
-    );
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+
+      child.emit("close", 0);
+      await Promise.resolve();
+      await Promise.resolve();
+      const persistedMessage = mockExecuteRaw.mock.calls.at(-1)?.[2] as string;
+      expect(persistedMessage).toContain("backup failed at phase 2");
+      expect(persistedMessage).toContain("output limit");
+      expect(Buffer.byteLength(persistedMessage)).toBeLessThanOrEqual(1000);
+    } finally {
+      if (originalMax === undefined) delete process.env.CRON_OUTPUT_MAX_BYTES;
+      else process.env.CRON_OUTPUT_MAX_BYTES = originalMax;
+    }
+  });
+
+  it("heartbeats the lease and terminates when this process loses ownership", async () => {
+    const originalLeaseMs = process.env.CRON_RUN_LEASE_MS;
+    process.env.CRON_RUN_LEASE_MS = "15000";
+    vi.useFakeTimers();
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    // The heartbeat UPDATE matched no row: another owner/reaper has fenced us.
+    mockExecuteRaw.mockResolvedValueOnce(0);
+
+    try {
+      triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1", "owner-1");
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(mockExecuteRaw).toHaveBeenCalledOnce();
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+
+      child.emit("close", 1);
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      vi.useRealTimers();
+      if (originalLeaseMs === undefined) delete process.env.CRON_RUN_LEASE_MS;
+      else process.env.CRON_RUN_LEASE_MS = originalLeaseMs;
+    }
   });
 });

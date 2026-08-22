@@ -20,6 +20,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -79,6 +80,7 @@ describeDb("course.js route coverage (integration)", () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
+    resetCourseAccessSyncForTests();
     await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
   });
 
@@ -89,6 +91,26 @@ describeDb("course.js route coverage (integration)", () => {
   });
 
   describe("POST /api/course", () => {
+    it("blocks a platform STUDENT before creating a local course anchor", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ user: { ...USER, role: "STUDENT" } }),
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/course")
+        .set(cookie())
+        .send({ coreCourseId: "core-student-must-not-create" });
+
+      expect(res.status).toBe(403);
+      expect(
+        await prisma.course.findUnique({ where: { coreCourseId: "core-student-must-not-create" } }),
+      ).toBeNull();
+    });
+
     it("creates a new course anchor when the Core course is in the caller scoped list", async () => {
       vi.stubGlobal(
         "fetch",
@@ -276,41 +298,41 @@ describeDb("course.js route coverage (integration)", () => {
         data: { userId: USER.id, coreCourseId: "core-enr" },
       });
       // requireCourseAccess's gate and the route's own roster fetch both hit
-      // /enrollments; the first call must show the caller as actively
-      // teaching (#1114) to pass the gate, the second is the roster this
-      // test actually asserts on.
-      let enrollmentCalls = 0;
+      // /enrollments, so the authoritative roster includes the requesting
+      // instructor as well as the active/inactive students under test.
       vi.stubGlobal(
         "fetch",
         routedFetch([
           {
             test: (u) => u.includes("/enrollments"),
-            reply: () => {
-              enrollmentCalls += 1;
-              if (enrollmentCalls === 1) {
-                return jsonRes({
-                  enrollments: [{ studentId: USER.id, isActive: true, role: "INSTRUCTOR" }],
-                });
-              }
-              return jsonRes({
-                enrollments: [
-                  {
-                    studentId: "s1",
-                    studentName: "Alice",
-                    studentEmail: "a@t.co",
-                    role: "STUDENT",
-                    isActive: true,
-                  },
-                  {
-                    studentId: "s2",
-                    studentName: "Bob",
-                    studentEmail: "b@t.co",
-                    role: "STUDENT",
-                    isActive: false,
-                  },
-                ],
-              });
-            },
+            reply: jsonRes({
+              enrollments: [
+                {
+                  studentId: "s1",
+                  studentName: "Alice",
+                  studentEmail: "a@t.co",
+                  role: "STUDENT",
+                  isActive: true,
+                },
+                {
+                  studentId: "s2",
+                  studentName: "Bob",
+                  studentEmail: "b@t.co",
+                  role: "STUDENT",
+                  isActive: false,
+                },
+                // The route's access gate also consumes this authoritative
+                // roster; keep the requesting instructor enrolled while
+                // retaining separate active/inactive mapping coverage.
+                {
+                  studentId: USER.id,
+                  studentName: USER.name,
+                  studentEmail: USER.email,
+                  role: "INSTRUCTOR",
+                  isActive: true,
+                },
+              ],
+            }),
           },
         ]),
       );
@@ -320,6 +342,7 @@ describeDb("course.js route coverage (integration)", () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([
         { userId: "s1", name: "Alice", email: "a@t.co", role: "STUDENT" },
+        { userId: USER.id, name: USER.name, email: USER.email, role: "INSTRUCTOR" },
       ]);
     });
   });

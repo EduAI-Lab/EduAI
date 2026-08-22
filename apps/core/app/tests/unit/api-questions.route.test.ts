@@ -54,6 +54,14 @@ function makeActionArgs(body: unknown, method = "POST") {
   } as never;
 }
 
+function makeRawActionArgs(body: string, headers: Record<string, string>) {
+  return {
+    request: new Request("http://localhost/api/questions", { method: "POST", headers, body }),
+    params: {},
+    context: {} as never,
+  } as never;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireServiceKey).mockResolvedValue(null);
@@ -141,8 +149,58 @@ describe("POST /api/questions (action)", () => {
 
   it("returns 401 for anonymous callers", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
-    const res = await action(makeActionArgs({ courseId: "course-1" }));
+    const res = await action(
+      makeActionArgs({
+        courseId: "course-1",
+        topicId: "topic-1",
+        content: "Q?",
+        type: "SA",
+      }),
+    );
     expect(res.status).toBe(401);
+  });
+
+  it("returns stable 413 from Content-Length before auth or body parsing", async () => {
+    const res = await action(
+      makeRawActionArgs("{}", {
+        "Content-Type": "application/json",
+        "Content-Length": "999999",
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "PAYLOAD_TOO_LARGE" });
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
+
+  it("returns stable 413 when actual UTF-8 bytes exceed the limit", async () => {
+    const res = await action(
+      makeRawActionArgs(JSON.stringify({ content: "x".repeat(70_000) }), {
+        "Content-Type": "application/json",
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "PAYLOAD_TOO_LARGE" });
+    expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 for unknown fields and never reaches course access or persistence", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "INSTRUCTOR" },
+    } as never);
+    const res = await action(
+      makeActionArgs({
+        courseId: "course-1",
+        topicId: "topic-1",
+        content: "Q?",
+        type: "SA",
+        unexpected: true,
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ error: "VALIDATION_ERROR" });
+    expect(resolveCourseAccessGate).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
   });
 
   it("returns 403 when the caller lacks course access", async () => {
@@ -153,7 +211,14 @@ describe("POST /api/questions (action)", () => {
       course: { id: "course-1" },
       access: { level: "student", rank: 0 },
     } as never);
-    const res = await action(makeActionArgs({ courseId: "course-1" }));
+    const res = await action(
+      makeActionArgs({
+        courseId: "course-1",
+        topicId: "topic-1",
+        content: "Q?",
+        type: "SA",
+      }),
+    );
     expect(res.status).toBe(403);
     expect(createQuestion).not.toHaveBeenCalled();
   });
@@ -168,7 +233,14 @@ describe("POST /api/questions (action)", () => {
     } as never);
     vi.mocked(createQuestion).mockResolvedValue({ id: "q1" } as never);
 
-    const res = await action(makeActionArgs({ courseId: "course-1", prompt: "2+2?" }));
+    const res = await action(
+      makeActionArgs({
+        courseId: "course-1",
+        topicId: "topic-1",
+        content: "2+2?",
+        type: "SA",
+      }),
+    );
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body).toEqual({ id: "q1" });
@@ -184,7 +256,14 @@ describe("POST /api/questions (action)", () => {
     } as never);
     vi.mocked(createQuestion).mockResolvedValue({ error: "TOPIC_NOT_FOUND" } as never);
 
-    const res = await action(makeActionArgs({ courseId: "course-1", topicId: "bad" }));
+    const res = await action(
+      makeActionArgs({
+        courseId: "course-1",
+        topicId: "bad",
+        content: "Q?",
+        type: "SA",
+      }),
+    );
     expect(res.status).toBe(404);
   });
 });

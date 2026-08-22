@@ -1,14 +1,12 @@
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: eduquery-postgres-dev
     environment:
       POSTGRES_DB: eduquery
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "${QM_DEV_DB_PORT:-55433}:5432"
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,48 +15,68 @@ services:
       timeout: 5s
       retries: 5
 
-  # Backend API (Development)
   backend:
     build:
-      context: ./app/backend
-      dockerfile: Dockerfile.dev
-    container_name: eduquery-backend-dev
+      context: ../../..
+      dockerfile: apps/extensions/question-maker/app/backend/Dockerfile.dev
     env_file:
       - .env
     environment:
+      NODE_ENV: development
+      DOCKER: "true"
       LOG_LEVEL: debug
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/eduquery
+      CORE_URL: ${CORE_CONTAINER_URL:-http://host.docker.internal:3000}
+      EXTENSION_URL: http://localhost:8000
+      CORS_ORIGINS: http://localhost:5173
     ports:
       - "8000:8000"
     volumes:
-      - ./app/backend:/app
-      - /app/node_modules
+      - ./app/backend:/workspace/apps/extensions/question-maker/app/backend
+      - ../../../packages/types:/workspace/packages/types
+      - qm_backend_generated:/workspace/apps/extensions/question-maker/app/backend/node_modules
     depends_on:
       postgres:
         condition: service_healthy
-    command: npm run dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    init: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 12
+    command: sh -c "npm run build -w @eduai/types && npm run dev -w question-maker-backend"
     restart: unless-stopped
 
-  # Frontend (Development)
   frontend:
     build:
-      context: ./app/frontend
-      dockerfile: Dockerfile.dev
-    container_name: eduquery-frontend-dev
-    env_file:
-      - .env
+      context: ../../..
+      dockerfile: apps/extensions/question-maker/app/frontend/Dockerfile.dev
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      VITE_CORE_URL: ${VITE_CORE_URL:-http://localhost:3000}
+      VITE_AI_TUTOR_URL: ${VITE_AI_TUTOR_URL:-http://localhost:3001}
+      VITE_QUESTION_MAKER_URL: ${VITE_QUESTION_MAKER_URL:-http://localhost:5173}
     ports:
       - "5173:5173"
     volumes:
-      - ./app/frontend:/app
-      - /app/node_modules
-    # Bind mount hides image node_modules; the anonymous volume keeps deps across restarts.
-    # Run npm install on start so new packages (e.g. docx) appear without manual volume pruning.
-    command: sh -c "npm install && npm run dev"
+      - ./app/frontend:/workspace/apps/extensions/question-maker/app/frontend
+      - ../../../packages/types:/workspace/packages/types
+      - ../../../packages/ui:/workspace/packages/ui
+      - qm_frontend_cache:/workspace/apps/extensions/question-maker/app/frontend/node_modules
+    init: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 20s
+      retries: 12
+    command: sh -c "npm run build -w @eduai/types && npm run dev -w question-maker-frontend"
     restart: unless-stopped
 
 volumes:
   postgres_dev_data:
-
-networks:
-  default:
-    name: eduquery-dev-network
+  qm_backend_generated:
+  qm_frontend_cache:

@@ -104,6 +104,29 @@ describe("auth/register action", () => {
     expect(auth.handler).not.toHaveBeenCalled();
   });
 
+  it("returns HTTP 413 for an oversized declared form before auth parsing", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("email=a@ubc.ca"));
+      },
+    });
+    const result = (await action({
+      request: new Request("http://localhost/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": String(64 * 1024 + 1),
+        },
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+      params: {},
+      context: {} as never,
+    } as never)) as Response;
+    expect(result.status).toBe(413);
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
   it("returns fieldErrors when passwords don't match", async () => {
     const result = (await action(
       makeActionArgs({

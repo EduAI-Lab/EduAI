@@ -75,6 +75,8 @@ import {
 } from "../utils/assessmentExport";
 
 type ActiveTab = "overview" | "questions" | "banks" | "assessments" | "canvas";
+type ExtractedDrafts = ReturnType<typeof mapExtractedToDraftQuestions>;
+type PendingExtractionReview = { courseId: number; drafts: ExtractedDrafts };
 
 const VALID_TABS: ActiveTab[] = ["overview", "questions", "banks", "assessments", "canvas"];
 
@@ -146,9 +148,8 @@ export const CourseDetailPage = () => {
   const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<
-    typeof mapExtractedToDraftQuestions
-  > | null>(null);
+  const [pendingExtractionReview, setPendingExtractionReview] =
+    useState<PendingExtractionReview | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
   const [banks, setBanks] = useState<QuestionBankModel[]>([]);
   const [isBanksLoading, setIsBanksLoading] = useState(false);
@@ -555,8 +556,11 @@ export const CourseDetailPage = () => {
 
   const handleUploadQuestions = useCallback(() => {
     if (courseId) void loadTopicsForCourse(courseId);
+    if (pendingExtractionReview && pendingExtractionReview.courseId !== courseId) {
+      setPendingExtractionReview(null);
+    }
     setIsUploadOpen(true);
-  }, [courseId, loadTopicsForCourse]);
+  }, [courseId, loadTopicsForCourse, pendingExtractionReview]);
 
   const handleUpdateVariant = useCallback(
     (
@@ -751,7 +755,7 @@ export const CourseDetailPage = () => {
       setIsUploadOpen(false);
       const processingToast = toast("Extraction in progress", {
         description:
-          "Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.",
+          "Your upload is being processed. Keep this page open until the extraction is ready.",
         duration: Infinity,
       });
       const dismissProcessing = () => {
@@ -781,10 +785,16 @@ export const CourseDetailPage = () => {
             return;
           }
           params.onExtractionComplete?.("success", { questionsCount: drafts.length });
-          setPendingExtractionDrafts(drafts);
+          setPendingExtractionReview({ courseId: params.courseId, drafts });
           toast("Your extraction is ready", {
-            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Open the upload dialog to review and save.`,
-            action: { label: "Review questions", onClick: () => setIsUploadOpen(true) },
+            description: `${drafts.length} question${drafts.length === 1 ? "" : "s"} extracted. Review them in the source course before saving.`,
+            action: {
+              label: "Review questions",
+              onClick: () => {
+                navigate(`/courses/${params.courseId}?tab=questions`);
+                setIsUploadOpen(true);
+              },
+            },
             duration: Infinity,
           });
         })
@@ -795,7 +805,7 @@ export const CourseDetailPage = () => {
           toast.error("Extraction failed", { description: message, duration: Infinity });
         });
     },
-    [toast],
+    [navigate, toast],
   );
 
   // ── Assessment handlers ─────────────────────────────────────────────────────
@@ -1103,10 +1113,13 @@ export const CourseDetailPage = () => {
       {courseId && (
         <>
           <QuestionUploadDialog
-            open={isUploadOpen}
+            open={
+              isUploadOpen &&
+              (!pendingExtractionReview || pendingExtractionReview.courseId === courseId)
+            }
             onClose={() => {
               setIsUploadOpen(false);
-              setPendingExtractionDrafts(null);
+              setPendingExtractionReview(null);
             }}
             courseId={courseId}
             courseName={course.name}
@@ -1114,7 +1127,9 @@ export const CourseDetailPage = () => {
             onEnsureTopics={loadTopicsForCourse}
             onQuestionsSaved={handleQuestionsUploaded}
             onExtractInBackground={handleExtractInBackground}
-            initialDraftQuestions={pendingExtractionDrafts}
+            initialDraftQuestions={
+              pendingExtractionReview?.courseId === courseId ? pendingExtractionReview.drafts : null
+            }
           />
 
           {selectedAssessmentForExport && (

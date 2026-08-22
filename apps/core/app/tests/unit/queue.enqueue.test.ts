@@ -61,6 +61,11 @@ vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logSystemError: vi.fn(),
 }));
+// Exercise the dormant enqueue implementation in isolation. Production entry
+// points are covered separately and always fail closed pre-MVP.
+vi.mock("~/lib/queue/availability.server", () => ({
+  assertAiJobQueueEnabled: vi.fn(),
+}));
 
 import { enqueue } from "~/lib/queue/enqueue.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";

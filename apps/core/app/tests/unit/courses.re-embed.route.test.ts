@@ -15,7 +15,7 @@ vi.mock("~/lib/courses/access.server", () => ({
 }));
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
-  startReEmbedJob: vi.fn(),
+  startOrResumeReEmbedJob: vi.fn(),
   serializeReEmbedJob: vi.fn((job: { id: string; courseId: string; status: string }) => ({
     id: job.id,
     courseId: job.courseId,
@@ -35,7 +35,7 @@ vi.mock("~/lib/request-context.server", () => ({
 
 import { auth } from "~/lib/auth/server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
-import { startReEmbedJob } from "~/lib/ai/re-embed-job.server";
+import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { action } from "~/routes/api/courses.re-embed.$";
 
 const job = {
@@ -43,6 +43,8 @@ const job = {
   courseId: "course_1",
   idempotencyKey: null,
   status: "RUNNING" as const,
+  embeddingProviderSnapshot: "local",
+  embeddingModelSnapshot: "mxbai-embed-large",
   totalMaterials: 0,
   processedCount: 0,
   failedMaterialIds: [] as string[],
@@ -60,7 +62,7 @@ beforeEach(() => {
     user: { id: "u1", role: "INSTRUCTOR" },
   } as never);
   vi.mocked(getCourseIfCanManageMaterials).mockResolvedValue({ id: "course_1" } as never);
-  vi.mocked(startReEmbedJob).mockResolvedValue({ job, created: true, keyHonored: true });
+  vi.mocked(startOrResumeReEmbedJob).mockResolvedValue({ job, created: true, keyHonored: true });
 });
 
 function postArgs(
@@ -97,16 +99,20 @@ describe("POST /api/courses/:courseId/re-embed (#1112)", () => {
   });
 
   it("returns 200 on idempotent retry with the same job", async () => {
-    vi.mocked(startReEmbedJob).mockResolvedValueOnce({ job, created: false, keyHonored: true });
+    vi.mocked(startOrResumeReEmbedJob).mockResolvedValueOnce({
+      job,
+      created: false,
+      keyHonored: true,
+    });
     const res = await action(postArgs({ headerKey: "k1" }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.reusedExistingJob).toBe(true);
-    expect(startReEmbedJob).toHaveBeenCalledWith("course_1", { idempotencyKey: "k1" });
+    expect(startOrResumeReEmbedJob).toHaveBeenCalledWith("course_1", { idempotencyKey: "k1" });
   });
 
   it("returns 503 when Redis/queue is unavailable (no orphan path)", async () => {
-    vi.mocked(startReEmbedJob).mockRejectedValueOnce(
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(
       new QueueUnavailableError("Queue unavailable", { cause: new Error("ECONNREFUSED") }),
     );
     const res = await action(postArgs());
@@ -114,7 +120,7 @@ describe("POST /api/courses/:courseId/re-embed (#1112)", () => {
   });
 
   it("returns 503 when DB times out during start", async () => {
-    vi.mocked(startReEmbedJob).mockRejectedValueOnce(
+    vi.mocked(startOrResumeReEmbedJob).mockRejectedValueOnce(
       new QueueUnavailableError("Database unavailable while creating re-embed job"),
     );
     const res = await action(postArgs({ headerKey: "k-db" }));

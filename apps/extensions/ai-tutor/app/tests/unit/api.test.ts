@@ -392,6 +392,26 @@ describe("api methods", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("api.logout propagates a non-OK response instead of reporting success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({ ok: false, error: "Logout service unavailable" }),
+    });
+
+    const { api } = await import("~/lib/api");
+
+    await expect(api.logout()).rejects.toThrow("Logout service unavailable");
+  });
+
+  it("api.logout propagates a network failure instead of reporting success", async () => {
+    mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    const { api, ApiNetworkError } = await import("~/lib/api");
+
+    await expect(api.logout()).rejects.toThrow(ApiNetworkError);
+  });
+
   // #1041: Core's user list is server-paginated, so these two calls always send
   // paging params and the admin views read the envelope (and its `stats`) rather
   // than counting an array.

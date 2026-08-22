@@ -183,12 +183,16 @@ describe("getAiModelPolicyState", () => {
 
   it("degrades to an empty catalog with availableModelsError set when the catalog load fails", async () => {
     mockGetSystemSetting.mockResolvedValue(null);
-    mockListEduAiModels.mockRejectedValue(new Error("EduAI unreachable"));
+    const canary = "SECRET_DB_PASSWORD https://provider.invalid/private?token=secret stack";
+    mockListEduAiModels.mockRejectedValue(new Error(canary));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const state = await getAiModelPolicyState();
 
     expect(state.availableModels).toEqual([]);
-    expect(state.availableModelsError).toContain("EduAI unreachable");
+    expect(state.availableModelsError).toBe("AI model catalog unavailable");
+    expect(state.availableModelsError).not.toContain(canary);
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(canary);
     // Policy is still resolved (against an empty catalog) so the admin UI can render.
     expect(state.policy).toBeDefined();
   });
