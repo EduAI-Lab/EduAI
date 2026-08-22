@@ -22,6 +22,7 @@
 ### Tests
 
 - [core] test: Cover the #1606 system-prompt authoring gate across the role × course-access matrix (student/TA refused and never persisted, instructor/unit/admin admitted, course access beating platform role, service-key elevation), the `canCustomizeChatPrompt` predicate, and a regression pinning that instructor-configured response styles reach the model's system prompt and survive a custom prompt. (@Ayyhab, 2026-08-21) — [#1612](https://github.com/EduAI-Lab/EduAI/pull/1612)
+- [core] test: Cover #1606 check 2 end-to-end — drive `POST /api/chat` and assert the instructor-configured response style reaches `streamText` on both the tool-calling and hybrid prompt paths, including that a custom prompt layers on top of it rather than replacing it. (@Ayyhab, 2026-08-21) — [#1612](https://github.com/EduAI-Lab/EduAI/pull/1612)
 - [ai-tutor] test: Cover that `callEduAI` presents the service key alongside the learner cookie and fails fast when `EDUAI_API_KEY` is unset. (@Ayyhab, 2026-08-21) — [#1612](https://github.com/EduAI-Lab/EduAI/pull/1612)
 - [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure for the course detail route. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
