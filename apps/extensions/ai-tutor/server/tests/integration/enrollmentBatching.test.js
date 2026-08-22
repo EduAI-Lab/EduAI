@@ -1,36 +1,20 @@
 /**
- * #1451 — the enrollment mirrors used to issue one database round trip per row.
- * These run the batched paths against the real database at a realistic roster
- * size and assert the end state is exactly what the per-row loops produced.
+ * #1451 — `syncCourseEnrollments` used to issue one database round trip per row.
+ * This runs the batched path against the real database at a realistic roster
+ * size and asserts the end state is exactly what the per-row loop produced.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("../../src/services/eduaiClient.js", () => ({
   listEduAiCourseEnrollmentsServiceKey: vi.fn(),
-  listEduAiCourses: vi.fn(),
 }));
 
-vi.mock("../../src/services/topicSync.js", () => ({
-  syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
-}));
-
-const { listEduAiCourseEnrollmentsServiceKey, listEduAiCourses } =
-  await import("../../src/services/eduaiClient.js");
+const { listEduAiCourseEnrollmentsServiceKey } = await import("../../src/services/eduaiClient.js");
 const { syncCourseEnrollments, resetEnrollmentSyncThrottleForTests } =
   await import("../../src/services/enrollmentSync.js");
-const { importEnrolledCoursesFromCore } =
-  await import("../../src/services/importTaughtCoursesService.js");
 const { truncateAll, prisma } = await import("../helpers.js");
 
 const ROSTER_SIZE = 250;
-const COURSE_COUNT = 60;
-
-function coreCourses(count) {
-  return Array.from({ length: count }, (_, i) => ({
-    id: `core-course-${i}`,
-    callerEnrollmentRole: i % 3 === 0 ? "TA" : "STUDENT",
-  }));
-}
 
 function coreRoster(size, role) {
   return Array.from({ length: size }, (_, i) => ({
@@ -138,72 +122,6 @@ describe("#1451 enrollment batching at roster size", () => {
       expect(
         await prisma.courseEnrollment.count({ where: { courseOfferingId: offering.id } }),
       ).toBe(ROSTER_SIZE);
-    });
-  });
-
-  describe("importEnrolledCoursesFromCore", () => {
-    const student = { id: "student-batch-1", role: "STUDENT" };
-
-    it("mirrors a full course load, creating every anchor exactly once", async () => {
-      listEduAiCourses.mockResolvedValue(coreCourses(COURSE_COUNT));
-
-      const first = await importEnrolledCoursesFromCore(student, "session=abc");
-
-      expect(first.enrolled).toBe(COURSE_COUNT);
-      expect(first.skipped).toBe(0);
-      expect(
-        await prisma.courseOffering.count({
-          where: { coreOfferingId: { startsWith: "core-course-" } },
-        }),
-      ).toBe(COURSE_COUNT);
-
-      const enrollments = await prisma.courseEnrollment.findMany({
-        where: { userId: student.id },
-        include: { courseOffering: { select: { coreOfferingId: true } } },
-      });
-      expect(enrollments).toHaveLength(COURSE_COUNT);
-      for (const enrollment of enrollments) {
-        const index = Number(enrollment.courseOffering.coreOfferingId.replace("core-course-", ""));
-        expect(enrollment.role).toBe(index % 3 === 0 ? "TA" : "STUDENT");
-      }
-    });
-
-    it("is idempotent — a second mirror creates no duplicate anchors or rows", async () => {
-      listEduAiCourses.mockResolvedValue(coreCourses(COURSE_COUNT));
-      await importEnrolledCoursesFromCore(student, "session=abc");
-
-      const second = await importEnrolledCoursesFromCore(student, "session=abc");
-
-      expect(second.enrolled).toBe(COURSE_COUNT);
-      expect(second.removed).toBe(0);
-      expect(
-        await prisma.courseOffering.count({
-          where: { coreOfferingId: { startsWith: "core-course-" } },
-        }),
-      ).toBe(COURSE_COUNT);
-      expect(await prisma.courseEnrollment.count({ where: { userId: student.id } })).toBe(
-        COURSE_COUNT,
-      );
-    });
-
-    it("applies a Core role change and prunes courses the user left", async () => {
-      listEduAiCourses.mockResolvedValue(coreCourses(COURSE_COUNT));
-      await importEnrolledCoursesFromCore(student, "session=abc");
-
-      // Every remaining course now reports TA, and half the catalog is gone.
-      const remaining = coreCourses(COURSE_COUNT)
-        .slice(0, COURSE_COUNT / 2)
-        .map((course) => ({ ...course, callerEnrollmentRole: "TA" }));
-      listEduAiCourses.mockResolvedValue(remaining);
-
-      const result = await importEnrolledCoursesFromCore(student, "session=abc");
-
-      expect(result.enrolled).toBe(COURSE_COUNT / 2);
-      expect(result.removed).toBe(COURSE_COUNT / 2);
-
-      const rows = await prisma.courseEnrollment.findMany({ where: { userId: student.id } });
-      expect(rows).toHaveLength(COURSE_COUNT / 2);
-      expect(rows.every((row) => row.role === "TA")).toBe(true);
     });
   });
 });

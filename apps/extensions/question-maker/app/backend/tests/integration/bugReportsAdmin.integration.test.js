@@ -51,7 +51,7 @@ afterEach(() => {
 describe("POST /api/bug-reports — service key not configured", () => {
   it("returns 503 when eduaiApiKey is unset", async () => {
     config.eduaiApiKey = "";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(sessionOk(STUDENT)));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(sessionOk(ADMIN)));
 
     const res = await request(app)
       .post("/api/bug-reports")

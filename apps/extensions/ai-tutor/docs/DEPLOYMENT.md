@@ -24,20 +24,20 @@ flowchart TD
     PM2 -->|"OIDC + LLM"| EduAI["EduAI external service"]
 ```
 
-| Layer | What runs it | Source of truth |
-|-------|--------------|-----------------|
-| TLS / static / reverse proxy | `httpd` (system service) | server-managed Apache vhost (not in repo) |
-| SPA assets | Apache document root | `npm run build` -> `build/client/` |
-| API | PM2 process `aitutor-api` | [`ecosystem.config.cjs`](../ecosystem.config.cjs) |
-| Database | Docker container `aitutor_db` | [`docker-compose.yml`](../docker-compose.yml) |
+| Layer                        | What runs it                  | Source of truth                                   |
+| ---------------------------- | ----------------------------- | ------------------------------------------------- |
+| TLS / static / reverse proxy | `httpd` (system service)      | server-managed Apache vhost (not in repo)         |
+| SPA assets                   | Apache document root          | `npm run build` -> `build/client/`                |
+| API                          | PM2 process `aitutor-api`     | [`ecosystem.config.cjs`](../ecosystem.config.cjs) |
+| Database                     | Docker container `aitutor_db` | [`docker-compose.yml`](../docker-compose.yml)     |
 
-| Constant | Value |
-|----------|-------|
-| Production host | `s216.ok.ubc.ca` (URL: `aitutor.ok.ubc.ca`) |
-| Repo path on host | `/srv/www/AiTutor` (hardcoded in [`deploy.sh:15`](../deploy.sh)) |
-| API port | `4000` (default in `server/src/index.js`; Apache proxies to it) |
-| DB host port | `54321` (mapped from container's `5432`) |
-| Required SSH auth | password (per `~/.claude/.../reference_ubc_server.md`) |
+| Constant                 | Value                                                                  |
+| ------------------------ | ---------------------------------------------------------------------- |
+| Production host          | `s216.ok.ubc.ca` (URL: `aitutor.ok.ubc.ca`)                            |
+| Repo path on host        | `/srv/www/AiTutor` (hardcoded in [`deploy.sh:15`](../deploy.sh))       |
+| API port                 | `4000` (default in `server/src/index.js`; Apache proxies to it)        |
+| DB host port             | `127.0.0.1:54321` (loopback-only mapping to container `5432`)          |
+| Required SSH auth        | password (per `~/.claude/.../reference_ubc_server.md`)                 |
 | Required local privilege | passwordless `sudo` for `docker compose` and `systemctl restart httpd` |
 
 ---
@@ -74,20 +74,20 @@ cd /srv/www/AiTutor
 
 Step by step (line numbers reference [`deploy.sh`](../deploy.sh)):
 
-| Step | What it does | Notes |
-|------|--------------|-------|
-| Lock | Writes `$$` to `/tmp/deploy-aitutor.lock` and `trap`s cleanup. | Guards against parallel deploys; checks `kill -0` on the recorded PID. (lines 18-38) |
-| Working tree reset | `git reset --hard` then `git clean -fd --exclude=.env --exclude=server/.env`. | **Preserves the two `.env` files**; everything else gets nuked. Local edits on the server are lost. (lines 47-50) |
-| Branch check | `git checkout main` + `git fetch origin`. | Branch is hardcoded to `main`. (line 14, 50-53) |
-| Commit gate | Compares `origin/main` to `.last_commit`. Exits 0 if unchanged unless `--force`. | `.last_commit` lives in repo root and is written at the very end. (lines 55-66) |
-| Pull | `git pull origin main`. | (line 69) |
-| Install | `npm install` (root), `npm install` (server). | (lines 75-80) |
-| DB up | `sudo docker compose up -d`. | Brings up the `aitutor_db` container if it isn't already running. **Requires passwordless sudo.** (lines 82-84) |
-| Migrate | `npx prisma generate && npx prisma migrate deploy` from `server/`. | Uses `migrate deploy`, never `migrate dev`. (lines 86-91) |
-| Build | `npm run build` (root). | Outputs static SPA to `build/client/`. (lines 93-95) |
-| Restart API | `pm2 restart ecosystem.config.cjs --update-env` falling back to `pm2 start ecosystem.config.cjs`. Then `pm2 save`. | The `||` chain is the cold-start fallback the first time PM2 has never seen the app. (lines 97-100) |
-| Pin commit | Write `LATEST_COMMIT` to `.last_commit`. | The next no-arg deploy will short-circuit until a new commit lands. (line 103) |
-| Restart Apache | `sudo systemctl restart httpd`. | Kicks Apache so any new SPA assets are served fresh. (line 112) |
+| Step               | What it does                                                                                                       | Notes                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | --- | -------------------------------------------------------------------------------------------- |
+| Lock               | Writes `$$` to `/tmp/deploy-aitutor.lock` and `trap`s cleanup.                                                     | Guards against parallel deploys; checks `kill -0` on the recorded PID. (lines 18-38)                              |
+| Working tree reset | `git reset --hard` then `git clean -fd --exclude=.env --exclude=server/.env`.                                      | **Preserves the two `.env` files**; everything else gets nuked. Local edits on the server are lost. (lines 47-50) |
+| Branch check       | `git checkout main` + `git fetch origin`.                                                                          | Branch is hardcoded to `main`. (line 14, 50-53)                                                                   |
+| Commit gate        | Compares `origin/main` to `.last_commit`. Exits 0 if unchanged unless `--force`.                                   | `.last_commit` lives in repo root and is written at the very end. (lines 55-66)                                   |
+| Pull               | `git pull origin main`.                                                                                            | (line 69)                                                                                                         |
+| Install            | `npm install` (root), `npm install` (server).                                                                      | (lines 75-80)                                                                                                     |
+| DB up              | `sudo docker compose up -d`.                                                                                       | Brings up the `aitutor_db` container if it isn't already running. **Requires passwordless sudo.** (lines 82-84)   |
+| Migrate            | `npx prisma generate && npx prisma migrate deploy` from `server/`.                                                 | Uses `migrate deploy`, never `migrate dev`. (lines 86-91)                                                         |
+| Build              | `npm run build` (root).                                                                                            | Outputs static SPA to `build/client/`. (lines 93-95)                                                              |
+| Restart API        | `pm2 restart ecosystem.config.cjs --update-env` falling back to `pm2 start ecosystem.config.cjs`. Then `pm2 save`. | The `                                                                                                             |     | ` chain is the cold-start fallback the first time PM2 has never seen the app. (lines 97-100) |
+| Pin commit         | Write `LATEST_COMMIT` to `.last_commit`.                                                                           | The next no-arg deploy will short-circuit until a new commit lands. (line 103)                                    |
+| Restart Apache     | `sudo systemctl restart httpd`.                                                                                    | Kicks Apache so any new SPA assets are served fresh. (line 112)                                                   |
 
 Failure mode: every step uses `|| { echo "..."; exit 1; }`, so any non-zero exit aborts the
 deploy. The lockfile is removed via the `trap`.
@@ -137,22 +137,22 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: aitutor
     ports:
-      - "54321:5432"
+      - '127.0.0.1:54321:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
 volumes:
   db_data:
 ```
 
-| Property | Value | Notes |
-|----------|-------|-------|
-| Image | `postgres:16-alpine` | Pinned to major 16. |
-| Host port | `54321` | Non-default to avoid clashing with any host-installed Postgres. The connection string in `.env` must use `54321`. |
-| Volume | named `db_data` | Survives `docker compose down` but **not** `docker compose down -v`. |
-| Restart policy | `unless-stopped` | Container comes back automatically after host reboot. |
+| Property       | Value                | Notes                                                                                                             |
+| -------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Image          | `postgres:16-alpine` | Pinned to major 16.                                                                                               |
+| Host port      | `127.0.0.1:54321`    | Loopback-only because the PM2 backend runs on the host. It is not reachable from the external network.            |
+| Volume         | named `db_data`      | Survives `docker compose down` but **not** `docker compose down -v`.                                              |
+| Restart policy | `unless-stopped`     | Container comes back automatically after host reboot.                                                             |
 
 App processes (API, frontend build, PM2) all run **outside** Docker.
 
@@ -160,24 +160,26 @@ App processes (API, frontend build, PM2) all run **outside** Docker.
 
 ## Environment Variables
 
-All values default to local-dev sane values; production must override the secrets.
+Production must export a non-default `POSTGRES_PASSWORD` (at least 16 characters) before running
+`deploy.sh`, and the password encoded in `server/.env`'s `DATABASE_URL` must match it. The deploy
+script rejects missing/default passwords and verifies the rendered Compose binding before startup.
 
 ### Frontend (`.env` at repo root)
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
+| Variable       | Default                 | Purpose                                                                                                                                                                                |
+| -------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VITE_API_URL` | `http://localhost:4000` | Base URL the SPA uses for `fetch('/api/...')`. Read in [`app/lib/api.ts:18`](../app/lib/api.ts). Must point at the public API origin in production (e.g. `https://aitutor.ok.ubc.ca`). |
 
 ### Backend (`server/.env`)
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `DATABASE_URL` | (none) | Prisma Postgres connection string. Local: `postgresql://postgres:postgres@localhost:54321/aitutor`. |
-| `PORT` | `4000` | API listen port. |
-| `CORE_URL` | (none) | Core base URL. Session validation is proxied to Core (`POST /api/sessions/validate`), not handled locally — see `server/src/middleware/auth.js`. |
-| `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`). |
-| `EDUAI_API_KEY` | (none) | Optional server-wide fallback API key. Overridden at runtime by the `EDUAI_API_KEY` row in `SystemSetting` if set via the admin UI. |
-| `EDUAI_MODEL` | `google:gemini-2.5-flash` | Default model id passed to EduAI when the request body omits one. |
+| Variable         | Default                     | Purpose                                                                                                                                          |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`   | (none)                      | Prisma Postgres connection string. Production uses `127.0.0.1:54321` and the same secret exported as `POSTGRES_PASSWORD`.                        |
+| `PORT`           | `4000`                      | API listen port.                                                                                                                                 |
+| `CORE_URL`       | (none)                      | Core base URL. Session validation is proxied to Core (`POST /api/sessions/validate`), not handled locally — see `server/src/middleware/auth.js`. |
+| `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`).                                                                                   |
+| `EDUAI_API_KEY`  | (none)                      | **Required.** Must match Core for `POST /api/sessions/validate`. Admin-UI overrides apply to AI API calls only and do not replace this environment trust anchor. |
+| `EDUAI_MODEL`    | `google:gemini-2.5-flash`   | Default model id passed to EduAI when the request body omits one.                                                                                |
 
 > `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, `AI_SUPERVISOR_ENABLED`, and the
 > `genericOAuth`/EduAI OAuth vars (`EDUAI_DISCOVERY_URL`, `EDUAI_USERINFO_URL`, `EDUAI_CLIENT_ID`,

@@ -56,9 +56,10 @@ const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
  * it is local inference with no key, so it keeps its own enable/disable block
  * below rather than being forced through this shape.
  */
-const KEY_PROVIDERS = [
+export const SETTINGS_KEY_PROVIDERS = [
   { id: "openai", label: "OpenAI", placeholder: "sk-..." },
   { id: "google", label: "Google AI (Gemini)", placeholder: "AIza-..." },
+  { id: "opencode", label: "OpenCode Go", placeholder: "OpenCode Go API key" },
 ] as const;
 
 interface SettingsViewProps {
@@ -439,7 +440,7 @@ export function SettingsView({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {KEY_PROVIDERS.map((provider) => (
+                {SETTINGS_KEY_PROVIDERS.map((provider) => (
                   <div key={provider.id} className="space-y-2">
                     <Label className="mb-1">{provider.label}</Label>
                     {isProviderConfigured(provider.id) ? (

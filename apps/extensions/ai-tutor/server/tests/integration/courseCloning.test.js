@@ -95,7 +95,14 @@ describe("courseCloning service", () => {
         answer: 2,
         hints: ["Think carefully"],
       };
-      await createActivity(source.lesson.id, source.topic.id, { config });
+      await createActivity(source.lesson.id, source.topic.id, {
+        config,
+        customPrompt: "Use a Socratic hint only.",
+        customPromptTitle: "Custom hint",
+        enableTeachMode: false,
+        enableGuideMode: true,
+        enableCustomMode: true,
+      });
 
       await cloneCourseContent(source.course.id, target.course.id);
 
@@ -107,6 +114,11 @@ describe("courseCloning service", () => {
 
       expect(clonedActivities.length).toBe(1);
       expect(clonedActivities[0].config).toEqual(config);
+      expect(clonedActivities[0].customPrompt).toBe("Use a Socratic hint only.");
+      expect(clonedActivities[0].customPromptTitle).toBe("Custom hint");
+      expect(clonedActivities[0].enableTeachMode).toBe(false);
+      expect(clonedActivities[0].enableGuideMode).toBe(true);
+      expect(clonedActivities[0].enableCustomMode).toBe(true);
     });
 
     it("maps source topics to target course (creates if not exists)", async () => {

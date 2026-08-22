@@ -8,7 +8,14 @@
  */
 import { test, expect } from "@playwright/test";
 import { CORE_URL } from "../../playwright.config";
-import { signUp, signIn, signOut, uniqueEmail, DEFAULT_PASSWORD } from "../helpers/auth";
+import {
+  coreServiceHeaders,
+  signUp,
+  signIn,
+  signOut,
+  uniqueEmail,
+  DEFAULT_PASSWORD,
+} from "../helpers/auth";
 import { listCoreCoursePage } from "../helpers/core-courses";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +37,9 @@ test.describe("Unauthenticated access", () => {
   }
 
   test("POST /api/sessions/validate returns 401 without cookie", async ({ request }) => {
-    const res = await request.post(`${CORE_URL}/api/sessions/validate`);
+    const res = await request.post(`${CORE_URL}/api/sessions/validate`, {
+      headers: coreServiceHeaders(),
+    });
     expect(res.status()).toBe(401);
   });
 });
@@ -156,7 +165,9 @@ test.describe("Service key guard", () => {
     const email = uniqueEmail("svc-validate");
     await signUp(request, { email });
 
-    const res = await request.post(`${CORE_URL}/api/sessions/validate`);
+    const res = await request.post(`${CORE_URL}/api/sessions/validate`, {
+      headers: coreServiceHeaders(),
+    });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.user.email).toBe(email);

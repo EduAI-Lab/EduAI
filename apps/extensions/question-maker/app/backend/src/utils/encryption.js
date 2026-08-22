@@ -77,7 +77,7 @@ export function encrypt(plaintext) {
   const key = deriveKey(encryptionKey, salt);
 
   // Create cipher
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
 
   // Encrypt the plaintext
   let encrypted = cipher.update(plaintext, "utf8", "base64");
@@ -134,7 +134,7 @@ export function decrypt(encryptedData) {
   try {
     const key = deriveKey(encryptionKey, salt);
 
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
     decipher.setAuthTag(tag);
 
     let decrypted = decipher.update(encrypted, "base64", "utf8");

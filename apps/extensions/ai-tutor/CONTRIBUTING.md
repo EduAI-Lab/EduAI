@@ -52,14 +52,14 @@ If you modify `app/routes.ts`, run `npm run typecheck` to regenerate React Route
 
 ### Naming Conventions
 
-| Item | Convention | Example |
-|------|-----------|---------|
-| Components | PascalCase | `StudentAiChat.tsx` |
-| Hooks | camelCase with `use` prefix | `useLocalUser.tsx` |
-| Route modules | lowercase with dots | `instructor.list.tsx` |
-| Prisma models | PascalCase | `CourseOffering` |
-| API endpoints | kebab-case | `/api/ai-models/validate-key` |
-| Backend files | camelCase | `aiGuidance.js` |
+| Item          | Convention                  | Example                       |
+| ------------- | --------------------------- | ----------------------------- |
+| Components    | PascalCase                  | `StudentAiChat.tsx`           |
+| Hooks         | camelCase with `use` prefix | `useLocalUser.tsx`            |
+| Route modules | lowercase with dots         | `instructor.list.tsx`         |
+| Prisma models | PascalCase                  | `CourseOffering`              |
+| API endpoints | kebab-case                  | `/api/ai-models/validate-key` |
+| Backend files | camelCase                   | `aiGuidance.js`               |
 
 ### Frontend Patterns
 
@@ -145,12 +145,12 @@ Uses [Knip](https://knip.dev/) to find unused exports, dependencies, and files.
 
 The `.githooks/pre-commit` hook runs automatically and scopes checks to staged files:
 
-| Check | Trigger | Tool |
-|-------|---------|------|
-| Format | Any staged source file | oxfmt `--check` |
-| Lint | Any staged source file | oxlint `--quiet` |
-| Typecheck | Any `.ts`/`.tsx` file staged | tsgo `--noEmit` |
-| Backend tests | `server/` files staged | vitest `--changed HEAD` |
+| Check          | Trigger                       | Tool                    |
+| -------------- | ----------------------------- | ----------------------- |
+| Format         | Any staged source file        | oxfmt `--check`         |
+| Lint           | Any staged source file        | oxlint `--quiet`        |
+| Typecheck      | Any `.ts`/`.tsx` file staged  | tsgo `--noEmit`         |
+| Backend tests  | `server/` files staged        | vitest `--changed HEAD` |
 | Frontend tests | `app/`/`shared/` files staged | vitest `--changed HEAD` |
 
 To skip in exceptional cases: `git commit --no-verify` (avoid this).
@@ -169,13 +169,13 @@ Run that once per checkout. Verify with `git config core.hooksPath` (should prin
 
 ### Hook inventory
 
-| Hook | Purpose | External dependency |
-|------|---------|---------------------|
-| `pre-commit` | Scoped lint / format / typecheck / tests on staged files (`oxfmt --check`, `oxlint --quiet`, `tsgo --noEmit`, `vitest --changed HEAD`). Skip with `--no-verify`. | `npx`-resolvable tools from `devDependencies` only. |
-| `prepare-commit-msg` | Inserts/condenses an `Entire-Checkpoint` trailer if the current shell is inside an Entire CLI session. | **`entire` binary in `$PATH`** |
-| `commit-msg` | Validates the commit message and strips the auto-trailer when there is no real user content (allows aborting empty commits). Hard-fails the commit if the script errors. | **`entire` binary in `$PATH`** |
-| `post-commit` | Condenses session data when the commit carries an `Entire-Checkpoint` trailer. Soft-failing (`|| true`). | **`entire` binary in `$PATH`** |
-| `pre-push` | Pushes session logs alongside the user's `git push`. Soft-failing (`|| true`). | **`entire` binary in `$PATH`** |
+| Hook                 | Purpose                                                                                                                                                                  | External dependency                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ------- | ------------------------------ |
+| `pre-commit`         | Scoped lint / format / typecheck / tests on staged files (`oxfmt --check`, `oxlint --quiet`, `tsgo --noEmit`, `vitest --changed HEAD`). Skip with `--no-verify`.         | `npx`-resolvable tools from `devDependencies` only. |
+| `prepare-commit-msg` | Inserts/condenses an `Entire-Checkpoint` trailer if the current shell is inside an Entire CLI session.                                                                   | **`entire` binary in `$PATH`**                      |
+| `commit-msg`         | Validates the commit message and strips the auto-trailer when there is no real user content (allows aborting empty commits). Hard-fails the commit if the script errors. | **`entire` binary in `$PATH`**                      |
+| `post-commit`        | Condenses session data when the commit carries an `Entire-Checkpoint` trailer. Soft-failing (`                                                                           |                                                     | true`). | **`entire` binary in `$PATH`** |
+| `pre-push`           | Pushes session logs alongside the user's `git push`. Soft-failing (`                                                                                                     |                                                     | true`). | **`entire` binary in `$PATH`** |
 
 ### What "requires `entire`" actually means
 
@@ -212,15 +212,15 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Types
 
-| Type | When |
-|------|------|
-| `feat` | New feature |
-| `fix` | Bug fix |
+| Type       | When                                    |
+| ---------- | --------------------------------------- |
+| `feat`     | New feature                             |
+| `fix`      | Bug fix                                 |
 | `refactor` | Code restructuring (no behavior change) |
-| `chore` | Build, tooling, dependency updates |
-| `docs` | Documentation only |
-| `test` | Adding or updating tests |
-| `perf` | Performance improvement |
+| `chore`    | Build, tooling, dependency updates      |
+| `docs`     | Documentation only                      |
+| `test`     | Adding or updating tests                |
+| `perf`     | Performance improvement                 |
 
 ### Examples
 
@@ -256,33 +256,36 @@ Include:
 
 ```markdown
 ## Summary
+
 - <What changed and why>
 
 ## Test plan
+
 - [ ] <Manual or automated verification steps>
 
 ## Notes
+
 - <Migrations, breaking changes, or deployment considerations>
 ```
 
 ## Project Structure Reference
 
-| Directory | Purpose |
-|-----------|---------|
-| `app/routes/` | React Router v7 route modules |
-| `app/components/` | Shared React components |
-| `app/hooks/` | React context providers and custom hooks |
-| `app/lib/` | API client, auth utilities, type definitions |
-| `app/lib/tours/` | Guided tour engine and definitions |
-| `app/components/ui/` | shadcn/ui primitives |
-| `app/tests/` | Frontend test files |
-| `server/src/routes/` | Express route handlers |
-| `server/src/services/` | Business logic (AI, analytics, cloning, sync) |
-| `server/src/middleware/` | Auth and session middleware |
-| `server/src/utils/` | Response mappers |
-| `server/src/config/` | Database client, admin bootstrap |
-| `server/prisma/` | Schema, migrations, seed |
-| `server/tests/` | Backend test files |
-| `shared/schemas/` | Zod validation schemas (used by both) |
-| `docs/` | Design documents |
-| `scripts/` | E2E and automation scripts |
+| Directory                | Purpose                                       |
+| ------------------------ | --------------------------------------------- |
+| `app/routes/`            | React Router v7 route modules                 |
+| `app/components/`        | Shared React components                       |
+| `app/hooks/`             | React context providers and custom hooks      |
+| `app/lib/`               | API client, auth utilities, type definitions  |
+| `app/lib/tours/`         | Guided tour engine and definitions            |
+| `app/components/ui/`     | shadcn/ui primitives                          |
+| `app/tests/`             | Frontend test files                           |
+| `server/src/routes/`     | Express route handlers                        |
+| `server/src/services/`   | Business logic (AI, analytics, cloning, sync) |
+| `server/src/middleware/` | Auth and session middleware                   |
+| `server/src/utils/`      | Response mappers                              |
+| `server/src/config/`     | Database client, admin bootstrap              |
+| `server/prisma/`         | Schema, migrations, seed                      |
+| `server/tests/`          | Backend test files                            |
+| `shared/schemas/`        | Zod validation schemas (used by both)         |
+| `docs/`                  | Design documents                              |
+| `scripts/`               | E2E and automation scripts                    |

@@ -28,7 +28,7 @@ export function AnimatedGradientDescent({
       detail={detail}
     >
       {({ playKey, reducedMotion }) => (
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex w-full min-w-0 flex-col items-center gap-2">
           <GradientDescentSvg
             playKey={playKey}
             reducedMotion={reducedMotion}
@@ -36,7 +36,7 @@ export function AnimatedGradientDescent({
             selected={selected}
             stageCount={stages.length}
           />
-          <ol className="flex w-full flex-wrap items-stretch justify-center gap-1.5">
+          <ol className="flex w-full min-w-0 flex-wrap items-stretch justify-center gap-1.5">
             {stages.map((stage, i) => (
               <li key={`${stage.label}-${i}`}>
                 <StageChipButton

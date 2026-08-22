@@ -31,6 +31,10 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/providers.server", () => ({
+  resolveActiveChatModel: vi.fn(),
+}));
+
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return {
@@ -51,6 +55,7 @@ import { APICallError } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 
 function makeRequest(body: object) {
@@ -111,6 +116,12 @@ beforeEach(() => {
     user: { id: "u1", role: "STUDENT" },
   } as never);
   vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
+  vi.mocked(resolveActiveChatModel).mockResolvedValue({
+    name: "GPT-4o",
+    supportsTools: true,
+    supportsImages: true,
+    maxTokens: 16_384,
+  });
 });
 
 afterEach(() => {

@@ -160,6 +160,10 @@ services:
       # See e2e-ai-tutor-server's CORE_PUBLIC_ORIGIN comment above.
       CORE_PUBLIC_ORIGIN: http://localhost:3000
       CORS_ORIGINS: http://localhost:5173
+      # Point the QM EduAI proxy (including the connectivity probe) at the
+      # in-stack Core so E2E probes reach the real course-free /api/completion
+      # boundary instead of the public https://eduai.ok.ubc.ca default.
+      EDUAI_API_URL: http://e2e-eduai-app:3000
       EDUAI_API_KEY: test-service-key-not-for-production
     ports:
       - "8000:8000"
@@ -179,6 +183,9 @@ services:
       context: .
       dockerfile: docker/tests/Dockerfile.qm-app
       target: serve
+      args:
+        VITE_API_URL: ${QM_BACKEND_URL:-http://localhost:8000}
+        VITE_CORE_URL: ${CORE_URL:-http://localhost:3000}
     environment:
       PORT: "5173"
     ports:
@@ -207,6 +214,7 @@ services:
       QM_BACKEND_URL: http://localhost:8000
       QM_FRONTEND_URL: http://localhost:5173
       BASE_URL: http://localhost:3000
+      EDUAI_API_KEY: test-service-key-not-for-production
       CI: "true"
     volumes:
       - ./playwright-report:/e2e/playwright-report

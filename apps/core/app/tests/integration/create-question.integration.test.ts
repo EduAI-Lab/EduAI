@@ -146,3 +146,63 @@ describe.each(rows.map((row, index) => [index, row] as const))(
     });
   },
 );
+
+describe("createQuestion course/topic integrity", () => {
+  it("rejects a primary topic owned by a different existing course", async () => {
+    const creator = await seedUser({ role: "INSTRUCTOR" });
+    userIds.push(creator.id);
+    const submittedCourse = await seedCourse();
+    const topicHomeCourse = await seedCourse();
+    courseIds.push(submittedCourse.id, topicHomeCourse.id);
+    const foreignTopic = await createTopic(topicHomeCourse.id);
+
+    const result = await createQuestion(
+      {
+        courseId: submittedCourse.id,
+        topicId: foreignTopic.id,
+        content: "Cross-course primary topic must not persist",
+        type: "SA",
+      },
+      creator.id,
+    );
+
+    expect(result).toEqual({ error: "TOPIC_NOT_FOUND" });
+    expect(
+      await prisma.question.count({
+        where: { courseId: submittedCourse.id, topicId: foreignTopic.id },
+      }),
+    ).toBe(0);
+  });
+
+  it("rejects a secondary topic owned by a different existing course", async () => {
+    const creator = await seedUser({ role: "INSTRUCTOR" });
+    userIds.push(creator.id);
+    const submittedCourse = await seedCourse();
+    const topicHomeCourse = await seedCourse();
+    courseIds.push(submittedCourse.id, topicHomeCourse.id);
+    const primaryTopic = await createTopic(submittedCourse.id);
+    const foreignSecondaryTopic = await createTopic(topicHomeCourse.id);
+
+    const result = await createQuestion(
+      {
+        courseId: submittedCourse.id,
+        topicId: primaryTopic.id,
+        secondaryTopicIds: [foreignSecondaryTopic.id],
+        content: "Cross-course secondary topic must not persist",
+        type: "SA",
+      },
+      creator.id,
+    );
+
+    expect(result).toEqual({
+      error: "INVALID_TOPIC_IDS",
+      deletedTopicIds: [foreignSecondaryTopic.id],
+      conflictingWithPrimary: [],
+    });
+    expect(
+      await prisma.question.count({
+        where: { courseId: submittedCourse.id, topicId: primaryTopic.id },
+      }),
+    ).toBe(0);
+  });
+});

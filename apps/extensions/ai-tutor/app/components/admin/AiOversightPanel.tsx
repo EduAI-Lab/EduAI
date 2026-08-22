@@ -218,6 +218,10 @@ export function AiOversightPanel({ initialTraces }: { initialTraces: AiTraceRow[
                   <TableCell className="text-muted-foreground">
                     {row.iterationCount ?? "—"}
                   </TableCell>
+                  <TableCell className="text-sm">{row.tutorModelId ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.iterationCount ?? "—"}
+                  </TableCell>
                   <TableCell>
                     {row.finalOutcome ? (
                       <Badge variant={outcomeBadgeVariant(row.finalOutcome)}>

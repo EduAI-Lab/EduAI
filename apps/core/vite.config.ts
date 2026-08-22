@@ -97,6 +97,7 @@ export default defineConfig(({ mode, isSsrBuild }) => {
         "react-dom",
         "react-dom/client",
         "react-router",
+        "@tanstack/react-table",
         "streamdown",
         "@streamdown/math",
         "style-to-js",

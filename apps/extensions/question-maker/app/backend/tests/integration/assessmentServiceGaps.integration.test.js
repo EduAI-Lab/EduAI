@@ -192,6 +192,50 @@ describeDb(
         expect(ids).not.toContain(qInB.id);
       });
 
+      it("filters cross-course and nonnumeric legacy questionOrder entries without a cast error", async () => {
+        const assessmentA = await makeAssessment("Course A assessment");
+        const secondCourse = (
+          await prisma.course.findMany({
+            where: { userId: USER.id, id: { not: courseId } },
+            orderBy: { id: "asc" },
+          })
+        )[0];
+        const secondTopic = await prisma.topics.findFirst({ where: { courseId: secondCourse.id } });
+
+        const good = await makeQuestion({ [assessmentA.id]: 1 });
+        const poisoned = await makeQuestion({ [assessmentA.id]: "not-a-number" });
+        const crossCourse = await prisma.questionMetadata.create({
+          data: {
+            courseId: secondCourse.id,
+            primaryTopicId: secondTopic.id,
+            type: "SA",
+            questionOrder: { [assessmentA.id]: 0 },
+          },
+        });
+
+        const result = await getQuestionsInAssessment(assessmentA.id, USER.id);
+        const ids = result.map((question) => question.id);
+
+        expect(ids).toEqual([good.id]);
+        expect(ids).not.toContain(poisoned.id);
+        expect(ids).not.toContain(crossCourse.id);
+      });
+
+      it("excludes zero and leading-zero legacy questionOrder values", async () => {
+        const assessment = await makeAssessment("Positive order invariant");
+
+        const good = await makeQuestion({ [assessment.id]: 2 });
+        const zero = await makeQuestion({ [assessment.id]: 0 });
+        const zeroPadded = await makeQuestion({ [assessment.id]: "00" });
+        const negative = await makeQuestion({ [assessment.id]: "-1" });
+
+        const result = await getQuestionsInAssessment(assessment.id, USER.id);
+        const ids = result.map((question) => question.id);
+
+        expect(ids).toEqual([good.id]);
+        expect(ids).not.toEqual(expect.arrayContaining([zero.id, zeroPadded.id, negative.id]));
+      });
+
       it("returns an empty array when the assessment has no questions", async () => {
         const assessment = await makeAssessment();
         const result = await getQuestionsInAssessment(assessment.id, USER.id);

@@ -109,7 +109,7 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
       }
     >
       {lessonList.length === 0 ? (
-        <Card className="mx-auto max-w-lg">
+        <Card className="mx-auto max-w-lg" data-tour="student-lessons-empty">
           <EmptyState
             icon={<IconNotebook size={22} aria-hidden="true" />}
             title="No lessons available"

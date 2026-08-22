@@ -1,7 +1,7 @@
 import axios, { AxiosResponse, AxiosError } from "axios";
 import { getCoreLoginUrl } from "@/lib/coreUrl";
 
-const API_URL = (import.meta as any).env?.VITE_API_URL || "/api";
+export const API_URL = (import.meta as any).env?.VITE_API_URL || "";
 
 /**
  * Server pagination envelope (#1044). QM's paginated list endpoints return

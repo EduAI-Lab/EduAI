@@ -15,7 +15,9 @@ export interface EduAIChatRequest {
   messages: EduAIMessage[];
   model?: string;
   apiKeys?: Record<string, any>;
-  courseCode: string;
+  /** QM numeric course id — preferred access path (#1362). */
+  courseId?: number | string;
+  courseCode?: string;
   streaming?: boolean;
 }
 
@@ -31,7 +33,9 @@ export interface EduAIChatResponse {
 
 export interface EduAIQuestionGenerationRequest {
   prompt: string;
-  courseCode: string;
+  /** QM numeric course id — preferred access path (#1362). */
+  courseId?: number | string;
+  courseCode?: string;
   model?: string;
   apiKeys?: Record<string, any>;
   numQuestions?: number;
