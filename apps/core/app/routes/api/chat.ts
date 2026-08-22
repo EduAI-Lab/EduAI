@@ -113,6 +113,8 @@ import {
 import { getCourseTopicNamesCached } from "~/lib/courses/server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { hasValidServiceKey } from "~/lib/auth/service-key.server";
+import { canCustomizeChatPrompt } from "~/lib/rbac/permissions";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -937,6 +939,40 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
+    // §19 (#1606): a custom system prompt replaces the assistant's operating
+    // instructions, so it is gated like course authoring — not offered as a
+    // learner preference. Students and TAs are refused here; course staff pass.
+    //
+    // First-party servers are elevated by the service key, NOT by the acting
+    // user's role. AI Tutor composes tutoring prompts on its own server but
+    // forwards the *learner's* cookie, so `isServiceKeyCaller` (which only fires
+    // when there is no session at all) never covers it — the bearer key is what
+    // proves the prompt did not come from the learner's browser.
+    const mayAuthorSystemPrompt =
+      isServiceKeyCaller ||
+      hasValidServiceKey(request) ||
+      Boolean(apiKeySession) ||
+      chatMode === "admin" ||
+      // Course-less chats have no enrollment to resolve; fall back to platform
+      // role, which for a non-course chat is the only authority available.
+      (effectiveCourseId
+        ? canCustomizeChatPrompt(courseAccess?.level ?? null)
+        : actingUser.role === UserRole.ADMIN ||
+          actingUser.role === UserRole.UNIT_ADMIN ||
+          actingUser.role === UserRole.INSTRUCTOR);
+
+    if (hasSystemPromptField && !mayAuthorSystemPrompt) {
+      return chatApiReject(
+        403,
+        {
+          error: "SYSTEM_PROMPT_FORBIDDEN",
+          details:
+            "Customizing the system prompt is restricted to course instructors, unit admins, and administrators.",
+        },
+        { chatMode, userId: actingUser.id },
+      );
+    }
+
     // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
     // request opts in with `enqueue: true`, push the work onto the AI-job queue and
     // return a durable job id instead of streaming. Placed after the same course
@@ -1637,8 +1673,12 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const resolvedSystemPrompt =
-      trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
+    // A stored prompt is replayed on every later turn, so it needs the same gate
+    // as a fresh one (#1606) — otherwise a row written before this rule existed,
+    // or by someone who has since lost the capability, would keep taking effect.
+    const resolvedSystemPrompt = mayAuthorSystemPrompt
+      ? (trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null)
+      : null;
 
     let streamConfig;
     let supportsTools: boolean;

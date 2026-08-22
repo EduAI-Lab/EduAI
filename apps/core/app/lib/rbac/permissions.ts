@@ -159,3 +159,20 @@ export function canViewCourseChats(
 export function isStudentAccess(access: CourseAccess): boolean {
   return access === "student";
 }
+
+// §19 Cross-cutting: chat system prompt authoring (#1606)
+//
+// A custom system prompt replaces the assistant's operating instructions for a
+// conversation, so it is a course-authoring capability rather than a chat
+// preference. Deliberately mirrors the rank>=2 gate on
+// PATCH /api/courses/:id/response-style: whoever may set the course's AI
+// instructions may also set a per-conversation prompt.
+//
+// TA is excluded with no policy escape hatch. `tas.canSetAiInstructions` lets a
+// TA pick from the fixed RESPONSE_STYLE_TAGS catalogue and write course
+// instructions that still sit *underneath* the platform prompt; a raw system
+// prompt is free-form and replaces it outright. Those are different powers, so
+// the TA flag does not carry over.
+export function canCustomizeChatPrompt(access: CourseAccess): boolean {
+  return access === "admin" || access === "unit" || access === "instructor";
+}
