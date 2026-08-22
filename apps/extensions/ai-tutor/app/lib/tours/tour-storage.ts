@@ -19,7 +19,26 @@ export function canAccessStudentTour(role: Role | undefined, pathname: string) {
   return false;
 }
 
+/**
+ * UNIT_ADMIN on the two screens the `unit-admin-orientation` tour covers.
+ *
+ * Scoped to the routes the tour actually visits: offering "Take tour" on
+ * /settings or /help would start a tour that immediately navigates the reader
+ * somewhere else. The tour is staff-voiced and unit-specific — extending it to
+ * INSTRUCTOR would need its own copy, not just another role in this list.
+ */
+export function canAccessUnitAdminTour(role: Role | undefined, pathname: string) {
+  if (role !== "UNIT_ADMIN") return false;
+  return pathname === "/dashboard" || pathname.startsWith("/instructor");
+}
+
+/** Whether any tour is on offer here — the sidebar footer control's gate. */
+export function canAccessTour(role: Role | undefined, pathname: string) {
+  return canAccessStudentTour(role, pathname) || canAccessUnitAdminTour(role, pathname);
+}
+
 export function resolveSuggestedTourId(role: Role | undefined, pathname: string): AppTourId | null {
+  if (canAccessUnitAdminTour(role, pathname)) return "unit-admin-orientation";
   if (!canAccessStudentTour(role, pathname)) return null;
   if (!pathname.startsWith("/student")) return "student-journey";
   return isLessonRoute(pathname) ? "student-lesson-help" : "student-journey";
