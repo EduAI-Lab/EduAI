@@ -10,10 +10,12 @@ import {
 import prisma from "~/lib/prisma.server";
 import { createQuestion, listQuestions } from "~/lib/questions/server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import { jsonObjectSchema } from "~/lib/json-value";
+import type { JsonObject } from "~/lib/json-value";
 import { MAX_CREATE_QUESTION_BODY_BYTES, validateCreateQuestion } from "~/lib/questions/schema";
 import { getRequestSession } from "~/lib/auth/request-session.server";
 
-function json(status: number, body: unknown) {
+function json(status: number, body: object) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -22,7 +24,7 @@ function json(status: number, body: unknown) {
 
 async function readBoundedJsonBody(
   request: Request,
-): Promise<{ ok: true; body: Record<string, unknown> | null } | { ok: false; response: Response }> {
+): Promise<{ ok: true; body: JsonObject | null } | { ok: false; response: Response }> {
   const declaredLength = request.headers.get("content-length");
   if (declaredLength !== null) {
     const bytes = Number(declaredLength);
@@ -55,12 +57,8 @@ async function readBoundedJsonBody(
   }
 
   try {
-    const value: unknown = JSON.parse(new TextDecoder().decode(raw));
-    const body =
-      value && typeof value === "object" && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : null;
-    return { ok: true, body };
+    const parsed = jsonObjectSchema.safeParse(JSON.parse(new TextDecoder().decode(raw)));
+    return { ok: true, body: parsed.success ? parsed.data : null };
   } catch {
     return { ok: true, body: null };
   }
