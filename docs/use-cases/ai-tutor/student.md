@@ -6,6 +6,8 @@ This file covers the student's core loop — the three AI tutoring chat modes (t
 
 The tutoring pipeline (`apps/extensions/ai-tutor/server/src/services/aiGuidance.js`) is a **dual-loop** design: a "tutor" model drafts a Socratic response, then (if `dualLoopEnabled`) a "supervisor" model reviews the draft against hidden context — including, for guide/custom modes, the actual answer key — and either approves it or sends it back with feedback for revision, up to `maxSupervisorIterations` (admin-configurable, clamped to 1–5). If the loop exhausts without approval, the supervisor's own `safeResponseToStudent` is returned instead of the tutor's last (unapproved) draft — the system prefers vagueness over an answer leak. Both tutor and supervisor calls are proxied through `callEduAI`, which hits Core's `/api/chat` endpoint using the student's forwarded session cookie for auth and the student's own per-request LLM provider API key (`apiKeys[provider]`, never persisted server-side) for billing.
 
+> This file is the security/pipeline view of the student. The **whole** student surface — shell, dashboard, course list, lesson player, chat UI — is enumerated and e2e-tested in [`end-to-end-user-workflows/ai-tutor-workflows.md`](../../end-to-end-user-workflows/ai-tutor-workflows.md#student), whose UI/UX notes carry the fifteen usability findings (U1–U15) from the 2026-08-22 pass. Client-side UX caveats that touch the pipeline cases below are cross-referenced inline.
+
 ---
 
 ### UC-STUDENT-001: Asking for help in Teach mode and getting a supervised response
@@ -48,6 +50,8 @@ The tutoring pipeline (`apps/extensions/ai-tutor/server/src/services/aiGuidance.
   5. `supervisedGenerate` runs the same dual-loop as UC-STUDENT-001; a tutor draft that leaks the answer should be caught by the supervisor (whose hidden context includes `formatAnswerKey`'s output) and rejected with `feedbackToTutor`, triggering a revision pass
 - **Expected outcome:** `200` with a Socratic hint that (if the supervisor is working correctly) never states the correct choice outright; `Submission.attemptNumber` increments monotonically per (user, activity) regardless of how many hint requests occur in between.
 - **Failure modes / what could go wrong:** The tutor/answer-key separation is real — the tutor's prompt never contains `formatAnswerKey`'s output — but whether the supervisor actually *catches* a leak depends on the underlying LLM's judgment; there's no deterministic string-match check that the tutor's draft doesn't contain the literal answer text.
+- **Client-side UX caveats (2026-08-22 usability pass; not security):** the answer→hint loop has three rough edges on the client, none of which breaks the server contract above. (1) **Retry is unguided.** After a wrong answer the options stay enabled, so a re-pick + re-submit is a fresh `POST /questions/:id/answer` that grades again and increments `attemptNumber` — but `result` clears only on navigation, so the red "Not quite" banner sits over the new selection and there's no explicit "Try again". (2) **"Guide me" is inert with no provider key** — the client gates the composer on the *selected model's* provider key, so the button switches tab and returns with no visible change. (3) **Switching model to a provider you lack a key for blanks the chat.** These are catalogued as **U5 / U2 / U3** in [`ai-tutor-workflows.md`](../../end-to-end-user-workflows/ai-tutor-workflows.md#uiux-notes-not-bugs-worth-a-design-pass-1).
+- **Test coverage:** the wrong-answer *recovery* loop (re-pick → "Correct!") is a found-but-untested row in the workflow doc — the current `student-lesson-player.spec.ts` asserts the wrong-answer message and Guide-me availability but never re-submits.
 - **Related code:**
   - `apps/extensions/ai-tutor/server/src/routes/activities.js`
   - `apps/extensions/ai-tutor/server/src/services/aiGuidance.js`
@@ -66,7 +70,8 @@ The tutoring pipeline (`apps/extensions/ai-tutor/server/src/services/aiGuidance.
   2. Student picks a session; the client calls `GET /activities/:activityId/chat-sessions/:chatId/messages`, which first re-verifies `prisma.aiChatSession.findFirst({ chatId, userId: authUser.id, activityId })` — a session owned by someone else (or the wrong activity) yields `404` before any upstream call
   3. On success, the route proxies to Core: `GET {CORE_URL}/api/chats/:chatId/messages`, forwarding the student's own session cookie
 - **Expected outcome:** `200` with the chat's message history from Core, only for sessions the requesting student actually owns.
-- **Failure modes / what could go wrong:** None found — ownership is re-checked against `userId` server-side on both the listing and the message-proxy endpoint, not inferred from the client-supplied `chatId` alone.
+- **Failure modes / what could go wrong:** None found — ownership is re-checked against `userId` server-side on both the listing and the message-proxy endpoint, not inferred from the client-supplied `chatId` alone. UX-only: the history rows are hard to tell apart (mode badge + relative time, no title/preview), so "restore" is a guess — catalogued as **U7** in the workflow doc.
+- **Test coverage:** e2e only walks the *empty* history state ("No conversations yet") — a saved `AiChatSession` is written on an approved tutor turn, which needs a live model, so the persist → list → reopen → read-messages loop is human-pass-only in the e2e stack alongside the streamed answer.
 - **Related code:**
   - `apps/extensions/ai-tutor/server/src/routes/activities.js`
   - `apps/extensions/ai-tutor/server/src/services/eduaiAuth.js`
@@ -178,6 +183,7 @@ The tutoring pipeline (`apps/extensions/ai-tutor/server/src/services/aiGuidance.
   4. As additional defense-in-depth on the write side, `upsertChatSession` (used for the *response's own* `chatId`, e.g. one newly minted by Core) re-checks the row's `userId` before updating it, so even a chatId collision on the write path can't silently repoint another student's session row
 - **Expected outcome:** `404 { error: 'Session not found' }`; no chat call, no `AiChatSession`/trace row, no metrics recorded. AI Tutor rejects the mismatched `chatId` itself and no longer depends on Core's own chatId-ownership enforcement as the only safety net.
 - **Failure modes / what could go wrong:** None found — the ownership lookup's result now gates the request directly, and `upsertChatSession` independently re-verifies ownership before writing.
+- **Test coverage:** verified from source, but **not** yet exercised by the e2e suite — `student-security.spec.ts` covers the answer-route gates and the module-read BOLA, not the chat-session cross-user read. Worth adding a two-student case (A supplies B's `chatId` → expect `404`) so this boundary is guarded end-to-end, not just from source.
 - **Related code:**
   - `apps/extensions/ai-tutor/server/src/routes/activities.js`
   - `apps/core/app/routes/api/chat.ts`
