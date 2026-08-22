@@ -52,12 +52,7 @@ export type ChatViewSharedProps = {
   focusMode: boolean;
   onFocusModeChange: (value: boolean) => void;
   systemPrompt: string | null;
-  /**
-   * Omitted for roles that may not author a system prompt (#1606). The chat
-   * settings dialog treats absence as "hide the System prompt tab", so this
-   * single prop removes the editor from the UI.
-   */
-  onSystemPromptSave?: (prompt: string | null) => Promise<void>;
+  onSystemPromptSave: (prompt: string | null) => Promise<void>;
   webToolsEnabled: boolean;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;

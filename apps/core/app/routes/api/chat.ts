@@ -82,6 +82,7 @@ import {
 } from "~/lib/ai/course-scope-guardrail";
 import { buildChatToolRegistry, buildToolCallingSystemPrompt } from "~/lib/ai/chat-tools";
 import {
+  appendCustomInstructions,
   composeSecurityPrompt,
   filterIncomingClientMessages,
   sanitizeSystemPrompt,
@@ -114,7 +115,6 @@ import { getCourseTopicNamesCached } from "~/lib/courses/server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { hasValidServiceKey } from "~/lib/auth/service-key.server";
-import { canCustomizeChatPrompt } from "~/lib/rbac/permissions";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -939,39 +939,20 @@ export async function action({ request }: ActionFunctionArgs) {
       };
     }
 
-    // §19 (#1606): a custom system prompt replaces the assistant's operating
-    // instructions, so it is gated like course authoring — not offered as a
-    // learner preference. Students and TAs are refused here; course staff pass.
+    // §19 (#1606): a custom system prompt no longer REPLACES the EduAI base
+    // prompt for browser callers — it is appended as a subordinate block, so a
+    // learner can express a preference without deleting the assistant's
+    // identity, the instructor's configured response style, or the
+    // course-scope guardrail.
     //
-    // First-party servers are elevated by the service key, NOT by the acting
-    // user's role. AI Tutor composes tutoring prompts on its own server but
-    // forwards the *learner's* cookie, so `isServiceKeyCaller` (which only fires
-    // when there is no session at all) never covers it — the bearer key is what
-    // proves the prompt did not come from the learner's browser.
-    const mayAuthorSystemPrompt =
-      isServiceKeyCaller ||
-      hasValidServiceKey(request) ||
-      Boolean(apiKeySession) ||
-      chatMode === "admin" ||
-      // Course-less chats have no enrollment to resolve; fall back to platform
-      // role, which for a non-course chat is the only authority available.
-      (effectiveCourseId
-        ? canCustomizeChatPrompt(courseAccess?.level ?? null)
-        : actingUser.role === UserRole.ADMIN ||
-          actingUser.role === UserRole.UNIT_ADMIN ||
-          actingUser.role === UserRole.INSTRUCTOR);
-
-    if (hasSystemPromptField && !mayAuthorSystemPrompt) {
-      return chatApiReject(
-        403,
-        {
-          error: "SYSTEM_PROMPT_FORBIDDEN",
-          details:
-            "Customizing the system prompt is restricted to course instructors, unit admins, and administrators.",
-        },
-        { chatMode, userId: actingUser.id },
-      );
-    }
+    // Trusted server-to-server callers keep replace semantics: Question Maker
+    // and AI Tutor send structured-generation prompts that must BE the system
+    // prompt, and layering a tutor persona above them breaks JSON/variant
+    // output. `isServiceKeyCaller` only fires when there is no session at all,
+    // so the bearer key is what identifies AI Tutor calling under a learner's
+    // cookie.
+    const replacesBasePrompt =
+      isServiceKeyCaller || hasValidServiceKey(request) || Boolean(apiKeySession);
 
     // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
     // request opts in with `enqueue: true`, push the work onto the AI-job queue and
@@ -1673,12 +1654,8 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // A stored prompt is replayed on every later turn, so it needs the same gate
-    // as a fresh one (#1606) — otherwise a row written before this rule existed,
-    // or by someone who has since lost the capability, would keep taking effect.
-    const resolvedSystemPrompt = mayAuthorSystemPrompt
-      ? (trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null)
-      : null;
+    const resolvedSystemPrompt =
+      trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
     let streamConfig;
     let supportsTools: boolean;
@@ -1898,9 +1875,17 @@ ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the use
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
       const defaultCourseSystemPrompt = [
-        appendCourseStyleToSystemPrompt(
-          resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
-          courseStyleBlock,
+        appendCustomInstructions(
+          appendCourseStyleToSystemPrompt(
+            // A trusted server's prompt still REPLACES the base: Question Maker
+            // and AI Tutor generate structured JSON and cannot carry a tutor
+            // persona above it. Browser prompts always layer instead (#1606).
+            replacesBasePrompt
+              ? (resolvedSystemPrompt ?? eduAiCourseDefaultPrompt)
+              : eduAiCourseDefaultPrompt,
+            courseStyleBlock,
+          ),
+          replacesBasePrompt ? null : resolvedSystemPrompt,
         ),
         courseScopePolicyBlock,
       ]
@@ -1976,15 +1961,21 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = [
-          appendCourseStyleToSystemPrompt(
-            resolvedSystemPrompt ??
-              `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const eduAiToolBasePrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}`,
-            courseStyleBlock,
+${LATEST_TURN_FOCUS_INSTRUCTION}`;
+
+        const baseSystemPrompt = [
+          appendCustomInstructions(
+            appendCourseStyleToSystemPrompt(
+              replacesBasePrompt
+                ? (resolvedSystemPrompt ?? eduAiToolBasePrompt)
+                : eduAiToolBasePrompt,
+              courseStyleBlock,
+            ),
+            replacesBasePrompt ? null : resolvedSystemPrompt,
           ),
           courseScopePolicyBlock,
         ]
