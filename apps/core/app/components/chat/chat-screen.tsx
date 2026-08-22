@@ -79,6 +79,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }));
 
   const isStudentWithCourseChat = user.role === "STUDENT";
+  // §19 (#1606): a custom system prompt is a course-authoring capability, so the
+  // editor is not offered to students or TAs. This is the platform-role check
+  // only — per-course authority is resolved server-side in POST /api/chat, which
+  // stays authoritative and 403s SYSTEM_PROMPT_FORBIDDEN either way.
+  const canAuthorSystemPrompt =
+    user.role === "ADMIN" || user.role === "UNIT_ADMIN" || user.role === "INSTRUCTOR";
   const hasNoCourses = availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
   const [selectedModel, setSelectedModel] = useState(() => {
@@ -727,7 +733,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     focusMode,
     onFocusModeChange: setFocusMode,
     systemPrompt,
-    onSystemPromptSave: handleSystemPromptSave,
+    // Undefined for roles that may not author one — the chat settings dialog
+    // drops its "System prompt" tab entirely when this prop is absent (#1606).
+    onSystemPromptSave: canAuthorSystemPrompt ? handleSystemPromptSave : undefined,
     webToolsEnabled,
     onInputChange: handleInputChange,
     onSubmit,
