@@ -86,8 +86,10 @@ test.describe("AI Tutor ADMIN — bug-report triage", () => {
     await expect(row).toBeVisible({ timeout: 30_000 });
 
     // The toolbar filter also has a "Resolved" option, so the choice has to
-    // come from the row's own listbox. Radix Select can drop the first click
-    // while the table is still settling, so retry the open-and-choose.
+    // come from the row's own listbox. The retry is belt-and-braces around
+    // Radix's open-then-choose; it is NOT what made this pass — the status
+    // genuinely would not move until AI Tutor started sending the service key
+    // on its PATCH to Core (see patchCoreAdminBugReportStatus).
     const trigger = row.locator('[aria-label^="Update status for report"]');
     await expect(async () => {
       await trigger.click();

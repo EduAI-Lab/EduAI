@@ -209,7 +209,15 @@ describe("patchCoreAdminBugReportStatus", () => {
     });
   });
 
+  it("throws when EDUAI_API_KEY is not configured", async () => {
+    delete process.env.EDUAI_API_KEY;
+    await expect(patchCoreAdminBugReportStatus("cookie=abc", "br-1", "RESOLVED")).rejects.toThrow(
+      "EDUAI_API_KEY not configured",
+    );
+  });
+
   it("PATCHes the status and returns the updated row", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     const updated = { id: "br-1", status: "RESOLVED" };
     const mockFetch = vi.fn().mockResolvedValue(okJson(updated));
     vi.stubGlobal("fetch", mockFetch);
@@ -223,7 +231,24 @@ describe("patchCoreAdminBugReportStatus", () => {
     expect(JSON.parse(opts.body)).toEqual({ status: "RESOLVED" });
   });
 
+  // Regression guard: sending the cookie alone earned a 403 CROSS_ORIGIN_MUTATION
+  // from Core's mutation guard — a server-to-server call has no Origin, and the
+  // service key is the only bypass. The cookie still has to ride along, because
+  // Core's admin bug-report route authorizes on the ADMIN session, not the key.
+  it("sends both the session cookie and the service key", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
+    const mockFetch = vi.fn().mockResolvedValue(okJson({ id: "br-1", status: "RESOLVED" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await patchCoreAdminBugReportStatus("cookie=abc", "br-1", "RESOLVED");
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.headers.Authorization).toBe("Bearer svc-key");
+    expect(opts.headers.cookie).toBe("cookie=abc");
+  });
+
   it("throws with status on a non-ok Core response", async () => {
+    process.env.EDUAI_API_KEY = "svc-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk(400, "INVALID_STATUS")));
     await expect(
       patchCoreAdminBugReportStatus("cookie=abc", "br-1", "BOGUS"),

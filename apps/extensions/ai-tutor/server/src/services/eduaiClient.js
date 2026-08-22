@@ -348,6 +348,15 @@ async function fetchCoreUsers(cookie, params, signal) {
 
 /**
  * PATCH Core admin bug report status (ADMIN session cookie).
+ *
+ * The cookie carries the ADMIN identity — Core's admin bug-report route has no
+ * service-key path, so it cannot be dropped. The service key is what gets the
+ * request past Core's cross-origin mutation guard: that guard fails closed on
+ * any cookie-bearing unsafe method with no Origin/Referer/Sec-Fetch-Site, which
+ * is exactly the shape of a server-to-server call, and accepts a valid service
+ * key as the sole non-browser bypass. Sending only the cookie earns a 403
+ * CROSS_ORIGIN_MUTATION. Every other cookie-forwarding mutation here (publish,
+ * enrollments) pairs the two for the same reason.
  */
 export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {
   if (!cookie) {
@@ -356,11 +365,19 @@ export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreSta
     throw error;
   }
 
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    const error = new Error("EDUAI_API_KEY not configured");
+    error.status = 503;
+    throw error;
+  }
+
   const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${bugReportId}`;
   const response = await fetch(url, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
       cookie,
     },
     body: JSON.stringify({ status: coreStatus }),
