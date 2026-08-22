@@ -251,7 +251,9 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
         userId: payload.userId,
         courseId: payload.courseId ?? null,
         queueName,
-        ...(payload.idempotencyKey ? { bullJobId: payload.idempotencyKey } : {}),
+        // Without an idempotency key the row takes the column default; the
+        // unique index must not see an empty string standing in for "none".
+        bullJobId: payload.idempotencyKey || undefined,
       },
       select: { id: true, type: true, status: true, createdAt: true, queueName: true },
     });

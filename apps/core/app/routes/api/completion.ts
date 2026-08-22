@@ -187,13 +187,18 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
+  // The same telemetry headers ride on the streaming and the buffered response;
+  // each is set only when this request has something to report for it.
+  const telemetryHeaders: Record<string, string> = {};
+  if (outcome.fleetServerId) telemetryHeaders["X-Fleet-Server"] = outcome.fleetServerId;
+  if (admissionWaitedMs > 0) telemetryHeaders["X-Admission-Wait-Ms"] = String(admissionWaitedMs);
+
   if (outcome.streaming) {
     try {
       const response = outcome.result.toDataStreamResponse({
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
-          ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
-          ...(admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {}),
+          ...telemetryHeaders,
         },
         // HTTP status/headers are immutable once this 200 stream begins. Route
         // late provider errors through the same sanitized contract as the
@@ -215,8 +220,7 @@ export async function action({ request }: ActionFunctionArgs) {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...(outcome.fleetServerId ? { "X-Fleet-Server": outcome.fleetServerId } : {}),
-      ...(admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {}),
+      ...telemetryHeaders,
     },
   });
 }

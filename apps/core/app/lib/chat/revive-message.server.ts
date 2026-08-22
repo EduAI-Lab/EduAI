@@ -114,17 +114,15 @@ export function reviveStoredMessage(record: {
     typeof parsed.metadata === "object" &&
     !Array.isArray(parsed.metadata) &&
     (parsed.metadata as Record<string, unknown>).hitLongOutputCap === true;
-  const metadata = {
-    ...(resolvedModelId
-      ? {
-          resolvedModelId,
-          wasAutoRouted,
-        }
-      : {}),
-    ...(hitLongOutputCap ? { hitLongOutputCap: true } : {}),
-    ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
-  };
-  return {
+  const metadata: StoredChatMessageMetadata = {};
+  if (resolvedModelId) {
+    metadata.resolvedModelId = resolvedModelId;
+    metadata.wasAutoRouted = wasAutoRouted;
+  }
+  if (hitLongOutputCap) metadata.hitLongOutputCap = true;
+  if (courseScopeRedirect) metadata.courseScopeRedirect = true;
+
+  const revived: StoredChatMessage = {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
     // SAFETY: `role` is whatever the row stored, and rows predate the current
     // role union. The value is only ever compared or rendered, never used to
@@ -133,6 +131,9 @@ export function reviveStoredMessage(record: {
     role: role as StoredChatMessage["role"],
     content: text,
     parts: [{ type: "text", text }],
-    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
+  // A turn with nothing worth recording carries no `metadata` key at all, so a
+  // restored transcript matches the shape a fresh turn produces.
+  if (Object.keys(metadata).length > 0) revived.metadata = metadata;
+  return revived;
 }

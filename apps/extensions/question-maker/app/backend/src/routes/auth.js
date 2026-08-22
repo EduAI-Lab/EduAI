@@ -24,7 +24,9 @@ router.get("/auth/me", requireAuth, async (req, res, next) => {
       user: {
         ...req.user,
         isBugReportAdmin,
-        ...(authorizedUnits !== undefined ? { authorizedUnits } : {}),
+        // Only a UNIT_ADMIN has a unit list; JSON.stringify drops the undefined
+        // for every other role.
+        authorizedUnits,
       },
     });
   } catch (error) {

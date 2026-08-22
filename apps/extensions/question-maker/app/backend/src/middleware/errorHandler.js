@@ -91,7 +91,7 @@ export const errorHandler = (err, req, res, next) => {
   logger[logLevel](
     {
       ...safeRequestLogFields({ ...err, status }),
-      ...(safeCode ? { code: safeCode } : {}),
+      code: safeCode || undefined,
       req: {
         method: req.method,
         path: req.path,
@@ -109,6 +109,7 @@ export const errorHandler = (err, req, res, next) => {
     // failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT` from the Core fetch
     // paths) also carry `code`, and leaking those would both expose internal
     // infrastructure detail and clobber the semantic `body.error` code below.
-    ...(safeCode ? { code: safeCode } : {}),
+    // JSON.stringify drops the undefined, so ungated errors send no `code`.
+    code: safeCode || undefined,
   });
 };

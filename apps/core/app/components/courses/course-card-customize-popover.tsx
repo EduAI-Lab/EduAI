@@ -50,9 +50,11 @@ export function CourseCardCustomizePopover({
     if (!color && !nickname) {
       onApply(null);
     } else {
+      // An untouched half of the form stays undefined so it does not overwrite
+      // the value already stored for this card.
       onApply({
-        ...(color ? { color } : {}),
-        ...(nickname ? { nickname } : {}),
+        color: color || undefined,
+        nickname: nickname || undefined,
       });
     }
     setOpen(false);
