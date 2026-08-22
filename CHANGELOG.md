@@ -16,10 +16,13 @@
 
 ### Fixed
 
+- [core] fix: Restrict custom chat system prompts to course staff — `POST /api/chat` now returns 403 `SYSTEM_PROMPT_FORBIDDEN` when a student or TA sends `systemPrompt`, applies the same gate to a prompt already stored on the chat row so pre-existing ones stop taking effect, and hides the System prompt editor for those roles. First-party servers are elevated by the service key rather than the acting user's role, so AI Tutor keeps sending its server-composed tutoring prompt under the learner's cookie. Closes #1606. (@Ayyhab, 2026-08-21) — #PR
 - [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ### Tests
 
+- [core] test: Cover the #1606 system-prompt authoring gate across the role × course-access matrix (student/TA refused and never persisted, instructor/unit/admin admitted, course access beating platform role, service-key elevation), the `canCustomizeChatPrompt` predicate, and a regression pinning that instructor-configured response styles reach the model's system prompt and survive a custom prompt. (@Ayyhab, 2026-08-21) — #PR
+- [ai-tutor] test: Cover that `callEduAI` presents the service key alongside the learner cookie and fails fast when `EDUAI_API_KEY` is unset. (@Ayyhab, 2026-08-21) — #PR
 - [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure for the course detail route. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 - [ai-tutor] refactor: Rebuild the course feedback search filters and buttons on the shared `@eduai/ui` `Input`/`Button` primitives instead of raw elements with local utility classes. Closes #1573. (@yta3216, 2026-08-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
