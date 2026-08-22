@@ -161,7 +161,13 @@ describe("api methods", () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ terms: ["W1::2026"], statuses: ["published"], progress: [] }),
+        json: () =>
+          Promise.resolve({
+            terms: ["W1::2026"],
+            statuses: ["published"],
+            progress: [],
+            coreUnavailable: false,
+          }),
       });
       const { api } = await import("~/lib/api");
       const facets = await api.listCourseFacets();
@@ -184,7 +190,12 @@ describe("api methods", () => {
   });
 
   it("successful response returns parsed JSON", async () => {
-    const mockData = { courses: [{ id: 1, title: "Math 101" }] };
+    const mockData = {
+      data: [{ id: 1, title: "Math 101", isPublished: true }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    };
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -417,7 +428,15 @@ describe("api methods", () => {
   // than counting an array.
   it("api.listAdminUsers() defaults to the first page and returns the envelope", async () => {
     const page = {
-      data: [{ id: "u1", name: "Student", role: "STUDENT" }],
+      data: [
+        {
+          id: "u1",
+          name: "Student",
+          email: "student@ubc.ca",
+          role: "STUDENT",
+          createdAt: "2026-01-05T00:00:00.000Z",
+        },
+      ],
       total: 137,
       page: 1,
       pageSize: 25,
@@ -439,7 +458,14 @@ describe("api methods", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ data: [], total: 0, page: 4, pageSize: 100 }),
+      json: () =>
+        Promise.resolve({
+          data: [],
+          total: 0,
+          page: 4,
+          pageSize: 100,
+          stats: { total: 0, active: 0, byRole: {} },
+        }),
     });
 
     const { api } = await import("~/lib/api");
@@ -454,7 +480,7 @@ describe("api methods", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ enrollments: [], availableStudents: [] }),
+      json: () => Promise.resolve(emptyEnrollments()),
     });
 
     const { api } = await import("~/lib/api");
@@ -471,8 +497,16 @@ describe("api methods", () => {
       status: 200,
       json: () =>
         Promise.resolve({
-          enrollments: [],
-          availableStudents: [{ id: "u9" }],
+          ...emptyEnrollments(),
+          availableStudents: [
+            {
+              id: "u9",
+              name: "Ali",
+              email: "ali@ubc.ca",
+              role: "STUDENT",
+              createdAt: "2026-01-05T00:00:00.000Z",
+            },
+          ],
           availableStudentsPage: { total: 900, page: 2, pageSize: 50 },
         }),
     });
@@ -494,7 +528,7 @@ describe("api methods", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ enrollments: [], availableStudents: [] }),
+      json: () => Promise.resolve(emptyEnrollments()),
     });
 
     const { api } = await import("~/lib/api");
@@ -610,7 +644,7 @@ describe("search + move endpoints (#1207)", () => {
     ["moveLessonToPosition", "lessons", "lesson"],
     ["moveActivityToPosition", "activities", "activity"],
   ] as const)("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
-    okJson({ [key]: { id: 4 }, position: 12, total: 40 });
+    okJson({ [key]: movedRow(key), position: 12, total: 40 });
     const { api } = await import("~/lib/api");
 
     const result = await api[method](4, 12);
@@ -649,3 +683,36 @@ describe("search + move endpoints (#1207)", () => {
     expect(result).toEqual({ moduleOrdinal: 4, moduleTotal: 12 });
   });
 });
+
+/** The enrollment route's envelope with no rows in it (`server/src/routes/admin.js`). */
+function emptyEnrollments() {
+  return {
+    courseId: 9,
+    enrolledStudents: [],
+    availableStudents: [],
+    availableStudentsPage: { total: 0, page: 1, pageSize: 25 },
+  };
+}
+
+/** A minimal but complete module/lesson/activity row, as a move response returns it. */
+function movedRow(key: "module" | "lesson" | "activity") {
+  if (key === "activity") {
+    return {
+      id: 4,
+      instructionsMd: "",
+      position: 12,
+      question: "Q",
+      type: "SHORT_TEXT",
+      options: null,
+      hints: [],
+      mainTopic: null,
+      secondaryTopics: [],
+      enableTeachMode: true,
+      enableGuideMode: true,
+      enableCustomMode: false,
+      customPrompt: null,
+      customPromptTitle: null,
+    };
+  }
+  return { id: 4, title: "Moved", position: 12, isPublished: true };
+}
