@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  canCustomizeChatPrompt,
   canCreateCourse,
   canEditCourse,
   canPublishCourse,
@@ -361,5 +362,23 @@ describe("resolvePolicyGate", () => {
         manageEnrollmentsPolicyKey(access),
       );
     }
+  });
+});
+
+// §19 chat system prompt authoring (#1606). Mirrors the rank>=2 gate on
+// PATCH /api/courses/:id/response-style — see the note in permissions.ts on why
+// the TA policy flag deliberately does not extend to raw system prompts.
+describe("canCustomizeChatPrompt", () => {
+  it.each(["admin", "unit", "instructor"] as const)("allows %s", (access) => {
+    expect(canCustomizeChatPrompt(access)).toBe(true);
+  });
+
+  // The headline of #1606: a student must not be able to override the prompt.
+  it.each(["ta", "student", null] as const)("denies %s", (access) => {
+    expect(canCustomizeChatPrompt(access)).toBe(false);
+  });
+
+  it("allows exactly the course-authoring levels across the whole union", () => {
+    expect(ALL_ACCESS.filter(canCustomizeChatPrompt)).toEqual(["admin", "unit", "instructor"]);
   });
 });
