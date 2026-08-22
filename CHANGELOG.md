@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- [core] fix: Remove the user-menu Account item, which linked to `/settings/account`, a route that does not exist and 404s for every user; `/settings` already has its own Account tab. (@abdullahmoh21, 2026-08-22) — [#1594](https://github.com/EduAI-Lab/EduAI/pull/1594)
 - [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ### Tests
