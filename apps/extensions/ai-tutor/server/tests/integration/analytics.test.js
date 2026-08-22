@@ -1,6 +1,27 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
+
+vi.mock("../../src/services/enrollmentSync.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    authorizeLiveStudentEnrollment: vi
+      .fn()
+      .mockImplementation(
+        async (_courseId, userId, { course, allowedRoles = ["STUDENT"] } = {}) => {
+          const enrollment = course?.enrollments?.find((entry) => entry.userId === userId);
+          const instructor = course?.instructors?.some((entry) => entry.userId === userId);
+          const role =
+            instructor && allowedRoles.includes("INSTRUCTOR")
+              ? "INSTRUCTOR"
+              : (enrollment?.role ?? (allowedRoles.includes("INSTRUCTOR") ? "INSTRUCTOR" : null));
+          const allowed = allowedRoles.includes(role);
+          return { allowed, state: allowed ? "allowed" : "denied", role };
+        },
+      ),
+  };
+});
 import {
   makeProfessor,
   makeAdmin,

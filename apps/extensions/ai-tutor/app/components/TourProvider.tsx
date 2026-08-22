@@ -23,7 +23,7 @@ import {
 import { markTourCompleted, resolveSuggestedTourId } from "~/lib/tours/tour-storage";
 import { useLocalUser } from "~/hooks/useLocalUser";
 import type { AppTourDefinition, AppTourId } from "~/lib/tours/tour-types";
-import { waitForElement } from "~/lib/tours/tour-utils";
+import { waitForEitherElement, waitForElement } from "~/lib/tours/tour-utils";
 
 type TourContextValue = {
   activeTourId: AppTourId | null;
@@ -142,7 +142,26 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     const token = ++renderTokenRef.current;
 
     try {
-      const element = await waitForElement(step.target);
+      let element: Element;
+      if (step.emptyTarget) {
+        // Race the target against its empty-state sentinel so an empty course
+        // (no modules/lessons) skips this gate at once instead of stalling on
+        // the full timeout, then dropping its dependent steps (#1572).
+        const result = await waitForEitherElement(step.target, step.emptyTarget);
+        if (renderTokenRef.current !== token || sessionRef.current !== session) return;
+        if (result.matched === "empty") {
+          const nextIndex = moveSessionAfterMissingTarget(session);
+          if (nextIndex == null) {
+            completeTour(session.tour);
+            return;
+          }
+          void showStep();
+          return;
+        }
+        element = result.element;
+      } else {
+        element = await waitForElement(step.target);
+      }
       if (renderTokenRef.current !== token || sessionRef.current !== session) return;
 
       const projectedSession: ActiveTourSession = {

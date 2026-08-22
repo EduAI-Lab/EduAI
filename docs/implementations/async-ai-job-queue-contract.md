@@ -4,6 +4,13 @@
 **Status:** Design — frozen for handoff (v1)
 **Covers:** EduAICore #912 (design). Unblocks the dequeue/dispatch worker (Deployment epic #168) and the producer track (#914 enqueue, #915 backpressure, #916 tests, #917 ETA).
 
+> **Pre-MVP operational status (August 2026): hard-disabled.** This document is
+> a future design contract, not a deployment runbook. Core ignores the legacy
+> `QUEUE_ENQUEUE_ENABLED` flag, `/api/chat` stays on direct chat, and the worker
+> entry point exits before creating Redis/BullMQ resources. Re-enabling requires
+> owner-scoped authenticated status/cancellation plus server-side model/provider
+> authorization; an environment-only rollout is intentionally impossible.
+
 > **This doc is the frozen contract** between the two sides — the producer/enqueue side (`enqueue()`, the `AiJob` model, status read model) and the dequeue/dispatch side (routing into the GPU fleet, epic #168). It fixes the job schema and the queue interface. Neither side may change a field or a status transition without updating this doc.
 
 ---

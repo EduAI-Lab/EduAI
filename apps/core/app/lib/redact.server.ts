@@ -87,6 +87,8 @@ function splitKeySegments(key: string): string[] {
 const AUTH_HEADER_CREDENTIAL_RE =
   /\b(Authorization["']?\s*[:=]\s*["']?(?:Bearer|Basic))\s+[A-Za-z0-9\-._~+/]+=*/gi;
 const STANDALONE_AUTH_TOKEN_RE = /\b(Bearer|Basic)\s+[A-Za-z0-9\-._~+/]{16,}=*/gi;
+/** Provider keys can surface in SDK error prose without a credential field label. */
+const OPENAI_STYLE_API_KEY_RE = /\bsk-[A-Za-z0-9][A-Za-z0-9._-]{5,}/g;
 /** Raw Cookie / Set-Cookie header lines in console or network text captures. */
 const COOKIE_HEADER_RE = /\b(?:Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi;
 /** Common API-key header lines (HAR / fetch dumps). */
@@ -374,6 +376,7 @@ export function redactSecretValuesInString(text: string): string {
   const headerScrubbed = text
     .replace(AUTH_HEADER_CREDENTIAL_RE, `$1 ${REDACTED_VALUE}`)
     .replace(STANDALONE_AUTH_TOKEN_RE, `$1 ${REDACTED_VALUE}`)
+    .replace(OPENAI_STYLE_API_KEY_RE, REDACTED_VALUE)
     .replace(COOKIE_HEADER_RE, (match) => {
       const prefix = match.split(":")[0] ?? "Cookie";
       return `${prefix}: ${REDACTED_VALUE}`;

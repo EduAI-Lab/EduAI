@@ -17,6 +17,7 @@ interface NetworkEntry {
 
 const MAX_CONSOLE_ENTRIES = 100;
 const MAX_NETWORK_ENTRIES = 50;
+
 /**
  * Patches console + fetch to buffer recent diagnostics for bug reports.
  * When `enabled` is false, restores originals and clears buffers.
@@ -25,7 +26,7 @@ export function useBugReportCapture(enabled: boolean) {
   const consoleBuffer = useRef<ConsoleEntry[]>([]);
   const networkBuffer = useRef<NetworkEntry[]>([]);
   const screenshotRef = useRef<string | null>(null);
-  const capturePromiseRef = useRef<Promise<void> | null>(null);
+  const capturePromiseRef = useRef<Promise<string | null> | null>(null);
   const captureGenerationRef = useRef(0);
   const patchedRef = useRef(false);
   const originalsRef = useRef<{
@@ -138,12 +139,12 @@ export function useBugReportCapture(enabled: boolean) {
     };
   }, [enabled]);
 
-  const captureScreenshot = useCallback(async () => {
-    if (!enabled || typeof window === "undefined") return;
+  const captureScreenshot = useCallback(async (): Promise<string | null> => {
+    if (!enabled || typeof window === "undefined") return null;
     if (capturePromiseRef.current) return capturePromiseRef.current;
 
     const generation = captureGenerationRef.current;
-    let capturePromise!: Promise<void>;
+    let capturePromise!: Promise<string | null>;
     capturePromise = (async () => {
       try {
         const canvas = await html2canvas(document.body, {
@@ -154,9 +155,12 @@ export function useBugReportCapture(enabled: boolean) {
         // JPEG keeps the report below Core's screenshot size cap.
         if (captureGenerationRef.current === generation) {
           screenshotRef.current = canvas.toDataURL("image/jpeg", 0.7);
+          return screenshotRef.current;
         }
+        return null;
       } catch {
         // ignore capture failures
+        return null;
       } finally {
         if (capturePromiseRef.current === capturePromise) {
           capturePromiseRef.current = null;

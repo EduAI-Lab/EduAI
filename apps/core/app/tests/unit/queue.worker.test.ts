@@ -41,6 +41,11 @@ vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logSystemError: vi.fn().mockResolvedValue(undefined),
 }));
+// Keep unit coverage for dormant queue internals; production entry points use
+// the real module and are asserted fail-closed in queue.pre-mvp-disabled.test.
+vi.mock("~/lib/queue/availability.server", () => ({
+  assertAiJobQueueEnabled: vi.fn(),
+}));
 
 import { enqueue } from "~/lib/queue/enqueue.server";
 import {

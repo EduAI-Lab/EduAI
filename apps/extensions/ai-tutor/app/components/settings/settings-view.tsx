@@ -33,6 +33,7 @@ import {
   type AccessibilityUiTheme,
 } from "@eduai/ui";
 import { IconAccessible, IconLogout, IconUser, IconWorld } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 import { useAssistiveMode } from "~/components/settings/assistive-mode";
 import { ProvidersSettings } from "~/components/settings/providers-settings";
@@ -79,8 +80,14 @@ export function SettingsView() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate("/");
+    try {
+      await logout();
+      navigate("/");
+    } catch {
+      toast.error("Could not log out", {
+        description: "Your session is still active. Please try again.",
+      });
+    }
   };
 
   return (

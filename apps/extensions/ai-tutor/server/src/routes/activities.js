@@ -26,7 +26,7 @@
 import { randomUUID } from "crypto";
 import express from "express";
 import { prisma } from "../config/database.js";
-import { requireRole, isUnitAdminForCourse, isCourseAdmin } from "../middleware/auth.js";
+import { requireRole, isCourseAdmin } from "../middleware/auth.js";
 import { mapActivity, mapImportableActivity } from "../utils/mappers.js";
 import {
   parsePaginationParams,
@@ -37,6 +37,11 @@ import {
   PaginationError,
 } from "../utils/pagination.js";
 import { evaluateQuestion } from "../services/activityEvaluation.js";
+import {
+  ActivityMutationError,
+  createActivityForLesson,
+  updateActivityForEditor,
+} from "../services/activityManagement.js";
 import { getActivityCompletionStatuses } from "../services/progressCalculation.js";
 import { cloneActivityIntoLesson } from "../services/activityCloning.js";
 import { moveToPosition, parsePositionBody, ReorderError } from "../services/reorder.js";
@@ -54,8 +59,15 @@ import {
   generateCustomResponse,
   generateGuideResponse,
   generateTeachResponse,
+  getSafeAiErrorMetadata,
+  logAiGuidanceEvent,
 } from "../services/aiGuidance.js";
 import { getEduAiCookieForRequest } from "../services/eduaiAuth.js";
+import {
+  authorizeLiveStudentEnrollment,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+  LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+} from "../services/enrollmentSync.js";
 import { getEduAiBaseUrl, listCourseTestableQuestions } from "../services/eduaiClient.js";
 import {
   isCoursePublishedLive,
@@ -70,20 +82,47 @@ import {
 } from "../../../shared/schemas/aiGuidance.js";
 import { CreateActivitySchema, UpdateActivitySchema } from "../../../shared/schemas/activity.js";
 import { getCoreCourseId } from "../utils/coreCourseId.js";
+import { logSafeError, sendSafeError } from "../utils/safeErrors.js";
+import { gateCourseThrough } from "../middleware/liveCoursePrincipal.js";
+import {
+  authorizeLiveCoursePrincipal,
+  isAllowedLiveCourseStaffPrincipal,
+  LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+  LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+} from "../services/liveCoursePrincipal.js";
 
 const router = express.Router();
 
-const normalizeCustomPrompt = (value) => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
+async function requireLiveStaffAccess(res, course, user, message) {
+  const principal = await authorizeLiveCoursePrincipal(course, user);
+  if (principal.state === "unavailable") {
+    res.status(503).json({
+      error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+    });
+    return false;
+  }
+  if (!isAllowedLiveCourseStaffPrincipal(principal)) {
+    res.status(403).json({ error: message });
+    return false;
+  }
+  return true;
+}
 
-const normalizeCustomPromptTitle = (value) => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().slice(0, 20);
-  return trimmed.length > 0 ? trimmed : null;
+const activityCourseInclude = {
+  lesson: { include: { module: { include: { courseOffering: true } } } },
 };
+router.use(
+  "/lessons/:lessonId/activities",
+  gateCourseThrough("lesson", "lessonId", {
+    module: { include: { courseOffering: true } },
+  }),
+);
+router.use(
+  "/activities/:activityId",
+  gateCourseThrough("activity", "activityId", activityCourseInclude),
+);
+router.use("/questions/:id/answer", gateCourseThrough("activity", "id", activityCourseInclude));
 
 /**
  * Course code for AI-prompt context. `code` is Core-owned (#1072 step 3) —
@@ -97,10 +136,50 @@ async function getCourseCode(coreOfferingId) {
   return typeof course?.code === "string" ? course.code : "";
 }
 
-function getActivityAccess(course, authUser) {
-  const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
-  const isEnrolledStudent = course.enrollments.some((e) => e.userId === authUser.id);
-  return { isInstructorForCourse, isEnrolledStudent };
+/**
+ * Live student-operation gate. Returns `null` after sending a stable 503 when
+ * Core cannot be consulted; callers must return immediately and skip their
+ * provider/local resource side effect. A non-student platform role is a normal
+ * authorization denial and never triggers a roster lookup.
+ */
+async function getLiveStudentEnrollment(res, course, authUser, expectedRole) {
+  const enrollmentRole = expectedRole ?? authUser.role;
+  if (!["STUDENT", "TA"].includes(enrollmentRole)) {
+    return { allowed: false, state: "denied", role: null };
+  }
+
+  let result;
+  try {
+    result = await authorizeLiveStudentEnrollment(course.id, authUser.id, {
+      course,
+      allowedRoles: [enrollmentRole],
+    });
+  } catch {
+    result = { allowed: false, state: "unavailable", role: null };
+  }
+
+  if (result?.state === "unavailable") {
+    res.status(503).json({
+      error: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE,
+      code: LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE,
+    });
+    return null;
+  }
+
+  return result ?? { allowed: false, state: "unavailable", role: null };
+}
+
+async function getExactCourseMembership(course, authUser) {
+  const principal = await authorizeLiveCoursePrincipal(course, authUser);
+  const liveTa = principal.state === "allowed" && principal.role === "TA";
+  return {
+    principal,
+    isInstructor: principal.state === "allowed" && principal.kind === "INSTRUCTOR",
+    isTa: liveTa,
+    isStudent: principal.state === "allowed" && principal.role === "STUDENT",
+    isUnitAdmin: principal.state === "allowed" && principal.kind === "UNIT_ADMIN",
+    isAdmin: principal.state === "allowed" && principal.kind === "ADMIN",
+  };
 }
 
 // The student may pick a secondary topic to focus on for an AI session;
@@ -180,7 +259,7 @@ async function persistAiTrace({
       },
     });
   } catch (error) {
-    console.error("Failed to persist AI interaction trace:", error);
+    logSafeError("Failed to persist AI interaction trace", error);
   }
 }
 
@@ -188,7 +267,7 @@ async function trackAiHelpRequest(userId, activityId) {
   try {
     await recordAiHelpRequest({ userId, activityId });
   } catch (error) {
-    console.error("Failed to update AI help metrics:", error);
+    logSafeError("Failed to update AI help metrics", error);
   }
 }
 
@@ -196,7 +275,7 @@ async function trackSubmissionMetrics(userId, activityId, isCorrect) {
   try {
     await recordSubmissionMetrics({ userId, activityId, isCorrect });
   } catch (error) {
-    console.error("Failed to update submission metrics:", error);
+    logSafeError("Failed to update submission metrics", error);
   }
 }
 
@@ -214,7 +293,7 @@ async function loadActivityForChat(activityId) {
                 select: {
                   id: true,
                   coreOfferingId: true,
-                  enrollments: { select: { userId: true } },
+                  enrollments: { select: { userId: true, role: true } },
                 },
               },
             },
@@ -225,7 +304,15 @@ async function loadActivityForChat(activityId) {
   });
 }
 
-async function handleAiInteraction({ req, res, activity, mode, payload, generateResponse }) {
+async function handleAiInteraction({
+  req,
+  res,
+  activity,
+  mode,
+  payload,
+  generateResponse,
+  liveEnrollment,
+}) {
   const authUser = req.user;
   const activityId = activity.id;
   const course = activity.lesson?.module?.courseOffering;
@@ -237,8 +324,9 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   if (authUser.role !== "STUDENT") {
     return res.status(403).json({ error: "Only students can use AI tutoring" });
   }
-  const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
-  if (!isEnrolled) {
+  const liveAccess = liveEnrollment ?? (await getLiveStudentEnrollment(res, course, authUser));
+  if (!liveAccess) return;
+  if (!liveAccess.allowed) {
     return res.status(403).json({ error: "Not enrolled in this course" });
   }
   const lesson = activity.lesson;
@@ -362,9 +450,20 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       // cancelled.
       return;
     }
-    console.error(`Error generating ${mode} guidance:`, error);
-    const status = Number.isInteger(error?.status) ? error.status : 500;
-    return res.status(status).json({ error: String(error.message || error) });
+    const metadata = getSafeAiErrorMetadata(error);
+    logAiGuidanceEvent("error", "guidance_route_failed", { mode, ...metadata });
+    const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
+    const timedOut = metadata.code === "TIMEOUT";
+    const body = {
+      error: timedOut
+        ? "The AI study buddy took too long to respond. Please try again."
+        : "Unable to generate an AI tutoring response",
+      code: timedOut ? "AI_TUTOR_TIMEOUT" : "AI_TUTOR_GUIDANCE_ERROR",
+      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
+      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
+      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
+    };
+    return res.status(status).json(body);
   } finally {
     res.removeListener("close", onClientClose);
   }
@@ -413,16 +512,24 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
       return res.status(404).json({ error: "Lesson not found" });
     }
 
-    const isInstructor = lesson.module.courseOffering.instructors.some(
-      (i) => i.userId === authUser.id,
-    );
-    const enrollment = lesson.module.courseOffering.enrollments.find(
-      (e) => e.userId === authUser.id,
-    );
-    const isTa = enrollment?.role === "TA";
-    const isStudent = enrollment?.role === "STUDENT";
-    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(lesson.module.courseOffering, authUser);
+    const {
+      principal,
+      isInstructor,
+      isTa,
+      isStudent,
+      isUnitAdmin: unitAdmin,
+      isAdmin,
+    } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : "Course authorization unavailable",
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : "COURSE_AUTH_UNAVAILABLE",
+      });
+    }
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
@@ -470,13 +577,19 @@ router.get("/lessons/:lessonId/activities", async (req, res) => {
 
       res.json(paginated(activitiesWithStatus, total, pageParams));
     } else {
-      res.json(paginated(activities.map(mapActivity), total, pageParams));
+      res.json(
+        paginated(
+          activities.map((activity) => mapActivity(activity, { includeAnswer: true })),
+          total,
+          pageParams,
+        ),
+      );
     }
   } catch (e) {
     if (e instanceof PaginationError) {
       return res.status(e.status).json({ error: e.message, code: e.code });
     }
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -499,126 +612,28 @@ router.post(
       return res.status(400).json({ error: "Invalid lesson id" });
     }
 
-    // Accept legacy `prompt` field by mapping it to question before validation
+    // Accept legacy `prompt` field by mapping it to question before validation.
     const raw = { ...req.body };
     if (!raw.question && raw.prompt) raw.question = raw.prompt;
     let payload;
     try {
       payload = CreateActivitySchema.parse(raw);
-    } catch (e) {
-      return res.status(400).json({ error: "Invalid payload", details: e?.errors || String(e) });
-    }
-
-    // Validate at least one AI mode is enabled
-    if (!payload.enableTeachMode && !payload.enableGuideMode && !payload.enableCustomMode) {
-      return res.status(400).json({ error: "At least one AI mode must be enabled" });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     try {
-      const lesson = await prisma.lesson.findUnique({
-        where: { id: lessonId },
-        include: {
-          module: {
-            include: {
-              courseOffering: { include: { instructors: { select: { userId: true } } } },
-            },
-          },
-        },
+      const activity = await createActivityForLesson({
+        lessonId,
+        payload,
+        user: authUser,
       });
-
-      if (!lesson) {
-        return res.status(404).json({ error: "Lesson not found" });
-      }
-
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
-      }
-
-      const courseOfferingId = lesson.module.courseOffering.id;
-
-      const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
-      if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-        return res.status(400).json({ error: "mainTopicId must belong to the lesson course" });
-      }
-
-      const normalizedSecondaryIds = Array.isArray(payload.secondaryTopicIds)
-        ? Array.from(
-            new Set(
-              payload.secondaryTopicIds.filter(
-                (value) =>
-                  typeof value === "string" && value.length > 0 && value !== payload.mainTopicId,
-              ),
-            ),
-          )
-        : [];
-
-      if (normalizedSecondaryIds.length > 0) {
-        const topics = await prisma.topic.findMany({
-          where: { id: { in: normalizedSecondaryIds } },
-        });
-        const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
-        if (invalid || topics.length !== normalizedSecondaryIds.length) {
-          return res
-            .status(400)
-            .json({ error: "secondaryTopicIds must belong to the lesson course" });
-        }
-      }
-
-      // Append to the end of the lesson's activity list. Historically create
-      // never set a position, so every activity landed at 0 and order was
-      // undefined; assign max(position)+1 so new activities append (issue #1047).
-      const lastActivity = await prisma.activity.findFirst({
-        where: { lessonId },
-        orderBy: { position: "desc" },
-        select: { position: true },
-      });
-      const resolvedPosition = lastActivity ? lastActivity.position + 1 : 0;
-
-      const activity = await prisma.activity.create({
-        data: {
-          title: payload.title ?? null,
-          instructionsMd: payload.instructionsMd ?? "Answer the question.",
-          position: resolvedPosition,
-          lessonId,
-          promptTemplateId: payload.promptTemplateId ?? null,
-          customPrompt: normalizeCustomPrompt(payload.customPrompt),
-          customPromptTitle: normalizeCustomPromptTitle(payload.customPromptTitle),
-          mainTopicId: payload.mainTopicId,
-          enableTeachMode: payload.enableTeachMode,
-          enableGuideMode: payload.enableGuideMode,
-          enableCustomMode: payload.enableCustomMode ?? false,
-          config: {
-            question: payload.question,
-            questionType: payload.type ?? "MCQ",
-            options: payload.options,
-            answer: payload.answer ?? null,
-            hints: Array.isArray(payload.hints) ? payload.hints : [],
-          },
-          secondaryTopics:
-            normalizedSecondaryIds.length > 0
-              ? {
-                  create: normalizedSecondaryIds.map((topicId) => ({
-                    topic: { connect: { id: topicId } },
-                  })),
-                }
-              : undefined,
-        },
-        include: {
-          promptTemplate: { select: { id: true, name: true } },
-          mainTopic: true,
-          secondaryTopics: {
-            include: { topic: true },
-          },
-        },
-      });
-
-      res.status(201).json(mapActivity(activity));
+      res.status(201).json(mapActivity(activity, { includeAnswer: true }));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      if (e instanceof ActivityMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -647,262 +662,22 @@ router.patch(
     let payload;
     try {
       payload = UpdateActivitySchema.parse(req.body || {});
-    } catch (e) {
-      return res.status(400).json({ error: "Invalid payload", details: e?.errors || String(e) });
-    }
-    const noUpdatableFields =
-      typeof payload.promptTemplateId === "undefined" &&
-      typeof payload.customPrompt === "undefined" &&
-      typeof payload.customPromptTitle === "undefined" &&
-      typeof payload.enableCustomMode === "undefined" &&
-      typeof payload.mainTopicId === "undefined" &&
-      typeof payload.secondaryTopicIds === "undefined" &&
-      typeof payload.title === "undefined" &&
-      typeof payload.instructionsMd === "undefined" &&
-      typeof payload.question === "undefined" &&
-      typeof payload.type === "undefined" &&
-      typeof payload.options === "undefined" &&
-      typeof payload.answer === "undefined" &&
-      typeof payload.hints === "undefined" &&
-      typeof payload.enableTeachMode === "undefined" &&
-      typeof payload.enableGuideMode === "undefined";
-
-    if (noUpdatableFields) {
-      return res.status(400).json({ error: "Nothing to update" });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     try {
-      const activity = await prisma.activity.findUnique({
-        where: { id: activityId },
-        include: {
-          lesson: {
-            include: {
-              module: {
-                include: {
-                  courseOffering: {
-                    include: { instructors: true },
-                  },
-                },
-              },
-            },
-          },
-          mainTopic: true,
-        },
+      const updated = await updateActivityForEditor({
+        activityId,
+        payload,
+        user: instructor,
       });
-
-      if (!activity) {
-        return res.status(404).json({ error: "Activity not found" });
-      }
-
-      const isInstructor = activity.lesson.module.courseOffering.instructors.some(
-        (assignment) => assignment.userId === instructor.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(
-        instructor,
-        activity.lesson.module.courseOffering,
-      );
-
-      if (!isInstructor && !unitAdmin && instructor.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this activity" });
-      }
-
-      const courseOfferingId = activity.lesson.module.courseOfferingId;
-
-      const updateData = {};
-
-      if (typeof payload.title !== "undefined") {
-        if (payload.title === null) {
-          updateData.title = null;
-        } else {
-          const trimmedTitle = payload.title.trim();
-          updateData.title = trimmedTitle.length > 0 ? trimmedTitle : null;
-        }
-      }
-
-      if (typeof payload.instructionsMd !== "undefined") {
-        updateData.instructionsMd = payload.instructionsMd;
-      }
-
-      const currentConfig =
-        activity.config && typeof activity.config === "object" ? { ...activity.config } : {};
-      let configChanged = false;
-
-      if (typeof payload.question !== "undefined") {
-        const questionText = payload.question.trim();
-        if (questionText.length === 0) {
-          return res.status(400).json({ error: "question must not be empty" });
-        }
-        currentConfig.question = questionText;
-        configChanged = true;
-      }
-
-      if (typeof payload.type !== "undefined") {
-        currentConfig.questionType = payload.type;
-        if (payload.type === "SHORT_TEXT") {
-          currentConfig.options = null;
-        }
-        configChanged = true;
-      }
-
-      if (typeof payload.options !== "undefined") {
-        if (payload.options === null) {
-          currentConfig.options = null;
-        } else {
-          currentConfig.options = payload.options.map((choice) => choice);
-        }
-        configChanged = true;
-      }
-
-      if (typeof payload.answer !== "undefined") {
-        currentConfig.answer = payload.answer;
-        configChanged = true;
-      }
-
-      if (typeof payload.hints !== "undefined") {
-        const normalizedHints = Array.isArray(payload.hints)
-          ? payload.hints.map((hint) => hint.trim()).filter((hint) => hint.length > 0)
-          : [];
-        currentConfig.hints = normalizedHints;
-        configChanged = true;
-      }
-
-      if (configChanged) {
-        updateData.config = currentConfig;
-      }
-
-      if (typeof payload.promptTemplateId !== "undefined") {
-        if (payload.promptTemplateId === null) {
-          updateData.promptTemplateId = null;
-        } else if (typeof payload.promptTemplateId === "number") {
-          const prompt = await prisma.promptTemplate.findUnique({
-            where: { id: payload.promptTemplateId },
-          });
-          if (!prompt) {
-            return res.status(400).json({ error: "Invalid promptTemplateId" });
-          }
-          updateData.promptTemplateId = payload.promptTemplateId;
-        } else {
-          return res.status(400).json({ error: "promptTemplateId must be a number or null" });
-        }
-      }
-
-      if (typeof payload.customPrompt !== "undefined") {
-        if (payload.customPrompt === null) {
-          updateData.customPrompt = null;
-        } else if (typeof payload.customPrompt === "string") {
-          updateData.customPrompt = normalizeCustomPrompt(payload.customPrompt);
-        } else {
-          return res.status(400).json({ error: "customPrompt must be a string or null" });
-        }
-      }
-
-      if (typeof payload.customPromptTitle !== "undefined") {
-        if (payload.customPromptTitle === null) {
-          updateData.customPromptTitle = null;
-        } else if (typeof payload.customPromptTitle === "string") {
-          updateData.customPromptTitle = normalizeCustomPromptTitle(payload.customPromptTitle);
-        } else {
-          return res.status(400).json({ error: "customPromptTitle must be a string or null" });
-        }
-      }
-
-      let resolvedMainTopicId = activity.mainTopicId;
-      if (typeof payload.mainTopicId !== "undefined") {
-        if (typeof payload.mainTopicId !== "string" || payload.mainTopicId.length === 0) {
-          return res.status(400).json({ error: "mainTopicId must be a string" });
-        }
-        const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
-        if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
-          return res.status(400).json({ error: "mainTopicId must belong to the activity course" });
-        }
-        updateData.mainTopicId = payload.mainTopicId;
-        resolvedMainTopicId = payload.mainTopicId;
-      }
-
-      if (typeof payload.secondaryTopicIds !== "undefined") {
-        if (!Array.isArray(payload.secondaryTopicIds)) {
-          return res.status(400).json({ error: "secondaryTopicIds must be an array of ids" });
-        }
-        const normalizedSecondaryIds = Array.from(
-          new Set(
-            payload.secondaryTopicIds.filter(
-              (value) =>
-                typeof value === "string" && value.length > 0 && value !== resolvedMainTopicId,
-            ),
-          ),
-        );
-
-        if (normalizedSecondaryIds.length > 0) {
-          const topics = await prisma.topic.findMany({
-            where: { id: { in: normalizedSecondaryIds } },
-          });
-          const invalid = topics.some((topic) => topic.courseOfferingId !== courseOfferingId);
-          if (invalid || topics.length !== normalizedSecondaryIds.length) {
-            return res
-              .status(400)
-              .json({ error: "secondaryTopicIds must belong to the activity course" });
-          }
-        }
-
-        updateData.secondaryTopics = {
-          deleteMany: {},
-          create: normalizedSecondaryIds.map((topicId) => ({
-            topic: { connect: { id: topicId } },
-          })),
-        };
-      }
-
-      const requestedModeUpdate =
-        typeof payload.enableTeachMode !== "undefined" ||
-        typeof payload.enableGuideMode !== "undefined" ||
-        typeof payload.enableCustomMode !== "undefined";
-
-      // Handle AI mode updates with validation
-      if (requestedModeUpdate) {
-        const newTeachMode =
-          typeof payload.enableTeachMode !== "undefined"
-            ? payload.enableTeachMode
-            : activity.enableTeachMode;
-        const newGuideMode =
-          typeof payload.enableGuideMode !== "undefined"
-            ? payload.enableGuideMode
-            : activity.enableGuideMode;
-        const newCustomMode =
-          typeof payload.enableCustomMode !== "undefined"
-            ? payload.enableCustomMode
-            : activity.enableCustomMode;
-
-        // Validate at least one mode is enabled
-        if (!newTeachMode && !newGuideMode && !newCustomMode) {
-          return res.status(400).json({ error: "At least one AI mode must be enabled" });
-        }
-
-        if (typeof payload.enableTeachMode !== "undefined") {
-          updateData.enableTeachMode = payload.enableTeachMode;
-        }
-        if (typeof payload.enableGuideMode !== "undefined") {
-          updateData.enableGuideMode = payload.enableGuideMode;
-        }
-        if (typeof payload.enableCustomMode !== "undefined") {
-          updateData.enableCustomMode = payload.enableCustomMode;
-        }
-      }
-
-      const updated = await prisma.activity.update({
-        where: { id: activityId },
-        data: updateData,
-        include: {
-          promptTemplate: { select: { id: true, name: true } },
-          mainTopic: true,
-          secondaryTopics: {
-            include: { topic: true },
-          },
-        },
-      });
-
-      res.json(mapActivity(updated));
+      res.json(mapActivity(updated, { includeAnswer: true }));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      if (e instanceof ActivityMutationError) {
+        return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) });
+      }
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -939,15 +714,17 @@ router.delete(
         return res.status(404).json({ error: "Activity not found" });
       }
 
-      const isInstructor = activity.lesson.module.courseOffering.instructors.some(
-        (assignment) => assignment.userId === instructor.id,
-      );
-      const unitAdmin = await isUnitAdminForCourse(
-        instructor,
+      const principal = await authorizeLiveCoursePrincipal(
         activity.lesson.module.courseOffering,
+        instructor,
       );
-
-      if (!isInstructor && !unitAdmin && instructor.role !== "ADMIN") {
+      if (principal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(principal)) {
         return res.status(403).json({ error: "Not authorized for this activity" });
       }
 
@@ -955,7 +732,7 @@ router.delete(
 
       res.json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1015,10 +792,10 @@ router.post(
         targetCourseOfferingId: course.id,
       });
 
-      res.status(201).json(mapActivity(clone));
+      res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
-      console.error("Error duplicating activity:", e);
-      res.status(500).json({ error: String(e) });
+      logSafeError("Error duplicating activity", e);
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1067,10 +844,52 @@ router.post(
       }
 
       const targetCourse = targetLesson.module.courseOffering;
-      if (!(await isCourseAdmin(authUser, targetCourse))) {
+      const targetPrincipal = await authorizeLiveCoursePrincipal(targetCourse, authUser);
+      if (targetPrincipal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(targetPrincipal)) {
         return res.status(403).json({ error: "Not authorized for this lesson" });
       }
 
+      // Resolve only the source activity's parent course before loading any
+      // authored fields (answer/config/custom prompt). This metadata lookup is
+      // the boundary needed to perform exact live Core authorization first.
+      const sourceActivityMeta = await prisma.activity.findUnique({
+        where: { id: sourceActivityId },
+        select: {
+          id: true,
+          lesson: { select: { module: { select: { courseOfferingId: true } } } },
+        },
+      });
+      if (!sourceActivityMeta) {
+        return res.status(404).json({ error: "Source activity not found" });
+      }
+
+      const sourceCourse = await prisma.courseOffering.findUnique({
+        where: { id: sourceActivityMeta.lesson.module.courseOfferingId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!sourceCourse) {
+        return res.status(404).json({ error: "Source activity not found" });
+      }
+
+      const sourcePrincipal = await authorizeLiveCoursePrincipal(sourceCourse, authUser);
+      if (sourcePrincipal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(sourcePrincipal)) {
+        return res.status(403).json({ error: "Not authorized for the source activity" });
+      }
+
+      // Source authorization has completed; only now read the full authored
+      // activity tree that includes answer/config/custom-prompt material.
       const sourceActivity = await prisma.activity.findUnique({
         where: { id: sourceActivityId },
         include: {
@@ -1091,21 +910,16 @@ router.post(
         return res.status(404).json({ error: "Source activity not found" });
       }
 
-      const sourceCourse = sourceActivity.lesson.module.courseOffering;
-      if (!(await isCourseAdmin(authUser, sourceCourse))) {
-        return res.status(403).json({ error: "Not authorized for the source activity" });
-      }
-
       const clone = await cloneActivityIntoLesson({
         sourceActivity,
         targetLessonId: lessonId,
         targetCourseOfferingId: targetCourse.id,
       });
 
-      res.status(201).json(mapActivity(clone));
+      res.status(201).json(mapActivity(clone, { includeAnswer: true }));
     } catch (e) {
-      console.error("Error importing activity:", e);
-      res.status(500).json({ error: String(e) });
+      logSafeError("Error importing activity", e);
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1151,7 +965,14 @@ router.get(
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
-      if (!(await isCourseAdmin(authUser, course))) {
+      const destinationPrincipal = await authorizeLiveCoursePrincipal(course, authUser);
+      if (destinationPrincipal.state === "unavailable") {
+        return res.status(503).json({
+          error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+          code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+        });
+      }
+      if (!isAllowedLiveCourseStaffPrincipal(destinationPrincipal)) {
         return res.status(403).json({ error: "Not authorized for this course" });
       }
 
@@ -1192,6 +1013,32 @@ router.get(
         manageableCourseIds = owned.map((c) => c.id);
       }
 
+      // Local CourseInstructor rows only identify candidate mirrors; they are
+      // never authority. Resolve every candidate source course against the
+      // live Core principal before querying any activity content.
+      const manageableCourses = await prisma.courseOffering.findMany({
+        where: { id: { in: manageableCourseIds } },
+        select: {
+          id: true,
+          coreOfferingId: true,
+          instructors: { select: { userId: true } },
+        },
+      });
+      const authorizedManageableCourses = [];
+      for (const candidate of manageableCourses) {
+        const principal = await authorizeLiveCoursePrincipal(candidate, authUser);
+        if (principal.state === "unavailable") {
+          return res.status(503).json({
+            error: LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+            code: LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+          });
+        }
+        if (isAllowedLiveCourseStaffPrincipal(principal)) {
+          authorizedManageableCourses.push(candidate.id);
+        }
+      }
+      manageableCourseIds = authorizedManageableCourses;
+
       const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
         ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
@@ -1230,8 +1077,8 @@ router.get(
       if (e instanceof PaginationError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      console.error("Error listing importable activities:", e);
-      res.status(500).json({ error: String(e) });
+      logSafeError("Error listing importable activities", e);
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -1291,10 +1138,9 @@ router.post("/questions/:id/answer", async (req, res) => {
     if (authUser.role !== "STUDENT") {
       return res.status(403).json({ error: "Only students can submit answers" });
     }
-    const isEnrolled = course.enrollments.some(
-      (e) => e.userId === authUser.id && e.role === "STUDENT",
-    );
-    if (!isEnrolled) {
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
       return res.status(403).json({ error: "Not enrolled in this course" });
     }
     const answerLesson = activity.lesson;
@@ -1353,7 +1199,7 @@ router.post("/questions/:id/answer", async (req, res) => {
       feedbackAlreadySubmitted,
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1390,7 +1236,9 @@ router.post("/activities/:activityId/teach", async (req, res) => {
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
     if (authUser.role !== "STUDENT")
       return res.status(403).json({ error: "Only students can use AI tutoring" });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
       return res.status(403).json({ error: "Not enrolled in this course" });
     const lesson = activity.lesson;
     if (
@@ -1407,10 +1255,8 @@ router.post("/activities/:activityId/teach", async (req, res) => {
     let payload;
     try {
       payload = TeachRequestSchema.parse(req.body || {});
-    } catch (error) {
-      return res
-        .status(400)
-        .json({ error: "Invalid payload", details: error?.errors || String(error) });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1420,6 +1266,7 @@ router.post("/activities/:activityId/teach", async (req, res) => {
       activity,
       mode: "teach",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateTeachResponse({
           activity,
@@ -1427,12 +1274,14 @@ router.post("/activities/:activityId/teach", async (req, res) => {
           knowledgeLevel: payload.knowledgeLevel,
           message: payload.message,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
   } catch (e) {
-    console.error("Error generating guidance:", e);
-    res.status(500).json({ error: String(e) });
+    logSafeError("Error generating guidance", e);
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1469,7 +1318,9 @@ router.post("/activities/:activityId/guide", async (req, res) => {
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
     if (authUser.role !== "STUDENT")
       return res.status(403).json({ error: "Only students can use AI tutoring" });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
       return res.status(403).json({ error: "Not enrolled in this course" });
     const lesson = activity.lesson;
     if (
@@ -1486,10 +1337,8 @@ router.post("/activities/:activityId/guide", async (req, res) => {
     let payload;
     try {
       payload = GuideRequestSchema.parse(req.body || {});
-    } catch (error) {
-      return res
-        .status(400)
-        .json({ error: "Invalid payload", details: error?.errors || String(error) });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     return handleAiInteraction({
@@ -1498,6 +1347,7 @@ router.post("/activities/:activityId/guide", async (req, res) => {
       activity,
       mode: "guide",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateGuideResponse({
           activity,
@@ -1505,12 +1355,14 @@ router.post("/activities/:activityId/guide", async (req, res) => {
           message: payload.message,
           studentAnswer: payload.studentAnswer,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
   } catch (e) {
-    console.error("Error generating guidance:", e);
-    res.status(500).json({ error: String(e) });
+    logSafeError("Error generating guidance", e);
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1547,7 +1399,9 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
     if (authUser.role !== "STUDENT")
       return res.status(403).json({ error: "Only students can use AI tutoring" });
-    if (!course.enrollments.some((e) => e.userId === authUser.id))
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed)
       return res.status(403).json({ error: "Not enrolled in this course" });
     const lesson = activity.lesson;
     if (
@@ -1569,10 +1423,8 @@ router.post("/activities/:activityId/custom", async (req, res) => {
     let payload;
     try {
       payload = CustomRequestSchema.parse(req.body || {});
-    } catch (error) {
-      return res
-        .status(400)
-        .json({ error: "Invalid payload", details: error?.errors || String(error) });
+    } catch {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1582,6 +1434,7 @@ router.post("/activities/:activityId/custom", async (req, res) => {
       activity,
       mode: "custom",
       payload,
+      liveEnrollment,
       generateResponse: (context) =>
         generateCustomResponse({
           activity,
@@ -1590,12 +1443,23 @@ router.post("/activities/:activityId/custom", async (req, res) => {
           message: payload.message,
           studentAnswer: payload.studentAnswer,
           apiKey: payload.apiKey,
+          apiKeys: payload.apiKeys,
+          supervisorApiKey: payload.supervisorApiKey,
           ...context,
         }),
     });
-  } catch (e) {
-    console.error("Error generating custom response:", e);
-    res.status(500).json({ error: String(e) });
+  } catch (error) {
+    const metadata = getSafeAiErrorMetadata(error);
+    logAiGuidanceEvent("error", "custom_route_failed", metadata);
+    const status = metadata.status >= 400 && metadata.status <= 599 ? metadata.status : 500;
+    const body = {
+      error: "Unable to generate a custom tutoring response",
+      code: "AI_TUTOR_CUSTOM_ERROR",
+      ...(metadata.requestId ? { requestId: metadata.requestId } : {}),
+      ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
+      ...(metadata.traceId ? { traceId: metadata.traceId } : {}),
+    };
+    return res.status(status).json(body);
   }
 });
 
@@ -1642,14 +1506,27 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    const unitAdmin = await isUnitAdminForCourse(authUser, course);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: "Not authorized for this activity" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
+        return res.status(403).json({ error: "Not authorized for this activity" });
+      }
     }
 
     const submissions = await prisma.submission.findMany({
@@ -1659,7 +1536,7 @@ router.get("/activities/:activityId/submissions", async (req, res) => {
 
     res.json(submissions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1736,10 +1613,26 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
     const course = submission.activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    if (!(await isCourseAdmin(authUser, course)) && !isTa) {
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
+    if (!isAdmin && !isInstructor && !unitAdmin && !isTa) {
       return res.status(403).json({ error: "Not authorized for this submission" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
+        return res.status(403).json({ error: "Not authorized for this submission" });
+      }
     }
 
     const updated = await prisma.submission.update({
@@ -1749,7 +1642,7 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
 
     res.json(updated);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1796,14 +1689,27 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const isTa = enrollment?.role === "TA";
-    const unitAdmin = await isUnitAdminForCourse(authUser, course);
-    const isAdmin = authUser.role === "ADMIN";
+    const membership = await getExactCourseMembership(course, authUser);
+    const { principal, isInstructor, isTa, isUnitAdmin: unitAdmin, isAdmin } = membership;
+    if (principal.state === "unavailable") {
+      const learner = authUser.role === "STUDENT" || authUser.role === "TA";
+      return res.status(503).json({
+        error: learner
+          ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_MESSAGE
+          : LIVE_COURSE_AUTH_UNAVAILABLE_MESSAGE,
+        code: learner ? LIVE_ENROLLMENT_AUTH_UNAVAILABLE_CODE : LIVE_COURSE_AUTH_UNAVAILABLE_CODE,
+      });
+    }
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: "Not authorized for this activity" });
+    }
+    if (isTa) {
+      const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+      if (!liveEnrollment) return;
+      if (!liveEnrollment.allowed || liveEnrollment.role !== "TA") {
+        return res.status(403).json({ error: "Not authorized for this activity" });
+      }
     }
 
     const feedback = await prisma.activityFeedback.findMany({
@@ -1813,7 +1719,7 @@ router.get("/activities/:activityId/feedback", async (req, res) => {
 
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1841,10 +1747,8 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
   let payload;
   try {
     payload = ActivityFeedbackRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: "Invalid payload", details: error?.errors || String(error) });
+  } catch {
+    return res.status(400).json({ error: "Invalid payload" });
   }
 
   try {
@@ -1857,7 +1761,9 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
               include: {
                 courseOffering: {
                   select: {
-                    enrollments: { select: { userId: true } },
+                    id: true,
+                    coreOfferingId: true,
+                    enrollments: { select: { userId: true, role: true } },
                     instructors: { select: { userId: true } },
                   },
                 },
@@ -1877,8 +1783,12 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
       return res.status(500).json({ error: "Activity course context missing" });
     }
 
-    const { isEnrolledStudent } = getActivityAccess(course, authUser);
-    if (!isEnrolledStudent || authUser.role !== "STUDENT") {
+    if (authUser.role !== "STUDENT") {
+      return res.status(403).json({ error: "Only enrolled students can submit activity feedback" });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
       return res.status(403).json({ error: "Only enrolled students can submit activity feedback" });
     }
 
@@ -1918,8 +1828,8 @@ router.post("/activities/:activityId/feedback", async (req, res) => {
     if (error?.code === "P2002") {
       return res.status(409).json({ error: "Feedback already submitted for this activity" });
     }
-    console.error("Error recording activity feedback:", error);
-    res.status(500).json({ error: String(error) });
+    logSafeError("Error recording activity feedback", error);
+    sendSafeError(res, error, "Internal server error");
   }
 });
 
@@ -1939,7 +1849,7 @@ router.get("/me/submissions", async (req, res) => {
     });
     res.json(submissions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1959,7 +1869,7 @@ router.get("/me/feedback", async (req, res) => {
     });
     res.json(feedback);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -1972,6 +1882,8 @@ router.get("/me/feedback", async (req, res) => {
 router.get("/activities/:activityId/chat-sessions", async (req, res) => {
   try {
     const authUser = req.user;
+    if (!authUser) return res.status(401).json({ error: "Authentication required" });
+
     const activityId = Number(req.params.activityId);
     if (!Number.isFinite(activityId)) return res.status(400).json({ error: "Invalid activityId" });
 
@@ -1981,9 +1893,22 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: "Activity course context missing" });
 
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
-    if (authUser.role !== "STUDENT" || !isEnrolled) {
+    if (authUser.role !== "STUDENT") {
       return res.status(403).json({ error: "Forbidden" });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const lesson = activity.lesson;
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    ) {
+      return res.status(403).json({ error: "Activity is not available" });
     }
 
     const sessions = await prisma.aiChatSession.findMany({
@@ -2001,7 +1926,7 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
 
     return res.json(sessions);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -2015,6 +1940,8 @@ router.get("/activities/:activityId/chat-sessions", async (req, res) => {
 router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req, res) => {
   try {
     const authUser = req.user;
+    if (!authUser) return res.status(401).json({ error: "Authentication required" });
+
     const activityId = Number(req.params.activityId);
     const { chatId } = req.params;
     if (!Number.isFinite(activityId)) return res.status(400).json({ error: "Invalid activityId" });
@@ -2023,6 +1950,27 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
       where: { chatId, userId: authUser.id, activityId },
     });
     if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const activity = await loadActivityForChat(activityId);
+    const course = activity?.lesson?.module?.courseOffering;
+    if (!course) return res.status(404).json({ error: "Activity not found" });
+    if (authUser.role !== "STUDENT") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const liveEnrollment = await getLiveStudentEnrollment(res, course, authUser);
+    if (!liveEnrollment) return;
+    if (!liveEnrollment.allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const lesson = activity.lesson;
+    if (
+      !(await isCoursePublishedLive(course.coreOfferingId)) ||
+      !lesson?.module?.isPublished ||
+      !lesson?.isPublished
+    ) {
+      return res.status(403).json({ error: "Activity is not available" });
+    }
 
     const cookie = getEduAiCookieForRequest(req);
     const coreUrl = getEduAiBaseUrl().replace(/\/api$/, "");
@@ -2035,7 +1983,7 @@ router.get("/activities/:activityId/chat-sessions/:chatId/messages", async (req,
     const data = await upstream.json();
     return res.json(data);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    sendSafeError(res, e, "Internal server error");
   }
 });
 
@@ -2074,10 +2022,15 @@ router.patch(
       if (!activity) return res.status(404).json({ error: "Activity not found" });
 
       const courseOffering = activity.lesson.module.courseOffering;
-      const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          courseOffering,
+          authUser,
+          "Not authorized for this lesson",
+        ))
+      ) {
+        return;
       }
 
       const { position, total } = await moveToPosition({
@@ -2095,12 +2048,12 @@ router.patch(
           secondaryTopics: { include: { topic: true } },
         },
       });
-      res.json({ activity: mapActivity(updated), position, total });
+      res.json({ activity: mapActivity(updated, { includeAnswer: true }), position, total });
     } catch (e) {
       if (e instanceof ReorderError) {
         return res.status(e.status).json({ error: e.message, code: e.code });
       }
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );
@@ -2142,14 +2095,15 @@ router.put(
       });
       if (!lesson) return res.status(404).json({ error: "Lesson not found" });
 
-      const isInstructor = lesson.module.courseOffering.instructors.some(
-        (i) => i.userId === authUser.id,
-      );
-      // `isUnitAdminForCourse` is async — without the await this resolved to a
-      // (always truthy) Promise, so the guard below never denied anyone.
-      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-      if (!isInstructor && !unitAdmin && authUser.role !== "ADMIN") {
-        return res.status(403).json({ error: "Not authorized for this lesson" });
+      if (
+        !(await requireLiveStaffAccess(
+          res,
+          lesson.module.courseOffering,
+          authUser,
+          "Not authorized for this lesson",
+        ))
+      ) {
+        return;
       }
 
       const existing = await prisma.activity.findMany({
@@ -2181,9 +2135,9 @@ router.put(
           secondaryTopics: { include: { topic: true } },
         },
       });
-      res.json(activities.map(mapActivity));
+      res.json(activities.map((activity) => mapActivity(activity, { includeAnswer: true })));
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      sendSafeError(res, e, "Internal server error");
     }
   },
 );

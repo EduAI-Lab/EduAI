@@ -1,9 +1,11 @@
 /**
  * Routes for the assessment variant workflow (API path `/api/assessment-variant`).
  *
- * RBAC (rbac-matrix.md §17, issue #313): all routes require QM_AUTHORIZED role
- * (ADMIN, UNIT_ADMIN, INSTRUCTOR — TA excluded). Service scoping keys off the
- * authorized course's owner id (`req.qmCourse.userId`).
+ * RBAC (rbac-matrix.md §17, issue #313): authoring routes are instructor-only,
+ * while blueprint/readiness reads are TA-viewable. The latter use the
+ * enrollment-aware assessment gate because Core identifies a course TA as a
+ * platform STUDENT. Service scoping keys off the authorized course's owner id
+ * (`req.qmCourse.userId`).
  */
 import express from "express";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
@@ -19,6 +21,13 @@ import {
   generateBankVariantsForQuestions,
   reviewVariantExamWithAi,
 } from "../services/assessmentVariantService.js";
+import {
+  qmAiProviderCallAdmission,
+  qmAiUserRateLimit,
+  validateBankVariantAdmission,
+  validateReviewAdmission,
+  isQmAiDeadlineError,
+} from "../middleware/aiAdmission.js";
 
 const router = express.Router();
 
@@ -29,6 +38,35 @@ const writeByCourseBody = requireCourseAccess({
 
 /** Body fields the role endpoint is allowed to touch — everything else is rejected (#5). */
 const ROLE_ALLOWED_FIELDS = ["studyRole"];
+
+const bankVariantAdmission = qmAiProviderCallAdmission({
+  validate: validateBankVariantAdmission,
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+const reviewVariantAdmission = qmAiProviderCallAdmission({
+  validate: validateReviewAdmission,
+  getCost: (req) => req.aiAdmission.providerCalls,
+});
+
+function sendStableAiFailure(res, error, fallbackCode) {
+  const statusCode = Number(error?.statusCode ?? error?.status);
+  if (statusCode === 429) {
+    return res.status(429).json({
+      success: false,
+      error: "AI provider rate limit exceeded; try again later",
+      code: "EDUAI_UPSTREAM_RATE_LIMITED",
+    });
+  }
+  if (isQmAiDeadlineError(error) || statusCode === 504) {
+    return res.status(504).json({
+      success: false,
+      error: "AI operation timed out; try again later",
+      code: "QM_AI_OPERATION_DEADLINE",
+    });
+  }
+  return res.status(500).json({ success: false, error: "AI operation failed", code: fallbackCode });
+}
 
 /** PATCH /api/assessment-variant/assessments/:id/role — set blueprintConfig.studyRole (instructor-only). */
 router.patch(
@@ -83,7 +121,6 @@ router.patch(
 router.get(
   "/assessments/:id/blueprint-snapshot",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireAssessmentAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
@@ -99,7 +136,6 @@ router.get(
 router.get(
   "/assessments/:id/variant-readiness",
   authenticateToken,
-  requireRole(QM_AUTHORIZED),
   requireAssessmentAccess({ min: "ta" }),
   async (req, res, next) => {
     try {
@@ -199,31 +235,36 @@ router.post(
   "/generate-bank-variants",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
+  qmAiUserRateLimit,
+  bankVariantAdmission,
   writeByCourseBody,
   async (req, res, next) => {
     try {
-      const { questionIds, model, apiKeys, variantsToAdd, variantPromptInstructions } = req.body;
-
-      if (!Array.isArray(questionIds) || questionIds.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: "courseId and questionIds (non-empty array) are required",
-        });
-      }
+      const { model, apiKeys, variantPromptInstructions } = req.body;
+      const { questionIds, variantsToAdd } = req.aiAdmission;
 
       const result = await generateBankVariantsForQuestions(req.qmCourse.userId, {
-        questionIds: questionIds.map(Number),
+        questionIds,
         courseId: req.qmCourse.id,
         model: typeof model === "string" ? model : undefined,
         apiKeys: apiKeys && typeof apiKeys === "object" ? apiKeys : {},
-        variantsToAdd: variantsToAdd != null ? Number(variantsToAdd) : 1,
+        variantsToAdd,
         variantPromptInstructions:
           typeof variantPromptInstructions === "string" ? variantPromptInstructions : null,
         cookie: req.headers.cookie ?? "",
+        signal: req.aiOperation?.signal,
+        deadlineAt: req.aiOperation?.deadlineAt,
       });
 
       res.status(201).json({ success: true, data: result });
     } catch (error) {
+      if (
+        Number(error?.statusCode ?? error?.status) === 429 ||
+        isQmAiDeadlineError(error) ||
+        Number(error?.statusCode ?? error?.status) === 504
+      ) {
+        return sendStableAiFailure(res, error, "EDUAI_BANK_VARIANT_FAILED");
+      }
       next(error);
     }
   },
@@ -234,28 +275,17 @@ router.post(
   "/review-variant-ai",
   authenticateToken,
   requireRole(QM_AUTHORIZED),
+  qmAiUserRateLimit,
+  reviewVariantAdmission,
   writeByCourseBody,
   async (req, res, next) => {
     try {
-      const {
-        baselineAssessmentId,
-        variantAssessmentId,
-        model,
-        apiKeys,
-        rubricText,
-        applyUsabilityPenalty,
-        includeOverallSummary,
-      } = req.body;
-      if (!baselineAssessmentId || !variantAssessmentId) {
-        return res.status(400).json({
-          success: false,
-          error: "baselineAssessmentId, variantAssessmentId, and courseId are required",
-        });
-      }
+      const { model, apiKeys, rubricText, applyUsabilityPenalty } = req.body;
+      const { baselineAssessmentId, variantAssessmentId, includeOverallSummary } = req.aiAdmission;
 
       const data = await reviewVariantExamWithAi(req.qmCourse.userId, {
-        baselineAssessmentId: Number(baselineAssessmentId),
-        variantAssessmentId: Number(variantAssessmentId),
+        baselineAssessmentId,
+        variantAssessmentId,
         courseId: req.qmCourse.id,
         model: typeof model === "string" ? model : undefined,
         apiKeys: apiKeys && typeof apiKeys === "object" ? apiKeys : {},
@@ -265,10 +295,19 @@ router.post(
         includeOverallSummary:
           typeof includeOverallSummary === "boolean" ? includeOverallSummary : undefined,
         cookie: req.headers.cookie ?? "",
+        signal: req.aiOperation?.signal,
+        deadlineAt: req.aiOperation?.deadlineAt,
       });
 
       res.json({ success: true, data });
     } catch (error) {
+      if (
+        Number(error?.statusCode ?? error?.status) === 429 ||
+        isQmAiDeadlineError(error) ||
+        Number(error?.statusCode ?? error?.status) === 504
+      ) {
+        return sendStableAiFailure(res, error, "EDUAI_VARIANT_REVIEW_FAILED");
+      }
       next(error);
     }
   },

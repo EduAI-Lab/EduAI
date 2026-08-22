@@ -14,8 +14,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
-import { CourseDetailManagerView } from "~/components/courses/course-detail-manager-view";
-import type { CourseDetail } from "~/hooks/api/use-course-detail";
+import {
+  CourseDetailManagerView,
+  type CourseDetailManagerCourse,
+} from "~/components/courses/course-detail-manager-view";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
@@ -61,7 +63,7 @@ function candidatesReturnFn(..._args: unknown[]) {
   return candidatesReturn;
 }
 
-const COURSE: CourseDetail = {
+const COURSE: CourseDetailManagerCourse = {
   id: "c1",
   code: "COSC 101",
   name: "Intro to CS",
@@ -80,6 +82,7 @@ const COURSE: CourseDetail = {
   instructor: { id: "user-instructor", name: "Dr. Instructor", email: "inst@test.com" },
   ragTopK: 4,
   ragSimilarityThreshold: 0.5,
+  courseScopeGuardrailEnabled: false,
 };
 
 const MATERIAL: CourseMaterial = {
@@ -560,6 +563,55 @@ describe("CourseDetailManagerView — staff tab", () => {
 });
 
 describe("CourseDetailManagerView — settings (RAG) tab", () => {
+  it("shows the course-scope toggle off by default and persists it when enabled", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    renderView();
+    clickTab(/settings/i);
+
+    const toggle = screen.getByRole("switch", {
+      name: /restrict course chat to this course/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const [, request] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      courseScopeGuardrailEnabled: true,
+    });
+  });
+
+  it("preserves an enabled course-scope toggle when saving only RAG top-k", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    renderView({ course: { ...COURSE, courseScopeGuardrailEnabled: true } });
+    clickTab(/settings/i);
+
+    const toggle = screen.getByRole("switch", {
+      name: /restrict course chat to this course/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.change(screen.getByLabelText(/results per question/i), {
+      target: { value: "6" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/courses/c1/rag-settings",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+    const [, request] = mockFetch.mock.calls.at(-1) as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      courseScopeGuardrailEnabled: true,
+      ragTopK: 6,
+    });
+  });
+
   it("saves RAG search-tuning settings", async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
     renderView();

@@ -15,8 +15,13 @@ import {
   listCoursesFromCore,
   searchCoursesFromCore,
 } from "./coreApiService.js";
-import { dedupeCoursesByCoreId, normalizeCourseCode } from "./courseCodeUtils.js";
+import {
+  dedupeCoursesByCoreId,
+  normalizeCourseCode,
+  courseCodeLookupCandidates,
+} from "./courseCodeUtils.js";
 import { ensureCourseAnchor } from "./ensureCourseAnchor.js";
+import { assertQmAiDeadline } from "../middleware/aiAdmission.js";
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 const ACCESS_SYNC_TTL_MS = Number(process.env.COURSE_ACCESS_SYNC_TTL_MS) || 60_000;
@@ -125,7 +130,7 @@ function enrichCourseRow(course, coreById, accessLevel) {
  * directly (§3 "detail from GET /api/courses/:id") — degrades gracefully
  * (placeholder, not a hard error) when Core is unreachable.
  */
-export async function enrichCourseDetail(course, { cookie } = {}) {
+export async function enrichCourseDetail(course, { cookie, signal } = {}) {
   const row = course;
 
   let core = null;
@@ -139,8 +144,11 @@ export async function enrichCourseDetail(course, { cookie } = {}) {
       // — a fragile retry edge that silently degraded a resolvable course to
       // a placeholder). `cookie` stays as the fallback variant for
       // environments with no EDUAI_API_KEY configured (#1072 unified contract).
-      core = await getCourseFromCore(row.coreCourseId, { cookie, preferCookie: false });
+      const coreOptions = { cookie, preferCookie: false };
+      if (signal) coreOptions.signal = signal;
+      core = await getCourseFromCore(row.coreCourseId, coreOptions);
     } catch {
+      if (signal?.aborted) assertQmAiDeadline({ signal });
       core = null; // Core unreachable — degrade the detail response, don't hard-error.
     }
   }
@@ -267,7 +275,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
           );
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
-    // Core unreachable — list still works without department enrichment.
+    // Core unreachable — linked-course access must fail closed below.
   }
 
   if (reqUser.role === "ADMIN") {
@@ -411,8 +419,12 @@ export function resetCourseAccessSyncForTests() {
   coreCatalogCache.refreshedAt = 0;
 }
 
-/** SQL-paginated course list. Visibility and totals share one DB predicate. */
-export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+/**
+ * Resolve the SQL predicate used for every multi-course visibility read.
+ * Keeping the access-mirror refresh and fail-closed fallback here prevents
+ * question-bank aggregates from drifting from the course list's RBAC rules.
+ */
+async function resolveCourseVisibilityContext(reqUser, { cookie } = {}) {
   let accessMirrorHealthy = true;
   if (reqUser.role === "ADMIN") {
     await listCoursesForUser(reqUser, { cookie });
@@ -421,7 +433,8 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
       accessMirrorHealthy = await syncCourseAccessMirror(reqUser, cookie);
     } catch {
       // Do not use stale grants after a failed refresh. Linked-course owners
-      // retain the documented fallback, while non-owners fail closed.
+      // and non-owners both fail closed; only explicitly unlinked QM-native
+      // courses use the local-owner branch below.
       accessMirrorHealthy = false;
       accessSyncedAtByUser.set(reqUser.id, { refreshedAt: Date.now(), healthy: false });
     }
@@ -473,6 +486,26 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
           ],
         };
 
+  return { where, authorizedUnits, accessMirrorHealthy };
+}
+
+/**
+ * Return the trusted Prisma CourseWhereInput for all courses visible to a
+ * caller. This is intentionally server-derived; request query parameters must
+ * never be accepted as a course predicate.
+ */
+export async function resolveVisibleCourseWhereForUser(reqUser, opts = {}) {
+  const { where } = await resolveCourseVisibilityContext(reqUser, opts);
+  return where;
+}
+
+/** SQL-paginated course list. Visibility and totals share one DB predicate. */
+export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {}) {
+  const { where, authorizedUnits, accessMirrorHealthy } = await resolveCourseVisibilityContext(
+    reqUser,
+    { cookie },
+  );
+
   const [total, rows] = await Promise.all([
     prisma.course.count({ where }),
     prisma.course.findMany({
@@ -501,7 +534,8 @@ export async function listCoursesPageForUser(reqUser, { cookie, pagination } = {
           : grant?.role === "INSTRUCTOR" || reqUser.id === course.userId
             ? "instructor"
             : null;
-    const { accessGrants, ...plainCourse } = course;
+    const plainCourse = { ...course };
+    delete plainCourse.accessGrants;
     return { ...plainCourse, accessLevel };
   });
 
@@ -583,24 +617,37 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
  * (`routes/eduai.js`) to authorize a client-supplied course code against a
  * real course — `code` is Core-owned and no longer stored locally (#1072 §4
  * step 10), so matching must read through Core rather than querying the
- * dropped `courses.code` column. One Core-side `?search=` call (#1125)
- * regardless of row count (no N+1, mirrors `listCoursesForUser`).
+ * dropped `courses.code` column.
+ *
+ * Core `?search=` is literal contains (#1125 / #1362), so this issues one
+ * search per whitespace/compact candidate from `courseCodeLookupCandidates`
+ * (not a single query) and unions the results before the exact normalized
+ * match filter. Still no per-row Core fan-out.
  *
  * Returns raw `Course` model instances (not enriched rows) so callers can
  * pass them straight to `resolveAccessForCourse`.
  */
-export async function findCoursesByProjectedCode(codeQuery) {
+export async function findCoursesByProjectedCode(codeQuery, { signal } = {}) {
   const target = normalizeCourseCode(codeQuery);
   if (!target) return [];
 
+  const candidates = courseCodeLookupCandidates(codeQuery);
   let coreById = new Map();
   try {
-    // #1125: let Core do the code match instead of pulling the catalog and
-    // filtering here. The exact-match check below still applies, since Core's
-    // `search` is a substring match.
-    const coreCourses = await searchCoursesFromCore(target, {}, { serviceKeyOnly: true });
-    coreById = new Map(coreCourses.map((c) => [c.id, c]));
+    assertQmAiDeadline({ signal });
+    // #1125 / #1362: Core `search` is literal contains — try whitespace
+    // variants so compact client codes (COSC121) still match spaced Core
+    // codes (COSC 121). Exact normalized match below still applies.
+    for (const candidate of candidates) {
+      const coreCourses = await searchCoursesFromCore(
+        candidate,
+        { signal },
+        { serviceKeyOnly: true },
+      );
+      for (const c of coreCourses) coreById.set(c.id, c);
+    }
   } catch {
+    if (signal?.aborted) assertQmAiDeadline({ signal });
     return []; // Core unreachable — no code-based match is possible; degrade to no access.
   }
 

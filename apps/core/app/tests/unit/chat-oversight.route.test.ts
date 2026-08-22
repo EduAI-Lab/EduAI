@@ -292,14 +292,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     mockAuditResult();
     vi.mocked(prisma.chatMessage.createMany)
       .mockResolvedValueOnce({ count: 1 })
-      .mockRejectedValueOnce(new Error("db down"));
+      .mockRejectedValueOnce(
+        new Error("postgres://db-user:db-pass@internal-db/private?api_key=secret"),
+      );
 
     const res = await action(makeArgs(baseBody({ streaming: true })));
     expect(res.status).toBe(500);
 
     const body = await res.json();
     expect(body.error).toBe("Failed to generate overseen response");
-    expect(body.details).toContain("db down");
+    expect(body.code).toBe("ADHD_OVERSIGHT_FAILED");
+    expect(body).not.toHaveProperty("details");
+    expect(JSON.stringify(body)).not.toContain("db-pass");
+    expect(JSON.stringify(body)).not.toContain("api_key");
   });
 
   it("skips oversight when ADHD_ASSIST_OVERSIGHT is disabled", async () => {

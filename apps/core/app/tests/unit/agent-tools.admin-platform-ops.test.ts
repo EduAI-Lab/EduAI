@@ -509,18 +509,28 @@ describe("triggerAdminCronJob", () => {
   });
 
   it("reuses an already-running job", async () => {
-    vi.mocked(findRunningCronRun).mockResolvedValue({ id: "run1" });
+    vi.mocked(startCronRun).mockResolvedValue({ runId: "run1", created: false });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run1", jobName: "backup-nightly", reused: true });
-    expect(startCronRun).not.toHaveBeenCalled();
+    expect(startCronRun).toHaveBeenCalledWith("backup-nightly");
+    expect(triggerCronJobAsync).not.toHaveBeenCalled();
   });
 
   it("starts a new run for the dedicated cron worker", async () => {
     vi.mocked(findRunningCronRun).mockResolvedValue(null);
-    vi.mocked(startCronRun).mockResolvedValue({ runId: "run2", created: true });
+    vi.mocked(startCronRun).mockResolvedValue({
+      runId: "run2",
+      created: true,
+      leaseOwner: "lease-owner-2",
+    });
     const result = await triggerAdminCronJob(ADMIN, "backup-nightly");
     expect(result).toEqual({ ok: true, runId: "run2", jobName: "backup-nightly", reused: false });
-    expect(triggerCronJobAsync).not.toHaveBeenCalled();
+    expect(triggerCronJobAsync).toHaveBeenCalledWith(
+      "backup-nightly",
+      "backup-nightly.sh",
+      "run2",
+      "lease-owner-2",
+    );
   });
 
   it("does not trigger the script when the run was reclaimed, not created", async () => {
