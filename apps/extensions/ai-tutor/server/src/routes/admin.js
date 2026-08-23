@@ -35,6 +35,7 @@ import {
   getEduAiApiKeyStatus,
   setSystemSetting,
 } from "../services/systemSettings.js";
+import { SecretEncryptionUnavailableError } from "../utils/encryption.js";
 import { getAiModelPolicyState, setAiModelPolicy } from "../services/aiModelPolicy.js";
 import { mapCoreAdminUser, mapCourseOffering } from "../utils/mappers.js";
 import { parsePaginationParams, paginated, PaginationError } from "../utils/pagination.js";
@@ -559,6 +560,13 @@ router.put("/admin/settings/eduai-api-key", requireRole("ADMIN"), async (req, re
     const status = await getEduAiApiKeyStatus();
     res.json(status);
   } catch (e) {
+    if (e instanceof SecretEncryptionUnavailableError) {
+      // Fail closed: the deployment refuses to persist the key in plaintext.
+      logSafeError("eduai-api-key write refused (no ENCRYPTION_KEY)", e);
+      return res.status(503).json({
+        error: "Secret storage is not configured. Set ENCRYPTION_KEY to store the EduAI API key.",
+      });
+    }
     sendSafeError(res, e, "Internal server error");
   }
 });

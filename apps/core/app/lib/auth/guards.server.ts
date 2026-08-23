@@ -150,7 +150,15 @@ type AdminGate = { response: Response; session: null } | { response: null; sessi
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
   const resolved = await getRequestSession(request);
-  if (!resolved?.user || resolved.user.role !== "ADMIN") {
+  // Re-check `isActive` against the DB, not just the session's cached role
+  // (#1571): deactivating an admin must revoke access on their next request,
+  // not only after their session expires. Mirrors the x-api-key admin path,
+  // which already gates on `isActiveAdminUser`.
+  if (
+    !resolved?.user ||
+    resolved.user.role !== "ADMIN" ||
+    !(await isActiveAdminUser(resolved.user.id))
+  ) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(resolved?.user ?? null),

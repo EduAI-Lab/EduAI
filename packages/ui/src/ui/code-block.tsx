@@ -55,6 +55,11 @@ function CodeBlockCode({
 
   // SSR fallback: render plain code if not hydrated yet
   return highlightedHtml ? (
+    // TRUST BOUNDARY (#1571): `highlightedHtml` is injected raw. This is safe
+    // ONLY because Shiki's `codeToHtml` HTML-escapes the source before wrapping
+    // it in highlight markup — the user's code text can never break out as live
+    // HTML. If this is ever switched to a highlighter that does NOT escape its
+    // input, this becomes a live XSS sink and the input must be sanitized here.
     <div className={classNames} dangerouslySetInnerHTML={{ __html: highlightedHtml }} {...props} />
   ) : (
     <div className={classNames} {...props}>
