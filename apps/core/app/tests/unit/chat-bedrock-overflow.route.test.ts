@@ -118,11 +118,18 @@ vi.mock("~/lib/ai/admission.server", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/api-keys/access.server", () => ({
+  // #1571: admin chatMode re-checks isActive against the DB; keep the mocked
+  // admin active so this suite's admin-mode overflow paths stay admitted.
+  isActiveAdminUser: vi.fn(async () => true),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AdmissionTimeoutError, acquireAiAdmission } from "~/lib/ai/admission.server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -181,6 +188,9 @@ beforeEach(() => {
   delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 
   vi.mocked(acquireAiAdmission).mockRejectedValue(new AdmissionTimeoutError());
+  // #1571: vi.clearAllMocks() above wipes the factory default, so re-arm the
+  // admin isActive re-check for each admin-mode overflow case.
+  vi.mocked(isActiveAdminUser).mockResolvedValue(true);
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "ADMIN" },
   } as never);
