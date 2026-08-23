@@ -498,12 +498,15 @@ function logStreamError(error: unknown, trace: Record<string, unknown>): void {
 }
 
 function rejectProviderFailure(failure: ProviderFailure, trace: Record<string, unknown>): Response {
-  return chatApiReject(
-    failure.status,
-    providerFailureBody(failure),
-    trace,
-    providerFailureHeaders(failure),
-  );
+  const headers = providerFailureHeaders(failure);
+  // Surface the chat id back to the client (X-Chat-Id, read in onResponse)
+  // even on a provider failure, so a retry continues the same thread instead
+  // of spawning another orphaned "New conversation" row (#1561).
+  const chatId = trace.chatId;
+  if (typeof chatId === "string" && chatId.length > 0) {
+    headers["X-Chat-Id"] = chatId;
+  }
+  return chatApiReject(failure.status, providerFailureBody(failure), trace, headers);
 }
 
 function providerStreamErrorMessage(
@@ -1389,6 +1392,73 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Persist the user's message(s) now — the request has already cleared
+    // every structural/content validation gate above (course-scope image
+    // support, model image-capability), so anything that fails from here on
+    // (fleet/provider availability, the model call itself) is an
+    // infrastructure failure, not a bad request. A provider/availability
+    // failure must not silently discard what the user typed and leave
+    // behind an empty, unrecoverable "New conversation" row (#1561).
+    const existingMessageIds = new Set(
+      storedMessages.map((message) => message.id).filter(isNonEmptyString),
+    );
+    const appendMessages = async (messages: GenericMessage[]) => {
+      // Stateless callers never persist messages (no chat row / no real user).
+      // regenerateOnly is a read-only content preview (#1246) — never persists.
+      if (ephemeral || regenerateOnly || !chat?.id) return;
+      if (!messages.length) return;
+
+      const rows: Prisma.ChatMessageCreateManyInput[] = [];
+
+      for (const message of messages) {
+        if (!isNonEmptyString(message.role) || !isNonEmptyString(message.id)) {
+          continue;
+        }
+
+        if (existingMessageIds.has(message.id)) {
+          continue;
+        }
+
+        const messageToPersist =
+          message.role === "assistant"
+            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
+            : message;
+
+        rows.push({
+          chatId: chat!.id,
+          messageId: message.id,
+          role: message.role,
+          content: serializeMessage(messageToPersist) as Prisma.InputJsonValue,
+        });
+
+        existingMessageIds.add(message.id);
+      }
+
+      if (rows.length > 0) {
+        await prisma.chatMessage.createMany({
+          data: rows,
+          skipDuplicates: true,
+        });
+      }
+    };
+
+    // Persist only client-authored turns (user messages) that remain in the
+    // bounded model context. The assistant reply is owned by `onFinish`/the
+    // awaited path below, which stores it once under a server id. Clients resend
+    // their whole `useChat` transcript every turn, and their assistant copies
+    // carry client-generated ids that never match the server id — persisting
+    // those here is what duplicated history on restore. Discarding incoming
+    // turns that were already trimmed from this request also prevents a caller
+    // from turning a single bounded POST into an unbounded storage write.
+    const persistableMessageIds = new Set(
+      trimmedMessages.map((message) => message.id).filter(isNonEmptyString),
+    );
+    await appendMessages(
+      normalizedIncomingMessages.filter(
+        (message) => message.role !== "assistant" && persistableMessageIds.has(message.id),
+      ),
+    );
+
     let fleetPick: FleetPick | null = null;
     if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
       try {
@@ -1413,6 +1483,7 @@ export async function action({ request }: ActionFunctionArgs) {
               userId: actingUser.id,
               model: resolvedModelId,
               stage: "fleet-resolution",
+              chatId: chat?.id ?? null,
             },
           );
         }
@@ -1479,52 +1550,10 @@ export async function action({ request }: ActionFunctionArgs) {
           userId: actingUser.id,
           model: resolvedModelId,
           stage: "provider-configuration",
+          chatId: chat?.id ?? null,
         },
       );
     }
-
-    const existingMessageIds = new Set(
-      storedMessages.map((message) => message.id).filter(isNonEmptyString),
-    );
-    const appendMessages = async (messages: GenericMessage[]) => {
-      // Stateless callers never persist messages (no chat row / no real user).
-      // regenerateOnly is a read-only content preview (#1246) — never persists.
-      if (ephemeral || regenerateOnly || !chat?.id) return;
-      if (!messages.length) return;
-
-      const rows: Prisma.ChatMessageCreateManyInput[] = [];
-
-      for (const message of messages) {
-        if (!isNonEmptyString(message.role) || !isNonEmptyString(message.id)) {
-          continue;
-        }
-
-        if (existingMessageIds.has(message.id)) {
-          continue;
-        }
-
-        const messageToPersist =
-          message.role === "assistant"
-            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
-            : message;
-
-        rows.push({
-          chatId: chat!.id,
-          messageId: message.id,
-          role: message.role,
-          content: serializeMessage(messageToPersist) as Prisma.InputJsonValue,
-        });
-
-        existingMessageIds.add(message.id);
-      }
-
-      if (rows.length > 0) {
-        await prisma.chatMessage.createMany({
-          data: rows,
-          skipDuplicates: true,
-        });
-      }
-    };
 
     let registry = createAIProviderRegistry(validatedApiKeys);
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
@@ -1542,26 +1571,10 @@ export async function action({ request }: ActionFunctionArgs) {
           userId: actingUser.id,
           model: resolvedModelId,
           stage: "provider-registry",
+          chatId: chat?.id ?? null,
         },
       );
     }
-
-    // Persist only client-authored turns (user messages) that remain in the
-    // bounded model context. The assistant reply is owned by `onFinish`/the
-    // awaited path below, which stores it once under a server id. Clients resend
-    // their whole `useChat` transcript every turn, and their assistant copies
-    // carry client-generated ids that never match the server id — persisting
-    // those here is what duplicated history on restore. Discarding incoming
-    // turns that were already trimmed from this request also prevents a caller
-    // from turning a single bounded POST into an unbounded storage write.
-    const persistableMessageIds = new Set(
-      trimmedMessages.map((message) => message.id).filter(isNonEmptyString),
-    );
-    await appendMessages(
-      normalizedIncomingMessages.filter(
-        (message) => message.role !== "assistant" && persistableMessageIds.has(message.id),
-      ),
-    );
 
     // Course-scope guardrail: resolve the classifier promise kicked off
     // earlier (alongside the RAG prefetch) and short-circuit before touching
@@ -1634,6 +1647,7 @@ export async function action({ request }: ActionFunctionArgs) {
         userId: actingUser.id,
         model: resolvedModelId,
         stage: "model-resolution",
+        chatId: chat?.id ?? null,
       });
     }
 
