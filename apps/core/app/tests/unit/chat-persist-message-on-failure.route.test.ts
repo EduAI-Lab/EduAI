@@ -235,4 +235,25 @@ describe("#1561 — user message survives a provider-gate failure", () => {
     expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(1);
     expect(res.headers.get("X-Chat-Id")).toBe(NEW_CHAT_ID);
   });
+
+  // #1621 review: an exception that isn't routed through one of the explicit
+  // rejectProviderFailure gates (e.g. resolveFleetHost throwing something
+  // other than FleetUnavailableError, which the handler re-throws) falls
+  // through to the outer catch-all instead. The user's message is already
+  // persisted by then — the response must still carry X-Chat-Id, or a retry
+  // spawns another orphaned chat despite nothing actually being lost.
+  it("returns X-Chat-Id from the outer catch-all when an unrouted exception fires after persistence", async () => {
+    vi.mocked(resolveFleetHost).mockRejectedValue(new Error("boom: not a FleetUnavailableError"));
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await action(makeRequest(baseBody()));
+    errorSpy.mockRestore();
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "Internal server error" });
+
+    expect(prisma.chat.create).toHaveBeenCalledTimes(1);
+    expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(1);
+    expect(res.headers.get("X-Chat-Id")).toBe(NEW_CHAT_ID);
+  });
 });
