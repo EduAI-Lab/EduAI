@@ -124,6 +124,71 @@ test.describe("AI Tutor STUDENT — answering an MCQ", () => {
       await seeded.dispose();
     }
   });
+
+  test("dismiss the feedback prompt with 'Maybe later' instead of rating", async ({
+    page,
+    playwright,
+  }) => {
+    // The feedback card renders after the first attempt
+    // (`promptShown && !dismissed`); "Maybe later" calls `onDismiss`, which sets
+    // `dismissed` and hides the card without a rating — no thanks confirmation,
+    // just gone.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Feedback Dismiss Course",
+      codePrefix: "FDC",
+    });
+    try {
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      await page.getByRole("radio", { name: "Option A" }).click();
+      await page.getByRole("button", { name: /submit answer/i }).click();
+      await expect(page.getByText("Correct!")).toBeVisible({ timeout: 20_000 });
+
+      await expect(page.getByText("Quick feedback")).toBeVisible({ timeout: 20_000 });
+      await page.getByRole("button", { name: /maybe later/i }).click();
+
+      // Dismissed: neither the prompt nor a "thanks" confirmation remains.
+      await expect(page.getByText("Quick feedback")).toHaveCount(0);
+      await expect(page.getByText(/Thanks for the feedback/i)).toHaveCount(0);
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  test("recover from a wrong answer: re-pick a different option and reach 'Correct!'", async ({
+    page,
+    playwright,
+  }) => {
+    // Options stay enabled after a wrong answer (`disabled={submitting ||
+    // wasCorrect}`), so the student can re-pick and re-submit; each submit is a
+    // fresh `POST /questions/:id/answer`. The recovery path ends on "Correct!"
+    // and only then do the options lock.
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Wrong Answer Recovery Course",
+      codePrefix: "WRC",
+    });
+    try {
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+
+      // First attempt is wrong (correct answer is Option A).
+      await page.getByRole("radio", { name: "Option B" }).click();
+      await page.getByRole("button", { name: /submit answer/i }).click();
+      await expect(page.getByText(/Not quite\. Keep going!/i)).toBeVisible({ timeout: 20_000 });
+      // The options are still live — a wrong answer does not lock the card.
+      await expect(page.getByRole("radio", { name: "Option A" })).toBeEnabled();
+
+      // Re-pick the correct option and re-submit.
+      await page.getByRole("radio", { name: "Option A" }).click();
+      await page.getByRole("button", { name: /submit answer/i }).click();
+
+      await expect(page.getByText("Correct!")).toBeVisible({ timeout: 20_000 });
+      // Now the recovery is complete: the options lock.
+      await expect(page.getByRole("radio").first()).toBeDisabled();
+    } finally {
+      await seeded.dispose();
+    }
+  });
 });
 
 test.describe("AI Tutor STUDENT — short-text activity", () => {

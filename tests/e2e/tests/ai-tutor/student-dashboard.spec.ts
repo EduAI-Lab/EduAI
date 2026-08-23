@@ -9,8 +9,12 @@
  * Path inventory: `docs/end-to-end-user-workflows/ai-tutor-workflows.md`.
  */
 import { test, expect } from "@playwright/test";
+import { AI_TUTOR_API_URL } from "../../playwright.config";
 import { gotoAiTutor, loginAsStudent } from "../helpers/at-ui";
+import { seedMcqActivity } from "../helpers/at-admin-fixtures";
 import { seedEnrolledStudentCourse } from "../helpers/at-student-fixtures";
+
+const AT = AI_TUTOR_API_URL;
 
 test.describe("AI Tutor STUDENT — dashboard overview", () => {
   test("shows the four-stat row", async ({ page }) => {
@@ -29,7 +33,7 @@ test.describe("AI Tutor STUDENT — dashboard overview", () => {
     await expect(page.getByText("No enrolled courses yet.")).toBeVisible();
   });
 
-  test("an enrolled course appears in 'Your courses' and 'Continue learning'", async ({
+  test("an in-progress course appears in both 'Your courses' and the 'Continue learning' resume panel", async ({
     page,
     playwright,
   }) => {
@@ -38,12 +42,46 @@ test.describe("AI Tutor STUDENT — dashboard overview", () => {
       codePrefix: "DRC",
     });
     try {
-      // The fixture already signed the browser in as the enrolled student.
+      // "Continue learning" requires *partial* progress: `0 < completed < total`
+      // (dashboard-helpers `inProgressCourses`). The fixture seeds one activity,
+      // and progress `total` counts every activity in a published lesson while a
+      // newly added activity needs no publish of its own — so add a second
+      // activity (total → 2), then answer only the first correctly as the
+      // signed-in student (completed → 1). 1/2 lands the course in-progress; a
+      // single 1/1 would read as "completed" and never surface here.
+      await seedMcqActivity(seeded.admin, seeded.lessonId, seeded.topicIds[0], {
+        question: "Second activity — leave this one unanswered.",
+      });
+      // The fixture signed the browser in as the enrolled student, so its request
+      // context carries that session. Seed default: correct answer is Option A (0).
+      const answer = await page.request.post(`${AT}/api/questions/${seeded.activityId}/answer`, {
+        data: { answerOption: 0 },
+      });
+      expect(answer.status()).toBe(200);
+      expect((await answer.json()).isCorrect).toBe(true);
+
       await gotoAiTutor(page, "/dashboard");
+
+      // "Your courses" lists the enrolment.
       await expect(page.getByText("Your courses", { exact: true })).toBeVisible({
         timeout: 20_000,
       });
       await expect(page.getByText(seeded.name).first()).toBeVisible({ timeout: 20_000 });
+
+      // The resume panel is genuinely populated, not its "Nothing in progress"
+      // empty state. The resume hero is a button carrying the course name, the
+      // "In progress" badge, and the 1 / 2 progress readout.
+      await expect(page.getByText("Nothing in progress")).toHaveCount(0);
+      const resume = page.getByRole("button", { name: new RegExp(seeded.name) });
+      await expect(resume).toBeVisible({ timeout: 20_000 });
+      await expect(resume).toContainText("In progress");
+      await expect(resume).toContainText("1 / 2");
+
+      // Exercise the resume link — it drills into the course.
+      await resume.click();
+      await expect(page).toHaveURL(new RegExp(`/student/courses/${seeded.atCourseId}(\\b|/|$)`), {
+        timeout: 20_000,
+      });
     } finally {
       await seeded.dispose();
     }

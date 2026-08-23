@@ -202,6 +202,60 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
     }
   });
 
+  test("per-mode suggested-prompt chips appear once a level is chosen, and a chip fills the composer without sending", async ({
+    page,
+    playwright,
+  }) => {
+    // The chips are driven by `GET /api/suggested-prompts`, which reads the
+    // global `SuggestedPrompt` table. The e2e AI-Tutor server boots with
+    // `prisma migrate deploy && node src/index.js` and never seeds that table
+    // (only the `dev` script runs the seed), so the endpoint returns `[]` in
+    // this stack and the chips can't render from real data. Stub the read to
+    // exercise the client behaviour the row documents: chips render for the
+    // active mode once a knowledge level is set, and clicking one *fills* the
+    // composer (`handleSuggestedPromptClick` sets input only) rather than
+    // sending — no live model is involved either way.
+    const teachPrompt = "E2E: can you explain this in simpler terms?";
+    await page.route("**/api/suggested-prompts", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { id: "e2e-teach-1", mode: "teach", text: teachPrompt },
+          { id: "e2e-guide-1", mode: "guide", text: "E2E: give me a hint." },
+        ]),
+      }),
+    );
+
+    const { studentId } = await registerStudent(page);
+    const seeded = await seedPublishedCourseAndEnroll(playwright, studentId, {
+      name: "Chat Suggested Prompts Course",
+      codePrefix: "CSP",
+    });
+    try {
+      await seedByokKey(page, studentId);
+      await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
+      const chat = page.locator('[data-tour="student-ai-chat"]');
+      // Pick a level (default tab is Teach me) so the chips can show against an
+      // empty thread.
+      await chat.getByRole("button", { name: "New to this" }).click();
+
+      await expect(chat.getByText("Try asking")).toBeVisible({ timeout: 20_000 });
+      const chip = chat.getByRole("button", { name: teachPrompt });
+      await expect(chip).toBeVisible();
+
+      // Clicking a chip fills the composer, it does not send.
+      await chip.click();
+      const composer = chat.getByRole("textbox").last();
+      await expect(composer).toHaveValue(teachPrompt);
+      // No send happened: the empty-thread chips (which a send would dismiss)
+      // are still on screen.
+      await expect(chat.getByText("Try asking")).toBeVisible();
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
   test("'Change knowledge level' opens the 'Before we start' modal", async ({
     page,
     playwright,
