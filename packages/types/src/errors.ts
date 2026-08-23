@@ -34,6 +34,20 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 /** Per-field validation messages, keyed by field name. */
 export type ErrorFields = Record<string, string>;
 
+/**
+ * The JSON body an error response carries on the wire:
+ * `{ error: "CODE", fields?: { field: "message" } }`.
+ *
+ * `error` holds the machine-readable code, never the human-readable message —
+ * that is the contract MCP clients branch on. It is a plain `string` rather
+ * than `ErrorCode` because a route may answer with a code of its own that
+ * predates this list.
+ */
+export interface ErrorEnvelope {
+  error: string;
+  fields?: ErrorFields;
+}
+
 export interface AppErrorOptions {
   /** Machine-readable code clients branch on. Defaults to the subclass code. */
   code?: string;
