@@ -60,6 +60,7 @@ import { splitTitle } from "~/lib/course-title";
 import { accentForCourse } from "~/lib/course-display";
 import { KNOWLEDGE_LEVELS } from "~/lib/knowledge-levels";
 import { cn } from "~/lib/utils";
+import { RouteErrorState } from "~/components/common/RouteErrorState";
 
 /**
  * Activities the player holds at once (#1207). Comfortably larger than any
@@ -751,3 +752,9 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     </div>
   );
 }
+
+/**
+ * A missing record, a malformed id, or a route this role may not open all land
+ * on the generic 404 inside the shell — see `RouteErrorState`.
+ */
+export { RouteErrorState as ErrorBoundary };

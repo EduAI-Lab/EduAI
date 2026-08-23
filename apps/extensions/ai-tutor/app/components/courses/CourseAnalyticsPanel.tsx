@@ -235,7 +235,13 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
               <TableBody>
                 {metrics.map((row) => (
                   <TableRow key={row.userId}>
-                    <TableCell className="font-mono text-xs">{row.userId}</TableCell>
+                    <TableCell>
+                      {row.studentName ? (
+                        row.studentName
+                      ) : (
+                        <span className="font-mono text-xs">{row.userId}</span>
+                      )}
+                    </TableCell>
                     <TableCell>{row.submissionCount}</TableCell>
                     <TableCell>{row.correctSubmissionCount}</TableCell>
                     <TableCell>{row.incorrectSubmissionCount}</TableCell>
