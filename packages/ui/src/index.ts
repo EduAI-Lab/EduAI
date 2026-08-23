@@ -135,7 +135,7 @@ export type {
   CourseSwitcherOption,
   CourseSwitcherId,
 } from "./course-switcher";
-export { AIServiceIndicators } from "./ai-service-indicators";
+export { AIServiceIndicators, isServiceActive } from "./ai-service-indicators";
 export type {
   AIServiceIndicatorsProps,
   ServiceStatus,
