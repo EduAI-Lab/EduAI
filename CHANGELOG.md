@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- [core] fix: `#1516` loadtest setup now seeds through an explicit local-demo contract (app runtime stays `NODE_ENV=production`), VU accounts share `EDUAI_LOCAL_SEED_PASSWORD` and an 8-digit student ID, `/api/sessions/validate` bursts send the service key so they hit the 300-req limiter, and HTTP profiles fail the run if dashboard or rate-limit isolation checks miss. The fail-closed base-url helper parses the host after userinfo (no WHATWG `URL` in k6) so `https://127.0.0.1@dev.eduai.ok.ubc.ca` cannot bypass the study-host block. (@Ayyhab, 2026-08-22) — [#1516](https://github.com/EduAI-Lab/EduAI/pull/1516)
 - [core] fix: Remove the user-menu Account item, which linked to `/settings/account`, a route that does not exist and 404s for every user; `/settings` already has its own Account tab. (@abdullahmoh21, 2026-08-22) — [#1594](https://github.com/EduAI-Lab/EduAI/pull/1594)
 - [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
@@ -134,6 +135,7 @@
 
 ### Tests
 
+- [core] test: Isolated k6 HTTP + Chromium stress harness for #919 / EPIC #63 (dedicated `eduai_loadtest` DB, mock LLM, loopback-only Grafana/app). Ships k6 rather than Locust so one tool covers a 500-VU protocol ramp and a real-browser flow. k6 refuses a non-loopback `LOADTEST_BASE_URL` unless `LOADTEST_ALLOW_REMOTE=1`, and always refuses the live study/prod hosts — hostnames are lowercased and trailing FQDN dots stripped so `https://dev.eduai.ok.ubc.ca.` cannot bypass the block. Documented local URLs use `127.0.0.1` so IPv6-first machines do not miss the IPv4 bind. (@Ayyhab, 2026-08-18) — [#1516](https://github.com/EduAI-Lab/EduAI/pull/1516)
 - [core] test: Reproducible Playwright exploration suite for Core's Student and TA roles (`tests/e2e/tests/core/week15-student-ta-exploration.spec.ts`, plus round 2/3 follow-ups) covering course-chat access, cross-course IDOR probes, hidden-material RAG-visibility scoping, AUTH-08 TA own-upload materials, TA chat-oversight permanence, skip-onboarding click, `/help` role filtering, and granular chatbot sub-behaviors. (#1459, @Ayyhab, 2026-08-17) — [#1466](https://github.com/EduAI-Lab/EduAI/pull/1466)
 - [monorepo] test: ADHD pilot `test_adhd_analysis.py` now covers missing / empty / wrong-length / duplicate / unknown `ADHD_EXCLUDE_RESPONSE_IDS` on a primary run, and that `--include-excluded` still runs with the env var unset. (@Ayyhab, 2026-08-16) — [#1476](https://github.com/EduAI-Lab/EduAI/pull/1476)
 - [question-maker] test: Add browser workflows for all Question Maker roles and Instructor assessment blueprint creation, plus manual UAT documentation for the #1429/#1530 workflow pass and access boundaries. Closes #1530. (@SyedS, 2026-08-16) — [#1531](https://github.com/EduAI-Lab/EduAI/pull/1531)
