@@ -38,10 +38,12 @@ vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession: vi.fn() } } }))
 
 vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
-}));
-
-vi.mock("~/lib/auth/service-key.server", () => ({
-  hasValidServiceKey: vi.fn().mockReturnValue(false),
+  requireServiceKey: vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }),
+  ),
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
@@ -83,8 +85,8 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
-import { hasValidServiceKey } from "~/lib/auth/service-key.server";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import { RESPONSE_STYLE_TAGS } from "~/lib/ai/response-style-tags";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
@@ -122,11 +124,11 @@ function setToolSupport(supportsTools: boolean) {
   } as never);
 }
 
-function makeRequest(body: object = {}) {
+function makeRequest(body: object = {}, headers: Record<string, string> = {}) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify({
         messages: [{ id: "msg-1", role: "user", content: "What is a limit?" }],
         model: "vllm:test-model",
@@ -167,7 +169,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
-  vi.mocked(hasValidServiceKey).mockReturnValue(false);
   mockCourse();
   setToolSupport(false);
   mockStream();
@@ -301,18 +302,30 @@ describe("#1606 — course response styles reach the model", () => {
       expect(prompt).toContain("ADDITIONAL INSTRUCTIONS (lower priority)");
     });
 
-    // Question Maker and AI Tutor send structured-generation prompts that must BE
-    // the system prompt; layering a tutor persona above them breaks JSON output.
-    // The service key is what selects those semantics — not the caller's role.
-    it("still REPLACES the base prompt for a valid service-key caller", async () => {
-      vi.mocked(hasValidServiceKey).mockReturnValue(true);
+    // Replace is only for the existing trusted /api/chat paths (no session +
+    // valid service key, or an admin API-key session). A Bearer header on a
+    // learner cookie used to flip replace while still persisting to that
+    // learner — that hybrid is gone. AI Tutor / QM post to /api/completion.
+    it("still REPLACES the base prompt for a sessionless service-key caller", async () => {
+      vi.mocked(auth.api.getSession).mockResolvedValue(null);
+      vi.mocked(requireServiceKey).mockResolvedValue(null);
 
-      await action(makeRequest());
+      await action(makeRequest({ chatId: undefined, systemPrompt: CUSTOM }));
       const prompt = sentSystemPrompt();
 
       expect(prompt).toContain(CUSTOM);
       expect(prompt).not.toContain("You are EduAI");
       expect(prompt).not.toContain("ADDITIONAL INSTRUCTIONS");
+    });
+
+    it("a learner session plus bearer still LAYERS rather than replacing", async () => {
+      await action(makeRequest({}, { Authorization: "Bearer valid-service-key" }));
+      const prompt = sentSystemPrompt();
+
+      expect(prompt).toContain("You are EduAI");
+      expect(prompt).toContain(SOCRATIC.promptSnippet);
+      expect(prompt).toContain(CUSTOM);
+      expect(prompt).toContain("ADDITIONAL INSTRUCTIONS (lower priority)");
     });
 
     it("emits no custom block when no prompt is set", async () => {

@@ -23,10 +23,6 @@ vi.mock("~/lib/auth/guards.server", () => ({
   ),
 }));
 
-vi.mock("~/lib/auth/service-key.server", () => ({
-  hasValidServiceKey: vi.fn().mockReturnValue(false),
-}));
-
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
@@ -49,7 +45,6 @@ vi.mock("~/lib/policy.server", () => ({
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { hasValidServiceKey } from "~/lib/auth/service-key.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
@@ -81,7 +76,6 @@ function makeArgs(body: object) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
-  vi.mocked(hasValidServiceKey).mockReturnValue(false);
   // vi.clearAllMocks() resets call history but NOT implementations, so a test
   // that stubs an admin api-key session leaks it into every later test. Restore
   // the default here rather than at each call site.
@@ -643,11 +637,22 @@ describe("POST /api/chat — §19 system prompt layering (#1606)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("admits a student-cookie call carrying a valid service key (AI Tutor)", async () => {
-    // The key now selects REPLACE semantics rather than granting permission.
-    vi.mocked(hasValidServiceKey).mockReturnValue(true);
-    mockAccess({ level: "student", rank: 0 });
-    const res = await send();
-    expect(res.status).not.toBe(403);
+  it("a student cookie plus bearer is still a browser caller, not a sessionless service-key caller", async () => {
+    // isServiceKeyCaller only fires when there is no session. A Bearer header
+    // on a real cookie must not skip COURSE_REQUIRED or switch to replace.
+    const args = makeArgs({ messages: [], systemPrompt: PROMPT });
+    args.request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer valid-service-key",
+      },
+      body: JSON.stringify({ messages: [], systemPrompt: PROMPT }),
+    });
+
+    const res = await action(args);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(requireServiceKey).not.toHaveBeenCalled();
   });
 });

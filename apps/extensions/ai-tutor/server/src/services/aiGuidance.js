@@ -384,16 +384,13 @@ async function callEduAI({
     const deadline = callStartedAt + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
-    // Core restricts custom system prompts to course staff (#1606). The prompt
-    // below is composed by THIS server, not by the learner whose cookie we
-    // forward, so the shared service key is what proves first-party origin.
-    // Without it Core returns 403 SYSTEM_PROMPT_FORBIDDEN — the same answer the
-    // learner's own browser would get.
-    //
-    // Deliberately not fatal: a missing key is an operator misconfiguration, and
-    // throwing here would convert it into an opaque tutoring outage before the
-    // request is even attempted. Log it loudly and let Core's 403 carry the
-    // diagnosis.
+    // Attach the shared service key when it is configured. callEduAI posts to
+    // /api/completion (not /api/chat): a learner session is enough to auth, and
+    // that route already uses the supplied systemPrompt as-is. The bearer is
+    // therefore optional here — it matches other Core calls and covers the
+    // no-session fallback. A missing key is an operator misconfiguration;
+    // throwing would turn it into an opaque tutoring outage, so we log
+    // missing_service_key and proceed.
     const serviceKey = process.env.EDUAI_API_KEY;
     if (!serviceKey) {
       logAiGuidanceEvent("error", "missing_service_key");

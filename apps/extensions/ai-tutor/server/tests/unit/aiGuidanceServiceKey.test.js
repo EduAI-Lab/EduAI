@@ -1,10 +1,9 @@
 /**
- * #1606: EduAI Core restricts custom system prompts to course staff. AI Tutor
- * composes its tutoring prompt on THIS server but forwards the *learner's*
- * cookie, so Core cannot tell the two apart from the cookie alone — the shared
- * service key is what proves first-party origin. Without the bearer header Core
- * returns 403 SYSTEM_PROMPT_FORBIDDEN, exactly as it would for a learner's own
- * browser, and tutoring breaks.
+ * #1606: callEduAI presents the shared service key when EDUAI_API_KEY is set,
+ * alongside the learner cookie, and still sends the composed system prompt.
+ * It posts to /api/completion — a learner session is enough to auth there, and
+ * that route uses the supplied prompt as-is. A missing key is logged as
+ * missing_service_key; the request still goes out (no fail-fast throw).
  *
  * Fetch is mocked in-process, so these tests never contact EduAI.
  */
@@ -66,9 +65,9 @@ describe("callEduAI service-key authentication (#1606)", () => {
   });
 
   it("still forwards the learner cookie alongside it", async () => {
-    // Both are required, for different reasons: the key authorizes the custom
-    // prompt, the cookie scopes the call to the learner. Dropping the cookie
-    // would silently widen access.
+    // The cookie is what /api/completion actually authenticates. The bearer is
+    // optional on that path when a session is present; dropping the cookie
+    // would fall through to the service-key-only identity.
     await generateResponse();
     expect(sentHeaders().cookie).toBe("session=service-key-test");
   });
@@ -83,9 +82,8 @@ describe("callEduAI service-key authentication (#1606)", () => {
   it("omits the header rather than failing when the key is not configured", async () => {
     // A missing key is an operator misconfiguration. Throwing here would turn it
     // into an opaque tutoring outage before the request is even attempted, so the
-    // call proceeds and Core's 403 SYSTEM_PROMPT_FORBIDDEN carries the diagnosis.
-    // CI provisions a minimal .env.test with no EDUAI_API_KEY, so this is also
-    // the configuration every other callEduAI test runs under.
+    // call proceeds without Authorization. /api/completion still auths via the
+    // learner cookie. CI's minimal .env.test also omits EDUAI_API_KEY.
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     delete process.env.EDUAI_API_KEY;
 

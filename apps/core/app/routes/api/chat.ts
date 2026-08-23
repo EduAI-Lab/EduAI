@@ -114,7 +114,6 @@ import {
 import { getCourseTopicNamesCached } from "~/lib/courses/server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { hasValidServiceKey } from "~/lib/auth/service-key.server";
 import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { checkRateLimit, getChatRateLimitConfig, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -945,14 +944,17 @@ export async function action({ request }: ActionFunctionArgs) {
     // identity, the instructor's configured response style, or the
     // course-scope guardrail.
     //
-    // Trusted server-to-server callers keep replace semantics: Question Maker
-    // and AI Tutor send structured-generation prompts that must BE the system
-    // prompt, and layering a tutor persona above them breaks JSON/variant
-    // output. `isServiceKeyCaller` only fires when there is no session at all,
-    // so the bearer key is what identifies AI Tutor calling under a learner's
-    // cookie.
-    const replacesBasePrompt =
-      isServiceKeyCaller || hasValidServiceKey(request) || Boolean(apiKeySession);
+    // Replace stays on the existing trusted /api/chat paths only:
+    // sessionless service-key (`isServiceKeyCaller`) and admin API-key
+    // sessions. Those callers are already ephemeral / skip course-scope, so
+    // replace and the rest of the service-caller contract stay aligned.
+    // A Bearer header on a real user session does NOT flip this — that hybrid
+    // used to replace the base while still persisting to the learner chat.
+    //
+    // AI Tutor and Question Maker do not use this route. They POST to
+    // /api/completion, which has no EduAI course default and uses the
+    // supplied systemPrompt as-is.
+    const replacesBasePrompt = isServiceKeyCaller || Boolean(apiKeySession);
 
     // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
     // request opts in with `enqueue: true`, push the work onto the AI-job queue and
@@ -1877,9 +1879,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
       const defaultCourseSystemPrompt = [
         appendCustomInstructions(
           appendCourseStyleToSystemPrompt(
-            // A trusted server's prompt still REPLACES the base: Question Maker
-            // and AI Tutor generate structured JSON and cannot carry a tutor
-            // persona above it. Browser prompts always layer instead (#1606).
+            // Sessionless service-key / admin API-key prompts still REPLACE
+            // the base: structured JSON generation cannot carry a tutor
+            // persona above it. Browser sessions always layer instead (#1606).
             replacesBasePrompt
               ? (resolvedSystemPrompt ?? eduAiCourseDefaultPrompt)
               : eduAiCourseDefaultPrompt,
