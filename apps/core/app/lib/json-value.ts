@@ -1,23 +1,13 @@
+import type { JsonObject, JsonValue } from "@eduai/types";
 import { z } from "zod";
 
 /**
- * A JSON value, as it exists after `JSON.parse` and before anything gives it a
- * domain meaning.
- *
- * Use this only where a payload is genuinely open-ended — a request body this
- * layer forwards without owning, a stored blob replayed verbatim, arguments an
- * external caller chose. Where the shape *is* known, name it or derive it from
- * the schema that parses it; reaching for `JsonValue` there just relabels
- * `unknown` and loses the same contract.
+ * `JsonValue` and `JsonObject` are declared in `@eduai/types` so every app that
+ * renders or forwards a stored blob spells it the same way. They are re-exported
+ * here because the decoders below live with zod, which that package does not
+ * depend on, and callers want the type and its parser from one module.
  */
-export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
-
-/**
- * A JSON object. Values admit `undefined` so a TypeScript object with optional
- * properties satisfies it — that is how an absent key is spelled on this side
- * of the boundary, and `JSON.stringify` drops it either way.
- */
-export type JsonObject = { [key: string]: JsonValue | undefined };
+export type { JsonObject, JsonValue } from "@eduai/types";
 
 /** Decodes anything `JSON.parse` can produce. Fails only on values JSON cannot hold. */
 export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
