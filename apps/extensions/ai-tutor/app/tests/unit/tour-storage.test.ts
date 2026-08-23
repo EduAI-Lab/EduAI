@@ -31,8 +31,12 @@ describe("tour access helpers", () => {
     // admin is still out of scope for `canAccessStudentTour` (asserted above).
     expect(canAccessUnitAdminTour("UNIT_ADMIN", "/dashboard")).toBe(true);
     expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor")).toBe(true);
-    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor/courses/1")).toBe(true);
-    // Routes the tour never visits — starting it there would yank the reader away.
+    // Routes the tour never visits — starting it there would yank the reader
+    // away. That includes everything *below* /instructor: the course-list step
+    // anchors on /instructor exactly, so a course, module or lesson page has no
+    // step of its own and would jump the reader back to the dashboard.
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor/courses/1")).toBe(false);
+    expect(canAccessUnitAdminTour("UNIT_ADMIN", "/instructor/modules/1")).toBe(false);
     expect(canAccessUnitAdminTour("UNIT_ADMIN", "/settings")).toBe(false);
     expect(canAccessUnitAdminTour("UNIT_ADMIN", "/help")).toBe(false);
     // Other roles keep their own answer.
@@ -49,6 +53,7 @@ describe("tour access helpers", () => {
   it("suggests the unit-admin orientation for a unit admin", () => {
     expect(resolveSuggestedTourId("UNIT_ADMIN", "/dashboard")).toBe("unit-admin-orientation");
     expect(resolveSuggestedTourId("UNIT_ADMIN", "/instructor")).toBe("unit-admin-orientation");
+    expect(resolveSuggestedTourId("UNIT_ADMIN", "/instructor/courses/1")).toBe(null);
     expect(resolveSuggestedTourId("UNIT_ADMIN", "/settings")).toBe(null);
   });
 
