@@ -24,7 +24,7 @@ vi.mock("~/lib/ai/embedding", () => ({
   ALLOWED_LOCAL_EMBEDDING_MODELS: ["local-embedding"],
   clearCourseEmbeddingSettingsCache: vi.fn(),
   isEmbeddingIndexStale: vi.fn(() => false),
-  parseEmbeddingSettingsUpdate: vi.fn((body: unknown) => ({ ok: true, value: body })),
+  parseEmbeddingSettingsUpdate: vi.fn((body: RouteRequestBody) => ({ ok: true, value: body })),
   resolveEffectiveEmbeddingSettings: vi.fn((fields: unknown) => fields),
   validateEmbeddingSettingsUpdate: vi.fn((_current: unknown, value: unknown) => ({
     ok: true,
@@ -56,6 +56,7 @@ import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
 import { startOrResumeReEmbedJob } from "~/lib/ai/re-embed-job.server";
 import { action } from "~/routes/api/courses.embedding-settings.$";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const course = {
   id: "course_1",

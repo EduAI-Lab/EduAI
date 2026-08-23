@@ -28,6 +28,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccess, wantsIncludeDeleted } from "~/lib/auth/course-access.server";
 import { getQuestionById, updateQuestionTestable } from "~/lib/questions/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(headers: Record<string, string> = {}) {
   return {
@@ -37,7 +38,11 @@ function makeLoaderArgs(headers: Record<string, string> = {}) {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "PATCH", headers: Record<string, string> = {}) {
+function makeActionArgs(
+  body: RouteRequestBody,
+  method = "PATCH",
+  headers: Record<string, string> = {},
+) {
   // A bodyless method carries no body at all, so the key is added only when the
   // caller passed one.
   const init: RequestInit = {

@@ -15,6 +15,7 @@ import { loader, action } from "~/routes/api/preferences";
 import { loader as rootLoader } from "~/root";
 import { getPolicies } from "~/lib/policy.server";
 import { seedUser, mockSession, cleanupRbac } from "../helpers/rbac";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const createdUserIds: string[] = [];
 
@@ -32,7 +33,7 @@ function getArgs(path = "/api/preferences") {
   } as any;
 }
 
-function patchArgs(body: unknown) {
+function patchArgs(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/preferences", {
       method: "PATCH",

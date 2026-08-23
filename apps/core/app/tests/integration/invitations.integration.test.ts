@@ -31,6 +31,7 @@ import { action as invitationIdAction } from "~/routes/api/invitations.$id";
 // The accept flow has a single live path: the user-facing page route. There is no
 // API equivalent, so the page's loader/action are what we drive here.
 import { loader as acceptLoader, action as acceptAction } from "~/routes/auth/accept-invitation";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const getSessionSpy = vi.spyOn(auth.api, "getSession");
 const sendEmailMock = vi.mocked(sendEmail);
@@ -66,7 +67,7 @@ function asAnon() {
 }
 
 const ctx = { context: {} as never } as any;
-function createReq(body: unknown) {
+function createReq(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/invitations", {
       method: "POST",

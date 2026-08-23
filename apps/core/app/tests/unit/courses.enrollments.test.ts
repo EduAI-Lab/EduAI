@@ -60,7 +60,7 @@ import {
 } from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 import { withIdempotency } from "~/lib/idempotency.server";
-import type { CourseGateFixture } from "../helpers/route-fixtures";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const VALID_KEY = "test-service-key";
 
@@ -120,7 +120,7 @@ function makeArgs(id?: string, authorization?: string, query = "") {
   } as any;
 }
 
-function makePost(id: string, body: unknown) {
+function makePost(id: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/courses/${id}/enrollments`, {
       method: "POST",

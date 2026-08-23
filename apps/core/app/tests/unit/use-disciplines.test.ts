@@ -10,13 +10,14 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDisciplines } from "~/hooks/api/use-disciplines";
+import type { ParsedJsonBody } from "../helpers/route-fixtures";
 
 const disciplines = [
   { code: "CPSC", name: "Computer Science" },
   { code: "MATH", name: "Mathematics" },
 ];
 
-function okJson(body: unknown) {
+function okJson(body: ParsedJsonBody) {
   return {
     ok: true,
     status: 200,

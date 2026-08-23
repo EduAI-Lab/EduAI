@@ -33,6 +33,7 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessGate, wantsIncludeDeleted } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { listQuestions, createQuestion } from "~/lib/questions/server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs(query: string, headers: Record<string, string> = {}) {
   return {
@@ -42,7 +43,7 @@ function makeLoaderArgs(query: string, headers: Record<string, string> = {}) {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "POST") {
+function makeActionArgs(body: RouteRequestBody, method = "POST") {
   // A bodyless method carries no body at all, so the key is added only when the
   // caller passed one.
   const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };

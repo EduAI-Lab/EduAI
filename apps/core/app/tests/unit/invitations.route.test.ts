@@ -32,6 +32,7 @@ import {
   revokeInvitation,
   resendInvitation,
 } from "~/lib/invitations/service.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 // The `unitAdmins.canInvite` flag gate now lives inside `requireInviter`, so the
 // routes only ever see "admitted" or "denied". `asInviter` simulates an admitted
@@ -54,7 +55,7 @@ function getReq() {
   return { request: new Request("http://localhost/api/invitations") } as never;
 }
 
-function postReq(body: unknown) {
+function postReq(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/invitations", {
       method: "POST",

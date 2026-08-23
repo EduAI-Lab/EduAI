@@ -28,13 +28,14 @@ import { auth } from "~/lib/auth/server";
 import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
 import { logAuditAction } from "~/lib/logging.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 const POLICIES = { "instructors.canCreateCourses": true };
 
 function get(headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/policies", { method: "GET", headers });
 }
-function patch(body: unknown) {
+function patch(body: RouteRequestBody) {
   return new Request("http://localhost/api/policies", {
     method: "PATCH",
     body: JSON.stringify(body),

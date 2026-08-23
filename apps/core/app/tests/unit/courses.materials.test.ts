@@ -73,7 +73,7 @@ import {
   validateUploadedFile,
 } from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
-import type { CourseGateFixture } from "../helpers/route-fixtures";
+import type { CourseGateFixture, RouteRequestBody } from "../helpers/route-fixtures";
 
 const COURSE_ID = "course-1";
 const COURSE = { id: COURSE_ID, isPublished: true, department: null };
@@ -123,7 +123,7 @@ function makeDeleteArgs(materialId: string) {
   } as any;
 }
 
-function makeRenameArgs(materialId: string, body: unknown) {
+function makeRenameArgs(materialId: string, body: RouteRequestBody) {
   return {
     request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`, {
       method: "PATCH",

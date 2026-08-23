@@ -26,6 +26,7 @@ import { loader, action } from "~/routes/api/invitations";
 import { requireInviter } from "~/lib/auth/guards.server";
 import { listInvitations, createInvitation } from "~/lib/invitations/service.server";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 function makeLoaderArgs() {
   return {
@@ -35,7 +36,7 @@ function makeLoaderArgs() {
   } as never;
 }
 
-function makeActionArgs(body: unknown, method = "POST") {
+function makeActionArgs(body: RouteRequestBody, method = "POST") {
   // A bodyless method carries no body at all, so the key is added only when the
   // caller passed one.
   const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };

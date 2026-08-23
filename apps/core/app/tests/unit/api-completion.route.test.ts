@@ -58,8 +58,9 @@ import { runCompletion } from "~/lib/ai/completion.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import { acquireAiAdmission, withAdmissionRelease } from "~/lib/ai/admission.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeArgs(body: unknown, method = "POST") {
+function makeArgs(body?: RouteRequestBody, method = "POST") {
   // A bodyless request carries neither a body nor its content type.
   const init: RequestInit = { method };
   if (body !== undefined) {
@@ -273,7 +274,7 @@ describe("POST /api/completion", () => {
 
   it("routes a late streaming provider error through the stable contract", async () => {
     const toDataStreamResponse = vi.fn(
-      (_options: { getErrorMessage?: (error: unknown) => string }) =>
+      (_options: { getErrorMessage?: (cause: unknown) => string }) =>
         new Response("stream", { status: 200 }),
     );
     vi.mocked(runCompletion).mockResolvedValue({
