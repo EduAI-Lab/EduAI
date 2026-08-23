@@ -3,6 +3,7 @@
  * Dynamic provider management with user-provided API keys
  */
 
+import type { ValidationResult } from "~/lib/validation-result";
 import type { ProviderV1 } from "@ai-sdk/provider";
 import { createProviderRegistry } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -212,7 +213,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 export function validateProviderConfig(
   providerId: SupportedProvider,
   settings: { apiKey?: string; baseUrl?: string },
-): { isValid: boolean; error?: string } {
+): ValidationResult {
   const config = PROVIDER_CONFIGS[providerId];
 
   if (!config) {

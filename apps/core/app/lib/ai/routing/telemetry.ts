@@ -8,7 +8,24 @@ export type NormalizedTokenUsage = {
   totalTokens: number | null;
 };
 
-function asTokenCount(value: unknown): number | null {
+/**
+ * A usage report as some provider spelled it. Every field is optional and all
+ * three spellings of each count are listed, because which ones arrive depends
+ * on the provider and the SDK version — that variability is the reason this
+ * normalizer exists at all.
+ */
+export type ReportedTokenUsage = {
+  promptTokens?: number | null;
+  inputTokens?: number | null;
+  prompt_tokens?: number | null;
+  completionTokens?: number | null;
+  outputTokens?: number | null;
+  completion_tokens?: number | null;
+  totalTokens?: number | null;
+  total_tokens?: number | null;
+};
+
+function asTokenCount(value: number | null | undefined): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return null;
   }
@@ -32,7 +49,7 @@ function isMissingUsage(
 
 /** AI SDK / OpenAI-compatible providers may use promptTokens or inputTokens. */
 export function normalizeTokenUsage(
-  usage: Record<string, unknown> | undefined | null,
+  usage: ReportedTokenUsage | undefined | null,
 ): NormalizedTokenUsage {
   if (!usage) {
     return { promptTokens: null, completionTokens: null, totalTokens: null };
@@ -61,7 +78,7 @@ export function normalizeTokenUsage(
 
 /** Pick the first source that yields token counts (finish hook, AI SDK usage, raw body). */
 export function coalesceTokenUsage(
-  ...sources: (Record<string, unknown> | undefined | null)[]
+  ...sources: (ReportedTokenUsage | undefined | null)[]
 ): NormalizedTokenUsage {
   for (const source of sources) {
     const normalized = normalizeTokenUsage(source);

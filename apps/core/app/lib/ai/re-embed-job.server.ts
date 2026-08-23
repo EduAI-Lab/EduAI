@@ -78,7 +78,7 @@ const SAFE_RE_EMBED_ERROR_MESSAGES = new Set([
   RE_EMBED_STALE_JOB_MESSAGE,
 ]);
 
-function publicReEmbedErrorMessage(errorMessage: unknown): string | null {
+function publicReEmbedErrorMessage(errorMessage: string | null | undefined): string | null {
   if (typeof errorMessage !== "string" || !errorMessage) return null;
   return SAFE_RE_EMBED_ERROR_MESSAGES.has(errorMessage)
     ? errorMessage

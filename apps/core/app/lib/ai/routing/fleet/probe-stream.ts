@@ -15,10 +15,13 @@ export type StreamStartupHooks = {
  * Create a probe that resolves on first ready signal or rejects on error.
  * Soft-timeout resolves without error so slow-but-alive hosts are not retried.
  */
-export function createStreamStartupProbe(options?: { timeoutMs?: number }): {
+/** A startup probe: the hooks a provider signals through, and the wait itself. */
+export type StreamStartupProbe = {
   hooks: StreamStartupHooks;
   wait: () => Promise<void>;
-} {
+};
+
+export function createStreamStartupProbe(options?: { timeoutMs?: number }): StreamStartupProbe {
   // Zero would wait forever and hold an admission slot on a silent provider.
   const timeoutMs = Math.max(1, options?.timeoutMs ?? 10_000);
   let settled = false;
