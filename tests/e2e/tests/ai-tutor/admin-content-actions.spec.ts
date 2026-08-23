@@ -198,10 +198,13 @@ test.describe("AI Tutor ADMIN — reordering", () => {
         timeout: 20_000,
       });
 
-      // The grip is present (the accessible drag path), but dnd-kit's keyboard
-      // sensor does not reliably complete a reorder under Playwright. The same
-      // PATCH is what the "Move module…" prompt uses — the path a paged list
-      // already needs for a destination off the current page (#1207).
+      // The grip is present here, but the keyboard gesture itself is pinned at
+      // the primitive instead — packages/ui/src/tests/sortable.test.tsx drives
+      // dnd-kit's real KeyboardSensor (Space → Arrow → Space) and asserts the
+      // resulting order. This spec covers the half a unit test cannot: that the
+      // new order survives a reload. It goes through the "Move module…" prompt,
+      // which issues the same reorder PATCH as a drop and is also the only path
+      // to a destination off the current page (#1207).
       await expect(
         page.getByRole("button", { name: "Drag to reorder Alpha module", exact: true }),
       ).toBeVisible();
