@@ -126,11 +126,14 @@ test.describe("INSTRUCTOR course detail", () => {
     await gotoAiTutor(page, `/instructor/courses/${fx.course.atCourseId}`);
 
     await openTab(page, "Submissions");
+    // Gated on a stat tile: the panel's "Submissions" title is a `CardTitle`,
+    // which is not a heading element, and the same word is the tab label — so
+    // neither is a usable "the panel has painted" signal. (This assertion used
+    // to `.or()` on a "Submissions" heading, a branch that could never match.)
+    await expect(page.getByText("Pass rate", { exact: true })).toBeVisible({ timeout: 30_000 });
     // With no attempts yet the panel says so rather than rendering an empty
     // table that reads as a loading failure.
-    await expect(
-      page.getByText("No submissions yet.").or(page.getByRole("heading", { name: "Submissions" })),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("No submissions yet.")).toBeVisible();
   });
 
   test("the Feedback tab is reachable", async ({ page }) => {

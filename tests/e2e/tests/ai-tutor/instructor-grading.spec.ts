@@ -175,15 +175,30 @@ test.describe("INSTRUCTOR submissions and grading", () => {
     await signInThroughPage(page, fx, `${AI_TUTOR_URL}/dashboard`);
     await openSubmissions(page);
 
-    // The tiles are computed over the course's whole submission set, so the
-    // override above has to move them rather than only the row it edited.
+    // The tiles are computed over the course's whole submission set, read from
+    // the *course* endpoint rather than the activity one the override was
+    // polled back from — so this proves the override propagated to the rollup's
+    // own source, not merely that the row it edited changed.
     const stats = await (
       await page.request.get(
         `${AI_TUTOR_API_URL}/api/courses/${fx.course.atCourseId}/submissions?page=1&pageSize=200`,
       )
     ).json();
-    const rows = Array.isArray(stats) ? stats : (stats.data ?? []);
-    expect(rows.length, "the course must have at least the seeded attempt").toBeGreaterThan(0);
+    // The course endpoint answers with a bare array; `.data` is the shape the
+    // paginated endpoints use, kept as a fallback rather than assumed away.
+    const rows: Array<{ isCorrect?: boolean; studentName?: string | null }> = Array.isArray(stats)
+      ? stats
+      : (stats.data ?? []);
+    const seeded = rows.find((row) => row.studentName === student.studentName);
+    expect(seeded, "the seeded attempt must be in the course-wide submission set").toBeTruthy();
+    // Seeded as the wrong choice, overridden to Correct in the test above.
+    expect(seeded!.isCorrect, "the override is reflected course-wide").toBe(true);
+
+    // And the tab renders that rollup rather than a stale one: with the only
+    // attempt now correct, the "Correct" filter must include it.
+    const filter = page.getByRole("radiogroup", { name: "Filter submissions by result" });
+    await filter.getByRole("radio", { name: "Correct", exact: true }).click();
+    await expect(page.getByText(student.studentName).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("reads the course's per-activity and per-student analytics", async ({ page }) => {

@@ -125,10 +125,23 @@ test.describe("INSTRUCTOR settings", () => {
     // the reader has to justify.
     await expect(page.getByText("These settings are optional for everyone.")).toBeVisible();
 
-    const assistive = page.getByRole("switch").first();
-    const before = await assistive.getAttribute("aria-checked");
+    // Both switches carry an explicit `aria-label`, so each is addressable on
+    // its own rather than by position in the panel.
+    const assistive = page.getByRole("switch", { name: "Assistive Mode" });
+    const assistiveBefore = await assistive.getAttribute("aria-checked");
     await assistive.click();
-    await expect(assistive).not.toHaveAttribute("aria-checked", before ?? "");
+    await expect(assistive).not.toHaveAttribute("aria-checked", assistiveBefore ?? "");
+
+    // Reduce motion is the other half of this row and moves independently —
+    // toggling one must not carry the other with it.
+    const reduceMotion = page.getByRole("switch", { name: "Reduce motion" });
+    const motionBefore = await reduceMotion.getAttribute("aria-checked");
+    await reduceMotion.click();
+    await expect(reduceMotion).not.toHaveAttribute("aria-checked", motionBefore ?? "");
+    // It reaches the document, same as density — though nothing in AI Tutor
+    // reads the attribute yet (Findings #1).
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "true");
+    await expect(assistive).not.toHaveAttribute("aria-checked", assistiveBefore ?? "");
   });
 
   test("the Providers tab is explicit about where a key is stored", async ({ page }) => {
