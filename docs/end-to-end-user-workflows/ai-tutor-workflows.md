@@ -2,7 +2,7 @@
 
 > **How to edit this file:** pick a role section below and work it in stages — Claude finds the paths, Claude simulates them via Playwright *and turns that into a committed e2e test* (`tests/e2e/tests/ai-tutor/`), Claude reviews (its own and another Claude's) work, Claude sweeps once more for gaps, then a human walks the same paths (see the [README](./README.md) for the full methodology). Add/update a row per workflow, including a link to its e2e test — every workflow needs one, it's not optional. Prioritize AI-involving workflows (tutor chat sessions) and happy paths first. File bugs as GitHub issues and link them in the Bugs column — don't just describe them in prose. Prefix security findings with `SECURITY:`. Bump **Last updated** every time you edit.
 
-**Last updated:** 2026-08-22 — Claude (Student section review + usability pass: re-verified all 65 tests green against the live stack and every security/loader/chat claim against source (all TRUE, no missed BOLA); added three found-but-untested rows — suggested-prompt chips, wrong-answer retry loop, "Maybe later" dismissal; recorded four coverage caveats where a spec passes but under-verifies its claim; expanded the UI/UX notes with fifteen new usability findings U1–U15). 2026-08-21 — Claude (Student section: every student path enumerated and walked through a real Chromium session, then an adversarial review pass added the course-list filters/pagination, the chat's New chat / Chat history / Model select / "Before we start" modal, and TA-enrolment access, and overturned the "modal is human-pass-only" claim — 65 committed e2e tests across nine `student-*.spec.ts` files, whole `ai-tutor` suite green), Student section
+**Last updated:** 2026-08-22 — Claude (TA section: every TA path enumerated and walked through a real Chromium session against the live `docker-compose.e2e.yml` stack, then turned into **41 committed e2e tests** across seven `ta-*.spec.ts` files — all green, whole `ai-tutor` suite green. A TA is a STUDENT-platform user carrying an `EnrollmentRole.TA`, promoted to the effective client role `"TA"` in `/api/me`, so the enumeration is a genuinely distinct surface: the staff instructor shell (read-only Content + Submissions/Feedback/Analytics), a TA-specific dashboard variant, the grading path, the learner surface a TA also keeps, Settings, and the API authorization matrix. One real bug found and fixed — **BUG-TA-1**, the grade override 403'd every TA — plus one UI/UX note. 2026-08-22 — Claude (Student section review + usability pass: re-verified all 65 tests green against the live stack and every security/loader/chat claim against source (all TRUE, no missed BOLA); added three found-but-untested rows — suggested-prompt chips, wrong-answer retry loop, "Maybe later" dismissal; recorded four coverage caveats where a spec passes but under-verifies its claim; expanded the UI/UX notes with fifteen new usability findings U1–U15). 2026-08-21 — Claude (Student section: every student path enumerated and walked through a real Chromium session, then an adversarial review pass added the course-list filters/pagination, the chat's New chat / Chat history / Model select / "Before we start" modal, and TA-enrolment access, and overturned the "modal is human-pass-only" claim — 65 committed e2e tests across nine `student-*.spec.ts` files, whole `ai-tutor` suite green), Student section
 
 ## Table of contents
 
@@ -363,10 +363,104 @@ docker compose -f docker-compose.e2e.yml up -d
 
 ## TA
 
+Walked in a real Chromium session against the `docker-compose.e2e.yml` stack (Core 3000 + AI Tutor 3001/4000), signed in as a freshly registered platform `STUDENT` enrolled on a course with `EnrollmentRole.TA`. Every row has a committed Playwright spec under `tests/e2e/tests/ai-tutor/` — **seven** `ta-*.spec.ts` files, **41 tests**, all green run serially with `--workers=1` as CI does (plus the pre-existing `student-ta-access.spec.ts`, which pins the bare "a TA opens the lesson player" case).
 
-| Workflow | Tester(s) | Status      | Makes sense? / UI clear? | Security | Bugs | E2E test |
-| -------- | --------- | ----------- | ------------------------ | -------- | ---- | -------- |
-|          |           | Not started |                          |          |      |          |
+**A TA is not a platform role.** Core dropped `UserRole.TA`, so a TA is a STUDENT-platform user carrying a per-course `EnrollmentRole.TA` (`/api/e2e/promote` rejects `"TA"`; the fixture enrols one via the real admin enrolment APIs). AI Tutor mirrors that enrolment (`enrollmentSync.js` `MIRRORED_ROLES`) and, on every `/api/me`, promotes such a user to the **effective client role `"TA"`** (`authentication.js` — `userHasCoreTaEnrollment`). That effective role drives the whole client: `getNavForUser` gives a TA the instructor "Courses" entry (`usesInstructorShell`), the course-detail tabs add Submissions, and `canAccessStudentTour` offers the tour. Server-side is subtler: on routes other than `/api/me`, `req.user.role` is the **platform** role `STUDENT`, and TA authority is re-derived per course from the live Core enrolment role — which is exactly where BUG-TA-1 lived.
+
+So a TA holds **two surfaces at once**: the course-staff instructor shell for the course they assist (read-only Content, plus Submissions/Feedback/Analytics and grading), and the STUDENT learner surface (lesson player + AI study buddy) they keep by enrolment. Only `/admin` is withheld, and content authoring / enrolment management / answer submission are refused.
+
+**Status legend:** `Claude-tested` = paths found and walked through the browser, e2e test committed and green. A human pass is still required (README step 5) before any row counts as done.
+
+**One product bug was found and fixed** (BUG-TA-1, below) and one UI/UX note recorded (U-TA-1). Every spec asserts the fixed behaviour, so the fix carries a regression test.
+
+### Shell, navigation, and session
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| A course TA resolves to the effective role `"TA"` in `/api/me` and lands on `/dashboard` | Claude | Claude-tested | Yes — no AI Tutor login of its own; a STUDENT with a TA enrolment is promoted to the effective role and `routeForRole` sends every role to `/dashboard` | Correct: the promotion is read-only and re-checked per request | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Sidebar shows exactly Dashboard / Courses / Help — no Admin — and Courses is the **staff** shell | Claude | Claude-tested | Mostly — a TA's single "Courses" entry points at `/instructor` (`usesInstructorShell`); the learner `/student` list has no sidebar entry and is reached only by direct URL (see U-TA-1 note on discoverability) | Correct: `getNavForUser` withholds the admin console | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Courses in the sidebar opens the instructor (staff) course list | Claude | Claude-tested | Yes — the list of courses the TA assists, headed "Courses" | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Open the sidebar user menu (Settings + Log out) | Claude | Claude-tested | Yes | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Open the command palette with Ctrl+K and see the RBAC-filtered targets | Claude | Claude-tested | Yes — lists Dashboard / Courses / Settings / Help; the spec asserts the **negative** too (no "Admin" target) | Correct: the palette reuses `getNavForUser` | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Search the palette and jump to the staff course list with Enter | Claude | Claude-tested | Yes — Enter navigates to `/instructor` | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Switch apps from the launcher (Core / AI Tutor current / Question Maker) | Claude | Claude-tested | Yes — current app is marked and carries no link | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Toggle light/dark theme from the header | Claude | Claude-tested | Yes | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Submit a bug report from any shell page | Claude | Claude-tested | Yes — type + description, with console/network/screenshot captured automatically | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Read the Help guide, and confirm the guided tour **is** offered to a TA | Claude | Claude-tested | Yes — `canAccessStudentTour` is STUDENT/TA (uniquely for a TA, on the instructor shell too), so "Take tour" renders | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Try to enter `/admin` — the one route a TA is kept out of | Claude | Claude-tested | Yes — answered with the in-shell 404, URL left alone, a way onwards still visible | **Correctly blocked** — `admin.tsx` is ADMIN-only; `requireClientUser` throws a 404 on a role mismatch rather than confirming the page exists | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| A URL that matches no route is a 404 inside the shell | Claude | Claude-tested | Yes — the catch-all `*` route, not a bare error boundary | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+| Sign out from Settings and confirm protected routes bounce to Core login | Claude | Claude-tested | Yes — logout returns to Core's form with `force=1` and a `redirect` back; the spec asserts `force=1` and a 401 from `/api/me` | — | — | [`ta-access-and-shell.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-access-and-shell.spec.ts) |
+
+### Dashboard
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| The dashboard renders the TA "Assigned courses" variant | Claude | Claude-tested | Yes — neither the student's learner stat-row nor the instructor rollup, but a dedicated `{ role: "TA", yourCourses, publishedCourses, submissionsToReview }` view (`courses.js`) | Only the TA's own assigned courses feed it | — | [`ta-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-dashboard.spec.ts) |
+| An assigned course appears in the Assigned courses panel | Claude | Claude-tested | Yes | — | — | [`ta-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-dashboard.spec.ts) |
+| Quick actions are the TA set, and "View courses" opens the staff list | Claude | Claude-tested | Yes — the copy is dual-surface ("courses you assist with" / "a course you're enrolled in") and "View courses" lands on `/instructor` | — | — | [`ta-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-dashboard.spec.ts) |
+| A submission awaiting grading is reflected in the assigned-course activity | Claude | Claude-tested | Yes — the dashboard resolves to the TA variant with the course present when the grading queue is non-empty | — | — | [`ta-dashboard.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-dashboard.spec.ts) |
+
+### Staff course oversight (`/instructor/*`)
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| The instructor course list shows a course the TA assists | Claude | Claude-tested | Yes — headed "Courses", scoped to the TA's assigned courses (`taUnion`) | Only courses the TA is enrolled on as TA are listed | — | [`ta-course-oversight.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-course-oversight.spec.ts) |
+| Opening a course shows all four staff tabs (Content / Submissions / Feedback / Analytics) | Claude | Claude-tested | Yes — `getCourseDetailTabs` adds Submissions for a TA explicitly, and Feedback/Analytics via `canViewCourseFeedback`/`canViewCourseAnalytics` | — | — | [`ta-course-oversight.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-course-oversight.spec.ts) |
+| The Content tab is read-only — a TA cannot author or create | Claude | Claude-tested | Yes — the module list renders (a TA sees content, including unpublished drafts a student cannot), but `canManageContent` is false so no Add-module / Import-modules / Create-course affordance appears | Intended: authoring stays with instructor/unit-admin/admin | — | [`ta-course-oversight.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-course-oversight.spec.ts) |
+| The Feedback tab renders its heading and id filters | Claude | Claude-tested | Yes — "Student activity feedback in this course." with the same raw Activity ID / Student ID boxes the admin sees (same look-up gap as the Admin section) | — | — | [`ta-course-oversight.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-course-oversight.spec.ts) |
+| The Analytics tab renders its rollups | Claude | Claude-tested | Yes — "Overall accuracy" (and a Difficulty mix once graded data exists) | — | — | [`ta-course-oversight.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-course-oversight.spec.ts) |
+| A course the TA does **not** assist is a 404 in the shell and a 403 at the API | Claude | Claude-tested | Yes — the same generic 404 as elsewhere; the app never confirms the course exists to a non-member | **Enrolment gate verified server-side**: `GET /courses/:id` and `.../submissions` both 403 for a non-assisting TA | — | [`ta-course-oversight.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-course-oversight.spec.ts) |
+
+### Grading (the TA's flagship staff path)
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| The Submissions tab shows the grading counters and a gradable row | Claude | Claude-tested | Yes — Submissions / Needs grading / Correct / Pass rate, with a per-row Grade button | — | — | [`ta-grading.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-grading.spec.ts) |
+| **AI-adjacent:** a TA overrides an auto-graded submission to Correct and it persists | Claude | Claude-tested | Yes — the dialog shows the question, the student's submitted answer, and the AI's own verdict before the override; re-opening the row reads back "Correct" | **Verified, since BUG-TA-1** — a TA's grade override is authorised against the TA *enrolment* role, and the override is recorded against the caller | **BUG-TA-1** — fixed | [`ta-grading.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-grading.spec.ts) |
+| The pass-rate counter follows a manual grade override | Claude | Claude-tested | Yes — the single submission overridden to Correct moves the Pass rate to 100% | — | **BUG-TA-1** — fixed | [`ta-grading.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-grading.spec.ts) |
+
+### Learner surface (a TA keeps the STUDENT experience)
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| The `/student` enrolled-course list shows the TA's course (by direct URL) | Claude | Claude-tested | Yes — the learner list renders the TA's enrolments even though the sidebar's Courses points at `/instructor` (see U-TA-1) | Only the TA's own enrolments are shown | — | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
+| The lesson player renders the question, answer card, and study buddy | Claude | Claude-tested | Yes — the same player a student opens; also covered bare in [`student-ta-access.spec.ts`](../../tests/e2e/tests/ai-tutor/student-ta-access.spec.ts) | The enrolment mirror (`MIRRORED_ROLES`) lets a TA read published content exactly as a student does | — | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
+| The player is read-only for a TA — options select, but submitting is not their path | Claude | Claude-tested | Partly — a TA can pick an option (Submit enables) but the submission silently no-ops: `POST /questions/:id/answer` is STUDENT-enrolment-only, and the UI swallows the 403 (**U-TA-1**) | **Correct block**: recording graded attempts is a STUDENT path ("only enrolled STUDENTs may submit") — a TA is not a submitter | see **U-TA-1** | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
+| The study buddy shows the connect-a-provider state with no BYOK key | Claude | Claude-tested | Yes — composer disabled, Add-API-key CTA and Settings link, empty-catalogue notice — the same state a fresh student lands in | The BYOK key stays on the device; the empty EduAI catalogue fails closed | — | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
+| With a browser-local BYOK key the composer surface unlocks for the TA | Claude | Claude-tested | Yes — the connect state clears and the author-enabled modes (Teach me / Guide me) are offered, exactly as for a student | The mode set is author-controlled, never widened by the TA | — | [`ta-learner-access.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-learner-access.spec.ts) |
+
+**Human-pass-only in this stack (same as the Student section):** a real streamed tutoring answer needs a live model provider the e2e stack lacks. The chat specs unlock and walk the whole client-side surface with a seeded BYOK key, but send → stream → render is a human pass.
+
+### Settings
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| The Account tab shows the TA identity, a TA role indicator, and the sign-out card | Claude | Claude-tested | Yes — `getRoleViewLabel("TA")` is "Teaching assistant" | — | — | [`ta-settings.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-settings.spec.ts) |
+| Accessibility tab: assistive mode, reduce motion, density | Claude | Claude-tested | Yes — all optional and clearly labelled | — | — | [`ta-settings.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-settings.spec.ts) |
+| Providers tab: browser-local BYOK Gemini / OpenAI keys | Claude | Claude-tested | Yes — states plainly the keys stay in the browser; the same store the in-chat dialog writes | Per-user BYOK keys are browser-local, never persisted server-side | — | [`ta-settings.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-settings.spec.ts) |
+
+### Security (API-level authorization boundaries)
+
+These back the Security column with checks no screen walks. A TA is course teaching staff for **their** course and a plain learner everywhere else, and is never a content manager or an admin.
+
+| Workflow | Tester(s) | Status | Makes sense? / UI clear? | Security | Bugs | E2E test |
+| --- | --- | --- | --- | --- | --- | --- |
+| Own-course submissions / feedback / analytics reads are 200 | Claude | Claude-tested | n/a (API) | **Verified**: the course-level staff reads authorise a TA on their assigned course | — | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+| Activity-level submissions + feedback + the grade override are 200 | Claude | Claude-tested | n/a (API) | **Verified, since BUG-TA-1**: the activity-level TA re-check now authorises the TA enrolment role explicitly (all three 403'd before) | **BUG-TA-1** — fixed | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+| Authoring content (create module / publish / create activity) is 403 | Claude | Claude-tested | n/a (API) | **Verified**: `canManageContent` is false for a TA | — | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+| Managing enrolments is 403 on both Core and AI Tutor | Claude | Claude-tested | n/a (API) | **Verified**: `canManageEnrollments` excludes TA | — | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+| Submitting an answer is 403 — recording attempts is a STUDENT path only | Claude | Claude-tested | n/a (API) | **Verified**: `POST /questions/:id/answer` is gated to enrolled STUDENTs; a TA is not a submitter | see **U-TA-1** | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+| Admin endpoints (`/admin/ai-traces`, `/admin/users`) are 403 | Claude | Claude-tested | n/a (API) | **Verified**: admin API is ADMIN-only; a TA cannot reach it | — | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+| Every course-scoped read on a course the TA does not assist is 403 | Claude | Claude-tested | n/a (API) | **Verified**: `GET /courses/:id` and its `/submissions`, `/feedback`, `/analytics` all 403 for a non-assisting TA | — | [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) |
+
+### Findings
+
+- **BUG-TA-1 — a TA could not grade, and the whole activity-level staff surface 403'd. Fixed.** A course TA's *platform* role is `STUDENT` (Core has no `UserRole.TA`), so on routes other than `/api/me`, `req.user.role` reads `"STUDENT"`. The activity-level TA re-checks — `GET /activities/:id/submissions`, `GET /activities/:id/feedback`, and the grade override `PATCH /activities/:id/submissions/:id` — called `getLiveStudentEnrollment(res, course, authUser)` with no `expectedRole`, so it defaulted the live allow-list to `[authUser.role]` = `["STUDENT"]`. The caller's real Core enrolment role is `"TA"`, which is not in that set, so `.allowed` came back false and each endpoint 403'd — *before* the very `liveEnrollment.role !== "TA"` check the `if (isTa)` branch was written to make. The result: the Submissions tab and its Grade dialog rendered for a TA (the *course-level* list authorises correctly), but Save always failed. Fixed in `server/src/routes/activities.js` by passing `"TA"` as the expected enrolment role at all three `isTa` re-check sites. Regression tests: [`ta-grading.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-grading.spec.ts) walks the override end-to-end through the UI, and [`ta-security.spec.ts`](../../tests/e2e/tests/ai-tutor/ta-security.spec.ts) pins the three endpoints at 200. No GitHub issue filed — the fix landed with the report, matching the Admin section's convention.
+
+### UI/UX notes (not bugs, worth a design pass)
+
+- **U-TA-1 — a TA's answer submission silently no-ops.** The lesson player is a learner read surface a TA keeps, but recording an attempt is a STUDENT-enrolment path (`POST /questions/:id/answer` — "only enrolled STUDENTs may submit"), which is a reasonable block. The presentation is not: the player still shows the radios and an enabled Submit for a TA, and clicking it swallows the 403 with no result and no message. Either disable/hide Submit for a TA on the learner surface, or surface the refusal ("Teaching assistants don't submit answers"), rather than leaving a dead button.
+- **The learner list is discoverable only by direct URL.** A TA's sidebar "Courses" points at the staff `/instructor` shell; the `/student` enrolled-course list — which a TA legitimately uses to open the tutoring surface — has no nav entry. A TA who wants to *learn* rather than *assist* has to know the URL.
 
 ## Student
 
