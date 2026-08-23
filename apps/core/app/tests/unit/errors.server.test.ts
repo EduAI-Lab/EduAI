@@ -19,10 +19,12 @@ import {
   normalizeError,
 } from "@eduai/types";
 
+import type { ErrorEnvelope } from "@eduai/types";
+
 import { errorResponse } from "~/lib/errors.server";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
-async function bodyOf(response: Response): Promise<unknown> {
+async function bodyOf(response: Response): Promise<ErrorEnvelope> {
   return JSON.parse(await response.text());
 }
 

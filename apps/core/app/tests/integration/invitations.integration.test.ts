@@ -715,7 +715,7 @@ describe("accept flow", () => {
                   },
                 });
               }
-              const value = (target as unknown as Record<string, unknown>)[prop as string];
+              const value = (target as Record<string, unknown>)[prop as string];
               return typeof value === "function" ? value.bind(target) : value;
             },
           });

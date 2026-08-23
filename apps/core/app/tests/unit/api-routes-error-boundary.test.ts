@@ -12,6 +12,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ErrorEnvelope } from "@eduai/types";
+
 const handleUsersApiRequest = vi.fn();
 const handleAiModelsApiRequest = vi.fn();
 const handleAiProvidersApiRequest = vi.fn();
@@ -41,7 +43,7 @@ function request(url = "https://core.test/api/x"): Request {
   return new Request(url);
 }
 
-async function bodyOf(response: Response): Promise<unknown> {
+async function bodyOf(response: Response): Promise<ErrorEnvelope> {
   return JSON.parse(await response.text());
 }
 

@@ -98,6 +98,13 @@ const pickFirstText = (...candidates: Array<unknown>): string | undefined => {
   return undefined;
 };
 
+/** Top-level fields a Firecrawl search hit carries but `Document` does not declare. */
+type FirecrawlDocumentExtras = {
+  url?: string;
+  title?: string;
+  description?: string;
+};
+
 const isFirecrawlDocument = (entry: unknown): entry is Document => {
   if (!entry || typeof entry !== "object") return false;
   return "markdown" in entry || "metadata" in entry || "summary" in entry;
@@ -107,15 +114,18 @@ const parseDocumentResult = (entry: Document): ExternalSearchResult | null => {
   const metadata =
     typeof entry.metadata === "object" && entry.metadata ? entry.metadata : undefined;
 
-  const url = pickFirstText(
-    (metadata as { url?: string } | undefined)?.url,
-    (entry as unknown as { url?: string }).url,
-  );
+  // Firecrawl puts these at the top level of a search hit, but its `Document`
+  // type only declares the crawl fields, so name what we actually read rather
+  // than laundering each access through `unknown` separately. Every field stays
+  // optional: this is the undeclared half of the payload.
+  const document: Document & FirecrawlDocumentExtras = entry;
+
+  const url = pickFirstText((metadata as { url?: string } | undefined)?.url, document.url);
   if (!url) return null;
 
   const title =
     pickFirstText(
-      (entry as unknown as { title?: string }).title,
+      document.title,
       (metadata as { title?: string } | undefined)?.title,
       (metadata as { ogTitle?: string } | undefined)?.ogTitle,
       (metadata as { ogSiteName?: string } | undefined)?.ogSiteName,
@@ -124,7 +134,7 @@ const parseDocumentResult = (entry: Document): ExternalSearchResult | null => {
   const snippetCandidate = pickFirstText(
     (entry as { markdown?: string }).markdown,
     (entry as { summary?: string }).summary,
-    (entry as unknown as { description?: string }).description,
+    document.description,
     (metadata as { description?: string } | undefined)?.description,
     (metadata as { ogDescription?: string } | undefined)?.ogDescription,
   );

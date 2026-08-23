@@ -12,10 +12,10 @@ import type { AdminBugReportRow, AdminUserPage, Course } from "~/lib/types";
  * counts come from `stats` (not the page length), that "Other" can't go
  * negative, and that a missing envelope degrades to zeroes rather than throwing.
  */
-const courses = [
-  { id: 1, code: "CPSC 101", name: "Intro", isPublished: true },
-  { id: 2, code: "CPSC 201", name: "Data", isPublished: false },
-] as unknown as Course[];
+const courses: Course[] = [
+  { id: 1, code: "CPSC 101", title: "Intro", isPublished: true },
+  { id: 2, code: "CPSC 201", title: "Data", isPublished: false },
+];
 
 const bugReports: AdminBugReportRow[] = [];
 

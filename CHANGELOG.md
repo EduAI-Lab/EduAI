@@ -27,9 +27,13 @@
 ### Added
 
 - [core] feat: Add a shared typed-error hierarchy in `@eduai/types` (`AppError` plus `ValidationError`/`UnauthenticatedError`/`ForbiddenError`/`NotFoundError`/`ConflictError`/`ServiceUnavailableError`, `isAppError`, and a `normalizeError` route-boundary normalizer), and adopt it at Core's API boundary via a `withErrorResponse` wrapper on `api/users.$`, `api/ai-models.$`, `api/ai-providers.$`, `api/invitations` and `api/invitations.$id`. Unhandled failures inside these loaders/actions previously escaped to React Router instead of Core's `{ error: "CODE" }` envelope; the wrapper maps any thrown error to a stable status/code without leaking Prisma model or column text (P2002 collapses to a generic `CONFLICT`, never the constraint's field names; a `PrismaClientInitializationError`, whose connectivity code lives on `errorCode` rather than `code`, now maps to 503 instead of a generic 500). Server-side failures (status ≥ 500) are logged via `logSystemError` with route/method context before they are mapped, so an outage the boundary swallows into the envelope still reaches operational logs instead of vanishing with React Router's `onError` hook. `normalizeError` is scoped to Core here — AI Tutor and question-maker independently landed their own sanitized boundaries (`utils/safeErrors.js` and a hardened `errorHandler`), so this PR no longer touches them. Core's remaining ~47 route handlers, which run a second `{ success, error }` envelope, are tracked separately in #1560. Part of #1279. (@yta3216, 2026-08-20) — [#1515](https://github.com/EduAI-Lab/EduAI/pull/1515)
+### Changed
+
+- [monorepo] chore: Consolidate the three duplicate `anti-slop` oxlint plugin copies into one at the repo root, wire all eleven lint units (and the pre-commit hook) to it, and promote eight now-clean rules from `warn` to `error`. (@abdullahmoh21, 2026-08-22) — [#1594](https://github.com/EduAI-Lab/EduAI/pull/1594)
 
 ### Fixed
 
+- [core] fix: Remove the user-menu Account item, which linked to `/settings/account`, a route that does not exist and 404s for every user; `/settings` already has its own Account tab. (@abdullahmoh21, 2026-08-22) — [#1594](https://github.com/EduAI-Lab/EduAI/pull/1594)
 - [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ### Tests

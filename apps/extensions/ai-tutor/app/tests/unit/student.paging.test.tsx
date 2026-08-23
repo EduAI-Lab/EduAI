@@ -72,7 +72,7 @@ describe("student.course — paged module grid (#1207)", () => {
               pageSize: 25,
               ...overrides,
             },
-          } as unknown as React.ComponentProps<typeof StudentCourseModules>)}
+          } as React.ComponentProps<typeof StudentCourseModules>)}
         />
       </MemoryRouter>,
     );
@@ -217,7 +217,7 @@ describe("student.lesson — paged activity walk (#1207)", () => {
     });
 
     const props = (loaderData: Record<string, unknown>) =>
-      ({ loaderData }) as unknown as React.ComponentProps<typeof StudentLessonPlayer>;
+      ({ loaderData }) as React.ComponentProps<typeof StudentLessonPlayer>;
 
     const oldLesson = {
       course,

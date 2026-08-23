@@ -94,7 +94,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     course: serializeCourseForApi(course, {
       audience,
       detail: true,
-    }) as unknown as CourseDetail & Record<string, unknown>,
+    }) as CourseDetail & Record<string, unknown>,
     // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
     // role=TA); the course query no longer includes a CourseTA relation.
     user,

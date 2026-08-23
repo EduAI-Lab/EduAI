@@ -2,6 +2,7 @@
 // #1441 review: admission timeout must skip the rethrow after Bedrock overflow
 // activates, so the request reaches streamText on the overflow model.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -135,7 +136,7 @@ import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

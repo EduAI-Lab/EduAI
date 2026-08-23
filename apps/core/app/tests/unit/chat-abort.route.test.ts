@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Client abort / stop-button support for /api/chat (#267).
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -96,7 +97,7 @@ import prisma from "~/lib/prisma.server";
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
 
-function makeRequest(body: object, signal?: AbortSignal) {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

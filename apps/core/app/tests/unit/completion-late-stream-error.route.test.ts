@@ -57,8 +57,9 @@ import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeRequest(body: object) {
+function makeRequest(body: RouteRequestBody) {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",

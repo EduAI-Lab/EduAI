@@ -65,8 +65,9 @@ import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import { FleetUnavailableError, resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { resolveActiveChatModel } from "~/lib/ai/providers.server";
 import { acquireAiAdmission } from "~/lib/ai/admission.server";
+import type { RouteRequestBody } from "../helpers/route-fixtures";
 
-function makeRequest(body: object, signal?: AbortSignal): Parameters<typeof action>[0] {
+function makeRequest(body: RouteRequestBody, signal?: AbortSignal): Parameters<typeof action>[0] {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",

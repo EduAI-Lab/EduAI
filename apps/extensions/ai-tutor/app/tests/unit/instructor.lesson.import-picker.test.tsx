@@ -104,6 +104,7 @@ const module_ = {
   title: "Module 1",
   description: "",
   position: 0,
+  isPublished: true,
   courseOfferingId: 1,
   lessons: [],
 };
@@ -111,6 +112,7 @@ const lesson = {
   id: 1,
   title: "Lesson 1",
   moduleId: 1,
+  position: 0,
   isPublished: true,
   contentMd: "",
   courseOfferingId: 1,

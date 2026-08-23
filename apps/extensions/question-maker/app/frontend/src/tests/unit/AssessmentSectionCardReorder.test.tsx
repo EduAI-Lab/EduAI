@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { AssessmentSectionCard } from "@/components/assessments/AssessmentSectionCard";
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from "@/types/question";
 
-const section = { id: 1, name: "Section A", position: 2 } as unknown as AssessmentSection;
+const section = { id: 1, name: "Section A", position: 2 } as AssessmentSection;
 
 function renderCard(props: Partial<React.ComponentProps<typeof AssessmentSectionCard>> = {}) {
   return render(

@@ -71,7 +71,7 @@ const user = {
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-01T00:00:00.000Z",
   _count: { enrolledCourses: 0, assistedCourses: 0, taughtCourses: 0, aiInteractions: 0 },
-} as unknown as PlatformUser;
+} as PlatformUser;
 
 function renderView(overrides: Partial<React.ComponentProps<typeof UsersAdminView>> = {}) {
   return render(

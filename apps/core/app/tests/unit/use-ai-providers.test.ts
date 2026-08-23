@@ -23,7 +23,7 @@ const provider = {
   displayName: "OpenAI",
   isActive: true,
   _count: { models: 3 },
-} as unknown as AIProvider;
+} as AIProvider;
 
 function mockPage(data: AIProvider[] = [provider], total = data.length) {
   vi.mocked(apiFetch).mockResolvedValue({ data, total, page: 1, pageSize: 25 } as never);

@@ -281,6 +281,20 @@ function buildSessionDigest<T extends Record<string, unknown>>(
 const DIGEST_MESSAGE_ID = "session-digest";
 
 /**
+ * The synthetic turn `prepareBoundedSessionContext` splices in when older turns
+ * are summarized away.
+ *
+ * It is deliberately not a `T`: the caller's message type may require fields
+ * this module has no value for, so the return type is a union rather than a
+ * claim that the digest is one of the caller's own messages.
+ */
+export type SessionDigestMessage = {
+  id: typeof DIGEST_MESSAGE_ID;
+  role: "user";
+  content: string;
+};
+
+/**
  * Strict truncation: the result length is `<= maxChars` (unlike
  * `truncateToMaxChars`, whose result is `maxChars + 1`). Used for hard budget
  * enforcement where the total must not exceed `charBudget`.
@@ -402,12 +416,17 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
     charBudget?: number;
     recentCount?: number;
     digestMaxChars?: number;
-    /** Override budget accounting (defaults to {@link estimateMessageCharsForModel}). */
-    estimateChars?: (message?: T) => number;
+    /**
+     * Override budget accounting (defaults to {@link estimateMessageCharsForModel}).
+     *
+     * Also called on the synthetic digest turn, which is why it takes the union
+     * rather than only the caller's own message type.
+     */
+    estimateChars?: (message?: T | SessionDigestMessage) => number;
     /** Override digest preview text (defaults to the internal text extractor). */
     previewText?: (message?: T) => string;
   },
-): T[] {
+): (T | SessionDigestMessage)[] {
   if (messages.length === 0) {
     return messages;
   }
@@ -431,15 +450,39 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
   }
 
   const digest = buildSessionDigest(older, previewText, digestMaxChars);
-  const digestMessage = {
+  const digestMessage: SessionDigestMessage = {
     id: DIGEST_MESSAGE_ID,
     role: "user",
     content:
       digest || "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
-  } as unknown as T;
+  };
 
-  return enforceSessionCharBudget([digestMessage, ...recent], estimate, charBudget, true);
+  return enforceSessionCharBudget<T | SessionDigestMessage>(
+    [digestMessage, ...recent],
+    estimate,
+    charBudget,
+    true,
+  );
 }
+
+/**
+ * A tool-result value with every oversized string leaf capped.
+ *
+ * Tool results arrive as parsed JSON, but `capStringsInValue` walks whatever it
+ * is handed, so the union admits the non-JSON leaves it passes through rather
+ * than claiming a strictness the walk does not enforce.
+ */
+type CappedValue =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  | Function
+  | CappedValue[]
+  | { [key: string]: CappedValue };
 
 /**
  * Recursively caps every string in a value, intentionally including metadata
@@ -455,25 +498,32 @@ function capStringsInValue(
   value: unknown,
   maxChars: number,
   truncate: (text: string, max: number) => string = truncateToMaxChars,
-): unknown {
+): CappedValue {
   if (typeof value === "string") {
     return truncate(value, maxChars);
+  }
+
+  // Non-string leaves are returned as they came in: only strings can be
+  // oversized. Taking them before the object walk lets each `typeof` narrow
+  // `value` into one arm of `CappedValue`, so no passthrough needs an assertion.
+  if (value === null || value === undefined) return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value;
+  }
+  if (typeof value === "symbol" || typeof value === "function") {
+    return value;
   }
 
   if (Array.isArray(value)) {
     return value.map((item) => capStringsInValue(item, maxChars, truncate));
   }
 
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const capped: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(record)) {
-      capped[key] = capStringsInValue(nested, maxChars, truncate);
-    }
-    return capped;
+  const record = value as Record<string, unknown>;
+  const capped: Record<string, CappedValue> = {};
+  for (const [key, nested] of Object.entries(record)) {
+    capped[key] = capStringsInValue(nested, maxChars, truncate);
   }
-
-  return value;
+  return capped;
 }
 
 /**
