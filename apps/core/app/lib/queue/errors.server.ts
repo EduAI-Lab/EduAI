@@ -14,12 +14,7 @@ export class QueueUnavailableError extends AppError {
   readonly code = "QUEUE_UNAVAILABLE" as const;
 
   constructor(message = "Queue unavailable", options?: { cause?: unknown }) {
-    const appErrorOptions: AppErrorOptions = {
-      code: "QUEUE_UNAVAILABLE",
-      expose: true,
-    };
-    // Only set `cause` when one was actually supplied — `{ cause: undefined }`
-    // still defines the property, which changes how the error serialises.
+    const appErrorOptions: AppErrorOptions = { code: "QUEUE_UNAVAILABLE", expose: true };
     if (options?.cause !== undefined) appErrorOptions.cause = options.cause;
     super(503, message, appErrorOptions);
     this.name = "QueueUnavailableError";

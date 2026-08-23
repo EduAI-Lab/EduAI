@@ -1,5 +1,7 @@
 import type { z } from "zod";
 
+import type { ErrorEnvelope } from "@eduai/types";
+
 import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
@@ -12,11 +14,10 @@ export function jsonResponse(status: number, body: JsonResponseBody): Response {
   });
 }
 
-/**
- * MCP-ready error envelope: `{ error: "CODE", fields?: { field: "message" } }`.
- */
 export function apiError(status: number, error: string, fields?: Record<string, string>): Response {
-  return jsonResponse(status, fields ? { error, fields } : { error });
+  const body: ErrorEnvelope = { error };
+  if (fields) body.fields = fields;
+  return jsonResponse(status, body);
 }
 
 export function validationErrorFromZod(zodError: z.ZodError, status = 422): Response {

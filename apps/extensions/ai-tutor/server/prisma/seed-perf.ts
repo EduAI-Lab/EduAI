@@ -27,7 +27,7 @@
  *   cd apps/extensions/ai-tutor/server && npx tsx prisma/seed-perf.ts
  *   PERF_POOL_SIZE=15 npx tsx prisma/seed-perf.ts
  */
-import type { JsonValue } from "@eduai/types";
+import type { JsonObject, JsonValue } from "@eduai/types";
 import { PrismaClient } from "@eduai/ai-tutor-prisma-client";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -65,14 +65,17 @@ function writeManifest(obj: JsonValue) {
   writeFileSync(f, JSON.stringify(obj, null, 2));
   console.log(`  ✓ wrote pool manifest → ${f}`);
 }
+/** The two fields the AI Tutor seed reads out of Core's perf manifest. */
+type CoreManifestAnchors = { sharedCourseId: string; readChatId: string | null };
+
 // Loads the Core perf manifest once and returns the two fields the AI Tutor seed
 // depends on. `sharedCourseId` is REQUIRED — the pool CourseOffering is a pure
 // Core anchor, so a missing/unparseable manifest or an absent/empty
 // `sharedCourseId` fails fast (the developer must run the Core perf seed first).
 // `readChatId` stays optional to preserve the existing chat-session fallback.
-function loadCoreManifest(): { sharedCourseId: string; readChatId: string | null } {
+function loadCoreManifest(): CoreManifestAnchors {
   const file = path.join(poolDir(), "core.json");
-  let core: Record<string, unknown>;
+  let core: JsonObject;
   try {
     core = JSON.parse(readFileSync(file, "utf8"));
   } catch {
