@@ -120,6 +120,33 @@ test.describe("AI Tutor TA — actions a TA is refused", () => {
     }
   });
 
+  test("reordering content (move activity, reorder lesson) is 403", async ({
+    page,
+    playwright,
+  }) => {
+    const { seeded } = await seedTa(page, playwright, "SA6");
+    try {
+      // Both reorder writes are `requireRole(INSTRUCTOR/UNIT_ADMIN/ADMIN)` on the
+      // platform role, so a TA (platform STUDENT) 403s regardless of the body.
+      expect(
+        (
+          await page.request.patch(`${AT}/api/activities/${seeded.activityId}/position`, {
+            data: { position: 0 },
+          })
+        ).status(),
+      ).toBe(403);
+      expect(
+        (
+          await page.request.put(`${AT}/api/lessons/${seeded.lessonId}/activities/order`, {
+            data: { orderedIds: [seeded.activityId] },
+          })
+        ).status(),
+      ).toBe(403);
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
   test("managing enrolments is 403 on both Core and AI Tutor", async ({ page, playwright }) => {
     const { studentId, seeded } = await seedTa(page, playwright, "SA2");
     try {

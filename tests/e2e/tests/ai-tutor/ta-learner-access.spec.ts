@@ -49,6 +49,34 @@ test.describe("AI Tutor TA — learner surface", () => {
     }
   });
 
+  test("a TA drills course → module → lesson on the learner surface", async ({
+    page,
+    playwright,
+  }) => {
+    const { seeded } = await seedTaLearner(page, playwright, "TL1b");
+    try {
+      // The learner course/module pages admit a TA (their loaders allow TA and
+      // the enrolment mirror lets them read published content), so the same
+      // drill-down a student walks works for a TA.
+      await gotoAiTutor(page, `/student/courses/${seeded.atCourseId}`);
+      await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({
+        timeout: 20_000,
+      });
+
+      await page.getByText("Spine module").first().click();
+      await expect(page).toHaveURL(new RegExp(`/student/module/${seeded.moduleId}$`), {
+        timeout: 20_000,
+      });
+      await expect(page.getByText("Spine lesson").first()).toBeVisible();
+
+      await page.getByText("Spine lesson").first().click();
+      await expect(page.getByText(seeded.question)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText("Your answer")).toBeVisible();
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
   test("the lesson player renders the question, answer card, and study buddy", async ({
     page,
     playwright,
