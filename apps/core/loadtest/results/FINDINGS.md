@@ -81,8 +81,14 @@ finding.
    per-user chat throttle, confirmed working on the `curl` side-experiment
    (429). Line numbers in `chat.ts` drift; the symbol is `checkRateLimit`.
 3. **Session-validate rate limiter** (`app/lib/auth/rate-limit.server.ts`,
-   300/60s per IP) — confirmed engaging under burst and correctly isolating
-   other IPs, at both smoke and 500-VU scale.
+   300/60s per identity) — the original HTTP runs burst `/api/sessions/validate`
+   **without** a service key. The route now rejects missing service auth
+   first and limits that invalid-auth bucket to **1** request, so those
+   "429 at req #301+" ticks were the invalid-auth gate, not
+   `SESSION_VALIDATE_RATE_LIMIT=300`. The harness now sends
+   `Authorization: Bearer $EDUAI_API_KEY` and isolates clients with
+   `X-EduAI-Client-IP`. Re-run smoke/stress before treating the 300-req
+   limiter as confirmed at this head.
 
 ## What held up fine at 500 concurrent users
 
@@ -110,10 +116,35 @@ finding.
    is the right place for "how EduAI handles load under real network
    conditions."
 
-## Browser run (2026-08-17) — `npm run loadtest:browser:smoke`
+## Isolated re-run (2026-08-22) — setup + HTTP smoke + browser smoke
+
+`npm run loadtest:setup` now completes from the checked-in example:
+fixture writes use an explicit local-demo contract; `.env.loadtest`
+stays `NODE_ENV=production`. VU accounts share `EDUAI_LOCAL_SEED_PASSWORD`
+and an 8-digit student ID.
+
+`npm run loadtest:smoke` against the isolated instance (10 seeded VUs):
+
+| Check | Result |
+|---|---|
+| Session-validate 429s (`SESSION_VALIDATE_RATE_LIMIT=300`) | **20** (burst 320 — the real limiter, not the invalid-auth bucket of 1) |
+| Bystander isolation | **401** (1/1) |
+| Dashboard samples | 62 |
+| Chat / dashboard success | still ~15% (`401 MISSING_SERVICE_KEY`) — thresholds now **fail** the run instead of going green |
+
+`npm run loadtest:browser:smoke` (`BROWSER_SMOKE=1 BROWSER_VUS=2`).
+Summary: `browser-5vu.summary.json`.
+
+| Check | Result |
+|---|---|
+| Left the login page | **100%** |
+| Did not land on student-id onboarding | **100%** |
+| Assistant reply rendered | **100%** (42/42 checks, threshold `rate>0.9` passed) |
+
+## Browser run (2026-08-17) — first Chromium pass
 
 Issue #919's actual deliverable. Isolated instance on `127.0.0.1:4100` +
-mock LLM on `:8801`. Summary: `browser-5vu.summary.json`.
+mock LLM on `:8801`.
 
 `BROWSER_SMOKE=1 BROWSER_VUS=2` against the production build. After the
 script/env fixes below:
@@ -129,8 +160,11 @@ What running the script actually found (this is why the first attempts were 0%):
    k6 strict mode throws. Fixed to `input#email` / `#password`.
 2. `page.$('button:has-text(...)')` is invalid CSS. `page.$` is
    `querySelector`. Click by text via `page.evaluate`.
-3. Loadtest VUs have no student number, so login lands on
-   `/onboarding/student-id`. The script now clicks skip.
+3. Loadtest VUs originally had no student number, so login landed on
+   `/onboarding/student-id`. The current form has no skip button — the
+   script's old `intent=skip` click was a no-op and `waitForNavigation()`
+   burned 30s. VU seeder now writes an 8-digit student ID (`20000001+`)
+   so onboarding is skipped by the loader.
 4. k6's locator engine is not Playwright — `locator('text=…')` never
    matches the assistant bubble. Poll `document.body.innerText` instead.
 5. The mock binds `127.0.0.1` only. `VLLM_BASE_URL=http://localhost:8801`

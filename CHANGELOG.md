@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- [core] fix: `#1516` loadtest setup now seeds through an explicit local-demo contract (app runtime stays `NODE_ENV=production`), VU accounts share `EDUAI_LOCAL_SEED_PASSWORD` and an 8-digit student ID, `/api/sessions/validate` bursts send the service key so they hit the 300-req limiter, and HTTP profiles fail the run if dashboard or rate-limit isolation checks miss. (@Ayyhab, 2026-08-22) — [#1516](https://github.com/EduAI-Lab/EduAI/pull/1516)
 - [core] fix: Restore the course restrictive-chat toggle in Course Manager settings, default it to off, expose the setting only to staff, and persist changes through the course PATCH flow. Closes #1522. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 ### Tests

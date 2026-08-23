@@ -3,8 +3,12 @@
 // 500-VU ramp.
 //
 //   k6 run loadtest/k6/smoke.js
-import { chatFlow } from "./scenarios/chat-flow.js";
-import { rateLimitCheck } from "./scenarios/rate-limit-check.js";
+import { chatFlow, dashboardOk, dashboardSamples } from "./scenarios/chat-flow.js";
+import {
+  rateLimitCheck,
+  rateLimitTriggered,
+  rateLimitIsolationOk,
+} from "./scenarios/rate-limit-check.js";
 
 export const options = {
   scenarios: {
@@ -28,8 +32,20 @@ export const options = {
     },
   },
   thresholds: {
+    checks: ["rate>0.9"],
     eduai_chat_success: ["rate>0.9"],
+    eduai_dashboard_ok: ["rate>0.9"],
+    eduai_dashboard_samples: ["count>=1"],
+    eduai_rate_limit_429s: ["count>=1"],
+    eduai_rate_limit_isolation_ok: ["count>=1"],
   },
 };
 
-export { chatFlow, rateLimitCheck };
+export {
+  chatFlow,
+  dashboardOk,
+  dashboardSamples,
+  rateLimitCheck,
+  rateLimitTriggered,
+  rateLimitIsolationOk,
+};

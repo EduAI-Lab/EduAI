@@ -10,6 +10,8 @@ import { BASE_URL, COURSE_CODE, MODEL_ID, CHAT_MESSAGES } from "../lib/config.js
 export const pageLoadDuration = new Trend("eduai_page_load_duration", true);
 export const chatStreamDuration = new Trend("eduai_chat_stream_duration", true);
 export const chatSuccessRate = new Rate("eduai_chat_success");
+export const dashboardOk = new Rate("eduai_dashboard_ok");
+export const dashboardSamples = new Counter("eduai_dashboard_samples");
 export const chatFailures = new Counter("eduai_chat_failures");
 
 function randomMessage() {
@@ -38,9 +40,11 @@ export function chatFlow() {
     tags: { name: "dashboard" },
   });
   pageLoadDuration.add(Date.now() - dashboardStart);
-  check(dashboardRes, {
+  const dashboardLoaded = check(dashboardRes, {
     "dashboard loaded (not redirected to login)": (r) => r.status === 200,
   });
+  dashboardOk.add(dashboardLoaded);
+  dashboardSamples.add(1);
 
   sleep(Math.random() * 1.5 + 0.5); // think time — a human reads before typing
 

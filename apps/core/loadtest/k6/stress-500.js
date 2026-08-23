@@ -8,8 +8,12 @@
 //
 // For live dashboards: `npm run loadtest:monitoring:up` first, then add
 //   --out influxdb=http://127.0.0.1:8086/k6
-import { chatFlow } from "./scenarios/chat-flow.js";
-import { rateLimitCheck } from "./scenarios/rate-limit-check.js";
+import { chatFlow, dashboardOk, dashboardSamples } from "./scenarios/chat-flow.js";
+import {
+  rateLimitCheck,
+  rateLimitTriggered,
+  rateLimitIsolationOk,
+} from "./scenarios/rate-limit-check.js";
 
 export const options = {
   scenarios: {
@@ -44,7 +48,20 @@ export const options = {
     eduai_chat_stream_duration: ["p(95)<8000"],
     eduai_chat_success: ["rate>0.95"],
     http_req_failed: ["rate<0.05"],
+    // A failed dashboard or rate-limit isolation check must fail the run.
+    checks: ["rate>0.95"],
+    eduai_dashboard_ok: ["rate>0.95"],
+    eduai_dashboard_samples: ["count>=1"],
+    eduai_rate_limit_429s: ["count>=1"],
+    eduai_rate_limit_isolation_ok: ["count>=1"],
   },
 };
 
-export { chatFlow, rateLimitCheck };
+export {
+  chatFlow,
+  dashboardOk,
+  dashboardSamples,
+  rateLimitCheck,
+  rateLimitTriggered,
+  rateLimitIsolationOk,
+};

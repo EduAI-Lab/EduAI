@@ -17,10 +17,43 @@ if [ ! -f "$ENV_FILE" ]; then
   rm -f "$ENV_FILE.bak"
 fi
 
+ensure_local_seed_password() {
+  if grep -qE '^EDUAI_LOCAL_SEED_PASSWORD="[^"]+"' "$ENV_FILE"; then
+    return
+  fi
+  local pw
+  pw="$(openssl rand -base64 24)"
+  if grep -qE '^EDUAI_LOCAL_SEED_PASSWORD=' "$ENV_FILE"; then
+    sed -i.bak "s|^EDUAI_LOCAL_SEED_PASSWORD=.*|EDUAI_LOCAL_SEED_PASSWORD=\"${pw}\"|" "$ENV_FILE"
+  else
+    printf '\nEDUAI_LOCAL_SEED_PASSWORD="%s"\n' "$pw" >> "$ENV_FILE"
+  fi
+  rm -f "$ENV_FILE.bak"
+}
+
+ensure_local_seed_password
+
 set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+
+if [ -z "${EDUAI_LOCAL_SEED_PASSWORD:-}" ]; then
+  echo "EDUAI_LOCAL_SEED_PASSWORD is empty after setup." >&2
+  exit 1
+fi
+
+# prisma/seed.ts and the VU seeder refuse NODE_ENV=production. The app runtime
+# stays production (this file); fixture writes get an explicit local-demo
+# contract for this process only.
+run_loadtest_fixture() {
+  NODE_ENV=development \
+    EDUAI_DEPLOYMENT_MODE=local \
+    EDUAI_ENABLE_LOCAL_DEMO=true \
+    BETTER_AUTH_URL="${BETTER_AUTH_URL:?BETTER_AUTH_URL is required}" \
+    EDUAI_LOCAL_SEED_PASSWORD="${EDUAI_LOCAL_SEED_PASSWORD:?EDUAI_LOCAL_SEED_PASSWORD is required}" \
+    "$@"
+}
 
 DB_NAME=$(echo "$DATABASE_URL" | sed -E 's#.*/([a-zA-Z0-9_]+)\?.*#\1#')
 DB_CONTAINER="${LOADTEST_DB_CONTAINER:-eduai-db}"
@@ -36,12 +69,12 @@ npx prisma generate
 echo "==> Applying migrations..."
 npx prisma migrate deploy
 
-echo "==> Seeding demo dataset (students 1-5, DATA 310, etc.)..."
-npx tsx prisma/seed.ts
+echo "==> Seeding demo dataset (fixture-only local-demo contract; app runtime stays production)..."
+run_loadtest_fixture npx tsx prisma/seed.ts
 
 echo "==> Seeding one password-backed student per VU (default 500)..."
-LOADTEST_VUS="${LOADTEST_VUS:-500}" npx tsx loadtest/scripts/seed-loadtest-users.ts
+LOADTEST_VUS="${LOADTEST_VUS:-500}" run_loadtest_fixture npx tsx loadtest/scripts/seed-loadtest-users.ts
 
-echo "==> Done. Demo login: student1@eduai.local / EduAI2026!"
-echo "==> Unique VU logins: loadtest.vu-001@eduai.local … loadtest.vu-${LOADTEST_VUS:-500}@eduai.local / EduAI2026!"
+echo "==> Done. Demo + VU logins use EDUAI_LOCAL_SEED_PASSWORD from apps/core/.env.loadtest"
+echo "==> Unique VU logins: loadtest.vu-001@eduai.local … loadtest.vu-${LOADTEST_VUS:-500}@eduai.local"
 echo "==> See loadtest/README.md"

@@ -115,6 +115,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `LOADTEST_BASE_URL` | optional (default `http://127.0.0.1:4100`) | loadtest | k6 target. Loopback only unless `LOADTEST_ALLOW_REMOTE=1`. Live hosts `dev.eduai.ok.ubc.ca` / `my.eduai.ok.ubc.ca` are always refused (trailing-dot FQDNs included). |
 | `LOADTEST_ALLOW_REMOTE` | optional | loadtest | Set `1` to allow a non-loopback `LOADTEST_BASE_URL` for a **dedicated** load-test host. Does not unlock the live study/prod hosts. |
 | `LOADTEST_VUS` | optional (default `500`) | loadtest | How many `loadtest.vu-NNN@eduai.local` accounts `seed-loadtest-users.ts` creates. |
+| `EDUAI_LOCAL_SEED_PASSWORD` | required for `loadtest:setup` | loadtest | Explicit fixture password for `prisma/seed.ts` and the VU seeder. `loadtest:setup` generates it if empty and invokes seed with a local-demo contract; the app runtime in `.env.loadtest` stays `NODE_ENV=production`. k6 reads the same value via `loadtest/scripts/run-k6.sh`. |
 | `LOADTEST_UNIQUE_USERS` | optional | loadtest | Set `0` to round-robin the five demo students instead of one account per VU. |
 | `HOST` | optional (loadtest default `127.0.0.1`) | loadtest | Bind address for the mock LLM and `react-router-serve` during a harness run. |
 | `ROUTING_LOCAL_VLLM_ONLY` | optional | loadtest / research | Set `1` so Auto routing stays on `vllm:*` models. The #919 harness also sets `VLLM_FLEET_CHAT_URLS` to the mock so chat does not wait on campus fleet hosts. |

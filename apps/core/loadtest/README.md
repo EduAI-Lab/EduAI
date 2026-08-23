@@ -35,11 +35,17 @@ npm run build                   # production build (loadtest measures prod perf,
 
 By default each VU logs in as a distinct seeded account
 (`loadtest.vu-001@eduai.local` … `loadtest.vu-500@eduai.local`, password
-`EduAI2026!`, enrolled in `DATA 310`) so a 500-VU run is 500 sessions, not
-five loud users sharing `checkRateLimit`'s per-user bucket. `loadtest:setup`
-seeds those accounts. Set `LOADTEST_UNIQUE_USERS=0` to round-robin the five
-`prisma/seed.ts` demo students (`student1@eduai.local` … `student5`) for a
-tiny smoke without the extra seed.
+from `EDUAI_LOCAL_SEED_PASSWORD` in `apps/core/.env.loadtest`, enrolled in
+`DATA 310`, 8-digit student ID already linked) so a 500-VU run is 500
+sessions, not five loud users sharing `checkRateLimit`'s per-user bucket,
+and Chromium does not stop on `/onboarding/student-id`. `loadtest:setup`
+invokes `prisma/seed.ts` and the VU seeder with an explicit local-demo
+contract (`NODE_ENV=development`, `EDUAI_DEPLOYMENT_MODE=local`,
+`EDUAI_ENABLE_LOCAL_DEMO=true`) so the seed gate can run while the app
+runtime in `.env.loadtest` stays `NODE_ENV=production`. Set
+`LOADTEST_UNIQUE_USERS=0` to round-robin the five `prisma/seed.ts` demo
+students (`student1@eduai.local` … `student5`) for a tiny smoke without
+the extra seed.
 
 ## Running it
 
@@ -81,14 +87,17 @@ under concurrent load."
 | File | What it does |
 |---|---|
 | `k6/scenarios/chat-flow.js` | login → GET /dashboard → POST /api/chat (streamed), think-time between turns |
-| `k6/scenarios/rate-limit-check.js` | bursts `/api/sessions/validate` past the 300 req/60s limit from one fake IP, confirms 429 engages and a different IP is unaffected |
+| `k6/scenarios/rate-limit-check.js` | bursts `/api/sessions/validate` with `Authorization: Bearer $EDUAI_API_KEY` past the 300 req/60s limiter from one `X-EduAI-Client-IP`, confirms 429 engages, and asserts a bystander IP gets 401 (not the attacker's 429) |
 | `k6/browser-flow.js` | real-Chromium login → chat page → send message → assert the reply renders |
 | `k6/stress-500.js` | main entrypoint: ramps `chat_flow` to 500 VUs over ~7min, runs `rate_limit_check` once mid-ramp |
 | `k6/smoke.js` | same scenarios at 10 VUs / ~40s, for fast iteration |
 
 Thresholds (in `stress-500.js`) — the run fails if any of these are breached:
 page-load p95 < 3s, chat-stream p95 < 8s, chat success rate > 95%, HTTP
-failure rate < 5%.
+failure rate < 5%, overall `checks` > 95%, dashboard-ok > 95% plus
+`eduai_dashboard_samples>=1`, and the rate-limit scenario must record ≥1
+limiter 429 plus ≥1 isolation 401. `smoke.js` uses the same
+isolation/dashboard gates at 90%.
 
 ## Relationship to #961 (perf-baseline)
 

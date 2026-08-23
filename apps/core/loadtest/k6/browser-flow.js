@@ -59,17 +59,10 @@ export async function browserChatFlow() {
 
     check(page, {
       "left the login page after submit": (p) => !p.url().includes("/auth/login"),
+      // VU seeder writes an 8-digit student ID, so the current onboarding
+      // form (link-only, no skip button) is never shown.
+      "did not land on student-id onboarding": (p) => !p.url().includes("/onboarding/student-id"),
     });
-
-    // Seeded loadtest VUs have no student number, so first login lands on
-    // /onboarding/student-id. Skip it the same way a TA without a number would.
-    if (page.url().includes("/onboarding/student-id")) {
-      await page.evaluate(() => {
-        const btn = document.querySelector('button[name="intent"][value="skip"]');
-        if (btn) btn.click();
-      });
-      await page.waitForNavigation().catch(() => {});
-    }
 
     let appeared = false;
     try {

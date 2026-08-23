@@ -3,23 +3,23 @@
  * distinct sessions, not 5 demo accounts sharing a per-user chat limiter.
  *
  * Emails: loadtest.vu-001@eduai.local … loadtest.vu-NNN@eduai.local
- * Password: EduAI2026! (same as prisma/seed.ts demo accounts)
+ * Password: EDUAI_LOCAL_SEED_PASSWORD (same contract as prisma/seed.ts)
+ * Student IDs: 20000001… so login skips /onboarding/student-id
  * Enrollment: STUDENT on DATA 310
  *
  *   LOADTEST_VUS=500 npx tsx loadtest/scripts/seed-loadtest-users.ts
  */
 import { hashPassword } from "better-auth/crypto";
 import prisma from "../../app/lib/prisma.server";
+import { getLocalSeedPassword } from "../../app/lib/deployment-safety.server";
+import { prepareStudentIdStorage } from "../../app/lib/canvas/student-id.server";
+import { emailForVu, studentNumberForVu } from "./loadtest-fixtures";
 
-const SEED_PASSWORD = "EduAI2026!";
 const COURSE_CODE = "DATA 310";
 const COUNT = Math.max(1, Number(process.env.LOADTEST_VUS || 500));
 
-function emailForVu(n: number) {
-  return `loadtest.vu-${String(n).padStart(3, "0")}@eduai.local`;
-}
-
 async function main() {
+  const seedPassword = getLocalSeedPassword();
   const course = await prisma.course.findFirst({
     where: { code: COURSE_CODE },
     select: { id: true, code: true },
@@ -28,20 +28,27 @@ async function main() {
     throw new Error(`Course ${COURSE_CODE} not found — run prisma/seed.ts first.`);
   }
 
-  const hashed = await hashPassword(SEED_PASSWORD);
+  const hashed = await hashPassword(seedPassword);
   console.log(`▶ seeding ${COUNT} loadtest VUs into ${course.code}`);
 
   for (let n = 1; n <= COUNT; n++) {
     const email = emailForVu(n);
+    const studentNumber = studentNumberForVu(n);
+    const studentIdFields = prepareStudentIdStorage(studentNumber);
     const user = await prisma.user.upsert({
       where: { email },
-      update: { isActive: true, emailVerified: true },
+      update: {
+        isActive: true,
+        emailVerified: true,
+        ...studentIdFields,
+      },
       create: {
         email,
         name: `Loadtest VU ${n}`,
         role: "STUDENT",
         isActive: true,
         emailVerified: true,
+        ...studentIdFields,
       },
     });
     await prisma.account.upsert({
@@ -70,7 +77,7 @@ async function main() {
     if (n % 50 === 0) console.log(`  … ${n}/${COUNT}`);
   }
 
-  console.log(`✓ ${COUNT} loadtest users ready (password ${SEED_PASSWORD})`);
+  console.log(`✓ ${COUNT} loadtest users ready (password from EDUAI_LOCAL_SEED_PASSWORD)`);
 }
 
 main()

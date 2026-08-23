@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { resolveLoadtestBaseUrl } from "../../../loadtest/k6/lib/base-url.js";
+import { parseLoadtestHttpUrl, resolveLoadtestBaseUrl } from "../../../loadtest/k6/lib/base-url.js";
+
+describe("parseLoadtestHttpUrl", () => {
+  it("parses IPv4 loopback without a WHATWG URL global (k6)", () => {
+    expect(parseLoadtestHttpUrl("http://127.0.0.1:4100")).toEqual({
+      protocol: "http:",
+      hostname: "127.0.0.1",
+    });
+    expect(parseLoadtestHttpUrl("https://dev.eduai.ok.ubc.ca.:443")).toEqual({
+      protocol: "https:",
+      hostname: "dev.eduai.ok.ubc.ca.",
+    });
+  });
+});
 
 describe("resolveLoadtestBaseUrl", () => {
   it("defaults to IPv4 loopback", () => {

@@ -9,9 +9,15 @@ export const BASE_URL = resolveLoadtestBaseUrl(
   __ENV.LOADTEST_ALLOW_REMOTE,
 );
 
-// Seeded by `apps/core/prisma/seed.ts` — see loadtest/README.md for how the
-// isolated DB is provisioned. All demo accounts share one password.
-export const DEMO_PASSWORD = "EduAI2026!";
+// Same explicit fixture password `loadtest:setup` wrote into
+// EDUAI_LOCAL_SEED_PASSWORD (prisma/seed.ts + the VU seeder). run-k6.sh
+// sources apps/core/.env.loadtest so this is set for npm run loadtest:*.
+export const DEMO_PASSWORD = __ENV.EDUAI_LOCAL_SEED_PASSWORD || __ENV.LOADTEST_PASSWORD || "";
+if (!DEMO_PASSWORD) {
+  throw new Error(
+    "EDUAI_LOCAL_SEED_PASSWORD is required (run npm run loadtest:setup, or pass -e LOADTEST_PASSWORD=...)",
+  );
+}
 export const STUDENTS = [
   "student1@eduai.local",
   "student2@eduai.local",
