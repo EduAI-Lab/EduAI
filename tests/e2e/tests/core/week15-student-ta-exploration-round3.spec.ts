@@ -412,9 +412,16 @@ test.describe("Chat composer — system prompt settings", () => {
 // ===========================================================================
 
 test.describe("Chat composer — error handling per failure mode", () => {
+  // Observed contract for every mocked /api/chat failure on this branch.
+  // #1510: useChat's `error` is never rendered, so the composer returns to
+  // idle with no banner/toast. Flip `errorVisible` when that toast ships —
+  // do not drop the Send/Stop asserts, a stuck Stop is a separate regression.
   const cases: Array<{
     name: string;
     mock: (route: Route) => Promise<void>;
+    sendVisible: boolean;
+    stopVisible: boolean;
+    errorVisible: boolean;
   }> = [
     {
       name: "502 LLM_STREAM_FAILED (model errored mid-stream)",
@@ -427,6 +434,9 @@ test.describe("Chat composer — error handling per failure mode", () => {
             code: "LLM_STREAM_FAILED",
           }),
         }),
+      sendVisible: true,
+      stopVisible: false,
+      errorVisible: false,
     },
     {
       name: "400 provider not available (matches an unconfigured/unreachable model)",
@@ -439,15 +449,24 @@ test.describe("Chat composer — error handling per failure mode", () => {
               'Provider "vllm" is not available on this server. Set VLLM_BASE_URL in apps/core/.env and restart the dev process.',
           }),
         }),
+      sendVisible: true,
+      stopVisible: false,
+      errorVisible: false,
     },
     {
       name: "connection refused (route.abort — closest match to a totally unreachable backend)",
       mock: (route) => route.abort("connectionrefused"),
+      sendVisible: true,
+      stopVisible: false,
+      errorVisible: false,
     },
   ];
 
-  for (const { name, mock } of cases) {
-    test(`${name}: does the UI show anything to the user?`, async ({ page, playwright }) => {
+  for (const { name, mock, sendVisible, stopVisible, errorVisible } of cases) {
+    test(`${name}: composer returns to idle with the #1510 silent-error contract`, async ({
+      page,
+      playwright,
+    }) => {
       const ctx = await newAuthedContext(playwright, USERS.student1);
       try {
         await page.route("**/api/chat", async (route: Route) => {
@@ -455,6 +474,9 @@ test.describe("Chat composer — error handling per failure mode", () => {
             await route.continue();
             return;
           }
+          // Brief delay so Stop can render; otherwise an instant 4xx/abort
+          // can skip the in-flight state and we cannot detect a stuck Stop.
+          await new Promise((resolve) => setTimeout(resolve, 400));
           await mock(route);
         });
 
@@ -462,34 +484,54 @@ test.describe("Chat composer — error handling per failure mode", () => {
         await openCourseChat(page);
 
         const input = page.locator("#chat-message-input");
+        const sendButton = page.getByRole("button", { name: "Send message" });
+        const stopButton = page.getByRole("button", { name: "Stop generating" });
+        const errorText = page.getByText(/error|failed|try again|something went wrong/i);
+
         await input.fill("This request will fail.");
-        await page.getByRole("button", { name: "Send message" }).click();
+        await sendButton.click();
+        await expect(
+          stopButton,
+          `[${name}] Stop should appear while the mocked /api/chat is in flight`,
+        ).toBeVisible({ timeout: 5_000 });
 
-        // Give the failure time to propagate through useChat's onError.
-        await page.waitForTimeout(3_000);
+        if (sendVisible) {
+          await expect(
+            sendButton,
+            `[${name}] composer should return to Send after /api/chat fails`,
+          ).toBeVisible({ timeout: 10_000 });
+        } else {
+          await expect(
+            sendButton,
+            `[${name}] Send should stay hidden after /api/chat fails`,
+          ).toHaveCount(0);
+        }
 
-        const sendVisible = await page.getByRole("button", { name: "Send message" }).isVisible();
-        const stopVisible = await page.getByRole("button", { name: "Stop generating" }).isVisible();
-        const errorTextCount = await page
-          .getByText(/error|failed|try again|something went wrong/i)
-          .count();
+        if (stopVisible) {
+          await expect(
+            stopButton,
+            `[${name}] Stop should remain visible after /api/chat fails`,
+          ).toBeVisible();
+        } else {
+          await expect(
+            stopButton,
+            `[${name}] Stop must not stay stuck after /api/chat fails`,
+          ).toHaveCount(0);
+        }
 
-        test.info().annotations.push({
-          type: "finding",
-          description:
-            `[${name}] After the failure: composer shows Send button=${sendVisible}, ` +
-            `stuck on Stop button=${stopVisible}, error-like text visible=${errorTextCount > 0} ` +
-            `(useChat's \`error\` state is never destructured/rendered anywhere in the chat view ` +
-            `components — apps/core/app/components/chat/chat-conversation-layout.tsx, ` +
-            `chat-course-scoped-view.tsx, chat-input.tsx — so this is expected to be silent).`,
-        });
-
-        // Documenting the actual behavior rather than asserting a specific
-        // outcome here — round 1/2 could only observe "no reply within 15s
-        // against a genuinely unreachable model" (environment-confounded).
-        // This is the controlled version: whatever happens is deterministic
-        // and reproducible, and gets written up precisely in the workflows
-        // doc rather than hedged as inconclusive.
+        // Tracked expected-failure contract for #1510. Flip `errorVisible`
+        // on the case above when the error toast/banner ships.
+        if (errorVisible) {
+          await expect(
+            errorText,
+            `[${name}] /api/chat failure should surface error UI`,
+          ).toBeVisible();
+        } else {
+          await expect(
+            errorText,
+            `[${name}] Known bug #1510: /api/chat failures never surface error UI. Update this case when #1510 lands.`,
+          ).toHaveCount(0);
+        }
       } finally {
         await ctx.dispose();
       }
