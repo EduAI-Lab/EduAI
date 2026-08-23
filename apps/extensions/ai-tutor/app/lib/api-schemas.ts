@@ -499,11 +499,17 @@ export const chatSessionRowSchema = z
   })
   .passthrough();
 
+/**
+ * Core's `GET /api/chats/:chatId/messages`, which AI-Tutor's chat-session route
+ * proxies verbatim. Each message is built by Core's `reviveStoredMessage`, which
+ * keys the message by `id` — the earlier `messageId` here matched no field Core
+ * has ever sent, so the restored id was silently `undefined` under the old cast.
+ */
 export const chatMessagesSchema = z
   .object({
     chat: z.object({ id: z.string(), title: z.string().nullable() }).passthrough(),
     messages: z.array(
-      z.object({ messageId: z.string(), role: z.string(), content: z.unknown() }).passthrough(),
+      z.object({ id: z.string(), role: z.string(), content: z.unknown() }).passthrough(),
     ),
   })
   .passthrough();
@@ -518,11 +524,16 @@ export const okWithRoleSchema = z
   .object({ ok: z.literal(true), role: enrollmentRoleSchema })
   .passthrough();
 
-export const bugReportCreatedSchema = z
+/**
+ * The status-only row `PATCH /admin/bug-reports/:id` answers with. The service
+ * deliberately returns just the two fields it changed, and the admin view
+ * spread-merges them onto the row it already holds, so this must not require
+ * the full `adminBugReportRowSchema` shape.
+ */
+export const bugReportStatusUpdatedSchema = z
   .object({
     id: z.string(),
     status: bugReportStatusSchema,
-    createdAt: z.string(),
   })
   .passthrough();
 

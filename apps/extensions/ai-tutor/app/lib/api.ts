@@ -39,7 +39,7 @@ import {
   aiStatusSchema,
   aiTraceRowSchema,
   apiKeyValidationSchema,
-  bugReportCreatedSchema,
+  bugReportStatusUpdatedSchema,
   chatMessagesSchema,
   chatSessionRowSchema,
   courseFacetsSchema,
@@ -980,7 +980,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify(payload),
       }),
-      bugReportCreatedSchema,
+      okSchema,
     ),
   listAdminBugReports: () =>
     decode(http("/api/admin/bug-reports"), z.array(adminBugReportRowSchema)),
@@ -992,7 +992,7 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(payload),
       }),
-      adminBugReportRowSchema,
+      bugReportStatusUpdatedSchema,
     ),
   setEduAiApiKey: (apiKey: string) =>
     decode(

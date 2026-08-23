@@ -781,3 +781,77 @@ describe("AI request topic ids", () => {
     expect(sentBody()).not.toHaveProperty("topicId");
   });
 });
+
+// #1616 review: three schemas named fields their routes have never sent, so
+// every call decoded into a ZodError the UI surfaced as a failed action. Each
+// payload below is copied from the handler that produces it, so a future edit
+// to either side has to break this test before it can break the feature.
+describe("response shapes match what the routes actually send", () => {
+  const respondWith = (body: unknown) =>
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+    });
+
+  // Core's `reviveStoredMessage` keys each message by `id`; the proxy in
+  // `server/src/routes/activities.js` forwards Core's body verbatim.
+  it("getChatMessages decodes Core's id-keyed messages", async () => {
+    respondWith({
+      chat: { id: "chat-1", title: "Recursion" },
+      messages: [
+        { id: "m1", role: "user", content: "Explain base cases" },
+        { id: "m2", role: "assistant", content: "A base case is..." },
+      ],
+      canEdit: true,
+    });
+
+    const { api } = await import("~/lib/api");
+    const result = await api.getChatMessages(4, "chat-1");
+
+    expect(result.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("getChatMessages rejects a message with no id", async () => {
+    respondWith({
+      chat: { id: "chat-1", title: null },
+      messages: [{ role: "user", content: "Explain base cases" }],
+    });
+
+    const { api } = await import("~/lib/api");
+    await expect(api.getChatMessages(4, "chat-1")).rejects.toThrow();
+  });
+
+  // `POST /bug-reports` discards the created row and answers `{ ok: true }`.
+  it("submitBugReport decodes the bare ok envelope the route sends", async () => {
+    respondWith({ ok: true });
+
+    const { api } = await import("~/lib/api");
+    await expect(
+      api.submitBugReport({
+        description: "The topic selector drops my selection",
+        bugType: "UI_DISPLAY",
+        isAnonymous: false,
+        consoleLogs: "[]",
+        networkLogs: "[]",
+        screenshot: null,
+        pageUrl: "http://localhost:3001/activities/4",
+        userAgent: "vitest",
+      }),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  // `updateBugReportStatus` returns only the two fields it wrote; the admin
+  // view spread-merges them onto the row it already holds.
+  // The service maps Core's enum back to the UI casing before responding, so
+  // the decoded status is `"resolved"`, not Core's `RESOLVED`.
+  it("updateAdminBugReportStatus decodes the status-only row", async () => {
+    respondWith({ id: "bug-1", status: "resolved" });
+
+    const { api } = await import("~/lib/api");
+    await expect(api.updateAdminBugReportStatus("bug-1", { status: "resolved" })).resolves.toEqual({
+      id: "bug-1",
+      status: "resolved",
+    });
+  });
+});
