@@ -11,6 +11,21 @@ describe("parseLoadtestHttpUrl", () => {
       protocol: "https:",
       hostname: "dev.eduai.ok.ubc.ca.",
     });
+    expect(parseLoadtestHttpUrl("http://[::1]:4100")).toEqual({
+      protocol: "http:",
+      hostname: "::1",
+    });
+  });
+
+  it("uses the host after userinfo, matching WHATWG URL.hostname", () => {
+    expect(parseLoadtestHttpUrl("https://127.0.0.1@dev.eduai.ok.ubc.ca")).toEqual({
+      protocol: "https:",
+      hostname: "dev.eduai.ok.ubc.ca",
+    });
+    expect(parseLoadtestHttpUrl("https://evil@127.0.0.1:4100")).toEqual({
+      protocol: "https:",
+      hostname: "127.0.0.1",
+    });
   });
 });
 
@@ -63,6 +78,16 @@ describe("resolveLoadtestBaseUrl", () => {
       /live EduAI traffic/,
     );
     expect(() => resolveLoadtestBaseUrl("https://dev.eduai.ok.ubc.ca.:443", "1")).toThrow(
+      /live EduAI traffic/,
+    );
+    // Userinfo must not hide the study host from the exact-host check.
+    expect(() => resolveLoadtestBaseUrl("https://127.0.0.1@dev.eduai.ok.ubc.ca", "1")).toThrow(
+      /live EduAI traffic/,
+    );
+    expect(() => resolveLoadtestBaseUrl("https://127.0.0.1@dev.eduai.ok.ubc.ca.", "1")).toThrow(
+      /live EduAI traffic/,
+    );
+    expect(() => resolveLoadtestBaseUrl("https://127.0.0.1@my.eduai.ok.ubc.ca", "1")).toThrow(
       /live EduAI traffic/,
     );
   });

@@ -12,21 +12,44 @@ function canonicalizeHostname(hostname) {
 /**
  * k6 (Sobek) has no WHATWG `URL` global. Parse just enough of an http(s)
  * absolute URL to apply the loopback / live-host policy in both Node tests
- * and `k6 run`.
+ * and `k6 run`. Host is the authority *after* the last `@` so
+ * `https://127.0.0.1@dev.eduai.ok.ubc.ca` cannot bypass the study-host block
+ * the way a naive `[^/?#:]+` hostname would.
  */
 export function parseLoadtestHttpUrl(value) {
-  const match = String(value)
-    .trim()
-    .match(/^(https?):\/\/(\[[^\]]+\]|[^/?#:]+)(?::\d+)?(?:[/?#].*)?$/i);
-  if (!match) {
+  const trimmed = String(value).trim();
+  const scheme = trimmed.match(/^(https?):\/\//i);
+  if (!scheme) {
     throw new Error(`LOADTEST_BASE_URL is not a valid URL: ${value}`);
   }
-  let hostname = match[2];
-  if (hostname.startsWith("[") && hostname.endsWith("]")) {
-    hostname = hostname.slice(1, -1);
+  const rest = trimmed.slice(scheme[0].length);
+  const authorityEnd = rest.search(/[/?#]/);
+  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
+  if (!authority) {
+    throw new Error(`LOADTEST_BASE_URL is not a valid URL: ${value}`);
+  }
+  const hostport = authority.slice(authority.lastIndexOf("@") + 1);
+  let hostname = "";
+  const ipv6 = hostport.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (ipv6) {
+    hostname = ipv6[1];
+  } else {
+    const colon = hostport.lastIndexOf(":");
+    if (colon !== -1) {
+      const port = hostport.slice(colon + 1);
+      if (!/^\d+$/.test(port)) {
+        throw new Error(`LOADTEST_BASE_URL is not a valid URL: ${value}`);
+      }
+      hostname = hostport.slice(0, colon);
+    } else {
+      hostname = hostport;
+    }
+  }
+  if (!hostname) {
+    throw new Error(`LOADTEST_BASE_URL is not a valid URL: ${value}`);
   }
   return {
-    protocol: `${match[1].toLowerCase()}:`,
+    protocol: `${scheme[1].toLowerCase()}:`,
     hostname,
   };
 }

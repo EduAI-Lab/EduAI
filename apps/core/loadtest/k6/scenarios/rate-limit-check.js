@@ -32,20 +32,29 @@ function validateHeaders(clientIp) {
 
 export function rateLimitCheck() {
   let got429 = false;
+  let first429At = -1;
+  let status401 = 0;
 
   for (let i = 0; i < BURST; i++) {
     const res = http.post(`${BASE_URL}/api/sessions/validate`, null, {
       headers: validateHeaders(ATTACKER_IP),
       tags: { name: "sessions-validate-burst" },
     });
+    if (res.status === 401) status401 += 1;
     if (res.status === 429) {
       got429 = true;
+      if (first429At < 0) first429At = i;
       rateLimitTriggered.add(1);
     }
   }
 
+  // A missing/wrong service key 429s on request 2 (invalid-auth bucket of 1).
+  // The 300-req session limiter only counts if we saw LIMIT unauthenticated
+  // 401s first and the first 429 lands at or after that limit.
   check(null, {
     [`rate limit engaged within ${BURST} requests (limit=${LIMIT})`]: () => got429,
+    "burst hit the session limiter, not the invalid-auth bucket": () =>
+      status401 >= LIMIT && first429At >= LIMIT,
   });
 
   // Valid service key, no session: the intended unauthenticated response is
