@@ -6,8 +6,15 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
+vi.mock("~/lib/prisma.server", () => ({
+  default: {
+    enrollment: { count: vi.fn().mockResolvedValue(0) },
+  },
+}));
+
 import { loader } from "~/routes/help";
 import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
 
 function makeArgs() {
   return {
@@ -19,6 +26,7 @@ function makeArgs() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
 });
 
 describe("help loader", () => {
@@ -34,6 +42,24 @@ describe("help loader", () => {
       user: { id: "u1", role: "STUDENT" },
     } as never);
     const result = await loader(makeArgs());
-    expect(result).toEqual({ user: { id: "u1", role: "STUDENT" } });
+    expect(result).toEqual({ user: { id: "u1", role: "STUDENT" }, isTA: false });
+  });
+
+  it("marks a STUDENT with an active TA enrollment as isTA", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "STUDENT" },
+    } as never);
+    vi.mocked(prisma.enrollment.count).mockResolvedValue(1);
+    const result = await loader(makeArgs());
+    expect(result).toEqual({ user: { id: "u1", role: "STUDENT" }, isTA: true });
+  });
+
+  it("does not check TA enrollment for non-STUDENT roles", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "admin-1", role: "ADMIN" },
+    } as never);
+    const result = await loader(makeArgs());
+    expect(result).toEqual({ user: { id: "admin-1", role: "ADMIN" }, isTA: false });
+    expect(prisma.enrollment.count).not.toHaveBeenCalled();
   });
 });

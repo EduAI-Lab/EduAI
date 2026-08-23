@@ -50,6 +50,17 @@ describe("HelpView", () => {
     expect(screen.queryByRole("heading", { name: "Administration" })).not.toBeInTheDocument();
   });
 
+  it("shows Course materials (but not Administration) for a TA", () => {
+    render(
+      <MemoryRouter>
+        <HelpView role="STUDENT" isTA />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Course materials" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Administration" })).not.toBeInTheDocument();
+  });
+
   it("renders the jump-link rail with an anchor per visible topic", () => {
     renderHelp("ADMIN");
 
