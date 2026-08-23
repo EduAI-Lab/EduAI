@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
@@ -149,9 +150,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (parts.length === 1 && method === "DELETE") {
-    let body: Record<string, unknown> = {};
+    let body: JsonObject = {};
     try {
-      body = await request.json();
+      // SAFETY: `Request#json` resolves to whatever the client sent; the guard
+      // below keeps a non-object body from reaching the service.
+      const parsed = (await request.json()) as JsonValue;
+      body = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
       body = {};
     }

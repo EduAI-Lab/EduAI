@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -367,7 +368,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             annotation !== null &&
             typeof annotation === "object" &&
             !Array.isArray(annotation) &&
-            (annotation as Record<string, unknown>).hitLongOutputCap === true,
+            (annotation as JsonObject).hitLongOutputCap === true,
         );
 
       if (hitLongOutputCap) {

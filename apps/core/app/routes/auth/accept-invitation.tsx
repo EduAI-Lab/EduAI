@@ -33,25 +33,28 @@ function formBodyErrorResponse(cause: unknown): Response | null {
   return null;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: "Administrator",
-  UNIT_ADMIN: "Unit Administrator",
-  INSTRUCTOR: "Instructor",
-  STUDENT: "Student",
-};
+// A `Map` because the role arrives as a string on the invitation payload.
+const ROLE_LABELS = new Map<string, string>([
+  ["ADMIN", "Administrator"],
+  ["UNIT_ADMIN", "Unit Administrator"],
+  ["INSTRUCTOR", "Instructor"],
+  ["STUDENT", "Student"],
+]);
 
-const ERROR_MESSAGES: Record<string, string> = {
-  MISSING_TOKEN: "This invitation link is missing its token.",
-  INVALID_TOKEN: "This invitation link is invalid.",
-  INVITATION_USED: "This invitation has already been used.",
-  INVITATION_REVOKED: "This invitation was cancelled. Ask an administrator to send a new one.",
-  INVITATION_EXPIRED: "This invitation has expired. Ask an administrator to send a new one.",
-  USER_EXISTS: "An account already exists for this email. Try logging in instead.",
-  SIGNUP_FAILED: "We couldn't create your account. Please try again.",
-};
+// A `Map` because the code comes back from the API: an unrecognised one
+// falls back to the generic message.
+const ERROR_MESSAGES = new Map<string, string>([
+  ["MISSING_TOKEN", "This invitation link is missing its token."],
+  ["INVALID_TOKEN", "This invitation link is invalid."],
+  ["INVITATION_USED", "This invitation has already been used."],
+  ["INVITATION_REVOKED", "This invitation was cancelled. Ask an administrator to send a new one."],
+  ["INVITATION_EXPIRED", "This invitation has expired. Ask an administrator to send a new one."],
+  ["USER_EXISTS", "An account already exists for this email. Try logging in instead."],
+  ["SIGNUP_FAILED", "We couldn't create your account. Please try again."],
+]);
 
 function friendlyError(code: string): string {
-  return ERROR_MESSAGES[code] ?? "Something went wrong with this invitation.";
+  return ERROR_MESSAGES.get(code) ?? "Something went wrong with this invitation.";
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -171,7 +174,7 @@ export default function AcceptInvitationPage() {
                   <h1 className="text-2xl font-bold">Accept your invitation</h1>
                   <p className="text-muted-foreground text-sm">
                     You've been invited to join EduAI as{" "}
-                    <strong>{ROLE_LABELS[data.role] ?? data.role}</strong>. Set a password to
+                    <strong>{ROLE_LABELS.get(data.role) ?? data.role}</strong>. Set a password to
                     activate your account.
                   </p>
                 </div>

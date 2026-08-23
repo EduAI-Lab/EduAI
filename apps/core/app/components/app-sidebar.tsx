@@ -32,7 +32,7 @@ import { getNavForUser, getNavSecondaryForUser, type NavItemKey } from "~/lib/rb
 import { usePolicyGate } from "~/components/policy/policy-gate";
 import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status";
 
-const NAV_ICONS: Record<NavItemKey, Icon> = {
+const NAV_ICONS = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
@@ -50,7 +50,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
   help: IconHelp,
   "ai-tutor": IconMessageChatbot,
-};
+} satisfies Record<NavItemKey, Icon>;
 
 function toNavMainItems(
   items: ReturnType<typeof getNavForUser>,

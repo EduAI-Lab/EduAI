@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { useEffect, useState } from "react";
 import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
@@ -75,10 +76,10 @@ const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
   { value: "STUDENT", label: "Student" },
 ];
 
-const ROLE_LABEL: Record<InviteRole, string> = {
+const ROLE_LABEL = {
   INSTRUCTOR: "Instructor",
   STUDENT: "Student",
-};
+} satisfies Record<InviteRole, string>;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getRequestSession(request);
@@ -100,17 +101,28 @@ function StatusBadge({ invite }: { invite: Invitation }) {
       </Badge>
     );
   }
-  const map: Record<Invitation["status"], string> = {
+  const map = {
     PENDING: "bg-orange-50 text-orange-700 border-orange-200",
     ACCEPTED: "bg-green-50 text-green-700 border-green-200",
     REVOKED: "bg-gray-50 text-gray-700 border-gray-200",
-  };
+  } satisfies Record<Invitation["status"], string>;
   return (
     <Badge variant="outline" className={map[invite.status]}>
       {invite.status}
     </Badge>
   );
 }
+
+/**
+ * The body of `POST /api/invitations`. `name` is omitted when the form leaves
+ * it blank, and `authorizedUnits` only accompanies a unit-admin invite.
+ */
+type InviteRequestBody = {
+  email: string;
+  role: InviteRole;
+  name?: string;
+  authorizedUnits?: string[];
+};
 
 export default function UnitAdminInvitationsPage() {
   const { user } = useLoaderData<typeof loader>();
@@ -175,7 +187,7 @@ export default function UnitAdminInvitationsPage() {
     e.preventDefault();
     setSubmitting(true);
     setFormError(null);
-    const body: Record<string, unknown> = { email, role };
+    const body: InviteRequestBody = { email, role };
     if (name.trim()) body.name = name.trim();
 
     try {
@@ -505,7 +517,7 @@ export default function UnitAdminInvitationsPage() {
   );
 }
 
-function errorMessage(code: unknown, status: number, details?: unknown): string {
+function errorMessage(code: JsonValue, status: number, details?: JsonValue): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
