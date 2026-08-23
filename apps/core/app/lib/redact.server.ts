@@ -351,6 +351,7 @@ function redactSensitiveKeyValuePairs(text: string): string {
  * `name` as if the key itself were that header.
  */
 function isHarHeaderEntry(
+  // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- classifies one arm of the redactor's walk over an arbitrary runtime graph; there is no payload schema to derive a value type from.
   value: Record<string, unknown>,
 ): value is { name: string; value: unknown } {
   // Real HAR cookie rows also carry domain/path/httpOnly/secure/expires — match
@@ -421,6 +422,7 @@ export function redactSecretValuesInString(text: string): string {
  * Used for audit / security / system log details and bug-report console+network captures.
  */
 export function sanitizeSensitiveData(
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- callers pass whatever they are about to log: Error, Map, Set, class instance, cycle. Classifying that graph is what this function is for.
   value: unknown,
   seen: WeakSet<object> = new WeakSet(),
 ): RedactedValue {
@@ -462,6 +464,7 @@ export function sanitizeSensitiveData(
   } else if (value instanceof Set) {
     result = Array.from(value, (entry) => sanitizeSensitiveData(entry, seen));
   } else {
+    // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- the last arm of that walk: a plain object whose values are still unclassified, one level down.
     const record = value as Record<string, unknown>;
     // HAR-style header rows: `{ name: "Cookie", value: "session=…" }`
     if (isHarHeaderEntry(record) && shouldRedactKey(record.name)) {
