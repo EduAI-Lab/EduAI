@@ -67,6 +67,13 @@ type LessonActivityViewProps = {
   onSubmit: () => void;
   result: string | null;
   wasCorrect: boolean;
+  /**
+   * Recording a graded attempt is a STUDENT-enrolment path; a course TA keeps
+   * the learner surface but is not a submitter (`POST /questions/:id/answer` is
+   * 403 for them). When false, the answer inputs and Submit are withheld and a
+   * short note explains why, rather than leaving a dead button (U-TA-1).
+   */
+  canSubmitAnswers: boolean;
 
   isUserReady: boolean;
   onGuideMe: () => void;
@@ -102,6 +109,7 @@ export function LessonActivityView({
   onSubmit,
   result,
   wasCorrect,
+  canSubmitAnswers,
   isUserReady,
   onGuideMe,
   canPrev,
@@ -228,7 +236,7 @@ export function LessonActivityView({
                       letter={String.fromCharCode(65 + i)}
                       state={state}
                       selected={mcq === i}
-                      disabled={submitting || wasCorrect}
+                      disabled={submitting || wasCorrect || !canSubmitAnswers}
                       onSelect={() => onSelectMcq(i)}
                     >
                       {choice}
@@ -247,31 +255,41 @@ export function LessonActivityView({
               onChange={(e) => onTextChange(e.target.value)}
               placeholder="Type your answer…"
               className="text-lg"
+              disabled={!canSubmitAnswers}
             />
           )}
 
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={onSubmit}
-              disabled={
-                submitting || (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
-              }
-            >
-              {submitting ? (
-                <>
-                  <Spinner className="mr-1" />
-                  Submitting…
-                </>
-              ) : (
-                <>
-                  <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
-                  Submit answer
-                </>
-              )}
-            </Button>
+            {canSubmitAnswers ? (
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={onSubmit}
+                disabled={
+                  submitting || (activity?.type === "MCQ" ? mcq === null : text.trim() === "")
+                }
+              >
+                {submitting ? (
+                  <>
+                    <Spinner className="mr-1" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Submit answer
+                  </>
+                )}
+              </Button>
+            ) : (
+              <p
+                role="note"
+                className="rounded-[var(--radius-lg)] bg-muted/60 px-3 py-2 text-sm text-muted-foreground"
+              >
+                Teaching assistants don&apos;t submit answers.
+              </p>
+            )}
 
             <Button
               variant="secondary"

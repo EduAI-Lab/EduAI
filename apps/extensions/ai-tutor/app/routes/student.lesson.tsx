@@ -290,7 +290,10 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   }
 
   const submit = async () => {
-    if (!activity || !user) return;
+    // A course TA keeps the learner surface but is not a submitter — the
+    // answer route is 403 for them, so the UI withholds Submit (U-TA-1) and
+    // this guards the path even if the button is ever reached programmatically.
+    if (!activity || !user || user.role !== "STUDENT") return;
     setSubmitting(true);
     try {
       const payload: any = { userId: user.id };
@@ -600,6 +603,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       onSubmit={submit}
       result={result}
       wasCorrect={wasCorrect}
+      canSubmitAnswers={user?.role === "STUDENT"}
       isUserReady={isUserReady}
       onGuideMe={handleGuideMe}
       canPrev={canPrev}
