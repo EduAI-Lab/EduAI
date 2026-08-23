@@ -33,3 +33,21 @@ export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 
 /** Decodes a JSON object — a parsed body, not an array and not a bare scalar. */
 export const jsonObjectSchema: z.ZodType<JsonObject> = z.record(jsonValueSchema);
+
+/**
+ * `JSON.parse` for text that may not be JSON at all.
+ *
+ * Malformed text and text that parses to something JSON cannot hold both come
+ * back as `undefined`, so a caller reading a stored blob or a stream frame
+ * branches on the value instead of wrapping every read in its own `try`.
+ */
+export function parseJsonText(text: string): JsonValue | undefined {
+  let raw: JsonValue;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const decoded = jsonValueSchema.safeParse(raw);
+  return decoded.success ? decoded.data : undefined;
+}
