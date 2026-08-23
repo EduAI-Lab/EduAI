@@ -37,6 +37,8 @@ export class FleetUnavailableError extends Error {
 
 /** Independent round-robin cursor per pool (chat vs heavy). */
 const roundRobinByPool = new Map<"interactive" | "background", number>();
+// Keep normal chat affinity sticky, but let a target escape a burst of work.
+const AFFINITY_LOAD_TOLERANCE = 2;
 
 /** Reset round-robin counters (unit tests). */
 export function resetFleetRoundRobin(): void {
@@ -83,9 +85,13 @@ async function pickServer(
 ): Promise<{ server: { id: string; baseUrl: string }; reason: string }> {
   const pool = poolCursorKey(jobType);
   const normalizedAffinityKey = affinityKey?.trim();
-  if (normalizedAffinityKey) {
+  const affinityServer = normalizedAffinityKey
+    ? eligible[affinityIndex(normalizedAffinityKey, eligible.length)]
+    : undefined;
+
+  if (affinityServer && !reserveLoad) {
     return {
-      server: eligible[affinityIndex(normalizedAffinityKey, eligible.length)]!,
+      server: affinityServer,
       reason:
         jobType === "background" && heavyFleetConfigured()
           ? "background-affinity"
@@ -94,13 +100,37 @@ async function pickServer(
   }
 
   if (reserveLoad) {
+    // Background work falls back to the interactive pool when no heavy fleet
+    // is configured, so it must share that pool's load accounting too.
+    const loadJobType = pool;
     const scored = await Promise.all(
       eligible.map(async (server) => ({
         server,
-        score: await fleetLoadScore({ jobType, serverId: server.id, modelId }),
+        score: await fleetLoadScore({
+          jobType: loadJobType,
+          serverId: server.id,
+          modelId,
+        }),
       })),
     );
     const lowestScore = Math.min(...scored.map(({ score }) => score));
+    if (affinityServer) {
+      const affinityTarget = scored.find(
+        ({ server }) => server.id === affinityServer.id,
+      );
+      if (
+        affinityTarget &&
+        affinityTarget.score <= lowestScore + AFFINITY_LOAD_TOLERANCE
+      ) {
+        return {
+          server: affinityServer,
+          reason:
+            jobType === "background" && heavyFleetConfigured()
+              ? "background-affinity"
+              : "interactive-affinity",
+        };
+      }
+    }
     const tied = scored
       .filter(({ score }) => score === lowestScore)
       .map(({ server }) => server);
@@ -108,6 +138,16 @@ async function pickServer(
     return {
       server,
       reason: `${pickReason(jobType)}-load-aware`,
+    };
+  }
+
+  if (affinityServer) {
+    return {
+      server: affinityServer,
+      reason:
+        jobType === "background" && heavyFleetConfigured()
+          ? "background-affinity"
+          : "interactive-affinity",
     };
   }
 
@@ -175,7 +215,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     ...(input.reserveLoad === true
       ? {
           loadLease: await reserveFleetLoad({
-            jobType,
+            jobType: poolCursorKey(jobType),
             serverId: picked.server.id,
             modelId: parsed.modelId,
           }),

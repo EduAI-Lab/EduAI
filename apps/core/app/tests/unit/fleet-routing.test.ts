@@ -315,6 +315,68 @@ describe("resolveFleetHost", () => {
     second?.loadLease?.release();
   });
 
+  it("moves an affinity key when its target is materially more loaded", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    const leases = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        resolveFleetHost({
+          jobType: "interactive",
+          resolvedModelId: "vllm:qwen2.5-7b-instruct",
+          affinityKey: "chat-123",
+          reserveLoad: true,
+        }),
+      ),
+    );
+    const moved = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      affinityKey: "chat-123",
+      reserveLoad: true,
+    });
+
+    expect(new Set(leases.map((pick) => pick?.serverId)).size).toBe(1);
+    expect(moved?.serverId).not.toBe(leases[0]?.serverId);
+    [...leases, moved].forEach((pick) => pick?.loadLease?.release());
+  });
+
+  it("shares load accounting when background work falls back to chat servers", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    delete process.env.VLLM_FLEET_HEAVY_URL;
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    const interactive = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      reserveLoad: true,
+    });
+    const background = await resolveFleetHost({
+      jobType: "background",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      reserveLoad: true,
+    });
+
+    expect(interactive?.serverId).toBe("cmps01");
+    expect(background?.serverId).toBe("cmps02");
+    interactive?.loadLease?.release();
+    background?.loadLease?.release();
+  });
+
   it("ejects an inference-failed host before selecting the next request", async () => {
     process.env.VLLM_FLEET_CHAT_URLS =
       "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
