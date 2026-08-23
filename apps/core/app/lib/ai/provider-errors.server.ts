@@ -34,7 +34,7 @@ const PUBLIC_MESSAGES: Record<ProviderErrorCode, string> = {
   PROVIDER_TIMEOUT: "Provider request timed out",
 };
 
-type ErrorShape = {
+type ProviderErrorFields = {
   name?: unknown;
   statusCode?: unknown;
   responseHeaders?: unknown;
@@ -66,8 +66,8 @@ export function createProviderFailure(
 }
 
 function classifyProviderFailure(provider: string, error: unknown): ProviderFailure {
-  const shape = isObject(error) ? (error as ErrorShape) : {};
-  const name = typeof shape.name === "string" ? shape.name : "";
+  const fields = isObject(error) ? (error as ProviderErrorFields) : {};
+  const name = typeof fields.name === "string" ? fields.name : "";
 
   if (NoSuchProviderError.isInstance(error) || name === "AI_NoSuchProviderError") {
     return createProviderFailure(provider, "INVALID_PROVIDER_CONFIG");
@@ -81,9 +81,9 @@ function classifyProviderFailure(provider: string, error: unknown): ProviderFail
     return createProviderFailure(provider, "PROVIDER_TIMEOUT");
   }
 
-  if (APICallError.isInstance(error) || isApiCallErrorShape(shape)) {
-    const statusCode = numericStatus(shape.statusCode);
-    const retryAfter = retryAfterFromHeaders(shape.responseHeaders);
+  if (APICallError.isInstance(error) || isApiCallErrorLike(fields)) {
+    const statusCode = numericStatus(fields.statusCode);
+    const retryAfter = retryAfterFromHeaders(fields.responseHeaders);
 
     if (statusCode === 401 || statusCode === 403) {
       return createProviderFailure(provider, "INVALID_PROVIDER_CONFIG");
@@ -96,7 +96,7 @@ function classifyProviderFailure(provider: string, error: unknown): ProviderFail
     }
 
     return createProviderFailure(provider, "PROVIDER_REQUEST_FAILED", {
-      retryable: shape.isRetryable === true,
+      retryable: fields.isRetryable === true,
       retryAfter,
     });
   }
@@ -153,7 +153,7 @@ function numericStatus(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
-function isApiCallErrorShape(error: ErrorShape): boolean {
+function isApiCallErrorLike(error: ProviderErrorFields): boolean {
   return error.name === "AI_APICallError" || numericStatus(error.statusCode) != null;
 }
 

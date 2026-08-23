@@ -347,6 +347,22 @@ export class ApiNetworkError extends Error {
   }
 }
 
+/**
+ * Thrown for any non-OK HTTP response `http()` doesn't handle specially.
+ * Carries `status` so a route error boundary can tell "no such course" apart
+ * from "something broke"; the message is still the server's body text, so
+ * existing `error.message` callers are unaffected.
+ */
+export class ApiHttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+  }
+}
+
 /** Thrown when a request is aborted by `http()`'s own timeout, not by a caller-supplied signal. */
 export class ApiTimeoutError extends Error {
   constructor(message = "Request timed out") {
@@ -443,7 +459,7 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
       throw new ApiTimeoutError();
     }
     const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
+    throw new ApiHttpError(res.status, text || `Request failed: ${res.status}`);
   }
   // Optional chaining: some lightweight test doubles for `Response` omit
   // `headers` entirely — a real `fetch` Response always has it.
@@ -480,10 +496,16 @@ export const api = {
     });
     return meInFlight;
   },
-  aiStatus: () =>
-    http("/api/ai-status") as Promise<{
-      cloud: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
-      ubc: { state: "online" | "offline" | "loading" | "unknown"; detail?: string };
+  aiStatus: (signal?: AbortSignal) =>
+    http("/api/ai-status", { signal }) as Promise<{
+      cloud: {
+        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
+        detail?: string;
+      };
+      ubc: {
+        state: "operational" | "degraded" | "outage" | "loading" | "unknown";
+        detail?: string;
+      };
     }>,
   listCourses: (params?: CourseListParams) =>
     http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,
@@ -899,7 +921,8 @@ export const api = {
   gradeSubmission: (
     activityId: number,
     submissionId: number,
-    body: { score?: number; isCorrect?: boolean },
+    // null clears the field — the route accepts an explicit null for both.
+    body: { score?: number | null; isCorrect?: boolean | null },
   ) =>
     http(`/api/activities/${activityId}/submissions/${submissionId}`, {
       method: "PATCH",

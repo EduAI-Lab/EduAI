@@ -78,7 +78,7 @@ function uploadArgs(user: { id: string; role: string }, marker = "lecture notes 
     method: "POST",
     headers: new Headers(),
     formData: () => Promise.resolve(form),
-  } as unknown as Request;
+  } as Request;
   return { request, params: { courseId }, context: {} as never } as any;
 }
 

@@ -4,7 +4,7 @@
 const mockFetch = vi.fn();
 
 beforeEach(() => {
-  global.fetch = mockFetch as unknown as typeof fetch;
+  global.fetch = mockFetch as typeof fetch;
   mockFetch.mockReset();
 
   // Reset window.location before each test
@@ -609,13 +609,11 @@ describe("search + move endpoints (#1207)", () => {
     ["moveModuleToPosition", "modules", "module"],
     ["moveLessonToPosition", "lessons", "lesson"],
     ["moveActivityToPosition", "activities", "activity"],
-  ])("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
+  ] as const)("%s PATCHes the position with a 0-based ordinal", async (method, segment, key) => {
     okJson({ [key]: { id: 4 }, position: 12, total: 40 });
     const { api } = await import("~/lib/api");
 
-    const result = await (
-      api as unknown as Record<string, (id: number, p: number) => Promise<unknown>>
-    )[method](4, 12);
+    const result = await api[method](4, 12);
 
     const [url, options] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://localhost:4000/api/${segment}/4/position`);

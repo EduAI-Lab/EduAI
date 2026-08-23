@@ -1070,7 +1070,7 @@ function createWebDownloadBody(
 }
 
 function createUndiciDownloadBody(
-  stream: AsyncIterable<Uint8Array> & { destroy(error?: Error): unknown },
+  stream: AsyncIterable<Uint8Array> & { destroy(error?: Error): void },
 ): CanvasFileDownloadBody {
   const iterator = stream[Symbol.asyncIterator]();
   return {

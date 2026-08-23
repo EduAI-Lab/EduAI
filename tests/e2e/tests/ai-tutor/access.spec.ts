@@ -77,14 +77,29 @@ test.describe("Authenticated access to AI Tutor via Core session", () => {
     expect(body.total).toBe(0);
   });
 
-  test("ADMIN role blocks access to non-admin instructor/student routes", async ({ request }) => {
-    // Self-registered users are STUDENT, not ADMIN, so this confirms the gate
-    // is correctly evaluated on the AI Tutor side (not Core).
+  test("a STUDENT reaches their own course list but not staff-only endpoints", async ({
+    request,
+  }) => {
+    // Renamed: this used to be called "ADMIN role blocks access to non-admin
+    // instructor/student routes" while only signing up a STUDENT and asserting
+    // a single 200 — it exercised neither an admin nor a block. It now checks
+    // the gate in both directions for the role it actually creates.
     await signUp(request, { email: uniqueEmail("at-role-check") });
 
-    // STUDENT should NOT be blocked from /api/courses (their own list)
+    // Their own list is allowed.
     const coursesRes = await atListResponse(request, `${AI_TUTOR_API_URL}/api/courses`);
     expect(coursesRes.status()).toBe(200);
+
+    // Staff-only writes and reads are not. These are evaluated by AI Tutor's own
+    // `requireRole`, not by Core.
+    expect((await request.get(`${AI_TUTOR_API_URL}/api/prompts`)).status()).toBe(403);
+    expect((await request.post(`${AI_TUTOR_API_URL}/api/courses`, { data: {} })).status()).toBe(
+      403,
+    );
+    expect(
+      (await request.get(`${AI_TUTOR_API_URL}/api/admin/settings/eduai-api-key`)).status(),
+    ).toBe(403);
+    expect((await request.get(`${AI_TUTOR_API_URL}/api/admin/ai-traces`)).status()).toBe(403);
   });
 
   test("ADMIN-only admin routes return 403 for a STUDENT user", async ({ request }) => {

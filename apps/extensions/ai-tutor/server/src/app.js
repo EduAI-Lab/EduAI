@@ -28,6 +28,11 @@ function isAllowedAdminPath(path) {
     path === "/ai-models" ||
     path.startsWith("/ai-models/") ||
     path === "/bug-reports" ||
+    // Prompt templates carry system prompts, temperature and topP — platform
+    // configuration of the same kind as the AI loop policy under /admin, so an
+    // ADMIN is not acting as an instructor by reading or writing them.
+    path === "/prompts" ||
+    path.startsWith("/prompts/") ||
     // Admins share the instructor Courses dashboard, so they need the course
     // list itself plus topic endpoints (the lesson builder calls these). Course-
     // nested resources under /courses/, /modules/, /lessons/, /activities/ are

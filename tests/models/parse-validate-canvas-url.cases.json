@@ -1,96 +1,96 @@
 [
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "ipv6-literal",
     "ExtraPath": "query-ssrf"
   },
   {
-    "UrlShape": "http-host",
+    "UrlForm": "http-host",
     "HostClass": "ipv4-public",
     "ExtraPath": "traversal"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "ipv6-literal",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "http-host",
+    "UrlForm": "http-host",
     "HostClass": "ipv4-private",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "http-host",
+    "UrlForm": "http-host",
     "HostClass": "ipv4-private",
     "ExtraPath": "query-ssrf"
   },
   {
-    "UrlShape": "with-userinfo",
+    "UrlForm": "with-userinfo",
     "HostClass": "public-dns",
     "ExtraPath": "query-ssrf"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "public-dns",
     "ExtraPath": "traversal"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "ipv4-public",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "ipv4-public",
     "ExtraPath": "query-ssrf"
   },
   {
-    "UrlShape": "http-host",
+    "UrlForm": "http-host",
     "HostClass": "localhost",
     "ExtraPath": "traversal"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "ipv4-private",
     "ExtraPath": "traversal"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "ipv6-literal",
     "ExtraPath": "traversal"
   },
   {
-    "UrlShape": "http-host",
+    "UrlForm": "http-host",
     "HostClass": "public-dns",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "relative",
+    "UrlForm": "relative",
     "HostClass": "public-dns",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "with-userinfo",
+    "UrlForm": "with-userinfo",
     "HostClass": "public-dns",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "opaque",
+    "UrlForm": "opaque",
     "HostClass": "public-dns",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "localhost",
     "ExtraPath": "none"
   },
   {
-    "UrlShape": "with-userinfo",
+    "UrlForm": "with-userinfo",
     "HostClass": "public-dns",
     "ExtraPath": "traversal"
   },
   {
-    "UrlShape": "https-host",
+    "UrlForm": "https-host",
     "HostClass": "localhost",
     "ExtraPath": "query-ssrf"
   }

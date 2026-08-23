@@ -19,6 +19,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 import { loader } from "~/routes/api/courses.student-candidates.$";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessGate } from "~/lib/auth/course-access.server";
+import type { CourseGateFixture } from "../helpers/route-fixtures";
 
 const COURSE = { id: "c1" };
 
@@ -28,7 +29,7 @@ function session(role = "INSTRUCTOR", id = "u1") {
 
 function mockAccess(
   access: { level: string; rank: number } | null,
-  course: object | null = COURSE,
+  course: CourseGateFixture | null = COURSE,
 ) {
   vi.mocked(resolveCourseAccessGate).mockResolvedValue({
     course: course as never,

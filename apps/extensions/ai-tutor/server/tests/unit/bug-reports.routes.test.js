@@ -251,4 +251,22 @@ describe("PATCH /api/admin/bug-reports/:bugReportId", () => {
 
     expect(res.status).toBe(500);
   });
+
+  // The two GET handlers already forward the upstream status; this one collapsed
+  // everything to 500, which is what turned Core's 403 CROSS_ORIGIN_MUTATION into
+  // an unreadable "Unable to update bug report".
+  it("forwards the upstream status instead of flattening it to 500", async () => {
+    const upstream = new Error("CROSS_ORIGIN_MUTATION");
+    upstream.status = 403;
+    mockUpdateBugReportStatus.mockRejectedValue(upstream);
+    const app = buildApp({ role: "ADMIN" });
+
+    const res = await request(app)
+      .patch("/api/admin/bug-reports/br-1")
+      .send({ status: "resolved" });
+
+    expect(res.status).toBe(403);
+    // The public message stays generic — only the status crosses the boundary.
+    expect(res.body).toEqual({ error: "Unable to update bug report" });
+  });
 });

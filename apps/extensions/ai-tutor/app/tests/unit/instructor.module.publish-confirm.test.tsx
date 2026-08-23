@@ -97,7 +97,7 @@ function wrap(lessons = [lesson]) {
       pageSize: 25,
       search: "",
     },
-  } as unknown as Route.ComponentProps;
+  } as Route.ComponentProps;
   return render(
     <MemoryRouter>
       <InstructorModuleLessons {...props} />

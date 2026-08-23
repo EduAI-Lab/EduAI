@@ -108,7 +108,7 @@ beforeEach(() => {
       ownerName: "Jane Doe",
       updatedAt: new Date().toISOString(),
     },
-    messages: [{ role: "user", content: "hi" }],
+    messages: [{ id: "msg-1", role: "user", content: "hi" }],
     canEdit: true,
   });
 });

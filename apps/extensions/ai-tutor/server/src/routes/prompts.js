@@ -5,6 +5,10 @@ import { sendSafeError } from "../utils/safeErrors.js";
 
 const router = express.Router();
 
+// Admin ⊇ instructor everywhere else in the app; a bare "INSTRUCTOR" here used
+// to 403 ADMIN/UNIT_ADMIN off the prompt-template store.
+const TEACHING_ROLES = ["INSTRUCTOR", "UNIT_ADMIN", "ADMIN"];
+
 function createPromptSlug(name) {
   return (
     name
@@ -40,7 +44,7 @@ async function resolveUniquePromptSlug(name) {
   return `${baseSlug}-${suffix}`;
 }
 
-router.get("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
+router.get("/prompts", requireRole(TEACHING_ROLES), async (req, res) => {
   try {
     const prompts = await prisma.promptTemplate.findMany({
       orderBy: { updatedAt: "desc" },
@@ -51,7 +55,7 @@ router.get("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
   }
 });
 
-router.post("/prompts", requireRole("INSTRUCTOR"), async (req, res) => {
+router.post("/prompts", requireRole(TEACHING_ROLES), async (req, res) => {
   const { name, systemPrompt, temperature, topP } = req.body || {};
 
   if (!name || !systemPrompt) {

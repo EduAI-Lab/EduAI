@@ -51,6 +51,7 @@ import {
   recordActivityFeedback,
   recordAiHelpRequest,
   recordSubmissionMetrics,
+  resyncSubmissionMetrics,
 } from "../services/activityAnalytics.js";
 import {
   resolveSupervisorSettings,
@@ -1627,6 +1628,13 @@ router.patch("/activities/:activityId/submissions/:submissionId", async (req, re
       where: { id: submissionId },
       data: updateData,
     });
+
+    // The student metrics behind Analytics are written once, at submit time —
+    // without this re-derive an override left the Analytics tab contradicting
+    // the Submissions tab for the same course.
+    if (typeof isCorrect !== "undefined") {
+      await resyncSubmissionMetrics({ userId: updated.userId, activityId });
+    }
 
     res.json(updated);
   } catch (e) {

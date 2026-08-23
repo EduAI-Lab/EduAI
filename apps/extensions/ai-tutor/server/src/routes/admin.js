@@ -351,6 +351,10 @@ router.post(
         return res.status(403).json({ error: "Not authorized for this course" });
       }
 
+      // Write through to Core first, mirroring DELETE below (#812). A local-only
+      // row would grant course access Core's audit trail never recorded — and
+      // PATCH .../role refuses to manage an enrolment Core has never heard of,
+      // so the admin could create something they then could not change.
       if (course.coreOfferingId) {
         await createCoreEnrollment(
           course.coreOfferingId,
@@ -377,7 +381,11 @@ router.post(
 
       res.status(201).json({ ok: true });
     } catch (e) {
-      sendSafeError(res, e, "Internal server error");
+      // Core's refusal is the useful signal (e.g. it rejects an unknown user), so
+      // pass its status through — same as the DELETE path below. The body stays
+      // generic; `sendSafeError` never serializes the thrown value.
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      sendSafeError(res, e, "Internal server error", { status });
     }
   },
 );

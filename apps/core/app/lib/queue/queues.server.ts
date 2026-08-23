@@ -29,7 +29,7 @@ export function getQueue(name: QueueName): Queue {
     // type (`ConnectionOptions`) doesn't accept a bare `Redis` instance resolved
     // through the app's own ioredis — a known BullMQ/ioredis type clash. Cast to
     // reuse the singleton from connection.server.ts (contract §4) without dropping it.
-    queue = new Queue(name, { connection: redis as unknown as ConnectionOptions });
+    queue = new Queue(name, { connection: redis as ConnectionOptions });
     registry.set(name, queue);
   }
   return queue;
