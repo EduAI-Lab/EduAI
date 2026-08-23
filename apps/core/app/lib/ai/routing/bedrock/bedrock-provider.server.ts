@@ -12,9 +12,14 @@ import type {
   LanguageModelV1CallOptions,
   LanguageModelV1CallWarning,
   LanguageModelV1FinishReason,
+  LanguageModelV1Message,
   LanguageModelV1Prompt,
   LanguageModelV1StreamPart,
+  ProviderV1,
 } from "@ai-sdk/provider";
+import { NoSuchModelError } from "@ai-sdk/provider";
+import { z } from "zod";
+import { parseJsonText } from "~/lib/json-value";
 import { concatBytes, parseEventStreamMessages } from "./bedrock-eventstream";
 
 export type BedrockProviderConfig = {
@@ -36,42 +41,99 @@ type BedrockConverseBody = {
   };
 };
 
-type BedrockUsage = {
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
+/** The `messages`/`system` half of a Converse body, before call options fill in the rest. */
+type BedrockConversePrompt = Pick<BedrockConverseBody, "messages" | "system">;
+
+/** A Converse body plus the call options this provider had to drop to build it. */
+type BedrockConverseRequest = {
+  body: BedrockConverseBody;
+  warnings: LanguageModelV1CallWarning[];
 };
+
+/** Token counts in the shape the AI SDK's `usage` field expects. */
+type BedrockTokenUsage = {
+  promptTokens: number;
+  completionTokens: number;
+};
+
+/** The content of one prompt message: a system string, or the SDK's typed parts. */
+type BedrockPromptContent = LanguageModelV1Message["content"];
+
+const bedrockUsageSchema = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  totalTokens: z.number().optional(),
+});
+
+type BedrockUsage = z.infer<typeof bedrockUsageSchema>;
+
+/** A non-streaming Converse response. Every field is optional: Bedrock omits them on a filtered turn. */
+const bedrockConverseResponseSchema = z.object({
+  output: z
+    .object({
+      message: z
+        .object({ content: z.array(z.object({ text: z.string().optional() })).optional() })
+        .optional(),
+    })
+    .optional(),
+  stopReason: z.string().optional(),
+  usage: bedrockUsageSchema.optional(),
+});
+
+/**
+ * One decoded event-stream payload.
+ *
+ * The three event types this provider reads (`contentBlockDelta`, `messageStop`,
+ * `metadata`) are folded into one all-optional object rather than a discriminated
+ * union: the payload carries no discriminator of its own, the event name lives in
+ * the frame header, and each branch reads exactly one field.
+ */
+const bedrockStreamPayloadSchema = z.object({
+  delta: z.object({ text: z.string().optional() }).optional(),
+  stopReason: z.string().optional(),
+  usage: bedrockUsageSchema.optional(),
+});
+
+type BedrockStreamPayload = z.infer<typeof bedrockStreamPayloadSchema>;
 
 function bedrockEndpoint(region: string, modelId: string, stream: boolean): string {
   const action = stream ? "converse-stream" : "converse";
   return `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/${action}`;
 }
 
-function collectText(content: unknown): string {
+/**
+ * Flattens one message's content to plain text.
+ *
+ * Converse serves text only, so image, file and reasoning parts are dropped;
+ * tool calls and results are rendered inline so the model still sees that they
+ * happened.
+ */
+function collectText(content: BedrockPromptContent): string {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
   const parts: string[] = [];
   for (const part of content) {
-    if (!part || typeof part !== "object" || !("type" in part)) continue;
-    if (part.type === "text" && "text" in part && typeof part.text === "string") {
-      parts.push(part.text);
-    } else if (part.type === "tool-call" && "toolName" in part) {
-      parts.push(`[tool call ${String(part.toolName)}] ${JSON.stringify(part.args)}`);
-    } else if (part.type === "tool-result" && "toolName" in part) {
-      parts.push(
-        `[tool result ${String(part.toolName)}] ${
-          typeof part.result === "string" ? part.result : JSON.stringify(part.result)
-        }`,
-      );
+    switch (part.type) {
+      case "text":
+        parts.push(part.text);
+        break;
+      case "tool-call":
+        parts.push(`[tool call ${part.toolName}] ${JSON.stringify(part.args)}`);
+        break;
+      case "tool-result":
+        parts.push(
+          `[tool result ${part.toolName}] ${
+            typeof part.result === "string" ? part.result : JSON.stringify(part.result)
+          }`,
+        );
+        break;
+      default:
+        break;
     }
   }
   return parts.join("\n");
 }
 
-export function convertPromptToConverse(prompt: LanguageModelV1Prompt): {
-  messages: BedrockMessage[];
-  system?: Array<{ text: string }>;
-} {
+export function convertPromptToConverse(prompt: LanguageModelV1Prompt): BedrockConversePrompt {
   const systemParts: string[] = [];
   const messages: BedrockMessage[] = [];
 
@@ -109,10 +171,7 @@ export function convertPromptToConverse(prompt: LanguageModelV1Prompt): {
   };
 }
 
-function buildConverseBody(options: LanguageModelV1CallOptions): {
-  body: BedrockConverseBody;
-  warnings: LanguageModelV1CallWarning[];
-} {
+function buildConverseBody(options: LanguageModelV1CallOptions): BedrockConverseRequest {
   const warnings: LanguageModelV1CallWarning[] = [];
   const converted = convertPromptToConverse(options.prompt);
   const inferenceConfig: BedrockConverseBody["inferenceConfig"] = {};
@@ -155,7 +214,7 @@ function buildConverseBody(options: LanguageModelV1CallOptions): {
   };
 }
 
-function mapStopReason(reason: unknown): LanguageModelV1FinishReason {
+function mapStopReason(reason: string | undefined): LanguageModelV1FinishReason {
   switch (reason) {
     case "end_turn":
     case "stop_sequence":
@@ -172,10 +231,7 @@ function mapStopReason(reason: unknown): LanguageModelV1FinishReason {
   }
 }
 
-function usageFromBedrock(usage: BedrockUsage | undefined): {
-  promptTokens: number;
-  completionTokens: number;
-} {
+function usageFromBedrock(usage: BedrockUsage | undefined): BedrockTokenUsage {
   return {
     promptTokens: usage?.inputTokens ?? 0,
     completionTokens: usage?.outputTokens ?? 0,
@@ -202,7 +258,7 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
     private readonly config: BedrockProviderConfig,
   ) {}
 
-  private headers(): Record<string, string> {
+  private headers() {
     return {
       "Content-Type": "application/json",
       Accept: "application/json",
@@ -228,11 +284,7 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
       );
     }
 
-    const json = (await response.json()) as {
-      output?: { message?: { content?: Array<{ text?: string }> } };
-      stopReason?: string;
-      usage?: BedrockUsage;
-    };
+    const json = bedrockConverseResponseSchema.parse(await response.json());
     const text = json.output?.message?.content?.map((block) => block.text ?? "").join("") ?? "";
 
     return {
@@ -281,8 +333,8 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
         let finishReason: LanguageModelV1FinishReason = "unknown";
         let usage = { promptTokens: 0, completionTokens: 0 };
 
-        const emitError = (error: unknown) => {
-          controller.enqueue({ type: "error", error });
+        const emitError = (cause: unknown) => {
+          controller.enqueue({ type: "error", error: cause });
           controller.enqueue({
             type: "finish",
             finishReason: "error",
@@ -303,13 +355,14 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
               const messageType = message.headers[":message-type"];
               const eventType = message.headers[":event-type"];
               const payloadText = decoder.decode(message.payload);
-              let payload: Record<string, unknown> = {};
+              // A frame this provider does not read, or one Bedrock sends in a
+              // shape we do not model, degrades to an empty payload: the branches
+              // below all guard on the field they need, and an error frame is
+              // reported from its header rather than its body.
+              let payload: BedrockStreamPayload = {};
               if (payloadText) {
-                try {
-                  payload = JSON.parse(payloadText) as Record<string, unknown>;
-                } catch {
-                  payload = { raw: payloadText };
-                }
+                const decoded = bedrockStreamPayloadSchema.safeParse(parseJsonText(payloadText));
+                if (decoded.success) payload = decoded.data;
               }
 
               if (messageType === "exception" || messageType === "error") {
@@ -319,14 +372,13 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
               }
 
               if (eventType === "contentBlockDelta") {
-                const delta = payload.delta as { text?: string } | undefined;
-                if (delta?.text) {
-                  controller.enqueue({ type: "text-delta", textDelta: delta.text });
+                if (payload.delta?.text) {
+                  controller.enqueue({ type: "text-delta", textDelta: payload.delta.text });
                 }
               } else if (eventType === "messageStop") {
                 finishReason = mapStopReason(payload.stopReason);
               } else if (eventType === "metadata") {
-                usage = usageFromBedrock(payload.usage as BedrockUsage | undefined);
+                usage = usageFromBedrock(payload.usage);
               }
             }
           }
@@ -355,10 +407,16 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
   }
 }
 
-export function createBedrockProvider(config: BedrockProviderConfig) {
+export function createBedrockProvider(config: BedrockProviderConfig): ProviderV1 {
   return {
     languageModel(modelId: string): LanguageModelV1 {
       return new BedrockChatLanguageModel(modelId, config);
+    },
+    // Converse is text-only and this provider is overflow-only (#1441), so an
+    // embedding lookup is a caller mistake, not a gap to fill. `ProviderV1`
+    // requires the method; the SDK's own error is the right answer to it.
+    textEmbeddingModel(modelId: string): never {
+      throw new NoSuchModelError({ modelId, modelType: "textEmbeddingModel" });
     },
   };
 }
