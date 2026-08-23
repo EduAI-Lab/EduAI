@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { apiError, jsonResponse } from "~/lib/api-error.server";
-import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonObject, JsonValue } from "~/lib/json-value";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -387,12 +386,17 @@ export async function withIdempotency(
   if (opts.body !== undefined) {
     body = opts.body;
   } else {
-    const rawBody = await opts.request
+    // SAFETY: `Request#json` resolves to whatever the client sent; naming it
+    // `JsonValue` claims only what JSON parsing already guarantees. Checked
+    // structurally rather than decoded — this runs on every idempotent write,
+    // and a recursive union decode would walk and clone the whole body to
+    // establish only that its top level is an object.
+    const rawBody = (await opts.request
       .clone()
       .json()
-      .catch(() => null);
-    const parsed = jsonObjectSchema.safeParse(rawBody);
-    body = parsed.success ? parsed.data : null;
+      .catch(() => null)) as JsonValue | null;
+    body =
+      rawBody !== null && typeof rawBody === "object" && !Array.isArray(rawBody) ? rawBody : null;
   }
 
   const key = extractIdempotencyKey(opts.request, body);

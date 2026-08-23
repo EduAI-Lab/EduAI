@@ -5,7 +5,7 @@ import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
-import { jsonObjectSchema, jsonValueSchema, parseJsonText } from "~/lib/json-value";
+import { jsonObjectSchema, parseJsonText } from "~/lib/json-value";
 import type { JsonObject, JsonValue } from "~/lib/json-value";
 
 /** Per-message metadata Core persists alongside a stored assistant turn. */
@@ -99,10 +99,14 @@ export function reviveStoredMessage(record: {
   role: string;
   content: Prisma.JsonValue;
 }): StoredChatMessage {
-  // The DB column is `Json`, so the stored value is decoded here once and every
-  // reader below works off the decoded shape rather than re-asserting the row.
-  const storedContent = jsonValueSchema.safeParse(record.content);
-  const content: JsonValue = storedContent.success ? storedContent.data : null;
+  // SAFETY: the DB column is `Json`, so Prisma's `JsonValue` and ours describe
+  // the same set of values. Named once here so every reader below works off the
+  // named shape rather than re-asserting the row.
+  //
+  // Deliberately not run through `jsonValueSchema`: this is the transcript-load
+  // hot path, and a recursive union decode would walk (and deep-clone) every
+  // node of every message to prove something the column type already guarantees.
+  const content = record.content as JsonValue;
   const parsed: JsonObject = isJsonObject(content) ? content : {};
 
   // Prefer an explicit non-empty string `content`; otherwise pull text out of
