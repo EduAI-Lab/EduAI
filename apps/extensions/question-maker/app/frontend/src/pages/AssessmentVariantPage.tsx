@@ -153,11 +153,14 @@ function isYesterday(date: Date): boolean {
   );
 }
 
-function groupAiReviewHistory(items: AiReviewHistoryItem[]): {
+/** AI review history split into the three buckets the panel renders. */
+type AiReviewHistoryGroups = {
   today: AiReviewHistoryItem[];
   yesterday: AiReviewHistoryItem[];
   earlier: AiReviewHistoryItem[];
-} {
+};
+
+function groupAiReviewHistory(items: AiReviewHistoryItem[]): AiReviewHistoryGroups {
   const out = {
     today: [] as AiReviewHistoryItem[],
     yesterday: [] as AiReviewHistoryItem[],

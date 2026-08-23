@@ -21,47 +21,47 @@ export interface DifficultyMeta {
   blurb: string;
 }
 
-export const DIFFICULTY_META: Record<QuestionDifficulty, DifficultyMeta> = {
+export const DIFFICULTY_META = {
   easy: { label: "Easy", value: 1, blurb: "Recall & recognition" },
   medium: { label: "Medium", value: 2, blurb: "Apply & analyze" },
   hard: { label: "Hard", value: 3, blurb: "Evaluate & synthesize" },
-};
+} satisfies Record<QuestionDifficulty, DifficultyMeta>;
 
 /** Filled tint background + readable foreground + colored border. Pair with pill layout. */
-export const difficultyChipClass: Record<QuestionDifficulty, string> = {
+export const difficultyChipClass = {
   easy: "bg-[var(--diff-easy-bg)] text-[var(--diff-easy-fg)] border-[var(--diff-easy-border)]",
   medium:
     "bg-[var(--diff-medium-bg)] text-[var(--diff-medium-fg)] border-[var(--diff-medium-border)]",
   hard: "bg-[var(--diff-hard-bg)] text-[var(--diff-hard-fg)] border-[var(--diff-hard-border)]",
-};
+} satisfies Record<QuestionDifficulty, string>;
 
 /** Solid swatch — dots, slider thumbs, meter fills. */
-export const difficultySolidClass: Record<QuestionDifficulty, string> = {
+export const difficultySolidClass = {
   easy: "bg-[var(--diff-easy-solid)]",
   medium: "bg-[var(--diff-medium-solid)]",
   hard: "bg-[var(--diff-hard-solid)]",
-};
+} satisfies Record<QuestionDifficulty, string>;
 
 /** Foreground colour only — for inline icons/text without a chip. */
-export const difficultyTextClass: Record<QuestionDifficulty, string> = {
+export const difficultyTextClass = {
   easy: "text-[var(--diff-easy-fg)]",
   medium: "text-[var(--diff-medium-fg)]",
   hard: "text-[var(--diff-hard-fg)]",
-};
+} satisfies Record<QuestionDifficulty, string>;
 
 /** Border colour only — for outlined/selected states. */
-export const difficultyBorderClass: Record<QuestionDifficulty, string> = {
+export const difficultyBorderClass = {
   easy: "border-[var(--diff-easy-border)]",
   medium: "border-[var(--diff-medium-border)]",
   hard: "border-[var(--diff-hard-border)]",
-};
+} satisfies Record<QuestionDifficulty, string>;
 
 /** CSS custom-property name of the solid colour — for inline `style` / gradients. */
-export const difficultySolidVar: Record<QuestionDifficulty, string> = {
+export const difficultySolidVar = {
   easy: "var(--diff-easy-solid)",
   medium: "var(--diff-medium-solid)",
   hard: "var(--diff-hard-solid)",
-};
+} satisfies Record<QuestionDifficulty, string>;
 
 /** Left → right, easy → hard. Used for slider tracks and distribution meters. */
 export const DIFFICULTY_GRADIENT =
