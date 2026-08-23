@@ -472,7 +472,13 @@ export function sanitizeTextContent(content: string): string {
 /**
  * Simple HTML to Markdown converter for better RAG performance
  */
-function convertHtmlToMarkdown(html: string): string {
+/**
+ * Exported for tests (#1494 review): mammoth now runs in an isolated worker, so
+ * the HTML→markdown step is no longer reachable by mocking mammoth in-process —
+ * it is unit-tested directly, and the real end-to-end DOCX path is covered by
+ * `docx-extraction-integration.test.ts`.
+ */
+export function convertHtmlToMarkdown(html: string): string {
   let markdown = html;
 
   // Preserve tables as markdown before stripping remaining HTML
@@ -1004,7 +1010,79 @@ export type ExtractPdfTextIsolatedLimits = {
   maxRssMb?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /**
+   * Worker script piped to the child over stdin. Defaults to the PDF worker.
+   * Overridden by the Office path (#1494 review), which needs mammoth/jszip off
+   * the event loop with the same memory ceilings and admission control.
+   */
+  workerSource?: (maxOutputBytes: number) => string;
+  /** Temp-file extension for the child's input; also names the temp dir. */
+  inputKind?: "pdf" | "docx" | "pptx";
 };
+
+/**
+ * DOCX/PPTX worker. Same shape as the PDF one — plain CommonJS over stdin,
+ * resolving deps from the app root — so both share the isolation, the RSS/heap
+ * ceilings, the wall-clock timeout and the admission queue.
+ *
+ * The ZIP-bomb caps that `loadZipWithLimits` applies in-process still matter and
+ * still run in the parent before the child is spawned; this is about keeping
+ * mammoth's and jszip's inflate/parse work off the request-serving event loop,
+ * which is the part #949 was asked to move.
+ */
+function buildOfficeExtractionWorkerSource(kind: "docx" | "pptx", maxOutputBytes: number): string {
+  const body =
+    kind === "docx"
+      ? `
+      const mammoth = require("mammoth");
+      const result = await mammoth.convertToHtml({ buffer: fs.readFileSync(inputPath) });
+      return { html: result.value, messages: result.messages || [] };
+`
+      : `
+      const JSZip = require("jszip");
+      const zip = await JSZip.loadAsync(fs.readFileSync(inputPath));
+      // Sort by slide *number*, not lexically: "slide10.xml" sorts before
+      // "slide2.xml" as a string, so any deck past nine slides was emitted out
+      // of order and every "Slide N" label was wrong (#1494 review).
+      const slideIndex = (name) => {
+        const match = /slide(\\d+)\\.xml$/.exec(name);
+        return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+      };
+      const slideNames = Object.keys(zip.files)
+        .filter((name) => /^ppt\\/slides\\/slide\\d+\\.xml$/.test(name))
+        .sort((a, b) => slideIndex(a) - slideIndex(b) || a.localeCompare(b));
+      const slides = [];
+      for (const name of slideNames) {
+        slides.push(await zip.files[name].async("text"));
+      }
+      return { slides: slides };
+`;
+
+  return `
+  const fs = require("node:fs");
+
+  const [, , inputPath, outputPath] = process.argv;
+  const MAX_OUTPUT_BYTES = ${maxOutputBytes};
+
+  Promise.resolve()
+    .then(async () => {${body}    })
+    .then((value) => {
+      const payload = JSON.stringify(value);
+      if (Buffer.byteLength(payload, "utf8") > MAX_OUTPUT_BYTES) {
+        process.stderr.write(
+          "Extraction output of " + Buffer.byteLength(payload, "utf8") +
+          " bytes exceeds the maximum of " + MAX_OUTPUT_BYTES,
+        );
+        process.exit(2);
+      }
+      fs.writeFileSync(outputPath, payload);
+    })
+    .catch((error) => {
+      process.stderr.write(String((error && error.stack) || error));
+      process.exit(1);
+    });
+`;
+}
 
 /**
  * Run `@opendocsg/pdf2md` in an isolated subprocess with a V8 heap soft ceiling,
@@ -1012,14 +1090,16 @@ export type ExtractPdfTextIsolatedLimits = {
  * PDF kills the worker instead of over-allocating the main server. Throws if the
  * worker breaches a limit, exits non-zero, fails to start, or the waiting queue is full.
  */
-export async function extractPdfTextIsolated(
+export async function extractPdfTextIsolated<T = { content: string }>(
   buffer: Buffer,
   limits: ExtractPdfTextIsolatedLimits = {},
-): Promise<{ content: string }> {
+): Promise<T> {
   const maxOldSpaceMb = limits.maxOldSpaceMb ?? PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB;
   const maxRssMb = limits.maxRssMb ?? getPdfExtractionMaxRssMb();
   const timeoutMs = limits.timeoutMs ?? PDF_EXTRACTION_WORKER_TIMEOUT_MS;
   const maxOutputBytes = limits.maxOutputBytes ?? PDF_EXTRACTION_MAX_OUTPUT_BYTES;
+  const inputKind = limits.inputKind ?? "pdf";
+  const buildWorkerSource = limits.workerSource ?? buildPdfExtractionWorkerSource;
 
   // Acquire the slot before any fallible setup (mkdtemp/write) so a failure cannot leak
   // a concurrency permit. Temp dir cleanup is best-effort inside the same finally.
@@ -1027,8 +1107,8 @@ export async function extractPdfTextIsolated(
   let dir: string | undefined;
 
   try {
-    dir = await mkdtemp(join(tmpdir(), "pdf-extract-"));
-    const inputPath = join(dir, "input.pdf");
+    dir = await mkdtemp(join(tmpdir(), `${inputKind}-extract-`));
+    const inputPath = join(dir, `input.${inputKind}`);
     const outputPath = join(dir, "output.json");
 
     await writeFile(inputPath, buffer);
@@ -1150,7 +1230,7 @@ export async function extractPdfTextIsolated(
       });
 
       try {
-        child.stdin?.write(buildPdfExtractionWorkerSource(maxOutputBytes));
+        child.stdin?.write(buildWorkerSource(maxOutputBytes));
         child.stdin?.end();
       } catch (error) {
         // Synchronous write failures: kill and wait for exit before rejecting.
@@ -1170,13 +1250,13 @@ export async function extractPdfTextIsolated(
     }
 
     const raw = await readFile(outputPath, "utf8");
-    const parsed = JSON.parse(raw) as { content: string };
+    const parsed = JSON.parse(raw) as { content?: unknown };
     if (typeof parsed.content === "string" && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
       throw new Error(
         `PDF extraction result of ${parsed.content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
       );
     }
-    return parsed;
+    return parsed as T;
   } finally {
     release();
     if (dir) {
@@ -1218,38 +1298,44 @@ export async function extractPdfText(
 }
 
 /**
- * Extract text from DOCX files using Mammoth.js (client-side)
+ * Extract text from DOCX files using Mammoth.js.
+ *
+ * mammoth runs in the same isolated subprocess the PDF path uses (#1494 review):
+ * inflating and converting a Word document is CPU-bound work that used to sit on
+ * the request-serving event loop, which is exactly what #949 set out to move.
+ * The ZIP-bomb caps still run here in the parent, before the child is spawned,
+ * so a malicious archive is rejected without ever reaching a worker.
  */
 export async function extractDocxText(file: File): Promise<{ content: string; metadata?: any }> {
   try {
-    // Dynamic import for client-side DOCX processing
-    const mammoth = await import("mammoth");
-
     const arrayBuffer = await file.arrayBuffer();
 
     // DOCX is a ZIP container; bound decompression before mammoth inflates it.
     await loadZipWithLimits(arrayBuffer, "DOCX");
 
-    // Extract as HTML first, then convert to markdown-like format for better RAG performance
-    // mammoth's Node build only accepts `{ path }` / `{ buffer }` (NodeJsInput), not
-    // `{ arrayBuffer }` (BrowserInput) — passing arrayBuffer here throws "Could not
-    // find file in options" for every real DOCX upload processed server-side.
-    const result = await mammoth.convertToHtml({ buffer: Buffer.from(arrayBuffer) });
+    // Extract as HTML first, then convert to markdown-like format for better RAG
+    // performance. mammoth's Node build only accepts `{ path }` / `{ buffer }`
+    // (NodeJsInput), not `{ arrayBuffer }` (BrowserInput) — the worker reads the
+    // temp file into a Buffer for the same reason.
+    const result = await extractPdfTextIsolated<{ html: string; messages: unknown[] }>(
+      Buffer.from(arrayBuffer),
+      { inputKind: "docx", workerSource: (max) => buildOfficeExtractionWorkerSource("docx", max) },
+    );
 
     if (result.messages && result.messages.length > 0) {
       console.warn("DOCX extraction warnings:", result.messages);
     }
 
     // Convert HTML to markdown-like text for better RAG performance
-    const markdownContent = convertHtmlToMarkdown(result.value);
+    const markdownContent = convertHtmlToMarkdown(result.html);
 
     return {
       content: sanitizeTextContent(markdownContent),
       metadata: {
         extractionWarnings: result.messages,
         format: "markdown",
-        processingMethod: "mammoth.js + HTML conversion",
-        isClientSide: true,
+        processingMethod: "mammoth.js + HTML conversion (isolated worker)",
+        isClientSide: false,
       },
     };
   } catch (error) {
@@ -1272,21 +1358,21 @@ export async function extractPptxText(
     // or a more robust client-side PPTX parser when available
 
     const arrayBuffer = await file.arrayBuffer();
-    const zipContent = await loadZipWithLimits(arrayBuffer, "PPTX");
+    // ZIP-bomb caps run in the parent, before any worker is spawned.
+    await loadZipWithLimits(arrayBuffer, "PPTX");
 
-    const textContent: string[] = [];
-    let slideCount = 0;
-
-    // Extract slide content from the PPTX structure
-    const slideFiles = Object.keys(zipContent.files).filter(
-      (name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"),
+    // Inflating every slide part is the expensive half and now runs in the same
+    // isolated worker as PDF/DOCX (#1494 review); the parent only does the cheap
+    // regex pass over the returned XML.
+    const { slides } = await extractPdfTextIsolated<{ slides: string[] }>(
+      Buffer.from(arrayBuffer),
+      { inputKind: "pptx", workerSource: (max) => buildOfficeExtractionWorkerSource("pptx", max) },
     );
 
-    slideCount = slideFiles.length;
+    const textContent: string[] = [];
+    const slideCount = slides.length;
 
-    for (const slideFile of slideFiles) {
-      const slideXml: string = await zipContent.files[slideFile].async("text");
-
+    slides.forEach((slideXml, index) => {
       // Basic text extraction from XML (simplified approach)
       const textMatches: string[] = slideXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
       const slideText = textMatches
@@ -1295,10 +1381,9 @@ export async function extractPptxText(
         .join(" ");
 
       if (slideText) {
-        const slideNumber = slideFiles.indexOf(slideFile) + 1;
-        textContent.push(`\n--- Slide ${slideNumber} ---\n${slideText}`);
+        textContent.push(`\n--- Slide ${index + 1} ---\n${slideText}`);
       }
-    }
+    });
 
     return {
       content: sanitizeTextContent(
@@ -1307,8 +1392,8 @@ export async function extractPptxText(
       pageCount: slideCount,
       metadata: {
         slideCount,
-        processingMethod: "client-side XML parsing",
-        isClientSide: true,
+        processingMethod: "XML parsing (isolated worker)",
+        isClientSide: false,
         note: "Basic text extraction - complex formatting may not be preserved",
       },
     };
@@ -1464,9 +1549,12 @@ function addContextHeaders(chunk: string, headers: string[]): string {
 }
 
 /**
- * Process uploaded file and extract text content (client-side optimized)
+ * Cheap, synchronous-cost half of the upload pipeline: type/size caps plus the
+ * declared-MIME-vs-actual-bytes sniff. Split out of `processUploadedFile` for
+ * #949 so an HTTP upload can reject a bad file inline (400) while deferring the
+ * expensive extraction half to a background task. Throws on the first failure.
  */
-export async function processUploadedFile(file: File): Promise<FileInfo> {
+export async function validateUploadedFile(file: File): Promise<void> {
   // Validate file
   const validation = validateFile(file);
   if (!validation.isValid) {
@@ -1479,7 +1567,18 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
   if (!signatureCheck.isValid) {
     throw new Error(signatureCheck.error);
   }
+}
 
+/**
+ * Expensive half of the upload pipeline: extraction, semantic chunking, and the
+ * content checksum. Assumes `validateUploadedFile` has already passed — callers
+ * that have not run it should use `processUploadedFile`, which does both.
+ *
+ * The PDF branch still goes through the out-of-process `pdf-extract-worker` and
+ * its admission queue; DOCX/PPTX still run mammoth/jszip on this thread, which
+ * is why #949 moves this whole function off the request path.
+ */
+export async function extractUploadedFileContent(file: File): Promise<FileInfo> {
   let content: string;
   let pageCount: number | undefined;
   let metadata: any = {};
@@ -1562,6 +1661,18 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
       `Failed to process file ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
   }
+}
+
+/**
+ * Process uploaded file and extract text content (client-side optimized).
+ *
+ * Validate-then-extract, in one call. Kept as the single entry point for
+ * callers that run both halves in the same pass — notably the Canvas importer
+ * (`lib/canvas/materials.server.ts`), which is already off the request path.
+ */
+export async function processUploadedFile(file: File): Promise<FileInfo> {
+  await validateUploadedFile(file);
+  return extractUploadedFileContent(file);
 }
 
 /**

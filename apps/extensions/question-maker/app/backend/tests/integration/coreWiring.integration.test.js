@@ -60,7 +60,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 describe("PATCH /api/course/:id/link-core", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }));
     const res = await request(app)
       .patch("/api/course/1/link-core")
       .send({ coreCourseId: "cuid-core" });
@@ -82,7 +82,7 @@ describe("PATCH /api/course/:id/link-core", () => {
 // ---------------------------------------------------------------------------
 describe("POST /api/course/:id/sync-topics", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }));
     const res = await request(app).post("/api/course/1/sync-topics");
     expect(res.status).toBe(401);
   });
@@ -93,7 +93,7 @@ describe("POST /api/course/:id/sync-topics", () => {
 // ---------------------------------------------------------------------------
 describe("PATCH /api/questions/variants/:variantId/testable", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }));
     const res = await request(app)
       .patch("/api/questions/variants/1/testable")
       .send({ testable: true });

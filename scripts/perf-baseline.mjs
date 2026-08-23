@@ -32,7 +32,7 @@
  *
  * CLI flags (win over env): --out=<dir> (output dir), --target=<label>.
  *   Note the npm `--` that forwards args to the script.
- * Env: CORE_URL, AITUTOR_URL, QM_URL (set "" to skip an app), SEED_PASSWORD,
+ * Env: CORE_URL, AITUTOR_URL, QM_URL (set "" to skip an app), EDUAI_LOCAL_SEED_PASSWORD,
  *   PERF_WARMUP(3), PERF_SAMPLES(30), PERF_MUT_SAMPLES(15), PERF_POOL_DIR,
  *   PERF_VALIDATE_LIMIT(300), PERF_VALIDATE_WINDOW_MS(60000), TARGET_LABEL,
  *   PERF_SKIP_MUTATIONS(0).  (Output dir is --out only, no env.)
@@ -69,7 +69,13 @@ const QM_URL = (process.env.QM_URL ?? "http://localhost:8000").replace(/\/$/, ""
 // read the contract allows, which is the closest equivalent to the old unpaged call.
 const CORE_PAGE_SIZE = 200;
 const CORE_PAGE_QUERY = `page=1&pageSize=${CORE_PAGE_SIZE}`;
-const SEED_PASSWORD = process.env.SEED_PASSWORD ?? "EduAI2026!";
+const LOCAL_SEED_PASSWORD = process.env.EDUAI_LOCAL_SEED_PASSWORD?.trim();
+if (!LOCAL_SEED_PASSWORD) {
+  console.error(
+    "FATAL: set EDUAI_LOCAL_SEED_PASSWORD to the local-only Core fixture password before running the performance baseline",
+  );
+  process.exit(2);
+}
 const WARMUP = Number(process.env.PERF_WARMUP ?? 3);
 const SAMPLES = Number(process.env.PERF_SAMPLES ?? 30);
 const RUN_MUTATIONS = (process.env.PERF_SKIP_MUTATIONS ?? "0") !== "1";
@@ -257,12 +263,12 @@ async function signIn(email, password) {
 async function mintCookies(actor) {
   const cookies = {};
   for (const [role, email] of Object.entries(ROLE_USERS)) {
-    cookies[role] = await signIn(email, SEED_PASSWORD);
+    cookies[role] = await signIn(email, LOCAL_SEED_PASSWORD);
     console.error(`  ${cookies[role] ? "✓" : "✗"} auth ${role} (${email})`);
     await sleep(400);
   }
   if (actor?.email) {
-    cookies.actor = await signIn(actor.email, actor.password ?? SEED_PASSWORD);
+    cookies.actor = await signIn(actor.email, actor.password ?? LOCAL_SEED_PASSWORD);
     console.error(`  ${cookies.actor ? "✓" : "✗"} auth actor (${actor.email})`);
   }
   return cookies;

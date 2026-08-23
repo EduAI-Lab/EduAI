@@ -139,8 +139,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       | Awaited<ReturnType<typeof import("~/lib/ai/re-embed-job.server").serializeReEmbedJob>>
       | undefined;
     if (reEmbedAfterSave) {
-      const { startReEmbedJob, serializeReEmbedJob } = await import("~/lib/ai/re-embed-job.server");
-      const { job, created } = await startReEmbedJob(courseId);
+      const { startOrResumeReEmbedJob, serializeReEmbedJob } =
+        await import("~/lib/ai/re-embed-job.server");
+      const { job, created } = await startOrResumeReEmbedJob(courseId);
       reEmbedJob = serializeReEmbedJob(job);
 
       // A re-embed started through the settings PATCH must be audited the same way

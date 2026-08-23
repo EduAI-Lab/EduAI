@@ -104,8 +104,9 @@ describe("UsersAdminView", () => {
     renderView();
 
     // The picker needs a browsable set, not the whole table — and `/api/courses`
-    // caps pageSize at 200, so anything larger would be clamped anyway.
-    expect(useCourses).toHaveBeenCalledWith({ pageSize: 200 });
+    // caps pageSize at 200, so anything larger would be clamped anyway. It opts
+    // out of facets, which only the filter toolbar consumes.
+    expect(useCourses).toHaveBeenCalledWith({ pageSize: 200, includeFacets: false });
   });
 
   it("renders the server-reported platform counts rather than counting the loaded page", () => {

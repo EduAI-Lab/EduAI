@@ -274,7 +274,6 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
     });
   }
 
-  const token = authHeader.slice(7);
   const envKey = process.env.EDUAI_API_KEY;
 
   if (!envKey) {
@@ -293,10 +292,7 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
     });
   }
 
-  const tokenHash = createHash("sha256").update(token).digest();
-  const keyHash = createHash("sha256").update(envKey).digest();
-
-  if (!timingSafeEqual(tokenHash, keyHash)) {
+  if (!hasValidServiceKey(request)) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),
@@ -313,4 +309,19 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   }
 
   return null;
+}
+
+/**
+ * Constant-time service-key verification for request chokepoints that need to
+ * distinguish an authenticated server call without emitting guard responses.
+ * Header presence or shape alone is never treated as authentication.
+ */
+export function hasValidServiceKey(request: Request): boolean {
+  const authHeader = request.headers.get("Authorization");
+  const envKey = process.env.EDUAI_API_KEY;
+  if (!authHeader?.startsWith("Bearer ") || !envKey) return false;
+
+  const tokenHash = createHash("sha256").update(authHeader.slice(7)).digest();
+  const keyHash = createHash("sha256").update(envKey).digest();
+  return timingSafeEqual(tokenHash, keyHash);
 }

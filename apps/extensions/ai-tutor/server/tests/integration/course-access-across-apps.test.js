@@ -39,6 +39,8 @@ vi.mock("../../src/services/topicSync.js", () => ({
 vi.mock("../../src/services/enrollmentSync.js", () => ({
   AUTO_SYNC_TTL_MS: 30_000,
   AUTO_SYNC_TIMEOUT_MS: 3_000,
+  LIVE_ENROLLMENT_SYNC_TIMEOUT_MS: 3_000,
+  authorizeLiveStudentEnrollment: vi.fn(),
   syncCourseEnrollments: vi.fn().mockResolvedValue({
     synced: 0,
     created: 0,
@@ -60,6 +62,7 @@ vi.mock("../../src/services/eduaiClient.js", async (importOriginal) => {
 });
 
 import { fetchCoreCourseSafe } from "../../src/services/eduaiClient.js";
+import { authorizeLiveStudentEnrollment } from "../../src/services/enrollmentSync.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../");
 const allCases = JSON.parse(
@@ -97,6 +100,13 @@ function levelFromEnrollment(row) {
 
 async function runRow(row) {
   const platformRole = platformRoleForRow(row, APP);
+  const enrollment = effectiveEnrollment(row);
+  const liveRole = enrollment.startsWith("active-") ? enrollment.slice("active-".length) : null;
+  vi.mocked(authorizeLiveStudentEnrollment).mockResolvedValue({
+    allowed: liveRole !== null,
+    state: liveRole === null ? "denied" : "allowed",
+    role: liveRole,
+  });
 
   let user;
   if (platformRole === "ADMIN") {
@@ -130,7 +140,6 @@ async function runRow(row) {
       isPublished: row.CourseState === "published",
     });
 
-    const enrollment = effectiveEnrollment(row);
     if (enrollment === "active-INSTRUCTOR") {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: courseId, userId: user.id, role: "INSTRUCTOR" },
@@ -156,6 +165,7 @@ async function runRow(row) {
 beforeEach(async () => {
   await truncateAll();
   vi.mocked(fetchCoreCourseSafe).mockReset();
+  vi.mocked(authorizeLiveStudentEnrollment).mockReset();
 });
 
 afterEach(async () => {

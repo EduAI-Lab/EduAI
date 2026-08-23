@@ -62,7 +62,7 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | QM Postgres (Docker port `55432` in monorepo dev) |
+| `DATABASE_URL` | Yes | QM Postgres (`postgres:5432` inside production Compose; host port `55432` is monorepo dev only) |
 | `CORE_URL` | Yes | Core base URL for session validation |
 | `EDUAI_API_KEY` | For Core S2S / AI | Must match Core |
 | `EDUAI_API_URL` | For AI proxy | Core API base |
@@ -73,13 +73,21 @@ Copy `.env.example` → `.env` in **this directory**. Full commented list lives 
 | `OPENAI_API_KEY` | No | Same |
 | `DEEPSEEK_API_KEY` | No | Same |
 | `DEFAULT_NUM_QUESTIONS`, `MAX_QUESTIONS` | No | AI batch limits |
+| `QM_MAX_EXTRACT_TEXT_CHARS`, `QM_MAX_EXTRACT_CHUNKS`, `QM_MAX_EXTRACT_PROVIDER_CALLS` | No | OCR extraction caps (defaults: 120000 chars, 24 chunks, 36 EduAI calls) |
+| `QM_EXTRACT_DEADLINE_MS`, `QM_AI_PROVIDER_TIMEOUT_MS` | No | OCR total/provider deadlines (defaults: 120s / 30s) |
+| `QM_GENERATE_PROMPT_MAX_CHARS` | No | Legacy generation prompt cap (default: 12000 chars) |
+| `QM_AI_RATE_LIMIT_WINDOW_MS`, `QM_AI_RATE_LIMIT_MAX` | No | Caller-keyed AI request quota (defaults: 15 minutes / 60 requests) |
+
+The upload dialog mirrors the server's 120,000-character OCR cap and rejects
+PDF/image/TXT files larger than 20 MiB before reading or starting OCR.
 | `COURSE_ACCESS_SYNC_TTL_MS` | No | Cache TTL (ms, default `60000`) for the synced Core enrollment access mirror and ADMIN catalog behind `GET /api/course` (#1206/#1410) |
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | No | Production rate limiting |
 | `BUG_REPORT_ADMIN_EMAILS` | No | Extra admin emails for bug triage (see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)) |
-| `VITE_API_URL` | No | Default `http://localhost:8000` |
+| `VITE_API_URL` | No | API origin; defaults to same-origin `/api` paths when unset |
+| `VITE_CANVAS_DEFAULT_URL` | No | Optional reachable HTTPS Canvas host used to prefill development/test-mode connections; leave empty when testers use account-specific hosts |
 | `TEST_DATABASE_URL` | Integration tests | Optional |
 
-**Production Compose** may use `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). **Automated server deploys** may use `GITHUB_TOKEN`, `GITHUB_PERSONAL_ACCESS_TOKEN`, or `PERSONAL_ACCESS_TOKEN` — see [docs/deployment/cron.md](docs/deployment/cron.md) and [docs/deployment/README.md](docs/deployment/README.md).
+**Production Compose** requires `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). Automated server deploys use a read-only SSH deploy key or OS credential helper configured outside the application `.env`; see [docs/deployment/cron.md](docs/deployment/cron.md).
 
 ## Campus vLLM defaults
 

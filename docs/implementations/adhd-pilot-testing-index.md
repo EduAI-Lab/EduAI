@@ -7,7 +7,7 @@
 
 **Platform testing guide:** [Phase 3 User Testing Guide](../eduai-summer-2026/PHASE_3_USER_TESTING_GUIDE.md)
 
-**Local dev login:** `student1@eduai.local` / `EduAI2026!` · Core at http://localhost:3000
+**Local dev login:** `student1@eduai.local` / the local-only value of `EDUAI_LOCAL_SEED_PASSWORD` (generate/export it before seeding) · Core at http://localhost:3000
 
 ## PR merge order (#708)
 

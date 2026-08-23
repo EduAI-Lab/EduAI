@@ -124,6 +124,9 @@ function entryContext(): EntryContext {
     isSpaMode: false,
     routeDiscovery: { mode: "initial" as const },
     renderMeta: {},
+    // Make React Router emit its critical CSS `<style>` so the test covers
+    // the nonce path that `HydratedRouter` does not retain client-side.
+    criticalCss: "body{color:rgb(1 2 3)}",
     serverHandoffString: JSON.stringify({ ssr: true, isSpaMode: false }),
     serverHandoffStream: serverHandoffStream(),
     // `EntryContext` is the framework's own build-time shape (full asset
@@ -212,5 +215,18 @@ describe("CSP nonce on document inline scripts (#1219)", () => {
     for (const { tag } of themeScripts) {
       expect(tag).toContain(`nonce="${nonce}"`);
     }
+  });
+
+  it("nonces React Router critical CSS with the response CSP nonce", async () => {
+    const { response, html } = await renderDocument();
+    const nonce = (response.headers.get("Content-Security-Policy") ?? "").match(
+      /'nonce-([^']+)'/,
+    )?.[1];
+    const criticalStyle = html.match(
+      /<style\b[^>]*data-react-router-critical-css[^>]*>[\s\S]*?<\/style>/,
+    )?.[0];
+
+    expect(criticalStyle).toBeTruthy();
+    expect(criticalStyle).toContain(`nonce="${nonce}"`);
   });
 });

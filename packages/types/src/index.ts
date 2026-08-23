@@ -1,3 +1,9 @@
+// Shared typed-error hierarchy (#1279). The `.js` specifier is required: the
+// emitted `dist/index.js` is loaded directly by Node ESM consumers
+// (ai-tutor/server, question-maker backend), which do not resolve extensionless
+// relative imports even though `moduleResolution: bundler` accepts them here.
+export * from "./errors.js";
+
 // Prisma dropped UserRole.TA in Core (the unify migration) — a course TA is a
 // STUDENT-platform user with an EnrollmentRole.TA enrollment. Platform UserRole
 // no longer includes TA (#225 AUTH-12); course-level TA stays on EnrollmentRole.
