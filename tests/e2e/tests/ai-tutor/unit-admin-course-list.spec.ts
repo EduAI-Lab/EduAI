@@ -137,22 +137,25 @@ test.describe("UNIT_ADMIN course list", () => {
   });
 
   test("the pager walks the unit list and keeps the page in the URL", async ({ page }) => {
-    await signInThroughPage(page, ua, `${AI_TUTOR_URL}/instructor`);
+    // `?pageSize=1` rather than the default: `PaginationControls` returns null
+    // when `pageCount <= 1`, so on a unit with few courses there is no pager to
+    // assert on at all. Forcing one course per page makes a second page exist
+    // whatever the fixture seeded, instead of leaving the test's outcome to how
+    // much state the run happened to accumulate.
+    await signInThroughPage(page, ua, `${AI_TUTOR_URL}/instructor?pageSize=1`);
 
-    const next = page.getByRole("button", { name: "Next" });
-    await expect(next).toBeVisible();
+    const pager = page.getByRole("navigation", { name: "Pagination" });
+    await expect(pager).toBeVisible({ timeout: 30_000 });
 
-    if (await next.isEnabled()) {
-      await next.click();
-      // #1162: the page lives in the URL so it survives a reload.
-      await page.waitForURL(/[?&]page=2/);
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page).toHaveURL(/[?&]page=2/);
-      await expect(page.getByRole("button", { name: "Previous" })).toBeEnabled();
-    } else {
-      // A unit with a single page still renders a disabled pager.
-      await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
-    }
+    const next = pager.getByRole("button", { name: "Next" });
+    await expect(next).toBeEnabled();
+    await next.click();
+
+    // #1162: the page lives in the URL so it survives a reload.
+    await page.waitForURL(/[?&]page=2/);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/[?&]page=2/);
+    await expect(pager.getByRole("button", { name: "Previous" })).toBeEnabled();
   });
 
   test("a course card opens the course detail page", async ({ page }) => {

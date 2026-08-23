@@ -28,7 +28,7 @@ import { test, expect } from "@playwright/test";
 import { AI_TUTOR_API_URL, AI_TUTOR_URL, CORE_URL } from "../../playwright.config";
 import { signInThroughPage } from "../helpers/auth";
 import { createUnitAdmin, type UnitAdminFixture } from "../helpers/at-unit-admin";
-import { errorBoundary, sidebarLink } from "../helpers/at-ui";
+import { errorBoundary, shellMain, sidebarLink } from "../helpers/at-ui";
 
 let ua: UnitAdminFixture;
 /** Module + lesson the instructor authored inside the out-of-unit course. */
@@ -136,13 +136,13 @@ test.describe("UNIT_ADMIN access boundaries", () => {
       waitUntil: "domcontentloaded",
     });
     await expect(errorBoundary(page)).toBeVisible();
-    const forbidden = await page.getByRole("main").innerText();
+    const forbidden = await shellMain(page).innerText();
 
     await page.goto(`${AI_TUTOR_URL}/instructor/courses/999999999`, {
       waitUntil: "domcontentloaded",
     });
     await expect(errorBoundary(page)).toBeVisible();
-    const missing = await page.getByRole("main").innerText();
+    const missing = await shellMain(page).innerText();
 
     expect(forbidden).toBe(missing);
   });

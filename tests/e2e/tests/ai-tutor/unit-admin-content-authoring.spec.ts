@@ -457,7 +457,13 @@ test.describe("UNIT_ADMIN content authoring", () => {
       await page.request.get(`${AI_TUTOR_API_URL}/api/lessons/${lessonId}/activities`)
     ).json();
     expect(activities.total).toBe(1);
-    expect(activities.data[0].instructionsMd).toContain(prompt);
+    // The prompt is the activity's *question*, not its instructions:
+    // `activityManagement.createActivity` defaults `instructionsMd` to
+    // "Answer the question." and stores what was typed in `config.question`,
+    // which `mapActivity` exposes as `question`. Asserting on `instructionsMd`
+    // could only ever have matched the default.
+    expect(activities.data[0].question).toContain(prompt);
+    expect(activities.data[0].mainTopic?.name).toBe(ua.seededTopic);
   });
 
   test("the activity form loads the course's topics for a unit admin", async ({ page }) => {
