@@ -37,6 +37,7 @@ import {
   PaginationError,
 } from "../utils/pagination.js";
 import { evaluateQuestion } from "../services/activityEvaluation.js";
+import { createSubmissionWithNextAttempt } from "../services/submissionAttempts.js";
 import {
   ActivityMutationError,
   createActivityForLesson,
@@ -1091,9 +1092,8 @@ router.get(
  *   updates submission analytics for students, and signals whether
  *   per-activity feedback is still owed.
  *
- * Why: `attemptNumber` is computed server-side from the latest existing
- * submission rather than trusted from the client, so retries can't collide
- * or be spoofed.
+ * Why: `attemptNumber` is allocated transactionally and guarded by a database
+ * uniqueness constraint rather than trusted from the client.
  */
 router.post("/questions/:id/answer", async (req, res) => {
   const activityId = Number(req.params.id);
@@ -1157,29 +1157,17 @@ router.post("/questions/:id/answer", async (req, res) => {
       answerOption,
     });
 
-    // Get the latest attempt number for this activity and user
-    const latestSubmission = await prisma.submission.findFirst({
-      where: { userId: authUser.id, activityId },
-      orderBy: { attemptNumber: "desc" },
-      select: { attemptNumber: true },
-    });
-
-    const nextAttemptNumber = latestSubmission ? latestSubmission.attemptNumber + 1 : 1;
-
-    const submission = await prisma.submission.create({
-      data: {
-        userId: authUser.id,
-        activityId,
-        attemptNumber: nextAttemptNumber,
-        response: {
-          answerText: typeof answerText === "string" ? answerText : null,
-          answerOption: typeof answerOption === "number" ? answerOption : null,
-        },
-        aiFeedback: isCorrect
-          ? { message: "Nice! That looks right." }
-          : { message: "Not quite. Try another angle." },
-        isCorrect,
+    const submission = await createSubmissionWithNextAttempt({
+      userId: authUser.id,
+      activityId,
+      response: {
+        answerText: typeof answerText === "string" ? answerText : null,
+        answerOption: typeof answerOption === "number" ? answerOption : null,
       },
+      aiFeedback: isCorrect
+        ? { message: "Nice! That looks right." }
+        : { message: "Not quite. Try another angle." },
+      isCorrect,
     });
 
     if (authUser.role === "STUDENT") {
