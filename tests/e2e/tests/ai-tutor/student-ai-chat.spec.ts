@@ -236,9 +236,12 @@ test.describe("AI Tutor STUDENT — chat with a BYOK key connected", () => {
       await seedByokKey(page, studentId);
       await gotoAiTutor(page, `/student/lesson/${seeded.lessonId}`);
       const chat = page.locator('[data-tour="student-ai-chat"]');
-      // Pick a level (default tab is Teach me) so the chips can show against an
-      // empty thread.
+      // Pick a level so the chips can show against an empty thread. The seeded
+      // activity enables Teach me + Guide me, and the chat opens on Guide me by
+      // default (StudentAiChat seeds `activeTab` to "guide"), so switch to the
+      // Teach me tab to exercise the teach-mode prompt below.
       await chat.getByRole("button", { name: "New to this" }).click();
+      await chat.getByRole("radio", { name: "Teach me" }).click();
 
       await expect(chat.getByText("Try asking")).toBeVisible({ timeout: 20_000 });
       const chip = chat.getByRole("button", { name: teachPrompt });
