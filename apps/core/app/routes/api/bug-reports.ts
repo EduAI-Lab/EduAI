@@ -80,7 +80,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // For session-auth requests, override userId and source from the verified session.
   if (sessionUserId) {
-    const fields: JsonObject = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+    const fields: JsonObject =
+      body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
     fields.userId = sessionUserId;
     fields.source = "CORE";
     body = fields;
