@@ -4,6 +4,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse, type AccessLevel } from "~/lib/auth/course-access.server";
 import { canEditCourse } from "~/lib/rbac";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 import {
   addQuestionToBank,
   addQuestionsToBank,
@@ -14,13 +15,6 @@ import {
   removeQuestionFromBank,
   updateQuestionBank,
 } from "~/lib/question-banks/server";
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 /**
  * Nested path after /api/courses/:courseId/banks

@@ -1,9 +1,11 @@
 import type { z } from "zod";
 
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
+
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /** Standard JSON response for Core API routes. */
-export function jsonResponse(status: number, body: unknown): Response {
+export function jsonResponse(status: number, body: JsonResponseBody): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: JSON_HEADERS,

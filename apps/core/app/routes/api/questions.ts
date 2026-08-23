@@ -14,8 +14,9 @@ import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonObject } from "~/lib/json-value";
 import { MAX_CREATE_QUESTION_BODY_BYTES, validateCreateQuestion } from "~/lib/questions/schema";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import type { JsonResponseBody } from "~/lib/api/json-response.server";
 
-function json(status: number, body: object) {
+function json(status: number, body: JsonResponseBody) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
