@@ -18,11 +18,13 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { AI_TUTOR_API_URL, CORE_URL } from "../../playwright.config";
+import { registerUser } from "../helpers/auth";
 import { registerStudent, seedPublishedCourseAndEnroll } from "../helpers/at-student-fixtures";
 import {
   seedAtCourse,
   seedModule,
   seedLesson,
+  seedMcqActivity,
   seedStudentSubmission,
 } from "../helpers/at-admin-fixtures";
 
@@ -189,6 +191,114 @@ test.describe("AI Tutor TA — actions a TA is refused", () => {
     } finally {
       await mine.dispose();
       await foreign.dispose();
+    }
+  });
+});
+
+test.describe("AI Tutor TA — elevated reads and learner-path boundaries", () => {
+  // The mirror image of BUG-TA-1. On the read side a TA has *elevated* access —
+  // `isTa` folds into `hasElevatedAccess` (`activities.js:534`), so a TA reads a
+  // course's unpublished drafts a plain student is refused. Pinning this guards
+  // the distinction: were `isTa` dropped from `hasElevatedAccess`, a TA would
+  // silently lose draft visibility with no other regression to catch it.
+  test("a TA reads unpublished draft activities a plain student cannot", async ({
+    page,
+    playwright,
+  }) => {
+    const { seeded } = await seedTa(page, playwright, "SD1");
+    try {
+      // Author a DRAFT (unpublished) lesson with an activity in the TA's course.
+      const draftLesson = await seedLesson(seeded.admin, seeded.moduleId, {
+        title: "Draft Lesson",
+        publish: false,
+      });
+      await seedMcqActivity(seeded.admin, draftLesson.id, seeded.topicIds[0], {
+        question: "Draft-only question?",
+      });
+
+      // The TA (elevated) reads the draft lesson's activities.
+      const taRead = await page.request.get(`${AT}/api/lessons/${draftLesson.id}/activities`);
+      expect(taRead.status(), "TA reads draft-lesson activities").toBe(200);
+      const taBody = await taRead.json();
+      const taRows = Array.isArray(taBody) ? taBody : (taBody.data ?? []);
+      expect(taRows.length, "draft activity is visible to the TA").toBeGreaterThan(0);
+
+      // A plain enrolled STUDENT on the same course is refused the unpublished
+      // lesson (`activities.js:540` — "Lesson is not published").
+      const studentCtx = await playwright.request.newContext();
+      try {
+        await registerUser(studentCtx, {
+          name: "Draft Contrast Student",
+          prefix: "at-ta-draft-stu",
+        });
+        const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
+        expect(
+          (
+            await seeded.admin.post(`${CORE_URL}/api/courses/${seeded.coreCourseId}/enrollments`, {
+              data: { userId: studentId, role: "STUDENT" },
+            })
+          ).status(),
+        ).toBe(201);
+        expect(
+          (
+            await seeded.admin.post(`${AT}/api/admin/courses/${seeded.atCourseId}/enrollments`, {
+              data: { userId: studentId, role: "STUDENT" },
+            })
+          ).status(),
+        ).toBe(201);
+
+        const studentRead = await studentCtx.get(`${AT}/api/lessons/${draftLesson.id}/activities`);
+        expect(studentRead.status(), "student blocked from the draft lesson").toBe(403);
+      } finally {
+        await studentCtx.dispose();
+      }
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  // Two more learner-only paths with the exact silent-403 shape of the U-TA-1
+  // answer-submit block: a TA passes the `role !== "STUDENT"` gate (platform
+  // role IS "STUDENT") but is refused by the enrolment allow-list, which
+  // `getLiveStudentEnrollment` defaults to `["STUDENT"]` — the TA's live
+  // enrolment role is "TA". A refactor of that default is what would wrongly
+  // admit a TA here, so these pin the boundary.
+  test("student-only activity paths (feedback, chat sessions) 403 a TA", async ({
+    page,
+    playwright,
+  }) => {
+    const { seeded } = await seedTa(page, playwright, "SD2");
+    try {
+      const feedback = await page.request.post(
+        `${AT}/api/activities/${seeded.activityId}/feedback`,
+        { data: { rating: 5 } },
+      );
+      expect(feedback.status(), "POST activity feedback").toBe(403);
+
+      const chats = await page.request.get(
+        `${AT}/api/activities/${seeded.activityId}/chat-sessions`,
+      );
+      expect(chats.status(), "GET activity chat-sessions").toBe(403);
+    } finally {
+      await seeded.dispose();
+    }
+  });
+
+  // The `/instructor/lesson/:id` AI study buddy panel renders its mode/topic
+  // controls for a TA (they are NOT behind the `canManageContent` PermissionGate
+  // the edit/delete affordances use — see U-TA-2), but the write is a server
+  // backstop: `PATCH /activities/:id` is `requireRole(INSTRUCTOR/UNIT_ADMIN/
+  // ADMIN)`, which reads the platform role, so a TA 403s. This pins the backstop
+  // so a TA can never actually author an activity's AI config.
+  test("editing an activity's AI config (modes / topics) is 403", async ({ page, playwright }) => {
+    const { seeded } = await seedTa(page, playwright, "SD3");
+    try {
+      const patch = await page.request.patch(`${AT}/api/activities/${seeded.activityId}`, {
+        data: { enableGuideMode: false },
+      });
+      expect(patch.status(), "PATCH activity AI config").toBe(403);
+    } finally {
+      await seeded.dispose();
     }
   });
 });
