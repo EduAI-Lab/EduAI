@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
 import type { AiServiceStatusPair } from "@eduai/ui";
+import type { ProviderApiKeys } from "@/services/apiKeyStorage";
 
 const testApiKey = vi.fn();
 const getAllApiKeys = vi.fn();
@@ -98,7 +99,7 @@ describe("useAiServicesStatus probes", () => {
 
   it("reports cloud outage when the probe throws (network down)", async () => {
     getAllApiKeys.mockResolvedValue({ openai: "sk-x" });
-    testApiKey.mockImplementation((keys: Record<string, unknown>) => {
+    testApiKey.mockImplementation((keys: ProviderApiKeys) => {
       // Cloud probe throws; UBC probe (forceProvider) resolves to an outage.
       if (Object.keys(keys).length > 0) return Promise.reject(new Error("ECONNREFUSED"));
       return Promise.resolve({ configured: false });
@@ -113,11 +114,13 @@ describe("useAiServicesStatus probes", () => {
 
   it("reports UBC operational when the forced vLLM probe validates", async () => {
     isCampusProvider.mockReturnValue(true);
-    testApiKey.mockImplementation((_keys: unknown, opts?: { forceProvider?: string }) => {
-      if (opts?.forceProvider === "vllm")
-        return Promise.resolve({ success: true, provider: "vllm" });
-      return Promise.resolve({ configured: false });
-    });
+    testApiKey.mockImplementation(
+      (_keys: ProviderApiKeys | undefined, opts?: { forceProvider?: string }) => {
+        if (opts?.forceProvider === "vllm")
+          return Promise.resolve({ success: true, provider: "vllm" });
+        return Promise.resolve({ configured: false });
+      },
+    );
     const fetcher = mountAndGetFetcher();
 
     const { ubc } = await fetcher(new AbortController().signal);
@@ -127,10 +130,12 @@ describe("useAiServicesStatus probes", () => {
   });
 
   it("reports UBC outage 'not configured on the server' when configured is false", async () => {
-    testApiKey.mockImplementation((_keys: unknown, opts?: { forceProvider?: string }) => {
-      if (opts?.forceProvider === "vllm") return Promise.resolve({ configured: false });
-      return Promise.resolve({ configured: false });
-    });
+    testApiKey.mockImplementation(
+      (_keys: ProviderApiKeys | undefined, opts?: { forceProvider?: string }) => {
+        if (opts?.forceProvider === "vllm") return Promise.resolve({ configured: false });
+        return Promise.resolve({ configured: false });
+      },
+    );
     const fetcher = mountAndGetFetcher();
 
     const { ubc } = await fetcher(new AbortController().signal);
@@ -140,10 +145,12 @@ describe("useAiServicesStatus probes", () => {
   });
 
   it("reports UBC outage when the forced vLLM probe throws", async () => {
-    testApiKey.mockImplementation((_keys: unknown, opts?: { forceProvider?: string }) => {
-      if (opts?.forceProvider === "vllm") return Promise.reject(new Error("timeout"));
-      return Promise.resolve({ configured: false });
-    });
+    testApiKey.mockImplementation(
+      (_keys: ProviderApiKeys | undefined, opts?: { forceProvider?: string }) => {
+        if (opts?.forceProvider === "vllm") return Promise.reject(new Error("timeout"));
+        return Promise.resolve({ configured: false });
+      },
+    );
     const fetcher = mountAndGetFetcher();
 
     const { ubc } = await fetcher(new AbortController().signal);

@@ -789,7 +789,7 @@ describe("AI request topic ids", () => {
 // payload below is copied from the handler that produces it, so a future edit
 // to either side has to break this test before it can break the feature.
 describe("response shapes match what the routes actually send", () => {
-  const respondWith = (body: unknown) =>
+  const respondWith = (body: JsonValue) =>
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,

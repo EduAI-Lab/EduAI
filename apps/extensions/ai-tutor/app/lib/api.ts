@@ -240,6 +240,13 @@ export interface ListParams {
  * The array dimensions are repeatable query params — OR within a dimension, AND
  * across them, matching `CourseListView`'s toolbar semantics.
  */
+/** Body of `POST /api/courses/:id/modules`. `position` defaults server-side. */
+export interface ModuleCreatePayload {
+  title: string;
+  description?: string;
+  position?: number;
+}
+
 export interface CourseListParams {
   page?: number;
   pageSize?: number;
@@ -639,10 +646,7 @@ export const api = {
       paginatedSchema(moduleSchema),
     ),
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
-  createModule: (
-    courseId: number,
-    payload: { title: string; description?: string; position?: number },
-  ) =>
+  createModule: (courseId: number, payload: ModuleCreatePayload) =>
     http(`/api/courses/${courseId}/modules`, {
       method: "POST",
       body: JSON.stringify(payload),
