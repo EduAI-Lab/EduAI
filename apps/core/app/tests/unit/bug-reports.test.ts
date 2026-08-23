@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 
@@ -357,10 +358,12 @@ describe("createBugReport — field caps and redaction (#979)", () => {
   });
 
   it("drops non-JSON-serializable context to DbNull instead of failing", async () => {
-    const r = await createBugReport({
-      ...BASE_PAYLOAD,
-      context: { big: BigInt(1) },
-    });
+    const context: JsonObject = {};
+    // A BigInt cannot arrive through `JSON.parse`, so the payload type says it
+    // cannot be here. Writing it in anyway is how this test reaches the branch
+    // that drops a context `JSON.stringify` refuses to serialize.
+    Reflect.set(context, "big", BigInt(1));
+    const r = await createBugReport({ ...BASE_PAYLOAD, context });
     expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create.mock.calls[0][0].data.context).toEqual(Prisma.DbNull);
   });

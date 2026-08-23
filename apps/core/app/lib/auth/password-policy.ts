@@ -57,12 +57,12 @@ export function isStrongPassword(password: string): boolean {
 /**
  * Maps auth paths to the password field in the request body.
  */
-const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
-  "/sign-up/email": "password",
-  "/change-password": "newPassword",
-  "/reset-password": "newPassword",
-  "/set-password": "newPassword",
-};
+const PASSWORD_SETTING_PATHS = new Map<string, "password" | "newPassword">([
+  ["/sign-up/email", "password"],
+  ["/change-password", "newPassword"],
+  ["/reset-password", "newPassword"],
+  ["/set-password", "newPassword"],
+]);
 
 /**
  * `setPassword` is declared `serverOnly`, so it has no route and `ctx.path`
@@ -70,9 +70,9 @@ const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
  * `operationId` (the `auth.api.*` map key) even when there's no path, so
  * that's the identity a server-only endpoint has to be matched on instead.
  */
-const PASSWORD_SETTING_OPERATIONS: Record<string, "password" | "newPassword"> = {
-  setPassword: "newPassword",
-};
+const PASSWORD_SETTING_OPERATIONS = new Map<string, "password" | "newPassword">([
+  ["setPassword", "newPassword"],
+]);
 
 /**
  * Auth paths that resolve a user via a reset token instead of a session.
@@ -95,8 +95,8 @@ export function extractPolicyPassword(
   body: JsonValue | undefined,
 ): string | null {
   const field =
-    (path ? PASSWORD_SETTING_PATHS[path] : undefined) ??
-    (operationId ? PASSWORD_SETTING_OPERATIONS[operationId] : undefined);
+    (path ? PASSWORD_SETTING_PATHS.get(path) : undefined) ??
+    (operationId ? PASSWORD_SETTING_OPERATIONS.get(operationId) : undefined);
   if (!field) {
     return null;
   }

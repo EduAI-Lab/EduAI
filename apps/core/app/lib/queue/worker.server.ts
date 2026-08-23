@@ -1,3 +1,4 @@
+import type { SupportedProvider } from "~/lib/ai/provider-types";
 import { Prisma } from "@prisma/client";
 import { Worker, type ConnectionOptions, type Job, type WorkerOptions } from "bullmq";
 import { runCompletion } from "~/lib/ai/completion.server";
@@ -58,13 +59,16 @@ function formatError(cause: unknown): string {
   }
 }
 
-function serverApiKeys(model: string): Record<
-  string,
-  {
-    isEnabled: boolean;
-    apiKey?: string;
-  }
-> {
+/**
+ * Server-held provider credentials for a queued job. Keyed by provider id
+ * because the job names its model as `provider:model`, and only that provider's
+ * entry is ever filled in.
+ */
+type ServerProviderKeys = {
+  [K in SupportedProvider]?: { isEnabled: boolean; apiKey?: string };
+};
+
+function serverApiKeys(model: string): ServerProviderKeys {
   if (model.startsWith("openai:") && process.env.OPENAI_API_KEY) {
     return {
       openai: {

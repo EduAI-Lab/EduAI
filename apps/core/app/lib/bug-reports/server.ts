@@ -1,3 +1,4 @@
+import type { JsonValue } from "~/lib/json-value";
 import { Prisma, BugReportType } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { redactDiagnosticLogString, sanitizeSensitiveData } from "~/lib/redact.server";
@@ -38,13 +39,16 @@ function validationError(fields: Record<string, string>): CreateBugReportResult 
 }
 
 /**
+ * A field that survived the size cap, or the reason it did not. `value` is null
+ * when the payload simply did not carry a string there.
+ */
+type CappedString = { ok: true; value: string | null } | { ok: false; reason: string };
+
+/**
  * Optional string fields: non-strings are ignored (null), oversized values rejected.
  * Matches prior createBugReport coercion while adding #979 size caps.
  */
-function optionalCappedString(
-  value: unknown,
-  maxChars: number,
-): { ok: true; value: string | null } | { ok: false; reason: string } {
+function optionalCappedString(value: JsonValue | undefined, maxChars: number): CappedString {
   if (typeof value !== "string") {
     return { ok: true, value: null };
   }
@@ -54,14 +58,17 @@ function optionalCappedString(
   return { ok: true, value };
 }
 
+/** A diagnostic blob after redaction and truncation; null when there was none. */
+type PreparedDiagnosticLogs = { ok: true; value: string | null };
+
 /**
  * Redact then truncate diagnostic log blobs. Truncation is safe for triage text;
  * secrets must be scrubbed first so a cut mid-token cannot leave a partial secret.
  */
 function prepareDiagnosticLogs(
-  value: unknown,
+  value: JsonValue | undefined,
   maxChars: number,
-): { ok: true; value: string | null } {
+): PreparedDiagnosticLogs {
   if (typeof value !== "string") {
     return { ok: true, value: null };
   }
@@ -77,7 +84,9 @@ function prepareDiagnosticLogs(
  * Oversized or non-serializable context is dropped to DbNull so the
  * description and logs still persist (#1116 review).
  */
-function prepareContext(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
+function prepareContext(
+  value: JsonValue | undefined,
+): Prisma.InputJsonValue | typeof Prisma.DbNull {
   // Non-object / array context was previously coerced to DbNull — keep that behavior.
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return Prisma.DbNull;
@@ -98,12 +107,12 @@ function prepareContext(value: unknown): Prisma.InputJsonValue | typeof Prisma.D
   return sanitized as Prisma.InputJsonValue;
 }
 
-export async function createBugReport(raw: unknown): Promise<CreateBugReportResult> {
+export async function createBugReport(raw: JsonValue | undefined): Promise<CreateBugReportResult> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return validationError({ body: "invalid payload" });
   }
 
-  const p = raw as Record<string, unknown>;
+  const p = raw;
 
   if (!VALID_SOURCES.includes(p.source as BugReportSource)) {
     return validationError({ source: "must be AI_TUTOR or QUESTION_MAKER" });
@@ -190,13 +199,15 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
 const VALID_STATUSES = ["UNHANDLED", "IN_PROGRESS", "RESOLVED"] as const;
 type BugReportStatus = (typeof VALID_STATUSES)[number];
 
-export function isBugReportStatus(value: unknown): value is BugReportStatus {
+export function isBugReportStatus(value: JsonValue | undefined): value is BugReportStatus {
   return typeof value === "string" && (VALID_STATUSES as readonly string[]).includes(value);
 }
 
 const ADMIN_LIST_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 
-export function isBugReportSource(value: unknown): value is (typeof ADMIN_LIST_SOURCES)[number] {
+export function isBugReportSource(
+  value: JsonValue | undefined,
+): value is (typeof ADMIN_LIST_SOURCES)[number] {
   return typeof value === "string" && (ADMIN_LIST_SOURCES as readonly string[]).includes(value);
 }
 

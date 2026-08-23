@@ -28,15 +28,18 @@ function isBullJobIdConflict(cause: unknown): boolean {
   );
 }
 
+/** BullMQ retry policy for an AI job: how many attempts, and how they back off. */
+export type AiJobRetryOptions = {
+  attempts: number;
+  backoff: { type: "exponential"; delay: number };
+};
+
 function positiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function aiJobRetryOptions(): {
-  attempts: number;
-  backoff: { type: "exponential"; delay: number };
-} {
+export function aiJobRetryOptions(): AiJobRetryOptions {
   return {
     attempts: positiveInt(process.env.AI_JOB_ATTEMPTS, 3),
     backoff: {
