@@ -93,10 +93,10 @@ describe("CourseSwitcher — server search (#1208)", () => {
     await waitFor(() => expect(listCourses).toHaveBeenCalledTimes(1));
 
     // The "co" request is held open so it can resolve AFTER the later "cosc" one.
-    let resolveSlow: (v: unknown) => void = () => {};
+    let resolveSlow: (coursesPage: ReturnType<typeof page>) => void = () => {};
     listCourses.mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
+        new Promise<ReturnType<typeof page>>((resolve) => {
           resolveSlow = resolve;
         }),
     );
