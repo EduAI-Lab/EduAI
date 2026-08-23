@@ -3,6 +3,7 @@
  * Dynamic provider management with user-provided API keys
  */
 
+import type { ProviderV1 } from "@ai-sdk/provider";
 import { createProviderRegistry } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -114,7 +115,12 @@ function resolveVllmRegistration(
  * Creates a dynamic provider registry with user-provided settings
  */
 export function createAIProviderRegistry(userSettings: UserProviderSettings) {
-  const providers: Record<string, any> = {};
+  // Keyed by `SupportedProvider`, but declared open: every entry is conditional
+  // — a provider that is disabled, missing its key, or whose base URL failed to
+  // resolve is simply absent — and the registry's model ids are built from
+  // strings, so narrowing the key type here only moves the looseness to the
+  // call sites.
+  const providers: Record<string, ProviderV1> = {};
 
   // OpenAI
   if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) {
