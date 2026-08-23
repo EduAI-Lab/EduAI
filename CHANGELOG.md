@@ -20,7 +20,7 @@
 
 ### Tests
 
-- [core] test: Assert the Round 3 mocked `/api/chat` failure UI (Send returns, Stop is not stuck, no error banner) as the tracked #1510 contract instead of annotation-only probes. (@Ayyhab, 2026-08-22) — [#1466](https://github.com/EduAI-Lab/EduAI/pull/1466)
+- [core] test: Assert the Round 3 mocked `/api/chat` failure UI (Send returns, Stop is not stuck) and encode the missing error banner as a `test.fail` expected-failure contract for #1510. (@Ayyhab, 2026-08-22) — [#1466](https://github.com/EduAI-Lab/EduAI/pull/1466)
 - [core] test: Cover the course-scope guardrail's default-off UI state and PATCH persistence, plus staff-only loader exposure for the course detail route. (@saadtab01, 2026-08-18) — [#1524](https://github.com/EduAI-Lab/EduAI/pull/1524)
 
 - [ai-tutor] refactor: Rebuild the course feedback search filters and buttons on the shared `@eduai/ui` `Input`/`Button` primitives instead of raw elements with local utility classes. Closes #1573. (@yta3216, 2026-08-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)

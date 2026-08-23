@@ -412,16 +412,15 @@ test.describe("Chat composer — system prompt settings", () => {
 // ===========================================================================
 
 test.describe("Chat composer — error handling per failure mode", () => {
-  // Observed contract for every mocked /api/chat failure on this branch.
-  // #1510: useChat's `error` is never rendered, so the composer returns to
-  // idle with no banner/toast. Flip `errorVisible` when that toast ships —
-  // do not drop the Send/Stop asserts, a stuck Stop is a separate regression.
+  // Idle Send/Stop are hard asserts — a stuck Stop fails the run.
+  // Missing error UI is the known #1510 drift: we assert the spec (an
+  // error state must be visible) and mark that check with test.fail() so a
+  // real fix surfaces as a newly-passing (and thus newly-failing
+  // test.fail) row. Same pattern as #1411/#1412 in
+  // ai-chat-gate.pict.test.js (`it.fails` against the spec oracle).
   const cases: Array<{
     name: string;
     mock: (route: Route) => Promise<void>;
-    sendVisible: boolean;
-    stopVisible: boolean;
-    errorVisible: boolean;
   }> = [
     {
       name: "502 LLM_STREAM_FAILED (model errored mid-stream)",
@@ -434,9 +433,6 @@ test.describe("Chat composer — error handling per failure mode", () => {
             code: "LLM_STREAM_FAILED",
           }),
         }),
-      sendVisible: true,
-      stopVisible: false,
-      errorVisible: false,
     },
     {
       name: "400 provider not available (matches an unconfigured/unreachable model)",
@@ -449,21 +445,15 @@ test.describe("Chat composer — error handling per failure mode", () => {
               'Provider "vllm" is not available on this server. Set VLLM_BASE_URL in apps/core/.env and restart the dev process.',
           }),
         }),
-      sendVisible: true,
-      stopVisible: false,
-      errorVisible: false,
     },
     {
       name: "connection refused (route.abort — closest match to a totally unreachable backend)",
       mock: (route) => route.abort("connectionrefused"),
-      sendVisible: true,
-      stopVisible: false,
-      errorVisible: false,
     },
   ];
 
-  for (const { name, mock, sendVisible, stopVisible, errorVisible } of cases) {
-    test(`${name}: composer returns to idle with the #1510 silent-error contract`, async ({
+  for (const { name, mock } of cases) {
+    test(`${name}: composer returns to idle; error UI is the #1510 expected-failure contract`, async ({
       page,
       playwright,
     }) => {
@@ -483,55 +473,34 @@ test.describe("Chat composer — error handling per failure mode", () => {
         await injectSession(page, ctx);
         await openCourseChat(page);
 
-        const input = page.locator("#chat-message-input");
         const sendButton = page.getByRole("button", { name: "Send message" });
         const stopButton = page.getByRole("button", { name: "Stop generating" });
         const errorText = page.getByText(/error|failed|try again|something went wrong/i);
 
-        await input.fill("This request will fail.");
+        await page.locator("#chat-message-input").fill("This request will fail.");
         await sendButton.click();
         await expect(
           stopButton,
           `[${name}] Stop should appear while the mocked /api/chat is in flight`,
         ).toBeVisible({ timeout: 5_000 });
 
-        if (sendVisible) {
-          await expect(
-            sendButton,
-            `[${name}] composer should return to Send after /api/chat fails`,
-          ).toBeVisible({ timeout: 10_000 });
-        } else {
-          await expect(
-            sendButton,
-            `[${name}] Send should stay hidden after /api/chat fails`,
-          ).toHaveCount(0);
-        }
+        await expect(
+          sendButton,
+          `[${name}] composer should return to Send after /api/chat fails`,
+        ).toBeVisible({ timeout: 10_000 });
+        await expect(
+          stopButton,
+          `[${name}] Stop must not stay stuck after /api/chat fails`,
+        ).toHaveCount(0);
 
-        if (stopVisible) {
-          await expect(
-            stopButton,
-            `[${name}] Stop should remain visible after /api/chat fails`,
-          ).toBeVisible();
-        } else {
-          await expect(
-            stopButton,
-            `[${name}] Stop must not stay stuck after /api/chat fails`,
-          ).toHaveCount(0);
-        }
-
-        // Tracked expected-failure contract for #1510. Flip `errorVisible`
-        // on the case above when the error toast/banner ships.
-        if (errorVisible) {
-          await expect(
-            errorText,
-            `[${name}] /api/chat failure should surface error UI`,
-          ).toBeVisible();
-        } else {
-          await expect(
-            errorText,
-            `[${name}] Known bug #1510: /api/chat failures never surface error UI. Update this case when #1510 lands.`,
-          ).toHaveCount(0);
-        }
+        // Called only after the idle-composer asserts, so a stuck Stop is a
+        // real failure. The remaining expect is the spec (error UI visible);
+        // it currently fails, which is the tracked #1510 contract.
+        test.fail(true, "Known bug #1510: /api/chat failures never surface error UI");
+        await expect(
+          errorText,
+          `[${name}] /api/chat failure should surface error UI`,
+        ).toBeVisible();
       } finally {
         await ctx.dispose();
       }
