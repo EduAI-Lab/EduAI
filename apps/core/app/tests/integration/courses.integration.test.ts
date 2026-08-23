@@ -10,7 +10,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-import { getCourses, createCourse } from "~/lib/courses/server";
+import { getCourses, createCourse, getCourseFacets } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
 import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
 import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
@@ -274,6 +274,405 @@ describe("GET /api/courses", () => {
     expect(found).toBeUndefined();
 
     await prisma.course.delete({ where: { id: deleted.id } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/courses — search & filters before pagination (#1263)
+// ---------------------------------------------------------------------------
+
+describe("GET /api/courses — search & filters before pagination (#1263)", () => {
+  type ListRow = {
+    name: string;
+    code: string;
+    term: string;
+    year: number;
+    department: string | null;
+    isPublished: boolean;
+  };
+
+  // Sorts code-asc: the `ZZZ*` rows land past page 1 at any pageSize < 7, which
+  // is the premise every "beyond page 1" assertion relies on. All totals are
+  // deterministic because each test scopes a fresh INSTRUCTOR to exactly these.
+  const FIXTURE: ListRow[] = [
+    {
+      name: "Old Term Course",
+      code: "AAA 050",
+      term: "W1",
+      year: 2025,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Filler One",
+      code: "AAA 100",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Filler Two",
+      code: "AAA 200",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Term Target Course",
+      code: "ZZZ 100",
+      term: "W2",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+    {
+      name: "Status Draft Course",
+      code: "ZZZ 200",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: false,
+    },
+    {
+      name: "Department Math Course",
+      code: "ZZZ 300",
+      term: "W1",
+      year: 2026,
+      department: "MATH",
+      isPublished: true,
+    },
+    {
+      name: "Search Target Course",
+      code: "ZZZ 400",
+      term: "W1",
+      year: 2026,
+      department: "COSC",
+      isPublished: true,
+    },
+  ];
+
+  async function seedScopedList(rows: ListRow[]) {
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const ids: Record<string, string> = {};
+    for (const row of rows) {
+      const created = await prisma.course.create({
+        data: {
+          name: row.name,
+          code: row.code,
+          section: "001",
+          term: row.term,
+          year: row.year,
+          startDate: new Date("2026-01-01"),
+          department: row.department,
+          isPublished: row.isPublished,
+        },
+      });
+      await enroll(created.id, instructor.id, "INSTRUCTOR");
+      ids[row.name] = created.id;
+    }
+    return { instructor, ids, allIds: Object.values(ids) };
+  }
+
+  async function runWithFixture(
+    fn: (ctx: Awaited<ReturnType<typeof seedScopedList>>) => Promise<void>,
+  ) {
+    const ctx = await seedScopedList(FIXTURE);
+    try {
+      mockSession(ctx.instructor);
+      await fn(ctx);
+    } finally {
+      await cleanupRbac({ userIds: [ctx.instructor.id], courseIds: ctx.allIds });
+    }
+  }
+
+  const list = (query: string) =>
+    new Request(`http://localhost/api/courses?${query}`, { method: "GET" });
+
+  const idsOf = (body: { data: { id: string }[] }) => body.data.map((c) => c.id);
+
+  it("finds a title match that sorts past page 1", async () => {
+    await runWithFixture(async ({ ids }) => {
+      // Premise: the target is NOT on page 1 of the unfiltered list.
+      const page1 = await getCourses(list("page=1&pageSize=2"));
+      expect(idsOf(await page1.json())).not.toContain(ids["Search Target Course"]);
+
+      const res = await getCourses(list("page=1&pageSize=2&search=Search%20Target"));
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body.total).toBe(1);
+      expect(idsOf(body)).toContain(ids["Search Target Course"]);
+    });
+  });
+
+  it("finds a code match that sorts past page 1", async () => {
+    await runWithFixture(async ({ ids }) => {
+      const res = await getCourses(list("page=1&pageSize=2&search=ZZZ%20400"));
+      const body = await res.json();
+      expect(body.total).toBe(1);
+      expect(idsOf(body)).toContain(ids["Search Target Course"]);
+    });
+  });
+
+  it("applies the status filter over the whole set, not just page 1", async () => {
+    await runWithFixture(async ({ ids }) => {
+      const res = await getCourses(list("page=1&pageSize=2&status=draft"));
+      const body = await res.json();
+      expect(body.total).toBe(1);
+      expect(idsOf(body)).toContain(ids["Status Draft Course"]);
+
+      const published = await getCourses(list("page=1&pageSize=2&status=published"));
+      expect((await published.json()).total).toBe(6);
+    });
+  });
+
+  it("ORs values within a group (published OR draft returns the whole set)", async () => {
+    await runWithFixture(async () => {
+      const res = await getCourses(list("page=1&pageSize=2&status=published&status=draft"));
+      expect((await res.json()).total).toBe(7);
+    });
+  });
+
+  it("applies the term filter by exact term/year pair, past page 1", async () => {
+    await runWithFixture(async ({ ids }) => {
+      const res = await getCourses(list("page=1&pageSize=2&term=W2::2026"));
+      const body = await res.json();
+      expect(body.total).toBe(1);
+      expect(idsOf(body)).toContain(ids["Term Target Course"]);
+
+      // Same term code, different year — must NOT match the 2026 rows.
+      const old = await getCourses(list("page=1&pageSize=2&term=W1::2025"));
+      const oldBody = await old.json();
+      expect(oldBody.total).toBe(1);
+      expect(idsOf(oldBody)).toContain(ids["Old Term Course"]);
+
+      const current = await getCourses(list("page=1&pageSize=2&term=W1::2026"));
+      expect((await current.json()).total).toBe(5);
+    });
+  });
+
+  it("applies the department filter over the whole set, past page 1", async () => {
+    await runWithFixture(async ({ ids }) => {
+      const res = await getCourses(list("page=1&pageSize=2&department=MATH"));
+      const body = await res.json();
+      expect(body.total).toBe(1);
+      expect(idsOf(body)).toContain(ids["Department Math Course"]);
+
+      const cosc = await getCourses(list("page=1&pageSize=2&department=COSC"));
+      expect((await cosc.json()).total).toBe(6);
+    });
+  });
+
+  it("ANDs across groups (term AND department)", async () => {
+    await runWithFixture(async ({ ids }) => {
+      const res = await getCourses(list("page=1&pageSize=2&term=W1::2026&department=MATH"));
+      const body = await res.json();
+      expect(body.total).toBe(1);
+      expect(idsOf(body)).toContain(ids["Department Math Course"]);
+    });
+  });
+
+  it("ANDs across groups (term AND status)", async () => {
+    await runWithFixture(async () => {
+      const res = await getCourses(list("page=1&pageSize=2&term=W1::2026&status=published"));
+      expect((await res.json()).total).toBe(4);
+    });
+  });
+
+  it("returns an empty page with total 0 for an unknown query", async () => {
+    await runWithFixture(async () => {
+      const res = await getCourses(list("page=1&pageSize=2&search=does-not-exist"));
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body.data).toEqual([]);
+      expect(body.total).toBe(0);
+    });
+  });
+
+  it("rejects a malformed status value with a 400", async () => {
+    await runWithFixture(async () => {
+      const res = await getCourses(list("page=1&pageSize=2&status=banana"));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("FILTER_INVALID");
+    });
+  });
+
+  it("rejects a malformed term value with a 400", async () => {
+    await runWithFixture(async () => {
+      const res = await getCourses(list("page=1&pageSize=2&term=not-a-term-key"));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("FILTER_INVALID");
+    });
+  });
+
+  it("never widens access: filters stay ANDed with the STUDENT publish gate", async () => {
+    const { instructor, ids } = await seedScopedList(FIXTURE);
+    const student = await seedUser({ role: "STUDENT" });
+    // Published enrollment is visible; the draft enrollment must stay hidden.
+    await enroll(ids["Filler One"], student.id, "STUDENT");
+    await enroll(ids["Status Draft Course"], student.id, "STUDENT");
+
+    try {
+      mockSession(student);
+      const all = await getCourses(list("page=1&pageSize=10"));
+      expect((await all.json()).total).toBe(1);
+
+      const draft = await getCourses(list("page=1&pageSize=10&status=draft"));
+      expect((await draft.json()).total).toBe(0);
+
+      const published = await getCourses(list("page=1&pageSize=10&status=published"));
+      expect((await published.json()).total).toBe(1);
+    } finally {
+      await cleanupRbac({
+        userIds: [student.id, instructor.id],
+        courseIds: [ids["Filler One"], ids["Status Draft Course"], ...Object.values(ids)],
+      });
+    }
+  });
+
+  it("ANDs filters with the UNIT_ADMIN authorized-unit scope", async () => {
+    const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
+    const coscDraft = await prisma.course.create({
+      data: {
+        name: "COSC Draft",
+        code: "ZZU 001",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+        department: "COSC",
+        isPublished: false,
+      },
+    });
+    const coscPublished = await prisma.course.create({
+      data: {
+        name: "COSC Published",
+        code: "ZZU 002",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+        department: "COSC",
+        isPublished: true,
+      },
+    });
+    const mathDraft = await prisma.course.create({
+      data: {
+        name: "MATH Draft",
+        code: "ZZU 003",
+        section: "001",
+        term: "W1",
+        year: 2026,
+        startDate: new Date("2026-09-01"),
+        department: "MATH",
+        isPublished: false,
+      },
+    });
+
+    try {
+      mockSession(unitAdmin);
+      // The status filter matches the MATH draft, but it sits outside the
+      // UNIT_ADMIN's authorized units — the OR-based unit scope must still AND
+      // with the filter so it can never widen what the caller may see.
+      const res = await getCourses(list("page=1&pageSize=10&status=draft"));
+      const ids = (await res.json()).data.map((c: { id: string }) => c.id);
+      expect(ids).toContain(coscDraft.id);
+      expect(ids).not.toContain(mathDraft.id);
+      expect(ids).not.toContain(coscPublished.id);
+    } finally {
+      await cleanupRbac({
+        userIds: [unitAdmin.id],
+        courseIds: [coscDraft.id, coscPublished.id, mathDraft.id],
+      });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/courses/facets (#1263)
+// ---------------------------------------------------------------------------
+
+describe("GET /api/courses/facets (#1263)", () => {
+  async function seedInstructorFixture() {
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const rows = [
+      {
+        name: "Published CosC",
+        code: "AAA 001",
+        term: "W1",
+        year: 2026,
+        department: "COSC",
+        isPublished: true,
+      },
+      {
+        name: "Draft CosC",
+        code: "ZZZ 001",
+        term: "W2",
+        year: 2026,
+        department: "COSC",
+        isPublished: false,
+      },
+      {
+        name: "Math Course",
+        code: "ZZZ 002",
+        term: "W1",
+        year: 2025,
+        department: "MATH",
+        isPublished: true,
+      },
+    ];
+    const ids: string[] = [];
+    for (const row of rows) {
+      const created = await prisma.course.create({
+        data: { ...row, section: "001", startDate: new Date("2026-01-01") },
+      });
+      await enroll(created.id, instructor.id, "INSTRUCTOR");
+      ids.push(created.id);
+    }
+    return { instructor, ids };
+  }
+
+  const facetsRequest = () => new Request("http://localhost/api/courses/facets", { method: "GET" });
+
+  it("returns status/term/department values from the whole accessible set, most-recent-first terms", async () => {
+    const { instructor, ids } = await seedInstructorFixture();
+    try {
+      mockSession(instructor);
+      const res = await getCourseFacets(facetsRequest());
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toEqual(["published", "draft"]);
+      // Deterministic most-recent-first ordering (W2::2026 > W1::2026 > W1::2025).
+      expect(body.term).toEqual(["W2::2026", "W1::2026", "W1::2025"]);
+      expect(body.department).toEqual(["COSC", "MATH"]);
+    } finally {
+      await cleanupRbac({ userIds: [instructor.id], courseIds: ids });
+    }
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    const res = await getCourseFacets(facetsRequest());
+    expect(res.status).toBe(401);
+  });
+
+  it("never leaks facet metadata from courses outside the caller's scope", async () => {
+    const { instructor, ids } = await seedInstructorFixture();
+    // ids[0] = published COSC W1/2026, ids[1] = draft W2/2026, ids[2] = MATH W1/2025.
+    const student = await seedUser({ role: "STUDENT" });
+    await enroll(ids[0], student.id, "STUDENT");
+
+    try {
+      mockSession(student);
+      const res = await getCourseFacets(facetsRequest());
+      const body = await res.json();
+      expect(body.status).toEqual(["published"]);
+      expect(body.term).toEqual(["W1::2026"]);
+      expect(body.department).toEqual(["COSC"]);
+    } finally {
+      await cleanupRbac({ userIds: [student.id, instructor.id], courseIds: ids });
+    }
   });
 });
 

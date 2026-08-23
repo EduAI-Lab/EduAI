@@ -54,7 +54,7 @@ describe("BugReportDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("attaches captured diagnostics when getCapturedData is provided", async () => {
+  it("does not attach captured diagnostics without explicit consent", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const getCapturedData = vi.fn().mockReturnValue({
       consoleLogs: "[]",
@@ -75,10 +75,42 @@ describe("BugReportDialog", () => {
     });
     fireEvent.click(screen.getByTestId("bug-type"));
     fireEvent.click(await screen.findByText("Other"));
+    fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(getCapturedData).not.toHaveBeenCalled();
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("networkLogs");
+  });
+
+  it("attaches captured diagnostics only after the user opts in", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const captureScreenshot = vi.fn().mockResolvedValue("data:image/jpeg;base64,abc");
+    const getCapturedData = vi.fn().mockReturnValue({
+      consoleLogs: "[]",
+      networkLogs: "[]",
+      screenshot: null,
+    });
+    render(
+      <BugReportDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        onSubmit={onSubmit}
+        captureScreenshot={captureScreenshot}
+        getCapturedData={getCapturedData}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("bug-description"), {
+      target: { value: "Steps to reproduce the issue in detail." },
+    });
+    fireEvent.click(screen.getByTestId("bug-type"));
+    fireEvent.click(await screen.findByText("Other"));
+    fireEvent.click(screen.getByRole("switch", { name: /include diagnostics/i }));
 
     fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
 
     await waitFor(() => {
+      expect(captureScreenshot).toHaveBeenCalledTimes(1);
       expect(getCapturedData).toHaveBeenCalled();
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ consoleLogs: "[]", networkLogs: "[]", screenshot: null }),

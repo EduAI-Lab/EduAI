@@ -24,6 +24,12 @@ vi.mock("~/lib/api", () => ({
   default: {
     lessonById: vi.fn().mockResolvedValue({ id: 1, title: "Lesson 1", moduleId: null }),
     activitiesForLesson: (...args: unknown[]) => mockActivitiesForLesson(...args),
+    lessonBreadcrumb: vi.fn().mockResolvedValue({
+      module: { id: 2, title: "Module", courseOfferingId: 1 },
+      course: { id: 1, title: "Course", code: "C1" },
+      moduleOrdinal: 1,
+      lessonOrdinal: 1,
+    }),
     duplicateActivity: (...args: unknown[]) => mockDuplicateActivity(...args),
     deleteActivity: vi.fn().mockResolvedValue(undefined),
     syncTopics: vi.fn().mockResolvedValue({ missingTopics: 0 }),

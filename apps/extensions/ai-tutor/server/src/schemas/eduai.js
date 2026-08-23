@@ -60,8 +60,14 @@ export const EduAiEnrollmentSchema = z
     studentId: z.string(),
     studentEmail: z.string(),
     studentName: z.string(),
-    enrolledAt: z.string(),
+    enrolledAt: z.string().nullable(),
     isActive: z.boolean(),
+    // #1571: Core's enrollment payload carries the enrollment `role`; validate
+    // it here so the schema matches the documented contract. Optional/nullable
+    // because a department-only (unit) grant can carry no personal enrollment
+    // role. `enrollmentSync.js` still constrains what actually gets mirrored via
+    // its MIRRORED_ROLES = [STUDENT, TA] allowlist — this only tightens typing.
+    role: z.string().nullable().optional(),
   })
   .passthrough();
 

@@ -37,6 +37,7 @@ vi.mock("react-router", async (importActual) => {
       user: { id: "u1", role: "ADMIN", name: "Admin", email: "a@test.com" },
       authorizedUnits: [],
       taCourseIds: [],
+      instructorCourseIds: [],
       enrolledCourseIds: [],
       instructors: [],
     }),

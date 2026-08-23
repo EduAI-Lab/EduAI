@@ -6,9 +6,16 @@
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { createHash } from "crypto";
-import { processMaterialEmbeddings } from "~/lib/ai/embedding";
-import { processUploadedFile } from "~/lib/ai/file-processing";
+import { validateUploadedFile } from "~/lib/ai/file-processing";
 import prisma from "~/lib/prisma.server";
+import {
+  PENDING_CHECKSUM_PREFIX,
+  ensureMaterialSweeperRunning,
+  isChecksumConflict,
+  persistUploadBlob,
+  startMaterialExtraction,
+  toBytesColumn,
+} from "~/lib/materials/extraction-job.server";
 import {
   resolveCourseAccessGate,
   wantsIncludeDeleted,
@@ -16,33 +23,22 @@ import {
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import type { Session } from "~/lib/auth/server";
-import { fireAndForget, logAuditAction, logSystemError } from "~/lib/logging.server";
 import { toMaterialUploadUserMessage } from "~/lib/material-upload-errors";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
+import {
+  MultipartBodyInvalidError,
+  MultipartBodyTooLargeError,
+  readBoundedFormData,
+} from "~/lib/multipart.server";
 import { getRequestSession } from "~/lib/auth/request-session.server";
+import { MATERIAL_UPLOAD_BODY_MAX_BYTES } from "~/lib/materials/constants";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-/**
- * True for a Prisma unique-constraint violation on `CourseMaterial`'s
- * `(courseId, checksum)` index. `uploadMaterial`'s findFirst dedupe check and
- * its create() are not atomic, so two concurrent uploads of the same file can
- * both pass the findFirst check and race into create() — the DB constraint
- * (not the findFirst) is the real guard (#225 RAG-04).
- */
-function isChecksumConflict(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
-  );
 }
 
 /**
@@ -266,6 +262,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           ? "MATERIAL_UPDATED"
           : "MATERIAL_VISIBILITY_CHANGED";
 
+      const { fireAndForget, logAuditAction } = await import("~/lib/logging.server");
       fireAndForget(
         logAuditAction({
           ...getActorContext(user ?? null),
@@ -301,7 +298,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId, deletedAt: null },
-        select: { id: true, uploadedBy: true, title: true },
+        select: {
+          id: true,
+          uploadedBy: true,
+          title: true,
+          status: true,
+          duplicateOfId: true,
+        },
       });
       if (!material) {
         return json(404, { error: "MATERIAL_NOT_FOUND" });
@@ -323,7 +326,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // own-only carve-out via uploadedBy (#294). Null uploadedBy = no owner,
       // TA denied.
       const isOwnTa = access.level === "ta" && material.uploadedBy === user.id;
-      if (access.rank < 2 && !isOwnTa) {
+
+      // #949/#1494 review: a late content-duplicate leaves the uploader a FAILED
+      // receipt row that the client reads and then deletes. Students may upload
+      // when `students.canUploadMaterials` is on, but rank 0 cannot delete — so
+      // without this carve-out every student duplicate leaves a dead receipt in
+      // the course's material list, one per retry. Scoped as narrowly as the
+      // receipt itself: the caller's own row, FAILED, and pointing at a winner.
+      // It grants nothing over real material, which is never FAILED with a
+      // `duplicateOfId`.
+      const isOwnDuplicateReceipt =
+        material.uploadedBy === user.id &&
+        material.status === "FAILED" &&
+        material.duplicateOfId !== null;
+
+      if (access.rank < 2 && !isOwnTa && !isOwnDuplicateReceipt) {
         return json(403, { error: "Forbidden" });
       }
 
@@ -333,8 +350,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
         data: { deletedAt: new Date(), deletedBy: user.id },
       });
 
-      fireAndForget(
-        logAuditAction({
+      const { fireAndForget: fireAndForgetDelete, logAuditAction: logAuditActionDelete } =
+        await import("~/lib/logging.server");
+      fireAndForgetDelete(
+        logAuditActionDelete({
           ...getActorContext(user ?? null),
           ...requestContext,
           actionCode: "MATERIAL_DELETED",
@@ -354,47 +373,106 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-async function persistFailedUploadMaterial(
-  courseId: string,
-  file: File,
-  userId: string,
-): Promise<string> {
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const checksum = `failed:${createHash("sha256").update(bytes).digest("hex")}`;
-  const title = (file.name || "upload").replace(/\.[^/.]+$/, "") || "upload";
+const DUPLICATE_CONTENT_MESSAGE = "A file with identical content already exists in this course";
 
+/**
+ * Resolve a `(courseId, pending:<bytehash>)` collision — two uploads of the
+ * exact same bytes to the same course.
+ *
+ * A `pending:` checksum only survives while a row is mid-flight or has died
+ * before finalization, so the collision is meaningful rather than incidental:
+ *
+ *   - still PROCESSING → a genuine concurrent upload of the same file. 409,
+ *     which keeps byte-identical re-uploads failing fast exactly as they did
+ *     before #949; only content-identical-but-byte-different duplicates became
+ *     asynchronous.
+ *   - FAILED or soft-deleted → a stranded row from an earlier attempt (failed
+ *     extraction, or a process that died mid-run). Reclaim it and retry. This
+ *     is the user-driven half of recovery; the sweeper
+ *     (`lib/materials/extraction-job.server.ts`) is the automatic half, and
+ *     neither depends on the other.
+ *
+ * The claim is a single conditional `updateMany` rather than a read followed by
+ * an unconditional `update` (#1494 review): two identical retries can both read
+ * the row as FAILED, and an unconditional update would let both start embedding
+ * the same materialId, leaving the final status nondeterministic. Restating the
+ * "not already claimed" predicate in the UPDATE's WHERE makes the database
+ * serialize them on the row lock — exactly one gets `count === 1` and proceeds,
+ * and the loser falls through to the same 409 a live concurrent upload returns.
+ */
+async function reclaimProvisionalRow(
+  courseId: string,
+  provisionalChecksum: string,
+  userId: string,
+  upload: { bytes: Buffer; fileName: string; mimeType: string },
+): Promise<{ outcome: "conflict" | "reclaimed"; materialId: string } | null> {
   const existing = await prisma.courseMaterial.findFirst({
-    where: { courseId, checksum },
+    where: { courseId, checksum: provisionalChecksum },
     select: { id: true },
   });
+  if (!existing) return null;
 
-  if (existing) {
-    await prisma.courseMaterial.update({
-      where: { id: existing.id },
+  const now = new Date();
+  // The claim and the blob replacement commit together (#1494 review). The row
+  // is flipped to PROCESSING here and the dead attempt's bytes are replaced with
+  // this caller's; if those were two statements, a crash between them would
+  // leave a pending row with no blob — invisible to the sweeper, which requires
+  // one, and unreachable by retry, since identical bytes answer 409. The row
+  // would be stranded with no recovery path at all.
+  const claimed = await prisma.$transaction(async (tx) => {
+    const result = await tx.courseMaterial.updateMany({
+      // Every condition that made this row reclaimable is restated here, not
+      // just the status one (#1494 review) — the lookup above and this write are
+      // not atomic, so anything read outside the WHERE can change underneath us:
+      //
+      //   - `checksum` pins the row to the *provisional* state we found it in. A
+      //     worker that finalizes between the read and this update replaces the
+      //     `pending:` checksum with the real content hash, and without this the
+      //     UPDATE would happily match that now-READY row and reset it back to
+      //     PROCESSING with a null rawText.
+      //   - a PROCESSING row is reclaimable only once its extraction lease has
+      //     expired, soft-deleted or not. `deletedAt != null` alone used to be
+      //     enough, which let a DELETE issued during processing hand the row to
+      //     a second worker while the first was still writing to it.
+      //
+      // A row that fails these is either live or already finalized; both are the
+      // 409 below.
+      where: {
+        id: existing.id,
+        checksum: provisionalChecksum,
+        OR: [{ status: { not: "PROCESSING" } }, { extractionLeaseUntil: { lt: now } }],
+      },
       data: {
-        status: "FAILED",
+        status: "PROCESSING",
         uploadedBy: userId,
         deletedAt: null,
         deletedBy: null,
         processedAt: null,
+        duplicateOfId: null,
+        rawText: null,
+        // Hand the row back as a fresh job: clear the dead attempt's lease and
+        // reset its attempt count, or a row reclaimed after two failures would
+        // start one strike from being abandoned by the sweeper.
+        extractionLeaseUntil: null,
+        extractionAttempts: 0,
       },
     });
-    return existing.id;
-  }
 
-  const created = await prisma.courseMaterial.create({
-    data: {
-      courseId,
-      title,
-      mimeType: file.type || "application/octet-stream",
-      fileSize: file.size || bytes.length,
-      checksum,
-      rawText: null,
-      status: "FAILED",
-      uploadedBy: userId,
-    },
+    // Only the winner replaces the bytes: a loser's UPDATE matched nothing, and
+    // overwriting the blob would corrupt the run the winner is about to start.
+    if (result.count > 0) {
+      await persistUploadBlob(existing.id, upload.bytes, upload.fileName, upload.mimeType, tx);
+    }
+    return result;
   });
-  return created.id;
+
+  if (claimed.count === 0) {
+    // Either the row was live PROCESSING all along, or a concurrent retry won
+    // the claim a moment ago. Both mean "someone else is already processing
+    // these bytes", which is the 409 case.
+    return { outcome: "conflict", materialId: existing.id };
+  }
+  return { outcome: "reclaimed", materialId: existing.id };
 }
 
 async function uploadMaterial(
@@ -403,186 +481,187 @@ async function uploadMaterial(
   user: Session["user"],
   requestContext: ReturnType<typeof getRequestContext>,
 ) {
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await readBoundedFormData(request, MATERIAL_UPLOAD_BODY_MAX_BYTES);
+  } catch (error) {
+    if (error instanceof MultipartBodyTooLargeError) {
+      return json(413, { error: "PAYLOAD_TOO_LARGE" });
+    }
+    if (error instanceof MultipartBodyInvalidError) {
+      return json(400, { error: error.message });
+    }
+    throw error;
+  }
   const file = formData.get("file") as File;
 
   if (!file) {
     return json(400, { error: "No file provided" });
   }
 
-  let fileInfo;
+  // Type/size caps and the #225 RAG-05 magic-byte sniff stay inline: they are
+  // cheap, and a rejected file must still fail synchronously with a 400 rather
+  // than becoming a background FAILED row the caller has to poll for.
   try {
-    fileInfo = await processUploadedFile(file);
-  } catch (extractError) {
-    // Extraction (e.g. PDF worker kill) happens before a material row exists — persist
-    // FAILED so a killed worker still leaves an auditable record (#1018 / #1161).
-    console.error("Error extracting material upload:", extractError);
-    let materialId: string | undefined;
-    try {
-      materialId = await persistFailedUploadMaterial(courseId, file, user.id);
-      fireAndForget(
-        logSystemError({
-          ...requestContext,
-          source: "AI",
-          code: "MATERIAL_EXTRACT_FAILED",
-          message: "Material extraction failed during upload processing",
-          error: extractError,
-        }),
-      );
-    } catch (persistError) {
-      console.error("Additionally failed to persist FAILED material:", persistError);
-    }
-    return json(500, {
-      error: toMaterialUploadUserMessage(extractError),
-      ...(materialId ? { materialId } : {}),
-    });
+    await validateUploadedFile(file);
+  } catch (validationError) {
+    return json(400, { error: toMaterialUploadUserMessage(validationError) });
   }
 
-  try {
-    const existingMaterial = await prisma.courseMaterial.findFirst({
-      where: { courseId, checksum: fileInfo.checksum },
-    });
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const provisionalChecksum = `${PENDING_CHECKSUM_PREFIX}${createHash("sha256")
+    .update(bytes)
+    .digest("hex")}`;
+  const title = (file.name || "upload").replace(/\.[^/.]+$/, "") || "upload";
 
-    if (existingMaterial) {
-      // If the existing material is soft-deleted, restore it instead of 409.
-      if (existingMaterial.deletedAt) {
-        // Restore: clear deletedAt/deletedBy, reset status to PROCESSING, re-run embeddings.
-        await prisma.courseMaterial.update({
-          where: { id: existingMaterial.id },
-          data: {
-            deletedAt: null,
-            deletedBy: null,
-            status: "PROCESSING",
-            uploadedBy: user.id,
-            processedAt: null,
+  let materialId: string;
+  try {
+    // The blob is created *with* the row, not after it (#1494 review): the 202
+    // promises the upload survives, so "row is PROCESSING" and "bytes exist to
+    // re-run from" must never be observable apart. A nested create is one
+    // statement — no partially-persisted upload to reason about.
+    const created = await prisma.courseMaterial.create({
+      data: {
+        courseId,
+        title,
+        mimeType: file.type || "application/octet-stream",
+        fileSize: file.size || bytes.length,
+        checksum: provisionalChecksum,
+        rawText: null,
+        status: "PROCESSING",
+        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
+        uploadBlob: {
+          create: {
+            bytes: toBytesColumn(bytes),
+            fileName: file.name || "upload",
+            mimeType: file.type || "application/octet-stream",
           },
-        });
-        try {
-          // Replace any stale chunks/embeddings from before the soft-delete so
-          // restoring a material doesn't append duplicate RAG content (#685 review).
-          await processMaterialEmbeddings(existingMaterial.id, fileInfo.content, {
-            replace: true,
-          });
-          await prisma.courseMaterial.update({
-            where: { id: existingMaterial.id },
-            data: { status: "READY", processedAt: new Date() },
-          });
-          return json(200, {
-            success: true,
-            materialId: existingMaterial.id,
-            message: "Material restored and processed successfully",
-          });
-        } catch (embeddingError) {
-          await prisma.courseMaterial.update({
-            where: { id: existingMaterial.id },
-            data: { status: "FAILED" },
-          });
-          throw embeddingError;
-        }
-      }
-      // Not soft-deleted: it's a real duplicate.
-      return json(409, {
-        error: "A file with identical content already exists in this course",
-        materialId: existingMaterial.id,
-      });
-    }
-
-    let material;
-    try {
-      material = await prisma.courseMaterial.create({
-        data: {
-          courseId,
-          title: fileInfo.title,
-          mimeType: fileInfo.mimeType,
-          fileSize: fileInfo.fileSize,
-          checksum: fileInfo.checksum,
-          rawText: fileInfo.content,
-          status: "PROCESSING",
-          uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
         },
-      });
-    } catch (createError) {
-      // #225 RAG-04: a concurrent upload with the same (courseId, checksum)
-      // won the findFirst-to-create race above — the unique index rejected
-      // this insert, so no duplicate corpus was created. Respond the same
-      // way the findFirst dedupe path would, instead of leaking a raw Prisma
-      // conflict as a 500.
-      if (isChecksumConflict(createError)) {
-        const winner = await prisma.courseMaterial.findFirst({
-          where: { courseId, checksum: fileInfo.checksum, deletedAt: null },
-        });
-        if (winner) {
-          return json(409, {
-            error: "A file with identical content already exists in this course",
-            materialId: winner.id,
-          });
-        }
-      }
-      throw createError;
-    }
-
-    // Audit the upload as soon as the material row is persisted, independent of embedding.
-    // A material that uploads successfully but later fails to embed is still a real upload
-    // and must leave an audit trail (the embedding failure is recorded separately below).
-    // actorUserId/actorRole come from getActorContext; email/name and the material's
-    // type/size go in details so the audit line carries who-added-what in full.
-    fireAndForget(
-      logAuditAction({
-        ...getActorContext(user ?? null),
-        ...requestContext,
-        actionCode: "MATERIAL_UPLOADED",
-        category: "MATERIAL",
-        entityType: "CourseMaterial",
-        entityId: material.id,
-        entityLabel: material.title,
-        details: {
-          courseId,
-          actorEmail: user.email,
-          actorName: user.name,
-          mimeType: material.mimeType,
-          fileSize: material.fileSize,
-        },
-      }),
-    );
-
-    try {
-      await processMaterialEmbeddings(material.id, fileInfo.content);
-
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "READY", processedAt: new Date() },
-      });
-
-      return json(200, {
-        success: true,
-        materialId: material.id,
-        message: "Material uploaded and processed successfully",
-      });
-    } catch (embeddingError) {
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "FAILED" },
-      });
-      fireAndForget(
-        logSystemError({
-          ...requestContext,
-          source: "AI",
-          code: "MATERIAL_EMBED_FAILED",
-          message: "Material embedding failed during upload processing",
-          error: embeddingError,
-        }),
-      );
-      throw embeddingError;
-    }
-  } catch (error) {
-    console.error("Error processing material upload:", error);
-    return json(500, {
-      error: toMaterialUploadUserMessage(error),
+      },
     });
+    materialId = created.id;
+  } catch (createError) {
+    if (isChecksumConflict(createError)) {
+      const resolution = await reclaimProvisionalRow(
+        courseId,
+        provisionalChecksum,
+        user.id,
+        // The reclaimed row's bytes belong to the attempt that died; the claim
+        // replaces them with this caller's in the same commit, so a resume
+        // always re-runs against what was actually uploaded.
+        {
+          bytes,
+          fileName: file.name || "upload",
+          mimeType: file.type || "application/octet-stream",
+        },
+      );
+      if (resolution?.outcome === "conflict") {
+        return json(409, {
+          error: "This file is already being processed in this course",
+          materialId: resolution.materialId,
+        });
+      }
+      if (resolution?.outcome === "reclaimed") {
+        materialId = resolution.materialId;
+      } else {
+        // The colliding row disappeared between the failed insert and the
+        // lookup — another request finalized or deleted it. Nothing to reclaim.
+        return json(409, {
+          error: DUPLICATE_CONTENT_MESSAGE,
+        });
+      }
+    } else {
+      console.error("Error persisting material upload:", createError);
+      return json(500, { error: toMaterialUploadUserMessage(createError) });
+    }
   }
+
+  // Audit the upload as soon as the material row is persisted, independent of
+  // extraction and embedding. A material that uploads successfully but later
+  // fails to process is still a real upload and must leave an audit trail (the
+  // processing failure is recorded separately by `failMaterial`).
+  // actorUserId/actorRole come from getActorContext; email/name and the
+  // material's type/size go in details so the audit line carries who-added-what.
+  const { fireAndForget: fireAndForgetUpload, logAuditAction: logAuditActionUpload } =
+    await import("~/lib/logging.server");
+  fireAndForgetUpload(
+    logAuditActionUpload({
+      ...getActorContext(user ?? null),
+      ...requestContext,
+      actionCode: "MATERIAL_UPLOADED",
+      category: "MATERIAL",
+      entityType: "CourseMaterial",
+      entityId: materialId,
+      entityLabel: title,
+      details: {
+        courseId,
+        actorEmail: user.email,
+        actorName: user.name,
+        mimeType: file.type || "application/octet-stream",
+        fileSize: file.size || bytes.length,
+      },
+    }),
+  );
+
+  // Run it here and now for the common case, but the 202 no longer depends on
+  // this process surviving: the row is leased and the bytes are persisted, so a
+  // crash mid-extraction leaves an expired lease the sweeper picks up.
+  startMaterialExtraction(materialId, file, courseId, user.id, requestContext);
+  // Cheap after the first call — one guarded interval per process.
+  ensureMaterialSweeperRunning(requestContext);
+
+  return json(202, {
+    success: true,
+    materialId,
+    status: "PROCESSING",
+    message: "Material accepted and is being processed",
+  });
 }
 
 const PREVIEW_EXCERPT_MAX = 4000;
+
+/**
+ * Column set for every materials LIST response (#948). Deliberately an explicit
+ * `select` rather than `include`, so `rawText` — the full extracted document
+ * text, which can be megabytes per row — never reaches the JSON payload. The
+ * single-material preview path selects `rawText` on its own and truncates it to
+ * `PREVIEW_EXCERPT_MAX`; lists have no use for it at all.
+ *
+ * MAINTENANCE: this is an allow-list. A new column on `CourseMaterial` will NOT
+ * appear in list responses until it is added here explicitly — add it (unless
+ * it is another large text blob, in which case leave it out on purpose).
+ *
+ * `_count` is nested inside the select because Prisma rejects `include` and
+ * `select` at the same level. Both list paths (the includeDeleted/admin path and
+ * the student/staff loader path) share this const so they cannot drift; note
+ * that `visibleToStudents`/`availableAt` MUST stay selected — the staff branch
+ * destructures them off the row and would emit `undefined` without them.
+ */
+const MATERIAL_LIST_SELECT = {
+  id: true,
+  courseId: true,
+  title: true,
+  mimeType: true,
+  fileSize: true,
+  checksum: true,
+  status: true,
+  externalId: true,
+  externalSource: true,
+  canvasUpdatedAt: true,
+  uploadedBy: true,
+  visibleToStudents: true,
+  availableAt: true,
+  deletedAt: true,
+  deletedBy: true,
+  unpublishedAt: true,
+  // #949: how a client polling after a 202 learns its upload resolved to an
+  // already-present material instead of a new one.
+  duplicateOfId: true,
+  createdAt: true,
+  updatedAt: true,
+  processedAt: true,
+  _count: { select: { chunks: true } },
+} as const;
 
 async function materialsListResponse(
   courseId: string,
@@ -592,9 +671,7 @@ async function materialsListResponse(
   const { cursor, limit } = cursorParams;
   const rows = await prisma.courseMaterial.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
-    include: {
-      _count: { select: { chunks: true } },
-    },
+    select: MATERIAL_LIST_SELECT,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -724,9 +801,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { cursor, limit } = cursorParams;
   const rows = await prisma.courseMaterial.findMany({
     where: { courseId, deletedAt: null, ...studentGate },
-    include: {
-      _count: { select: { chunks: true } },
-    },
+    select: MATERIAL_LIST_SELECT,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

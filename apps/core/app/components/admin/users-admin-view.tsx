@@ -52,8 +52,12 @@ export function UsersAdminView({
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
   const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
   // The user form's course picker needs a browsable set, not the whole table —
-  // one bounded page rather than the unbounded list this used to request.
-  const { courses, loading: coursesLoading } = useCourses({ pageSize: COURSE_PICKER_PAGE_SIZE });
+  // one bounded page rather than the unbounded list this used to request, and
+  // without the filter facets the picker never consumes.
+  const { courses, loading: coursesLoading } = useCourses({
+    pageSize: COURSE_PICKER_PAGE_SIZE,
+    includeFacets: false,
+  });
 
   const handleUserDialogOpenChange = (open: boolean) => {
     setUserDialogOpen(open);

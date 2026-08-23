@@ -148,8 +148,11 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
 }
 
 /** Deactivates all roster staging rows for a course. */
-export async function deactivateCourseRoster(courseId: string): Promise<number> {
-  const result = await prisma.canvasRosterMember.updateMany({
+export async function deactivateCourseRoster(
+  courseId: string,
+  db: RosterDb = prisma,
+): Promise<number> {
+  const result = await db.canvasRosterMember.updateMany({
     where: { courseId, isActive: true },
     data: { isActive: false },
   });

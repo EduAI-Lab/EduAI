@@ -1,27 +1,35 @@
+# Build context: monorepo root
 FROM node:24-alpine
 
-# Set working directory
-WORKDIR /app
+WORKDIR /workspace
 
-# Copy package files
-COPY package*.json ./
+RUN addgroup -g 1001 -S nodejs \
+    && adduser -S nodejs -u 1001 -G nodejs \
+    && chown nodejs:nodejs /workspace
 
-# Install dependencies
-RUN npm install
+COPY --chown=nodejs:nodejs package.json package-lock.json .npmrc ./
+COPY --chown=nodejs:nodejs packages/types/package.json packages/types/package.json
+COPY --chown=nodejs:nodejs packages/ui/package.json packages/ui/package.json
+COPY --chown=nodejs:nodejs apps/extensions/question-maker/app/frontend/package.json \
+    apps/extensions/question-maker/app/frontend/package.json
 
-# Copy source code
-COPY . .
-
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
-
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
 USER nodejs
 
-# Expose port
-EXPOSE 5173
+RUN npm ci --ignore-scripts \
+      --workspace=question-maker-frontend \
+      --workspace=@eduai/types \
+      --workspace=@eduai/ui \
+      --include-workspace-root=false
 
-# Start the development server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+COPY --chown=nodejs:nodejs packages/types packages/types
+COPY --chown=nodejs:nodejs packages/ui packages/ui
+COPY --chown=nodejs:nodejs apps/extensions/question-maker/app/frontend \
+    apps/extensions/question-maker/app/frontend
+
+RUN npm run build -w @eduai/types \
+    && mkdir -p apps/extensions/question-maker/app/frontend/node_modules
+
+WORKDIR /workspace/apps/extensions/question-maker/app/frontend
+
+EXPOSE 5173
+CMD ["npm", "run", "dev"]

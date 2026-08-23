@@ -1,6 +1,12 @@
 import { prisma, seedUsers } from "./seed";
+import {
+  assertLocalDemoEnvironment,
+  getLocalSeedPassword,
+} from "../app/lib/deployment-safety.server";
 
 console.log("[auto-seed] Backfilling seed student IDs (10000001–10000005)...");
+assertLocalDemoEnvironment();
+getLocalSeedPassword();
 
 try {
   await seedUsers();

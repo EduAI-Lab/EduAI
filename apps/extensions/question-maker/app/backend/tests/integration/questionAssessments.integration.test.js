@@ -13,6 +13,7 @@ vi.mock("../../src/services/authService.js", () => ({
 }));
 
 const { default: app } = await import("../../src/app.js");
+const { resetCourseAccessSyncForTests } = await import("../../src/services/courseListService.js");
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
@@ -43,13 +44,16 @@ describeDb("Questions & assessments (integration)", () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
+    resetCourseAccessSyncForTests();
 
     await prisma.user.create({
       data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name },
     });
     await seedCoursesForNewUser(TEST_USER.id);
 
-    const course = await prisma.course.findFirst({ where: { userId: TEST_USER.id } });
+    const course = await prisma.course.findFirst({
+      where: { userId: TEST_USER.id },
+    });
     courseId = course.id;
     const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
@@ -85,10 +89,12 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("creates an assessment and fetches it by id", async () => {
-    const createA = await request(app)
-      .post("/api/assessments")
-      .set(cookie())
-      .send({ type: "Quiz", name: "Integration Exam", semester: "Fall 2026", courseId });
+    const createA = await request(app).post("/api/assessments").set(cookie()).send({
+      type: "Quiz",
+      name: "Integration Exam",
+      semester: "Fall 2026",
+      courseId,
+    });
     expect(createA.status).toBe(201);
     const id = createA.body.data.id;
 
@@ -99,10 +105,12 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("rejects a question with invalid type", async () => {
-    const res = await request(app)
-      .post("/api/questions")
-      .set(cookie())
-      .send({ description: "X", courseId, primaryTopicId: topicId, type: "TF" });
+    const res = await request(app).post("/api/questions").set(cookie()).send({
+      description: "X",
+      courseId,
+      primaryTopicId: topicId,
+      type: "TF",
+    });
     expect(res.status).toBe(400);
   });
 
@@ -132,14 +140,23 @@ describeDb("Questions & assessments (integration)", () => {
         // (`?page=&pageSize=` or `?ids=`), so match on the path, not the tail.
         const path = target.split("?")[0];
         if (target.endsWith("/api/sessions/validate")) {
-          return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ user: TEST_USER }),
+          });
         }
         if (path.endsWith(`/api/courses/${coreCourseId}/enrollments`)) {
           return Promise.resolve({
             ok: true,
             json: () =>
               Promise.resolve({
-                enrollments: [{ studentId: TEST_USER.id, role: "INSTRUCTOR", isActive: true }],
+                enrollments: [
+                  {
+                    studentId: TEST_USER.id,
+                    role: "INSTRUCTOR",
+                    isActive: true,
+                  },
+                ],
               }),
           });
         }
@@ -214,7 +231,10 @@ describeDb("Questions & assessments (integration)", () => {
         // (`?page=&pageSize=` or `?ids=`), so match on the path, not the tail.
         const path = target.split("?")[0];
         if (target.endsWith("/api/sessions/validate")) {
-          return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ user: TEST_USER }),
+          });
         }
         if (path.endsWith("/api/courses")) {
           return Promise.resolve({
@@ -236,10 +256,12 @@ describeDb("Questions & assessments (integration)", () => {
   });
 
   it("creates a question, adds a variant, and lists variants", async () => {
-    const createQ = await request(app)
-      .post("/api/questions")
-      .set(cookie())
-      .send({ description: "Variant parent", courseId, primaryTopicId: topicId, type: "MCQ" });
+    const createQ = await request(app).post("/api/questions").set(cookie()).send({
+      description: "Variant parent",
+      courseId,
+      primaryTopicId: topicId,
+      type: "MCQ",
+    });
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
 

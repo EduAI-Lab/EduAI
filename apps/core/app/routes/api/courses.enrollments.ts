@@ -27,6 +27,7 @@ import { getCourse } from "~/lib/courses/server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import {
   addEnrollment,
+  getCourseEnrollmentForUser,
   getCourseEnrollments,
   getCourseEnrollmentsPage,
   requiredRankForEnrollmentRole,
@@ -64,8 +65,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    // Service key path stays a full, unpaged read — AI Tutor's enrollmentSync.js
-    // depends on getting every row back in one call (see module docblock).
+    const userId = url.searchParams.get("userId")?.trim();
+    if (userId) {
+      const enrollment = await getCourseEnrollmentForUser(courseId, userId);
+      return new Response(
+        JSON.stringify({ enrollment: enrollment ? mapEnrollment(enrollment) : null }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Explicit roster synchronization remains available to background/admin
+    // callers, but live authorization uses the bounded single-user lookup.
     return fullEnrollmentsResponse(courseId);
   }
 

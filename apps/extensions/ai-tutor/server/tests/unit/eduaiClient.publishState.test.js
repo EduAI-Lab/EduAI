@@ -4,35 +4,32 @@
  *
  * Core is the source of truth for isPublished. When an instructor publishes or
  * unpublishes a course in AI Tutor, this function calls Core's dedicated
- * publish/unpublish endpoints with the service key before the local DB is
+ * publish/unpublish endpoints with the user's session before the local DB is
  * updated. Failure here should surface to the caller — not silently swallowed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { setCoreCoursePublishState } from "../../src/services/eduaiClient.js";
 
 const OFFERING_ID = "core-cuid-1";
-const SERVICE_KEY = "test-service-key";
-
 beforeEach(() => {
-  process.env.EDUAI_API_KEY = SERVICE_KEY;
   process.env.EDUAI_BASE_URL = "http://core.test/api";
+  process.env.EDUAI_API_KEY = "service-provenance-key";
 });
 
 afterEach(() => {
-  delete process.env.EDUAI_API_KEY;
   delete process.env.EDUAI_BASE_URL;
+  delete process.env.EDUAI_API_KEY;
   vi.restoreAllMocks();
 });
 
 describe("setCoreCoursePublishState", () => {
-  it("throws when EDUAI_API_KEY is not configured", async () => {
-    delete process.env.EDUAI_API_KEY;
+  it("throws when the acting user session is not provided", async () => {
     await expect(setCoreCoursePublishState(OFFERING_ID, true)).rejects.toThrow(
-      "EDUAI_API_KEY not configured",
+      "Session cookie is required",
     );
   });
 
-  it("calls PATCH /courses/:id/publish with the Bearer service key", async () => {
+  it("calls PATCH /courses/:id/publish with the user cookie and service provenance", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -41,13 +38,24 @@ describe("setCoreCoursePublishState", () => {
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    await setCoreCoursePublishState(OFFERING_ID, true);
+    await setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" });
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://core.test/api/courses/${OFFERING_ID}/publish`);
     expect(opts.method).toBe("PATCH");
-    expect(opts.headers["Authorization"]).toBe(`Bearer ${SERVICE_KEY}`);
+    expect(opts.headers.cookie).toBe("session=user-session");
+    expect(opts.headers.Authorization).toBe("Bearer service-provenance-key");
+  });
+
+  it("fails closed when service provenance is not configured", async () => {
+    delete process.env.EDUAI_API_KEY;
+    vi.stubGlobal("fetch", vi.fn());
+
+    await expect(
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" }),
+    ).rejects.toThrow("EDUAI_API_KEY not configured");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("calls PATCH /courses/:id/unpublish when publish is false", async () => {
@@ -59,7 +67,7 @@ describe("setCoreCoursePublishState", () => {
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    await setCoreCoursePublishState(OFFERING_ID, false);
+    await setCoreCoursePublishState(OFFERING_ID, false, { cookie: "session=user-session" });
 
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe(`http://core.test/api/courses/${OFFERING_ID}/unpublish`);
@@ -75,7 +83,9 @@ describe("setCoreCoursePublishState", () => {
       }),
     );
 
-    await expect(setCoreCoursePublishState(OFFERING_ID, true)).rejects.toMatchObject({
+    await expect(
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" }),
+    ).rejects.toMatchObject({
       status: 403,
     });
   });
@@ -90,7 +100,9 @@ describe("setCoreCoursePublishState", () => {
       }),
     );
 
-    await expect(setCoreCoursePublishState(OFFERING_ID, true)).rejects.toMatchObject({
+    await expect(
+      setCoreCoursePublishState(OFFERING_ID, true, { cookie: "session=user-session" }),
+    ).rejects.toMatchObject({
       status: 404,
     });
   });

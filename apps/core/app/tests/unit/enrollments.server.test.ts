@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     enrollment: {
       findFirst: vi.fn(),
       count: vi.fn(),
@@ -41,6 +42,7 @@ import {
   requiredRankForEnrollmentRole,
   canAddEnrollmentRole,
   isEnrollmentRole,
+  getCourseEnrollmentForUser,
   getCourseEnrollments,
   getCourseEnrollmentsPage,
 } from "~/lib/courses/enrollments.server";
@@ -299,6 +301,19 @@ describe("getCourseEnrollments (#1369 select narrowing)", () => {
     // The AI Tutor full-sync contract: no `include`, no isActive filter, no limit.
     expect(arg).not.toHaveProperty("include");
     expect(arg).not.toHaveProperty("take");
+  });
+});
+
+describe("getCourseEnrollmentForUser", () => {
+  it("uses the course/user unique key and the roster response projection", async () => {
+    const enrollment = { id: "e1" };
+    prismaMock.enrollment.findUnique.mockResolvedValue(enrollment);
+
+    await expect(getCourseEnrollmentForUser("c1", "u1")).resolves.toBe(enrollment);
+    expect(prismaMock.enrollment.findUnique).toHaveBeenCalledWith({
+      where: { courseId_userId: { courseId: "c1", userId: "u1" } },
+      select: EXPECTED_SELECT,
+    });
   });
 });
 
