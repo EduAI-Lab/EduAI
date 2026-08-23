@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { jsonObjectSchema } from "~/lib/json-value";
 import type { JsonObject } from "~/lib/json-value";
 
 /**
@@ -38,10 +37,19 @@ function readMetadata(message: MessageWithMetadata): ChatMessageMetadata {
  * The writers below own three fields but must not drop whatever else a message
  * carries, so the existing slot is kept as an open JSON object rather than
  * narrowed to {@link ChatMessageMetadata}.
+ *
+ * Checked structurally rather than decoded: a decode that rejects one value
+ * would drop the whole slot, which is the opposite of "preserved verbatim", and
+ * it would also clone every key on the way through the persist path.
  */
 function existingMetadata<T extends object>(message: T): JsonObject {
-  const decoded = jsonObjectSchema.safeParse("metadata" in message ? message.metadata : undefined);
-  return decoded.success ? decoded.data : {};
+  const existing = "metadata" in message ? message.metadata : undefined;
+  // SAFETY: the caller's metadata is either a stored row's parsed JSON or a
+  // live message's own slot; this only claims it is an object, which the three
+  // checks establish, and every key is carried through untouched.
+  return existing !== null && typeof existing === "object" && !Array.isArray(existing)
+    ? (existing as JsonObject)
+    : {};
 }
 
 /**

@@ -9,7 +9,14 @@ import { z } from "zod";
  */
 export type { JsonObject, JsonValue } from "@eduai/types";
 
-/** Decodes anything `JSON.parse` can produce. Fails only on values JSON cannot hold. */
+/**
+ * Decodes anything `JSON.parse` can produce. Fails only on values JSON cannot hold.
+ *
+ * The record arm's value is `.optional()` so the schema accepts exactly what
+ * `JsonObject` declares: that type admits `undefined` values (an absent key
+ * before serialisation drops it), and a decoder annotated `z.ZodType<JsonValue>`
+ * must not reject a value its own type calls valid.
+ */
 export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
     z.string(),
@@ -17,12 +24,12 @@ export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.boolean(),
     z.null(),
     z.array(jsonValueSchema),
-    z.record(jsonValueSchema),
+    z.record(jsonValueSchema.optional()),
   ]),
 );
 
 /** Decodes a JSON object — a parsed body, not an array and not a bare scalar. */
-export const jsonObjectSchema: z.ZodType<JsonObject> = z.record(jsonValueSchema);
+export const jsonObjectSchema: z.ZodType<JsonObject> = z.record(jsonValueSchema.optional());
 
 /**
  * `JSON.parse` for text that may not be JSON at all.
