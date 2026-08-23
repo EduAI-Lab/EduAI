@@ -24,7 +24,7 @@ vi.mock("ai", async (importOriginal) => {
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(),
     formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
     embed: vi.fn(),
     embedMany: vi.fn(),
   };

@@ -19,7 +19,7 @@ vi.mock("ai", async (importOriginal) => {
       return new Response(chunks.join(""), { status: 200 });
     }),
     formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
@@ -98,7 +98,7 @@ import { REDACTED_VALUE } from "~/lib/redact.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
-let lateStreamErrorMessage: ((error: unknown) => string) | undefined;
+let lateStreamErrorMessage: ((cause: unknown) => string) | undefined;
 
 function makeRequest(body: RouteRequestBody) {
   return {
@@ -166,7 +166,7 @@ beforeEach(() => {
       messages: [{ id: "msg-1", role: "assistant", content: "Partial answer." }],
     }),
     toDataStreamResponse: vi.fn(
-      ({ getErrorMessage }: { getErrorMessage?: (error: unknown) => string }) => {
+      ({ getErrorMessage }: { getErrorMessage?: (cause: unknown) => string }) => {
         lateStreamErrorMessage = getErrorMessage;
         return new Response("stream", { status: 200 });
       },

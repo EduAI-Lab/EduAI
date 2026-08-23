@@ -25,7 +25,7 @@ vi.mock("ai", async (importOriginal) => {
       return new Response(chunks.join(""), { status: 200 });
     }),
     formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 

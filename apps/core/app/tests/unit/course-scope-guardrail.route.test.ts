@@ -25,7 +25,7 @@ vi.mock("ai", async (importOriginal) => {
     formatDataStreamPart: vi.fn(
       (type: string, value: unknown) => `${type}:${JSON.stringify(value)}\n`,
     ),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 

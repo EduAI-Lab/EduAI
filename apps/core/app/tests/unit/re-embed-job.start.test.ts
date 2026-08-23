@@ -89,12 +89,13 @@ let lastUpdatedJob = claimedJob;
 beforeEach(() => {
   vi.clearAllMocks();
   lastUpdatedJob = claimedJob;
-  transaction.mockImplementation(async <T>(callback: (tx: unknown) => T) =>
-    callback({
-      $queryRaw: queryRaw,
-      course: { findUniqueOrThrow: courseFindUniqueOrThrow },
-      courseReEmbedJob: { findFirst, findUnique, create, update },
-    }),
+  const txClient = {
+    $queryRaw: queryRaw,
+    course: { findUniqueOrThrow: courseFindUniqueOrThrow },
+    courseReEmbedJob: { findFirst, findUnique, create, update },
+  };
+  transaction.mockImplementation(async <T>(callback: (tx: typeof txClient) => T) =>
+    callback(txClient),
   );
   queryRaw.mockResolvedValue([{ id: "course_1" }]);
   courseFindUniqueOrThrow.mockResolvedValue({

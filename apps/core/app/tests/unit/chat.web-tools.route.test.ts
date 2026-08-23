@@ -11,7 +11,7 @@ vi.mock("ai", async (importOriginal) => {
       toDataStreamResponse: ({ headers }: { headers: Record<string, string> }) =>
         new Response("ok", { status: 200, headers }),
     })),
-    tool: vi.fn((definition: unknown) => definition),
+    tool: vi.fn(<T>(definition: T) => definition),
   };
 });
 
