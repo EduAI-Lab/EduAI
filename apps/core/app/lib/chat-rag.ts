@@ -526,23 +526,29 @@ type CappedValue =
  * result is whatever an arbitrary tool returned, so there is no schema to decode
  * it against: the walk is polymorphic over the value's own runtime shape, and
  * each branch narrows `value` into one arm of `CappedValue` so that every
- * non-string leaf passes through without an assertion.
+ * non-string leaf passes through without an assertion. They are the only
+ * `anti-slop/no-runtime-typeof` exemption in the tree and are suppressed
+ * per-line below so the rule can still reach zero elsewhere and be promoted to
+ * `error` (#1599).
  */
 function capStringsInValue<T>(
   value: T,
   maxChars: number,
   truncate: (text: string, max: number) => string = truncateToMaxChars,
 ): CappedValue {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "string") {
     return truncate(value, maxChars);
   }
 
   if (value === null) return null;
   if (value === undefined) return undefined;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     const leaf: number | boolean | bigint = value;
     return leaf;
   }
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof value === "symbol" || typeof value === "function") {
     const leaf: symbol | Function = value;
     return leaf;
