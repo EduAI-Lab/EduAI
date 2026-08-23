@@ -150,7 +150,14 @@ test.describe("UNIT_ADMIN shell and navigation", () => {
     await popover.getByRole("button", { name: "Continue" }).click();
     await expect(popover).toContainText("Your unit at a glance");
 
-    await page.getByRole("button", { name: "Stop Tour" }).click();
+    // Closed from the popover, not from the sidebar's "Stop Tour" button: while
+    // a tour is running driver.js lays a full-viewport overlay `<svg>` over the
+    // page, and it intercepts pointer events — so a click on the sidebar button
+    // underneath never lands and Playwright retries until the test times out.
+    // The popover's own close control sits above that overlay and is wired to
+    // the same `stopTour()` (`TourProvider.tsx`), so this exercises the same
+    // exit path a reader actually has while a step is open.
+    await popover.getByRole("button", { name: "Close tour" }).click();
     await expect(popover).toHaveCount(0);
   });
 

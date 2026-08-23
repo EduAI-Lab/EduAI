@@ -71,14 +71,34 @@ export async function gotoAiTutor(page: Page, path: string): Promise<void> {
 }
 
 /**
- * A sidebar nav link addressed by its `href` rather than its label.
+ * A sidebar *nav* link addressed by its `href` rather than its label.
  *
  * Two entries can share a label — ADMIN gets "Courses" from both the teaching
  * and admin-courses nav keys — so the href is the only stable identity. Returns
  * a locator, so `toHaveCount(0)` is a valid assertion that the entry is absent.
+ *
+ * Scoped to `sidebar-content` (NavMain + NavSecondary) rather than the whole
+ * sidebar, because `SidebarHeader` carries the brand logo as a link too and
+ * `_app.tsx` points it at `logoHref: routeForRole(user.role)`. For every role
+ * whose home is `/dashboard` that collides with the Dashboard nav entry, and an
+ * unscoped `a[href="/dashboard"]` matches both — a strict-mode violation rather
+ * than a missing element, so it fails as "resolved to 2 elements".
  */
 export function sidebarLink(page: Page, href: string) {
-  return sidebar(page).locator(`a[href="${href}"]`);
+  return sidebar(page).locator(`[data-slot="sidebar-content"] a[href="${href}"]`);
+}
+
+/**
+ * The shell's content area, for reading what a page actually rendered.
+ *
+ * `getByRole("main")` is ambiguous here: `@eduai/ui`'s `SidebarInset`
+ * (`ui/sidebar.tsx`) renders `<main data-slot="sidebar-inset">` and `AppShell`
+ * renders a second `<main>` inside it. Two nested `main` landmarks is an
+ * accessibility defect in the shared shell — reported separately; this helper
+ * only keeps the tests deterministic by naming the inner one explicitly.
+ */
+export function shellMain(page: Page) {
+  return page.locator('[data-slot="sidebar-inset"] main');
 }
 
 /**

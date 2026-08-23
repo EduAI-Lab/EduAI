@@ -129,7 +129,11 @@ test.describe("UNIT_ADMIN and the admin console", () => {
     await expect(dialog).toBeVisible();
 
     await dialog.getByTestId("bug-type").click();
-    await page.getByRole("option", { name: "Access / permission issue" }).click();
+    // Exactly as `BUG_TYPE_LABELS` spells it — the dialog and the triage table
+    // both render from that one map (#1592 ended the "UI / display issue" vs
+    // "UI / display" drift), and role-name matching is a substring test, so a
+    // label with an extra word appended matches nothing at all.
+    await page.getByRole("option", { name: "Access / permission", exact: true }).click();
     await dialog
       .getByTestId("bug-description")
       .fill("E2E: filed by a unit admin, who cannot triage it themselves.");
