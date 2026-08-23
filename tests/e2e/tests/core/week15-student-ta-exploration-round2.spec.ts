@@ -497,7 +497,10 @@ test.describe("Bug report — UI submission", () => {
       await expect(page.getByRole("heading", { name: "Report a bug" })).toBeVisible();
 
       await page.getByTestId("bug-type").click();
-      await page.getByRole("option", { name: "UI / display issue" }).click();
+      // The dialog's type labels now come from the shared BUG_TYPE_LABELS map
+      // (#1592), so a reporter and a triager read the same words: "UI / display",
+      // not the dialog's former "UI / display issue".
+      await page.getByRole("option", { name: "UI / display", exact: true }).click();
 
       const probeText = `Round2 e2e probe bug report ${Date.now()}`;
       await page.getByTestId("bug-description").fill(probeText);
