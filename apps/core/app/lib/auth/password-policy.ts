@@ -4,6 +4,8 @@
  * must stay free of server-only imports.
  */
 
+import type { JsonValue } from "~/lib/json-value";
+
 /** Minimum length for a complex password that mixes character classes. */
 export const MIN_COMPLEX_PASSWORD_LENGTH = 8;
 /** Minimum length for a passphrase that need not mix character classes. */
@@ -90,7 +92,7 @@ export const SKIP_REUSE_PATHS = new Set(["/sign-up/email"]);
 export function extractPolicyPassword(
   path: string | undefined,
   operationId: string | undefined,
-  body: unknown,
+  body: JsonValue | undefined,
 ): string | null {
   const field =
     (path ? PASSWORD_SETTING_PATHS[path] : undefined) ??
@@ -98,6 +100,9 @@ export function extractPolicyPassword(
   if (!field) {
     return null;
   }
-  const value = (body as Record<string, unknown> | null | undefined)?.[field];
+  if (body === null || body === undefined || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+  const value = body[field];
   return typeof value === "string" ? value : null;
 }
