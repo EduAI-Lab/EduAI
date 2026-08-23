@@ -539,6 +539,19 @@ function decode<Schema extends z.ZodTypeAny>(
   return response.then((body) => schema.parse(body));
 }
 
+/**
+ * The AI request schemas take `topicId` as the cuid string `Topic.id` actually
+ * is (`shared/schemas/aiGuidance.js`). Callers hold `Topic["id"]`, which is
+ * still `string | number` for the numeric fixtures, so stringify it here rather
+ * than making every call site do it.
+ */
+function withWireTopicId<Params extends { topicId?: string | number }>(
+  params: Params,
+): Omit<Params, "topicId"> & { topicId?: string } {
+  const { topicId, ...rest } = params;
+  return topicId === undefined ? rest : { ...rest, topicId: String(topicId) };
+}
+
 let meInFlight: Promise<{ user: User | null }> | null = null;
 
 export const api = {
@@ -790,7 +803,7 @@ export const api = {
     activityId: number,
     params: {
       knowledgeLevel: string;
-      topicId?: number;
+      topicId?: string | number;
       message: string;
       modelId: string;
       apiKey: string;
@@ -801,7 +814,7 @@ export const api = {
   ) =>
     http(`/api/activities/${activityId}/teach`, {
       method: "POST",
-      body: JSON.stringify(params),
+      body: JSON.stringify(withWireTopicId(params)),
       signal,
       timeoutMs: CHAT_TIMEOUT_MS,
     }),
@@ -828,7 +841,7 @@ export const api = {
     activityId: number,
     params: {
       knowledgeLevel: string;
-      topicId?: number;
+      topicId?: string | number;
       message: string;
       studentAnswer?: string | number | null;
       modelId: string;
@@ -840,7 +853,7 @@ export const api = {
   ) =>
     http(`/api/activities/${activityId}/custom`, {
       method: "POST",
-      body: JSON.stringify(params),
+      body: JSON.stringify(withWireTopicId(params)),
       signal,
       timeoutMs: CHAT_TIMEOUT_MS,
     }),

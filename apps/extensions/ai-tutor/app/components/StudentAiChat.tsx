@@ -415,7 +415,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
       if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
-      const topicId = typeof currentTopicId === "number" ? currentTopicId : undefined;
+      const topicId = currentTopicId ?? undefined;
       const normalizedStudentAnswer =
         typeof studentAnswer === "number"
           ? studentAnswer
@@ -747,8 +747,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             <Select
               value={currentTopicId === null ? "" : String(currentTopicId)}
               onValueChange={(value) => {
-                const numericValue = Number(value);
-                if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
+                // Options are keyed by `String(topic.value)`, so map the
+                // selected key back to the option's own id rather than
+                // coercing it: topic ids are cuid strings, and `Number()`
+                // turned every real one into `NaN` and dropped the selection.
+                const selected = topicOptions.find((topic) => String(topic.value) === value);
+                if (selected) onSelectTopic(selected.value);
               }}
             >
               <SelectTrigger id="ai-chat-topic" className="w-full">

@@ -733,3 +733,51 @@ function movedRow(key: "module" | "lesson" | "activity") {
   }
   return { id: 4, title: "Moved", position: 12, isPublished: true };
 }
+
+// #1596 review: `TeachRequestSchema`/`CustomRequestSchema` take `topicId` as the
+// cuid string `Topic.id` is, so the api layer must send it as a string. It used
+// to declare the parameter as `number`, which the server rejected outright.
+describe("AI request topic ids", () => {
+  const okChatReply = () =>
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ message: "reply", chatId: null }),
+    });
+
+  const sentBody = () => JSON.parse(mockFetch.mock.calls[0][1].body);
+
+  const params = {
+    knowledgeLevel: "beginner",
+    message: "Explain base cases",
+    modelId: "google:gemini-2.5-flash",
+    apiKey: "test-key",
+  };
+
+  it("sends a cuid topic id through unchanged on teach", async () => {
+    okChatReply();
+    const { api } = await import("~/lib/api");
+
+    await api.sendTeachMessage(4, { ...params, topicId: "cm4t0p1cabcdef0123456789" });
+
+    expect(sentBody().topicId).toBe("cm4t0p1cabcdef0123456789");
+  });
+
+  it("stringifies a numeric topic id so the wire stays single-typed", async () => {
+    okChatReply();
+    const { api } = await import("~/lib/api");
+
+    await api.sendCustomMessage(4, { ...params, topicId: 7 });
+
+    expect(sentBody().topicId).toBe("7");
+  });
+
+  it("omits topicId entirely when no topic is selected", async () => {
+    okChatReply();
+    const { api } = await import("~/lib/api");
+
+    await api.sendTeachMessage(4, params);
+
+    expect(sentBody()).not.toHaveProperty("topicId");
+  });
+});
