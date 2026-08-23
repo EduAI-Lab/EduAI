@@ -1,5 +1,11 @@
 # Changelog
 
+## [Week 16 — August 17–23, 2026]
+
+### Changed
+
+- [ai-tutor] perf: Collapse the lesson-page breadcrumb waterfall via `GET /lessons/:id/breadcrumb` (auth + lesson/activity loaders stay concurrent; breadcrumb loads after paint so the lesson body is not blocked), with header crumbs upgrading from skeleton once ancestry resolves. Closes #1334. (@GlowyBlack, 2026-08-17) — [#1559](https://github.com/EduAI-Lab/EduAI/pull/1559)
+
 ## [Week 16 — August 10–16, 2026]
 
 ### Added

@@ -42,6 +42,7 @@ import type {
   EnrollmentRole,
   Lesson,
   Module,
+  ModuleDetail,
   StudentMetricRow,
   SubmissionRow,
   SuggestedPrompt,
@@ -150,6 +151,16 @@ export interface LessonContext {
   lessonTotal: number;
   prevLessonId: number | null;
   nextLessonId: number | null;
+}
+
+/**
+ * Ancestry returned by `GET /lessons/:id/breadcrumb` (#1334). Collapses the
+ * former moduleById + courseById + /context fan-out into one follow-up call
+ * that runs after the lesson body paints (not on the initial lesson GET).
+ */
+export interface LessonBreadcrumb extends LessonContext {
+  module: ModuleDetail;
+  course: Course;
 }
 
 /**
@@ -582,7 +593,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ orderedIds }),
     }),
-  lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
+  lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`) as Promise<Lesson>,
+  /**
+   * Module/course ancestry + ordinals for lesson shell crumbs (#1334).
+   * Fetched after paint — not awaited in the lesson clientLoader.
+   */
+  lessonBreadcrumb: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}/breadcrumb`) as Promise<LessonBreadcrumb>,
   activitiesForLesson: (lessonId: number, params?: ListParams) =>
     http(
       `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
