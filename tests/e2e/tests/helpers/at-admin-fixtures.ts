@@ -274,12 +274,13 @@ export async function seedCourseWithActivity(
   }
 > {
   const topics = opts.topics ?? ["Recursion", "Complexity"];
-  const seeded = await seedAtCourse(playwright, {
+  const seedOpts: { name: string; codePrefix: string; topics: string[]; publish?: boolean } = {
     name: opts.name ?? "Activity Spine Course",
     codePrefix: opts.codePrefix ?? "SPIN",
     topics,
-    ...(opts.publish ? { publish: true } : {}),
-  });
+  };
+  if (opts.publish) seedOpts.publish = true;
+  const seeded = await seedAtCourse(playwright, seedOpts);
 
   const module = await seedModule(seeded.admin, seeded.atCourseId, { title: "Spine module" });
   const lesson = await seedLesson(seeded.admin, module.id, { title: "Spine lesson" });

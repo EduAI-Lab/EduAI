@@ -34,6 +34,7 @@ import {
   courseYear,
 } from "../lib/course-display";
 import api, { COURSE_LIST_PAGE_SIZE } from "../lib/api";
+import type { CourseListParams } from "../lib/api";
 import { getEduAiAppUrl } from "../lib/extension-urls";
 import type { Course } from "../lib/types";
 import type { Route } from "./+types/instructor";
@@ -77,16 +78,15 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   // response doesn't vary with search/filter/page, but the loader re-runs on
   // every one of those) and never rejects, so a facets outage costs the
   // dropdowns rather than the whole page.
-  const [page, facets] = await Promise.all([
-    api.listCourses({
-      page: selection.page,
-      ...(pageSize != null ? { pageSize } : {}),
-      search: selection.search || undefined,
-      term: selection.filters.term,
-      status: selection.filters.status,
-    }),
-    loadCourseFacets(),
-  ]);
+  const courseListParams: CourseListParams = {
+    page: selection.page,
+    search: selection.search || undefined,
+    term: selection.filters.term,
+    status: selection.filters.status,
+  };
+  if (pageSize != null) courseListParams.pageSize = pageSize;
+
+  const [page, facets] = await Promise.all([api.listCourses(courseListParams), loadCourseFacets()]);
 
   // #1162: guard the upper bound too, not just `page < 1`. A bookmarked or
   // hand-edited `?page=` past the end would otherwise render an empty list

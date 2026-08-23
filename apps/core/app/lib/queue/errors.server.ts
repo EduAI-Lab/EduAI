@@ -1,4 +1,5 @@
 import { AppError } from "@eduai/types";
+import type { AppErrorOptions } from "@eduai/types";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
@@ -13,11 +14,14 @@ export class QueueUnavailableError extends AppError {
   readonly code = "QUEUE_UNAVAILABLE" as const;
 
   constructor(message = "Queue unavailable", options?: { cause?: unknown }) {
-    super(503, message, {
+    const appErrorOptions: AppErrorOptions = {
       code: "QUEUE_UNAVAILABLE",
       expose: true,
-      ...(options?.cause !== undefined ? { cause: options.cause } : {}),
-    });
+    };
+    // Only set `cause` when one was actually supplied — `{ cause: undefined }`
+    // still defines the property, which changes how the error serialises.
+    if (options?.cause !== undefined) appErrorOptions.cause = options.cause;
+    super(503, message, appErrorOptions);
     this.name = "QueueUnavailableError";
   }
 }

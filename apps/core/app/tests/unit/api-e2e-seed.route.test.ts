@@ -12,11 +12,10 @@ vi.mock("../../../prisma/seed", () => ({
 import { action } from "~/routes/api/e2e.seed";
 
 function makeArgs(method: string, body?: unknown) {
+  const init: RequestInit = { method };
+  if (body !== undefined) init.body = JSON.stringify(body);
   return {
-    request: new Request("http://localhost/api/e2e/seed", {
-      method,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    }),
+    request: new Request("http://localhost/api/e2e/seed", init),
     params: {},
     context: {} as never,
   } as never;
