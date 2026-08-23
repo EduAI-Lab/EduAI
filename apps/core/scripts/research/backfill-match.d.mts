@@ -2,7 +2,7 @@ export interface BackfillRow {
   userId?: string | null;
   query?: string | null;
   createdAt?: string | Date | null;
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 }
 
 export interface BackfillIndex {

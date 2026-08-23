@@ -1,1 +1,1 @@
-export function responseChatId(response: Response, json: unknown): string | null;
+export function responseChatId(response: Response, json: JsonValue): string | null;
