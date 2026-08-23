@@ -158,12 +158,12 @@ function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   return true;
 }
 
-function getInitialChatState(): ChatState {
+function getInitialChatState() {
   return {
     teach: { messages: [], input: "", loading: false, chatId: null },
     guide: { messages: [], input: "", loading: false, chatId: null },
     custom: { messages: [], input: "", loading: false, chatId: null },
-  };
+  } satisfies ChatState;
 }
 
 const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(function StudentAiChat(

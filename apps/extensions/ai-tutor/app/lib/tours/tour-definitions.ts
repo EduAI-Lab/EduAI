@@ -12,7 +12,7 @@ function selectedModuleRoute(context: TourContextState) {
   return context.selectedModuleRoute;
 }
 
-export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition> = {
+export const tourDefinitions = {
   "student-journey": {
     id: "student-journey",
     completionKey: "aitutor:tour:completed:student-journey",
@@ -239,4 +239,4 @@ export const tourDefinitions: Record<AppTourDefinition["id"], AppTourDefinition>
       },
     ],
   },
-};
+} satisfies Record<AppTourDefinition["id"], AppTourDefinition>;

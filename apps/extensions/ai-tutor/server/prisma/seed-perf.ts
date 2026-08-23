@@ -27,6 +27,7 @@
  *   cd apps/extensions/ai-tutor/server && npx tsx prisma/seed-perf.ts
  *   PERF_POOL_SIZE=15 npx tsx prisma/seed-perf.ts
  */
+import type { JsonValue } from "@eduai/types";
 import { PrismaClient } from "@eduai/ai-tutor-prisma-client";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -56,7 +57,8 @@ function poolDir(): string {
   }
   return path.join(process.cwd(), ".perf-pool");
 }
-function writeManifest(obj: unknown) {
+/** The pool manifest is written straight to disk as JSON, so that is its type. */
+function writeManifest(obj: JsonValue) {
   const dir = poolDir();
   mkdirSync(dir, { recursive: true });
   const f = path.join(dir, "aitutor.json");

@@ -99,6 +99,15 @@ export function parseHintsInput(value: string) {
 }
 
 /**
+ * Either a submittable payload or the reason the form is not submittable —
+ * one arm or the other, never both. Spelling the two arms out lets a caller
+ * that has checked `error` read `payload` without re-checking it.
+ */
+export type ActivityUpdateResult =
+  | { payload: ActivityUpdatePayload; error?: undefined }
+  | { payload?: undefined; error: string };
+
+/**
  * Validates the editor state and produces the canonical update payload, or
  * an error string describing why the form is not yet submittable.
  *
@@ -107,10 +116,7 @@ export function parseHintsInput(value: string) {
  * this remap, the previously selected answer would point at the wrong (or
  * non-existent) choice once gaps are removed.
  */
-export function buildUpdatePayload(values: ActivityFormValues): {
-  payload?: ActivityUpdatePayload;
-  error?: string;
-} {
+export function buildUpdatePayload(values: ActivityFormValues): ActivityUpdateResult {
   const question = values.question.trim();
   if (!question) {
     return { error: "Question is required." };

@@ -62,8 +62,8 @@ import { contentExcerpt } from "../components/lessons/LessonCard";
 import { ModuleHero } from "../components/lessons/ModuleHero";
 import { accentForCourse } from "~/lib/course-display";
 import api from "../lib/api";
-import type { ImportableActivity } from "../lib/api";
-import type { Activity, Course, Lesson, ModuleDetail, Topic } from "../lib/types";
+import type { ActivityUpdateBody, ImportableActivity } from "../lib/api";
+import type { Activity, Course, Lesson, Module, ModuleDetail, Topic } from "../lib/types";
 import { CourseTopicsProvider, useCourseTopics } from "../hooks/useCourseTopics";
 import type { Route } from "./+types/instructor.lesson";
 import { requireClientUser } from "~/lib/client-auth";
@@ -647,7 +647,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
     beginModeUpdate(activityId);
     try {
-      const payload: Record<string, unknown> = {
+      const payload: ActivityUpdateBody = {
         enableTeachMode: newTeach,
         enableGuideMode: newGuide,
         enableCustomMode: newCustom,

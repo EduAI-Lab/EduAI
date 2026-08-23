@@ -1,3 +1,4 @@
+import type { JsonValue } from "@eduai/types";
 import { z } from "zod";
 
 import type { AiServiceStatusPair, ServiceStatus } from "@eduai/ui";
@@ -505,6 +506,22 @@ export const chatSessionRowSchema = z
   .passthrough();
 
 /**
+ * Decodes anything `JSON.parse` can produce. Used where a payload really is
+ * open-ended — a stored message body this client renders but does not own —
+ * so the value carries JSON's own contract instead of `unknown`.
+ */
+export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(jsonValueSchema),
+  ]),
+);
+
+/**
  * Core's `GET /api/chats/:chatId/messages`, which AI-Tutor's chat-session route
  * proxies verbatim. Each message is built by Core's `reviveStoredMessage`, which
  * keys the message by `id` — the earlier `messageId` here matched no field Core
@@ -514,7 +531,15 @@ export const chatMessagesSchema = z
   .object({
     chat: z.object({ id: z.string(), title: z.string().nullable() }).passthrough(),
     messages: z.array(
-      z.object({ id: z.string(), role: z.string(), content: z.unknown() }).passthrough(),
+      z
+        .object({
+          id: z.string(),
+          role: z.string(),
+          // Persisted verbatim by the server: a plain string for older rows, an
+          // AI-SDK message object for newer ones. `extractText` reads both.
+          content: jsonValueSchema.optional(),
+        })
+        .passthrough(),
     ),
   })
   .passthrough();
