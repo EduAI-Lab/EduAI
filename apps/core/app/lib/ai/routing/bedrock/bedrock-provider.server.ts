@@ -284,7 +284,12 @@ class BedrockChatLanguageModel implements LanguageModelV1 {
       );
     }
 
-    const json = bedrockConverseResponseSchema.parse(await response.json());
+    // `safeParse`, not `parse`: every field is optional because Bedrock omits
+    // them on a filtered turn, so a payload this provider does not model must
+    // degrade to empty text and zero usage rather than throw out of the call —
+    // the same rule the stream path below already follows.
+    const decoded = bedrockConverseResponseSchema.safeParse(await response.json());
+    const json = decoded.success ? decoded.data : {};
     const text = json.output?.message?.content?.map((block) => block.text ?? "").join("") ?? "";
 
     return {

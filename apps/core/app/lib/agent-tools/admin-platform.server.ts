@@ -834,7 +834,9 @@ const OllamaTagsSchema = z.object({
         modified_at: z.string().optional(),
       }),
     )
-    .optional(),
+    // `nullish`, not `optional`: an Ollama host with nothing pulled answers
+    // `{"models": null}`, which is "no models", not a protocol mismatch.
+    .nullish(),
 });
 
 export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
