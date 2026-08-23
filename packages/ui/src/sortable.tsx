@@ -24,6 +24,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DraggableAttributes,
 } from "@dnd-kit/core";
 import { restrictToParentElement } from "@dnd-kit/modifiers";
 import {
@@ -108,10 +109,7 @@ export interface SortableItemProps {
    * so only the handle initiates a drag; `isDragging` lets the body reflect the
    * active state.
    */
-  children: (args: {
-    handleProps: Record<string, unknown>;
-    isDragging: boolean;
-  }) => React.ReactNode;
+  children: (args: { handleProps: DragActivatorProps; isDragging: boolean }) => React.ReactNode;
 }
 
 export function SortableItem({ id, disabled = false, className, children }: SortableItemProps) {
@@ -130,14 +128,43 @@ export function SortableItem({ id, disabled = false, className, children }: Sort
 
   return (
     <div ref={setNodeRef} style={style} className={className}>
-      {children({ handleProps: { ...attributes, ...listeners }, isDragging })}
+      {children({
+        // SAFETY: dnd-kit's listener map is typed `Record<string, Function>`;
+        // the sensors registered by `SortableProvider` only ever put the React
+        // handlers named in `DragActivatorListeners` into it.
+        handleProps: { ...attributes, ...listeners } as DragActivatorProps,
+        isDragging,
+      })}
     </div>
   );
 }
 
+/**
+ * The event handlers dnd-kit installs on a drag activator. It types its own
+ * listener map as `Record<string, Function>`, which says nothing about which
+ * events arrive; these are the ones the sensors registered by `SortableProvider`
+ * can produce, plus the two `DragHandle` intercepts on the way out.
+ */
+type DragActivatorListeners = Pick<
+  React.DOMAttributes<HTMLElement>,
+  "onPointerDown" | "onKeyDown" | "onKeyUp" | "onClick"
+>;
+
+/**
+ * What `SortableItem` hands its render prop: dnd-kit's activator ARIA
+ * attributes plus those listeners. Named after the library type that produced
+ * it, so `DragHandle` destructures a contract instead of guessing at the keys
+ * of an open dictionary.
+ */
+export type DragActivatorProps = DraggableAttributes & DragActivatorListeners;
+
 export interface DragHandleProps {
-  /** The dnd-kit attributes + listeners from `SortableItem`'s render prop. */
-  handleProps: Record<string, unknown>;
+  /**
+   * The dnd-kit attributes + listeners from `SortableItem`'s render prop.
+   * Partial because a handle also renders outside a sortable context — a
+   * disabled or decorative grip has no activator to bind.
+   */
+  handleProps: Partial<DragActivatorProps>;
   /** Screen-reader label, e.g. "Drag to reorder module". */
   label?: string;
   className?: string;
@@ -149,19 +176,17 @@ export interface DragHandleProps {
  * clickable *and* keyboard-activatable, so Enter/Space on the grip must start a
  * drag without also firing the card's navigation handler.
  */
-function isolate<E extends React.SyntheticEvent>(handler: unknown): (event: E) => void {
+function isolate<E extends React.SyntheticEvent>(
+  handler: ((event: E) => void) | undefined,
+): (event: E) => void {
   return (event: E) => {
-    if (typeof handler === "function") (handler as (e: E) => void)(event);
+    handler?.(event);
     event.stopPropagation();
   };
 }
 
 export function DragHandle({ handleProps, label = "Drag to reorder", className }: DragHandleProps) {
-  const { onClick, onKeyDown, onKeyUp, ...rest } = handleProps as {
-    onClick?: unknown;
-    onKeyDown?: unknown;
-    onKeyUp?: unknown;
-  } & Record<string, unknown>;
+  const { onClick, onKeyDown, onKeyUp, ...rest } = handleProps;
 
   return (
     <button
@@ -176,9 +201,9 @@ export function DragHandle({ handleProps, label = "Drag to reorder", className }
       {...rest}
       // Composed last so dnd-kit's own handlers still run, but neither a click
       // nor a key activation bubbles into a clickable parent card.
-      onClick={isolate<React.MouseEvent>(onClick)}
-      onKeyDown={isolate<React.KeyboardEvent>(onKeyDown)}
-      onKeyUp={isolate<React.KeyboardEvent>(onKeyUp)}
+      onClick={isolate(onClick)}
+      onKeyDown={isolate(onKeyDown)}
+      onKeyUp={isolate(onKeyUp)}
     >
       <IconGripVertical size={16} aria-hidden="true" />
     </button>
