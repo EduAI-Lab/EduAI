@@ -63,12 +63,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(currentUser);
         setIsAuthenticated(true);
       })
-      .catch((error: unknown) => {
+      .catch((cause: unknown) => {
         if (cancelled) return;
         apiKeyStorage.setAuthenticatedUser(null);
         setUser(null);
         setIsAuthenticated(false);
-        if (isAxiosError(error) && error.response?.status === 401) {
+        if (isAxiosError(cause) && cause.response?.status === 401) {
           // The API interceptor redirects confirmed unauthenticated sessions to Core login.
           setAuthError(null);
         } else {

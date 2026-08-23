@@ -17,15 +17,15 @@ import {
 
 export const AUTH_FORM_BODY_MAX_BYTES = 64 * 1024;
 
-function formBodyErrorResponse(error: unknown): Response | null {
-  if (error instanceof MultipartBodyTooLargeError) {
+function formBodyErrorResponse(cause: unknown): Response | null {
+  if (cause instanceof MultipartBodyTooLargeError) {
     return new Response(JSON.stringify({ error: "PAYLOAD_TOO_LARGE" }), {
       status: 413,
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (error instanceof MultipartBodyInvalidError) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  if (cause instanceof MultipartBodyInvalidError) {
+    return new Response(JSON.stringify({ error: cause.message }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });

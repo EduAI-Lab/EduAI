@@ -8,7 +8,7 @@ export type StreamStartupHooks = {
   /** Call when the provider has produced a usable first event. */
   signalReady: () => void;
   /** Call when the provider fails before/during startup. */
-  signalError: (error: unknown) => void;
+  signalError: (cause: unknown) => void;
 };
 
 /**
@@ -23,7 +23,7 @@ export function createStreamStartupProbe(options?: { timeoutMs?: number }): {
   const timeoutMs = Math.max(1, options?.timeoutMs ?? 10_000);
   let settled = false;
   let resolveReady: () => void = () => {};
-  let rejectReady: (error: unknown) => void = () => {};
+  let rejectReady: (cause: unknown) => void = () => {};
 
   const waitPromise = new Promise<void>((resolve, reject) => {
     resolveReady = resolve;
@@ -36,10 +36,10 @@ export function createStreamStartupProbe(options?: { timeoutMs?: number }): {
     resolveReady();
   };
 
-  const settleError = (error: unknown) => {
+  const settleError = (cause: unknown) => {
     if (settled) return;
     settled = true;
-    rejectReady(error);
+    rejectReady(cause);
   };
 
   const wait = async () => {

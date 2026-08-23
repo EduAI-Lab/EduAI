@@ -44,15 +44,15 @@ export function aiJobTimeoutMs(): number {
   return positiveInt(process.env.AI_JOB_EXECUTION_TIMEOUT_MS, DEFAULT_AI_JOB_TIMEOUT_MS);
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message || error.name;
+function formatError(cause: unknown): string {
+  if (cause instanceof Error) {
+    return cause.message || cause.name;
   }
-  if (typeof error === "string") {
-    return error;
+  if (typeof cause === "string") {
+    return cause;
   }
   try {
-    return JSON.stringify(error);
+    return JSON.stringify(cause);
   } catch {
     return "Unknown AI job failure";
   }

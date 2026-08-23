@@ -76,22 +76,22 @@ function buildSystemLogWhere(params: SystemLogListParams) {
   return where;
 }
 
-function normalizeErrorMetadata(error: unknown): {
+function normalizeErrorMetadata(cause: unknown): {
   errorName: string | null;
   stack: string | null;
 } {
   // Normalizing unknown errors keeps diagnostics useful even when throwables are non-Error values.
-  if (error instanceof Error) {
+  if (cause instanceof Error) {
     return {
-      errorName: error.name || "Error",
-      stack: error.stack ?? null,
+      errorName: cause.name || "Error",
+      stack: cause.stack ?? null,
     };
   }
 
-  if (typeof error === "string") {
+  if (typeof cause === "string") {
     return {
       errorName: "Error",
-      stack: error,
+      stack: cause,
     };
   }
 

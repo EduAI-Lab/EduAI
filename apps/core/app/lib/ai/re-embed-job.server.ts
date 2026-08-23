@@ -162,12 +162,12 @@ function settingsFromJob(job: ReEmbedJobRecord): EffectiveEmbeddingSettings {
   };
 }
 
-function isIdempotencyConflict(error: unknown): boolean {
+function isIdempotencyConflict(cause: unknown): boolean {
   return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === "P2002" &&
-    ((error as { meta?: { target?: unknown } }).meta?.target as string[] | undefined)?.some(
+    typeof cause === "object" &&
+    cause !== null &&
+    (cause as { code?: unknown }).code === "P2002" &&
+    ((cause as { meta?: { target?: unknown } }).meta?.target as string[] | undefined)?.some(
       (value) => value === "idempotencyKey",
     ) === true
   );
@@ -200,8 +200,8 @@ function claimNeeded(job: ReEmbedJobRecord): boolean {
   return !job.leaseOwner || !job.leaseExpiresAt || job.leaseExpiresAt.getTime() <= Date.now();
 }
 
-function isInfrastructureOrQueueError(error: unknown): boolean {
-  return isInfrastructureError(error);
+function isInfrastructureOrQueueError(cause: unknown): boolean {
+  return isInfrastructureError(cause);
 }
 
 /**

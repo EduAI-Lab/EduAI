@@ -76,7 +76,7 @@ describe("re-embed lease heartbeat", () => {
       return Promise.resolve({ count: 1 });
     });
 
-    let rejectProvider!: (error: unknown) => void;
+    let rejectProvider!: (cause: unknown) => void;
     let providerSignal!: AbortSignal;
     mocks.reEmbedCourseMaterials.mockImplementation(
       async (_courseId: string, options: { signal: AbortSignal }) => {

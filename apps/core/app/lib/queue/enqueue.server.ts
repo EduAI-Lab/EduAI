@@ -20,11 +20,11 @@ import { assertAiJobQueueEnabled } from "./availability.server";
 import { isInfrastructureError, toQueueUnavailable } from "./errors.server";
 
 /** True for a unique-constraint violation on `AiJob(queueName, bullJobId)`. */
-function isBullJobIdConflict(error: unknown): boolean {
+function isBullJobIdConflict(cause: unknown): boolean {
   return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002" &&
-    (error.meta?.target as string[] | undefined)?.includes("bullJobId") === true
+    cause instanceof Prisma.PrismaClientKnownRequestError &&
+    cause.code === "P2002" &&
+    (cause.meta?.target as string[] | undefined)?.includes("bullJobId") === true
   );
 }
 

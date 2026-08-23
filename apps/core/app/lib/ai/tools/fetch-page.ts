@@ -102,9 +102,9 @@ function coerceDoc(
   return { url, title, markdown: md };
 }
 
-function failureResult(url: string, error: unknown): FetchPageResult {
-  const isUnsafe = error instanceof UnsafeFetchPageUrlError;
-  const isAbort = error instanceof Error && error.name === "AbortError";
+function failureResult(url: string, cause: unknown): FetchPageResult {
+  const isUnsafe = cause instanceof UnsafeFetchPageUrlError;
+  const isAbort = cause instanceof Error && cause.name === "AbortError";
   return {
     url,
     title: url,

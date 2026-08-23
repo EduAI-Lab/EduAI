@@ -308,12 +308,12 @@ export function QuestionComposerPage() {
           description: question.description ?? "",
         }));
       })
-      .catch((err: unknown) => {
+      .catch((cause: unknown) => {
         if (cancelled) return;
         const message =
-          (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data
+          (cause as { response?: { data?: { error?: string } }; message?: string })?.response?.data
             ?.error ??
-          (err as { message?: string })?.message ??
+          (cause as { message?: string })?.message ??
           "Could not load the source question.";
         setSourceError(message);
       })

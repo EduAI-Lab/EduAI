@@ -497,20 +497,20 @@ export function sanitizeSensitiveData(
  * Returns a plain shape rather than an `Error` because `console.error` prints an Error's own
  * (unredacted) fields rather than the properties we set on it.
  */
-export function redactErrorForConsole(error: unknown): RedactedValue {
-  if (error instanceof Error) {
+export function redactErrorForConsole(cause: unknown): RedactedValue {
+  if (cause instanceof Error) {
     return {
-      name: error.name,
-      message: redactSecretValuesInString(error.message),
-      stack: error.stack ? redactSecretValuesInString(error.stack) : undefined,
+      name: cause.name,
+      message: redactSecretValuesInString(cause.message),
+      stack: cause.stack ? redactSecretValuesInString(cause.stack) : undefined,
     };
   }
 
-  if (typeof error === "string") {
-    return redactSecretValuesInString(error);
+  if (typeof cause === "string") {
+    return redactSecretValuesInString(cause);
   }
 
-  return sanitizeSensitiveData(error);
+  return sanitizeSensitiveData(cause);
 }
 
 /**
@@ -522,23 +522,23 @@ export function redactErrorForConsole(error: unknown): RedactedValue {
  * message, say) want this instead. The stack is deliberately dropped: these
  * strings land in database columns, and the console path already carries it.
  */
-export function redactErrorForMessage(error: unknown): string {
-  if (error instanceof Error) {
-    const message = redactSecretValuesInString(error.message);
-    return message ? `${error.name}: ${message}` : error.name;
+export function redactErrorForMessage(cause: unknown): string {
+  if (cause instanceof Error) {
+    const message = redactSecretValuesInString(cause.message);
+    return message ? `${cause.name}: ${message}` : cause.name;
   }
-  if (typeof error === "string") return redactSecretValuesInString(error);
+  if (typeof cause === "string") return redactSecretValuesInString(cause);
   // `String(value)` on a plain object is "[object Object]" — the same loss this
   // function exists to prevent — so serialize the sanitized value instead.
-  if (typeof error === "object" && error !== null) {
+  if (typeof cause === "object" && cause !== null) {
     try {
-      const serialized = JSON.stringify(sanitizeSensitiveData(error));
+      const serialized = JSON.stringify(sanitizeSensitiveData(cause));
       if (serialized) return redactSecretValuesInString(serialized);
     } catch {
       // Circular or non-serializable: fall through to the string coercion.
     }
   }
-  return redactSecretValuesInString(String(error));
+  return redactSecretValuesInString(String(cause));
 }
 
 /**
