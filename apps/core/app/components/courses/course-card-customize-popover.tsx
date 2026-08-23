@@ -50,8 +50,10 @@ export function CourseCardCustomizePopover({
     if (!color && !nickname) {
       onApply(null);
     } else {
-      // An untouched half of the form stays undefined so it does not overwrite
-      // the value already stored for this card.
+      // Both drafts are seeded from the stored preference when the popover
+      // opens, so an empty half here means the user cleared it. `undefined`
+      // wins over the stored value in `mergeCourseCardPreference`'s spread,
+      // which is what makes clearing one half actually stick.
       onApply({
         color: color || undefined,
         nickname: nickname || undefined,

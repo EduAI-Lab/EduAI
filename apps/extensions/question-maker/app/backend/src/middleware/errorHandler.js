@@ -88,18 +88,19 @@ export const errorHandler = (err, req, res, next) => {
   // Log only allowlisted transport/status metadata. Never pass the Error
   // object or its message as structured data/serialised log text.
   const logLevel = status >= 500 ? "error" : "warn";
-  logger[logLevel](
-    {
-      ...safeRequestLogFields({ ...err, status }),
-      code: safeCode || undefined,
-      req: {
-        method: req.method,
-        path: req.path,
-      },
-      status,
+  // `safeRequestLogFields` already carries the transport `code` (ECONNREFUSED,
+  // UND_ERR_CONNECT_TIMEOUT, ...) when there is one, so the semantic code is
+  // layered on by statement, since an explicit `code: undefined` would erase it.
+  const logFields = {
+    ...safeRequestLogFields({ ...err, status }),
+    req: {
+      method: req.method,
+      path: req.path,
     },
-    "Request error",
-  );
+    status,
+  };
+  if (safeCode) logFields.code = safeCode;
+  logger[logLevel](logFields, "Request error");
 
   res.status(status).json({
     success: false,
