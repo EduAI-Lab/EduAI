@@ -30,7 +30,7 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/ai/re-embed-job.server", () => ({
   startOrResumeReEmbedJob: vi.fn(),
-  serializeReEmbedJob: vi.fn((job: unknown) => job),
+  serializeReEmbedJob: vi.fn(<T>(job: T) => job),
 }));
 
 vi.mock("~/lib/logging.server", () => ({

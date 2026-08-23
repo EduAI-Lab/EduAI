@@ -56,7 +56,7 @@ describe("MaterialPreviewDialog", () => {
   });
 
   it("shows a loading state while the request is in flight", async () => {
-    let resolveFetch: (v: unknown) => void = () => {};
+    let resolveFetch: (response: ReturnType<typeof jsonResponse>) => void = () => {};
     mockFetch.mockReturnValue(new Promise((resolve) => (resolveFetch = resolve)));
 
     render(

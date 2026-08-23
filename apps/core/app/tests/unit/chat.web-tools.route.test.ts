@@ -1,4 +1,5 @@
 // @vitest-environment node
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -77,7 +78,7 @@ function makeArgs(body: RouteRequestBody) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "u-1", role: "user", content: "hi" }],
     model: "vllm:test-model",
@@ -108,9 +109,7 @@ beforeEach(() => {
   } as never);
   // Course-context backfill (tagging an existing chat with its course) calls
   // chat.update; echo the patched row so the chat stays resolved on that path.
-  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
-    data?: Record<string, unknown>;
-  }) => ({
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
     id: CHAT_ID,
     userId: "u1",
     adhdAssist: false,

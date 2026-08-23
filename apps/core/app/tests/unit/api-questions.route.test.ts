@@ -14,7 +14,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessGate: vi.fn(),
-  stripAnswerForStudents: vi.fn((q: unknown) => q),
+  stripAnswerForStudents: vi.fn(<T>(q: T) => q),
   wantsIncludeDeleted: vi.fn().mockReturnValue(false),
 }));
 

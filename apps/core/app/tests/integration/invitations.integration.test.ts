@@ -6,6 +6,7 @@
  * Session control for the admin-gated endpoints is done by spying on
  * `auth.api.getSession`. The mailer is mocked so no SMTP is attempted.
  */
+import type { JsonObject } from "~/lib/json-value";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
@@ -709,14 +710,15 @@ describe("accept flow", () => {
                     if (invProp === "updateMany") {
                       return () => Promise.reject(new Error("db hiccup"));
                     }
-                    const value = (invTarget as unknown as Record<string, unknown>)[
-                      invProp as string
-                    ];
+                    // SAFETY: a proxy trap is handed every key of its target,
+                    // so the key is one of them by construction.
+                    const value = invTarget[invProp as keyof typeof invTarget];
                     return typeof value === "function" ? value.bind(invTarget) : value;
                   },
                 });
               }
-              const value = (target as Record<string, unknown>)[prop as string];
+              // SAFETY: as above — the trap only ever sees this target's keys.
+              const value = target[prop as keyof typeof target];
               return typeof value === "function" ? value.bind(target) : value;
             },
           });
@@ -776,7 +778,7 @@ describe("public registration — UBC backend gate (§567)", () => {
   // marker) so the §567 check inside the before-hook runs — the backend layer
   // that catches API calls bypassing register.tsx's signUpSchema. Both cases use
   // a Date.now offset to land past Better Auth's per-IP sign-up rate window.
-  function publicSignup(email: string, extra: Record<string, unknown> = {}): Promise<Response> {
+  function publicSignup(email: string, extra: JsonObject = {}): Promise<Response> {
     const base = new Request("http://localhost/auth/register");
     const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
       method: "POST",

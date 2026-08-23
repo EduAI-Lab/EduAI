@@ -252,7 +252,7 @@ describe("loadChatBaseDataForUser", () => {
   });
 
   it("resolves the session before issuing any base-data read", async () => {
-    let releaseSession: ((value: unknown) => void) | undefined;
+    let releaseSession: ((session: { user: { id: string } } | null) => void) | undefined;
     vi.mocked(auth.api.getSession).mockReturnValue(
       new Promise((resolve) => {
         releaseSession = resolve;

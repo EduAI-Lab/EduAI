@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Route tests for smart course RAG gate (#484 + research grounding).
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -18,7 +19,7 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
     tool: vi.fn(<T>(definition: T) => definition),
   };
 });
@@ -126,7 +127,7 @@ function mockStream() {
   } as never);
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "What is gradient descent?" }],
     model: "vllm:test-model",
@@ -201,9 +202,7 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation((async (args: {
-    data?: Record<string, unknown>;
-  }) => ({
+  vi.mocked(prisma.chat.update).mockImplementation((async (args: { data?: JsonObject }) => ({
     id: CHAT_ID,
     userId: "user-1",
     courseId: COURSE_ID,

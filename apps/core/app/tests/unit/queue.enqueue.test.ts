@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
@@ -9,14 +10,14 @@ const PrismaClientKnownRequestErrorMock = vi.hoisted(
   () =>
     class PrismaClientKnownRequestError extends Error {
       code: string;
-      meta?: Record<string, unknown>;
+      meta?: JsonObject;
 
       constructor(
         message: string,
         options: {
           code: string;
           clientVersion?: string;
-          meta?: Record<string, unknown>;
+          meta?: JsonObject;
         },
       ) {
         super(message);

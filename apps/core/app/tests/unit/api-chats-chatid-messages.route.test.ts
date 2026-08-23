@@ -14,7 +14,7 @@ vi.mock("~/lib/chat-history/server", () => ({
 }));
 
 vi.mock("~/lib/chat/revive-message.server", () => ({
-  reviveStoredMessage: vi.fn((row: unknown) => row),
+  reviveStoredMessage: vi.fn(<T>(row: T) => row),
 }));
 
 import { loader } from "~/routes/api/chats.$chatId.messages";

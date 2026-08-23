@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { MutationResult } from "~/lib/agent-tools/admin-mutations.server";
@@ -95,8 +96,8 @@ vi.mock("~/lib/idempotency.server", async (importOriginal) => {
   return {
     ...actual,
     withIdempotency: async (
-      opts: { body?: Record<string, unknown> | null },
-      handler: (body: Record<string, unknown> | null) => Promise<Response>,
+      opts: { body?: JsonObject | null },
+      handler: (body: JsonObject | null) => Promise<Response>,
     ) => handler(opts.body ?? null),
   };
 });

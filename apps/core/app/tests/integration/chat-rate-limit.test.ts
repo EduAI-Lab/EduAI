@@ -1,5 +1,6 @@
 // @vitest-environment node
 // #1113: /api/chat threshold behavior using the integration Redis service.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,7 +14,7 @@ vi.mock("ai", async (importOriginal) => {
       execute({ write: (part: string) => chunks.push(part) });
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
     tool: vi.fn(<T>(definition: T) => definition),
   };
 });
@@ -84,7 +85,7 @@ import { action } from "~/routes/api/chat";
 const keysToClean = new Set<string>();
 const chatId = "cjld2cjxh0000qzrmn831i7rn";
 
-function makeRequest(overrides: Record<string, unknown> = {}) {
+function makeRequest(overrides: JsonObject = {}) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",

@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import JSZip from "jszip";
 import {
@@ -1160,7 +1161,7 @@ describe("processUploadedFile", () => {
     expect(result.mimeType).toBe("text/plain");
     expect(result.checksum).toBe(generateChecksum(result.content));
     // These fields are set at runtime but fall outside FileInfo['metadata']'s declared shape.
-    const metadata = result.metadata as Record<string, unknown> | undefined;
+    const metadata = result.metadata as JsonObject | undefined;
     expect(metadata?.isEnhanced).toBe(true);
     expect(metadata?.processingLibrary).toBe("Native text extraction");
     expect(typeof metadata?.chunkCount).toBe("number");
@@ -1176,7 +1177,7 @@ describe("processUploadedFile", () => {
     expect(result.title).toBe("lecture");
     expect(result.mimeType).toBe("application/pdf");
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
-    expect((result.metadata as Record<string, unknown> | undefined)?.processingLibrary).toBe(
+    expect((result.metadata as JsonObject | undefined)?.processingLibrary).toBe(
       "@opendocsg/pdf2md",
     );
   });
@@ -1209,7 +1210,7 @@ describe("processUploadedFile", () => {
 
     expect(result.title).toBe("slides");
     expect(result.pageCount).toBe(2);
-    const metadata = result.metadata as Record<string, unknown> | undefined;
+    const metadata = result.metadata as JsonObject | undefined;
     expect(metadata?.slideCount).toBe(2);
     expect(metadata?.processingLibrary).toBe("XML parsing (isolated worker)");
     expect(result.content).toContain("Intro to the course");

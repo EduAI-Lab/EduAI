@@ -106,13 +106,14 @@ beforeEach(() => {
     lastEmbeddedAt: null,
   });
   findFirst.mockResolvedValue(null);
-  findUnique.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
-    "id" in where ? { ...claimedJob, id: where.id } : null,
+  findUnique.mockImplementation(
+    async ({ where }: { where: Prisma.CourseReEmbedJobWhereUniqueInput }) =>
+      "id" in where ? { ...claimedJob, id: where.id } : null,
   );
   findUniqueOrThrow.mockImplementation(async () => lastUpdatedJob);
   create.mockResolvedValue(baseJob);
   update.mockResolvedValue(claimedJob);
-  updateMany.mockImplementation(async (args: unknown) => {
+  updateMany.mockImplementation(async (args: Prisma.CourseReEmbedJobUpdateManyArgs) => {
     const result = await update(args);
     const jobId =
       typeof args === "object" && args !== null && "where" in args

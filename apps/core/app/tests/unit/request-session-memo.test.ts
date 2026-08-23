@@ -55,7 +55,7 @@ describe("getRequestSession — per-request memoization", () => {
   });
 
   it("caches the in-flight promise so concurrent callers dedupe instead of racing", async () => {
-    let resolveSession: (value: unknown) => void = () => {};
+    let resolveSession: (session: ReturnType<typeof sessionFor>) => void = () => {};
     getSessionMock.mockReturnValue(
       new Promise((resolve) => {
         resolveSession = resolve;

@@ -34,7 +34,26 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 const uploadMaterial = vi.fn();
-const materialsState: { materials: unknown[] } = { materials: [] };
+/** What the mocked `useCourseMaterials` hands back; rewritten per test. */
+type MaterialsState = { materials: CourseMaterialFixture[] };
+
+/** How the probe hands the captured `onFileSelect` back to the test. */
+type FileSelectBridge = { onFileSelect?: (file: File) => void | Promise<void> };
+
+/** The fields the view reads off a material row. */
+type CourseMaterialFixture = {
+  id: string;
+  title: string;
+  mimeType: string;
+  fileSize: number;
+  status: string;
+  createdAt: string;
+};
+
+const materialsState: MaterialsState = { materials: [] };
+
+/** How the probe hands the captured `onFileSelect` back to the test. */
+const fileSelectBridge: FileSelectBridge = {};
 
 vi.mock("~/hooks/api/use-course-materials", () => ({
   useCourseMaterials: () => ({
@@ -82,7 +101,7 @@ interface ProbeProps {
 }
 
 function Probe(props: ProbeProps) {
-  (globalThis as Record<string, unknown>).__onFileSelect = props.onFileSelect;
+  fileSelectBridge.onFileSelect = props.onFileSelect;
   return (
     <div>
       <span data-testid="error">{props.materialsError ?? ""}</span>
@@ -107,9 +126,8 @@ import CourseDetailPage from "~/routes/courses.$courseId";
 const file = new File(["x"], "week2.pdf", { type: "application/pdf" });
 
 async function selectFile() {
-  const handler = (globalThis as Record<string, unknown>).__onFileSelect as (
-    f: File,
-  ) => Promise<void>;
+  const handler = fileSelectBridge.onFileSelect;
+  if (!handler) throw new Error("the probe never rendered, so no handler was captured");
   await act(async () => {
     await handler(file);
   });

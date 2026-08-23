@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -69,12 +70,14 @@ describe("re-embed lease heartbeat", () => {
 
     mocks.findUnique.mockResolvedValue(job);
     mocks.findUniqueOrThrow.mockResolvedValue({ ...job, status: "RUNNING" });
-    mocks.updateMany.mockImplementation(({ data }: { data: Record<string, unknown> }) => {
-      if (data.status === "RUNNING") return Promise.resolve({ count: 1 });
-      if (data.status === "FAILED") return Promise.resolve({ count: 1 });
-      if ("leaseHeartbeatAt" in data) return Promise.reject(new Error("database unavailable"));
-      return Promise.resolve({ count: 1 });
-    });
+    mocks.updateMany.mockImplementation(
+      ({ data }: { data: Prisma.CourseReEmbedJobUpdateInput }) => {
+        if (data.status === "RUNNING") return Promise.resolve({ count: 1 });
+        if (data.status === "FAILED") return Promise.resolve({ count: 1 });
+        if ("leaseHeartbeatAt" in data) return Promise.reject(new Error("database unavailable"));
+        return Promise.resolve({ count: 1 });
+      },
+    );
 
     let rejectProvider!: (cause: unknown) => void;
     let providerSignal!: AbortSignal;

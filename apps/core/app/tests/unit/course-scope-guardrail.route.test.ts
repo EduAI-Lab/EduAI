@@ -4,6 +4,7 @@
 // canned redirect (skipping streamText/admission entirely), fails open on
 // its own module boundary, and is skipped for admin-preview/service-key
 // callers regardless of the enabled flag.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -23,7 +24,7 @@ vi.mock("ai", async (importOriginal) => {
       return new Response(chunks.join(""), { status: 200, headers });
     }),
     formatDataStreamPart: vi.fn(
-      (type: string, value: unknown) => `${type}:${JSON.stringify(value)}\n`,
+      (type: string, value: JsonValue) => `${type}:${JSON.stringify(value)}\n`,
     ),
     tool: vi.fn(<T>(definition: T) => definition),
   };
@@ -37,9 +38,9 @@ vi.mock("~/lib/ai/embedding", () => ({
 
 vi.mock("~/lib/agent-tools", () => ({
   buildAdminSystemPrompt: vi.fn().mockReturnValue(""),
-  chatbotTypeFromMode: vi.fn((mode: unknown) => (mode === "admin" ? "ADMIN" : "LEARNING")),
+  chatbotTypeFromMode: vi.fn((mode: JsonValue) => (mode === "admin" ? "ADMIN" : "LEARNING")),
   createChatTools: vi.fn().mockReturnValue({}),
-  parseChatMode: vi.fn((v: unknown) => (v === "admin" ? "admin" : "learning")),
+  parseChatMode: vi.fn((v: JsonValue) => (v === "admin" ? "admin" : "learning")),
 }));
 
 vi.mock("~/lib/auth/server", () => ({
@@ -156,7 +157,7 @@ function makeRequest(body: RouteRequestBody) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "What's due for assignment 2?" }],
     model: "vllm:test-model",

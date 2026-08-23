@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Per-user rate limiting for /api/chat (#987): caps LLM completion requests
 // so an authenticated user can't submit unbounded requests to the model.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -26,7 +27,7 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
     tool: vi.fn(<T>(definition: T) => definition),
   };
 });
@@ -128,7 +129,7 @@ function makeRequest(body: RouteRequestBody) {
   } as any;
 }
 
-function baseBody(overrides: Record<string, unknown> = {}) {
+function baseBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
     model: "vllm:test-model",

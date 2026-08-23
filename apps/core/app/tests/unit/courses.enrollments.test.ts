@@ -1,3 +1,4 @@
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -276,7 +277,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps STUDENT enrollment correctly", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const student = body.enrollments.find((e: Record<string, unknown>) => e.role === "STUDENT");
+    const student = body.enrollments.find((e: JsonObject) => e.role === "STUDENT");
     expect(student).toEqual({
       id: "enr-1",
       studentId: "user-1",
@@ -292,9 +293,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("maps INSTRUCTOR enrollment correctly with null enrolledAt", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const instructor = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "INSTRUCTOR",
-    );
+    const instructor = body.enrollments.find((e: JsonObject) => e.role === "INSTRUCTOR");
     expect(instructor).toEqual({
       id: "enr-3",
       studentId: "user-3",
@@ -311,7 +310,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
   it("returns both active and inactive enrollments", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     const body = await res.json();
-    const activeStates = body.enrollments.map((e: Record<string, unknown>) => e.isActive);
+    const activeStates = body.enrollments.map((e: JsonObject) => e.isActive);
     expect(activeStates).toContain(true);
     expect(activeStates).toContain(false);
   });

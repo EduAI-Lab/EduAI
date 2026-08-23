@@ -4,6 +4,7 @@
 // even when the reEmbed=true path throws QueueUnavailableError from
 // startOrResumeReEmbedJob on a DB/queue outage. That must surface as 503.
 
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueueUnavailableError } from "~/lib/queue/errors.server";
 
@@ -25,8 +26,8 @@ vi.mock("~/lib/ai/embedding", () => ({
   clearCourseEmbeddingSettingsCache: vi.fn(),
   isEmbeddingIndexStale: vi.fn(() => false),
   parseEmbeddingSettingsUpdate: vi.fn((body: RouteRequestBody) => ({ ok: true, value: body })),
-  resolveEffectiveEmbeddingSettings: vi.fn((fields: unknown) => fields),
-  validateEmbeddingSettingsUpdate: vi.fn((_current: unknown, value: unknown) => ({
+  resolveEffectiveEmbeddingSettings: vi.fn(<T>(fields: T) => fields),
+  validateEmbeddingSettingsUpdate: vi.fn((_current: JsonValue, value: JsonValue) => ({
     ok: true,
     value,
   })),
@@ -76,7 +77,7 @@ beforeEach(() => {
   vi.mocked(prisma.course.update).mockResolvedValue(course as never);
 });
 
-function patchArgs(body: Record<string, unknown>) {
+function patchArgs(body: JsonObject) {
   return {
     request: new Request("http://localhost/api/courses/course_1/embedding-settings", {
       method: "PATCH",

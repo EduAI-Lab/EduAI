@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Pre-MVP regression coverage: legacy queue inputs must stay on authenticated
 // direct chat even when old deployment configuration still sets the flag.
+import type { JsonObject, JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { RouteRequestBody } from "../helpers/route-fixtures";
 
@@ -10,7 +11,7 @@ vi.mock("ai", async (importOriginal) => {
     ...actual,
     streamText: vi.fn(),
     createDataStreamResponse: vi.fn(() => new Response("", { status: 200 })),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
+    formatDataStreamPart: vi.fn((_type: string, value: JsonValue) => String(value)),
     tool: vi.fn(<T>(definition: T) => definition),
   };
 });
@@ -106,7 +107,7 @@ function makeRequest(body: RouteRequestBody) {
   } as never;
 }
 
-function enqueueBody(overrides: Record<string, unknown> = {}) {
+function enqueueBody(overrides: JsonObject = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Write 5 questions on recursion." }],
     model: "vllm:test-model",

@@ -1,6 +1,7 @@
 // @vitest-environment node
 // #1213 — POST /api/completion: method gate, the api-key/session/service-key
 // auth chain, invalid JSON, and the streaming vs non-streaming response shape.
+import type { JsonValue } from "~/lib/json-value";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const checkRateLimitMock = vi.hoisted(() => vi.fn());
@@ -12,7 +13,7 @@ vi.mock("~/lib/auth/rate-limit.server", async (importOriginal) => {
 
 vi.mock("~/lib/ai/completion.server", () => ({
   runCompletion: vi.fn(),
-  validateCompletionRequest: vi.fn((input: unknown) => ({
+  validateCompletionRequest: vi.fn((input: JsonValue) => ({
     ok: true,
     request: input,
   })),

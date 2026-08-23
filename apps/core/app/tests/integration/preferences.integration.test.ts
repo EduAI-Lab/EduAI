@@ -4,6 +4,7 @@
 // PATCH /api/preferences persists → GET reads back → the root loader
 // (which gates data-assistive on <html>) reflects the stored value.
 
+import type { JsonObject } from "~/lib/json-value";
 import { describe, it, expect, vi, afterAll } from "vitest";
 import prisma from "~/lib/prisma.server";
 
@@ -45,7 +46,7 @@ function patchArgs(body: RouteRequestBody) {
   } as any;
 }
 
-async function expectRootLoader(overrides: Record<string, unknown>) {
+async function expectRootLoader(overrides: JsonObject) {
   return {
     canInvite: false,
     assistive: false,
