@@ -334,7 +334,6 @@ export interface GradedSubmission extends SubmissionRow {
 export interface ImportableActivity {
   id: number;
   title?: string | null;
-  question: string;
   type?: "MCQ" | "SHORT_TEXT";
   lessonId?: number;
   lessonTitle?: string | null;

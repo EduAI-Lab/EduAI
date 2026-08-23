@@ -287,7 +287,11 @@ export const activityAnalyticsRowSchema = z
     activityId: z.number(),
     averageRating: z.number().nullish(),
     feedbackCount: z.number().optional(),
-    difficultyScore: z.string().nullish(),
+    // Prisma's `ActivityAnalytics` sends both: `difficultyScore` is the 0-100
+    // rollup and `difficultyLabel` is the bucket derived from it. Typing the
+    // score as a string rejected every row, which emptied the whole panel.
+    difficultyScore: z.number().nullish(),
+    difficultyLabel: z.string().nullish(),
     activity: z
       .object({
         id: z.number(),
@@ -426,8 +430,9 @@ export const courseFacetsSchema = z
 export const importableActivitySchema = z
   .object({
     id: z.number(),
+    // `mapImportableActivity` folds the question into `title` and never sends a
+    // `question` of its own, so requiring one rejected every populated page.
     title: z.string().nullish(),
-    question: z.string(),
     type: activityTypeSchema.optional(),
     lessonId: z.number().optional(),
     lessonTitle: z.string().nullish(),

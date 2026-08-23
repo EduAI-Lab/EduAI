@@ -854,4 +854,47 @@ describe("response shapes match what the routes actually send", () => {
       status: "resolved",
     });
   });
+
+  // `mapImportableActivity` folds the question into `title`; there is no
+  // `question` on the wire, so requiring one emptied the import picker.
+  it("listImportableActivities decodes the row the mapper actually builds", async () => {
+    respondWith({
+      data: [
+        {
+          id: 7,
+          title: "What is recursion?",
+          type: "MCQ",
+          lessonId: 3,
+          lessonTitle: "Recursion",
+          moduleTitle: "Fundamentals",
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+
+    const { api } = await import("~/lib/api");
+    const page = await api.listImportableActivities();
+    expect(page.data[0]).toMatchObject({ id: 7, title: "What is recursion?", type: "MCQ" });
+  });
+
+  // `ActivityAnalytics.difficultyScore` is an Int and `difficultyLabel` is the
+  // bucket; typing the score as a string rejected every analytics row.
+  it("courseAnalytics decodes a numeric difficultyScore beside its label", async () => {
+    respondWith([
+      {
+        activityId: 7,
+        averageRating: 4.5,
+        feedbackCount: 2,
+        difficultyScore: 42,
+        difficultyLabel: "MEDIUM",
+        activity: { id: 7, title: "What is recursion?", lessonId: 3 },
+      },
+    ]);
+
+    const { api } = await import("~/lib/api");
+    const rows = await api.courseAnalytics(1);
+    expect(rows[0]).toMatchObject({ difficultyScore: 42, difficultyLabel: "MEDIUM" });
+  });
 });

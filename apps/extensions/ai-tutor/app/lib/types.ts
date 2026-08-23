@@ -74,7 +74,8 @@ export type ActivityAnalyticsRow = {
   activityId: number;
   averageRating?: number | null;
   feedbackCount?: number;
-  difficultyScore?: string | null;
+  difficultyScore?: number | null;
+  difficultyLabel?: string | null;
   activity?: {
     id: number;
     title?: string | null;
