@@ -871,7 +871,7 @@ export async function linkAdminCanvasRoster(
   return mutationPayload(result);
 }
 
-function wrapPlatformResult(result: object | ToolError): MutationResult {
+function wrapPlatformResult<T extends object>(result: T | ToolError): MutationResult {
   if ("error" in result) {
     return mutationFailure(result);
   }
